@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ZoningApplication;
 use App\Services\AuditLogger;
 use App\Models\ApplicationSequence;
+use App\Services\SmsNotifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -33,10 +34,20 @@ class ApplicationController extends Controller
                 'zoning_applications.reference_number',
                 'zoning_applications.date_of_application',
                 'zoning_applications.application_type',
+                'zoning_applications.land_use_class',      // ← add
                 'zoning_applications.status',
                 'zoning_applications.applicant_name',
                 'zoning_applications.barangay',
+                'zoning_applications.street_address',      // ← add
+                'zoning_applications.lot_number',          // ← add
+                'zoning_applications.tct_number',          // ← add
+                'zoning_applications.area_sqm',            // ← add
+                'zoning_applications.contact_number',      // ← add
+                'zoning_applications.latitude',            // ← add
+                'zoning_applications.longitude',           // ← add
                 'zoning_applications.assessment_fee',
+                'zoning_applications.or_number',           // ← add
+                'zoning_applications.remarks',             // ← add
                 'zoning_applications.created_at',
                 'users.name as encoded_by_name'
             );
@@ -79,16 +90,11 @@ class ApplicationController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function create()
     {
-        $staff = DB::table('users')
-            ->whereIn('role', ['Admin', 'Planning Officer'])
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name']);
-
-        return Inertia::render('Applications/Create', [
-            'staff' => $staff,
-        ]);
+        return Inertia::render('Applications/Create');
+        // auth is shared globally via HandleInertiaRequests middleware
     }
+
+
 
     // ─────────────────────────────────────────────────────────────────────────
     // STORE — Validate and persist new application
@@ -160,6 +166,12 @@ class ApplicationController extends Controller
                 'encoded_by'          => Auth::id(),
             ]);
 
+            SMSNotifier::applicationCreated(
+                $application->contact_number,
+                $application->reference_number,
+                $application->applicant_name
+            );
+
             AuditLogger::log(
                 applicationId: $application->id,
                 action: 'APPLICATION_CREATED',
@@ -168,9 +180,9 @@ class ApplicationController extends Controller
             );
 
             DB::commit();
-
-            return redirect()->route('applications.index')
-                ->with('success', "Application {$referenceNumber} encoded successfully.");
+            return back()
+                ->with('success', 'Application encoded successfully. SMS message sent to the applicant')
+                ->with('reference_number', $referenceNumber);
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['db' => 'Database error: ' . $e->getMessage()]);

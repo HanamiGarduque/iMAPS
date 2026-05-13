@@ -23,9 +23,7 @@ Route::get('/dashboard', function () {
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
-    Route::get('/dashboard', [DashboardController::class, 'index'])
-        ->name('dashboard');  // ← add this
-
+    Route::get('/dashboard', [DashboardController::class, 'index']) ->name('dashboard');
     Route::get('/applications',            [ApplicationController::class, 'index'])->name('applications.index');
     Route::get('/applications/encode',     [ApplicationController::class, 'create'])->name('applications.create');
     Route::post('/applications/encode',    [ApplicationController::class, 'store'])->name('applications.store');

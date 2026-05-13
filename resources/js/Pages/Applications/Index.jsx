@@ -4,16 +4,16 @@ import { Head, router, usePage } from '@inertiajs/react'
 
 // ── Status badge config ──
 const STATUS_CONFIG = {
-    'Received':                { bg: '#f0fdf4', color: '#16a34a' },
-    'Technical Review':        { bg: '#fffbeb', color: '#d97706' },
+    'Received': { bg: '#f0fdf4', color: '#16a34a' },
+    'Technical Review': { bg: '#fffbeb', color: '#d97706' },
     'Under Sangguniang Bayan': { bg: '#f5f3ff', color: '#7c3aed' },
-    'For Release':             { bg: '#eff6ff', color: '#2563eb' },
-    'Released':                { bg: '#eef4ff', color: '#1a45ee' },
-    'Denied':                  { bg: '#fef2f2', color: '#dc2626' },
+    'For Release': { bg: '#eff6ff', color: '#2563eb' },
+    'Released': { bg: '#eef4ff', color: '#1a45ee' },
+    'Denied': { bg: '#fef2f2', color: '#dc2626' },
 }
 
-const STATUSES    = ['Received', 'Technical Review', 'Under Sangguniang Bayan', 'For Release', 'Released', 'Denied']
-const APP_TYPES   = ['Locational Clearance', 'Zoning Certification', 'Development Permit', 'Special Land Use Permit', 'CLUP Compliance']
+const STATUSES = ['Received', 'Technical Review', 'Under Sangguniang Bayan', 'For Release', 'Released', 'Denied']
+const APP_TYPES = ['Locational Clearance', 'Zoning Certification', 'Development Permit', 'Special Land Use Permit', 'CLUP Compliance']
 
 function StatusBadge({ status }) {
     const cfg = STATUS_CONFIG[status] || { bg: '#f1f5f9', color: '#64748b' }
@@ -28,42 +28,56 @@ function StatusBadge({ status }) {
 
 // ── Leaflet Map (lazy loaded) ──
 function DrawerMap({ lat, lng, applicantName, barangay }) {
-    const mapRef    = useRef(null)
-    const mapInst   = useRef(null)
-    const markerRef = useRef(null)
+    const mapRef = useRef(null)
+    const mapInst = useRef(null)
 
     useEffect(() => {
-        if (!lat || !lng) return
+        if (!lat || !lng || isNaN(lat) || isNaN(lng)) return
+
+        // Leaflet CSS
+        if (!document.getElementById('leaflet-css')) {
+            const link = document.createElement('link')
+            link.id = 'leaflet-css'
+            link.rel = 'stylesheet'
+            link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+            document.head.appendChild(link)
+        }
 
         import('leaflet').then(({ default: L }) => {
-            if (!mapInst.current) {
-                mapInst.current = L.map(mapRef.current, {
-                    zoomControl: true,
-                    scrollWheelZoom: false,
-                })
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '© OpenStreetMap contributors',
-                    maxZoom: 19,
-                }).addTo(mapInst.current)
+            if (mapInst.current) {
+                mapInst.current.remove()
+                mapInst.current = null
             }
 
-            if (markerRef.current) mapInst.current.removeLayer(markerRef.current)
+            const map = L.map(mapRef.current, {
+                zoomControl: true,
+                scrollWheelZoom: false,
+            })
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19,
+            }).addTo(map)
 
             const pinIcon = L.divIcon({
                 className: '',
-                html: `<div style="width:32px;height:32px;border-radius:50% 50% 50% 0;background:#1a45ee;border:3px solid #fff;transform:rotate(-45deg);box-shadow:0 2px 8px rgba(26,69,238,.4);"></div>`,
-                iconSize: [32, 32],
-                iconAnchor: [16, 32],
-                popupAnchor: [0, -34],
+                html: `<div style="width:28px;height:28px;border-radius:50% 50% 50% 0;background:#1a45ee;border:3px solid #fff;transform:rotate(-45deg);box-shadow:0 2px 8px rgba(26,69,238,.4);"></div>`,
+                iconSize: [28, 28],
+                iconAnchor: [14, 28],
+                popupAnchor: [0, -30],
             })
 
-            markerRef.current = L.marker([lat, lng], { icon: pinIcon })
-                .addTo(mapInst.current)
+            L.marker([lat, lng], { icon: pinIcon })
+                .addTo(map)
                 .bindPopup(`<strong>${applicantName}</strong><br>Brgy. ${barangay}`)
                 .openPopup()
 
-            mapInst.current.setView([lat, lng], 16)
-            setTimeout(() => mapInst.current?.invalidateSize(), 150)
+            map.setView([lat, lng], 16)
+
+            // Wait for the container to be visible before invalidating
+            setTimeout(() => map.invalidateSize(), 300)
+
+            mapInst.current = map
         })
 
         return () => {
@@ -74,9 +88,9 @@ function DrawerMap({ lat, lng, applicantName, barangay }) {
         }
     }, [lat, lng])
 
-    if (!lat || !lng) {
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
         return (
-            <div className="h-full w-full flex flex-col items-center justify-center gap-2 bg-slate-50" style={{ minHeight: 260 }}>
+            <div className="h-full w-full flex flex-col items-center justify-center gap-2 bg-slate-50">
                 <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -86,38 +100,17 @@ function DrawerMap({ lat, lng, applicantName, barangay }) {
         )
     }
 
-    return <div ref={mapRef} style={{ height: '100%', width: '100%', minHeight: 260 }} />
+    return <div ref={mapRef} style={{ height: '100%', width: '100%' }} />
 }
 
 // ── Application Detail Drawer ──
-function AppDrawer({ appId, onClose, onStatusUpdated }) {
-    const [app, setApp]         = useState(null)
-    const [loading, setLoading] = useState(true)
-    const [newStatus, setNewStatus] = useState('')
-    const [remarks, setRemarks]     = useState('')
-    const [saving, setSaving]       = useState(false)
-    const [toast, setToast]         = useState(null)
+function AppDrawer({ app, onClose, onStatusUpdated }) {
+    const [newStatus, setNewStatus] = useState(app.status)
+    const [remarks, setRemarks] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [toast, setToast] = useState(null)
 
-    useEffect(() => {
-        if (!appId) return
-        setLoading(true)
-        setApp(null)
-
-        fetch(`/applications/${appId}`, {
-            headers: {
-                'X-Inertia': 'true',
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-            }
-        })
-        .then(r => r.json())
-        .then(data => {
-            setApp(data.props.application)
-            setNewStatus(data.props.application.status)
-            setLoading(false)
-        })
-        .catch(() => setLoading(false))
-    }, [appId])
+    // Remove the useEffect fetch entirely — app is already loaded
 
     const showToast = (msg, type = 'success') => {
         setToast({ msg, type })
@@ -127,9 +120,8 @@ function AppDrawer({ appId, onClose, onStatusUpdated }) {
     const saveStatus = () => {
         if (!newStatus) return showToast('Select a status first.', 'error')
         setSaving(true)
-
         router.post('/applications/update-status', {
-            id:         appId,
+            id: app.id,
             new_status: newStatus,
             remarks,
         }, {
@@ -165,20 +157,24 @@ function AppDrawer({ appId, onClose, onStatusUpdated }) {
 
                     {/* Header */}
                     <div className="flex items-start justify-between px-6 py-5 border-b border-slate-100 shrink-0">
-                        {loading ? (
-                            <div className="h-10 w-48 bg-slate-100 rounded animate-pulse" />
-                        ) : app ? (
+                        {app ? (
                             <div>
                                 <span className="inline-block font-mono text-[11px] font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full mb-1.5">
                                     {app.reference_number}
                                 </span>
-                                <h2 className="text-[17px] font-semibold text-slate-900 leading-snug">{app.applicant_name}</h2>
+
+                                <h2 className="text-[17px] font-semibold text-slate-900 leading-snug">
+                                    {app.applicant_name}
+                                </h2>
+
                                 <p className="text-xs text-slate-400 mt-0.5">
                                     Filed {formatDate(app.date_of_application)} · Brgy. {app.barangay}
                                 </p>
                             </div>
                         ) : (
-                            <p className="text-sm text-red-500">Failed to load application.</p>
+                            <p className="text-sm text-red-500">
+                                Failed to load application.
+                            </p>
                         )}
                         <button onClick={onClose}
                             className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-800 hover:bg-slate-50 transition-colors shrink-0 ml-4 mt-1">
@@ -188,87 +184,80 @@ function AppDrawer({ appId, onClose, onStatusUpdated }) {
                         </button>
                     </div>
 
+
                     {/* Body */}
                     <div className="flex-1 overflow-y-auto">
-                        {loading ? (
-                            <div className="flex flex-col items-center justify-center py-20 gap-3">
-                                <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-                                <p className="text-xs text-slate-400">Loading application…</p>
+                        <>
+                            {/* Map + Info */}
+                            <div className="flex" style={{ height: 320 }}>
+                                {/* Map — fixed width, full height */}
+                                <div style={{ width: '45%', height: '100%', flexShrink: 0 }}>
+                                    <DrawerMap
+                                        lat={parseFloat(app.latitude)}
+                                        lng={parseFloat(app.longitude)}
+                                        applicantName={app.applicant_name}
+                                        barangay={app.barangay}
+                                    />
+                                </div>
+
+                                {/* Info grid — scrollable */}
+                                <div className="flex-1 flex flex-col gap-3 px-5 py-4 border-l border-slate-100 overflow-y-auto" style={{ height: '100%' }}>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Details</p>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {[
+                                                ['Application Type', app.application_type],
+                                                ['Land Use Class', app.land_use_class],
+                                                ['Barangay', app.barangay],
+                                                ['Lot No.', app.lot_number || '—'],
+                                                ['TCT / OCT No.', app.tct_number || '—'],
+                                                ['Area (sq.m)', app.area_sqm ? app.area_sqm + ' m²' : '—'],
+                                                ['Contact', app.contact_number || '—'],
+                                                ['Date Filed', formatDate(app.date_of_application)],
+                                            ].map(([label, val]) => (
+                                                <div key={label} className="bg-slate-50 rounded-xl px-3 py-2.5">
+                                                    <p className="text-[10.5px] text-slate-400 font-medium">{label}</p>
+                                                    <p className="text-[13px] text-slate-800 font-medium mt-0.5">{val}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-sky-50 px-4 py-3 flex items-center justify-between mt-auto">
+                                        <div>
+                                            <p className="text-[11px] text-slate-500 font-medium">Assessment Fee</p>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">Computed upon filing</p>
+                                        </div>
+                                        <span className="font-mono text-lg font-bold text-blue-600">
+                                            {formatFee(app.assessment_fee)}
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
-                        ) : app && (
-                            <>
-                                {/* Map + Info */}
-                                <div className="flex" style={{ minHeight: 260 }}>
-                                    {/* Map */}
-                                    <div className="shrink-0" style={{ width: '50%', minHeight: 260 }}>
-                                        <DrawerMap
-                                            lat={parseFloat(app.latitude)}
-                                            lng={parseFloat(app.longitude)}
-                                            applicantName={app.applicant_name}
-                                            barangay={app.barangay}
-                                        />
+
+                            {/* Status Update */}
+                            <div className="px-6 py-5 border-t border-slate-100 space-y-3">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Update Status</p>
+                                <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs text-slate-500 font-medium">Current</span>
+                                        <StatusBadge status={app.status} />
                                     </div>
-
-                                    {/* Info grid */}
-                                    <div className="flex-1 flex flex-col gap-3 px-5 py-4 border-l border-slate-100 overflow-y-auto">
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Details</p>
-                                            <div className="grid grid-cols-1 gap-2">
-                                                {[
-                                                    ['Application Type', app.application_type],
-                                                    ['Land Use Class',   app.land_use_class],
-                                                    ['Barangay',         app.barangay],
-                                                    ['Lot No.',          app.lot_number || '—'],
-                                                    ['TCT / OCT No.',    app.tct_number || '—'],
-                                                    ['Area (sq.m)',       app.area_sqm ? app.area_sqm + ' m²' : '—'],
-                                                    ['Contact',          app.contact_number || '—'],
-                                                    ['Date Filed',       formatDate(app.date_of_application)],
-                                                ].map(([label, val]) => (
-                                                    <div key={label} className="bg-slate-50 rounded-xl px-3 py-2.5">
-                                                        <p className="text-[10.5px] text-slate-400 font-medium">{label}</p>
-                                                        <p className="text-[13px] text-slate-800 font-medium mt-0.5">{val}</p>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Fee */}
-                                        <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-sky-50 px-4 py-3 flex items-center justify-between mt-auto">
-                                            <div>
-                                                <p className="text-[11px] text-slate-500 font-medium">Assessment Fee</p>
-                                                <p className="text-[11px] text-slate-400 mt-0.5">Computed upon filing</p>
-                                            </div>
-                                            <span className="font-mono text-lg font-bold text-blue-600">
-                                                {formatFee(app.assessment_fee)}
-                                            </span>
-                                        </div>
+                                    <select value={newStatus} onChange={e => setNewStatus(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-colors">
+                                        <option value="">— Select new status —</option>
+                                        {STATUSES.map(s => <option key={s}>{s}</option>)}
+                                    </select>
+                                    <div>
+                                        <p className="text-[10.5px] text-slate-400 font-medium uppercase tracking-wider mb-1.5">Remarks (optional)</p>
+                                        <textarea rows={3} value={remarks}
+                                            onChange={e => setRemarks(e.target.value)}
+                                            placeholder="Add notes about this status update…"
+                                            className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 resize-y focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-colors" />
                                     </div>
                                 </div>
-
-                                {/* Status Update */}
-                                <div className="px-6 py-5 border-t border-slate-100 space-y-3">
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Update Status</p>
-                                    <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs text-slate-500 font-medium">Current</span>
-                                            <StatusBadge status={app.status} />
-                                        </div>
-                                        <select value={newStatus} onChange={e => setNewStatus(e.target.value)}
-                                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-colors">
-                                            <option value="">— Select new status —</option>
-                                            {STATUSES.map(s => <option key={s}>{s}</option>)}
-                                        </select>
-                                        <div>
-                                            <p className="text-[10.5px] text-slate-400 font-medium uppercase tracking-wider mb-1.5">Remarks (optional)</p>
-                                            <textarea rows={3} value={remarks}
-                                                onChange={e => setRemarks(e.target.value)}
-                                                placeholder="Add notes about this status update…"
-                                                className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 resize-y focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-colors" />
-                                        </div>
-                                    </div>
-                                </div>
-                            </>
-                        )}
+                            </div>
+                        </>
                     </div>
 
                     {/* Footer */}
@@ -302,10 +291,10 @@ function AppDrawer({ appId, onClose, onStatusUpdated }) {
 // ── Sidebar ──
 function Sidebar({ userName, userRole }) {
     const navItems = [
-        { href: '/dashboard',    label: 'Dashboard',    icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+        { href: '/dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
         { href: '/applications', label: 'Applications', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', active: true },
-        { href: '/analytics',    label: 'Analytics',    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-        { href: '/audit-log',    label: 'Audit Trail',  icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+        { href: '/analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+        { href: '/audit-log', label: 'Audit Trail', icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     ]
 
     return (
@@ -344,13 +333,30 @@ function Sidebar({ userName, userRole }) {
                         <p className="text-[10px] text-slate-400 mt-0.5">{userRole}</p>
                     </div>
                 </div>
-                <a href="/logout"
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
-                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                <button
+                    onClick={() => {
+                        if (confirm('Sign out from iMAPS?')) {
+                            router.post('/logout')
+                        }
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                >
+                    <svg
+                        className="w-4 h-4 shrink-0"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                        />
                     </svg>
+
                     Sign Out
-                </a>
+                </button>
             </div>
         </aside>
     )
@@ -358,13 +364,13 @@ function Sidebar({ userName, userRole }) {
 
 // ── Main Page ──
 export default function Index({ applications, filters, auth }) {
-    const [drawerAppId, setDrawerAppId] = useState(null)
-    const [clock, setClock]             = useState('')
-    const [search, setSearch]           = useState(filters.search || '')
+    const [drawerApp, setDrawerApp] = useState(null)
+    const [clock, setClock] = useState('')
+    const [search, setSearch] = useState(filters.search || '')
 
-    const userName = auth?.user?.name  || 'Staff'
-    const userRole = auth?.user?.role  || 'Planning Officer'
-    const isAdmin  = userRole === 'Admin'
+    const userName = auth?.user?.name || 'Staff'
+    const userRole = auth?.user?.role || 'Planning Officer'
+    const isAdmin = userRole === 'Admin'
 
     useEffect(() => {
         const tick = () => {
@@ -561,7 +567,7 @@ export default function Index({ applications, filters, auth }) {
                                                     <td className="px-4 py-3 text-slate-700 font-mono text-xs">{formatFee(app.assessment_fee)}</td>
                                                     <td className="px-4 py-3"><StatusBadge status={app.status} /></td>
                                                     <td className="px-4 py-3">
-                                                        <button onClick={() => setDrawerAppId(app.id)}
+                                                        <button onClick={() => setDrawerApp(app)}
                                                             className="text-xs text-blue-600 hover:text-blue-700 font-medium transition-colors whitespace-nowrap">
                                                             View →
                                                         </button>
@@ -601,10 +607,10 @@ export default function Index({ applications, filters, auth }) {
             </div>
 
             {/* Drawer */}
-            {drawerAppId && (
+            {drawerApp && (
                 <AppDrawer
-                    appId={drawerAppId}
-                    onClose={() => setDrawerAppId(null)}
+                    app={drawerApp}
+                    onClose={() => setDrawerApp(null)}
                     onStatusUpdated={() => router.reload({ preserveScroll: true })}
                 />
             )}

@@ -14,6 +14,7 @@ return [
     */
 
     'name' => env('APP_NAME', 'Laravel'),
+    'sms_enabled' => env('SMS_ENABLED', false),
 
     /*
     |--------------------------------------------------------------------------
