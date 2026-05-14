@@ -6,20 +6,19 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+    
     public function up(): void
     {
         Schema::create('application_sequences', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
+            $table->string('type_code', 4);
+            $table->integer('year');
+            $table->integer('last_seq');
+
+            $table->primary(['type_code', 'year']);
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
+
     public function down(): void
     {
         Schema::dropIfExists('application_sequences');
