@@ -30,7 +30,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/applications/{id}',       [ApplicationController::class, 'show'])->name('applications.show');
     Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])->name('applications.updateStatus');
     Route::get('/audit-log',               [AuditTrailController::class, 'index'])->name('audit-log.index');
-    Route::get('/analytics',               [AnalyticsController::class, 'index'])->name('analytics.index');
+    Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
 });
 
 Route::get('/public-portal', [PublicPortalController::class, 'index'])->name('public-portal');
