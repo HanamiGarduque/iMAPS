@@ -36,14 +36,14 @@ function StatBar({ label, pct, color, bg, count }) {
 
 // ── Status Panel ──
 function StatusPanel({ total, thisMonth, statusMap }) {
-    const review   = statusMap['Technical Review'] ?? 0
+    const review = statusMap['Technical Review'] ?? 0
     const released = statusMap['Released'] ?? 0
-    const pending  = statusMap['Received'] ?? 0
+    const pending = statusMap['Received'] ?? 0
 
     const safeTotal = total || 1
     const processingPct = Math.round(((safeTotal - review - released) / safeTotal) * 100)
-    const reviewPct     = Math.round((review / safeTotal) * 100)
-    const releasedPct   = Math.round((released / safeTotal) * 100)
+    const reviewPct = Math.round((review / safeTotal) * 100)
+    const releasedPct = Math.round((released / safeTotal) * 100)
 
     return (
         <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-xl border border-white/50 p-5">
@@ -61,10 +61,10 @@ function StatusPanel({ total, thisMonth, statusMap }) {
 
             <div className="grid grid-cols-2 gap-3 mb-4">
                 {[
-                    { label: 'Total',      value: total,     cls: 'bg-white border-slate-100',         textCls: 'text-slate-800' },
-                    { label: 'This Month', value: thisMonth, cls: 'bg-blue-50/70 border-blue-100',     textCls: 'text-blue-700' },
-                    { label: 'Review',     value: review,    cls: 'bg-amber-50/70 border-amber-100',   textCls: 'text-amber-600' },
-                    { label: 'Released',   value: released,  cls: 'bg-emerald-50/70 border-emerald-100', textCls: 'text-emerald-600' },
+                    { label: 'Total', value: total, cls: 'bg-white border-slate-100', textCls: 'text-slate-800' },
+                    { label: 'This Month', value: thisMonth, cls: 'bg-blue-50/70 border-blue-100', textCls: 'text-blue-700' },
+                    { label: 'Review', value: review, cls: 'bg-amber-50/70 border-amber-100', textCls: 'text-amber-600' },
+                    { label: 'Released', value: released, cls: 'bg-emerald-50/70 border-emerald-100', textCls: 'text-emerald-600' },
                 ].map(({ label, value, cls, textCls }) => (
                     <div key={label} className={`border rounded-xl p-3 shadow-sm ${cls}`}>
                         <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${textCls}`}>{label}</p>
@@ -75,9 +75,9 @@ function StatusPanel({ total, thisMonth, statusMap }) {
 
             <div className="border-t border-slate-100 pt-4">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Status Distribution</p>
-                <StatBar label="Processing"   pct={processingPct} color="#3366f8" />
-                <StatBar label="Under Review" pct={reviewPct}     color="#f59e0b" />
-                <StatBar label="Released"     pct={releasedPct}   color="#10b981" />
+                <StatBar label="Processing" pct={processingPct} color="#3366f8" />
+                <StatBar label="Under Review" pct={reviewPct} color="#f59e0b" />
+                <StatBar label="Released" pct={releasedPct} color="#10b981" />
             </div>
         </div>
     )
@@ -86,19 +86,19 @@ function StatusPanel({ total, thisMonth, statusMap }) {
 // ── Trends Panel ──
 function TrendsPanel() {
     const landUse = [
-        { label: 'Residential',      count: 82, pct: 40, color: '#3366f8', bg: '#eef4ff' },
-        { label: 'Agricultural',     count: 44, pct: 22, color: '#10b981', bg: '#ecfdf5' },
-        { label: 'Commercial',       count: 34, pct: 17, color: '#f59e0b', bg: '#fffbeb' },
-        { label: 'Industrial',       count: 22, pct: 11, color: '#ef4444', bg: '#fef2f2' },
-        { label: 'Agro-industrial',  count: 14, pct: 7,  color: '#8b5cf6', bg: '#f5f3ff' },
-        { label: 'Special projects', count: 7,  pct: 3,  color: '#64748b', bg: '#f8fafc' },
+        { label: 'Residential', count: 82, pct: 40, color: '#3366f8', bg: '#eef4ff' },
+        { label: 'Agricultural', count: 44, pct: 22, color: '#10b981', bg: '#ecfdf5' },
+        { label: 'Commercial', count: 34, pct: 17, color: '#f59e0b', bg: '#fffbeb' },
+        { label: 'Industrial', count: 22, pct: 11, color: '#ef4444', bg: '#fef2f2' },
+        { label: 'Agro-industrial', count: 14, pct: 7, color: '#8b5cf6', bg: '#f5f3ff' },
+        { label: 'Special projects', count: 7, pct: 3, color: '#64748b', bg: '#f8fafc' },
     ]
     const hotspots = [
-        { rank: 1, name: 'Barangay 1',   type: 'Residential',  color: '#3366f8', bg: '#eef4ff', count: 31 },
-        { rank: 2, name: 'Calantas',     type: 'Agricultural', color: '#10b981', bg: '#ecfdf5', count: 27 },
-        { rank: 3, name: 'Barangay 5',   type: 'Commercial',   color: '#f59e0b', bg: '#fffbeb', count: 23 },
-        { rank: 4, name: 'Barangay 12',  type: 'Industrial',   color: '#ef4444', bg: '#fef2f2', count: 18 },
-        { rank: 5, name: 'Brgy. Mabini', type: 'Residential',  color: '#3366f8', bg: '#eef4ff', count: 16 },
+        { rank: 1, name: 'Barangay 1', type: 'Residential', color: '#3366f8', bg: '#eef4ff', count: 31 },
+        { rank: 2, name: 'Calantas', type: 'Agricultural', color: '#10b981', bg: '#ecfdf5', count: 27 },
+        { rank: 3, name: 'Barangay 5', type: 'Commercial', color: '#f59e0b', bg: '#fffbeb', count: 23 },
+        { rank: 4, name: 'Barangay 12', type: 'Industrial', color: '#ef4444', bg: '#fef2f2', count: 18 },
+        { rank: 5, name: 'Brgy. Mabini', type: 'Residential', color: '#3366f8', bg: '#eef4ff', count: 16 },
     ]
     const [year, setYear] = useState(2026)
 
@@ -173,7 +173,7 @@ function TrendsPanel() {
 // ── Diversity Panel ──
 function DiversityPanel() {
     const clusters = [
-        { name: 'Calantas',   pct: 88, color: '#8b5cf6' },
+        { name: 'Calantas', pct: 88, color: '#8b5cf6' },
         { name: 'Barangay 1', pct: 72, color: '#3366f8' },
         { name: 'Barangay 5', pct: 61, color: '#10b981' },
     ]
@@ -279,8 +279,8 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     }, [])
 
     const layers = [
-        { key: 'status',    label: 'Application Status' },
-        { key: 'trends',    label: 'Time Trends' },
+        { key: 'status', label: 'Application Status' },
+        { key: 'trends', label: 'Time Trends' },
         { key: 'diversity', label: 'Diversity Index' },
     ]
 
@@ -345,9 +345,9 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                         </div>
                         <nav className="flex-1 flex flex-col gap-1 py-4">
                             {[
-                                { href: '/dashboard',    label: 'Dashboard',    icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', active: true },
+                                { href: '/dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', active: true },
                                 { href: '/applications', label: 'Applications', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-                                { href: '/analytics',    label: 'Analytics',    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+                                { href: '/analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
                             ].map(item => (
                                 <a key={item.href} href={item.href}
                                     className={`flex items-center gap-3 px-5 py-2.5 font-medium text-sm rounded-r-xl mr-4 transition-all ${item.active ? 'bg-blue-800 text-white font-semibold shadow-sm' : 'text-slate-700 hover:bg-blue-50 hover:text-blue-800'}`}>
@@ -359,13 +359,30 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                             ))}
                         </nav>
                         <div className="border-t border-slate-100 py-3 mt-2">
-                            <a href="/logout"
-                                className="flex items-center gap-3 px-5 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-blue-700 font-medium text-sm transition-all rounded-r-xl mr-4">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            <button
+                                onClick={() => {
+                                    if (confirm('Sign out from iMAPS?')) {
+                                        router.post('/logout')
+                                    }
+                                }}
+                                className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                            >
+                                <svg
+                                    className="w-4 h-4 shrink-0"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth="1.8"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                                    />
                                 </svg>
-                                <span>Sign Out</span>
-                            </a>
+
+                                Sign Out
+                            </button>
                         </div>
                     </aside>
 
@@ -375,8 +392,8 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
 
                         {/* ── Right Stats Panel ── */}
                         <div className="absolute top-6 right-6 z-[500] w-[340px] max-h-[calc(100vh-6rem)] overflow-y-auto">
-                            {activeLayer === 'status'    && <StatusPanel total={total} thisMonth={thisMonth} statusMap={statusMap} />}
-                            {activeLayer === 'trends'    && <TrendsPanel />}
+                            {activeLayer === 'status' && <StatusPanel total={total} thisMonth={thisMonth} statusMap={statusMap} />}
+                            {activeLayer === 'trends' && <TrendsPanel />}
                             {activeLayer === 'diversity' && <DiversityPanel />}
                         </div>
 
