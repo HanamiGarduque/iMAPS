@@ -100,13 +100,13 @@ class ApplicationController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function store(Request $request)
     {
-        if (Auth::user()->role !== 'Planning Officer') {
+        if (Auth::user()->role !== 'Admin') {
             return back()->withErrors(['auth' => 'You are not authorized to perform this action.']);
         }
 
         $validated = $request->validate([
             'date_of_application' => 'required|date|before_or_equal:today',
-            'application_type'    => 'required|in:Locational Clearance,Zoning Certification,Development Permit,Special Land Use Permit,CLUP Compliance',
+            'application_type'    => 'required|in:Locational Clearance,Zoning Certification,Development Permit,Special Land Use Permit',
             'land_use_class'      => 'required|string',
             'purpose'             => 'required|string',
             'applicant_name'      => 'required|string|max:255',
