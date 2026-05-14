@@ -95,8 +95,6 @@ class ApplicationController extends Controller
         // auth is shared globally via HandleInertiaRequests middleware
     }
 
-
-
     // ─────────────────────────────────────────────────────────────────────────
     // STORE — Validate and persist new application
     // ─────────────────────────────────────────────────────────────────────────
@@ -318,7 +316,6 @@ class ApplicationController extends Controller
             'Zoning Certification'    => 'ZC',
             'Development Permit'      => 'DP',
             'Special Land Use Permit' => 'SP',
-            'CLUP Compliance'         => 'CC',
         ];
 
         $code = $typeCodes[$type] ?? 'ZA';

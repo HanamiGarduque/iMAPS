@@ -21,7 +21,6 @@ return new class extends Migration
             // PostgreSQL ENUM equivalent
             $table->enum('role', [
                 'Planning Officer',
-                'Zoning Administrator',
                 'Admin',
             ])->default('Planning Officer');
 
