@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ZoningApplication;
 use App\Services\AuditLogger;
 use App\Models\ApplicationSequence;
+use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -172,6 +173,13 @@ class ApplicationController extends Controller
                 $application->applicant_name
             );
 
+            ApplicationStatusTracker::log(
+                $application->reference_number,
+                $application->applicant_name,
+                $application->status
+            );
+
+
             AuditLogger::log(
                 applicationId: $application->id,
                 action: 'APPLICATION_CREATED',
@@ -254,8 +262,15 @@ class ApplicationController extends Controller
                 performedBy: Auth::id(),
                 note: $note
             );
+            
+            ApplicationStatusTracker::log(
+                $application->reference_number,
+                $application->applicant_name,
+                $application->status
+            );
 
             DB::commit();
+
 
             return back()->with('success', 'Status updated successfully.');
         } catch (\Exception $e) {

@@ -3,13 +3,14 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AuditLogger
 {
     public static function log(
-        int    $applicationId,
+        int $applicationId,
         string $action,
-        ?int   $performedBy,
+        ?int $performedBy,
         string $note = ''
     ): void {
         try {
@@ -18,10 +19,14 @@ class AuditLogger
                 'action'         => $action,
                 'performed_by'   => $performedBy,
                 'note'           => $note,
-                'performed_at'   => now(),
+                'created_at'     => now(),
             ]);
         } catch (\Exception $e) {
-            Log::error('[AuditLogger] Failed: ' . $e->getMessage());
+            Log::error('[AuditLogger] Failed to write audit log', [
+                'application_id' => $applicationId,
+                'action'         => $action,
+                'error'          => $e->getMessage(),
+            ]);
         }
     }
 }
