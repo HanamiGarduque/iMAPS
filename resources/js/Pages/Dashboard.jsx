@@ -330,59 +330,70 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     const reviewPct = Math.round((review / safeTotal) * 100)
     const releasedPct = Math.round((released / safeTotal) * 100)
 
-    // ── Alert Initialization (Minimized & Font Adjusted) ──
-    useEffect(() => {
-        Swal.fire({
-            toast: true,
-            position: 'top-end',
-            icon: 'success',
-            title: `Welcome back, ${userName || 'Staff'}!`,
-            text: 'Successfully logged in.',
-            showConfirmButton: false,
-            timer: 3000,
-            timerProgressBar: true,
-            customClass: {
-                popup: 'swal-small-toast',
-            },
-            didOpen: (toast) => {
-                toast.onmouseenter = Swal.stopTimer;
-                toast.onmouseleave = Swal.resumeTimer;
-            }
-        });
-    }, [userName]);
+   // ── Alert Initialization (Minimized & Font Adjusted) ──
+    useEffect(() => {
+        // Check if the welcome message has already been shown this session
+        const hasShownWelcome = sessionStorage.getItem('hasShownWelcome');
+
+        if (!hasShownWelcome && userName) {
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'success',
+                title: `Welcome back, ${userName || 'Staff'}!`,
+                text: 'Successfully logged in.',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true,
+                customClass: {
+                    popup: 'swal-small-toast',
+                },
+                didOpen: (toast) => {
+                    toast.onmouseenter = Swal.stopTimer;
+                    toast.onmouseleave = Swal.resumeTimer;
+                }
+            });
+            
+            // Set the flag so it doesn't trigger on reloads or page switches
+            sessionStorage.setItem('hasShownWelcome', 'true');
+        }
+    }, [userName]);
 
     // ── Handle Custom Logout Process ──
-    const handleLogout = () => {
-        Swal.fire({
-            title: 'Sign Out?',
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#1e40af',
-            cancelButtonColor: '#ef4444',
-            confirmButtonText: 'Yes',
-            cancelButtonText: 'Cancel',
-            customClass: {
-                popup: 'swal-small-modal',
-                title: 'text-blue-900 font-black',
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({
-                    title: 'Logged Out!',
-                    text: 'You have been successfully logged out.',
-                    icon: 'success',
-                    timer: 1500,
-                    showConfirmButton: false,
-                    customClass: {
-                        popup: 'swal-small-modal'
-                    }
-                }).then(() => {
-                    router.post('/logout');
-                });
-            }
-        });
-    };
+    const handleLogout = () => {
+        Swal.fire({
+            title: 'Sign Out?',
+            text: "Are you sure you want to log out of iMAPS?",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#1e40af',
+            cancelButtonColor: '#ef4444',
+            confirmButtonText: 'Yes',
+            cancelButtonText: 'Cancel',
+            customClass: {
+                popup: 'swal-small-modal',
+                title: 'text-blue-900 font-black',
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Clear the flag so the welcome alert shows on the next login
+                sessionStorage.removeItem('hasShownWelcome');
+
+                Swal.fire({
+                    title: 'Logged Out!',
+                    text: 'You have been successfully logged out.',
+                    icon: 'success',
+                    timer: 1500,
+                    showConfirmButton: false,
+                    customClass: {
+                        popup: 'swal-small-modal'
+                    }
+                }).then(() => {
+                    router.post('/logout');
+                });
+            }
+        });
+    };
 
     useEffect(() => {
         const tick = () => {
