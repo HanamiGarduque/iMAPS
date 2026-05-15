@@ -4,9 +4,8 @@ namespace App\Providers;
 
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use App\Services\SupabaseService;
 use App\Models\ApplicationStatusTrack;
-use App\Models\ZoningApplication;
-use App\Observers\ZoningApplicationObserver;
 use App\Observers\ApplicationStatusTrackObserver;
 
 
@@ -17,7 +16,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(SupabaseService::class);
     }
 
     /**

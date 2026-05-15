@@ -14,7 +14,7 @@ class User extends Authenticatable  // ← must extend Authenticatable, NOT Mode
         'name',
         'email',
         'password_hash',
-        'role',        // ← add this for iMAPS roles
+        'role',     
     ];
 
     protected $hidden = [
