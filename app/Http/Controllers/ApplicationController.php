@@ -100,7 +100,7 @@ class ApplicationController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function store(Request $request)
     {
-        if (Auth::user()->role !== 'Admin') {
+        if (Auth::user()->role !== 'Planning Officer') {
             return back()->withErrors(['auth' => 'You are not authorized to perform this action.']);
         }
 
@@ -322,7 +322,7 @@ class ApplicationController extends Controller
         $year = (new \DateTime($date))->format('Y');
         $seq  = $this->getNextSequence($code, $year);
 
-        return sprintf('ZA-%s-%s-%05d', $code, $year, $seq);
+        return sprintf('%s-%s-%05d', $code, $year, $seq);
     }
 
     private function getNextSequence(string $typeCode, string $year): int

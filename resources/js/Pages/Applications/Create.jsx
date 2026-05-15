@@ -40,8 +40,8 @@ function Label({ children, required, hasError }) {
 const inputBaseStyles = (hasError) => `
     w-full rounded-[10px] border px-3 py-2.5 text-[13px] font-medium transition-all duration-200
     placeholder:text-slate-400 placeholder:font-normal outline-none
-    ${hasError 
-        ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-[2px] focus:ring-red-500/20' 
+    ${hasError
+        ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-[2px] focus:ring-red-500/20'
         : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-[0_2px_10px_rgb(0,0,0,0.02)] focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10'}
 `
 
@@ -121,7 +121,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
         }
         if (step === 2 && !form.applicant_name) newErrors.applicant_name = "Required"
         if (step === 3 && !form.barangay) newErrors.barangay = "Required"
-        
+
         setErrors(newErrors)
         return Object.keys(newErrors).length === 0
     }
@@ -141,7 +141,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
         if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: 'smooth' })
     }
 
-   const handleSubmit = (e) => {
+    const handleSubmit = (e) => {
         e.preventDefault()
         if (!form.assessment_fee) {
             setErrors({ assessment_fee: "Assessment fee is required for routing." })
@@ -164,8 +164,10 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                 setCurrentStep(1)
                 setForm({ ...form, application_type: '', land_use_class: '', purpose: '', applicant_name: '', contact_number: '', email: '', representative_name: '', barangay: '', street_address: '', lot_number: '', tct_number: '', area_sqm: '', coordinates: '', assessment_fee: '', or_number: '', remarks: '' })
             },
-            onError: (errs) => { 
-                setErrors(errs); 
+            onError: (errs) => {
+                console.log('Server validation errors:', errs)  // ← add this
+
+                setErrors(errs);
                 if (errs.date_of_application || errs.application_type || errs.land_use_class || errs.purpose) {
                     setCurrentStep(1);
                 } else if (errs.applicant_name || errs.contact_number || errs.email || errs.representative_name) {
@@ -175,7 +177,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                 } else {
                     setCurrentStep(5);
                 }
-                setFlash({ type: 'error', msg: 'Validation failed. Please check the highlighted fields.' }) 
+                setFlash({ type: 'error', msg: 'Validation failed. Please check the highlighted fields.' })
             },
             onFinish: () => setSubmitting(false),
         })
@@ -208,7 +210,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
             `}</style>
 
             <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
-                
+
                 {/* ── NAVBAR ── */}
                 <header className="h-14 bg-white border-b border-slate-200 shadow-sm flex items-center justify-between px-4 sm:px-6 shrink-0 z-[700] sticky top-0">
                     <div className="flex items-center gap-4 lg:gap-6">
@@ -255,47 +257,171 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                 </header>
 
                 <div className="flex flex-1 h-full overflow-hidden relative">
-                    
+
                     {/* ── SIDEBAR ── */}
-                    <aside className={`absolute top-0 left-0 w-[200px] h-full bg-white z-[600] border-r border-slate-200 flex flex-col py-4 transition-transform duration-500 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                        <button onClick={() => setSidebarOpen(!sidebarOpen)} className="absolute top-1/2 -translate-y-1/2 -right-5 w-5 h-12 bg-white border-y border-r border-slate-200 text-slate-400 hover:text-blue-600 rounded-r-md flex items-center justify-center shadow-sm transition-colors focus:outline-none z-10">
-                            <svg className={`w-3.5 h-3.5 transition-transform duration-500 ${!sidebarOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                    <aside
+                        className={`absolute top-0 left-0 w-[200px] h-full bg-white z-[9999] border-r border-slate-200 flex flex-col py-4 transition-transform duration-500 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                            }`}
+                    >
+                        <button
+                            onClick={() => setSidebarOpen(!sidebarOpen)}
+                            className="absolute top-1/2 -translate-y-1/2 -right-5 w-5 h-12 bg-white border-y border-r border-slate-200 text-slate-400 hover:text-blue-600 rounded-r-md flex items-center justify-center shadow-sm transition-colors focus:outline-none z-10"
+                        >
+                            <svg
+                                className={`w-3.5 h-3.5 transition-transform duration-500 ${!sidebarOpen ? 'rotate-180' : ''
+                                    }`}
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M15 19l-7-7 7-7"
+                                />
+                            </svg>
                         </button>
 
                         <div className="px-4 pb-4 pt-1 border-b border-slate-100 flex flex-col items-center">
-                            <h1 className="text-2xl font-black text-blue-900 tracking-tighter leading-none">iMAPS</h1>
-                            <span className="text-[9px] font-bold text-blue-700 tracking-[0.2em] uppercase mt-1">Rosario</span>
+                            <h1 className="text-2xl font-black text-blue-900 tracking-tighter leading-none">
+                                iMAPS
+                            </h1>
+
+                            <span className="text-[9px] font-bold text-blue-700 tracking-[0.2em] uppercase mt-1">
+                                Rosario
+                            </span>
                         </div>
 
                         <nav className="flex-1 flex flex-col gap-1 py-3 overflow-y-auto">
-                            <a href="/dashboard" className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-xs rounded-r-lg mr-3 transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg><span>Dashboard</span>
-                            </a>
-                            <a href="/applications" className="flex items-center gap-2.5 px-4 py-2 bg-blue-800 text-white font-semibold text-xs rounded-r-lg mr-3 shadow-sm transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><span>Applications</span>
-                            </a>
-                            <a href="/analytics" className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-xs rounded-r-lg mr-3 transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg><span>Analytics</span>
-                            </a>
-                           <a href="/audit" className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-xs rounded-r-lg mr-3 transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+
+                            {/* Dashboard */}
+                            <a
+                                href="/dashboard"
+                                className="relative z-[999] flex w-full items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-xs rounded-r-lg mr-3 transition-all"
+                            >
+                                <svg
+                                    className="w-4 h-4 shrink-0 pointer-events-none"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                                    />
                                 </svg>
-                                <span>Audit Trail</span>
+
+                                <span className="pointer-events-none">
+                                    Dashboard
+                                </span>
                             </a>
+
+                            {/* Applications */}
+                            <a
+                                href="/applications"
+                                className="relative z-[999] flex w-full items-center gap-2.5 px-4 py-2 bg-blue-800 text-white font-semibold text-xs rounded-r-lg mr-3 shadow-sm transition-all"
+                            >
+                                <svg
+                                    className="w-4 h-4 shrink-0 pointer-events-none"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                    />
+                                </svg>
+
+                                <span className="pointer-events-none">
+                                    Applications
+                                </span>
+                            </a>
+
+                            {/* Admin Links */}
+                            {userRole === 'Admin' && (
+                                <>
+                                    <a
+                                        href="/analytics"
+                                        className="relative z-[999] flex w-full items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-xs rounded-r-lg mr-3 transition-all"
+                                    >
+                                        <svg
+                                            className="w-4 h-4 shrink-0 pointer-events-none"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                                            />
+                                        </svg>
+
+                                        <span className="pointer-events-none">
+                                            Analytics
+                                        </span>
+                                    </a>
+
+                                    <a
+                                        href="/audit"
+                                        className="relative z-[999] flex w-full items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-xs rounded-r-lg mr-3 transition-all"
+                                    >
+                                        <svg
+                                            className="w-4 h-4 shrink-0 pointer-events-none"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                            />
+                                        </svg>
+
+                                        <span className="pointer-events-none">
+                                            Audit Trail
+                                        </span>
+                                    </a>
+                                </>
+                            )}
                         </nav>
 
                         <div className="border-t border-slate-100 py-2 mt-1">
-                            <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-500 hover:bg-slate-50 hover:text-blue-700 font-medium text-xs transition-all rounded-r-lg mr-3">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg><span>Sign Out</span>
+                            <button
+                                onClick={handleLogout}
+                                className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-500 hover:bg-slate-50 hover:text-blue-700 font-medium text-xs transition-all rounded-r-lg mr-3"
+                            >
+                                <svg
+                                    className="w-4 h-4 shrink-0"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                                    />
+                                </svg>
+
+                                <span>Sign Out</span>
                             </button>
                         </div>
                     </aside>
-
                     {/* ── WORKSPACE ── */}
                     <main className="flex-1 w-full h-full flex flex-col transition-all duration-500 ease-in-out bg-[#f8fafc]" style={{ paddingLeft: sidebarOpen ? '200px' : '0px' }}>
                         <div className="p-3 md:p-5 flex-1 flex flex-col h-full overflow-hidden">
-                            
+
                             {/* Header Area */}
                             <div className="max-w-[1000px] mx-auto w-full mb-3 flex-shrink-0 flex items-center justify-between gap-4">
                                 <div>
@@ -318,7 +444,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
 
                             {/* UNIFIED CARD */}
                             <div className="max-w-[1000px] mx-auto w-full bg-white rounded-2xl shadow-[0_2px_20px_rgb(0,0,0,0.04)] border border-slate-200/80 overflow-hidden flex flex-col md:flex-row flex-1 min-h-0">
-                                
+
                                 {/* LEFT: TIMELINE */}
                                 <div className="w-full md:w-[220px] lg:w-[240px] bg-slate-50/50 border-r border-slate-100 p-5 flex flex-col shrink-0 overflow-y-auto">
                                     <div className="relative border-l-2 border-slate-200 ml-3 space-y-8 mt-2 hidden md:block">
@@ -329,9 +455,9 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                                 <div key={step.id} className="relative pl-5 cursor-pointer group" onClick={() => isCompleted && setCurrentStep(step.id)}>
                                                     {isCompleted && <div className="absolute left-[-2px] top-0 bottom-[-32px] w-[2px] bg-blue-500 z-0"></div>}
                                                     <div className={`absolute left-[-13px] top-0 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 z-10 border-[1.5px]
-                                                        ${isCompleted ? 'bg-blue-500 border-blue-500 text-white' : 
-                                                          isCurrent ? 'bg-white border-blue-600 text-blue-600 shadow-[0_0_0_3px_rgba(37,99,235,0.15)] scale-110' : 
-                                                          'bg-slate-50 border-slate-300 text-slate-400 group-hover:border-slate-400'}`}>
+                                                        ${isCompleted ? 'bg-blue-500 border-blue-500 text-white' :
+                                                            isCurrent ? 'bg-white border-blue-600 text-blue-600 shadow-[0_0_0_3px_rgba(37,99,235,0.15)] scale-110' :
+                                                                'bg-slate-50 border-slate-300 text-slate-400 group-hover:border-slate-400'}`}>
                                                         {isCompleted ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg> : <span className="text-[11px] font-black">{step.id}</span>}
                                                     </div>
                                                     <div>
@@ -347,7 +473,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                 {/* RIGHT: FORM AREA */}
                                 <div ref={formRef} className="flex-1 p-5 flex flex-col relative bg-white overflow-y-auto">
                                     <form onSubmit={handleSubmit} className="flex-1 flex flex-col h-full w-full">
-                                        
+
                                         {/* ── STEP 1: SCOPE ── */}
                                         {currentStep === 1 && (
                                             <div className="form-enter flex-1 flex flex-col">
@@ -477,7 +603,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                             <div className="form-enter flex-1 flex flex-col">
                                                 <h3 className="text-lg font-black text-slate-800 tracking-tight mb-3 pb-2 border-b border-slate-100 flex-shrink-0">Review Summary</h3>
                                                 <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-                                                    
+
                                                     {/* Scope Review Card */}
                                                     <div className="bg-slate-50 border border-slate-200 rounded-[10px] p-3.5 relative group">
                                                         <button type="button" onClick={() => setCurrentStep(1)} className="absolute top-3 right-3 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-wider flex items-center gap-1"><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>Edit</button>
@@ -560,7 +686,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                                                 <Label required hasError={!!errors.assessment_fee}>Calculated Fee</Label>
                                                                 <div className="relative">
                                                                     <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 font-mono text-[14px] font-black pointer-events-none">₱</span>
-                                                                    <Input type="number" value={form.assessment_fee} onChange={set('assessment_fee')} onBlur={handleFeeBlur} min="0" step="0.01" placeholder="0.00" 
+                                                                    <Input type="number" value={form.assessment_fee} onChange={set('assessment_fee')} onBlur={handleFeeBlur} min="0" step="0.01" placeholder="0.00"
                                                                         className="pl-8 font-mono font-black text-[15px] text-blue-900 bg-white" hasError={!!errors.assessment_fee} />
                                                                 </div>
                                                                 {fieldError('assessment_fee')}

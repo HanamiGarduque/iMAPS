@@ -395,7 +395,7 @@ setResult({ ...latest, history: data })
                                         type="text"
                                         value={ref}
                                         onChange={e => setRef(e.target.value.toUpperCase())}
-                                        placeholder="e.g. ZA-LC-2026-00042"
+                                        placeholder="e.g. LC-2026-00042"
                                         autoComplete="off"
                                         spellCheck="false"
                                         className="flex-1 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 font-mono text-sm text-slate-800 tracking-wide uppercase focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 focus:bg-white transition-all"

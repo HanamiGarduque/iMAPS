@@ -274,10 +274,10 @@ function Sidebar({ userName, userRole }) {
     const { url } = usePage()
 
     const navItems = [
-        { href: '/dashboard',    label: 'Dashboard',    adminOnly: false, icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+        { href: '/dashboard', label: 'Dashboard', adminOnly: false, icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
         { href: '/applications', label: 'Applications', adminOnly: false, icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-        { href: '/analytics',    label: 'Analytics',    adminOnly: true,  icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-        { href: '/audit',        label: 'Audit Trail',  adminOnly: true,  icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+        { href: '/analytics', label: 'Analytics', adminOnly: true, icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+        { href: '/audit', label: 'Audit Trail', adminOnly: true, icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     ].filter(item => !item.adminOnly || userRole === 'Admin')
 
     return (
@@ -299,9 +299,8 @@ function Sidebar({ userName, userRole }) {
                     const isActive = url.startsWith(item.href)
                     return (
                         <Link key={item.href} href={item.href}
-                            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] font-medium transition-all ${
-                                isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                            }`}>
+                            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] font-medium transition-all ${isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                }`}>
                             <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
                                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                             </svg>
@@ -390,7 +389,7 @@ export default function Index({ applications, filters, auth }) {
             `}</style>
 
             <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
-                
+
                 {/* ── NAVBAR ── */}
                 <header className="h-14 bg-white border-b border-slate-200 shadow-sm flex items-center justify-between px-4 sm:px-6 shrink-0 z-[700] sticky top-0">
                     <div className="flex items-center gap-4 lg:gap-6">
@@ -428,7 +427,7 @@ export default function Index({ applications, filters, auth }) {
                 </header>
 
                 <div className="flex flex-1 h-full overflow-hidden relative">
-                    
+
                     {/* ── SIDEBAR ── */}
                     <aside className={`absolute top-0 left-0 w-[200px] h-full bg-white z-[600] border-r border-slate-200 flex flex-col py-4 transition-transform duration-500 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <button onClick={() => setSidebarOpen(!sidebarOpen)} className="absolute top-1/2 -translate-y-1/2 -right-5 w-5 h-12 bg-white border-y border-r border-slate-200 text-slate-400 hover:text-blue-600 rounded-r-md flex items-center justify-center shadow-sm transition-colors focus:outline-none z-10">
@@ -441,23 +440,34 @@ export default function Index({ applications, filters, auth }) {
                         </div>
 
                         <nav className="flex-1 flex flex-col gap-1 py-3 overflow-y-auto">
-                            <a href="/dashboard" className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-[12px] rounded-r-lg mr-3 transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg><span>Dashboard</span>
-                            </a>
-                            <a href="/applications" className="flex items-center gap-2.5 px-4 py-2 bg-blue-800 text-white font-semibold text-[12px] rounded-r-lg mr-3 shadow-sm transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><span>Applications</span>
-                            </a>
-                            <a href="/analytics" className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-[12px] rounded-r-lg mr-3 transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg><span>Analytics</span>
-                            </a>
-                            <a href="/audit" className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-[12px] rounded-r-lg mr-3 transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span>Audit Trail</span>
-                            </a>
+                            {[
+                                { href: '/dashboard', label: 'Dashboard', adminOnly: false, icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+                                { href: '/applications', label: 'Applications', adminOnly: false, icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+                                { href: '/analytics', label: 'Analytics', adminOnly: true, icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+                                { href: '/audit-log', label: 'Audit Trail', adminOnly: true, icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+                            ]
+                                .filter(item => !item.adminOnly || userRole === 'Admin')
+                                .map(item => {
+                                    const isActive = window.location.pathname === item.href
+                                    return (
+                                        <a key={item.href} href={item.href}
+                                            className={`flex items-center gap-2.5 px-4 py-2 font-medium text-[12px] rounded-r-lg mr-3 transition-all ${isActive
+                                                    ? 'bg-blue-800 text-white font-semibold shadow-sm'
+                                                    : 'text-slate-700 hover:bg-blue-50 hover:text-blue-800'
+                                                }`}>
+                                            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                                            </svg>
+                                            <span>{item.label}</span>
+                                        </a>
+                                    )
+                                })}
                         </nav>
 
                         <div className="border-t border-slate-100 py-2 mt-1">
                             <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-500 hover:bg-slate-50 hover:text-blue-700 font-medium text-[12px] transition-all rounded-r-lg mr-3">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg><span>Sign Out</span>
+                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                                <span>Sign Out</span>
                             </button>
                         </div>
                     </aside>
@@ -465,7 +475,7 @@ export default function Index({ applications, filters, auth }) {
                     {/* ── WORKSPACE ── */}
                     <main className="flex-1 w-full h-full flex flex-col transition-all duration-500 ease-in-out bg-[#f8fafc]" style={{ paddingLeft: sidebarOpen ? '200px' : '0px' }}>
                         <div className="p-4 md:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1400px] mx-auto w-full">
-                            
+
                             {/* Header Area */}
                             <div className="mb-4 flex-shrink-0 flex items-center justify-between gap-4 form-enter">
                                 <div>
@@ -477,10 +487,12 @@ export default function Index({ applications, filters, auth }) {
                                     <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none">Applications</h2>
                                 </div>
 
-                                <a href="/applications/encode" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-[10px] bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-bold shadow-sm transition-all active:scale-95">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-                                    Encode New
-                                </a>
+                                {userRole === 'Planning Officer' && (
+                                    <a href="/applications/encode" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-[10px] bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-bold shadow-sm transition-all active:scale-95">
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                        Encode New Application
+                                    </a>
+                                )}
                             </div>
 
                             {/* Filters & Search */}
@@ -490,9 +502,8 @@ export default function Index({ applications, filters, auth }) {
                                         <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 bg-slate-50 px-2 py-1 rounded">Status</span>
                                         {['', ...STATUSES].map(s => (
                                             <button key={s || 'all'} onClick={() => applyFilter({ status: s, application_type: filters.application_type })}
-                                                className={`text-[11px] font-bold px-3 py-1.5 rounded-[8px] transition-all border ${
-                                                    (filters.status || '') === s ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'
-                                                }`}>
+                                                className={`text-[11px] font-bold px-3 py-1.5 rounded-[8px] transition-all border ${(filters.status || '') === s ? 'bg-blue-50 border-blue-200 text-blue-700 shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'
+                                                    }`}>
                                                 {s || 'All'}
                                             </button>
                                         ))}
@@ -570,7 +581,7 @@ export default function Index({ applications, filters, auth }) {
                                         </table>
                                     </div>
                                 )}
-                                
+
                                 {/* Pagination Footer */}
                                 {applications.last_page > 1 && (
                                     <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 shrink-0 flex items-center justify-between">

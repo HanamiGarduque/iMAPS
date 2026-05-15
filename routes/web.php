@@ -27,21 +27,18 @@ Route::middleware('auth')->group(function () {
     Route::get('/applications', [ApplicationController::class, 'index'])
         ->name('applications.index');
 
+    // ── must be before {id} ──
+    Route::get('/applications/encode', [ApplicationController::class, 'create'])
+        ->name('applications.create')->middleware('role:Planning Officer');
+
+    Route::post('/applications/encode', [ApplicationController::class, 'store'])
+        ->name('applications.store')->middleware('role:Planning Officer');
+
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show');
 
     Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])
         ->name('applications.updateStatus');
-});
-
-// ── Planning Officer only ──
-Route::middleware(['auth', 'role:Planning Officer'])->group(function () {
-
-    Route::get('/applications/encode', [ApplicationController::class, 'create'])
-        ->name('applications.create');
-
-    Route::post('/applications/encode', [ApplicationController::class, 'store'])
-        ->name('applications.store');
 });
 
 // ── Admin only ──
