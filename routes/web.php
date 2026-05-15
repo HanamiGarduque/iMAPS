@@ -11,28 +11,51 @@ use Inertia\Inertia;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
+        'canLogin'       => Route::has('login'),
+        'canRegister'    => Route::has('register'),
         'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
+        'phpVersion'     => PHP_VERSION,
     ]);
 });
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
-
+// ── Authenticated routes (all roles) ──
 Route::middleware('auth')->group(function () {
-    Route::get('/dashboard', [DashboardController::class, 'index']) ->name('dashboard');
-    Route::get('/applications',            [ApplicationController::class, 'index'])->name('applications.index');
-    Route::get('/applications/encode',     [ApplicationController::class, 'create'])->name('applications.create');
-    Route::post('/applications/encode',    [ApplicationController::class, 'store'])->name('applications.store');
-    Route::get('/applications/{id}',       [ApplicationController::class, 'show'])->name('applications.show');
-    Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])->name('applications.updateStatus');
-    Route::get('/audit-log',               [AuditTrailController::class, 'index'])->name('audit-log.index');
-    Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
+
+    Route::get('/dashboard', [DashboardController::class, 'index'])
+        ->name('dashboard');
+
+    Route::get('/applications', [ApplicationController::class, 'index'])
+        ->name('applications.index');
+
+    Route::get('/applications/{id}', [ApplicationController::class, 'show'])
+        ->name('applications.show');
+
+    Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])
+        ->name('applications.updateStatus');
 });
 
-Route::get('/public-portal', [PublicPortalController::class, 'index'])->name('public-portal');
+// ── Planning Officer only ──
+Route::middleware(['auth', 'role:Planning Officer'])->group(function () {
+
+    Route::get('/applications/encode', [ApplicationController::class, 'create'])
+        ->name('applications.create');
+
+    Route::post('/applications/encode', [ApplicationController::class, 'store'])
+        ->name('applications.store');
+});
+
+// ── Admin only ──
+Route::middleware(['auth', 'role:Admin'])->group(function () {
+
+    Route::get('/analytics', [AnalyticsController::class, 'index'])
+        ->name('analytics.index');
+
+    Route::get('/audit-log', [AuditTrailController::class, 'index'])
+        ->name('audit-log.index');
+});
+
+// ── Public ──
+Route::get('/public-portal', [PublicPortalController::class, 'index'])
+    ->name('public-portal');
 
 require __DIR__ . '/auth.php';

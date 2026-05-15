@@ -73,9 +73,24 @@ function StatusBadge({ status }) {
 }
 
 // ── Progress Pipeline ──
-function Pipeline({ status }) {
+function Pipeline({ status, history }) {
     const isDenied   = status === 'Denied'
     const currentIdx = PIPELINE_ORDER[status] ?? 0
+
+    const formatDateTime = (d) => d
+        ? new Date(d).toLocaleString('en-PH', {
+            month: 'short', day: 'numeric', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+          })
+        : null
+
+    // Build a map of status → timestamp from history
+    const statusTimestamps = {}
+    ;(history ?? []).forEach(row => {
+        if (!statusTimestamps[row.status]) {
+            statusTimestamps[row.status] = row.created_at
+        }
+    })
 
     const getState = (stepKey, i) => {
         if (isDenied) return stepKey === 'Received' ? 'done' : 'idle'
@@ -87,7 +102,9 @@ function Pipeline({ status }) {
     return (
         <div className="px-6 py-6 border-b border-slate-100">
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-5">Progress</p>
-            <div className="flex items-start relative">
+
+            {/* ── Step indicators (unchanged) ── */}
+            <div className="flex items-start relative mb-6">
                 {PIPELINE_STEPS.map((step, i) => {
                     const state = getState(step.key, i)
                     return (
@@ -105,8 +122,7 @@ function Pipeline({ status }) {
                                 }}>
                                 {state === 'done'
                                     ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                    : step.num
-                                }
+                                    : step.num}
                             </div>
                             <p className="text-[10px] font-semibold text-center mt-2 max-w-[72px] leading-tight"
                                 style={{ color: state === 'done' ? '#1a45ee' : state === 'active' ? '#1e293b' : '#94a3b8', fontWeight: state === 'active' ? 700 : 600 }}>
@@ -115,6 +131,47 @@ function Pipeline({ status }) {
                         </div>
                     )
                 })}
+            </div>
+
+            {/* ── Detailed Timeline ── */}
+            <div className="border-t border-slate-100 pt-5">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-4">Stage History</p>
+                <div className="flex flex-col gap-0">
+                    {PIPELINE_STEPS.filter(step => {
+                        const state = getState(step.key, PIPELINE_ORDER[step.key])
+                        return state === 'done' || state === 'active'
+                    }).map((step, i, arr) => {
+                        const state     = getState(step.key, PIPELINE_ORDER[step.key])
+                        const timestamp = statusTimestamps[step.key]
+                        const isLast    = i === arr.length - 1
+
+                        return (
+                            <div key={step.key} className="flex gap-3">
+                                {/* Left spine */}
+                                <div className="flex flex-col items-center">
+                                    <div className="w-2.5 h-2.5 rounded-full mt-0.5 shrink-0"
+                                        style={{ background: state === 'active' ? '#1a45ee' : '#93c5fd' }} />
+                                    {!isLast && <div className="w-px flex-1 mt-1" style={{ background: '#e2e8f0' }} />}
+                                </div>
+
+                                {/* Content */}
+                                <div className={`pb-4 flex-1 ${isLast ? 'pb-0' : ''}`}>
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <span className="text-[12px] font-semibold text-slate-800">{step.label === 'Tech. Review' ? 'Technical Review' : step.label}</span>
+                                        {state === 'active' && (
+                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">Current</span>
+                                        )}
+                                    </div>
+                                    {timestamp ? (
+                                        <p className="text-[11px] text-slate-400 mt-0.5 font-mono">{formatDateTime(timestamp)}</p>
+                                    ) : (
+                                        <p className="text-[11px] text-slate-300 mt-0.5 italic">Timestamp unavailable</p>
+                                    )}
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
             </div>
         </div>
     )
@@ -148,7 +205,7 @@ function ResultCard({ result }) {
 
                 {/* Pipeline or Denied */}
                 {!isDenied ? (
-                    <Pipeline status={result.status} />
+    <Pipeline status={result.status} history={result.history} />
                 ) : (
                     <div className="px-6 py-4 bg-red-50 border-y border-red-100 flex items-center gap-3">
                         <svg className="w-5 h-5 text-red-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -213,35 +270,39 @@ export default function PublicPortal({ supabaseUrl, supabaseKey }) {
 
         // 1. Initial fetch — get latest status row
         const { data, error: fetchError } = await supabase
-            .from('application_status_tracks')
-            .select('*')
-            .eq('reference_number', refInput)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single()
+    .from('application_status_tracks')
+    .select('*')
+    .eq('reference_number', refInput)
+    .order('created_at', { ascending: true }) 
 
-        setLoading(false)
+setLoading(false)
 
-        if (fetchError || !data) {
-            setError('No application found with that reference number. Please double-check and try again.')
-            return
-        }
+if (fetchError || !data || data.length === 0) {
+    setError('No application found with that reference number. Please double-check and try again.')
+    return
+}
 
-        setResult(data)
+// Latest row is the current status
+const latest = data[data.length - 1]
+setResult({ ...latest, history: data })
+
 
         // 2. Subscribe to live inserts
         channelRef.current = supabase
-            .channel(`status:${refInput}`)
-            .on('postgres_changes', {
-                event:  'INSERT',
-                schema: 'public',
-                table:  'application_status_tracks',
-                filter: `reference_number=eq.${refInput}`,
-            }, (payload) => {
-                setResult(payload.new)
-                setIsLive(true)
-            })
-            .subscribe()
+    .channel(`status:${refInput}`)
+    .on('postgres_changes', {
+        event:  'INSERT',
+        schema: 'public',
+        table:  'application_status_tracks',
+        filter: `reference_number=eq.${refInput}`,
+    }, (payload) => {
+        setResult(prev => ({
+            ...payload.new,
+            history: [...(prev?.history ?? []), payload.new],
+        }))
+        setIsLive(true)
+    })
+    .subscribe()
     }
 
     return (

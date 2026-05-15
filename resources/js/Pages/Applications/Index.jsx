@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Head, router, usePage } from '@inertiajs/react'
+import { Link, Head, router, usePage } from '@inertiajs/react'
 // import AppLayout from '@/Layouts/AppLayout'
 
 // ── Status badge config ──
@@ -288,14 +288,15 @@ function AppDrawer({ app, onClose, onStatusUpdated }) {
     )
 }
 
-// ── Sidebar ──
 function Sidebar({ userName, userRole }) {
+    const { url } = usePage()
+
     const navItems = [
-        { href: '/dashboard', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-        { href: '/applications', label: 'Applications', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', active: true },
-        { href: '/analytics', label: 'Analytics', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-        { href: '/audit-log', label: 'Audit Trail', icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-    ]
+        { href: '/dashboard',    label: 'Dashboard',    adminOnly: false, icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+        { href: '/applications', label: 'Applications', adminOnly: false, icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+        { href: '/analytics',    label: 'Analytics',    adminOnly: true,  icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+        { href: '/audit',        label: 'Audit Trail',  adminOnly: true,  icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+    ].filter(item => !item.adminOnly || userRole === 'Admin')
 
     return (
         <aside className="w-[220px] bg-white border-r border-slate-100 flex flex-col shrink-0">
@@ -312,15 +313,20 @@ function Sidebar({ userName, userRole }) {
 
             <nav className="flex-1 flex flex-col gap-1 p-3">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1">Menu</p>
-                {navItems.map(item => (
-                    <a key={item.href} href={item.href}
-                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] font-medium transition-all ${item.active ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
-                        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
-                            <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                        </svg>
-                        {item.label}
-                    </a>
-                ))}
+                {navItems.map(item => {
+                    const isActive = url.startsWith(item.href)
+                    return (
+                        <Link key={item.href} href={item.href}
+                            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] font-medium transition-all ${
+                                isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                            }`}>
+                            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+                                <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                            </svg>
+                            {item.label}
+                        </Link>
+                    )
+                })}
             </nav>
 
             <div className="border-t border-slate-100 p-3">
@@ -334,27 +340,12 @@ function Sidebar({ userName, userRole }) {
                     </div>
                 </div>
                 <button
-                    onClick={() => {
-                        if (confirm('Sign out from iMAPS?')) {
-                            router.post('/logout')
-                        }
-                    }}
+                    onClick={() => { if (confirm('Sign out from iMAPS?')) router.post('/logout') }}
                     className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
                 >
-                    <svg
-                        className="w-4 h-4 shrink-0"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                    >
-                        <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                        />
+                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                     </svg>
-
                     Sign Out
                 </button>
             </div>
@@ -450,13 +441,15 @@ export default function Index({ applications, filters, auth }) {
                                     {hasFilters ? ' — filtered' : ' total'}
                                 </p>
                             </div>
-                            <a href="/applications/encode"
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-sm transition-colors">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                                </svg>
-                                Encode Application
-                            </a>
+                            {userRole === 'Planning Officer' && (
+    <a href="/applications/encode"
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-sm transition-colors">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        Encode Application
+    </a>
+)}
                         </div>
 
                         {/* Search + filters */}
