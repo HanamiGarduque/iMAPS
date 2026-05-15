@@ -22,6 +22,7 @@ return new class extends Migration
                 'Locational Clearance',
                 'Development Permit',
                 'Zoning Certification',
+                 'Special Land Use Permit',
             ]);
 
             $table->enum('status', [

@@ -20,7 +20,6 @@ const APPLICATION_TYPES = [
     'Zoning Certification',
     'Development Permit',
     'Special Land Use Permit',
-    'CLUP Compliance',
 ]
 
 const LAND_USE_CLASSES = [
@@ -28,31 +27,38 @@ const LAND_USE_CLASSES = [
 ]
 
 // ── Reusable field components ──
-function Label({ children, required }) {
+function Label({ children, required, hasError }) {
     return (
-        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+        <label className={`block text-[10px] font-semibold uppercase tracking-wider mb-1
+            ${hasError ? 'text-red-500' : 'text-slate-500'}`}>
             {children}{required && <span className="text-red-400 ml-0.5">*</span>}
         </label>
     )
 }
 
-function Input({ className = '', ...props }) {
+function Input({ className = '', hasError = false, ...props }) {
     return (
         <input
-            className={`w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-800
-                hover:border-slate-300 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100
-                focus:bg-white transition-all ${className}`}
+            className={`w-full rounded-md border px-2.5 py-1.5 text-xs text-slate-800
+                focus:outline-none focus:ring-2 transition-all
+                ${hasError
+                    ? 'border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-100'
+                    : 'border-slate-200 bg-slate-50 hover:border-slate-300 focus:border-blue-500 focus:ring-blue-100 focus:bg-white'
+                } ${className}`}
             {...props}
         />
     )
 }
 
-function Select({ children, className = '', ...props }) {
+function Select({ children, className = '', hasError = false, ...props }) {
     return (
         <select
-            className={`w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-800
-                hover:border-slate-300 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100
-                focus:bg-white transition-all appearance-none ${className}`}
+            className={`w-full rounded-md border px-2.5 py-1.5 text-xs text-slate-800
+                focus:outline-none focus:ring-2 transition-all appearance-none
+                ${hasError
+                    ? 'border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-100'
+                    : 'border-slate-200 bg-slate-50 hover:border-slate-300 focus:border-blue-500 focus:ring-blue-100 focus:bg-white'
+                } ${className}`}
             {...props}
         >
             {children}
@@ -60,12 +66,15 @@ function Select({ children, className = '', ...props }) {
     )
 }
 
-function Textarea({ className = '', ...props }) {
+function Textarea({ className = '', hasError = false, ...props }) {
     return (
         <textarea
-            className={`w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-800
-                hover:border-slate-300 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100
-                focus:bg-white transition-all resize-none ${className}`}
+            className={`w-full rounded-md border px-2.5 py-1.5 text-xs text-slate-800
+                focus:outline-none focus:ring-2 transition-all resize-none
+                ${hasError
+                    ? 'border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-100'
+                    : 'border-slate-200 bg-slate-50 hover:border-slate-300 focus:border-blue-500 focus:ring-blue-100 focus:bg-white'
+                } ${className}`}
             {...props}
         />
     )
@@ -236,7 +245,8 @@ export default function Create({ auth, errors: serverErrors = {} }) {
             },
             onError: (errs) => {
                 setErrors(errs)
-                setFlash({ type: 'error', msg: 'Please fix the errors below.' })
+                const msg = errs.auth || 'Please fix the errors below.'
+                setFlash({ type: 'error', msg })
             },
             onFinish: () => setSubmitting(false),
         })
@@ -310,32 +320,35 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                         <SectionHeading number="1">Application Details</SectionHeading>
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
-                                                <Label required>Date Filed</Label>
+                                                <Label required hasError={!!errors.date_of_application}>Date Filed</Label>
                                                 <Input type="date" value={form.date_of_application}
-                                                    onChange={set('date_of_application')} max={today} />
+                                                    onChange={set('date_of_application')} max={today}
+                                                    hasError={!!errors.date_of_application} />
                                                 {fieldError('date_of_application')}
                                             </div>
                                             <div>
-                                                <Label required>Type</Label>
-                                                <Select value={form.application_type} onChange={set('application_type')}>
+                                                <Label required hasError={!!errors.application_type}>Type</Label>
+                                                <Select value={form.application_type} onChange={set('application_type')}
+                                                    hasError={!!errors.application_type}>
                                                     <option value="">— Select —</option>
                                                     {APPLICATION_TYPES.map(t => <option key={t}>{t}</option>)}
                                                 </Select>
                                                 {fieldError('application_type')}
                                             </div>
                                             <div>
-                                                <Label required>Land-Use Class</Label>
-                                                <Select value={form.land_use_class} onChange={set('land_use_class')}>
+                                                <Label required hasError={!!errors.land_use_class}>Land-Use Class</Label>
+                                                <Select value={form.land_use_class} onChange={set('land_use_class')}
+                                                    hasError={!!errors.land_use_class}>
                                                     <option value="">— Select —</option>
                                                     {LAND_USE_CLASSES.map(c => <option key={c}>{c}</option>)}
                                                 </Select>
                                                 {fieldError('land_use_class')}
                                             </div>
                                             <div className="col-span-2">
-                                                <Label required>Purpose</Label>
-                                                <Textarea rows={3} value={form.purpose}
-                                                    onChange={set('purpose')}
-                                                    placeholder="Describe the purpose…" />
+                                                <Label required hasError={!!errors.purpose}>Purpose</Label>
+                                                <Textarea rows={3} value={form.purpose} onChange={set('purpose')}
+                                                    placeholder="Describe the purpose…"
+                                                    hasError={!!errors.purpose} />
                                                 {fieldError('purpose')}
                                             </div>
                                         </div>
@@ -346,35 +359,35 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                         <SectionHeading number="2">Applicant Information</SectionHeading>
                                         <div className="grid grid-cols-2 gap-3">
                                             <div className="col-span-2">
-                                                <Label required>Full Name</Label>
+                                                <Label required hasError={!!errors.applicant_name}>Full Name</Label>
                                                 <Input type="text" value={form.applicant_name}
-                                                    onChange={set('applicant_name')}
-                                                    maxLength={255} placeholder="e.g. Juan dela Cruz" />
+                                                    onChange={set('applicant_name')} maxLength={255}
+                                                    placeholder="e.g. Juan dela Cruz"
+                                                    hasError={!!errors.applicant_name} />
                                                 {fieldError('applicant_name')}
                                             </div>
                                             <div>
-                                                <Label required>Contact No.</Label>
+                                                <Label required hasError={!!errors.contact_number}>Contact No.</Label>
                                                 <div className="relative">
                                                     <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 text-xs pointer-events-none">+63</span>
                                                     <Input type="tel" value={form.contact_number}
-                                                        onChange={handleContactInput}
-                                                        maxLength={10} placeholder="9XXXXXXXXX"
-                                                        className="pl-9" />
+                                                        onChange={handleContactInput} maxLength={10}
+                                                        placeholder="9XXXXXXXXX" className="pl-9"
+                                                        hasError={!!errors.contact_number} />
                                                 </div>
                                                 {fieldError('contact_number')}
                                             </div>
                                             <div>
-                                                <Label>Email</Label>
-                                                <Input type="email" value={form.email}
-                                                    onChange={set('email')}
-                                                    placeholder="optional" />
+                                                <Label hasError={!!errors.email}>Email</Label>
+                                                <Input type="email" value={form.email} onChange={set('email')}
+                                                    placeholder="optional"
+                                                    hasError={!!errors.email} />
                                                 {fieldError('email')}
                                             </div>
                                             <div className="col-span-2">
                                                 <Label>Authorized Representative</Label>
                                                 <Input type="text" value={form.representative_name}
-                                                    onChange={set('representative_name')}
-                                                    maxLength={255}
+                                                    onChange={set('representative_name')} maxLength={255}
                                                     placeholder="Leave blank if applicant is present" />
                                             </div>
                                         </div>
@@ -389,8 +402,9 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                         <SectionHeading number="3">Property &amp; Location</SectionHeading>
                                         <div className="grid grid-cols-3 gap-3">
                                             <div>
-                                                <Label required>Barangay</Label>
-                                                <Select value={form.barangay} onChange={set('barangay')}>
+                                                <Label required hasError={!!errors.barangay}>Barangay</Label>
+                                                <Select value={form.barangay} onChange={set('barangay')}
+                                                    hasError={!!errors.barangay}>
                                                     <option value="">— Select —</option>
                                                     {BARANGAYS.map(b => <option key={b}>{b}</option>)}
                                                 </Select>
@@ -404,29 +418,28 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                             </div>
                                             <div>
                                                 <Label>Lot No.</Label>
-                                                <Input type="text" value={form.lot_number}
-                                                    onChange={set('lot_number')}
+                                                <Input type="text" value={form.lot_number} onChange={set('lot_number')}
                                                     placeholder="e.g. Lot 12 Blk 4" />
                                             </div>
                                             <div>
                                                 <Label>TCT / Tax Dec. No.</Label>
-                                                <Input type="text" value={form.tct_number}
-                                                    onChange={set('tct_number')}
+                                                <Input type="text" value={form.tct_number} onChange={set('tct_number')}
                                                     placeholder="e.g. TCT-T-123456" />
                                             </div>
                                             <div>
                                                 <Label>Lot Area (sq.m.)</Label>
-                                                <Input type="number" value={form.area_sqm}
-                                                    onChange={set('area_sqm')}
+                                                <Input type="number" value={form.area_sqm} onChange={set('area_sqm')}
                                                     min="0" step="0.01" placeholder="e.g. 250.00" />
                                             </div>
                                             <div className="col-span-3">
-                                                <Label>GPS Coordinates <span className="text-slate-400 font-normal normal-case">(lat, lng)</span></Label>
+                                                <Label hasError={!!errors.coordinates}>
+                                                    GPS Coordinates <span className="text-slate-400 font-normal normal-case">(lat, lng)</span>
+                                                </Label>
                                                 <div className="relative">
                                                     <Input type="text" value={form.coordinates}
                                                         onChange={set('coordinates')}
                                                         placeholder="e.g. 13.8352, 121.2167"
-                                                        className="pr-8" />
+                                                        className="pr-8" hasError={!!errors.coordinates} />
                                                     <span className="absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-300">
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -444,27 +457,24 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                         <SectionHeading number="4">Fees &amp; Remarks</SectionHeading>
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
-                                                <Label required>Assessment Fee (₱)</Label>
+                                                <Label required hasError={!!errors.assessment_fee}>Assessment Fee (₱)</Label>
                                                 <div className="relative">
                                                     <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400 text-xs pointer-events-none">₱</span>
                                                     <Input type="number" value={form.assessment_fee}
-                                                        onChange={set('assessment_fee')}
-                                                        onBlur={handleFeeBlur}
-                                                        min="0" step="0.01" placeholder="0.00"
-                                                        className="pl-6" />
+                                                        onChange={set('assessment_fee')} onBlur={handleFeeBlur}
+                                                        min="0" step="0.01" placeholder="0.00" className="pl-6"
+                                                        hasError={!!errors.assessment_fee} />
                                                 </div>
                                                 {fieldError('assessment_fee')}
                                             </div>
                                             <div>
                                                 <Label>Official Receipt No.</Label>
-                                                <Input type="text" value={form.or_number}
-                                                    onChange={set('or_number')}
+                                                <Input type="text" value={form.or_number} onChange={set('or_number')}
                                                     placeholder="e.g. OR-2025-00123" />
                                             </div>
                                             <div className="col-span-2">
                                                 <Label>Remarks / Notes</Label>
-                                                <Textarea rows={3} value={form.remarks}
-                                                    onChange={set('remarks')}
+                                                <Textarea rows={3} value={form.remarks} onChange={set('remarks')}
                                                     placeholder="Additional notes…" />
                                             </div>
                                         </div>

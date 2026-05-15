@@ -19,7 +19,7 @@ class AuditLogger
                 'action'         => $action,
                 'performed_by'   => $performedBy,
                 'note'           => $note,
-                'created_at'     => now(),
+                'performed_at'     => now(),
             ]);
         } catch (\Exception $e) {
             Log::error('[AuditLogger] Failed to write audit log', [

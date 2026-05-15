@@ -11,7 +11,7 @@ return new class extends Migration
     {
         Schema::create('audit_trail', function (Blueprint $table) {
             $table->id(); 
-            $table->foreignId('application_id')->constrained();
+            $table->foreignId('application_id')->constrained('zoning_applications');
             $table->string('action', 60);
             $table->foreignId('performed_by')->constrained('users');
             $table->text('note')->nullable();

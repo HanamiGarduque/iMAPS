@@ -13,7 +13,7 @@ const STATUS_CONFIG = {
 }
 
 const STATUSES = ['Received', 'Technical Review', 'Under Sangguniang Bayan', 'For Release', 'Released', 'Denied']
-const APP_TYPES = ['Locational Clearance', 'Zoning Certification', 'Development Permit', 'Special Land Use Permit', 'CLUP Compliance']
+const APP_TYPES = ['Locational Clearance', 'Zoning Certification', 'Development Permit', 'Special Land Use Permit']
 
 function StatusBadge({ status }) {
     const cfg = STATUS_CONFIG[status] || { bg: '#f1f5f9', color: '#64748b' }
