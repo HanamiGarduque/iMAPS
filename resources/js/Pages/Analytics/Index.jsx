@@ -19,8 +19,8 @@ const COLORS = {
     primary: '#1a45ee',
     success: '#10b981',
     warning: '#f59e0b',
-    danger:  '#ef4444',
-    info:    '#3b82f6',
+    danger: '#ef4444',
+    info: '#3b82f6',
 };
 
 const RAIN_LABELS = { 1: 'Dry', 2: 'Normal', 3: 'Typhoon/Wet' };
@@ -100,11 +100,10 @@ function Sidebar({ userName, userRole }) {
                     <a
                         key={item.href}
                         href={item.href}
-                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] font-medium transition-all ${
-                            item.active
-                                ? 'bg-blue-50 text-blue-700'
-                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                        }`}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] font-medium transition-all ${item.active
+                            ? 'bg-blue-50 text-blue-700'
+                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                            }`}
                     >
                         <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
                             <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
@@ -159,24 +158,24 @@ function ReportSection({ num, title, children }) {
 export default function AnalyticsIndex({ analytics, filters, barangays, auth }) {
 
     // ── FILTER STATE ──────────────────────────────────────────────────
-    const [filterYear,        setFilterYear]        = useState(filters.year);
-    const [filterBarangay,    setFilterBarangay]    = useState(filters.barangay);
+    const [filterYear, setFilterYear] = useState(filters.year);
+    const [filterBarangay, setFilterBarangay] = useState(filters.barangay);
     const [filterServiceType, setFilterServiceType] = useState(filters.service_type);
-    const [isFiltering,       setIsFiltering]       = useState(false);
+    const [isFiltering, setIsFiltering] = useState(false);
 
     // ── SIMULATION STATE ──────────────────────────────────────────────
-    const [inflation,    setInflation]    = useState(4.2);
-    const [rain,         setRain]         = useState(2);
+    const [inflation, setInflation] = useState(4.2);
+    const [rain, setRain] = useState(2);
     const [forecastData, setForecastData] = useState(analytics.base_forecast);
 
     // ── MODAL STATE ───────────────────────────────────────────────────
-    const [drillDown,   setDrillDown]   = useState({ open: false, title: '', category: '' });
-    const [reportOpen,  setReportOpen]  = useState(false);
+    const [drillDown, setDrillDown] = useState({ open: false, title: '', category: '' });
+    const [reportOpen, setReportOpen] = useState(false);
 
     // ── REPORT FILTER STATE ───────────────────────────────────────────
-    const [repDate,    setRepDate]    = useState('Year to Date');
-    const [repBrgy,    setRepBrgy]    = useState('All Barangays');
-    const [repType,    setRepType]    = useState('All Services');
+    const [repDate, setRepDate] = useState('Year to Date');
+    const [repBrgy, setRepBrgy] = useState('All Barangays');
+    const [repType, setRepType] = useState('All Services');
     const [repLoading, setRepLoading] = useState(false);
 
     // ── CLOCK ─────────────────────────────────────────────────────────
@@ -202,23 +201,23 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
     const DATA = analytics;
 
     const barangayTotals = [...(DATA.by_barangay_type ?? [])].map(b => ({
-        name:  b.brgy,
+        name: b.brgy,
         total: b.lc + b.zc + b.dp,
     })).sort((a, b) => b.total - a.total);
 
     const grandTotal = barangayTotals.reduce((s, b) => s + b.total, 0);
-    const topBrgy    = barangayTotals[0] ?? { name: '—', total: 0 };
-    const topShare   = grandTotal > 0 ? Math.round((topBrgy.total / grandTotal) * 100) : 0;
+    const topBrgy = barangayTotals[0] ?? { name: '—', total: 0 };
+    const topShare = grandTotal > 0 ? Math.round((topBrgy.total / grandTotal) * 100) : 0;
 
     const maxForecastVol = Math.max(...forecastData);
-    const peakIdx        = forecastData.indexOf(maxForecastVol);
-    const peakMonth      = DATA.forecast_months[peakIdx] ?? '—';
+    const peakIdx = forecastData.indexOf(maxForecastVol);
+    const peakMonth = DATA.forecast_months[peakIdx] ?? '—';
     const readinessLevel = getReadinessLevel(maxForecastVol, DATA.office_capacity);
-    const rc             = READINESS_CONFIG[readinessLevel];
+    const rc = READINESS_CONFIG[readinessLevel];
 
     // ── SIMULATE FORECAST ─────────────────────────────────────────────
     const simulate = useCallback((inf, rainVal) => {
-        const infEffect  = (inf - 4.2) * -3;
+        const infEffect = (inf - 4.2) * -3;
         const rainEffect = rainVal === 3 ? -10 : rainVal === 1 ? 5 : 0;
         setForecastData(
             DATA.base_forecast.map(v =>
@@ -228,14 +227,14 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
     }, [DATA.base_forecast]);
 
     const handleInflationChange = (v) => { setInflation(v); simulate(v, rain); };
-    const handleRainChange      = (v) => { setRain(v);      simulate(inflation, v); };
+    const handleRainChange = (v) => { setRain(v); simulate(inflation, v); };
 
     // ── APPLY FILTERS ─────────────────────────────────────────────────
     const applyFilters = () => {
         setIsFiltering(true);
         router.get('/analytics', {
-            year:         filterYear,
-            barangay:     filterBarangay,
+            year: filterYear,
+            barangay: filterBarangay,
             service_type: filterServiceType,
         }, {
             preserveState: false,
@@ -245,54 +244,119 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
 
     // ── CHART DATA ────────────────────────────────────────────────────
     const statusChartData = {
-        labels:   DATA.by_status.map(d => d.status),
+        labels: DATA.by_status.map(d => d.status),
         datasets: [{
-            data:            DATA.by_status.map(d => d.count),
-            backgroundColor: ['#10b981','#8b5cf6','#3b82f6','#f59e0b','#64748b'],
+            data: DATA.by_status.map(d => d.count),
+            backgroundColor: ['#10b981', '#8b5cf6', '#3b82f6', '#f59e0b', '#64748b'],
             borderWidth: 0, hoverOffset: 6,
         }],
     };
 
     const typeChartData = {
-        labels:   DATA.by_type.map(d => d.application_type),
+        labels: DATA.by_type.map(d => d.application_type),
         datasets: [{
-            data:            DATA.by_type.map(d => d.count),
-            backgroundColor: ['#1a45ee','#3b82f6','#93c5fd'],
+            data: DATA.by_type.map(d => d.count),
+            backgroundColor: ['#1a45ee', '#3b82f6', '#93c5fd'],
             borderRadius: 4,
         }],
     };
 
     const barangayChartData = {
-        labels:   DATA.by_barangay_type.map(d => d.brgy),
+        labels: DATA.by_barangay_type.map(d => d.brgy),
         datasets: [
             { label: 'Locational Clearance', data: DATA.by_barangay_type.map(d => d.lc), backgroundColor: '#1a45ee', borderRadius: 2 },
-            { label: 'Zoning Certification',  data: DATA.by_barangay_type.map(d => d.zc), backgroundColor: '#3b82f6', borderRadius: 2 },
-            { label: 'Development Permit',    data: DATA.by_barangay_type.map(d => d.dp), backgroundColor: '#93c5fd', borderRadius: 2 },
+            { label: 'Zoning Certification', data: DATA.by_barangay_type.map(d => d.zc), backgroundColor: '#3b82f6', borderRadius: 2 },
+            { label: 'Development Permit', data: DATA.by_barangay_type.map(d => d.dp), backgroundColor: '#93c5fd', borderRadius: 2 },
         ],
     };
 
     const trendChartData = {
-        labels:   DATA.months,
+        labels: DATA.months,
         datasets: [
-            { label: `${filters.year} (Current)`,  data: DATA.monthly_trend_current, borderColor: '#1a45ee', backgroundColor: 'rgba(26,69,238,0.1)', borderWidth: 2, fill: true,  tension: 0.4 },
-            { label: `${filters.year - 1} (Previous)`, data: DATA.monthly_trend_prev, borderColor: '#94a3b8', borderDash: [5,5],                       borderWidth: 2, fill: false, tension: 0.4 },
+            { label: `${filters.year} (Current)`, data: DATA.monthly_trend_current, borderColor: '#1a45ee', backgroundColor: 'rgba(26,69,238,0.1)', borderWidth: 2, fill: true, tension: 0.4 },
+            { label: `${filters.year - 1} (Previous)`, data: DATA.monthly_trend_prev, borderColor: '#94a3b8', borderDash: [5, 5], borderWidth: 2, fill: false, tension: 0.4 },
         ],
     };
 
     const forecastChartData = {
-        labels:   DATA.forecast_months,
+        labels: DATA.forecast_months,
         datasets: [
-            { label: 'Predicted Volume',    data: forecastData,                              borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', borderWidth: 3, pointRadius: 5, tension: 0.3 },
-            { label: 'Upper Bound (95%)',   data: forecastData.map(v => v + 12),             borderColor: 'rgba(139,92,246,0.2)', borderWidth: 1, borderDash: [4,4], fill: false, pointRadius: 0 },
-            { label: 'Lower Bound (95%)',   data: forecastData.map(v => Math.max(0, v - 12)), borderColor: 'rgba(139,92,246,0.2)', borderWidth: 1, borderDash: [4,4], fill: false, pointRadius: 0 },
+            { label: 'Predicted Volume', data: forecastData, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', borderWidth: 3, pointRadius: 5, tension: 0.3 },
+            { label: 'Upper Bound (95%)', data: forecastData.map(v => v + 12), borderColor: 'rgba(139,92,246,0.2)', borderWidth: 1, borderDash: [4, 4], fill: false, pointRadius: 0 },
+            { label: 'Lower Bound (95%)', data: forecastData.map(v => Math.max(0, v - 12)), borderColor: 'rgba(139,92,246,0.2)', borderWidth: 1, borderDash: [4, 4], fill: false, pointRadius: 0 },
         ],
     };
 
+    const actualVsPredictedData = {
+
+        labels: analytics.prediction_months,
+
+        datasets: [
+
+            {
+                label: 'Actual',
+
+                data: analytics.actual_values,
+
+                borderWidth: 2,
+
+                tension: 0.4,
+            },
+
+            {
+                label: 'Predicted',
+
+                data: analytics.predicted_values,
+
+                borderWidth: 2,
+
+                tension: 0.4,
+            }
+        ]
+    };
+
+    const confidenceForecastData = {
+
+        labels: analytics.forecast_months,
+
+        datasets: [
+
+            {
+                label: 'Forecast',
+
+                data: analytics.base_forecast,
+
+                borderWidth: 2,
+
+                tension: 0.4,
+            },
+
+            {
+                label: 'Upper Bound',
+
+                data: analytics.forecast_upper,
+
+                borderDash: [5, 5],
+
+                borderWidth: 1,
+            },
+
+            {
+                label: 'Lower Bound',
+
+                data: analytics.forecast_lower,
+
+                borderDash: [5, 5],
+
+                borderWidth: 1,
+            }
+        ]
+    };
     // ── KPI TREND BADGE ───────────────────────────────────────────────
     const trendBadge = (curr, prev, invertGood = false) => {
         if (!prev) return null;
-        const pct    = (((curr - prev) / prev) * 100).toFixed(1);
-        const isUp   = pct > 0;
+        const pct = (((curr - prev) / prev) * 100).toFixed(1);
+        const isUp = pct > 0;
         const isGood = invertGood ? !isUp : isUp;
         return (
             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${isGood ? 'text-emerald-600 bg-green-50' : 'text-red-500 bg-red-50'}`}>
@@ -307,11 +371,11 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
         : '0.0';
 
     // ── DRILL DOWN MOCK ROWS ───────────────────────────────────────────
-    const mockNames = ['Maria Santos','Juan Perez','ACME Corp','Rizal Enterprises','Dela Cruz Family','Metro Builders Inc.','Sps. Reyes'];
+    const mockNames = ['Maria Santos', 'Juan Perez', 'ACME Corp', 'Rizal Enterprises', 'Dela Cruz Family', 'Metro Builders Inc.', 'Sps. Reyes'];
     const drillRows = Array.from({ length: 12 }, (_, i) => {
-        const status  = drillDown.category === 'All' ? (DATA.by_status[i % 5]?.status ?? '—') : drillDown.category;
-        const type    = DATA.by_type[i % 3]?.application_type ?? '—';
-        const brgy    = DATA.by_barangay_type[i % DATA.by_barangay_type.length]?.brgy ?? '—';
+        const status = drillDown.category === 'All' ? (DATA.by_status[i % 5]?.status ?? '—') : drillDown.category;
+        const type = DATA.by_type[i % 3]?.application_type ?? '—';
+        const brgy = DATA.by_barangay_type[i % DATA.by_barangay_type.length]?.brgy ?? '—';
         const badgeCls = status.includes('Released')
             ? 'bg-green-100 text-green-700'
             : status.includes('SB') ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-700';
@@ -319,6 +383,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
     });
 
     // ─────────────────────────────────────────────────────────────────
+
     return (
         <>
             <Head title="Analytics | iMAPS" />
@@ -361,7 +426,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                                     className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-sm transition-colors"
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                     </svg>
                                     Generate Report
                                 </button>
@@ -374,7 +439,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                                     <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Year</label>
                                     <select value={filterYear} onChange={e => setFilterYear(e.target.value)}
                                         className="w-full text-sm border border-slate-200 rounded-xl bg-white px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors">
-                                        {[2024,2025,2026,2027].map(y => <option key={y}>{y}</option>)}
+                                        {[2024, 2025, 2026, 2027].map(y => <option key={y}>{y}</option>)}
                                     </select>
                                 </div>
                                 <div className="flex-1 min-w-[180px]">
@@ -402,8 +467,8 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                                 >
                                     {isFiltering && (
                                         <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                                         </svg>
                                     )}
                                     {isFiltering ? 'Filtering…' : 'Apply Filters'}
@@ -414,12 +479,12 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                             <div className="fade-up bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 rounded-2xl p-5 shadow-sm relative overflow-hidden"
                                 style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
                                 <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-                                    <svg className="w-32 h-32 text-indigo-900" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                                    <svg className="w-32 h-32 text-indigo-900" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" /></svg>
                                 </div>
                                 <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
                                     <div className="flex-1">
                                         <h3 className="text-sm font-bold text-indigo-800 flex items-center gap-2 mb-2">
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                             Exploratory Spatial Data Analysis (ESDA) Insights
                                         </h3>
                                         <p className="text-sm text-slate-700 leading-relaxed">
@@ -542,7 +607,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                                     </div>
                                     <div className="space-y-2">
                                         {barangayTotals.map((b, i) => {
-                                            const share    = grandTotal > 0 ? ((b.total / grandTotal) * 100).toFixed(1) : 0;
+                                            const share = grandTotal > 0 ? ((b.total / grandTotal) * 100).toFixed(1) : 0;
                                             const barWidth = barangayTotals[0]?.total > 0 ? ((b.total / barangayTotals[0].total) * 100).toFixed(0) : 0;
                                             const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : <span className="text-slate-400 font-bold text-xs">{i + 1}</span>;
                                             return (
@@ -630,6 +695,127 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                                             <Line data={forecastChartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: false, suggestedMin: 30 } } }} />
                                         </div>
                                     </div>
+                                    <div className="mt-10">
+
+                                        <h3 className="text-[15px] font-semibold text-slate-800 mb-4">
+                                            Actual vs Predicted Output
+                                        </h3>
+
+                                        <div className="relative h-[320px]">
+
+                                            <Line
+                                                data={actualVsPredictedData}
+                                                options={{
+                                                    responsive: true,
+                                                    maintainAspectRatio: false
+                                                }}
+                                            />
+
+                                        </div>
+
+                                    </div>
+
+                                    <div className="mt-10">
+
+                                        <h3 className="text-[15px] font-semibold text-slate-800 mb-4">
+                                            Forecast Confidence Range
+                                        </h3>
+
+                                        <div className="relative h-[320px]">
+
+                                            <Line
+                                                data={confidenceForecastData}
+                                                options={{
+                                                    responsive: true,
+                                                    maintainAspectRatio: false
+                                                }}
+                                            />
+
+                                        </div>
+
+                                    </div>
+
+                                    <div className="mt-10 overflow-x-auto">
+
+                                        <h3 className="text-[15px] font-semibold text-slate-800 mb-4">
+                                            Prediction Validation Table
+                                        </h3>
+
+                                        <table className="min-w-full text-sm">
+
+                                            <thead>
+
+                                                <tr className="border-b border-slate-200">
+
+                                                    <th className="text-left py-2">
+                                                        Month
+                                                    </th>
+
+                                                    <th className="text-left py-2">
+                                                        Actual
+                                                    </th>
+
+                                                    <th className="text-left py-2">
+                                                        Predicted
+                                                    </th>
+
+                                                    <th className="text-left py-2">
+                                                        Residual
+                                                    </th>
+
+                                                </tr>
+
+                                            </thead>
+
+                                            <tbody>
+
+                                                {
+                                                    analytics.prediction_months?.map(
+                                                        (month, index) => {
+
+                                                            const actual =
+                                                                analytics.actual_values[index];
+
+                                                            const predicted =
+                                                                analytics.predicted_values[index];
+
+                                                            const residual =
+                                                                actual - predicted;
+
+                                                            return (
+
+                                                                <tr
+                                                                    key={index}
+                                                                    className="border-b border-slate-100"
+                                                                >
+
+                                                                    <td className="py-2">
+                                                                        {month}
+                                                                    </td>
+
+                                                                    <td className="py-2">
+                                                                        {actual}
+                                                                    </td>
+
+                                                                    <td className="py-2">
+                                                                        {predicted}
+                                                                    </td>
+
+                                                                    <td className="py-2">
+                                                                        {residual}
+                                                                    </td>
+
+                                                                </tr>
+                                                            );
+                                                        }
+                                                    )
+                                                }
+
+                                            </tbody>
+
+                                        </table>
+
+                                    </div>
                                     <div className="space-y-4 flex flex-col">
                                         {/* Model Accuracy */}
                                         <div className="bg-white p-4 rounded-2xl border border-slate-200"
@@ -648,7 +834,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                                         <div className="flex-1 bg-white rounded-2xl border border-slate-200 p-4"
                                             style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
                                             <h3 className="text-[13px] font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                                                <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                                                <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
                                                 Simulate Exogenous Factors
                                             </h3>
                                             <div className="space-y-5">
@@ -707,7 +893,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                             <table className="w-full text-left border-collapse">
                                 <thead className="bg-white sticky top-0 shadow-sm">
                                     <tr className="text-[10.5px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                                        {['Tracking ID','Applicant Name','Barangay','Type','Status'].map(h => (
+                                        {['Tracking ID', 'Applicant Name', 'Barangay', 'Type', 'Status'].map(h => (
                                             <th key={h} className="py-3 px-6 font-semibold">{h}</th>
                                         ))}
                                     </tr>
@@ -746,7 +932,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-[1100px] max-h-[95vh] flex flex-col">
                         <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center shrink-0">
                             <div className="flex items-center gap-3">
-                                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                                 <h3 className="font-semibold text-slate-800">Generate Report — MPDO Rosario</h3>
                             </div>
                             <button onClick={() => setReportOpen(false)}
@@ -795,14 +981,14 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                                     className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors shadow-sm flex items-center gap-2 shrink-0"
                                 >
                                     {repLoading
-                                        ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Generating…</>
+                                        ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg> Generating…</>
                                         : 'Generate'
                                     }
                                 </button>
                             </div>
                             <div className="flex flex-wrap gap-2 mt-3">
                                 {[repDate, repBrgy, repType].map((t, i) => (
-                                    <span key={i} className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${['bg-blue-100 text-blue-700','bg-indigo-100 text-indigo-700','bg-purple-100 text-purple-700'][i]}`}>{t}</span>
+                                    <span key={i} className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${['bg-blue-100 text-blue-700', 'bg-indigo-100 text-indigo-700', 'bg-purple-100 text-purple-700'][i]}`}>{t}</span>
                                 ))}
                             </div>
                         </div>
@@ -832,7 +1018,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
 
                                 <ReportSection num="01" title="Summary Metrics">
                                     <div className="grid grid-cols-2 gap-3 text-sm">
-                                        {[['Total Applications', summary.total_applications],['Completion Rate', `${cRate}%`],['Avg. Processing Time', `${summary.avg_processing_days} days`],['Pending / Denied', `${summary.pending} / ${summary.denied}`]].map(([k, v]) => (
+                                        {[['Total Applications', summary.total_applications], ['Completion Rate', `${cRate}%`], ['Avg. Processing Time', `${summary.avg_processing_days} days`], ['Pending / Denied', `${summary.pending} / ${summary.denied}`]].map(([k, v]) => (
                                             <div key={k} className="flex justify-between items-center bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-100">
                                                 <span className="text-slate-500">{k}</span>
                                                 <strong className="text-slate-800">{v}</strong>
@@ -843,7 +1029,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
 
                                 <ReportSection num="02" title="Volume Breakdown">
                                     <div className="grid grid-cols-3 gap-6 text-sm">
-                                        {[['By Service Type', DATA.by_type.map(t => [t.application_type, t.count])],['Top Barangays', barangayTotals.slice(0,5).map(b => [b.name, b.total])],['By Status', DATA.by_status.map(s => [s.status, s.count])]].map(([label, rows]) => (
+                                        {[['By Service Type', DATA.by_type.map(t => [t.application_type, t.count])], ['Top Barangays', barangayTotals.slice(0, 5).map(b => [b.name, b.total])], ['By Status', DATA.by_status.map(s => [s.status, s.count])]].map(([label, rows]) => (
                                             <div key={label}>
                                                 <strong className="text-slate-700 block mb-2 text-xs uppercase tracking-wide">{label}</strong>
                                                 <ul>{rows.map(([k, v]) => <li key={k} className="flex justify-between py-1 border-b border-slate-50"><span className="text-slate-600">{k}</span><span className="font-semibold">{v}</span></li>)}</ul>
@@ -855,7 +1041,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                                 <ReportSection num="03" title="Top Barangays Leaderboard">
                                     <table className="w-full text-sm text-left border border-slate-200 rounded-xl overflow-hidden mb-3">
                                         <thead className="bg-slate-50 text-slate-500 text-[10.5px] uppercase tracking-wider">
-                                            <tr>{['Rank','Barangay','Count','Share (%)'].map(h => <th key={h} className="p-3 border-b border-slate-100">{h}</th>)}</tr>
+                                            <tr>{['Rank', 'Barangay', 'Count', 'Share (%)'].map(h => <th key={h} className="p-3 border-b border-slate-100">{h}</th>)}</tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50">
                                             {barangayTotals.map((b, i) => (
@@ -893,10 +1079,10 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                                     <p className="text-sm text-slate-600 mb-3">Simulation — Inflation: {inflation.toFixed(1)}%, Rainfall: {RAIN_LABELS[rain]}. Next 3 months:</p>
                                     <table className="w-full text-sm text-left border border-slate-200 rounded-xl overflow-hidden">
                                         <thead className="bg-slate-50 text-slate-500 text-[10.5px] uppercase tracking-wider">
-                                            <tr>{['Forecast Month','Predicted Volume','Expected Range (95% CI)'].map(h => <th key={h} className="p-3 border-b border-slate-100">{h}</th>)}</tr>
+                                            <tr>{['Forecast Month', 'Predicted Volume', 'Expected Range (95% CI)'].map(h => <th key={h} className="p-3 border-b border-slate-100">{h}</th>)}</tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50">
-                                            {forecastData.slice(0,3).map((val, i) => (
+                                            {forecastData.slice(0, 3).map((val, i) => (
                                                 <tr key={i} className="hover:bg-slate-50">
                                                     <td className="p-3 font-medium">{DATA.forecast_months[i]}</td>
                                                     <td className="p-3 font-bold text-blue-600">{val} applications</td>
@@ -925,7 +1111,7 @@ export default function AnalyticsIndex({ analytics, filters, barangays, auth }) 
                             </button>
                             <button onClick={() => window.print()}
                                 className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors shadow-sm">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
                                 Print / Save PDF
                             </button>
                         </div>
