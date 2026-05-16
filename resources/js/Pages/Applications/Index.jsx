@@ -100,7 +100,7 @@ function DrawerMap({ lat, lng, applicantName, barangay }) {
 }
 
 // ── Application Detail Drawer ──
-function AppDrawer({ app, onClose, onStatusUpdated }) {
+function AppDrawer({ app, role, onClose, onStatusUpdated }) {
     const [newStatus, setNewStatus] = useState(app.status)
     const [remarks, setRemarks] = useState('')
     const [saving, setSaving] = useState(false)
@@ -222,8 +222,12 @@ function AppDrawer({ app, onClose, onStatusUpdated }) {
                                             <StatusBadge status={app.status} />
                                         </label>
                                         <div className="relative group">
-                                            <select value={newStatus} onChange={e => setNewStatus(e.target.value)}
-                                                className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 appearance-none outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 hover:border-slate-300 transition-all cursor-pointer">
+                                            <select
+                                                value={newStatus}
+                                                onChange={e => setNewStatus(e.target.value)}
+                                                disabled={role !== 'Planning Officer'}
+                                                className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 appearance-none outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 hover:border-slate-300 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50"
+                                            >
                                                 <option value="" disabled>Select new status...</option>
                                                 {STATUSES.map(s => <option key={s}>{s}</option>)}
                                             </select>
@@ -452,8 +456,8 @@ export default function Index({ applications, filters, auth }) {
                                     return (
                                         <a key={item.href} href={item.href}
                                             className={`flex items-center gap-2.5 px-4 py-2 font-medium text-[12px] rounded-r-lg mr-3 transition-all ${isActive
-                                                    ? 'bg-blue-800 text-white font-semibold shadow-sm'
-                                                    : 'text-slate-700 hover:bg-blue-50 hover:text-blue-800'
+                                                ? 'bg-blue-800 text-white font-semibold shadow-sm'
+                                                : 'text-slate-700 hover:bg-blue-50 hover:text-blue-800'
                                                 }`}>
                                             <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
@@ -610,7 +614,13 @@ export default function Index({ applications, filters, auth }) {
             </div>
 
             {/* Drawer */}
-            {drawerApp && <AppDrawer app={drawerApp} onClose={() => setDrawerApp(null)} onStatusUpdated={() => router.reload({ preserveScroll: true })} />}
-        </>
+            {drawerApp && (
+                <AppDrawer
+                    app={drawerApp}
+                    role={userRole}
+                    onClose={() => setDrawerApp(null)}
+                    onStatusUpdated={() => router.reload({ preserveScroll: true })}
+                />
+            )}        </>
     )
 }
