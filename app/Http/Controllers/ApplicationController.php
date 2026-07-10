@@ -125,6 +125,7 @@ class ApplicationController extends Controller
             // Multi-parcel payload. At least one parcel is required per application.
             'parcels'                  => 'required|array|min:1',
             'parcels.*.parcel_code'    => 'nullable|string|max:20',
+            'parcels.*.property_index_number'   => 'required|string|max:100', // <-- ADD THIS
             'parcels.*.lot_number'     => 'nullable|string|max:100',
             'parcels.*.tct_number'     => 'nullable|string|max:100',
             'parcels.*.tax_dec_number' => 'nullable|string|max:100',
@@ -178,6 +179,7 @@ class ApplicationController extends Controller
                     'latitude'              => $lat,
                     'longitude'             => $lng,
                     'land_use_class'        => $validated['land_use_class'],
+                    'property_index_number' => $parcelData['property_index_number'] ?? null,
                 ]);
             }
 

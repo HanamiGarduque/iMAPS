@@ -422,7 +422,7 @@ export default function Index({ applications, filters, auth }) {
                                     <p className="text-[10px] font-medium text-slate-400 mt-0.5">{app.land_use_class}</p>
                                 </td>
                                 <td className="px-5 py-4 text-[12px] font-medium text-slate-600">Brgy. {app.barangay}</td>
-                                <td className="px-5 py-4 text-[11px] font-medium text-slate-500">{formatDate(app.date_of_application)}</td>
+                                <td className="px-5 py-4 text-[11px] font-medium text-slate-500">{formatDate(app.created_at)}</td>
                                 <td className="px-5 py-4 font-mono text-[12px] font-bold text-slate-700">{formatFee(app.assessment_fee)}</td>
                                 <td className="px-5 py-4"><StatusBadge status={app.status} /></td>
                             </tr>

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ApplicationController;
+use App\Http\Controllers\TechnicalReviewController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\AuditTrailController;
 use App\Http\Controllers\AnalyticsController;
@@ -27,8 +28,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/applications', [ApplicationController::class, 'index'])
         ->name('applications.index');
 
-    Route::get('/technical-review', [ApplicationController::class, 'index'])
-            ->name('technical-review.index');
+    Route::get('/technical-review', [TechnicalReviewController::class, 'index'])
+            ->name('technicalreview.index');
 
     // ── must be before {id} ──
     Route::get('/applications/encode', [ApplicationController::class, 'create'])
