@@ -14,7 +14,7 @@ class UserSeeder extends Seeder
         DB::table('users')->insert([
             [
                 'email' => 'admin@imaps.com',
-                'password_hash' => Hash::make('password123'),
+                'password' => Hash::make('password123'),
                 'name' => 'Vico Sotto',
                 'role' => 'Admin',
                 'is_active' => true,
@@ -24,7 +24,7 @@ class UserSeeder extends Seeder
             ],
             [
                 'email' => 'planner@imaps.com',
-                'password_hash' => Hash::make('password123'),
+                'password' => Hash::make('password123'),
                 'name' => 'Blaster Salonga',
                 'role' => 'Planning Officer',
                 'is_active' => true,

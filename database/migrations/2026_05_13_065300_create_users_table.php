@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
 
             $table->string('email', 80)->unique();
-            $table->string('password_hash', 255);
+            $table->string('password', 255);
             $table->string('name', 255);
 
             // PostgreSQL ENUM equivalent

@@ -22,7 +22,6 @@ return new class extends Migration
                 'Locational Clearance',
                 'Development Permit',
                 'Zoning Certification',
-                 'Special Land Use Permit',
             ]);
 
             $table->enum('status', [
@@ -52,7 +51,7 @@ return new class extends Migration
 
             $table->string('tct_number', 100)->nullable();
 
-            $table->decimal('area_sqm', 12, 4)->nullable();
+            $table->decimal('lot_area_sqm', 12, 4)->nullable();
 
             $table->decimal('latitude', 10, 7)->nullable();
 

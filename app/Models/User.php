@@ -13,12 +13,12 @@ class User extends Authenticatable  // ← must extend Authenticatable, NOT Mode
     protected $fillable = [
         'name',
         'email',
-        'password_hash',
+        'password',
         'role',     
     ];
 
     protected $hidden = [
-        'password_hash',
+        'password',
         'remember_token',
     ];
 
@@ -26,11 +26,11 @@ class User extends Authenticatable  // ← must extend Authenticatable, NOT Mode
     {
         return [
             'email_verified_at' => 'datetime',
-            'password_hash'          => 'hashed',
+            'password'          => 'hashed',
         ];
     }
     public function getAuthPassword(): string
     {
-        return $this->password_hash;
+        return $this->password;
     }
 }

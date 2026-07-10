@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Head, router, usePage } from '@inertiajs/react'
+import Header from '@/Components/Header'
+import Sidebar from '@/Components/Sidebar'
 // import AppLayout from '@/Layouts/AppLayout'
 
 // ── Status badge config ──
@@ -144,32 +146,6 @@ function AppDrawer({ app, role, onClose, onStatusUpdated }) {
                 <div className="bg-white rounded-[20px] shadow-2xl flex flex-col overflow-hidden w-full border border-slate-200"
                     style={{ maxWidth: 860, maxHeight: '85vh' }}>
 
-                    {/* Header */}
-                    <div className="flex items-start justify-between px-6 py-5 border-b border-slate-100 shrink-0 bg-slate-50/50">
-                        {app ? (
-                            <div>
-                                <span className="inline-block font-mono text-[10px] font-black text-blue-700 bg-blue-100/50 border border-blue-200 px-2.5 py-1 rounded-md mb-2 tracking-tight">
-                                    {app.reference_number}
-                                </span>
-                                <h2 className="text-xl font-black text-slate-800 leading-tight tracking-tight">
-                                    {app.applicant_name}
-                                </h2>
-                                <p className="text-[11px] font-medium text-slate-500 mt-1 flex items-center gap-1.5">
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                    Filed {formatDate(app.date_of_application)}
-                                    <span className="text-slate-300 mx-1">•</span>
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                    Brgy. {app.barangay}
-                                </p>
-                            </div>
-                        ) : (
-                            <p className="text-[13px] font-bold text-red-500">Failed to load application.</p>
-                        )}
-                        <button onClick={onClose} className="w-8 h-8 rounded-[8px] border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-800 hover:bg-slate-100 hover:border-slate-300 transition-all shrink-0">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                    </div>
-
                     {/* Body */}
                     <div className="flex-1 overflow-y-auto">
                         <div className="flex flex-col md:flex-row" style={{ minHeight: 340 }}>
@@ -188,7 +164,7 @@ function AppDrawer({ app, role, onClose, onStatusUpdated }) {
                                             ['Land Use Class', app.land_use_class],
                                             ['Lot No.', app.lot_number || '—'],
                                             ['TCT / Title No.', app.tct_number || '—'],
-                                            ['Area (sq.m)', app.area_sqm ? app.area_sqm + ' m²' : '—'],
+                                            ['Area (sq.m)', app.lot_area_sqm ? app.lot_area_sqm + ' m²' : '—'],
                                             ['Contact No.', app.contact_number ? `+63 ${app.contact_number}` : '—'],
                                         ].map(([label, val]) => (
                                             <div key={label} className="bg-slate-50 border border-slate-100 rounded-[10px] px-3.5 py-2.5">
@@ -274,70 +250,6 @@ function AppDrawer({ app, role, onClose, onStatusUpdated }) {
     )
 }
 
-function Sidebar({ userName, userRole }) {
-    const { url } = usePage()
-
-    const navItems = [
-        { href: '/dashboard', label: 'Dashboard', adminOnly: false, icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-        { href: '/applications', label: 'Applications', adminOnly: false, icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-        { href: '/analytics', label: 'Analytics', adminOnly: true, icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-        { href: '/audit', label: 'Audit Trail', adminOnly: true, icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-    ].filter(item => !item.adminOnly || userRole === 'Admin')
-
-    return (
-        <aside className="w-[220px] bg-white border-r border-slate-100 flex flex-col shrink-0">
-            <div className="px-4 py-4 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                        </svg>
-                    </div>
-                    <span className="font-bold text-slate-900 text-sm">iMAPS</span>
-                </div>
-            </div>
-
-            <nav className="flex-1 flex flex-col gap-1 p-3">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1">Menu</p>
-                {navItems.map(item => {
-                    const isActive = url.startsWith(item.href)
-                    return (
-                        <Link key={item.href} href={item.href}
-                            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] font-medium transition-all ${isActive ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                                }`}>
-                            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
-                                <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                            </svg>
-                            {item.label}
-                        </Link>
-                    )
-                })}
-            </nav>
-
-            <div className="border-t border-slate-100 p-3">
-                <div className="flex items-center gap-2 px-2 py-2 mb-1">
-                    <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs">
-                        {userName?.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                        <p className="text-xs font-semibold text-slate-800 leading-none">{userName}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{userRole}</p>
-                    </div>
-                </div>
-                <button
-                    onClick={() => { if (confirm('Sign out from iMAPS?')) router.post('/logout') }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
-                >
-                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    Sign Out
-                </button>
-            </div>
-        </aside>
-    )
-}
-
 // ── Main Page ──
 export default function Index({ applications, filters, auth }) {
     const [drawerApp, setDrawerApp] = useState(null)
@@ -395,86 +307,19 @@ export default function Index({ applications, filters, auth }) {
             <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
 
                 {/* ── NAVBAR ── */}
-                <header className="h-14 bg-white border-b border-slate-200 shadow-sm flex items-center justify-between px-4 sm:px-6 shrink-0 z-[700] sticky top-0">
-                    <div className="flex items-center gap-4 lg:gap-6">
-                        <a href="/dashboard" className="flex items-center gap-2.5 group">
-                            <div className="w-7 h-7 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                                <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
-                            </div>
-                            <span className="font-black text-lg tracking-tight text-slate-800">iMAPS</span>
-                        </a>
-                        <div className="h-4 w-px bg-slate-200 hidden md:block" />
-                        <div className="hidden md:flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-0.5">
-                            <span className="flex h-1.5 w-1.5 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" /><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500" /></span>
-                            <span className="text-[9px] font-bold text-slate-600 tracking-widest uppercase">Rosario, Batangas</span>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        <div className="hidden sm:flex items-center px-2 py-1 rounded-lg text-slate-500">
-                            <span className="text-[11px] font-mono font-bold tracking-tight">{clock}</span>
-                        </div>
-                        <div className="h-5 w-px bg-slate-200 hidden sm:block" />
-                        <div className="flex items-center gap-2 pl-1 pr-2 py-1 cursor-pointer group hover:bg-slate-50 rounded-lg transition-colors" onClick={handleLogout}>
-                            <div className="relative">
-                                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-blue-400 flex items-center justify-center text-white font-bold text-xs shadow-sm">
-                                    {userName?.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 border-2 border-white rounded-full" />
-                            </div>
-                            <div className="hidden sm:flex flex-col text-left justify-center">
-                                <p className="text-[11px] font-bold text-slate-700 leading-tight group-hover:text-blue-700 transition-colors">{userName}</p>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-tight mt-0.5">{userRole}</p>
-                            </div>
-                        </div>
-                    </div>
-                </header>
+                <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} />
 
                 <div className="flex flex-1 h-full overflow-hidden relative">
 
                     {/* ── SIDEBAR ── */}
-                    <aside className={`absolute top-0 left-0 w-[200px] h-full bg-white z-[600] border-r border-slate-200 flex flex-col py-4 transition-transform duration-500 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                        <button onClick={() => setSidebarOpen(!sidebarOpen)} className="absolute top-1/2 -translate-y-1/2 -right-5 w-5 h-12 bg-white border-y border-r border-slate-200 text-slate-400 hover:text-blue-600 rounded-r-md flex items-center justify-center shadow-sm transition-colors focus:outline-none z-10">
-                            <svg className={`w-3.5 h-3.5 transition-transform duration-500 ${!sidebarOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-                        </button>
-
-                        <div className="px-4 pb-4 pt-1 border-b border-slate-100 flex flex-col items-center">
-                            <h1 className="text-2xl font-black text-blue-900 tracking-tighter leading-none">iMAPS</h1>
-                            <span className="text-[9px] font-bold text-blue-700 tracking-[0.2em] uppercase mt-1">Rosario</span>
-                        </div>
-
-                        <nav className="flex-1 flex flex-col gap-1 py-3 overflow-y-auto">
-                            {[
-                                { href: '/dashboard', label: 'Dashboard', adminOnly: false, icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-                                { href: '/applications', label: 'Applications', adminOnly: false, icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-                                { href: '/analytics', label: 'Analytics', adminOnly: true, icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-                                { href: '/audit-log', label: 'Audit Trail', adminOnly: true, icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
-                            ]
-                                .filter(item => !item.adminOnly || userRole === 'Admin')
-                                .map(item => {
-                                    const isActive = window.location.pathname === item.href
-                                    return (
-                                        <a key={item.href} href={item.href}
-                                            className={`flex items-center gap-2.5 px-4 py-2 font-medium text-[12px] rounded-r-lg mr-3 transition-all ${isActive
-                                                ? 'bg-blue-800 text-white font-semibold shadow-sm'
-                                                : 'text-slate-700 hover:bg-blue-50 hover:text-blue-800'
-                                                }`}>
-                                            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                                            </svg>
-                                            <span>{item.label}</span>
-                                        </a>
-                                    )
-                                })}
-                        </nav>
-
-                        <div className="border-t border-slate-100 py-2 mt-1">
-                            <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-500 hover:bg-slate-50 hover:text-blue-700 font-medium text-[12px] transition-all rounded-r-lg mr-3">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                                <span>Sign Out</span>
-                            </button>
-                        </div>
-                    </aside>
+                    <Sidebar
+                        userName={userName}
+                        userRole={userRole}
+                        sidebarOpen={sidebarOpen}
+                        setSidebarOpen={setSidebarOpen}
+                        onLogout={handleLogout}
+                        activePage="applications"
+                    />
 
                     {/* ── WORKSPACE ── */}
                     <main className="flex-1 w-full h-full flex flex-col transition-all duration-500 ease-in-out bg-[#f8fafc]" style={{ paddingLeft: sidebarOpen ? '200px' : '0px' }}>
@@ -534,79 +379,81 @@ export default function Index({ applications, filters, auth }) {
                                 </div>
                             </div>
 
-                            {/* Data Table Card */}
-                            <div className="flex-1 bg-white rounded-2xl shadow-[0_2px_20px_rgb(0,0,0,0.04)] border border-slate-200/80 overflow-hidden flex flex-col form-enter min-h-0">
-                                {applications.data.length === 0 ? (
-                                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                                        <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-200 mb-4 shadow-sm">
-                                            <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                        </div>
-                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">No Records Found</h3>
-                                        <p className="text-[12px] font-medium text-slate-500 mt-1 max-w-sm">
-                                            {hasFilters ? "We couldn't find any applications matching your current filter criteria." : "Your application registry is currently empty. Encode a new application to get started."}
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="flex-1 overflow-auto">
-                                        <table className="w-full text-left border-collapse whitespace-nowrap">
-                                            <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-sm z-10 shadow-[0_1px_0_rgb(226,232,240)]">
-                                                <tr>
-                                                    {['Reference', 'Applicant / Entity', 'Application Type', 'Location', 'Date Filed', 'Assessment', 'Status', ''].map((h, i) => (
-                                                        <th key={i} className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{h}</th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                                {applications.data.map(app => (
-                                                    <tr key={app.id} className="hover:bg-slate-50/60 transition-colors group">
-                                                        <td className="px-5 py-4">
-                                                            <span className="font-mono text-[11px] font-black text-slate-600 bg-slate-100 px-2 py-1 rounded tracking-tight">{app.reference_number}</span>
-                                                        </td>
-                                                        <td className="px-5 py-4">
-                                                            <p className="text-[13px] font-bold text-slate-800 leading-tight">{app.applicant_name}</p>
-                                                            {app.representative_name && <p className="text-[10px] font-medium text-slate-400 mt-0.5">via {app.representative_name}</p>}
-                                                        </td>
-                                                        <td className="px-5 py-4">
-                                                            <p className="text-[12px] font-bold text-slate-700">{app.application_type}</p>
-                                                            <p className="text-[10px] font-medium text-slate-400 mt-0.5">{app.land_use_class}</p>
-                                                        </td>
-                                                        <td className="px-5 py-4 text-[12px] font-medium text-slate-600">Brgy. {app.barangay}</td>
-                                                        <td className="px-5 py-4 text-[11px] font-medium text-slate-500">{formatDate(app.date_of_application)}</td>
-                                                        <td className="px-5 py-4 font-mono text-[12px] font-bold text-slate-700">{formatFee(app.assessment_fee)}</td>
-                                                        <td className="px-5 py-4"><StatusBadge status={app.status} /></td>
-                                                        <td className="px-5 py-4 text-right pr-6">
-                                                            <button onClick={() => setDrawerApp(app)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-white border border-slate-200 text-[10px] font-bold text-blue-600 uppercase tracking-wider hover:border-blue-300 hover:bg-blue-50 transition-all opacity-0 group-hover:opacity-100 focus:opacity-100">
-                                                                Review <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
+{/* Data Table Card */}
+<div className="flex-1 bg-white rounded-2xl shadow-[0_2px_20px_rgb(0,0,0,0.04)] border border-slate-200/80 overflow-hidden flex flex-col form-enter min-h-0">
+    {applications.data.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+            <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-200 mb-4 shadow-sm">
+                <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            </div>
+            <h3 className="text-lg font-black text-slate-800 tracking-tight">No Records Found</h3>
+            <p className="text-[12px] font-medium text-slate-500 mt-1 max-w-sm">
+                {hasFilters ? "We couldn't find any applications matching your current filter criteria." : "Your application registry is currently empty. Encode a new application to get started."}
+            </p>
+        </div>
+    ) : (
+        <div className="flex-1 overflow-auto">
+            <table className="w-full text-left border-collapse whitespace-nowrap">
+                <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-sm z-10 shadow-[0_1px_0_rgb(226,232,240)]">
+                    <tr>
+                        {/* REMOVED the empty '' at the end of this array */}
+                        {['Reference', 'Applicant / Entity', 'Application Type', 'Location', 'Date Filed', 'Assessment', 'Status'].map((h, i) => (
+                            <th key={i} className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{h}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                    {applications.data.map(app => {
+                        return (
+                            <tr
+                                key={app.id}
+                                onClick={() => setDrawerApp(app)}
+                                className="hover:bg-slate-50/60 transition-colors group cursor-pointer"
+                            >
+                                <td className="px-5 py-4">
+                                    <span className="font-mono text-[11px] font-black text-slate-600 bg-slate-100 px-2 py-1 rounded tracking-tight">{app.reference_number}</span>
+                                </td>
+                                <td className="px-5 py-4">
+                                    <p className="text-[13px] font-bold text-slate-800 leading-tight">{app.applicant_name}</p>
+                                    {app.representative_name && <p className="text-[10px] font-medium text-slate-400 mt-0.5">via {app.representative_name}</p>}
+                                </td>
+                                <td className="px-5 py-4">
+                                    <p className="text-[12px] font-bold text-slate-700">{app.application_type}</p>
+                                    <p className="text-[10px] font-medium text-slate-400 mt-0.5">{app.land_use_class}</p>
+                                </td>
+                                <td className="px-5 py-4 text-[12px] font-medium text-slate-600">Brgy. {app.barangay}</td>
+                                <td className="px-5 py-4 text-[11px] font-medium text-slate-500">{formatDate(app.date_of_application)}</td>
+                                <td className="px-5 py-4 font-mono text-[12px] font-bold text-slate-700">{formatFee(app.assessment_fee)}</td>
+                                <td className="px-5 py-4"><StatusBadge status={app.status} /></td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    )}
 
-                                {/* Pagination Footer */}
-                                {applications.last_page > 1 && (
-                                    <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 shrink-0 flex items-center justify-between">
-                                        <p className="text-[11px] font-medium text-slate-500">
-                                            Showing <span className="font-bold text-slate-700">{applications.from}</span> to <span className="font-bold text-slate-700">{applications.to}</span> of <span className="font-bold text-slate-700">{applications.total}</span> records
-                                        </p>
-                                        <div className="flex items-center gap-1.5">
-                                            {applications.links.map((link, i) => (
-                                                <button key={i} disabled={!link.url} onClick={() => link.url && router.get(link.url, {}, { preserveState: true })}
-                                                    className={`inline-flex items-center justify-center min-w-[32px] h-8 px-2 rounded-[8px] text-[11px] font-bold transition-all border
-                                                        ${link.active ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : ''}
-                                                        ${!link.url ? 'opacity-40 cursor-not-allowed border-slate-200 bg-white text-slate-400' : ''}
-                                                        ${link.url && !link.active ? 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100' : ''}
-                                                    `}
-                                                    dangerouslySetInnerHTML={{ __html: link.label }}
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
+    {/* Pagination Footer */}
+    {applications.last_page > 1 && (
+        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 shrink-0 flex items-center justify-between">
+            <p className="text-[11px] font-medium text-slate-500">
+                Showing <span className="font-bold text-slate-700">{applications.from}</span> to <span className="font-bold text-slate-700">{applications.to}</span> of <span className="font-bold text-slate-700">{applications.total}</span> records
+            </p>
+            <div className="flex items-center gap-1.5">
+                {applications.links.map((link, i) => (
+                    <button key={i} disabled={!link.url} onClick={() => link.url && router.get(link.url, {}, { preserveState: true })}
+                        className={`inline-flex items-center justify-center min-w-[32px] h-8 px-2 rounded-[8px] text-[11px] font-bold transition-all border
+                            ${link.active ? 'bg-blue-600 border-blue-600 text-white shadow-sm' : ''}
+                            ${!link.url ? 'opacity-40 cursor-not-allowed border-slate-200 bg-white text-slate-400' : ''}
+                            ${link.url && !link.active ? 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100' : ''}
+                        `}
+                        dangerouslySetInnerHTML={{ __html: link.label }}
+                    />
+                ))}
+            </div>
+        </div>
+    )}
+</div>
 
                         </div>
                     </main>

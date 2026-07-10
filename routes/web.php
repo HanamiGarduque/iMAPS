@@ -27,6 +27,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/applications', [ApplicationController::class, 'index'])
         ->name('applications.index');
 
+    Route::get('/technical-review', [ApplicationController::class, 'index'])
+            ->name('technical-review.index');
+
     // ── must be before {id} ──
     Route::get('/applications/encode', [ApplicationController::class, 'create'])
         ->name('applications.create')->middleware('role:Planning Officer');

@@ -57,7 +57,6 @@ class ZoningApplicationFactory extends Factory
 
         return [
             'reference_number'    => $referenceNumber,
-            'date_of_application' => $dateOfApplication,
             'application_type'    => $applicationType,
             'status' => 'Received',
             'purpose'             => $this->faker->sentence(10),
@@ -69,7 +68,7 @@ class ZoningApplicationFactory extends Factory
             'street_address'      => $this->faker->streetAddress(),
             'lot_number'          => $this->faker->numerify('Lot ##'),
             'tct_number'          => $this->faker->numerify('TCT-####-######'),
-            'area_sqm'            => $this->faker->randomFloat(4, 50, 5000),
+            'lot_area_sqm'            => $this->faker->randomFloat(4, 50, 5000),
             'latitude'            => $this->faker->randomFloat(
                                         7,
                                         self::LAT_CENTER - self::COORD_SPREAD,

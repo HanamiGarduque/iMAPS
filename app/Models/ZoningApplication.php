@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
@@ -11,12 +12,20 @@ use Illuminate\Support\Collection;
 class ZoningApplication extends Model
 {
     use HasFactory;
+public function parcels(): HasMany
+{
+    return $this->hasMany(Parcel::class, 'zoning_application_id');
+}
 
+public function technicalReviews(): HasMany
+{
+    return $this->hasMany(TechnicalReview::class, 'zoning_application_id');
+}
     protected $table = 'zoning_applications';
 
     protected $fillable = [
         'reference_number',
-        'date_of_application',
+        'form_number',
         'application_type',
         'land_use_class',
         'status',
@@ -29,7 +38,7 @@ class ZoningApplication extends Model
         'street_address',
         'lot_number',
         'tct_number',
-        'area_sqm',
+        'lot_area_sqm',
         'latitude',
         'longitude',
         'assessment_fee',
@@ -39,8 +48,7 @@ class ZoningApplication extends Model
     ];
 
     protected $casts = [
-        'date_of_application' => 'date',
-        'area_sqm'            => 'float',
+        'lot_area_sqm'            => 'float',
         'assessment_fee'      => 'float',
         'latitude'            => 'float',
         'longitude'           => 'float',
@@ -72,8 +80,7 @@ class ZoningApplication extends Model
             'reference_number',
             'applicant_name',
             'application_type',
-            'status',
-            'date_of_application'
+            'status'
         )
             ->orderByDesc('created_at')
             ->limit($limit)

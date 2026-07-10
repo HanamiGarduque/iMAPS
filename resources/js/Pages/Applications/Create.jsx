@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link, Head, router, usePage } from '@inertiajs/react'
 import Swal from 'sweetalert2'
+import Sidebar from '@/Components/Sidebar'
 
 const BARANGAYS = [
     'Alupay', 'Antipolo', 'Bagong Pook', 'Balibago', 'Barangay A (Poblacion)', 'Barangay B (Poblacion)', 'Barangay C (Poblacion)',
@@ -70,11 +71,61 @@ export default function Create({ auth, errors: serverErrors = {} }) {
     const formRef = useRef(null)
 
     const [form, setForm] = useState({
-        date_of_application: today, application_type: '', land_use_class: '', purpose: '',
+        application_type: '', application_form_number: '', land_use_class: '', purpose: '',
         applicant_name: '', contact_number: '', email: '', representative_name: '',
-        barangay: '', street_address: '', lot_number: '', tct_number: '',
-        area_sqm: '', coordinates: '', assessment_fee: '', or_number: '', remarks: '',
+        barangay: '', street_address: '', property_index_number: '', lot_number: '', assessment_fee: '', or_number: '', remarks: '',
+
+        parcels: [
+        { parcel_code: 'P-01', lot_number: '', tct_number: '', tax_dec_number: '', lot_area_sqm: '', coordinates: '' },
+    ],
     })
+
+    const addParcel = () => {
+    setForm((prev) => ({
+        ...prev,
+        parcels: [
+            ...prev.parcels,
+            {
+                parcel_code: `P-${String(prev.parcels.length + 1).padStart(2, '0')}`,
+                lot_number: '',
+                tct_number: '',
+                tax_dec_number: '',
+                lot_area_sqm: '',
+                coordinates: '',
+            },
+        ],
+    }));
+};
+
+const removeParcel = (index) => {
+    setForm((prev) => ({
+        ...prev,
+        parcels: prev.parcels.filter((_, i) => i !== index),
+    }));
+};
+
+const setParcelField = (index, field) => (e) => {
+    const value = e.target.value;
+    setForm((prev) => ({
+        ...prev,
+        parcels: prev.parcels.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
+    }));
+
+    const nestedField = `parcels.${index}.${field}`;
+    if (errors[nestedField]) {
+        setErrors((prev) => {
+            const next = { ...prev };
+            delete next[nestedField];
+            return next;
+        });
+    }
+};
+
+const parcelFieldError = (index, field) => errors[`parcels.${index}.${field}`]
+    ? <p className="text-[10px] font-bold text-red-500 mt-1">{errors[`parcels.${index}.${field}`]}</p>
+    : null;
+
+const totalAreaSqm = form.parcels.reduce((sum, p) => sum + (parseFloat(p.lot_area_sqm) || 0), 0);
 
     useEffect(() => {
         const tick = () => {
@@ -114,13 +165,37 @@ export default function Create({ auth, errors: serverErrors = {} }) {
     }
 
     const validateStep = (step) => {
-        let newErrors = {}
+        const newErrors = {}
+
         if (step === 1) {
-            if (!form.application_type) newErrors.application_type = "Required"
-            if (!form.land_use_class) newErrors.land_use_class = "Required"
+            if (!form.application_type) newErrors.application_type = 'Required'
+            if (!form.application_form_number?.trim()) newErrors.application_form_number = 'Required'
         }
-        if (step === 2 && !form.applicant_name) newErrors.applicant_name = "Required"
-        if (step === 3 && !form.barangay) newErrors.barangay = "Required"
+
+        if (step === 2) {
+            if (!form.applicant_name?.trim()) newErrors.applicant_name = 'Required'
+            if (!form.contact_number?.trim()) newErrors.contact_number = 'Required'
+            if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) newErrors.email = 'Enter a valid email'
+        }
+
+        if (step === 3) {
+            if (!form.barangay?.trim()) newErrors.barangay = 'Required'
+            if (!form.property_index_number?.trim()) newErrors.property_index_number = 'Required'
+
+            if (!form.parcels.length) {
+                newErrors.parcels = 'At least one parcel is required'
+            } else {
+                form.parcels.forEach((parcel, index) => {
+                    if (!parcel.lot_number?.trim() && !parcel.tct_number?.trim() && !parcel.tax_dec_number?.trim()) {
+                        newErrors[`parcels.${index}.lot_number`] = 'Add at least one parcel identifier'
+                    }
+
+                    if (!parcel.lot_area_sqm || Number(parcel.lot_area_sqm) <= 0) {
+                        newErrors[`parcels.${index}.lot_area_sqm`] = 'Declared area is required'
+                    }
+                })
+            }
+        }
 
         setErrors(newErrors)
         return Object.keys(newErrors).length === 0
@@ -162,17 +237,34 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                     confirmButtonColor: '#2563eb', customClass: { popup: 'swal-small-modal rounded-3xl', title: 'font-black text-slate-800 text-xl' }
                 })
                 setCurrentStep(1)
-                setForm({ ...form, application_type: '', land_use_class: '', purpose: '', applicant_name: '', contact_number: '', email: '', representative_name: '', barangay: '', street_address: '', lot_number: '', tct_number: '', area_sqm: '', coordinates: '', assessment_fee: '', or_number: '', remarks: '' })
+                setForm({
+                    ...form,
+                    application_type: '',
+                    application_form_number: '',
+                    land_use_class: '',
+                    purpose: '',
+                    applicant_name: '',
+                    contact_number: '',
+                    email: '',
+                    representative_name: '',
+                    barangay: '',
+                    street_address: '',
+                    property_index_number: '',
+                    assessment_fee: '',
+                    or_number: '',
+                    remarks: '',
+                    parcels: [{ parcel_code: 'P-01', lot_number: '', tct_number: '', tax_dec_number: '', lot_area_sqm: '', coordinates: '' }],
+                })
             },
             onError: (errs) => {
-                console.log('Server validation errors:', errs)  // ← add this
+                console.log('Server validation errors:', errs)
 
                 setErrors(errs);
-                if (errs.date_of_application || errs.application_type || errs.land_use_class || errs.purpose) {
+                if (errs.application_type || errs.land_use_class || errs.purpose) {
                     setCurrentStep(1);
                 } else if (errs.applicant_name || errs.contact_number || errs.email || errs.representative_name) {
                     setCurrentStep(2);
-                } else if (errs.barangay || errs.street_address || errs.lot_number || errs.tct_number || errs.area_sqm || errs.coordinates) {
+                } else if (errs.barangay || errs.street_address || errs.lot_number || errs.tct_number || errs.lot_area_sqm || errs.coordinates) {
                     setCurrentStep(3);
                 } else {
                     setCurrentStep(5);
@@ -259,165 +351,14 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                 <div className="flex flex-1 h-full overflow-hidden relative">
 
                     {/* ── SIDEBAR ── */}
-                    <aside
-                        className={`absolute top-0 left-0 w-[200px] h-full bg-white z-[9999] border-r border-slate-200 flex flex-col py-4 transition-transform duration-500 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-                            }`}
-                    >
-                        <button
-                            onClick={() => setSidebarOpen(!sidebarOpen)}
-                            className="absolute top-1/2 -translate-y-1/2 -right-5 w-5 h-12 bg-white border-y border-r border-slate-200 text-slate-400 hover:text-blue-600 rounded-r-md flex items-center justify-center shadow-sm transition-colors focus:outline-none z-10"
-                        >
-                            <svg
-                                className={`w-3.5 h-3.5 transition-transform duration-500 ${!sidebarOpen ? 'rotate-180' : ''
-                                    }`}
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth="2.5"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    d="M15 19l-7-7 7-7"
-                                />
-                            </svg>
-                        </button>
-
-                        <div className="px-4 pb-4 pt-1 border-b border-slate-100 flex flex-col items-center">
-                            <h1 className="text-2xl font-black text-blue-900 tracking-tighter leading-none">
-                                iMAPS
-                            </h1>
-
-                            <span className="text-[9px] font-bold text-blue-700 tracking-[0.2em] uppercase mt-1">
-                                Rosario
-                            </span>
-                        </div>
-
-                        <nav className="flex-1 flex flex-col gap-1 py-3 overflow-y-auto">
-
-                            {/* Dashboard */}
-                            <a
-                                href="/dashboard"
-                                className="relative z-[999] flex w-full items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-xs rounded-r-lg mr-3 transition-all"
-                            >
-                                <svg
-                                    className="w-4 h-4 shrink-0 pointer-events-none"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                                    />
-                                </svg>
-
-                                <span className="pointer-events-none">
-                                    Dashboard
-                                </span>
-                            </a>
-
-                            {/* Applications */}
-                            <a
-                                href="/applications"
-                                className="relative z-[999] flex w-full items-center gap-2.5 px-4 py-2 bg-blue-800 text-white font-semibold text-xs rounded-r-lg mr-3 shadow-sm transition-all"
-                            >
-                                <svg
-                                    className="w-4 h-4 shrink-0 pointer-events-none"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                                    />
-                                </svg>
-
-                                <span className="pointer-events-none">
-                                    Applications
-                                </span>
-                            </a>
-
-                            {/* Admin Links */}
-                            {userRole === 'Admin' && (
-                                <>
-                                    <a
-                                        href="/analytics"
-                                        className="relative z-[999] flex w-full items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-xs rounded-r-lg mr-3 transition-all"
-                                    >
-                                        <svg
-                                            className="w-4 h-4 shrink-0 pointer-events-none"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                                            />
-                                        </svg>
-
-                                        <span className="pointer-events-none">
-                                            Analytics
-                                        </span>
-                                    </a>
-
-                                    <a
-                                        href="/audit"
-                                        className="relative z-[999] flex w-full items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-xs rounded-r-lg mr-3 transition-all"
-                                    >
-                                        <svg
-                                            className="w-4 h-4 shrink-0 pointer-events-none"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                            />
-                                        </svg>
-
-                                        <span className="pointer-events-none">
-                                            Audit Trail
-                                        </span>
-                                    </a>
-                                </>
-                            )}
-                        </nav>
-
-                        <div className="border-t border-slate-100 py-2 mt-1">
-                            <button
-                                onClick={handleLogout}
-                                className="w-full flex items-center gap-2.5 px-4 py-2 text-slate-500 hover:bg-slate-50 hover:text-blue-700 font-medium text-xs transition-all rounded-r-lg mr-3"
-                            >
-                                <svg
-                                    className="w-4 h-4 shrink-0"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                                    />
-                                </svg>
-
-                                <span>Sign Out</span>
-                            </button>
-                        </div>
-                    </aside>
+                    <Sidebar
+                        userName={userName}
+                        userRole={userRole}
+                        sidebarOpen={sidebarOpen}
+                        setSidebarOpen={setSidebarOpen}
+                        onLogout={handleLogout}
+                        activePage="applications"
+                    />
                     {/* ── WORKSPACE ── */}
                     <main className="flex-1 w-full h-full flex flex-col transition-all duration-500 ease-in-out bg-[#f8fafc]" style={{ paddingLeft: sidebarOpen ? '200px' : '0px' }}>
                         <div className="p-3 md:p-5 flex-1 flex flex-col h-full overflow-hidden">
@@ -500,11 +441,11 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                                         {fieldError('application_type')}
                                                     </div>
 
-                                                    <div className="grid grid-cols-2 gap-4">
+                                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                                         <div className="relative">
-                                                            <Label required hasError={!!errors.date_of_application}>Filing Date</Label>
-                                                            <Input type="date" value={form.date_of_application} onChange={set('date_of_application')} max={today} hasError={!!errors.date_of_application} />
-                                                            {fieldError('date_of_application')}
+                                                            <Label required hasError={!!errors.application_form_number}>Application Form Number</Label>
+                                                            <Input type="text" value={form.application_form_number} onChange={set('application_form_number')} placeholder="Enter form number" hasError={!!errors.application_form_number} />
+                                                            {fieldError('application_form_number')}
                                                         </div>
                                                         <div className="relative">
                                                             <Label required hasError={!!errors.land_use_class}>Target Zoning Class</Label>
@@ -558,42 +499,119 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                             </div>
                                         )}
 
-                                        {/* ── STEP 3: LOCATION ── */}
+                                        {/* ── STEP 3: LOCATION (multi-parcel) ── */}
                                         {currentStep === 3 && (
                                             <div className="form-enter flex-1 flex flex-col">
                                                 <h3 className="text-lg font-black text-slate-800 tracking-tight mb-3 pb-2 border-b border-slate-100 flex-shrink-0">Property Location</h3>
-                                                <div className="grid grid-cols-2 gap-x-4 gap-y-4 flex-1">
-                                                    <div className="col-span-2 relative">
-                                                        <Label required hasError={!!errors.barangay}>Jurisdiction / Barangay</Label>
-                                                        <Select value={form.barangay} onChange={set('barangay')} hasError={!!errors.barangay}>
-                                                            <option value="" disabled>Search jurisdiction...</option>
-                                                            {BARANGAYS.map(b => <option key={b}>{b}</option>)}
-                                                        </Select>
-                                                        {fieldError('barangay')}
-                                                    </div>
-                                                    <div className="col-span-2 relative">
-                                                        <Label>Exact Site Address</Label>
-                                                        <Input type="text" value={form.street_address} onChange={set('street_address')} placeholder="e.g. Purok 3, Sitio Bulod" />
-                                                    </div>
-                                                    <div className="relative">
-                                                        <Label>Lot Identifier</Label>
-                                                        <Input type="text" value={form.lot_number} onChange={set('lot_number')} placeholder="e.g. Lot 12 Blk 4" />
-                                                    </div>
-                                                    <div className="relative">
-                                                        <Label>TCT / Title No.</Label>
-                                                        <Input type="text" value={form.tct_number} onChange={set('tct_number')} placeholder="e.g. TCT-T-123456" className="font-mono uppercase" />
-                                                    </div>
-                                                    <div className="relative">
-                                                        <Label>Declared Area</Label>
+                                                <div className="flex-1 flex flex-col gap-4 overflow-y-auto pr-1">
+                                                    <div className="rounded-[12px] border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+                                                        <div className="mb-4">
+                                                            <Label required hasError={!!errors.barangay}>Jurisdiction / Barangay</Label>
+                                                            <Select value={form.barangay} onChange={set('barangay')} hasError={!!errors.barangay}>
+                                                                <option value="" disabled>Search jurisdiction...</option>
+                                                                {BARANGAYS.map((b) => <option key={b}>{b}</option>)}
+                                                            </Select>
+                                                            {fieldError('barangay')}
+                                                        </div>
+
+                                                        <div>
+                                                            <Label>Exact Site Address</Label>
+                                                            <Input type="text" value={form.street_address} onChange={set('street_address')} placeholder="e.g. Purok 3, Sitio Bulod" />
+                                                        </div>
+
                                                         <div className="relative">
-                                                            <Input type="number" value={form.area_sqm} onChange={set('area_sqm')} min="0" step="0.01" placeholder="e.g. 250.00" className="pr-10 font-mono" />
-                                                            <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 font-bold text-[9px] pointer-events-none">SQM</span>
+                                                            <Label required hasError={!!errors.property_index_number}>Property Index Number</Label>
+                                                            <Input type="text" value={form.property_index_number} onChange={set('property_index_number')} placeholder="Enter property index number" hasError={!!errors.property_index_number} />
+                                                            {fieldError('property_index_number')}
                                                         </div>
                                                     </div>
-                                                    <div className="relative">
-                                                        <Label hasError={!!errors.coordinates}>GPS Mapping</Label>
-                                                        <Input type="text" value={form.coordinates} onChange={set('coordinates')} placeholder="e.g. 13.8352, 121.2167" className="font-mono" />
+
+                                                    <div className="space-y-3">
+                                                        {form.parcels.map((parcel, index) => (
+                                                            <div key={index} className="rounded-[12px] border border-slate-200 bg-white p-3.5 shadow-sm">
+                                                                <div className="flex items-center justify-between mb-2.5">
+                                                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md">
+                                                                        {parcel.parcel_code}
+                                                                    </span>
+                                                                    {form.parcels.length > 1 && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => removeParcel(index)}
+                                                                            className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-wider flex items-center gap-1"
+                                                                        >
+                                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                                                            Remove
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-3">
+                                                                    <div className="relative">
+                                                                        <Label hasError={!!errors[`parcels.${index}.lot_number`]}>Lot Identifier</Label>
+                                                                        <Input
+                                                                            type="text"
+                                                                            value={parcel.lot_number}
+                                                                            onChange={setParcelField(index, 'lot_number')}
+                                                                            placeholder="e.g. Lot 12 Blk 4"
+                                                                            className="bg-white"
+                                                                            hasError={!!errors[`parcels.${index}.lot_number`]}
+                                                                        />
+                                                                        {parcelFieldError(index, 'lot_number')}
+                                                                    </div>
+                                                                    <div className="relative">
+                                                                        <Label hasError={!!errors[`parcels.${index}.tct_number`]}>TCT / Title No.</Label>
+                                                                        <Input
+                                                                            type="text"
+                                                                            value={parcel.tct_number}
+                                                                            onChange={setParcelField(index, 'tct_number')}
+                                                                            placeholder="e.g. TCT-T-123456"
+                                                                            className="font-mono uppercase bg-white"
+                                                                            hasError={!!errors[`parcels.${index}.tct_number`]}
+                                                                        />
+                                                                        {parcelFieldError(index, 'tct_number')}
+                                                                    </div>
+                                                                    <div className="relative">
+                                                                        <Label hasError={!!errors[`parcels.${index}.tax_dec_number`]}>Tax Declaration No.</Label>
+                                                                        <Input
+                                                                            type="text"
+                                                                            value={parcel.tax_dec_number}
+                                                                            onChange={setParcelField(index, 'tax_dec_number')}
+                                                                            placeholder="e.g. TD-2026-001"
+                                                                            className="font-mono uppercase bg-white"
+                                                                            hasError={!!errors[`parcels.${index}.tax_dec_number`]}
+                                                                        />
+                                                                        {parcelFieldError(index, 'tax_dec_number')}
+                                                                    </div>
+                                                                    <div className="relative">
+                                                                        <Label required hasError={!!errors[`parcels.${index}.lot_area_sqm`]}>Declared Floor Area</Label>
+                                                                        <div className="relative">
+                                                                            <Input
+                                                                                type="number"
+                                                                                value={parcel.lot_area_sqm}
+                                                                                onChange={setParcelField(index, 'lot_area_sqm')}
+                                                                                min="0"
+                                                                                step="0.01"
+                                                                                placeholder="e.g. 250.00"
+                                                                                className="pr-10 font-mono bg-white"
+                                                                                hasError={!!errors[`parcels.${index}.lot_area_sqm`]}
+                                                                            />
+                                                                            <span className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 font-bold text-[9px] pointer-events-none">SQM</span>
+                                                                        </div>
+                                                                        {parcelFieldError(index, 'lot_area_sqm')}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
                                                     </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={addParcel}
+                                                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-[10px] border border-dashed border-slate-300 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50 font-bold text-[12px] transition-all flex-shrink-0"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                                        Add another parcel
+                                                    </button>
                                                 </div>
                                             </div>
                                         )}
@@ -654,12 +672,16 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                                                 <p className="text-[12px] font-bold text-slate-800">{form.barangay ? `Brgy. ${form.barangay}` : '—'} {form.street_address ? `(${form.street_address})` : ''}</p>
                                                             </div>
                                                             <div>
-                                                                <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">TCT / Title</p>
-                                                                <p className="text-[11px] font-mono text-slate-800 uppercase">{form.tct_number || '—'}</p>
+                                                                <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Property Index</p>
+                                                                <p className="text-[11px] font-mono text-slate-800 uppercase">{form.property_index_number || '—'}</p>
                                                             </div>
                                                             <div>
-                                                                <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Total Area</p>
-                                                                <p className="text-[11px] font-mono text-slate-800">{form.area_sqm ? `${form.area_sqm} sq.m.` : '—'}</p>
+                                                                <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Tax Declaration Number</p>
+                                                                <p className="text-[11px] font-mono text-slate-800 uppercase">{form.parcels[0]?.tax_dec_number || '—'}</p>
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Total Lot Area</p>
+                                                                <p className="text-[11px] font-mono text-slate-800">{totalAreaSqm > 0 ? `${totalAreaSqm.toFixed(2)} sq.m.` : '—'}</p>
                                                             </div>
                                                         </div>
                                                     </div>
