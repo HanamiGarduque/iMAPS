@@ -111,4 +111,8 @@ public function technicalReviews(): HasMany
 
         return $stats;
     }
+    public function siteInspections()
+    {
+        return $this->hasMany(SiteInspection::class);
+    }
 }

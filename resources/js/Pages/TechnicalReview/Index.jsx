@@ -1,11 +1,10 @@
-// resources/js/Pages/Applications/TechnicalReview.jsx
 import React, { useState, useEffect, useRef } from 'react'
 import { Head, router } from '@inertiajs/react'
 import Header from '@/Components/Header'
 import Sidebar from '@/Components/Sidebar'
 
 const APP_TYPES = ['Locational Clearance', 'Zoning Certification', 'Development Permit', 'Special Land Use Permit']
-const REVIEW_DECISIONS = ['Approved', 'Needs Site Inspection', 'Declined']
+const REVIEW_DECISIONS = ['Approved', 'Declined', 'Needs Site Inspection']
 
 // ── Status Badge ──
 function StatusBadge({ status }) {
@@ -17,11 +16,89 @@ function StatusBadge({ status }) {
     )
 }
 
-// ── Top Half Map Component (Plots multiple points) ──
-function TechReviewMap({ applications }) {
+// ── Assign Inspector Drawer ──
+function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
+    const [inspectorId, setInspectorId] = useState('')
+    const [scheduledDate, setScheduledDate] = useState('')
+
+    return (
+        <div className="absolute inset-0 z-[900] flex items-center justify-center p-4 form-enter"
+             style={{ background: 'rgba(15,23,42,.6)', backdropFilter: 'blur(4px)' }}>
+            <div className="bg-white rounded-[16px] shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden flex flex-col">
+                <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                    <h3 className="text-lg font-black text-slate-800 tracking-tight">Assign Site Inspector</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                
+                <div className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-600 mb-2">Select Personnel</label>
+                        <select 
+                            value={inspectorId} 
+                            onChange={(e) => setInspectorId(e.target.value)}
+                            className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 transition-all"
+                        >
+                            <option value="">-- Select an Inspector --</option>
+                            {/* Dynamically render fetched inspectors */}
+                            {inspectors.map(inspector => (
+                                <option key={inspector.id} value={inspector.id}>
+                                    {inspector.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-600 mb-2">Scheduled Date</label>
+                        <input 
+                            type="date" 
+                            value={scheduledDate}
+                            onChange={(e) => setScheduledDate(e.target.value)}
+                            min={new Date().toISOString().split('T')[0]} 
+                            className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 transition-all"
+                        />
+                    </div>
+                </div>
+
+                <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+                    <button onClick={onClose} className="px-5 py-2 rounded-[10px] border border-slate-200 bg-white text-slate-600 text-[12px] font-bold hover:bg-slate-50 transition-all">
+                        Back
+                    </button>
+                    <button 
+                        onClick={() => onSubmit({ inspector_id: inspectorId, scheduled_date: scheduledDate })} 
+                        disabled={saving || !inspectorId || !scheduledDate}
+                        className="inline-flex items-center gap-1.5 px-6 py-2 rounded-[10px] bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-black shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {saving ? 'Assigning...' : 'Confirm Assignment'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// ── Technical Review Action Drawer ──
+function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
+    const [form, setForm] = useState({
+        application_id: app.id,
+        decision: '',
+        zoning_compliant: false,
+        documents_complete: false,
+        land_use_compliant: false,
+        findings: '',
+        decision_reason: '',
+        inspector_id: '',
+        scheduled_date: ''
+    })
+    
+    const [saving, setSaving] = useState(false)
+    const [toast, setToast] = useState(null)
+    const [showAssignDrawer, setShowAssignDrawer] = useState(false)
+    
     const mapRef = useRef(null)
     const mapInst = useRef(null)
-    const markersRef = useRef([])
 
     useEffect(() => {
         if (!document.getElementById('leaflet-css')) {
@@ -33,93 +110,40 @@ function TechReviewMap({ applications }) {
         }
 
         import('leaflet').then(({ default: L }) => {
-            if (!mapInst.current) {
+            if (!mapInst.current && mapRef.current) {
                 mapInst.current = L.map(mapRef.current, {
                     zoomControl: true,
                     scrollWheelZoom: true,
-                }).setView([13.845, 121.206], 13) // Rosario approx center
+                }).setView([app.latitude || 13.845, app.longitude || 121.206], 15)
 
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                     attribution: '© OpenStreetMap',
                     maxZoom: 19,
                 }).addTo(mapInst.current)
-            }
 
-            const map = mapInst.current
-
-            // Clear existing markers
-            markersRef.current.forEach(marker => map.removeLayer(marker))
-            markersRef.current = []
-
-            const bounds = L.latLngBounds()
-            let hasValidCoords = false
-
-            const pinIcon = L.divIcon({
-                className: '',
-                html: `<div style="width:28px;height:28px;border-radius:50% 50% 50% 0;background:#d97706;border:3px solid #fff;transform:rotate(-45deg);box-shadow:0 2px 10px rgba(217,119,6,.4);"></div>`,
-                iconSize: [28, 28],
-                iconAnchor: [14, 28],
-                popupAnchor: [0, -30],
-            })
-
-            applications.forEach(app => {
-                const lat = parseFloat(app.latitude)
-                const lng = parseFloat(app.longitude)
-
-                if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
-                    hasValidCoords = true
-                    const marker = L.marker([lat, lng], { icon: pinIcon }).addTo(map)
-                    
-                    marker.bindPopup(`
-                        <div style="font-family:'Poppins',sans-serif">
-                            <span style="font-size:9px;font-weight:800;color:#d97706;letter-spacing:1px;text-transform:uppercase">${app.reference_number}</span><br>
-                            <strong style="font-size:12px;color:#1e293b">${app.applicant_name}</strong><br>
-                            <span style="font-size:10px;color:#64748b">Brgy. ${app.barangay}</span>
-                        </div>
-                    `)
-                    
-                    bounds.extend([lat, lng])
-                    markersRef.current.push(marker)
+                if (app.latitude && app.longitude) {
+                    const pinIcon = L.divIcon({
+                        className: '',
+                        html: `<div style="width:28px;height:28px;border-radius:50% 50% 50% 0;background:#d97706;border:3px solid #fff;transform:rotate(-45deg);box-shadow:0 2px 10px rgba(217,119,6,.4);"></div>`,
+                        iconSize: [28, 28],
+                        iconAnchor: [14, 28],
+                    })
+                    L.marker([app.latitude, app.longitude], { icon: pinIcon }).addTo(mapInst.current)
                 }
-            })
-
-            if (hasValidCoords) {
-                // Add a slight delay to ensure container is fully sized before fitting bounds
+                
                 setTimeout(() => {
-                    map.invalidateSize()
-                    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 })
-                }, 100)
+                    mapInst.current.invalidateSize()
+                }, 150)
             }
         })
-    }, [applications])
 
-    return (
-        <div className="relative w-full h-full rounded-[14px] overflow-hidden border border-slate-200 z-0 bg-slate-100">
-            <div ref={mapRef} style={{ height: '100%', width: '100%' }} />
-            
-            {/* Map Overlay Stats */}
-            <div className="absolute top-4 right-4 z-[400] bg-white/90 backdrop-blur border border-slate-200 shadow-sm rounded-xl px-4 py-2 pointer-events-none">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pending Reviews</p>
-                <p className="text-xl font-black text-slate-800 tracking-tight leading-none mt-1">{applications.length}</p>
-            </div>
-        </div>
-    )
-}
-
-// ── Technical Review Action Drawer ──
-function ReviewDrawer({ app, onClose, onReviewSubmitted }) {
-    const [form, setForm] = useState({
-        zoning_application_id: app.id,
-        decision: '',
-        zoning_compliant: false,
-        documents_complete: false,
-        land_use_compliant: false,
-        findings: '',
-        decision_reason: '',
-    })
-    
-    const [saving, setSaving] = useState(false)
-    const [toast, setToast] = useState(null)
+        return () => {
+            if (mapInst.current) {
+                mapInst.current.remove()
+                mapInst.current = null
+            }
+        }
+    }, [app])
 
     const showToast = (msg, type = 'success') => {
         setToast({ msg, type })
@@ -131,127 +155,183 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted }) {
         setForm(prev => ({ ...prev, [field]: val }))
     }
 
-    const submitReview = () => {
-        if (!form.decision) return showToast('Please select a decision.', 'error')
-        if (form.decision === 'Declined' && !form.decision_reason?.trim()) return showToast('Reason is required for declination.', 'error')
-
+    const processSubmission = (submissionData) => {
         setSaving(true)
-        router.post('/applications/submit-technical-review', form, {
+        
+        // Forcefully inject the ID into the final payload right before sending
+        const payload = {
+            ...submissionData,
+            id: app.id,
+            status: submissionData.decision // <-- ADD THIS LINEstatus: submissionData.decision // <-- ADD THIS LINE
+        }
+
+        router.post('/applications/update-status', payload, {
             preserveScroll: true,
             onSuccess: () => {
-                showToast(`Review submitted: ${form.decision}`)
+                showToast(`Review submitted: ${payload.decision}`)
                 onReviewSubmitted?.()
                 onClose()
             },
             onError: (errors) => {
                 showToast(Object.values(errors)[0] || 'Submission failed.', 'error')
+                setSaving(false)
             },
             onFinish: () => setSaving(false),
         })
     }
 
-    const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+    const handleInitialSubmit = () => {
+        if (!form.decision) return showToast('Please select a decision.', 'error')
+        if (form.decision === 'Declined' && !form.decision_reason?.trim()) return showToast('Reason is required for declination.', 'error')
+
+        if (form.decision === 'Needs Site Inspection') {
+            setShowAssignDrawer(true)
+        } else {
+            processSubmission(form)
+        }
+    }
+
+    const handleAssignSubmit = (assignmentData) => {
+        const finalForm = { 
+            ...form, 
+            inspector_id: assignmentData.inspector_id,
+            scheduled_date: assignmentData.scheduled_date
+        }
+        setForm(finalForm)
+        processSubmission(finalForm)
+    }
 
     return (
         <>
-            <div className="fixed inset-0 z-[800] flex items-center justify-center p-4 form-enter"
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 form-enter"
                 style={{ background: 'rgba(15,23,42,.6)', backdropFilter: 'blur(4px)' }}
                 onClick={(e) => e.target === e.currentTarget && onClose()}>
 
-                <div className="bg-white rounded-[20px] shadow-2xl flex flex-col overflow-hidden w-full border border-slate-200"
-                    style={{ maxWidth: 700, maxHeight: '90vh' }}>
+                <div className="bg-white rounded-[20px] shadow-2xl flex flex-col md:flex-row overflow-hidden w-full border border-slate-200 relative"
+                    style={{ maxWidth: 1400, height: '85vh' }}>
 
-                    {/* Header Info */}
-                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start">
-                        <div>
-                            <span className="font-mono text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-100 px-2 py-1 rounded tracking-tight mb-2 inline-block">
-                                {app.reference_number}
-                            </span>
-                            <h3 className="text-xl font-black text-slate-800 tracking-tight leading-none">{app.applicant_name}</h3>
-                            <p className="text-[12px] font-medium text-slate-500 mt-1">{app.application_type} • Brgy. {app.barangay}</p>
+                    {/* Left Side: Map Area */}
+                    <div className="w-full md:w-1/2 flex flex-col border-r border-slate-200 bg-slate-50 relative">
+                        <div className="p-4 border-b border-slate-200 bg-white shadow-sm z-10 flex items-center gap-3">
+                            <div className="relative w-full">
+                                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                <input type="text" placeholder="Search map locations..."
+                                    className="w-full rounded-[10px] border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-[12px] font-medium text-slate-800 transition-all focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-[2px] focus:ring-blue-500/10 hover:border-slate-300" />
+                            </div>
                         </div>
-                        <StatusBadge status={app.status} />
+                        <div className="flex-1 w-full bg-slate-200 z-0">
+                            <div ref={mapRef} style={{ height: '100%', width: '100%' }} />
+                        </div>
                     </div>
 
-                    {/* Body Form */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {/* Right Side: Action Form Area */}
+                    <div className="w-full md:w-1/2 flex flex-col bg-white h-full relative">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start shrink-0">
+                            <div>
+                                <span className="font-mono text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-100 px-2 py-1 rounded tracking-tight mb-2 inline-block">
+                                    {app.reference_number}
+                                </span>
+                                <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none">{app.applicant_name}</h3>
+                                <p className="text-[13px] font-medium text-slate-500 mt-1">
+                                    {app.application_type} • Brgy. {app.barangay}
+                                </p>
+                                <div className="mt-2 flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">PIN:</span>
+                                    <span className="font-mono text-[12px] font-semibold text-slate-700">{app.property_index_number || 'N/A'}</span>
+                                </div>
+                            </div>
+                            <StatusBadge status={app.status} />
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Pre-Review Checklist</p>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    {[
+                                        { key: 'documents_complete', label: 'Documents Complete' },
+                                        { key: 'zoning_compliant', label: 'Zoning Compliant' },
+                                        { key: 'land_use_compliant', label: 'Land Use Compliant' },
+                                    ].map((item) => (
+                                        <label key={item.key} className={`flex items-center gap-2.5 p-3 rounded-[10px] border cursor-pointer transition-all ${form[item.key] ? 'border-blue-500 bg-blue-50/30' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                            <input type="checkbox" checked={form[item.key]} onChange={set(item.key)} className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500" />
+                                            <span className={`text-[12px] font-bold ${form[item.key] ? 'text-blue-800' : 'text-slate-600'}`}>{item.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="h-px bg-slate-100 w-full" />
+
+                            <div className="space-y-4">
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Technical Decision</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                                        {REVIEW_DECISIONS.map(decision => {
+                                            let activeClass = 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
+                                            if (form.decision === decision) {
+                                                if (decision === 'Approved') activeClass = 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-[0_0_0_1px_rgba(16,185,129,1)]'
+                                                if (decision === 'Declined') activeClass = 'border-red-500 bg-red-50 text-red-800 shadow-[0_0_0_1px_rgba(239,68,68,1)]'
+                                                if (decision === 'Needs Site Inspection') activeClass = 'border-amber-500 bg-amber-50 text-amber-800 shadow-[0_0_0_1px_rgba(245,158,11,1)]'
+                                            }
+
+                                            return (
+                                                <label key={decision} className={`relative flex items-center justify-center p-3 rounded-[10px] border cursor-pointer transition-all ${activeClass}`}>
+                                                    <input type="radio" name="decision" value={decision} checked={form.decision === decision} onChange={set('decision')} className="sr-only" />
+                                                    <span className="text-[12px] font-bold text-center leading-tight">{decision}</span>
+                                                </label>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+
+                                {form.decision === 'Declined' && (
+                                    <div className="form-enter">
+                                        <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">
+                                            Reason for Declination <span className="text-red-500 text-[14px] leading-none">*</span>
+                                        </label>
+                                        <textarea rows={2} value={form.decision_reason} onChange={set('decision_reason')} placeholder="Must provide a clear reason for denial..."
+                                            className="w-full rounded-[10px] border border-red-300 bg-red-50/30 px-3 py-2 text-[13px] font-medium text-slate-800 resize-none outline-none focus:border-red-500 focus:ring-[2px] focus:ring-red-500/20 transition-all" />
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">General Findings / Notes</label>
+                                    <textarea rows={4} value={form.findings} onChange={set('findings')} placeholder="Any additional notes from the evaluation..."
+                                        className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-800 resize-none outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 hover:border-slate-300 transition-all" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex justify-end gap-3 bg-slate-50 mt-auto">
+                            <button onClick={onClose} className="px-5 py-2 rounded-[10px] border border-slate-200 bg-white text-slate-600 text-[12px] font-bold hover:bg-slate-50 transition-all">
+                                Cancel
+                            </button>
+                            <button onClick={handleInitialSubmit} disabled={saving || !form.decision}
+                                className={`inline-flex items-center gap-1.5 px-6 py-2 rounded-[10px] text-white text-[12px] font-black shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${form.decision === 'Needs Site Inspection' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-900 hover:bg-slate-800'}`}>
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                    {form.decision === 'Needs Site Inspection' 
+                                        ? <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" /> 
+                                        : <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    }
+                                </svg>
+                                {saving ? 'Processing...' : (form.decision === 'Needs Site Inspection' ? 'Proceed to Assignment' : 'Finalize Review')}
+                            </button>
+                        </div>
                         
-                        {/* Compliance Checklist */}
-                        <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Pre-Review Checklist</p>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                {[
-                                    { key: 'documents_complete', label: 'Documents Complete' },
-                                    { key: 'zoning_compliant', label: 'Zoning Compliant' },
-                                    { key: 'land_use_compliant', label: 'Land Use Compliant' },
-                                ].map((item) => (
-                                    <label key={item.key} className={`flex items-center gap-2.5 p-3 rounded-[10px] border cursor-pointer transition-all ${form[item.key] ? 'border-blue-500 bg-blue-50/30' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
-                                        <input type="checkbox" checked={form[item.key]} onChange={set(item.key)} className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500" />
-                                        <span className={`text-[12px] font-bold ${form[item.key] ? 'text-blue-800' : 'text-slate-600'}`}>{item.label}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="h-px bg-slate-100 w-full" />
-
-                        {/* Official Decision */}
-                        <div className="space-y-4">
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Technical Decision</p>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                                    {REVIEW_DECISIONS.map(decision => {
-                                        let activeClass = 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
-                                        if (form.decision === decision) {
-                                            if (decision === 'Approved') activeClass = 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-[0_0_0_1px_rgba(16,185,129,1)]'
-                                            if (decision === 'Needs Site Inspection') activeClass = 'border-amber-500 bg-amber-50 text-amber-800 shadow-[0_0_0_1px_rgba(245,158,11,1)]'
-                                            if (decision === 'Declined') activeClass = 'border-red-500 bg-red-50 text-red-800 shadow-[0_0_0_1px_rgba(239,68,68,1)]'
-                                        }
-
-                                        return (
-                                            <label key={decision} className={`relative flex items-center justify-center p-3 rounded-[10px] border cursor-pointer transition-all ${activeClass}`}>
-                                                <input type="radio" name="decision" value={decision} checked={form.decision === decision} onChange={set('decision')} className="sr-only" />
-                                                <span className="text-[12px] font-bold text-center leading-tight">{decision}</span>
-                                            </label>
-                                        )
-                                    })}
-                                </div>
-                            </div>
-
-                            {form.decision === 'Declined' && (
-                                <div className="form-enter">
-                                    <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">
-                                        Reason for Declination <span className="text-red-500 text-[14px] leading-none">*</span>
-                                    </label>
-                                    <textarea rows={2} value={form.decision_reason} onChange={set('decision_reason')} placeholder="Must provide a clear reason for denial..."
-                                        className="w-full rounded-[10px] border border-red-300 bg-red-50/30 px-3 py-2 text-[13px] font-medium text-slate-800 resize-none outline-none focus:border-red-500 focus:ring-[2px] focus:ring-red-500/20 transition-all" />
-                                </div>
-                            )}
-
-                            <div>
-                                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">General Findings / Notes</label>
-                                <textarea rows={2} value={form.findings} onChange={set('findings')} placeholder="Any additional notes from the evaluation..."
-                                    className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-800 resize-none outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 hover:border-slate-300 transition-all" />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Footer */}
-                    <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex justify-end gap-3 bg-slate-50">
-                        <button onClick={onClose} className="px-5 py-2 rounded-[10px] border border-slate-200 bg-white text-slate-600 text-[12px] font-bold hover:bg-slate-50 transition-all">
-                            Cancel
-                        </button>
-                        <button onClick={submitReview} disabled={saving || !form.decision}
-                            className="inline-flex items-center gap-1.5 px-6 py-2 rounded-[10px] bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-black shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            {saving ? 'Saving...' : 'Finalize Review'}
-                        </button>
+                        {showAssignDrawer && (
+                            <AssignInspectorDrawer 
+                                onClose={() => setShowAssignDrawer(false)} 
+                                onSubmit={handleAssignSubmit} 
+                                saving={saving}
+                                inspectors={inspectors} // <-- Pass down the array
+                            />
+                        )}
                     </div>
                 </div>
             </div>
 
             {toast && (
-                <div className={`fixed bottom-6 right-6 z-[900] flex items-center gap-2.5 px-4 py-3 rounded-[12px] text-[12px] font-bold shadow-xl form-enter border ${toast.type === 'success' ? 'bg-slate-900 text-white border-slate-800' : 'bg-red-50 text-red-800 border-red-200'}`}>
+                <div className={`fixed bottom-6 right-6 z-[99999] flex items-center gap-2.5 px-4 py-3 rounded-[12px] text-[12px] font-bold shadow-xl form-enter border ${toast.type === 'success' ? 'bg-slate-900 text-white border-slate-800' : 'bg-red-50 text-red-800 border-red-200'}`}>
                     {toast.type === 'success'
                         ? <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7" /></svg>
                         : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><circle cx="12" cy="12" r="10" /><path d="M12 8v4m0 4h.01" /></svg>
@@ -264,13 +344,13 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted }) {
 }
 
 // ── Main Page ──
-export default function TechnicalReview({ applications, filters, auth }) {
+export default function Index({ applications, filters, auth, inspectors }) { // <-- Accept inspectors prop
     const [drawerApp, setDrawerApp] = useState(null)
     const [clock, setClock] = useState('')
     const [search, setSearch] = useState(filters?.search || '')
     const [sidebarOpen, setSidebarOpen] = useState(true)
 
-    const userName = auth?.user?.name || 'Julience'
+    const userName = auth?.user?.name || 'User'
     const userRole = auth?.user?.role || 'Planning Officer'
 
     useEffect(() => {
@@ -284,15 +364,14 @@ export default function TechnicalReview({ applications, filters, auth }) {
     useEffect(() => {
         const t = setTimeout(() => {
             if (search !== filters?.search) {
-                // Ensure we pass a status to the backend to filter correctly if needed
-                router.get('/applications/technical-review', { ...filters, search, page: 1 }, { preserveState: true, replace: true })
+                router.get('/technical-review', { ...filters, search, page: 1 }, { preserveState: true, replace: true })
             }
         }, 400)
         return () => clearTimeout(t)
     }, [search, filters])
 
-    const applyFilter = (newFilters) => router.get('/applications/technical-review', { ...filters, ...newFilters, page: 1 }, { preserveState: true, replace: true })
-    const clearFilters = () => { setSearch(''); router.get('/applications/technical-review', {}, { preserveState: true, replace: true }) }
+    const applyFilter = (newFilters) => router.get('/technical-review', { ...filters, ...newFilters, page: 1 }, { preserveState: true, replace: true })
+    const clearFilters = () => { setSearch(''); router.get('/technical-review', {}, { preserveState: true, replace: true }) }
 
     const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
     const hasFilters = filters?.search || filters?.application_type
@@ -301,7 +380,6 @@ export default function TechnicalReview({ applications, filters, auth }) {
         if (confirm('Sign out from iMAPS?')) router.post('/logout')
     }
 
-    // Default data shape handling in case the backend paginator is structured differently
     const appData = applications?.data || []
 
     return (
@@ -330,13 +408,12 @@ export default function TechnicalReview({ applications, filters, auth }) {
                         sidebarOpen={sidebarOpen}
                         setSidebarOpen={setSidebarOpen}
                         onLogout={handleLogout}
-                        activePage="technical-review" // Assuming you might have a different active state for this page
+                        activePage="technical-review"
                     />
 
                     <main className="flex-1 w-full h-full flex flex-col transition-all duration-500 ease-in-out bg-[#f8fafc]" style={{ paddingLeft: sidebarOpen ? '200px' : '0px' }}>
                         <div className="p-4 md:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1400px] mx-auto w-full gap-4">
 
-                            {/* Header Area */}
                             <div className="flex-shrink-0 flex items-center justify-between form-enter">
                                 <div>
                                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
@@ -348,15 +425,8 @@ export default function TechnicalReview({ applications, filters, auth }) {
                                 </div>
                             </div>
 
-                            {/* UPPER HALF: Map Context */}
-                            <div className="h-[35vh] min-h-[250px] w-full flex-shrink-0 form-enter shadow-sm">
-                                <TechReviewMap applications={appData} />
-                            </div>
-
-                            {/* LOWER HALF: Filters & Table */}
                             <div className="flex-1 flex flex-col min-h-0 bg-white rounded-2xl shadow-[0_2px_20px_rgb(0,0,0,0.04)] border border-slate-200/80 overflow-hidden form-enter">
                                 
-                                {/* Inner Filters */}
                                 <div className="p-3.5 border-b border-slate-100 flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between bg-slate-50/50">
                                     <div className="flex items-center gap-3 flex-wrap">
                                         <div className="flex items-center gap-2">
@@ -380,7 +450,6 @@ export default function TechnicalReview({ applications, filters, auth }) {
                                     </div>
                                 </div>
 
-                                {/* Table */}
                                 {appData.length === 0 ? (
                                     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-white">
                                         <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-200 mb-4 shadow-sm">
@@ -461,9 +530,10 @@ export default function TechnicalReview({ applications, filters, auth }) {
             {/* Drawer */}
             {drawerApp && (
                 <ReviewDrawer
-                    app={drawerApp}
+                    app={drawerApp} 
                     onClose={() => setDrawerApp(null)}
                     onReviewSubmitted={() => router.reload({ preserveScroll: true })}
+                    inspectors={inspectors} // <-- Pass down to ReviewDrawer
                 />
             )}
         </>

@@ -279,6 +279,7 @@ export default function Register() {
                                         >
                                             <option value="" disabled>Select a role...</option>
                                             <option value="Planning Officer">Planning Officer</option>
+                                             <option value="Site Inspector">Site Inspector</option>
                                             <option value="Admin">Admin</option>
                                         </select>
                                     </div>

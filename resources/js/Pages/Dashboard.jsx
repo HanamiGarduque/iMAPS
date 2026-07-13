@@ -19,38 +19,22 @@ function StatBar({ label, pct, color, bg, count, iconColor }) {
         <div className={count !== undefined ? "mb-3.5" : "mb-0"}>
             <div className="flex justify-between items-center mb-1.5">
                 <span className="text-[11px] font-semibold text-slate-600 flex items-center gap-2">
-                    <span
-                        className="w-2.5 h-2.5 rounded-full inline-block shadow-sm"
-                        style={{ background: iconColor || color }}
-                    />
+                    <span className="w-2.5 h-2.5 rounded-full inline-block shadow-sm" style={{ background: iconColor || color }} />
                     {label}
                 </span>
                 {count !== undefined ? (
                     <div className="flex items-center gap-3">
-                        <span className="text-[10px] font-mono text-slate-400">
-                            {count} records
-                        </span>
-                        <span
-                            className="text-[11px] font-bold font-mono w-6 text-right"
-                            style={{ color }}
-                        >
+                        <span className="text-[10px] font-mono text-slate-400">{count} records</span>
+                        <span className="text-[11px] font-bold font-mono w-6 text-right" style={{ color }}>
                             {pct}%
                         </span>
                     </div>
                 ) : (
-                    <span className="text-[11px] font-bold font-mono text-slate-700">
-                        {pct}%
-                    </span>
+                    <span className="text-[11px] font-bold font-mono text-slate-700">{pct}%</span>
                 )}
             </div>
-            <div
-                className="stat-bar-track"
-                style={{ background: bg || "#e8f0fe" }}
-            >
-                <div
-                    className="stat-bar-fill"
-                    style={{ width: width + "%", background: color }}
-                />
+            <div className="stat-bar-track" style={{ background: bg || "#e8f0fe" }}>
+                <div className="stat-bar-fill" style={{ width: width + "%", background: color }} />
             </div>
         </div>
     );
@@ -59,44 +43,17 @@ function StatBar({ label, pct, color, bg, count, iconColor }) {
 // ── Realistic Temporal Data Engine (Rosario, Batangas) ──
 const getTemporalData = (baseData, name, year) => {
     // 1. Categorize Rosario's 48 Barangays based on real-world geography
-    const urbanCore = [
-        "Poblacion A",
-        "Poblacion B",
-        "Poblacion C",
-        "Poblacion D",
-        "Poblacion E",
-        "Poblacion",
-        "San Roque",
-        "Namunga",
-        "Quilib",
-    ];
-    const industrialCorridor = [
-        "San Carlos",
-        "Bagong Pook",
-        "San Jose",
-        "Inica",
-        "Cahigam",
-        "Calantas",
-    ];
-    const residentialSprawl = [
-        "Itlugan",
-        "Masaya",
-        "Bayawang",
-        "Pinagsibaan",
-        "Antipolo",
-        "Bulihan",
-        "Maligaya",
-    ];
+    const urbanCore = ["Poblacion A", "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Poblacion", "San Roque", "Namunga", "Quilib"];
+    const industrialCorridor = ["San Carlos", "Bagong Pook", "San Jose", "Inica", "Cahigam", "Calantas"];
+    const residentialSprawl = ["Itlugan", "Masaya", "Bayawang", "Pinagsibaan", "Antipolo", "Bulihan", "Maligaya"];
     // All other barangays default to Agricultural / Rural
 
     // 2. Set baselines if the barangay isn't explicitly in the staticBgyData list
     let currentLandUse = baseData?.landUse;
     if (!currentLandUse) {
         if (urbanCore.includes(name)) currentLandUse = "Commercial";
-        else if (industrialCorridor.includes(name))
-            currentLandUse = "Agro-industrial";
-        else if (residentialSprawl.includes(name))
-            currentLandUse = "Residential";
+        else if (industrialCorridor.includes(name)) currentLandUse = "Agro-industrial";
+        else if (residentialSprawl.includes(name)) currentLandUse = "Residential";
         else currentLandUse = "Agricultural";
     }
 
@@ -114,26 +71,19 @@ const getTemporalData = (baseData, name, year) => {
 
     if (urbanCore.includes(name)) {
         growthRate = 4.5; // Rapid application generation in the center
-        if (year >= 2022 && currentLandUse === "Residential")
-            currentLandUse = "Commercial";
+        if (year >= 2022 && currentLandUse === "Residential") currentLandUse = "Commercial";
     } else if (industrialCorridor.includes(name)) {
         growthRate = 3.8; // High growth along highways
-        if (year >= 2021 && currentLandUse === "Agricultural")
-            currentLandUse = "Agro-industrial";
-        if (year >= 2024 && currentLandUse === "Agro-industrial")
-            currentLandUse = "Industrial"; // Factories moving in by 2024
+        if (year >= 2021 && currentLandUse === "Agricultural") currentLandUse = "Agro-industrial";
+        if (year >= 2024 && currentLandUse === "Agro-industrial") currentLandUse = "Industrial"; // Factories moving in by 2024
     } else if (residentialSprawl.includes(name)) {
         growthRate = 2.8; // Subdivisions being built
-        if (year >= 2023 && currentLandUse === "Agricultural")
-            currentLandUse = "Residential";
+        if (year >= 2023 && currentLandUse === "Agricultural") currentLandUse = "Residential";
     }
     // Rural areas (e.g., Tulos, Macalamcam) remain Agricultural with 1.2 growth.
 
     // 4. Calculate simulated totals based on the specific growth rate
-    const newTotal = Math.max(
-        1,
-        Math.floor(data.total + yearDiff * growthRate),
-    );
+    const newTotal = Math.max(1, Math.floor(data.total + yearDiff * growthRate));
 
     return {
         ...data,
@@ -146,14 +96,7 @@ const getTemporalData = (baseData, name, year) => {
 };
 
 // ── Leaflet Map ──
-function LeafletMap({
-    bgyStats,
-    currentLayer,
-    onFeatureClick,
-    onMapClick,
-    appTypeFilter,
-    year,
-}) {
+function LeafletMap({ bgyStats, currentLayer, onFeatureClick, onMapClick, appTypeFilter, year }) {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
     const geoLayerRef = useRef(null);
@@ -212,20 +155,9 @@ function LeafletMap({
     const getFeatureStyle = (feature, layer, filter, currentYear) => {
         const props = feature.properties || {};
 
-        const name = (
-            props.ADM4_EN ||
-            props.name ||
-            props.NAME ||
-            props.BRGY ||
-            props.brgy ||
-            ""
-        ).trim();
+        const name = (props.ADM4_EN || props.name || props.NAME || props.BRGY || props.brgy || "").trim();
 
-        const temporalData = getTemporalData(
-            staticBgyData[name],
-            name,
-            currentYear,
-        );
+        const temporalData = getTemporalData(staticBgyData[name], name, currentYear);
 
         const multipliers = {
             "Zoning Certificate": 1,
@@ -233,10 +165,7 @@ function LeafletMap({
             "Development Permit": 0.8,
         };
 
-        const simulatedTotal = Math.max(
-            1,
-            Math.floor(temporalData.total * (multipliers[filter] || 1)),
-        );
+        const simulatedTotal = Math.max(1, Math.floor(temporalData.total * (multipliers[filter] || 1)));
 
         const baseStyle = {
             color: "#2563eb",
@@ -253,9 +182,7 @@ function LeafletMap({
         }
 
         if (layer === "trends") {
-            const lu =
-                landUseColors[temporalData.landUse] ||
-                landUseColors["Residential"];
+            const lu = landUseColors[temporalData.landUse] || landUseColors["Residential"];
 
             return {
                 ...baseStyle,
@@ -323,25 +250,12 @@ function LeafletMap({
                 .then((data) => {
                     geoLayerRef.current = L.default
                         .geoJSON(data, {
-                            style: (feature) =>
-                                getFeatureStyle(
-                                    feature,
-                                    layerRef.current,
-                                    appTypeFilter,
-                                    year,
-                                ),
+                            style: (feature) => getFeatureStyle(feature, layerRef.current, appTypeFilter, year),
 
                             onEachFeature: (feature, layer_feature) => {
                                 const props = feature.properties || {};
 
-                                const name = (
-                                    props.ADM4_EN ||
-                                    props.name ||
-                                    props.NAME ||
-                                    props.BRGY ||
-                                    props.brgy ||
-                                    "Unknown"
-                                ).trim();
+                                const name = (props.ADM4_EN || props.name || props.NAME || props.BRGY || props.brgy || "Unknown").trim();
 
                                 const bgyData = staticBgyData[name] || {
                                     total: 0,
@@ -406,13 +320,8 @@ function LeafletMap({
                                 layer_feature.on("click", (e) => {
                                     L.default.DomEvent.stopPropagation(e);
 
-                                    if (
-                                        activeFeatureRef.current &&
-                                        geoLayerRef.current
-                                    ) {
-                                        geoLayerRef.current.resetStyle(
-                                            activeFeatureRef.current,
-                                        );
+                                    if (activeFeatureRef.current && geoLayerRef.current) {
+                                        geoLayerRef.current.resetStyle(activeFeatureRef.current);
                                     }
 
                                     activeFeatureRef.current = layer_feature;
@@ -430,9 +339,7 @@ function LeafletMap({
                                         if (onFeatureClick) {
                                             onFeatureClick(name, bgyData);
                                         }
-                                    } else if (
-                                        currentLayerMode === "diversity"
-                                    ) {
+                                    } else if (currentLayerMode === "diversity") {
                                         layer_feature.setStyle({
                                             weight: 4,
                                             color: "#b91c1c",
@@ -440,9 +347,7 @@ function LeafletMap({
                                             fillOpacity: 0.4,
                                         });
                                     } else {
-                                        const lu =
-                                            landUseColors[bgyData.landUse] ||
-                                            landUseColors["Residential"];
+                                        const lu = landUseColors[bgyData.landUse] || landUseColors["Residential"];
 
                                         layer_feature.setStyle({
                                             weight: 4,
@@ -458,15 +363,11 @@ function LeafletMap({
                                         .bindTooltip(name, {
                                             permanent: false,
                                             direction: "center",
-                                            className:
-                                                "font-sans text-xs font-semibold bg-white text-slate-800 border-0 shadow-lg px-3 py-1.5 rounded-lg",
+                                            className: "font-sans text-xs font-semibold bg-white text-slate-800 border-0 shadow-lg px-3 py-1.5 rounded-lg",
                                         })
                                         .openTooltip();
 
-                                    if (
-                                        activeFeatureRef.current !==
-                                        layer_feature
-                                    ) {
+                                    if (activeFeatureRef.current !== layer_feature) {
                                         layer_feature.setStyle({
                                             fillOpacity: 0.35,
                                             weight: 3,
@@ -477,13 +378,8 @@ function LeafletMap({
                                 layer_feature.on("mouseout", () => {
                                     layer_feature.closeTooltip();
 
-                                    if (
-                                        activeFeatureRef.current !==
-                                        layer_feature
-                                    ) {
-                                        geoLayerRef.current.resetStyle(
-                                            layer_feature,
-                                        );
+                                    if (activeFeatureRef.current !== layer_feature) {
+                                        geoLayerRef.current.resetStyle(layer_feature);
                                     }
                                 });
                             },
@@ -507,9 +403,7 @@ function LeafletMap({
 
     useEffect(() => {
         if (geoLayerRef.current) {
-            geoLayerRef.current.setStyle((feature) =>
-                getFeatureStyle(feature, currentLayer, appTypeFilter, year),
-            );
+            geoLayerRef.current.setStyle((feature) => getFeatureStyle(feature, currentLayer, appTypeFilter, year));
 
             if (activeFeatureRef.current) {
                 activeFeatureRef.current = null;
@@ -522,15 +416,7 @@ function LeafletMap({
 
 // ── Main Dashboard ──
 // Destructure it at the top
-export default function Dashboard({
-    userName,
-    userRole,
-    total,
-    thisMonth,
-    statusMap,
-    bgyStats,
-    recent,
-}) {
+export default function Dashboard({ userName, userRole, total, thisMonth, statusMap, bgyStats, recent }) {
     const [activeLayer, setActiveLayer] = useState("status");
     const [appTypeFilter, setAppTypeFilter] = useState("Zoning Certificate");
     const [layerPopupOpen, setLayerPopupOpen] = useState(false);
@@ -543,9 +429,7 @@ export default function Dashboard({
     const review = statusMap?.["Technical Review"] ?? 0;
     const released = statusMap?.["Released"] ?? 0;
     const safeTotal = total || 1;
-    const processingPct = Math.round(
-        ((safeTotal - review - released) / safeTotal) * 100,
-    );
+    const processingPct = Math.round(((safeTotal - review - released) / safeTotal) * 100);
     const reviewPct = Math.round((review / safeTotal) * 100);
     const releasedPct = Math.round((released / safeTotal) * 100);
 
@@ -659,29 +543,15 @@ export default function Dashboard({
         trends: {
             label: "Time Trends",
             title: "Land Use Analysis",
-            icon: (
-                <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                />
-            ),
+            icon: <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />,
         },
         diversity: {
             label: "Diversity Index",
             title: "Land Use Mix Analysis",
             icon: (
                 <>
-                    <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"
-                    />
-                    <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"
-                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
                 </>
             ),
         },
@@ -690,48 +560,12 @@ export default function Dashboard({
     const trendFactor = 1 + (year - 2020) * 0.15;
 
     const landUseData = [
-        [
-            "Residential",
-            Math.floor(82 * trendFactor),
-            Math.min(100, Math.floor(40 * trendFactor * 0.8)),
-            "#22c55e",
-            "#dcfce7",
-        ],
-        [
-            "Commercial",
-            Math.floor(34 * trendFactor * 1.5),
-            Math.min(100, Math.floor(17 * trendFactor * 1.2)),
-            "#f59e0b",
-            "#fef3c7",
-        ],
-        [
-            "Agricultural",
-            Math.floor(44 / trendFactor),
-            Math.floor(22 / trendFactor),
-            "#84cc16",
-            "#ecfccb",
-        ],
-        [
-            "Agro-industrial",
-            Math.floor(14 * trendFactor * 1.8),
-            Math.min(100, Math.floor(7 * trendFactor * 1.5)),
-            "#8b5cf6",
-            "#f3e8ff",
-        ],
-        [
-            "Industrial",
-            Math.floor(22 * trendFactor),
-            Math.min(100, Math.floor(11 * trendFactor)),
-            "#ef4444",
-            "#fee2e2",
-        ],
-        [
-            "Special projects",
-            Math.floor(7 * trendFactor),
-            Math.min(100, Math.floor(3 * trendFactor)),
-            "#64748b",
-            "#f1f5f9",
-        ],
+        ["Residential", Math.floor(82 * trendFactor), Math.min(100, Math.floor(40 * trendFactor * 0.8)), "#22c55e", "#dcfce7"],
+        ["Commercial", Math.floor(34 * trendFactor * 1.5), Math.min(100, Math.floor(17 * trendFactor * 1.2)), "#f59e0b", "#fef3c7"],
+        ["Agricultural", Math.floor(44 / trendFactor), Math.floor(22 / trendFactor), "#84cc16", "#ecfccb"],
+        ["Agro-industrial", Math.floor(14 * trendFactor * 1.8), Math.min(100, Math.floor(7 * trendFactor * 1.5)), "#8b5cf6", "#f3e8ff"],
+        ["Industrial", Math.floor(22 * trendFactor), Math.min(100, Math.floor(11 * trendFactor)), "#ef4444", "#fee2e2"],
+        ["Special projects", Math.floor(7 * trendFactor), Math.min(100, Math.floor(3 * trendFactor)), "#64748b", "#f1f5f9"],
     ].sort((a, b) => b[1] - a[1]);
 
     const hotspots = [
@@ -890,16 +724,8 @@ export default function Dashboard({
                 }
             `}</style>
 
-            <div
-                id="dashboard-root"
-                className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden"
-            >
-                <Header
-                    userName={userName}
-                    userRole={userRole}
-                    clock={clock}
-                    onLogout={handleLogout}
-                />
+            <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
+                <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} />
 
                 <div className="flex flex-1 overflow-hidden relative bg-slate-100">
                     {/* ── Left Sidebar ── */}
@@ -910,42 +736,19 @@ export default function Dashboard({
                             onClick={() => setSidebarOpen(!sidebarOpen)}
                             className="absolute top-1/2 -translate-y-1/2 -right-8 w-8 h-12 bg-blue-800 hover:bg-blue-900 text-white rounded-r-xl flex items-center justify-center shadow-md transition-colors focus:outline-none"
                         >
-                            <svg
-                                className={`w-4 h-4 transition-transform duration-500 ${!sidebarOpen ? "rotate-180" : ""}`}
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth="2.5"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    d="M15 19l-7-7 7-7"
-                                />
+                            <svg className={`w-4 h-4 transition-transform duration-500 ${!sidebarOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                             </svg>
                         </button>
 
                         <div className="px-5 pb-5 pt-1 border-b border-slate-100 flex flex-col items-center justify-center">
-                            <h1 className="text-3xl font-black text-blue-900 tracking-tighter leading-none">
-                                iMAPS
-                            </h1>
-                            <span className="text-[10px] font-bold text-blue-700 tracking-[0.2em] uppercase mt-1">
-                                Rosario
-                            </span>
+                            <h1 className="text-3xl font-black text-blue-900 tracking-tighter leading-none">iMAPS</h1>
+                            <span className="text-[10px] font-bold text-blue-700 tracking-[0.2em] uppercase mt-1">Rosario</span>
                         </div>
 
                         <nav className="flex-1 flex flex-col gap-1 py-4 overflow-y-auto pr-4">
-                            <a
-                                href="/dashboard"
-                                className="flex items-center gap-3 px-5 py-2.5 bg-blue-800 text-white font-semibold text-sm rounded-r-xl shadow-sm transition-all"
-                            >
-                                <svg
-                                    className="w-4 h-4 shrink-0"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                >
+                            <a href="/dashboard" className="flex items-center gap-3 px-5 py-2.5 bg-blue-800 text-white font-semibold text-sm rounded-r-xl shadow-sm transition-all">
+                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                     <path
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
@@ -955,17 +758,8 @@ export default function Dashboard({
                                 <span>Dashboard</span>
                             </a>
 
-                            <a
-                                href="/applications"
-                                className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all"
-                            >
-                                <svg
-                                    className="w-4 h-4 shrink-0"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                >
+                            <a href="/applications" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
+                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                     <path
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
@@ -980,13 +774,7 @@ export default function Dashboard({
                                 href="/technical-review"
                                 className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all"
                             >
-                                <svg
-                                    className="w-4 h-4 shrink-0"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                >
+                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                     <path
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
@@ -1002,13 +790,7 @@ export default function Dashboard({
                                         href="/analytics"
                                         className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all"
                                     >
-                                        <svg
-                                            className="w-4 h-4 shrink-0"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                        >
+                                        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                             <path
                                                 strokeLinecap="round"
                                                 strokeLinejoin="round"
@@ -1021,18 +803,8 @@ export default function Dashboard({
                                         href="/audit-log"
                                         className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all"
                                     >
-                                        <svg
-                                            className="w-4 h-4 shrink-0"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                            />
+                                        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         <span>Audit Trail</span>
                                     </a>
@@ -1045,18 +817,8 @@ export default function Dashboard({
                                 onClick={handleLogout}
                                 className="w-full flex items-center gap-3 px-5 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-blue-700 font-medium text-sm transition-all rounded-r-xl mr-4"
                             >
-                                <svg
-                                    className="w-4 h-4 shrink-0"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                                    />
+                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                                 </svg>
                                 <span>Sign Out</span>
                             </button>
@@ -1070,9 +832,7 @@ export default function Dashboard({
                             currentLayer={activeLayer}
                             appTypeFilter={appTypeFilter}
                             year={year}
-                            onFeatureClick={(name, data) =>
-                                setSelectedBgy({ name, data })
-                            }
+                            onFeatureClick={(name, data) => setSelectedBgy({ name, data })}
                             onMapClick={() => setSelectedBgy(null)}
                         />
                         {/* ── Application Type Filter (Tactile Segmented Control) ── */}
@@ -1083,13 +843,7 @@ export default function Dashboard({
                                 {
                                     id: "Zoning Certificate",
                                     icon: (
-                                        <svg
-                                            className="w-4 h-4"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2.5"
-                                        >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                             <path
                                                 strokeLinecap="round"
                                                 strokeLinejoin="round"
@@ -1101,36 +855,16 @@ export default function Dashboard({
                                 {
                                     id: "Locational Clearance",
                                     icon: (
-                                        <svg
-                                            className="w-4 h-4"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2.5"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                                            />
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                                            />
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                         </svg>
                                     ),
                                 },
                                 {
                                     id: "Development Permit",
                                     icon: (
-                                        <svg
-                                            className="w-4 h-4"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2.5"
-                                        >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                             <path
                                                 strokeLinecap="round"
                                                 strokeLinejoin="round"
@@ -1144,20 +878,14 @@ export default function Dashboard({
                                 return (
                                     <button
                                         key={type.id}
-                                        onClick={() =>
-                                            setAppTypeFilter(type.id)
-                                        }
+                                        onClick={() => setAppTypeFilter(type.id)}
                                         className={`relative flex items-center gap-2 px-5 py-2.5 rounded-full text-[13px] transition-all duration-300 ease-out ${
                                             isActive
                                                 ? "text-blue-800 font-black bg-white shadow-[0_2px_10px_rgba(0,0,0,0.08)] ring-1 ring-black/5"
                                                 : "text-slate-500 font-semibold hover:text-slate-800 hover:bg-slate-200/50"
                                         }`}
                                     >
-                                        <span
-                                            className={`transition-transform duration-300 ${isActive ? "scale-110 text-blue-600" : "text-slate-400"}`}
-                                        >
-                                            {type.icon}
-                                        </span>
+                                        <span className={`transition-transform duration-300 ${isActive ? "scale-110 text-blue-600" : "text-slate-400"}`}>{type.icon}</span>
                                         {type.id}
                                     </button>
                                 );
@@ -1171,20 +899,14 @@ export default function Dashboard({
                             {/* Floating Header */}
                             <div className="flex items-center gap-3 bg-white/70 backdrop-blur-md px-4 py-1.5 rounded-full shadow-sm border border-white/50">
                                 <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                                <span className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-600">
-                                    Land Use Projection
-                                </span>
+                                <span className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-600">Land Use Projection</span>
                             </div>
 
                             {/* Main Control Panel */}
                             <div className="flex items-center p-1.5 bg-white/90 backdrop-blur-xl border border-white rounded-2xl shadow-[0_12px_32px_rgba(0,0,0,0.1)]">
                                 {/* Playback Button */}
                                 <button className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all shadow-sm ring-1 ring-slate-200 group">
-                                    <svg
-                                        className="w-4 h-4 ml-0.5 group-hover:scale-110 transition-transform"
-                                        fill="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
+                                    <svg className="w-4 h-4 ml-0.5 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
                                         <path d="M8 5v14l11-7z" />
                                     </svg>
                                 </button>
@@ -1193,10 +915,7 @@ export default function Dashboard({
 
                                 {/* Discrete Year Buttons */}
                                 <div className="flex items-center gap-1">
-                                    {[
-                                        2020, 2021, 2022, 2023, 2024, 2025,
-                                        2026,
-                                    ].map((y) => {
+                                    {[2020, 2021, 2022, 2023, 2024, 2025, 2026].map((y) => {
                                         const isActive = year === y;
                                         const isPast = y < year;
                                         return (
@@ -1216,11 +935,7 @@ export default function Dashboard({
                                                 {/* Status Dot */}
                                                 <div
                                                     className={`absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full transition-all duration-300 ${
-                                                        isActive
-                                                            ? "bg-white"
-                                                            : isPast
-                                                              ? "bg-blue-300"
-                                                              : "bg-transparent"
+                                                        isActive ? "bg-white" : isPast ? "bg-blue-300" : "bg-transparent"
                                                     }`}
                                                 />
                                             </button>
@@ -1236,9 +951,7 @@ export default function Dashboard({
                                 className={`bg-white rounded-xl shadow-xl border border-slate-200 w-[200px] mb-2 overflow-hidden transition-all duration-300 ${layerPopupOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}
                             >
                                 <div className="bg-blue-800 py-2.5 px-4">
-                                    <span className="text-[12px] font-semibold text-white tracking-wide">
-                                        View Layer
-                                    </span>
+                                    <span className="text-[12px] font-semibold text-white tracking-wide">View Layer</span>
                                 </div>
                                 <div className="p-2 space-y-0.5">
                                     {[
@@ -1258,38 +971,23 @@ export default function Dashboard({
                                             onClick={() => {
                                                 setActiveLayer(l.key);
                                                 setLayerPopupOpen(false);
-                                                if (sidebarOpen)
-                                                    setSidebarOpen(false);
+                                                if (sidebarOpen) setSidebarOpen(false);
                                             }}
                                         >
                                             <div className="view-layer-radio">
                                                 <div className="view-layer-radio-dot" />
                                             </div>
-                                            <span className="text-[12px] font-medium text-slate-700">
-                                                {l.label}
-                                            </span>
+                                            <span className="text-[12px] font-medium text-slate-700">{l.label}</span>
                                         </button>
                                     ))}
                                 </div>
                             </div>
                             <button
-                                onClick={() =>
-                                    setLayerPopupOpen(!layerPopupOpen)
-                                }
+                                onClick={() => setLayerPopupOpen(!layerPopupOpen)}
                                 className={`w-11 h-11 bg-blue-800 hover:bg-blue-900 text-white rounded-xl shadow-lg flex items-center justify-center transition-all focus:outline-none ${layerPopupOpen ? "ring-4 ring-blue-500/30" : ""}`}
                             >
-                                <svg
-                                    className="w-5 h-5"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    strokeWidth="2.5"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M4 6h16M7 12h10M10 18h4"
-                                    />
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M7 12h10M10 18h4" />
                                 </svg>
                             </button>
                         </div>
@@ -1298,28 +996,29 @@ export default function Dashboard({
                         <aside id="right-sidebar">
                             <div className="shrink-0 bg-blue-950 text-white px-5 py-4 flex items-center justify-between">
                                 <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-widest text-blue-300">
-                                        {rsConfig[activeLayer].label}
-                                    </p>
-                                    <h2 className="text-base font-bold mt-0.5 leading-tight">
-                                        {rsConfig[activeLayer].title}
-                                    </h2>
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-blue-300">{rsConfig[activeLayer].label}</p>
+                                    <h2 className="text-base font-bold mt-0.5 leading-tight">{rsConfig[activeLayer].title}</h2>
                                 </div>
                                 <div className="w-9 h-9 rounded-full bg-blue-800 flex items-center justify-center shadow-inner border border-blue-700">
-                                    <svg
-                                        className="w-4 h-4 text-blue-300"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                    >
+                                    <svg className="w-4 h-4 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                         {rsConfig[activeLayer].icon}
                                     </svg>
                                 </div>
                             </div>
 
                             <div id="right-sidebar-inner">
-                                {activeLayer === "status" && <StatusPanel total={total} thisMonth={thisMonth} review={review} released={released} processingPct={processingPct} reviewPct={reviewPct} releasedPct={releasedPct} recent={recent} />}
+                                {activeLayer === "status" && (
+                                    <StatusPanel
+                                        total={total}
+                                        thisMonth={thisMonth}
+                                        review={review}
+                                        released={released}
+                                        processingPct={processingPct}
+                                        reviewPct={reviewPct}
+                                        releasedPct={releasedPct}
+                                        recent={recent}
+                                    />
+                                )}
 
                                 {/* ── Trends Panel ── */}
                                 {activeLayer === "trends" && <TrendsPanel landUseData={landUseData} hotspots={hotspots} />}

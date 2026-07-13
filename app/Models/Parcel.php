@@ -17,6 +17,7 @@ class Parcel extends Model
         'latitude',
         'longitude',
         'land_use_class',
+        'property_index_number',
     ];
 
     protected $casts = [
