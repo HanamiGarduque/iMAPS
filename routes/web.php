@@ -37,8 +37,10 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/applications/encode', [ApplicationController::class, 'store'])
         ->name('applications.store')->middleware('role:Planning Officer');
-    Route::post('/applications/update-status', [TechnicalReviewController::class, 'updateStatus'])
+    Route::post('/technical-review/update-status', [TechnicalReviewController::class, 'updateStatus'])
     ->name('technical-review.update')->middleware('role:Planning Officer');
+    Route::post('/technical-review/assign-inspector', [TechnicalReviewController::class, 'assignInspector'])
+        ->name('technical-review.assign-inspector')->middleware('role:Planning Officer');
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show');
 

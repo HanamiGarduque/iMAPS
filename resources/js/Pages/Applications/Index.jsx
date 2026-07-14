@@ -108,6 +108,9 @@ function AppDrawer({ app, role, onClose, onStatusUpdated }) {
     const [saving, setSaving] = useState(false)
     const [toast, setToast] = useState(null)
 
+    // Grab the first parcel from the eager-loaded array
+    const firstParcel = app.parcels?.length > 0 ? app.parcels[0] : null;
+
     const showToast = (msg, type = 'success') => {
         setToast({ msg, type })
         setTimeout(() => setToast(null), 3000)
@@ -115,7 +118,12 @@ function AppDrawer({ app, role, onClose, onStatusUpdated }) {
 
     const saveStatus = () => {
         if (!newStatus) return showToast('Select a status first.', 'error')
+        
+        // Instantly trigger the toast notification 
+        showToast('Updating status, please wait...', 'success');
+        
         setSaving(true)
+        
         router.post('/applications/update-status', {
             id: app.id,
             new_status: newStatus,
@@ -133,13 +141,13 @@ function AppDrawer({ app, role, onClose, onStatusUpdated }) {
             onFinish: () => setSaving(false),
         })
     }
-
+        
     const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
     const formatFee = (fee) => '₱' + parseFloat(fee || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })
 
     return (
         <>
-            <div className="fixed inset-0 z-[800] flex items-center justify-center p-4 form-enter"
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 form-enter"
                 style={{ background: 'rgba(15,23,42,.6)', backdropFilter: 'blur(4px)' }}
                 onClick={(e) => e.target === e.currentTarget && onClose()}>
 
@@ -151,20 +159,27 @@ function AppDrawer({ app, role, onClose, onStatusUpdated }) {
                         <div className="flex flex-col md:flex-row" style={{ minHeight: 340 }}>
                             {/* Map */}
                             <div className="w-full md:w-[45%] h-[200px] md:h-auto p-5 md:pr-0 shrink-0">
-                                <DrawerMap lat={parseFloat(app.latitude)} lng={parseFloat(app.longitude)} applicantName={app.applicant_name} barangay={app.barangay} />
+                                <DrawerMap 
+                                    lat={firstParcel ? parseFloat(firstParcel.latitude) : null} 
+                                    lng={firstParcel ? parseFloat(firstParcel.longitude) : null} 
+                                    applicantName={app.applicant_name} 
+                                    barangay={app.barangay} 
+                                />
                             </div>
 
                             {/* Info grid */}
                             <div className="flex-1 flex flex-col gap-4 p-5 md:pl-5">
                                 <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Application Dossier</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                                        Application Dossier {app.parcels?.length > 1 ? `(+${app.parcels.length - 1} more parcels)` : ''}
+                                    </p>
                                     <div className="grid grid-cols-2 gap-2.5">
                                         {[
                                             ['Application Type', app.application_type],
                                             ['Land Use Class', app.land_use_class],
-                                            ['Lot No.', app.lot_number || '—'],
-                                            ['TCT / Title No.', app.tct_number || '—'],
-                                            ['Area (sq.m)', app.lot_area_sqm ? app.lot_area_sqm + ' m²' : '—'],
+                                            ['Lot No.', firstParcel?.lot_number || '—'],
+                                            ['TCT / Title No.', firstParcel?.tct_number || '—'],
+                                            ['Area (sq.m)', firstParcel?.lot_area_sqm ? firstParcel.lot_area_sqm + ' m²' : '—'],
                                             ['Contact No.', app.contact_number ? `+63 ${app.contact_number}` : '—'],
                                         ].map(([label, val]) => (
                                             <div key={label} className="bg-slate-50 border border-slate-100 rounded-[10px] px-3.5 py-2.5">

@@ -20,6 +20,7 @@ function StatusBadge({ status }) {
 function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
     const [inspectorId, setInspectorId] = useState('')
     const [scheduledDate, setScheduledDate] = useState('')
+    const [assignedNotes, setAssignedNotes] = useState('') // Changed to match DB
 
     return (
         <div className="absolute inset-0 z-[900] flex items-center justify-center p-4 form-enter"
@@ -41,7 +42,6 @@ function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
                             className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 transition-all"
                         >
                             <option value="">-- Select an Inspector --</option>
-                            {/* Dynamically render fetched inspectors */}
                             {inspectors.map(inspector => (
                                 <option key={inspector.id} value={inspector.id}>
                                     {inspector.name}
@@ -60,6 +60,17 @@ function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
                             className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 transition-all"
                         />
                     </div>
+
+                    <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-600 mb-2">Inspection Notes / Pointers</label>
+                        <textarea 
+                            rows={3}
+                            value={assignedNotes}
+                            onChange={(e) => setAssignedNotes(e.target.value)}
+                            placeholder="Add specific instructions, focus areas, or pointers for the site inspection..."
+                            className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 transition-all resize-none"
+                        />
+                    </div>
                 </div>
 
                 <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
@@ -67,7 +78,11 @@ function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
                         Back
                     </button>
                     <button 
-                        onClick={() => onSubmit({ inspector_id: inspectorId, scheduled_date: scheduledDate })} 
+                        onClick={() => onSubmit({ 
+                            inspector_id: inspectorId, 
+                            scheduled_date: scheduledDate,
+                            assigned_notes: assignedNotes // Updated to match DB payload
+                        })} 
                         disabled={saving || !inspectorId || !scheduledDate}
                         className="inline-flex items-center gap-1.5 px-6 py-2 rounded-[10px] bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-black shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -90,7 +105,8 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
         findings: '',
         decision_reason: '',
         inspector_id: '',
-        scheduled_date: ''
+        scheduled_date: '',
+        assigned_notes: '' // Updated to match DB payload
     })
     
     const [saving, setSaving] = useState(false)
@@ -162,7 +178,8 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
         const payload = {
             ...submissionData,
             id: app.id,
-            status: submissionData.decision // <-- ADD THIS LINEstatus: submissionData.decision // <-- ADD THIS LINE
+            status: submissionData.decision,
+            new_status: submissionData.decision // 
         }
 
         router.post('/applications/update-status', payload, {
@@ -191,14 +208,53 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
         }
     }
 
-    const handleAssignSubmit = (assignmentData) => {
+   const handleAssignSubmit = (assignmentData) => {
+        // 1. Instantly trigger the toast notification to assure the user
+        showToast('Processing assignment, please wait...', 'success');
+
         const finalForm = { 
             ...form, 
             inspector_id: assignmentData.inspector_id,
-            scheduled_date: assignmentData.scheduled_date
+            scheduled_date: assignmentData.scheduled_date,
+            assigned_notes: assignmentData.assigned_notes 
         }
         setForm(finalForm)
-        processSubmission(finalForm)
+        
+        // 2. This disables the button to prevent double-submission
+        setSaving(true) 
+        
+        const payload = {
+            ...finalForm,
+            id: app.id
+        }
+
+        router.post('/technical-review/update-status', payload, { 
+            preserveScroll: true,
+            onSuccess: () => {
+                showToast(`Review submitted and inspector assigned.`)
+                onReviewSubmitted?.()
+                onClose()
+            },
+            onError: (errors) => {
+                showToast(Object.values(errors)[0] || 'Submission failed.', 'error')
+                setSaving(false)
+            },
+            onFinish: () => setSaving(false),
+        })
+    }
+    // Lookup action for PIN Map
+    const handleLookup = () => {
+        if (!app.property_index_number) {
+            showToast('No PIN available to lookup.', 'error')
+            return
+        }
+
+        if (mapInst.current && app.latitude && app.longitude) {
+            mapInst.current.flyTo([app.latitude, app.longitude], 18, { animate: true, duration: 1.5 })
+            showToast(`Locating parcel for PIN: ${app.property_index_number}`, 'success')
+        } else {
+            showToast(`Lookup triggered for PIN: ${app.property_index_number}`, 'success')
+        }
     }
 
     return (
@@ -213,10 +269,23 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
                     {/* Left Side: Map Area */}
                     <div className="w-full md:w-1/2 flex flex-col border-r border-slate-200 bg-slate-50 relative">
                         <div className="p-4 border-b border-slate-200 bg-white shadow-sm z-10 flex items-center gap-3">
-                            <div className="relative w-full">
-                                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                <input type="text" placeholder="Search map locations..."
-                                    className="w-full rounded-[10px] border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-[12px] font-medium text-slate-800 transition-all focus:outline-none focus:border-blue-500 focus:bg-white focus:ring-[2px] focus:ring-blue-500/10 hover:border-slate-300" />
+                            <div className="flex-1 flex items-center gap-2">
+                                <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-[10px] overflow-hidden focus-within:border-blue-500 focus-within:ring-[2px] focus-within:ring-blue-500/10 transition-all">
+                                    <span className="pl-3 pr-2 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 border-r border-slate-200">PIN</span>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        value={app.property_index_number || 'N/A'}
+                                        className="w-full bg-transparent px-3 py-2 text-[12px] font-medium text-slate-800 outline-none"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleLookup}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-[10px] bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-bold shadow-md transition-all active:scale-95 whitespace-nowrap"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                    Lookup
+                                </button>
                             </div>
                         </div>
                         <div className="flex-1 w-full bg-slate-200 z-0">
@@ -226,82 +295,122 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
 
                     {/* Right Side: Action Form Area */}
                     <div className="w-full md:w-1/2 flex flex-col bg-white h-full relative">
-                        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start shrink-0">
-                            <div>
-                                <span className="font-mono text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-100 px-2 py-1 rounded tracking-tight mb-2 inline-block">
-                                    {app.reference_number}
-                                </span>
-                                <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none">{app.applicant_name}</h3>
-                                <p className="text-[13px] font-medium text-slate-500 mt-1">
-                                    {app.application_type} • Brgy. {app.barangay}
-                                </p>
-                                <div className="mt-2 flex items-center gap-1.5">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">PIN:</span>
-                                    <span className="font-mono text-[12px] font-semibold text-slate-700">{app.property_index_number || 'N/A'}</span>
+                        
+                        {/* 1. THE HEADER (Locked at top) */}
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col shrink-0">
+                            <div className="flex justify-between items-start w-full">
+                                <div>
+                                    <span className="font-mono text-[11px] font-black text-blue-600 bg-blue-50 border border-blue-100 px-2 py-1 rounded tracking-tight mb-2 inline-block">
+                                        {app.reference_number}
+                                    </span>
+                                    <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none">{app.applicant_name}</h3>
+                                    <p className="text-[13px] font-medium text-slate-500 mt-1">
+                                        {app.application_type} • Brgy. {app.barangay}
+                                    </p>
                                 </div>
+                                <StatusBadge status={app.status} />
                             </div>
-                            <StatusBadge status={app.status} />
+
+                            {/* Multi-Parcel Display - Kept safe in the header! */}
+                            <div className="mt-4">
+                                {app.parcels && app.parcels.length > 0 ? (
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                                            Associated Parcels ({app.parcels.length})
+                                        </p>
+                                        <div className="flex flex-wrap gap-2 max-h-[85px] overflow-y-auto">
+                                            {app.parcels.map((parcel, idx) => (
+                                                <div key={idx} className="bg-white border border-slate-200 rounded-[8px] px-3 py-2 shadow-sm flex items-center gap-2">
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">PIN:</span>
+                                                    <span className="font-mono text-[11px] font-semibold text-slate-700">{parcel.property_index_number || 'N/A'}</span>
+                                                    {parcel.lot_area_sqm && (
+                                                        <span className="text-[10px] text-slate-400 border-l border-slate-200 pl-2 ml-1">
+                                                            {parcel.lot_area_sqm} sqm
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1.5 mt-2">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">PIN:</span>
+                                        <span className="font-mono text-[12px] font-semibold text-slate-700">{app.property_index_number || 'N/A'}</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
+                        {/* 2. THE FORM BODY (Scrollable middle section) */}
                         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                            
+                            {/* Compliance Checks */}
                             <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Pre-Review Checklist</p>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    {[
-                                        { key: 'documents_complete', label: 'Documents Complete' },
-                                        { key: 'zoning_compliant', label: 'Zoning Compliant' },
-                                        { key: 'land_use_compliant', label: 'Land Use Compliant' },
-                                    ].map((item) => (
-                                        <label key={item.key} className={`flex items-center gap-2.5 p-3 rounded-[10px] border cursor-pointer transition-all ${form[item.key] ? 'border-blue-500 bg-blue-50/30' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
-                                            <input type="checkbox" checked={form[item.key]} onChange={set(item.key)} className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500" />
-                                            <span className={`text-[12px] font-bold ${form[item.key] ? 'text-blue-800' : 'text-slate-600'}`}>{item.label}</span>
-                                        </label>
+                                <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Compliance Checks</h4>
+                                <div className="space-y-3">
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="checkbox" checked={form.documents_complete} onChange={set('documents_complete')} className="w-4 h-4 rounded-[4px] border-slate-300 text-blue-600 focus:ring-blue-500/20" />
+                                        <span className="text-[13px] font-medium text-slate-700 group-hover:text-slate-900 transition-colors">Documents Complete</span>
+                                    </label>
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="checkbox" checked={form.zoning_compliant} onChange={set('zoning_compliant')} className="w-4 h-4 rounded-[4px] border-slate-300 text-blue-600 focus:ring-blue-500/20" />
+                                        <span className="text-[13px] font-medium text-slate-700 group-hover:text-slate-900 transition-colors">Zoning Compliant</span>
+                                    </label>
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <input type="checkbox" checked={form.land_use_compliant} onChange={set('land_use_compliant')} className="w-4 h-4 rounded-[4px] border-slate-300 text-blue-600 focus:ring-blue-500/20" />
+                                        <span className="text-[13px] font-medium text-slate-700 group-hover:text-slate-900 transition-colors">Land Use Compliant</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Findings */}
+                            <div>
+                                <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-600 mb-2">Findings / Remarks</label>
+                                <textarea 
+                                    rows={3} 
+                                    value={form.findings} 
+                                    onChange={set('findings')} 
+                                    placeholder="Enter review findings..." 
+                                    className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 transition-all resize-none" 
+                                />
+                            </div>
+
+                            {/* Decision */}
+                            <div>
+                                <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-600 mb-2">Review Decision <span className="text-red-500">*</span></label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {['Approved', 'Needs Site Inspection', 'Declined'].map(d => (
+                                        <button 
+                                            key={d} 
+                                            onClick={() => setForm(prev => ({ ...prev, decision: d }))} 
+                                            className={`px-3 py-2.5 rounded-[10px] text-[12px] font-bold transition-all border ${
+                                                form.decision === d 
+                                                    ? (d === 'Approved' ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : d === 'Declined' ? 'bg-red-50 border-red-500 text-red-700' : 'bg-amber-50 border-amber-500 text-amber-700') 
+                                                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                                            }`}
+                                        >
+                                            {d}
+                                        </button>
                                     ))}
                                 </div>
                             </div>
 
-                            <div className="h-px bg-slate-100 w-full" />
-
-                            <div className="space-y-4">
-                                <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Technical Decision</p>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                                        {REVIEW_DECISIONS.map(decision => {
-                                            let activeClass = 'border-slate-200 text-slate-600 bg-white hover:bg-slate-50'
-                                            if (form.decision === decision) {
-                                                if (decision === 'Approved') activeClass = 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-[0_0_0_1px_rgba(16,185,129,1)]'
-                                                if (decision === 'Declined') activeClass = 'border-red-500 bg-red-50 text-red-800 shadow-[0_0_0_1px_rgba(239,68,68,1)]'
-                                                if (decision === 'Needs Site Inspection') activeClass = 'border-amber-500 bg-amber-50 text-amber-800 shadow-[0_0_0_1px_rgba(245,158,11,1)]'
-                                            }
-
-                                            return (
-                                                <label key={decision} className={`relative flex items-center justify-center p-3 rounded-[10px] border cursor-pointer transition-all ${activeClass}`}>
-                                                    <input type="radio" name="decision" value={decision} checked={form.decision === decision} onChange={set('decision')} className="sr-only" />
-                                                    <span className="text-[12px] font-bold text-center leading-tight">{decision}</span>
-                                                </label>
-                                            )
-                                        })}
-                                    </div>
+                            {/* Reason for Declining */}
+                            {form.decision === 'Declined' && (
+                                <div className="form-enter">
+                                    <label className="block text-[11px] font-bold uppercase tracking-widest text-red-600 mb-2">Reason for Declination <span className="text-red-500">*</span></label>
+                                    <textarea 
+                                        rows={3} 
+                                        value={form.decision_reason} 
+                                        onChange={set('decision_reason')} 
+                                        placeholder="Specify the reason for declining this application..." 
+                                        className="w-full rounded-[10px] border border-red-200 bg-red-50/30 px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none focus:border-red-500 focus:ring-[2px] focus:ring-red-500/20 transition-all resize-none" 
+                                    />
                                 </div>
-
-                                {form.decision === 'Declined' && (
-                                    <div className="form-enter">
-                                        <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">
-                                            Reason for Declination <span className="text-red-500 text-[14px] leading-none">*</span>
-                                        </label>
-                                        <textarea rows={2} value={form.decision_reason} onChange={set('decision_reason')} placeholder="Must provide a clear reason for denial..."
-                                            className="w-full rounded-[10px] border border-red-300 bg-red-50/30 px-3 py-2 text-[13px] font-medium text-slate-800 resize-none outline-none focus:border-red-500 focus:ring-[2px] focus:ring-red-500/20 transition-all" />
-                                    </div>
-                                )}
-
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">General Findings / Notes</label>
-                                    <textarea rows={4} value={form.findings} onChange={set('findings')} placeholder="Any additional notes from the evaluation..."
-                                        className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-800 resize-none outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 hover:border-slate-300 transition-all" />
-                                </div>
-                            </div>
+                            )}
                         </div>
 
+                        {/* 3. THE FOOTER (Locked at bottom) */}
                         <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex justify-end gap-3 bg-slate-50 mt-auto">
                             <button onClick={onClose} className="px-5 py-2 rounded-[10px] border border-slate-200 bg-white text-slate-600 text-[12px] font-bold hover:bg-slate-50 transition-all">
                                 Cancel
@@ -323,10 +432,10 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
                                 onClose={() => setShowAssignDrawer(false)} 
                                 onSubmit={handleAssignSubmit} 
                                 saving={saving}
-                                inspectors={inspectors} // <-- Pass down the array
+                                inspectors={inspectors}
                             />
                         )}
-                    </div>
+                    </div>  
                 </div>
             </div>
 
@@ -344,7 +453,7 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
 }
 
 // ── Main Page ──
-export default function Index({ applications, filters, auth, inspectors }) { // <-- Accept inspectors prop
+export default function Index({ applications, filters, auth, inspectors }) {
     const [drawerApp, setDrawerApp] = useState(null)
     const [clock, setClock] = useState('')
     const [search, setSearch] = useState(filters?.search || '')
@@ -533,7 +642,7 @@ export default function Index({ applications, filters, auth, inspectors }) { // 
                     app={drawerApp} 
                     onClose={() => setDrawerApp(null)}
                     onReviewSubmitted={() => router.reload({ preserveScroll: true })}
-                    inspectors={inspectors} // <-- Pass down to ReviewDrawer
+                    inspectors={inspectors}
                 />
             )}
         </>

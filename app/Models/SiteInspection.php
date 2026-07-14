@@ -25,6 +25,7 @@ class SiteInspection extends Model
         'findings',
         'recommendation',
         'remarks',
+        'assigned_notes',
     ];
 
     /**

@@ -6,7 +6,7 @@ use App\Models\ZoningApplication;
 use App\Models\Parcel;
 use App\Models\User;
 use App\Models\TechnicalReview;
-use App\Models\SiteInspection; // Ensure this is imported if used
+use App\Models\SiteInspection; 
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -73,7 +73,6 @@ class TechnicalReviewController extends Controller
             $app->tax_dec_number = $firstParcel ? $firstParcel->tax_dec_number : null;
             $app->lot_area_sqm = $firstParcel ? $firstParcel->lot_area_sqm : null;
             
-            unset($app->parcels);
             return $app;
         });
 
@@ -107,23 +106,33 @@ class TechnicalReviewController extends Controller
             // Validation for Site Inspection assignment
             'inspector_id'       => 'required_if:decision,Needs Site Inspection|nullable|exists:users,id',
             'scheduled_date'     => 'required_if:decision,Needs Site Inspection|nullable|date|after_or_equal:today',
+            'assigned_notes'     => 'nullable|string',
         ]);
 
         DB::transaction(function () use ($validated) {
             $application = ZoningApplication::findOrFail($validated['id']);
             
-            // 1. Update main application status
-            $application->status = $validated['decision'];
-            $application->save();
+            // 1. Update main application status ONLY if it's a final decision
+            // We intentionally do NOT update the status if it "Needs Site Inspection"
+            if ($validated['decision'] === 'Approved') {
+                $application->status = 'Under Sangguniang Bayan';
+                $application->save();
+            } elseif ($validated['decision'] === 'Declined') {
+                $application->status = 'Denied';
+                $application->save();
+            }
 
-            // 2. Handle Site Inspection generation
+            // 2. Handle Site Inspection generation using the SiteInspection model directly
             $siteInspectionId = null;
             if ($validated['decision'] === 'Needs Site Inspection') {
-                $inspection = $application->siteInspections()->create([
-                    'inspector_id'   => $validated['inspector_id'],
-                    'scheduled_date' => $validated['scheduled_date'],
-                    'status'         => 'Pending',
+                $inspection = SiteInspection::create([
+                    'zoning_application_id' => $application->id,
+                    'inspector_id'          => $validated['inspector_id'],
+                    'scheduled_date'        => $validated['scheduled_date'],
+                    'assigned_notes'        => $validated['assigned_notes'] ?? null,
+                    'status'                => 'Pending',
                 ]);
+                
                 $siteInspectionId = $inspection->id;
             }
 
@@ -147,5 +156,28 @@ class TechnicalReviewController extends Controller
         });
 
         return redirect()->back()->with('success', 'Review processed successfully.');
+    }
+    /**
+     * Assign a site inspector without changing the application status.
+     * Use this ONLY if you don't want to log a Technical Review.
+     */
+    public function assignInspector(Request $request)
+    {
+        $validated = $request->validate([
+            'zoning_application_id' => 'required|exists:zoning_applications,id',
+            'inspector_id'          => 'required|exists:users,id',
+            'scheduled_date'        => 'required|date|after_or_equal:today',
+            'assigned_notes'        => 'nullable|string',
+        ]);
+
+        SiteInspection::create([
+            'zoning_application_id' => $validated['zoning_application_id'],
+            'inspector_id'          => $validated['inspector_id'],
+            'scheduled_date'        => $validated['scheduled_date'],
+            'assigned_notes'        => $validated['assigned_notes'] ?? null,
+            'status'                => 'Pending',
+        ]);
+
+        return redirect()->back()->with('success', 'Site Inspector assigned successfully.');
     }
 }

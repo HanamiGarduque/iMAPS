@@ -37,6 +37,7 @@ class ApplicationController extends Controller
     public function index(Request $request)
     {
         $query = ZoningApplication::query()
+            ->with('parcels') // <-- Eager load parcels here
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->withCount('parcels')
             ->select(
@@ -125,7 +126,7 @@ class ApplicationController extends Controller
             // Multi-parcel payload. At least one parcel is required per application.
             'parcels'                  => 'required|array|min:1',
             'parcels.*.parcel_code'    => 'nullable|string|max:20',
-            'parcels.*.property_index_number'   => 'required|string|max:100', // <-- ADD THIS
+            'parcels.*.property_index_number'   => 'required|string|max:100', 
             'parcels.*.lot_number'     => 'nullable|string|max:100',
             'parcels.*.tct_number'     => 'nullable|string|max:100',
             'parcels.*.tax_dec_number' => 'nullable|string|max:100',
@@ -218,14 +219,13 @@ class ApplicationController extends Controller
     public function show(int $id)
     {
         $application = ZoningApplication::query()
+            ->with(['parcels' => function ($query) {
+                $query->orderBy('parcel_code');
+            }]) // <-- Eager load and order parcels
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->select('zoning_applications.*', 'users.name as encoded_by_name')
             ->where('zoning_applications.id', $id)
             ->firstOrFail();
-
-        $parcels = Parcel::where('zoning_application_id', $id)
-            ->orderBy('parcel_code')
-            ->get();
 
         $technicalReviews = TechnicalReview::query()
             ->leftJoin('users', 'users.id', '=', 'technical_reviews.reviewed_by')
@@ -243,7 +243,7 @@ class ApplicationController extends Controller
 
         return Inertia::render('Applications/Show', [
             'application'      => $application,
-            'parcels'          => $parcels,
+            'parcels'          => $application->parcels, // Pass the eager-loaded data directly
             'technicalReviews' => $technicalReviews,
             'auditTrail'       => $auditTrail,
             'statusOrder'      => self::STATUS_ORDER,

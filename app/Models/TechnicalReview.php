@@ -13,6 +13,7 @@ class TechnicalReview extends Model
         'review_round',
         'decision',
         'zoning_compliant',
+        'documents_complete', // <-- ADD THIS LINE
         'land_use_compliant',
         'findings',
         'decision_reason',
