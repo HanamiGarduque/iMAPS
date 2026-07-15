@@ -12,9 +12,6 @@ class TechnicalReview extends Model
         'reviewed_by',
         'review_round',
         'decision',
-        'zoning_compliant',
-        'documents_complete', // <-- ADD THIS LINE
-        'land_use_compliant',
         'findings',
         'decision_reason',
         'site_inspection_task_id',
@@ -22,9 +19,6 @@ class TechnicalReview extends Model
     ];
 
     protected $casts = [
-        'zoning_compliant'   => 'boolean',
-        'documents_complete' => 'boolean',
-        'land_use_compliant' => 'boolean',
         'reviewed_at'        => 'datetime',
     ];
 

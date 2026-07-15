@@ -35,7 +35,6 @@ public function technicalReviews(): HasMany
         'email',
         'representative_name',
         'barangay',
-        'street_address',
         'lot_number',
         'tct_number',
         'lot_area_sqm',

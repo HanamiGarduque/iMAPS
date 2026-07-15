@@ -18,9 +18,6 @@ return new class extends Migration
             ->onDelete('restrict');
         $table->smallInteger('review_round')->default(1);
         $table->string('decision', 30);
-        $table->boolean('zoning_compliant')->nullable();
-        $table->boolean('documents_complete')->nullable();
-        $table->boolean('land_use_compliant')->nullable();
         $table->text('findings')->nullable();
         $table->text('decision_reason')->nullable();
         $table->unsignedBigInteger('site_inspection_task_id')->nullable();

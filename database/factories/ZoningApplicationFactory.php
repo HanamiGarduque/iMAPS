@@ -65,7 +65,6 @@ class ZoningApplicationFactory extends Factory
             'email'               => $this->faker->optional(0.7)->safeEmail(),
             'representative_name' => $this->faker->optional(0.4)->name(),
             'barangay'            => $this->faker->randomElement(self::BARANGAYS),
-            'street_address'      => $this->faker->streetAddress(),
             'lot_number'          => $this->faker->numerify('Lot ##'),
             'tct_number'          => $this->faker->numerify('TCT-####-######'),
             'lot_area_sqm'            => $this->faker->randomFloat(4, 50, 5000),

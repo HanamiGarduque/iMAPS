@@ -45,8 +45,6 @@ return new class extends Migration
 
             $table->string('barangay', 100);
 
-            $table->string('street_address', 500);
-
             $table->string('lot_number', 100)->nullable();
 
             $table->string('tct_number', 100)->nullable();

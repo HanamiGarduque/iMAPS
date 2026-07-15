@@ -99,9 +99,6 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
     const [form, setForm] = useState({
         application_id: app.id,
         decision: '',
-        zoning_compliant: false,
-        documents_complete: false,
-        land_use_compliant: false,
         findings: '',
         decision_reason: '',
         inspector_id: '',
@@ -344,24 +341,7 @@ function ReviewDrawer({ app, onClose, onReviewSubmitted, inspectors }) {
                         {/* 2. THE FORM BODY (Scrollable middle section) */}
                         <div className="flex-1 overflow-y-auto p-6 space-y-6">
                             
-                            {/* Compliance Checks */}
-                            <div>
-                                <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Compliance Checks</h4>
-                                <div className="space-y-3">
-                                    <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="checkbox" checked={form.documents_complete} onChange={set('documents_complete')} className="w-4 h-4 rounded-[4px] border-slate-300 text-blue-600 focus:ring-blue-500/20" />
-                                        <span className="text-[13px] font-medium text-slate-700 group-hover:text-slate-900 transition-colors">Documents Complete</span>
-                                    </label>
-                                    <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="checkbox" checked={form.zoning_compliant} onChange={set('zoning_compliant')} className="w-4 h-4 rounded-[4px] border-slate-300 text-blue-600 focus:ring-blue-500/20" />
-                                        <span className="text-[13px] font-medium text-slate-700 group-hover:text-slate-900 transition-colors">Zoning Compliant</span>
-                                    </label>
-                                    <label className="flex items-center gap-3 cursor-pointer group">
-                                        <input type="checkbox" checked={form.land_use_compliant} onChange={set('land_use_compliant')} className="w-4 h-4 rounded-[4px] border-slate-300 text-blue-600 focus:ring-blue-500/20" />
-                                        <span className="text-[13px] font-medium text-slate-700 group-hover:text-slate-900 transition-colors">Land Use Compliant</span>
-                                    </label>
-                                </div>
-                            </div>
+                            
 
                             {/* Findings */}
                             <div>

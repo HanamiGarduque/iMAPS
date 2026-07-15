@@ -10,6 +10,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+// ── Public Landing Page ──
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin'       => Route::has('login'),
@@ -19,36 +20,57 @@ Route::get('/', function () {
     ]);
 });
 
-// ── Authenticated routes (all roles) ──
+// ── Authenticated Routes (All Auth Users) ──
 Route::middleware('auth')->group(function () {
 
+    // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
 
+    // Applications Docket List
     Route::get('/applications', [ApplicationController::class, 'index'])
         ->name('applications.index');
 
+    // Technical Reviews List
     Route::get('/technical-review', [TechnicalReviewController::class, 'index'])
-            ->name('technicalreview.index');
+        ->name('technicalreview.index');
 
-    // ── must be before {id} ──
+    // ── Application Creation Form (Must be placed before wildcard {id} route) ──
     Route::get('/applications/encode', [ApplicationController::class, 'create'])
-        ->name('applications.create')->middleware('role:Planning Officer');
+        ->name('applications.create')
+        ->middleware('role:Planning Officer,Admin');
 
     Route::post('/applications/encode', [ApplicationController::class, 'store'])
-        ->name('applications.store')->middleware('role:Planning Officer');
-    Route::post('/technical-review/update-status', [TechnicalReviewController::class, 'updateStatus'])
-    ->name('technical-review.update')->middleware('role:Planning Officer');
-    Route::post('/technical-review/assign-inspector', [TechnicalReviewController::class, 'assignInspector'])
-        ->name('technical-review.assign-inspector')->middleware('role:Planning Officer');
+        ->name('applications.store')
+        ->middleware('role:Planning Officer,Admin');
+
+    // ── Single-View & Standard Status Transitions ──
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show');
 
+    // Handles Approved / Declined standard status changes from the show docket
     Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])
-        ->name('applications.updateStatus');
+        ->name('applications.updateStatus')
+        ->middleware('role:Planning Officer,Admin');
+
+    // ── Technical Review & Field Scheduling Transitions ──
+    // Handles changing technical review status (e.g., transition to Site Inspection)
+    Route::post('/technical-review/update-status', [TechnicalReviewController::class, 'updateStatus'])
+        ->name('technical-review.update')
+        ->middleware('role:Planning Officer,Admin');
+
+    // Handles the per-parcel batch review submitted from Applications/Show.jsx
+    Route::post('/technical-review/submit-batch', [TechnicalReviewController::class, 'submitBatch'])
+        ->name('technical-review.submit-batch')
+        ->middleware('role:Planning Officer,Admin');
+
+    // Handles specific inspector allocation/scheduling 
+    Route::post('/technical-review/assign-inspector', [TechnicalReviewController::class, 'assignInspector'])
+        ->name('technical-review.assign-inspector')
+        ->middleware('role:Planning Officer,Admin');
 });
 
-// ── Admin only ──
+// ── Admin-Only Routes ──
 Route::middleware(['auth', 'role:Admin'])->group(function () {
 
     Route::get('/analytics', [AnalyticsController::class, 'index'])
@@ -58,7 +80,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
         ->name('audit-log.index');
 });
 
-// ── Public ──
+// ── Public Portal Access ──
 Route::get('/public-portal', [PublicPortalController::class, 'index'])
     ->name('public-portal');
 

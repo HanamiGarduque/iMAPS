@@ -12,7 +12,6 @@ class TaxMapParcel extends Model
         'tct_number',
         'tax_dec_number',
         'lot_area_sqm',
-        'land_use_class',
         'is_dummy_data',
     ];
 

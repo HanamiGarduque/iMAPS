@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ZoningApplication;
 use App\Models\Parcel;
+use App\Models\User;
 use App\Models\TechnicalReview;
 use App\Services\AuditLogger;
 use App\Models\ApplicationSequence;
@@ -13,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+
 
 class ApplicationController extends Controller
 {
@@ -48,7 +50,6 @@ class ApplicationController extends Controller
                 'zoning_applications.status',
                 'zoning_applications.applicant_name',
                 'zoning_applications.barangay',
-                'zoning_applications.street_address',
                 'zoning_applications.contact_number',
                 'zoning_applications.assessment_fee',
                 'zoning_applications.or_number',
@@ -83,10 +84,16 @@ class ApplicationController extends Controller
             ->orderByDesc('zoning_applications.id')
             ->paginate(25)
             ->withQueryString();
+        $inspectors = User::where('role', 'Site Inspector')
+            ->select('id', 'name')
+            ->orderBy('name', 'asc')
+            ->get();
 
         return Inertia::render('Applications/Index', [
             'applications' => $applications,
             'filters'      => $request->only(['barangay', 'status', 'application_type', 'date_from', 'date_to', 'search']),
+            'inspectors'   => $inspectors,
+
         ]);
     }
 
@@ -99,6 +106,9 @@ class ApplicationController extends Controller
         // auth is shared globally via HandleInertiaRequests middleware
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // STORE — Validate and persist new application, with one or more parcels
+    // ─────────────────────────────────────────────────────────────────────────
     // ─────────────────────────────────────────────────────────────────────────
     // STORE — Validate and persist new application, with one or more parcels
     // ─────────────────────────────────────────────────────────────────────────
@@ -118,7 +128,6 @@ class ApplicationController extends Controller
             'email'               => 'nullable|email',
             'representative_name' => 'nullable|string|max:255',
             'barangay'            => 'required|string',
-            'street_address'      => 'nullable|string',
             'assessment_fee'      => 'required|numeric|min:0',
             'or_number'           => 'nullable|string',
             'remarks'             => 'nullable|string',
@@ -126,11 +135,11 @@ class ApplicationController extends Controller
             // Multi-parcel payload. At least one parcel is required per application.
             'parcels'                  => 'required|array|min:1',
             'parcels.*.parcel_code'    => 'nullable|string|max:20',
-            'parcels.*.property_index_number'   => 'required|string|max:100', 
+            'parcels.*.property_index_number'   => 'required|string|max:100',
             'parcels.*.lot_number'     => 'nullable|string|max:100',
             'parcels.*.tct_number'     => 'nullable|string|max:100',
             'parcels.*.tax_dec_number' => 'nullable|string|max:100',
-            'parcels.*.lot_area_sqm'       => 'nullable|numeric|min:0',
+            'parcels.*.lot_area_sqm'   => 'nullable|numeric|min:0',
             'parcels.*.coordinates'    => ['nullable', 'regex:/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/'],
         ]);
 
@@ -142,6 +151,7 @@ class ApplicationController extends Controller
 
         DB::beginTransaction();
         try {
+            // 1. Create the application with the initial 'Received' status
             $application = ZoningApplication::create([
                 'reference_number'    => $referenceNumber,
                 'form_number'         => $validated['form_number'],
@@ -154,7 +164,6 @@ class ApplicationController extends Controller
                 'email'               => $validated['email'] ?? null,
                 'representative_name' => $validated['representative_name'] ?? null,
                 'barangay'            => $validated['barangay'],
-                'street_address'      => $validated['street_address'] ?? null,
                 'assessment_fee'      => $validated['assessment_fee'],
                 'or_number'           => $validated['or_number'] ?? null,
                 'remarks'             => $validated['remarks'] ?? null,
@@ -176,7 +185,7 @@ class ApplicationController extends Controller
                     'lot_number'            => $parcelData['lot_number'] ?? null,
                     'tct_number'            => $parcelData['tct_number'] ?? null,
                     'tax_dec_number'        => $parcelData['tax_dec_number'] ?? null,
-                    'lot_area_sqm'              => $parcelData['lot_area_sqm'] ?? null,
+                    'lot_area_sqm'          => $parcelData['lot_area_sqm'] ?? null,
                     'latitude'              => $lat,
                     'longitude'             => $lng,
                     'land_use_class'        => $validated['land_use_class'],
@@ -184,16 +193,11 @@ class ApplicationController extends Controller
                 ]);
             }
 
-            // SMSNotifier::applicationCreated(
-            //     $application->contact_number,
-            //     $application->reference_number,
-            //     $application->applicant_name
-            // );
-
+            // 2. Log the 'Received' status
             ApplicationStatusTracker::log(
                 $application->reference_number,
                 $application->applicant_name,
-                $application->status
+                'Received'
             );
 
             AuditLogger::log(
@@ -203,9 +207,26 @@ class ApplicationController extends Controller
                 note: sprintf('Application encoded by staff with %d parcel(s).', count($validated['parcels']))
             );
 
+            // 3. Automatically transition to 'Technical Review'
+            $application->update(['status' => 'Technical Review']);
+
+            // 4. Log the transition
+            ApplicationStatusTracker::log(
+                $application->reference_number,
+                $application->applicant_name,
+                'Technical Review'
+            );
+
+            AuditLogger::log(
+                applicationId: $application->id,
+                action: 'STATUS_UPDATE',
+                performedBy: Auth::id(),
+                note: 'Application automatically moved from Received to Technical Review upon encoding.'
+            );
+
             DB::commit();
             return back()
-                ->with('success', 'Application encoded successfully. SMS message sent to the applicant')
+                ->with('success', 'Application encoded and moved to Technical Review successfully.')
                 ->with('reference_number', $referenceNumber);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -240,12 +261,17 @@ class ApplicationController extends Controller
             ->where('audit_trail.application_id', $id)
             ->orderByDesc('audit_trail.performed_at')
             ->get();
+        $inspectors = User::where('role', 'Site Inspector')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
 
         return Inertia::render('Applications/Show', [
             'application'      => $application,
             'parcels'          => $application->parcels, // Pass the eager-loaded data directly
             'technicalReviews' => $technicalReviews,
             'auditTrail'       => $auditTrail,
+            'inspectors'       => $inspectors, // <--- Add this
             'statusOrder'      => self::STATUS_ORDER,
         ]);
     }
@@ -264,9 +290,6 @@ class ApplicationController extends Controller
         $validated = $request->validate([
             'zoning_application_id' => 'required|integer|exists:zoning_applications,id',
             'decision'              => 'required|in:' . implode(',', self::REVIEW_DECISIONS),
-            'zoning_compliant'      => 'nullable|boolean',
-            'documents_complete'    => 'nullable|boolean',
-            'land_use_compliant'    => 'nullable|boolean',
             'findings'              => 'nullable|string',
             'decision_reason'       => 'required_if:decision,Declined|nullable|string',
         ]);
@@ -275,21 +298,39 @@ class ApplicationController extends Controller
         try {
             $application = ZoningApplication::findOrFail($validated['zoning_application_id']);
 
-            if ($application->status !== 'Technical Review') {
+            // CHANGE: Allow 'Received' OR 'Technical Review'
+            if (!in_array($application->status, ['Received', 'Technical Review'])) {
                 DB::rollBack();
-                return back()->withErrors(['status' => 'This application is not currently in Technical Review.']);
+                return back()->withErrors(['status' => 'This application must be in "Received" or "Technical Review" status.']);
+            }
+
+            // Logic: If it's currently 'Received', move it to 'Technical Review' first 
+            // if the review doesn't result in immediate approval/denial.
+            if ($application->status === 'Received') {
+                $application->update(['status' => 'Technical Review']);
+
+                // Add this to the Audit Trail
+                AuditLogger::log(
+                    applicationId: $application->id,
+                    action: 'STATUS_UPDATE',
+                    performedBy: Auth::id(),
+                    note: 'Application moved from Received to Technical Review.'
+                );
+
+                // Ensure the Status Tracker also updates for the dashboard/history view
+                ApplicationStatusTracker::log(
+                    $application->reference_number,
+                    $application->applicant_name,
+                    'Technical Review'
+                );
             }
 
             $nextRound = (TechnicalReview::where('zoning_application_id', $application->id)->max('review_round') ?? 0) + 1;
-
             TechnicalReview::create([
                 'zoning_application_id' => $application->id,
                 'reviewed_by'           => Auth::id(),
                 'review_round'          => $nextRound,
                 'decision'              => $validated['decision'],
-                'zoning_compliant'      => $validated['zoning_compliant'] ?? null,
-                'documents_complete'    => $validated['documents_complete'] ?? null,
-                'land_use_compliant'    => $validated['land_use_compliant'] ?? null,
                 'findings'              => $validated['findings'] ?? null,
                 'decision_reason'       => $validated['decision_reason'] ?? null,
             ]);
@@ -323,11 +364,11 @@ class ApplicationController extends Controller
                     $application->applicant_name,
                     'Denied'
                 );
-                SmsNotifier::applicationDenied(
-                    $application->contact_number,
-                    $application->reference_number,
-                    $validated['decision_reason']
-                );
+                // SmsNotifier::applicationDenied(
+                //     $application->contact_number,
+                //     $application->reference_number,
+                //     $validated['decision_reason']
+                // );
             }
             // 'Needs Site Inspection' intentionally leaves status as 'Technical
             // Review' — the application isn't done with this stage, it just
