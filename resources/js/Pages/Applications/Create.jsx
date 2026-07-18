@@ -7,17 +7,6 @@ import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// const BARANGAYS = [
-//     "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Barangay A (Poblacion)",
-//     "Barangay B (Poblacion)", "Barangay C (Poblacion)", "Barangay D (Poblacion)",
-//     "Barangay E (Poblacion)", "Bayawang", "Baybayin", "Bulihan", "Cahigam",
-//     "Calantas", "Colongan", "Itlugan", "Leviste (Tubahan)", "Lumbangan",
-//     "Maalas-as", "Mabato", "Mabunga", "Macalamcam A", "Macalamcam B", "Malaya",
-//     "Maligaya", "Marilag", "Masaya", "Matamis (Malinao)", "Mavalor", "Mayuro",
-//     "Namuco", "Namunga", "Nasi", "Natu", "Palakpak", "Pinagsibaan", "Putingkahoy",
-//     "Quilib", "Salao", "San Agustin", "San Carlos", "San Ignacio", "San Isidro",
-//     "San Jose", "San Roque", "Santa Cruz", "Timbugan", "Tiquiwan", "Tulos",
-// ];
 
 const APPLICATION_TYPES = [
     {
@@ -54,10 +43,21 @@ function MapController({ brgyData, activeParcelFeature }) {
     useEffect(() => {
         if (activeParcelFeature) {
             const layer = L.geoJSON(activeParcelFeature);
-            map.flyToBounds(layer.getBounds(), { padding: [80, 80], maxZoom: 18, duration: 1.2 });
+            const bounds = layer.getBounds();
+            
+            // Check if bounds are valid before flying
+            if (bounds.isValid()) {
+                map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 18, duration: 1.2 });
+            } else {
+                console.warn("Invalid geometry for the selected parcel.");
+            }
         } else if (brgyData) {
             const layer = L.geoJSON(brgyData);
-            map.fitBounds(layer.getBounds(), { padding: [30, 30] });
+            const bounds = layer.getBounds();
+            
+            if (bounds.isValid()) {
+                map.fitBounds(bounds, { padding: [30, 30] });
+            }
         }
     }, [brgyData, activeParcelFeature, map]);
 
@@ -297,34 +297,36 @@ export default function Create({ auth, errors: serverErrors = {} }) {
     };
 
     const handlePinLookup = async (index) => {
-        const pin = form.parcels[index]?.property_index_number?.trim();
+    const pin = form.parcels[index]?.property_index_number?.trim();
+    
+    const isDuplicate = form.parcels.some((p, i) => i !== index && p.property_index_number?.trim() === pin);
+    if (isDuplicate) {
+        setErrors((prev) => ({
+            ...prev,
+            [`parcels.${index}.property_index_number`]: "This PIN is already attached to another parcel.",
+        }));
+        setFlash({ type: "error", msg: "Duplicate PIN detected." });
+        setTimeout(() => setFlash(null), 4000);
+        return;
+    }
+
+    setPinLoading((prev) => ({ ...prev, [index]: true }));
+
+    try {
+        const data = await lookupPin(pin);
         
-        const isDuplicate = form.parcels.some((p, i) => i !== index && p.property_index_number?.trim() === pin);
-        if (isDuplicate) {
-            setErrors((prev) => ({
-                ...prev,
-                [`parcels.${index}.property_index_number`]: "This PIN is already attached to another parcel.",
-            }));
-            setFlash({
-                type: "error",
-                msg: "Duplicate PIN detected.",
-            });
-            setTimeout(() => setFlash(null), 4000);
-            return;
+        if (data.feature) {
+            setActiveParcelFeature(data.feature);
+            setActiveParcelIndex(index); 
         }
 
-        setPinLoading((prev) => ({ ...prev, [index]: true }));
+        setForm((prev) => {
+            // If this is the first (primary) parcel being looked up, set the application-level barangay
+            const newBarangay = (index === 0 && data.barangay) ? data.barangay : prev.barangay;
 
-        try {
-            const data = await lookupPin(pin);
-            
-            if (data.feature) {
-                setActiveParcelFeature(data.feature);
-                setActiveParcelIndex(index); 
-            }
-
-            setForm((prev) => ({
+            return {
                 ...prev,
+                barangay: newBarangay, // <-- FIX: Set the root form.barangay here
                 parcels: prev.parcels.map((p, i) =>
                     i === index
                         ? {
@@ -340,23 +342,26 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                           }
                         : p,
                 ),
-            }));
+            };
+        });
 
-            setErrors((prev) => {
-                const next = { ...prev };
-                delete next[`parcels.${index}.property_index_number`];
-                return next;
-            });
-        } catch (err) {
-            const message = err?.message || "Lookup failed";
-            setErrors((prev) => ({
-                ...prev,
-                [`parcels.${index}.property_index_number`]: message,
-            }));
-        } finally {
-            setPinLoading((prev) => ({ ...prev, [index]: false }));
-        }
-    };
+        setErrors((prev) => {
+            const next = { ...prev };
+            delete next[`parcels.${index}.property_index_number`];
+            // Clear the hidden barangay error if it exists
+            delete next.barangay; 
+            return next;
+        });
+    } catch (err) {
+        const message = err?.message || "Lookup failed";
+        setErrors((prev) => ({
+            ...prev,
+            [`parcels.${index}.property_index_number`]: message,
+        }));
+    } finally {
+        setPinLoading((prev) => ({ ...prev, [index]: false }));
+    }
+};
 
     useEffect(() => {
         const tick = () => {

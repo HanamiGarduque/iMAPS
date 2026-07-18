@@ -277,13 +277,11 @@ class ApplicationController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // TECHNICAL REVIEW — Record a review decision: Approved, Needs Site
-    // Inspection, or Declined. This is the only path that can move an
-    // application out of the "Technical Review" status.
+    // TECHNICAL REVIEW —
     // ─────────────────────────────────────────────────────────────────────────
     public function submitTechnicalReview(Request $request)
     {
-        if (!in_array(Auth::user()->role, ['Planning Officer', 'Admin'], true)) {
+        if (!in_array(Auth::user()->role, ['Planning Officer'], true)) {
             return back()->withErrors(['auth' => 'You are not authorized to perform this action.']);
         }
 

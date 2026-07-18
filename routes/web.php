@@ -42,7 +42,7 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/applications/encode', [ApplicationController::class, 'store'])
         ->name('applications.store')
-        ->middleware('role:Planning Officer,Admin');
+        ->middleware('role:Planning Officer');
 
     // ── Single-View & Standard Status Transitions ──
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
@@ -57,18 +57,27 @@ Route::middleware('auth')->group(function () {
     // Handles changing technical review status (e.g., transition to Site Inspection)
     Route::post('/technical-review/update-status', [TechnicalReviewController::class, 'updateStatus'])
         ->name('technical-review.update')
-        ->middleware('role:Planning Officer,Admin');
+        ->middleware('role:Planning Officer');
 
     // Handles the per-parcel batch review submitted from Applications/Show.jsx
     Route::post('/technical-review/submit-batch', [TechnicalReviewController::class, 'submitBatch'])
         ->name('technical-review.submit-batch')
-        ->middleware('role:Planning Officer,Admin');
+        ->middleware('role:Planning Officer');
 
     // Handles specific inspector allocation/scheduling 
     Route::post('/technical-review/assign-inspector', [TechnicalReviewController::class, 'assignInspector'])
         ->name('technical-review.assign-inspector')
-        ->middleware('role:Planning Officer,Admin');
+        ->middleware('role:Planning Officer');
+
+    Route::post('/applications/draft', [ApplicationController::class, 'saveDraft'])
+    ->name('applications.draft');
+
+    // routes/web.php
+Route::get('/applications/draft', [ApplicationController::class, 'getDraft'])
+    ->name('applications.getDraft');
 });
+
+
 
 // ── Admin-Only Routes ──
 Route::middleware(['auth', 'role:Admin'])->group(function () {

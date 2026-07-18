@@ -21,11 +21,8 @@ class SiteInspection extends Model
         'status',
         'scheduled_date',
         'completed_at',
-        'is_compliant',
-        'findings',
-        'recommendation',
-        'remarks',
         'assigned_notes',
+        'parcel_id',
     ];
 
     /**
@@ -36,7 +33,6 @@ class SiteInspection extends Model
     protected $casts = [
         'scheduled_date' => 'date',
         'completed_at'   => 'datetime',
-        'is_compliant'   => 'boolean',
     ];
 
     /**

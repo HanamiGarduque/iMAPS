@@ -303,15 +303,17 @@ class TechnicalReviewController extends Controller
                 ]);
             }
             if (in_array('Declined', $decisionsSeen, true)) {
-        $application->status = 'Denied';
-    } elseif (!in_array('Needs Site Inspection', $decisionsSeen, true)) {
-        // If no inspections are needed and nothing is declined, 
-        // we can advance to the next logical step.
-        $application->status = 'Under Sangguniang Bayan';
-    }
+                $application->status = 'Denied';
+            } elseif (!in_array('Needs Site Inspection', $decisionsSeen, true)) {
+                // If no inspections are needed and nothing is declined, 
+                // we can advance to the next logical step.
+                $application->status = 'Under Sangguniang Bayan';
+            }
 
-    $application->save(); // Save the status change immediately
+            $application->save(); // Save the status change immediately
 
+            // 👇 ADD THIS MISSING IF STATEMENT 👇
+            if ($application->status !== 'Technical Review') {
                 ApplicationStatusTracker::log(
                     $application->reference_number,
                     $application->applicant_name,
@@ -324,8 +326,6 @@ class TechnicalReviewController extends Controller
                     performedBy: auth()->id(),
                     note: "Batch review finalized. Overall application status updated to {$application->status}."
                 );
-
-                Log::info("PLACEHOLDER SMS - To: {$application->contact_number} | Message: Good day! The batch review for your application {$application->reference_number} is complete. Current status: {$application->status}.");
             } else {
                 // If it stayed in 'Technical Review' due to pending inspections
                 AuditLogger::log(
@@ -334,10 +334,8 @@ class TechnicalReviewController extends Controller
                     performedBy: auth()->id(),
                     note: "Batch review processed. Application requires Site Inspection for certain parcels."
                 );
-
-                Log::info("PLACEHOLDER SMS - To: {$application->contact_number} | Message: Good day! The review for application {$application->reference_number} requires a Site Inspection for evaluated parcels.");
             }
-        });
+        }); // <-- Closes DB::transaction
 
         return redirect()->back()->with('success', 'Technical review processed for all parcels.');
     }

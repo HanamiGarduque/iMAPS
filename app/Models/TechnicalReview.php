@@ -16,6 +16,7 @@ class TechnicalReview extends Model
         'decision_reason',
         'site_inspection_task_id',
         'reviewed_at',
+        'parcel_id',
     ];
 
     protected $casts = [

@@ -42,11 +42,43 @@ class SupabaseService
 
     // ── Generic helpers ───────────────────────────────────
 
+    /**
+     * Insert data into a Supabase table.
+     * Allows overriding the 'Prefer' header to get inserted representations back.
+     */
     public function insert(string $table, array $data, array $extraHeaders = []): Response
     {
-        return Http::withHeaders(
-            $this->serviceHeaders(array_merge(['Prefer' => 'return=minimal'], $extraHeaders))
-        )->post("{$this->url}/rest/v1/{$table}", $data);
+        $headers = array_merge(['Prefer' => 'return=minimal'], $extraHeaders);
+        
+        return Http::withHeaders($this->serviceHeaders($headers))
+            ->post("{$this->url}/rest/v1/{$table}", $data);
+    }
+
+    /**
+     * Fetch records matching specific PostgREST criteria.
+     */
+    public function select(string $table, string $query = '*', array $params = []): Response
+    {
+        return Http::withHeaders($this->serviceHeaders())
+            ->get("{$this->url}/rest/v1/{$table}?select={$query}", $params);
+    }
+
+    /**
+     * Update records matching specific conditions (e.g., column = value).
+     */
+    public function update(string $table, array $data, string $column, $value): Response
+    {
+        return Http::withHeaders($this->serviceHeaders(['Prefer' => 'return=representation']))
+            ->patch("{$this->url}/rest/v1/{$table}?{$column}=eq.{$value}", $data);
+    }
+
+    /**
+     * Delete records matching specific conditions.
+     */
+    public function delete(string $table, string $column, $value): Response
+    {
+        return Http::withHeaders($this->serviceHeaders())
+            ->delete("{$this->url}/rest/v1/{$table}?{$column}=eq.{$value}");
     }
 
     // ── Domain methods ────────────────────────────────────
@@ -67,6 +99,7 @@ class SupabaseService
 
         return true;
     }
+
     public function getApplicationByReference(string $ref)
     {
         $response = Http::withHeaders($this->publicHeaders())
@@ -86,6 +119,66 @@ class SupabaseService
         }
 
         return $response->json()[0] ?? null;
+    }
+
+    /**
+     * Push full Zoning Application and returns the newly generated Supabase Application UUID.
+     */
+    public function pushZoningApplication(array $payload): ?string
+    {
+        // Must request 'return=representation' to catch the newly assigned primary key UUID
+        $response = $this->insert('supabase_zoning_applications', $payload, [
+            'Prefer' => 'return=representation'
+        ]);
+
+        if ($response->failed()) {
+            Log::error('Failed to push zoning application to Supabase', [
+                'local_id' => $payload['local_application_id'] ?? null,
+                'status'   => $response->status(),
+                'body'     => $response->body(),
+            ]);
+            return null;
+        }
+
+        return $response->json()[0]['id'] ?? null;
+    }
+
+    /**
+     * Push associated Parcel records to Supabase.
+     */
+    public function pushParcel(array $payload): bool
+    {
+        $response = $this->insert('supabase_parcels', $payload);
+
+        if ($response->failed()) {
+            Log::error('Failed to push parcel to Supabase', [
+                'local_parcel_id' => $payload['local_parcel_id'] ?? null,
+                'status'          => $response->status(),
+                'body'            => $response->body(),
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Create/Assign a field job in Supabase.
+     */
+    public function createFieldJob(array $payload): bool
+    {
+        $response = $this->insert('field_jobs', $payload);
+
+        if ($response->failed()) {
+            Log::error('Failed to create field job in Supabase', [
+                'local_inspection_id' => $payload['local_inspection_id'] ?? null,
+                'status'              => $response->status(),
+                'body'                => $response->body(),
+            ]);
+            return false;
+        }
+
+        return true;
     }
 
     public function clientCredentials(): array
