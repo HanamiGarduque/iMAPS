@@ -44,6 +44,18 @@ Route::middleware('auth')->group(function () {
         ->name('applications.store')
         ->middleware('role:Planning Officer');
 
+     // ── Drafts / Offline Storage ──
+    Route::get('applications/drafts', [ApplicationController::class, 'draftsIndex'])
+        ->name('drafts.index')
+        ->middleware('role:Planning Officer');
+
+    Route::post('applications/drafts/sync-all', [ApplicationController::class, 'syncAllDrafts'])
+        ->name('drafts.syncAll')
+        ->middleware('role:Planning Officer');
+
+    Route::delete('applications/drafts/{id}', [ApplicationController::class, 'destroyDraft'])
+        ->name('drafts.destroy')
+        ->middleware('role:Planning Officer');
     // ── Single-View & Standard Status Transitions ──
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show');
@@ -69,12 +81,11 @@ Route::middleware('auth')->group(function () {
         ->name('technical-review.assign-inspector')
         ->middleware('role:Planning Officer');
 
-    Route::post('/applications/draft', [ApplicationController::class, 'saveDraft'])
-    ->name('applications.draft');
+   
 
-    // routes/web.php
-Route::get('/applications/draft', [ApplicationController::class, 'getDraft'])
-    ->name('applications.getDraft');
+
+   
+
 });
 
 

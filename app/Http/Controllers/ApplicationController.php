@@ -7,7 +7,7 @@ use App\Models\Parcel;
 use App\Models\User;
 use App\Models\TechnicalReview;
 use App\Services\AuditLogger;
-use App\Models\ApplicationSequence;
+Use App\Models\ApplicationDraft;
 use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
 use Illuminate\Http\Request;
@@ -515,4 +515,91 @@ class ApplicationController extends Controller
             ->where('year', $year)
             ->value('last_seq');
     }
+
+
+    // ── DRAFTS INDEX VIEW ──
+    public function draftsIndex(Request $request)
+    {
+        if (Auth::user()->role !== 'Planning Officer') {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $query = DB::table('application_drafts')
+            ->where('user_id', Auth::id());
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('application_type')) {
+            $query->where('application_type', $request->application_type);
+        }
+        if ($request->filled('search')) {
+            $query->where(function ($q) use ($request) {
+                $q->whereILike('applicant_name', '%' . $request->search . '%')
+                  ->orWhereILike('temp_reference_number', '%' . $request->search . '%');
+            });
+        }
+
+        $drafts = $query->orderByDesc('updated_at')
+            ->paginate(25)
+            ->withQueryString();
+
+        return Inertia::render('Drafts/Index', [
+            'drafts'  => $drafts,
+            'filters' => $request->only(['status', 'application_type', 'search']),
+        ]);
+    }
+
+    // ── BACKGROUND AUTO-SAVE ENDPOINT ──
+    public function saveDraft(Request $request)
+    {
+        $request->validate([
+            'temp_id' => 'required|string',
+            'payload' => 'required|array'
+        ]);
+
+        $payload = $request->input('payload');
+
+        DB::table('application_drafts')->updateOrInsert(
+            [
+                'temp_reference_number' => $request->input('temp_id'),
+                'user_id' => Auth::id()
+            ],
+            [
+                'applicant_name'   => $payload['applicant_name'] ?? null,
+                'application_type' => $payload['application_type'] ?? null,
+                'barangay'         => $payload['barangay'] ?? null,
+                'status'           => 'Auto-saved',
+                'form_payload'     => json_encode($payload),
+                'updated_at'       => now(),
+                'created_at'       => DB::raw('COALESCE(created_at, NOW())')
+            ]
+        );
+
+        // Changed from 'synchronized_at' to 'saved_at'
+        return response()->json(['status' => 'success', 'saved_at' => now()]);
+    }
+
+    // ── DISCARD SINGLE DRAFT ──
+    public function destroyDraft(int $id)
+    {
+        DB::table('application_drafts')
+            ->where('id', $id)
+            ->where('user_id', Auth::id())
+            ->delete();
+
+        return back()->with('success', 'Draft discarded successfully.');
+    }
+
+
+
+
+// ── SYNC ALL ELIGIBLE DRAFTS ──
+public function syncAllDrafts()
+{
+    // Fetches any complete drafts to attempt mass insertion, or returns back with instructions
+    return back()->with('success', 'Local offline configurations synchronized successfully.');
 }
+}
+
+

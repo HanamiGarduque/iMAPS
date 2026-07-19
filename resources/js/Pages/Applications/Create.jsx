@@ -1,12 +1,12 @@
 // resources/js/Pages/Applications/Create.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { Link, Head, router, usePage } from "@inertiajs/react";
+import axios from "axios";
 import Swal from "sweetalert2";
 import Sidebar from "@/Components/Sidebar";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-
 
 const APPLICATION_TYPES = [
     {
@@ -36,6 +36,37 @@ const STEPS = [
     { id: 5, title: "Assess" },
 ];
 
+const DRAFT_UUID_KEY = "imaps_current_draft_uuid";
+const DRAFT_PAYLOAD_KEY = "imaps_local_backup_payload";
+
+const emptyForm = () => ({
+    application_type: "",
+    form_number: "",
+    land_use_class: "",
+    purpose: "",
+    applicant_name: "",
+    contact_number: "",
+    email: "",
+    representative_name: "",
+    barangay: "",
+    assessment_fee: "",
+    or_number: "",
+    remarks: "",
+
+    parcels: [
+        {
+            parcel_code: "P-01",
+            property_index_number: "",
+            property_tax_number: "",
+            lot_number: "",
+            tct_number: "",
+            tax_dec_number: "",
+            lot_area_sqm: "",
+            coordinates: "",
+        },
+    ],
+});
+
 // ── Custom Map Bounds Controller ──
 function MapController({ brgyData, activeParcelFeature }) {
     const map = useMap();
@@ -44,7 +75,7 @@ function MapController({ brgyData, activeParcelFeature }) {
         if (activeParcelFeature) {
             const layer = L.geoJSON(activeParcelFeature);
             const bounds = layer.getBounds();
-            
+
             // Check if bounds are valid before flying
             if (bounds.isValid()) {
                 map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 18, duration: 1.2 });
@@ -54,7 +85,7 @@ function MapController({ brgyData, activeParcelFeature }) {
         } else if (brgyData) {
             const layer = L.geoJSON(brgyData);
             const bounds = layer.getBounds();
-            
+
             if (bounds.isValid()) {
                 map.fitBounds(bounds, { padding: [30, 30] });
             }
@@ -105,6 +136,10 @@ export default function Create({ auth, errors: serverErrors = {} }) {
     const userName = auth?.user?.name || "Julience";
     const userRole = auth?.user?.role || "Planning Officer";
 
+    // Grab query parameters to see if we're resuming an existing cloud draft
+    const urlParams = new URLSearchParams(window.location.search);
+    const cloudDraftId = urlParams.get("draft_id");
+
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [clock, setClock] = useState("");
     const [currentStep, setCurrentStep] = useState(1);
@@ -113,40 +148,65 @@ export default function Create({ auth, errors: serverErrors = {} }) {
     const [errors, setErrors] = useState(serverErrors);
     const formRef = useRef(null);
 
+    // Dynamic tracking reference identifier for safely syncing draft state
+    const [tempDraftId, setTempDraftId] = useState(() => {
+        return cloudDraftId || localStorage.getItem(DRAFT_UUID_KEY) || "TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase();
+    });
+    const [syncStatus, setSyncStatus] = useState("Saved locally");
+
     // Map States
     const [brgyMapData, setBrgyMapData] = useState(null);
     const [parcelMapData, setParcelMapData] = useState(null);
     const [activeParcelFeature, setActiveParcelFeature] = useState(null);
-    const [activeParcelIndex, setActiveParcelIndex] = useState(null); 
+    const [activeParcelIndex, setActiveParcelIndex] = useState(null);
     const rosarioCenter = [13.8450, 121.2063];
 
-    const [form, setForm] = useState({
-        application_type: "",
-        form_number: "",
-        land_use_class: "",
-        purpose: "",
-        applicant_name: "",
-        contact_number: "",
-        email: "",
-        representative_name: "",
-        barangay: "",
-        assessment_fee: "",
-        or_number: "",
-        remarks: "",
-
-        parcels: [
-            {
-                parcel_code: "P-01",
-                property_index_number: "",
-                property_tax_number: "",
-                lot_number: "",
-                tct_number: "",
-                tax_dec_number: "",
-                lot_area_sqm: "",
-                coordinates: "",
-            },
-        ],
+    const [form, setForm] = useState(() => {
+        // Restore a local draft automatically, unless we're resuming a specific cloud draft
+        const structuralBackup = localStorage.getItem(DRAFT_PAYLOAD_KEY);
+        if (structuralBackup && !cloudDraftId) {
+            try {
+                return JSON.parse(structuralBackup);
+            } catch (e) {
+                console.warn("Failed to parse local draft backup:", e);
+            }
+        }
+        return emptyForm();
     });
+
+    // ── AUTO-SAVE LOGIC ENGINE ──
+    // Persists the working draft locally on every change, and debounces a
+    // background sync to the server so in-progress applications survive a
+    // refresh or a dropped connection.
+    useEffect(() => {
+        localStorage.setItem(DRAFT_UUID_KEY, tempDraftId);
+        localStorage.setItem(DRAFT_PAYLOAD_KEY, JSON.stringify(form));
+        setSyncStatus("Saving modifications...");
+
+        const backgroundSyncTimer = setTimeout(() => {
+            if (!form.application_type && !form.applicant_name) {
+                setSyncStatus("Saved locally");
+                return;
+            }
+
+            // Background dispatch without breaking user interactions
+            axios
+                .post("/applications/draft", {
+                    temp_id: tempDraftId,
+                    payload: form,
+                })
+                .then(() => setSyncStatus("Auto-saved to cloud"))
+                .catch(() => setSyncStatus("Saved locally (Offline)"));
+        }, 3000);
+
+        return () => clearTimeout(backgroundSyncTimer);
+    }, [form, tempDraftId]);
+
+    // Clear recovery state entirely upon successful submission
+    const clearDraftStateRecord = () => {
+        localStorage.removeItem(DRAFT_UUID_KEY);
+        localStorage.removeItem(DRAFT_PAYLOAD_KEY);
+    };
 
     const addParcel = () => {
         setForm((prev) => ({
@@ -240,7 +300,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                 const response = await fetch("/geojson/rosario_batangas_dummy_parcels.geojson");
                 if (!response.ok) throw new Error("Unable to load parcel lookup data");
                 const payload = await response.json();
-                
+
                 setParcelMapData(payload);
 
                 const lookupMap = {};
@@ -249,7 +309,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                     if (!pin) return;
                     const centroid = getGeometryCentroid(feature.geometry);
                     lookupMap[pin] = {
-                        feature: feature, 
+                        feature: feature,
                         property_index_number: pin,
                         property_tax_number: feature.properties?.property_tax_number || "",
                         barangay: feature.properties?.barangay || "",
@@ -270,7 +330,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
         loadParcelLookup();
     }, []);
 
-    // ── FIXED LOOKUP FUNCTION ──
+    // ── PIN LOOKUP (local geojson cache, falls back to API) ──
     const lookupPin = async (pin) => {
         const normalizedPin = pin?.trim();
         if (!normalizedPin) throw new Error("Property Index Number is required");
@@ -280,7 +340,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
         }
 
         const res = await fetch(`/api/tax-map/lookup/${encodeURIComponent(normalizedPin)}`);
-        
+
         // Handle non-JSON or non-200 responses safely
         if (!res.ok) {
             const contentType = res.headers.get("content-type");
@@ -291,77 +351,76 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                 throw new Error("Unable to locate parcel. Please check your network or PIN input.");
             }
         }
-        
+
         const payload = await res.json();
         return payload.data;
     };
 
     const handlePinLookup = async (index) => {
-    const pin = form.parcels[index]?.property_index_number?.trim();
-    
-    const isDuplicate = form.parcels.some((p, i) => i !== index && p.property_index_number?.trim() === pin);
-    if (isDuplicate) {
-        setErrors((prev) => ({
-            ...prev,
-            [`parcels.${index}.property_index_number`]: "This PIN is already attached to another parcel.",
-        }));
-        setFlash({ type: "error", msg: "Duplicate PIN detected." });
-        setTimeout(() => setFlash(null), 4000);
-        return;
-    }
+        const pin = form.parcels[index]?.property_index_number?.trim();
 
-    setPinLoading((prev) => ({ ...prev, [index]: true }));
-
-    try {
-        const data = await lookupPin(pin);
-        
-        if (data.feature) {
-            setActiveParcelFeature(data.feature);
-            setActiveParcelIndex(index); 
+        const isDuplicate = form.parcels.some((p, i) => i !== index && p.property_index_number?.trim() === pin);
+        if (isDuplicate) {
+            setErrors((prev) => ({
+                ...prev,
+                [`parcels.${index}.property_index_number`]: "This PIN is already attached to another parcel.",
+            }));
+            setFlash({ type: "error", msg: "Duplicate PIN detected." });
+            setTimeout(() => setFlash(null), 4000);
+            return;
         }
 
-        setForm((prev) => {
-            // If this is the first (primary) parcel being looked up, set the application-level barangay
-            const newBarangay = (index === 0 && data.barangay) ? data.barangay : prev.barangay;
+        setPinLoading((prev) => ({ ...prev, [index]: true }));
 
-            return {
+        try {
+            const data = await lookupPin(pin);
+
+            if (data.feature) {
+                setActiveParcelFeature(data.feature);
+                setActiveParcelIndex(index);
+            }
+
+            setForm((prev) => {
+                // If this is the first (primary) parcel being looked up, set the application-level barangay
+                const newBarangay = index === 0 && data.barangay ? data.barangay : prev.barangay;
+
+                return {
+                    ...prev,
+                    barangay: newBarangay,
+                    parcels: prev.parcels.map((p, i) =>
+                        i === index
+                            ? {
+                                  ...p,
+                                  property_index_number: data.property_index_number || p.property_index_number,
+                                  barangay: data.barangay || p.barangay || "",
+                                  property_tax_number: data.property_tax_number || p.property_tax_number || "",
+                                  lot_number: data.lot_number || p.lot_number || "",
+                                  tct_number: data.tct_number || p.tct_number || "",
+                                  tax_dec_number: data.tax_dec_number || p.tax_dec_number || "",
+                                  lot_area_sqm: data.lot_area_sqm ?? p.lot_area_sqm,
+                                  coordinates: data.coordinates || (data.latitude && data.longitude ? `${data.latitude},${data.longitude}` : p.coordinates),
+                              }
+                            : p,
+                    ),
+                };
+            });
+
+            setErrors((prev) => {
+                const next = { ...prev };
+                delete next[`parcels.${index}.property_index_number`];
+                delete next.barangay;
+                return next;
+            });
+        } catch (err) {
+            const message = err?.message || "Lookup failed";
+            setErrors((prev) => ({
                 ...prev,
-                barangay: newBarangay, // <-- FIX: Set the root form.barangay here
-                parcels: prev.parcels.map((p, i) =>
-                    i === index
-                        ? {
-                              ...p,
-                              property_index_number: data.property_index_number || p.property_index_number,
-                              barangay: data.barangay || p.barangay || "",
-                              property_tax_number: data.property_tax_number || p.property_tax_number || "",
-                              lot_number: data.lot_number || p.lot_number || "",                              
-                              tct_number: data.tct_number || p.tct_number || "",
-                              tax_dec_number: data.tax_dec_number || p.tax_dec_number || "",
-                              lot_area_sqm: data.lot_area_sqm ?? p.lot_area_sqm,
-                              coordinates: data.coordinates || (data.latitude && data.longitude ? `${data.latitude},${data.longitude}` : p.coordinates),
-                          }
-                        : p,
-                ),
-            };
-        });
-
-        setErrors((prev) => {
-            const next = { ...prev };
-            delete next[`parcels.${index}.property_index_number`];
-            // Clear the hidden barangay error if it exists
-            delete next.barangay; 
-            return next;
-        });
-    } catch (err) {
-        const message = err?.message || "Lookup failed";
-        setErrors((prev) => ({
-            ...prev,
-            [`parcels.${index}.property_index_number`]: message,
-        }));
-    } finally {
-        setPinLoading((prev) => ({ ...prev, [index]: false }));
-    }
-};
+                [`parcels.${index}.property_index_number`]: message,
+            }));
+        } finally {
+            setPinLoading((prev) => ({ ...prev, [index]: false }));
+        }
+    };
 
     useEffect(() => {
         const tick = () => {
@@ -526,57 +585,37 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                         title: "font-black text-slate-800 text-xl",
                     },
                 });
+
+                // Drop the local/cloud draft now that submission succeeded
+                clearDraftStateRecord();
+                setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
+                setSyncStatus("Saved locally");
+
                 setCurrentStep(1);
                 setActiveParcelFeature(null);
                 setActiveParcelIndex(null);
-                setForm({
-                    ...form,
-                    application_type: "",
-                    form_number: "",
-                    land_use_class: "",
-                    purpose: "",
-                    applicant_name: "",
-                    contact_number: "",
-                    email: "",
-                    representative_name: "",
-                    barangay: "",
-                    assessment_fee: "",
-                    or_number: "",
-                    remarks: "",
-                    parcels: [
-                        {
-                            parcel_code: "P-01",
-                            property_index_number: "",
-                            property_tax_number: "",
-                            lot_number: "",
-                            tct_number: "",
-                            tax_dec_number: "",
-                            lot_area_sqm: "",
-                            coordinates: "",
-                        },
-                    ],
-                });
+                setForm(emptyForm());
             },
             onError: (errs) => {
                 setErrors(errs);
-                
+
                 let targetStep = 5;
                 let stepNames = [];
                 const errKeys = Object.keys(errs);
-                
-                if (errKeys.some(k => ['application_type', 'form_number', 'land_use_class', 'purpose'].includes(k))) {
+
+                if (errKeys.some((k) => ["application_type", "form_number", "land_use_class", "purpose"].includes(k))) {
                     targetStep = Math.min(targetStep, 1);
                     if (!stepNames.includes("Scope")) stepNames.push("Scope");
                 }
-                if (errKeys.some(k => ['applicant_name', 'contact_number', 'email', 'representative_name'].includes(k))) {
+                if (errKeys.some((k) => ["applicant_name", "contact_number", "email", "representative_name"].includes(k))) {
                     targetStep = Math.min(targetStep, 2);
                     if (!stepNames.includes("Profile")) stepNames.push("Profile");
                 }
-                if (errKeys.some(k => ['barangay'].includes(k) || k.startsWith("parcels"))) {
+                if (errKeys.some((k) => ["barangay"].includes(k) || k.startsWith("parcels"))) {
                     targetStep = Math.min(targetStep, 3);
                     if (!stepNames.includes("Location")) stepNames.push("Location");
                 }
-                if (errKeys.some(k => ['assessment_fee', 'or_number', 'remarks'].includes(k))) {
+                if (errKeys.some((k) => ["assessment_fee", "or_number", "remarks"].includes(k))) {
                     if (!stepNames.includes("Assess")) stepNames.push("Assess");
                 }
 
@@ -585,7 +624,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
 
                 const firstErrorKey = errKeys[0];
                 const firstErrorMessage = Array.isArray(errs[firstErrorKey]) ? errs[firstErrorKey][0] : errs[firstErrorKey];
-                const stepsString = stepNames.length > 1 ? stepNames.join(' & ') : (stepNames[0] || "Application");
+                const stepsString = stepNames.length > 1 ? stepNames.join(" & ") : stepNames[0] || "Application";
 
                 setFlash({
                     type: "error",
@@ -608,17 +647,17 @@ export default function Create({ auth, errors: serverErrors = {} }) {
         weight: 2,
         opacity: 0.8,
         fillOpacity: 0.05,
-        fillColor: "#3b82f6"
+        fillColor: "#3b82f6",
     };
 
     const getParcelStyle = (feature) => {
         const isActive = activeParcelFeature && activeParcelFeature.properties.property_index_number === feature.properties.property_index_number;
         return {
-            color: isActive ? "#ef4444" : "#f97316", 
+            color: isActive ? "#ef4444" : "#f97316",
             weight: isActive ? 3 : 1,
             opacity: 0.9,
             fillOpacity: isActive ? 0.6 : 0.3,
-            fillColor: isActive ? "#ef4444" : "#fdba74"
+            fillColor: isActive ? "#ef4444" : "#fdba74",
         };
     };
 
@@ -629,19 +668,19 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500;700&display=swap');
                 #dashboard-root, #dashboard-root :not(.font-mono) { font-family: 'Poppins', sans-serif !important; }
                 #dashboard-root .font-mono, #dashboard-root .font-mono * { font-family: 'DM Mono', monospace !important; }
-                
+
                 ::-webkit-scrollbar { width: 6px; height: 6px; }
                 ::-webkit-scrollbar-track { background: transparent; }
                 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-                
+
                 .form-enter { animation: formFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
                 @keyframes formFadeIn { 0% { opacity: 0; transform: translateY(5px); } 100% { opacity: 1; transform: translateY(0); } }
 
                 .swal-small-modal { width: 340px !important; padding: 1.5rem !important; border-radius: 20px !important; }
-                
+
                 .radio-card input:checked + div { border-color: #2563eb; background-color: #eff6ff; box-shadow: inset 0 0 0 1px #2563eb; }
                 .radio-card input:checked + div .icon-box { background-color: #2563eb; color: white; }
-                
+
                 .map-grid-bg { background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 20px 20px; }
 
                 .leaflet-container {
@@ -649,6 +688,9 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                     height: 100%;
                     z-index: 0;
                 }
+
+                @keyframes syncPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+                .sync-dot-active { animation: syncPulse 1.4s ease-in-out infinite; }
             `}</style>
 
             <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
@@ -669,6 +711,10 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500" />
                             </span>
                             <span className="text-[9px] font-bold text-slate-600 tracking-widest uppercase">Rosario, Batangas</span>
+                        </div>
+                        <div className="hidden md:flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 italic">
+                            <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === "Saving modifications..." ? "bg-amber-400 sync-dot-active" : syncStatus === "Auto-saved to cloud" ? "bg-emerald-500" : "bg-slate-300"}`} />
+                            {syncStatus}
                         </div>
                     </div>
 
@@ -694,7 +740,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
 
                 <div className="flex flex-1 h-full overflow-hidden relative">
                     <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="applications" />
-                    
+
                     <main className="flex-1 w-full h-full flex flex-col transition-all duration-500 ease-in-out bg-white" style={{ paddingLeft: sidebarOpen ? "200px" : "0px" }}>
                         <div className="flex-1 flex flex-col h-full overflow-hidden relative">
                             {flash && (
@@ -715,49 +761,52 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                             />
                                             {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
-                                            {parcelMapData && <GeoJSON key={activeParcelFeature?.properties.property_index_number || 'parcels'} data={parcelMapData} style={getParcelStyle} />}
+                                            {parcelMapData && <GeoJSON key={activeParcelFeature?.properties.property_index_number || "parcels"} data={parcelMapData} style={getParcelStyle} />}
                                             <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />
                                         </MapContainer>
                                     </div>
 
                                     <div className="absolute top-5 left-5 right-5 z-10 flex flex-col gap-3 pointer-events-none">
-                                        {form.parcels.map((parcel, idx) => (
-                                            idx === activeParcelIndex && parcel.property_index_number && parcel.lot_number && (
-                                                <div key={idx} className="bg-white/95 backdrop-blur-sm p-4 rounded-2xl shadow-[0_10px_40px_rgb(0,0,0,0.1)] pointer-events-auto transition-all animate-[formFadeIn_0.3s_ease-out] border border-slate-100 max-w-sm">
-                                                    <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
-                                                        <span className="text-[10px] font-black uppercase tracking-widest text-blue-700 bg-blue-50/80 px-2 py-1 rounded-[6px] border border-blue-100/50">
-                                                            {parcel.parcel_code} INFO
-                                                        </span>
-                                                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100/80 px-2.5 py-1 rounded-[6px] border border-slate-200/50 uppercase tracking-widest">
-                                                            PIN: {parcel.property_index_number}
-                                                        </span>
+                                        {form.parcels.map(
+                                            (parcel, idx) =>
+                                                idx === activeParcelIndex &&
+                                                parcel.property_index_number &&
+                                                parcel.lot_number && (
+                                                    <div key={idx} className="bg-white/95 backdrop-blur-sm p-4 rounded-2xl shadow-[0_10px_40px_rgb(0,0,0,0.1)] pointer-events-auto transition-all animate-[formFadeIn_0.3s_ease-out] border border-slate-100 max-w-sm">
+                                                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
+                                                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-700 bg-blue-50/80 px-2 py-1 rounded-[6px] border border-blue-100/50">
+                                                                {parcel.parcel_code} INFO
+                                                            </span>
+                                                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100/80 px-2.5 py-1 rounded-[6px] border border-slate-200/50 uppercase tracking-widest">
+                                                                PIN: {parcel.property_index_number}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-2 gap-y-3 gap-x-4">
+                                                            <div>
+                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Lot Number</p>
+                                                                <p className="text-[13px] font-bold text-slate-800 leading-tight">{parcel.lot_number}</p>
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Declared Area</p>
+                                                                <p className="text-[13px] font-mono font-bold text-slate-800 leading-tight">{parcel.lot_area_sqm} <span className="text-[10px] font-bold text-slate-400 font-sans tracking-wide">SQ.M</span></p>
+                                                            </div>
+                                                            <div className="col-span-2">
+                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Barangay</p>
+                                                                <p className="text-[13px] font-bold text-slate-800 leading-tight">{parcel.barangay}</p>
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">TCT / Title No.</p>
+                                                                <p className="text-[12px] font-mono font-medium text-slate-700 uppercase">{parcel.tct_number || "—"}</p>
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Tax Dec No.</p>
+                                                                <p className="text-[12px] font-mono font-medium text-slate-700 uppercase">{parcel.tax_dec_number || "—"}</p>
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    
-                                                    <div className="grid grid-cols-2 gap-y-3 gap-x-4">
-                                                        <div>
-                                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Lot Number</p>
-                                                            <p className="text-[13px] font-bold text-slate-800 leading-tight">{parcel.lot_number}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Declared Area</p>
-                                                            <p className="text-[13px] font-mono font-bold text-slate-800 leading-tight">{parcel.lot_area_sqm} <span className="text-[10px] font-bold text-slate-400 font-sans tracking-wide">SQ.M</span></p>
-                                                        </div>
-                                                        <div className="col-span-2">
-                                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Barangay</p>
-                                                            <p className="text-[13px] font-bold text-slate-800 leading-tight">{parcel.barangay}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">TCT / Title No.</p>
-                                                            <p className="text-[12px] font-mono font-medium text-slate-700 uppercase">{parcel.tct_number || "—"}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Tax Dec No.</p>
-                                                            <p className="text-[12px] font-mono font-medium text-slate-700 uppercase">{parcel.tax_dec_number || "—"}</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )
-                                        ))}
+                                                ),
+                                        )}
                                     </div>
                                 </div>
 
@@ -794,7 +843,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
 
                                     <div ref={formRef} className="flex-1 p-6 md:p-8 flex flex-col relative overflow-y-auto mt-2">
                                         <form onSubmit={handleSubmit} className="flex-1 flex flex-col h-full w-full max-w-xl mx-auto">
-                                          
+
                                             {/* ── STEP 1: SCOPE ── */}
                                             {currentStep === 1 && (
                                                 <div className="form-enter flex-1 flex flex-col">
@@ -885,8 +934,6 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                                 <div className="form-enter flex-1 flex flex-col">
                                                     <h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 flex-shrink-0">Property Location</h3>
                                                     <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-1">
-                                                        
-                                                    
 
                                                         <div className="space-y-4">
                                                             {form.parcels.map((parcel, index) => (
