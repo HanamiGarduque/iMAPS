@@ -7,7 +7,7 @@ use App\Models\Parcel;
 use App\Models\User;
 use App\Models\TechnicalReview;
 use App\Services\AuditLogger;
-Use App\Models\ApplicationDraft;
+use App\Models\ApplicationDraft;
 use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
 use Illuminate\Http\Request;
@@ -105,10 +105,6 @@ class ApplicationController extends Controller
         return Inertia::render('Applications/Create');
         // auth is shared globally via HandleInertiaRequests middleware
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // STORE — Validate and persist new application, with one or more parcels
-    // ─────────────────────────────────────────────────────────────────────────
     // ─────────────────────────────────────────────────────────────────────────
     // STORE — Validate and persist new application, with one or more parcels
     // ─────────────────────────────────────────────────────────────────────────
@@ -241,7 +237,7 @@ class ApplicationController extends Controller
     {
         $application = ZoningApplication::query()
             ->with(['parcels' => function ($query) {
-                $query->orderBy('parcel_code');
+                $query->orderBy('parcel_code')->with('siteInspection');
             }]) // <-- Eager load and order parcels
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->select('zoning_applications.*', 'users.name as encoded_by_name')
@@ -536,7 +532,7 @@ class ApplicationController extends Controller
         if ($request->filled('search')) {
             $query->where(function ($q) use ($request) {
                 $q->whereILike('applicant_name', '%' . $request->search . '%')
-                  ->orWhereILike('temp_reference_number', '%' . $request->search . '%');
+                    ->orWhereILike('temp_reference_number', '%' . $request->search . '%');
             });
         }
 
@@ -594,12 +590,10 @@ class ApplicationController extends Controller
 
 
 
-// ── SYNC ALL ELIGIBLE DRAFTS ──
-public function syncAllDrafts()
-{
-    // Fetches any complete drafts to attempt mass insertion, or returns back with instructions
-    return back()->with('success', 'Local offline configurations synchronized successfully.');
+    // ── SYNC ALL ELIGIBLE DRAFTS ──
+    public function syncAllDrafts()
+    {
+        // Fetches any complete drafts to attempt mass insertion, or returns back with instructions
+        return back()->with('success', 'Local offline configurations synchronized successfully.');
+    }
 }
-}
-
-

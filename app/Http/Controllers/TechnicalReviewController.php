@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ZoningApplication;
 use App\Models\Parcel;
+use App\Jobs\PushInspectionToSupabase;
 use App\Models\User;
 use App\Models\TechnicalReview;
 use App\Models\SiteInspection;
@@ -96,9 +97,6 @@ class TechnicalReviewController extends Controller
     /**
      * Handle the submission of the Technical Review Action Drawer.
      */
-    /**
-     * Handle the submission of the Technical Review Action Drawer.
-     */
     public function updateStatus(Request $request)
     {
         $validated = $request->validate([
@@ -110,8 +108,9 @@ class TechnicalReviewController extends Controller
             // Validation for Site Inspection assignment
             'inspector_id'       => 'required_if:decision,Needs Site Inspection|nullable|exists:users,id',
             'scheduled_date'     => 'required_if:decision,Needs Site Inspection|nullable|date|after_or_equal:today',
+            'deadline_date'      => 'required_if:decision,Needs Site Inspection|nullable|date|after_or_equal:scheduled_date',
             'assigned_notes'     => 'nullable|string',
-            
+
             // Allow an optional parcel_id in case this is called for a single specific parcel
             'parcel_id'          => 'nullable|exists:parcels,id',
         ]);
@@ -138,28 +137,37 @@ class TechnicalReviewController extends Controller
 
             // If a specific parcel_id was sent from the frontend, use it. 
             // Otherwise, apply this decision to ALL parcels in the application.
-            $parcelsToProcess = !empty($validated['parcel_id']) 
-                ? $application->parcels->where('id', $validated['parcel_id']) 
+            $parcelsToProcess = !empty($validated['parcel_id'])
+                ? $application->parcels->where('id', $validated['parcel_id'])
                 : $application->parcels;
 
             foreach ($parcelsToProcess as $parcel) {
                 $siteInspectionId = null;
 
                 if ($validated['decision'] === 'Needs Site Inspection') {
-                    $inspection = SiteInspection::create([
-                        'zoning_application_id' => $application->id,
-                        'parcel_id'             => $parcel->id, // <-- Stores the fetched parcel_id
-                        'inspector_id'          => $validated['inspector_id'],
-                        'scheduled_date'        => $validated['scheduled_date'],
-                        'assigned_notes'        => $validated['assigned_notes'] ?? null,
-                        'status'                => 'Pending',
-                    ]);
+                    // Prevent duplicate parcel site inspections by using updateOrCreate
+                    $inspection = SiteInspection::updateOrCreate(
+                        [
+                            'zoning_application_id' => $application->id,
+                            'parcel_id'             => $parcel->id, 
+                        ],
+                        [
+                            'inspector_id'          => $validated['inspector_id'],
+                            'scheduled_date'        => $validated['scheduled_date'],
+                            'deadline_date'         => $validated['deadline_date'],
+                            'assigned_notes'        => $validated['assigned_notes'] ?? null,
+                            'status'                => 'Pending',
+                        ]
+                    );
                     $siteInspectionId = $inspection->id;
+                    // Dispatch the Sync Job
+    PushInspectionToSupabase::dispatch($inspection);
                 }
 
+                // Create the technical review row for the parcel
                 TechnicalReview::create([
                     'zoning_application_id'   => $application->id,
-                    'parcel_id'               => $parcel->id, // <-- Stores the fetched parcel_id
+                    'parcel_id'               => $parcel->id,
                     'reviewed_by'             => auth()->id(),
                     'review_round'            => $nextRound,
                     'decision'                => $validated['decision'],
@@ -192,7 +200,6 @@ class TechnicalReviewController extends Controller
 
                 // Placeholder SMS notification
                 Log::info("PLACEHOLDER SMS - To: {$application->contact_number} | Message: Good day! Your application {$application->reference_number} has completed Technical Review and is now '{$application->status}'.");
-            
             } elseif ($validated['decision'] === 'Needs Site Inspection') {
                 $note = "Technical review requires site inspection.";
                 if (!empty($validated['findings'])) {
@@ -211,8 +218,9 @@ class TechnicalReviewController extends Controller
             }
         });
 
-        return redirect()->back()->with('success', 'Review processed successfully.');
+        return redirect('/applications')->with('success', 'Technical review processed successfully.');
     }
+
     /**
      * Handle the submission of the per-parcel Technical Review batch form
      * (Applications/Show.jsx — used only while status === 'Technical Review').
@@ -230,8 +238,9 @@ class TechnicalReviewController extends Controller
             'reviews.*.decision'                 => 'required|string|in:Approved,Needs Site Inspection,Declined',
             'reviews.*.findings'                 => 'nullable|string',
             'reviews.*.decision_reason'          => 'nullable|string',
-            'reviews.*.inspector_id'              => 'nullable|exists:users,id',
+            'reviews.*.inspector_id'             => 'nullable|exists:users,id',
             'reviews.*.scheduled_date'           => 'nullable|date|after_or_equal:today',
+            'reviews.*.deadline_date'            => 'nullable|date|after_or_equal:reviews.*.scheduled_date', 
             'reviews.*.assigned_notes'           => 'nullable|string',
         ]);
 
@@ -250,10 +259,10 @@ class TechnicalReviewController extends Controller
 
             if (
                 $review['decision'] === 'Needs Site Inspection'
-                && (empty($review['inspector_id']) || empty($review['scheduled_date']))
+                && (empty($review['inspector_id']) || empty($review['scheduled_date']) || empty($review['deadline_date']))
             ) {
                 throw ValidationException::withMessages([
-                    "reviews.$parcelId.inspector_id" => 'Inspector and scheduled date are required when the decision is "Needs Site Inspection".',
+                    "reviews.$parcelId.inspector_id" => 'Inspector, scheduled date, and deadline are required when the decision is "Needs Site Inspection".',
                 ]);
             }
 
@@ -278,16 +287,26 @@ class TechnicalReviewController extends Controller
 
                 $siteInspectionId = null;
                 if ($review['decision'] === 'Needs Site Inspection') {
-                    $inspection = SiteInspection::create([
-                        'zoning_application_id' => $application->id,
-                        'parcel_id'             => $parcelId,
-                        'inspector_id'          => $review['inspector_id'],
-                        'scheduled_date'        => $review['scheduled_date'],
-                        'assigned_notes'        => $review['assigned_notes'] ?? null,
-                        'status'                => 'Pending',
-                    ]);
+                    // Prevent duplicate parcel site inspections by using updateOrCreate
+                    $inspection = SiteInspection::updateOrCreate(
+                        [
+                            'zoning_application_id' => $application->id,
+                            'parcel_id'             => $parcelId,
+                        ],
+                        [
+                            'inspector_id'          => $review['inspector_id'],
+                            'scheduled_date'        => $review['scheduled_date'],
+                            'deadline_date'         => $review['deadline_date'], 
+                            'assigned_notes'        => $review['assigned_notes'] ?? null,
+                            'status'                => 'Pending',
+                        ]
+                    );
 
                     $siteInspectionId = $inspection->id;
+                    
+                    // --- NEW LINE ADDED HERE ---
+                    // Dispatch the Sync Job to Supabase
+                    PushInspectionToSupabase::dispatch($inspection);
                 }
 
                 TechnicalReview::create([
@@ -302,6 +321,7 @@ class TechnicalReviewController extends Controller
                     'reviewed_at'             => now(),
                 ]);
             }
+            
             if (in_array('Declined', $decisionsSeen, true)) {
                 $application->status = 'Denied';
             } elseif (!in_array('Needs Site Inspection', $decisionsSeen, true)) {
@@ -312,7 +332,6 @@ class TechnicalReviewController extends Controller
 
             $application->save(); // Save the status change immediately
 
-            // 👇 ADD THIS MISSING IF STATEMENT 👇
             if ($application->status !== 'Technical Review') {
                 ApplicationStatusTracker::log(
                     $application->reference_number,
@@ -337,7 +356,8 @@ class TechnicalReviewController extends Controller
             }
         }); // <-- Closes DB::transaction
 
-        return redirect()->back()->with('success', 'Technical review processed for all parcels.');
+        // Updates redirect strictly to /applications
+        return redirect('/applications')->with('success', 'Technical review processed for all parcels.');
     }
 
     /**
@@ -363,4 +383,4 @@ class TechnicalReviewController extends Controller
 
         return redirect()->back()->with('success', 'Site Inspector assigned successfully.');
     }
-}
+}   

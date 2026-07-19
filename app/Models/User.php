@@ -15,6 +15,7 @@ class User extends Authenticatable  // ← must extend Authenticatable, NOT Mode
         'email',
         'password',
         'role',     
+        'supabase_uuid', // Add this line
     ];
 
     protected $hidden = [

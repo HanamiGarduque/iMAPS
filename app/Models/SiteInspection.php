@@ -20,6 +20,7 @@ class SiteInspection extends Model
         'inspector_id',
         'status',
         'scheduled_date',
+        'deadline_date',
         'completed_at',
         'assigned_notes',
         'parcel_id',
@@ -32,6 +33,7 @@ class SiteInspection extends Model
      */
     protected $casts = [
         'scheduled_date' => 'date',
+        'deadline_date' => 'date',
         'completed_at'   => 'datetime',
     ];
 

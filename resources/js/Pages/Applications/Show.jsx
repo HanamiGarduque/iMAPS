@@ -6,6 +6,7 @@ import Sidebar from "@/Components/Sidebar";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
 
 // ── Status Badge Configuration ──
 const STATUS_CONFIG = {
@@ -27,23 +28,78 @@ function StatusBadge({ status }) {
     );
 }
 
+// ── GeoJSON Sanitizer Utility ──
+// Deep inspects coordinates to prevent Leaflet NaN crashes
+const hasValidCoords = (coords) => {
+    if (!coords) return false;
+    if (Array.isArray(coords)) {
+        // If it's a direct coordinate pair [lng, lat]
+        if (coords.length === 2 && typeof coords[0] === "number") {
+            return !isNaN(coords[0]) && !isNaN(coords[1]);
+        }
+        // If it's a nested array (Polygon/MultiPolygon), check recursively
+        return coords.length > 0 && coords.every(hasValidCoords);
+    }
+    return false;
+};
+
+const sanitizeGeoJSON = (geojson) => {
+    if (!geojson || !geojson.features) return geojson;
+    const validFeatures = geojson.features.filter((feature) => {
+        try {
+            // First pass: manually check for NaN coordinates
+            if (!feature.geometry || !hasValidCoords(feature.geometry.coordinates)) {
+                return false;
+            }
+
+            // Second pass: let Leaflet verify bounds
+            const layer = L.geoJSON(feature);
+            const bounds = layer.getBounds();
+            const sw = bounds?.getSouthWest();
+            const ne = bounds?.getNorthEast();
+
+            return sw && ne && !isNaN(sw.lat) && !isNaN(sw.lng) && !isNaN(ne.lat) && !isNaN(ne.lng);
+        } catch (e) {
+            return false;
+        }
+    });
+    return { ...geojson, features: validFeatures };
+};
+
 // ── Custom Map Bounds Controller ──
 function MapController({ brgyData, activeParcelFeature }) {
     const map = useMap();
 
     useEffect(() => {
-        if (activeParcelFeature) {
-            const layer = L.geoJSON(activeParcelFeature);
-            map.flyToBounds(layer.getBounds(), { padding: [80, 80], maxZoom: 18, duration: 1.2 });
-        } else if (brgyData) {
-            const layer = L.geoJSON(brgyData);
-            map.fitBounds(layer.getBounds(), { padding: [30, 30] });
+        try {
+            if (activeParcelFeature) {
+                const layer = L.geoJSON(activeParcelFeature);
+                const bounds = layer.getBounds();
+
+                // Only fly to bounds if the GeoJSON has valid coordinates
+                if (bounds.isValid()) {
+                    map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 18, duration: 1.2 });
+                } else {
+                    console.warn("activeParcelFeature geometry is empty or invalid.");
+                }
+            } else if (brgyData) {
+                const layer = L.geoJSON(brgyData);
+                const bounds = layer.getBounds();
+
+                // Only fit bounds if the GeoJSON has valid coordinates
+                if (bounds.isValid()) {
+                    map.fitBounds(bounds, { padding: [30, 30] });
+                } else {
+                    console.warn("brgyData geometry is empty or invalid.");
+                }
+            }
+        } catch (error) {
+            console.error("Map animation framing error prevented:", error);
         }
     }, [brgyData, activeParcelFeature, map]);
 
     return null;
 }
-
 // ── Premium Form Controls ──
 function Label({ children, required, hasError }) {
     return (
@@ -62,10 +118,11 @@ const inputBaseStyles = (hasError) => `
 
 const Textarea = ({ className = "", hasError = false, ...props }) => <textarea className={`${inputBaseStyles(hasError)} resize-none ${className}`} {...props} />;
 
-// ── Assign Inspector Drawer (Modal Overlap) ──
+// ── Assign Inspector Drawer ──
 function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
     const [inspectorId, setInspectorId] = useState("");
     const [scheduledDate, setScheduledDate] = useState("");
+    const [deadlineDate, setDeadlineDate] = useState("");
     const [assignedNotes, setAssignedNotes] = useState("");
 
     return (
@@ -107,6 +164,16 @@ function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
                             className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 transition-all"
                         />
                     </div>
+                    <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-600 mb-2">Deadline Date</label>
+                        <input
+                            type="date"
+                            value={deadlineDate}
+                            onChange={(e) => setDeadlineDate(e.target.value)}
+                            min={scheduledDate || new Date().toISOString().split("T")[0]}
+                            className="w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-[2px] focus:ring-blue-500/10 transition-all"
+                        />
+                    </div>
 
                     <div>
                         <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-600 mb-2">Inspection Notes / Pointers</label>
@@ -129,10 +196,11 @@ function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
                             onSubmit({
                                 inspector_id: inspectorId,
                                 scheduled_date: scheduledDate,
+                                deadline_date: deadlineDate,
                                 assigned_notes: assignedNotes,
                             })
                         }
-                        disabled={saving || !inspectorId || !scheduledDate}
+                        disabled={saving || !inspectorId || !scheduledDate || !deadlineDate}
                         className="inline-flex items-center gap-1.5 px-6 py-2 rounded-[10px] bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-black shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {saving ? "Assigning..." : "Confirm Assignment"}
@@ -142,12 +210,12 @@ function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
         </div>
     );
 }
-// ── Update Status Drawer (Modal Overlap) ──
+
+// ── Update Status Drawer ──
 function UpdateStatusDrawer({ onClose, onSubmit, saving, currentStatus }) {
     const [newStatus, setNewStatus] = useState("");
     const [remarks, setRemarks] = useState("");
 
-    // Status options for general transition updates
     const availableStatuses = ["Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
 
     return (
@@ -209,30 +277,45 @@ function UpdateStatusDrawer({ onClose, onSubmit, saving, currentStatus }) {
         </div>
     );
 }
+
 // ── Main Page Component ──
+// Data is gathered synchronously from parent properties
 export default function Show({ auth, application: initialApp, app: alternateApp, inspectors = [], errors: serverErrors = {} }) {
     const app = initialApp || alternateApp || {};
 
-    // ✅ HOOKS MOVED HERE: Now inside the React Component
-    // 1. Add this state to track per-parcel reviews
-    const [parcelReviews, setParcelReviews] = useState({});
+    const uniqueParcels = React.useMemo(() => {
+        if (!app.parcels) return [];
+        const map = new Map();
+        app.parcels.forEach((p) => map.set(p.id, p));
+        return Array.from(map.values());
+    }, [app.parcels]);
 
-    // 2. Initialize the state when the app data loads
+    const [parcelReviews, setParcelReviews] = useState({});
+const [liveStatuses, setLiveStatuses] = useState({});
+
+    const handleLiveStatusUpdate = (parcelId, status) => {
+        setLiveStatuses((prev) => {
+            if (prev[parcelId] === status) return prev; 
+            return { ...prev, [parcelId]: status };
+        });
+    };
     useEffect(() => {
-        if (app.parcels && Object.keys(parcelReviews).length === 0) {
+        if (uniqueParcels && Object.keys(parcelReviews).length === 0) {
             const initial = {};
-            app.parcels.forEach((p) => {
+            uniqueParcels.forEach((p) => {
                 initial[p.id] = {
                     decision: "",
                     findings: "",
                     decision_reason: "",
+                    inspector_id: "",
+                    scheduled_date: "",
+                    deadline_date: "",
                 };
             });
             setParcelReviews(initial);
         }
-    }, [app]);
+    }, [uniqueParcels]);
 
-    // 3. Helper to update specific parcel state
     const handleParcelReviewChange = (parcelId, field, value) => {
         setParcelReviews((prev) => ({
             ...prev,
@@ -258,7 +341,6 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     const [activeParcelIndex, setActiveParcelIndex] = useState(0);
     const rosarioCenter = [13.845, 121.2063];
 
-    // Technical Review Form States (Functions from TechnicalReviews/Index)
     const [form, setForm] = useState({
         application_id: app.id,
         decision: "",
@@ -274,29 +356,10 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
         setTimeout(() => setToast(null), 3000);
     };
 
-    const getGeometryCentroid = (geometry) => {
-        if (!geometry?.type || !geometry.coordinates) return null;
-        const averageRing = (ring) => {
-            if (!Array.isArray(ring) || ring.length === 0) return null;
-            const totals = ring.reduce(
-                (acc, coordinate) => {
-                    const [lng, lat] = coordinate;
-                    return { lat: acc.lat + lat, lng: acc.lng + lng };
-                },
-                { lat: 0, lng: 0 },
-            );
-            return { lat: totals.lat / ring.length, lng: totals.lng / ring.length };
-        };
-        if (geometry.type === "Polygon") return averageRing(geometry.coordinates[0] || []);
-        if (geometry.type === "MultiPolygon") return averageRing(geometry.coordinates?.[0]?.[0] || []);
-        return null;
-    };
-
-    // Load GeoJSON and Populate Lookup Map
     useEffect(() => {
         fetch("/geojson/rosario_brgy_map.geojson")
             .then((res) => res.json())
-            .then((data) => setBrgyMapData(data))
+            .then((data) => setBrgyMapData(sanitizeGeoJSON(data)))
             .catch((err) => console.warn("Failed to load brgy map:", err));
 
         const loadParcelLookup = async () => {
@@ -304,10 +367,13 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                 const response = await fetch("/geojson/rosario_batangas_dummy_parcels.geojson");
                 if (!response.ok) throw new Error("Unable to load parcel lookup data");
                 const payload = await response.json();
-                setParcelMapData(payload);
+
+                // Sanitize dataset on load to filter corrupt geometry arrays entirely
+                const sanitizedPayload = sanitizeGeoJSON(payload);
+                setParcelMapData(sanitizedPayload);
 
                 const lookupMap = {};
-                (payload.features || []).forEach((feature) => {
+                (sanitizedPayload.features || []).forEach((feature) => {
                     const pin = feature?.properties?.property_index_number?.trim();
                     if (!pin) return;
                     lookupMap[pin] = feature;
@@ -320,19 +386,18 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
         loadParcelLookup();
     }, []);
 
-    // Monitor Parcel Index and Centering
     useEffect(() => {
         if (Object.keys(pinLookupMap).length > 0) {
-            const parcels = app.parcels || [];
-            const currentParcel = parcels[activeParcelIndex] || parcels[0] || app;
+            const currentParcel = uniqueParcels[activeParcelIndex] || uniqueParcels[0] || app;
             const pin = currentParcel.property_index_number?.trim();
             if (pin && pinLookupMap[pin]) {
                 setActiveParcelFeature(pinLookupMap[pin]);
+            } else {
+                setActiveParcelFeature(null);
             }
         }
-    }, [pinLookupMap, activeParcelIndex, app]);
+    }, [pinLookupMap, activeParcelIndex, app, uniqueParcels]);
 
-    // Handle Clock tick
     useEffect(() => {
         const tick = () => {
             const now = new Date();
@@ -342,61 +407,6 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
         const id = setInterval(tick, 1000);
         return () => clearInterval(id);
     }, []);
-
-    const setField = (field) => (e) => {
-        const val = e.target.type === "checkbox" ? e.target.checked : e.target.value;
-        setForm((prev) => ({ ...prev, [field]: val }));
-        if (errors[field]) {
-            setErrors((err) => {
-                const n = { ...err };
-                delete n[field];
-                return n;
-            });
-        }
-    };
-
-    const processSubmission = (submissionData) => {
-        setSaving(true);
-        const payload = {
-            ...submissionData,
-            id: app.id,
-            status: submissionData.decision,
-            new_status: submissionData.decision,
-        };
-
-        router.post("/applications/update-status", payload, {
-            preserveScroll: true,
-            onSuccess: () => {
-                Swal.fire({
-                    icon: "success",
-                    title: "Review Submitted",
-                    text: `Application review has been completed. Status is now ${payload.decision}.`,
-                    confirmButtonColor: "#2563eb",
-                    customClass: { popup: "rounded-2xl" },
-                });
-            },
-            onError: (errs) => {
-                setErrors(errs);
-                showToast(Object.values(errs)[0] || "Submission failed.", "error");
-            },
-            onFinish: () => setSaving(false),
-        });
-    };
-
-    const handleInitialSubmit = (e) => {
-        e.preventDefault();
-        if (!form.decision) return showToast("Please select a review decision.", "error");
-        if (form.decision === "Declined" && !form.decision_reason?.trim()) {
-            setErrors({ decision_reason: "Reason for declination is required." });
-            return showToast("Reason is required for declination.", "error");
-        }
-
-        if (form.decision === "Needs Site Inspection") {
-            setShowAssignDrawer(true);
-        } else {
-            processSubmission(form);
-        }
-    };
 
     const handleAssignSubmit = (assignmentData) => {
         showToast("Processing inspector assignment...", "success");
@@ -430,14 +440,13 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
             onFinish: () => setSaving(false),
         });
     };
+
     const handleBatchSubmit = () => {
-        // 1. Frontend Validation
-        const parcels = app.parcels || [];
         let isValid = true;
         let errorMessage = "";
 
-        for (let i = 0; i < parcels.length; i++) {
-            const pId = parcels[i].id;
+        for (let i = 0; i < uniqueParcels.length; i++) {
+            const pId = uniqueParcels[i].id;
             const review = parcelReviews[pId];
 
             if (!review || !review.decision) {
@@ -452,46 +461,41 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                 break;
             }
 
-            if (review.decision === "Needs Site Inspection" && (!review.inspector_id || !review.scheduled_date)) {
+            if (review.decision === "Needs Site Inspection" && (!review.inspector_id || !review.scheduled_date || !review.deadline_date)) {
                 isValid = false;
-                errorMessage = `Inspector and scheduled date are required for Parcel ${i + 1}.`;
+                errorMessage = `Inspector, scheduled date, and deadline are required for Parcel ${i + 1}.`;
                 break;
             }
         }
 
         if (!isValid) {
             showToast(errorMessage, "error");
-            return; // Stop submission if validation fails
+            return;
         }
 
-       // 1. Set loading state immediately to disable the button
-    setSaving(true); 
-    showToast("Processing batch review...", "success");
+        setSaving(true);
+        showToast("Processing batch review...", "success");
 
-    const payload = {
-        application_id: app.id,
-        reviews: parcelReviews,
-    };
+        const payload = {
+            application_id: app.id,
+            reviews: parcelReviews,
+        };
 
-    router.post("/technical-review/submit-batch", payload, {
-        preserveScroll: true,
-        onSuccess: () => {
-            // Once successful, the status will have updated in the backend,
-            // and the UI will reflect the new status upon page refresh
-            Swal.fire({
-                icon: "success",
-                title: "Batch Review Submitted",
-                text: "All parcel evaluations have been processed successfully.",
-                confirmButtonColor: "#2563eb",
-            });
-        },
-        onError: (errs) => {
-            setErrors(errs);
-            // 2. Re-enable button on error so the user can fix the issue
-            setSaving(false); 
-            showToast("Batch submission failed. Please check the fields.", "error");
-        },
-    });
+        router.post("/technical-review/submit-batch", payload, {
+            onSuccess: () => {
+                Swal.fire({
+                    icon: "success",
+                    title: "Batch Review Submitted",
+                    text: "All parcel evaluations have been processed successfully.",
+                    confirmButtonColor: "#2563eb",
+                });
+            },
+            onError: (errs) => {
+                setErrors(errs);
+                setSaving(false);
+                showToast("Batch submission failed. Please check the fields.", "error");
+            },
+        });
     };
 
     const handleLogout = () => {
@@ -530,11 +534,8 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
         };
     };
 
-    const activeParcelData = app.parcels?.[activeParcelIndex] || app.parcels?.[0] || {};
-    // NEW STATES
     const [showStatusModal, setShowStatusModal] = useState(false);
 
-    // NEW SUBMIT HANDLER
     const handleGeneralStatusSubmit = (updateData) => {
         setSaving(true);
         router.post(
@@ -564,6 +565,22 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
             },
         );
     };
+
+    // Update the variable extraction
+    // Update the variable extraction
+    const activeParcelData = uniqueParcels?.[activeParcelIndex] || uniqueParcels?.[0] || {};
+    const siteInspection = activeParcelData?.site_inspection || null;
+    const effectiveActiveStatus = liveStatuses[activeParcelData?.id]?.toLowerCase() || siteInspection?.status?.toLowerCase();
+    
+    console.log("Local Inspection ID passing to Supabase:", siteInspection?.id);
+    
+    const showDecisionButtons = !siteInspection || ["completed", "submitted"].includes(effectiveActiveStatus);
+    const hasCompletedInspection = siteInspection && ["completed", "submitted"].includes(effectiveActiveStatus);
+
+    const isBatchSubmitAllowed = uniqueParcels.every((parcel) => {
+        const effectiveStatus = liveStatuses[parcel.id]?.toLowerCase() || parcel.site_inspection?.status?.toLowerCase();
+        return !parcel.site_inspection || ["completed", "submitted"].includes(effectiveStatus);
+    });
     return (
         <>
             <Head title={`View Application: ${app.reference_number || "Detail"} | iMAPS`} />
@@ -651,7 +668,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                             )}
 
                             <div className="w-full h-full bg-white flex flex-col lg:flex-row flex-1 min-h-0 border-t border-slate-200">
-                                {/* Left Side Map View (Create style) */}
+                                {/* Left Side Map View */}
                                 <div className="hidden lg:flex flex-col lg:w-1/2 bg-slate-50 border-r border-slate-200 relative map-grid-bg">
                                     <div className="absolute inset-0 z-0">
                                         <MapContainer center={rosarioCenter} zoom={12} zoomControl={false} scrollWheelZoom={true}>
@@ -667,7 +684,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
 
                                     {/* Map overlay containing active parcel details */}
                                     <div className="absolute top-5 left-5 right-5 z-10 flex flex-col gap-3 pointer-events-none">
-                                        {app.parcels?.map(
+                                        {uniqueParcels?.map(
                                             (parcel, idx) =>
                                                 idx === activeParcelIndex &&
                                                 parcel.property_index_number && (
@@ -715,8 +732,8 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                 </div>
 
                                 {/* Right Side Info & Evaluations Panel */}
-                                <div className="flex-1 flex flex-col relative  overflow-hidden lg:w-1/2">
-                                    {/* Application Top Summary Header (Sticky & Clean) */}
+                                <div className="flex-1 flex flex-col relative overflow-hidden lg:w-1/2">
+                                    {/* Application Top Summary Header */}
                                     <div className="bg-white px-6 py-5 border-b border-slate-200 shrink-0 z-10 shadow-sm flex items-start justify-between">
                                         <div>
                                             <div className="flex items-center gap-2 mb-1.5">
@@ -738,16 +755,15 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                     {/* Scrollable Content Area */}
                                     <div className="flex-1 p-3 overflow-y-auto relative">
                                         <div className="max-w-2xl mx-auto space-y-6">
-                                            {/* 2. Conditional Section: Technical Review vs General Status */}
+                                            {/* Conditional Section: Technical Review vs General Status */}
                                             {app.status === "Technical Review" ? (
                                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                                                     {/* Multi-Parcel Tabs */}
                                                     <div className="bg-slate-50/80 border-b border-slate-200 px-2 pt-2 flex gap-1 overflow-x-auto">
-                                                        {app.parcels?.map((parcel, idx) => {
+                                                        {uniqueParcels?.map((parcel, idx) => {
                                                             const isActive = activeParcelIndex === idx;
                                                             const decision = parcelReviews[parcel.id]?.decision;
 
-                                                            // Visual indicator if a tab has a completed decision
                                                             const getIndicatorColor = () => {
                                                                 if (decision === "Approved") return "bg-emerald-500";
                                                                 if (decision === "Needs Site Inspection") return "bg-amber-500";
@@ -776,126 +792,171 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                     </div>
 
                                                     {/* Active Parcel Form Wrapper */}
-                                                    {app.parcels?.[activeParcelIndex] && (
-                                                        <div className="p-6 space-y-6 form-enter" key={`parcel-${app.parcels[activeParcelIndex].id}`}>
-                                                            {/* Decision Route */}
-                                                            <div>
-                                                                <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Parcel Evaluation Decision</h4>
-                                                                <div className="grid grid-cols-3 gap-2">
-                                                                    {["Approved", "Needs Site Inspection", "Declined"].map((d) => {
-                                                                        const currentDecision = parcelReviews[app.parcels[activeParcelIndex].id]?.decision;
-                                                                        const isSelected = currentDecision === d;
-                                                                        return (
-                                                                            <button
-                                                                                type="button"
-                                                                                key={d}
-                                                                                onClick={() => handleParcelReviewChange(app.parcels[activeParcelIndex].id, "decision", d)}
-                                                                                className={`px-2 py-3 rounded-xl text-[11px] font-bold transition-all border text-center ${
-                                                                                    isSelected
-                                                                                        ? d === "Approved"
-                                                                                            ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm"
-                                                                                            : d === "Declined"
-                                                                                              ? "bg-red-50 border-red-500 text-red-700 shadow-sm"
-                                                                                              : "bg-amber-50 border-amber-500 text-amber-700 shadow-sm"
-                                                                                        : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                                                                                }`}
-                                                                            >
-                                                                                {d}
-                                                                            </button>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </div>
+                                                    {activeParcelData && (
+                                                        <div className="p-6 space-y-6 form-enter" key={`parcel-${activeParcelData.id}`}>
+                                                            {/* Pass the callback down to the inspection component */}
+                                                            <ParcelInspectionStatus
+                                                                inspectionId={activeParcelData.site_inspection?.id}
+                                                                onStatusFetched={(status) => handleLiveStatusUpdate(activeParcelData.id, status)}
+                                                            />
+                                                            {showDecisionButtons ? (
+                                                                <>
+                                                                    <div>
+                                                                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Parcel Evaluation Decision</h4>
+                                                                        <div className="grid grid-cols-3 gap-2">
+                                                                            {["Approved", "Needs Site Inspection", "Declined"].map((d) => {
+                                                                                const currentDecision = parcelReviews[activeParcelData.id]?.decision;
+                                                                                const isSelected = currentDecision === d;
 
-                                                            {/* Conditional Fields based on Decision */}
-                                                            <div className="space-y-4">
-                                                                {/* Reason for Declination */}
-                                                                {parcelReviews[app.parcels[activeParcelIndex].id]?.decision === "Declined" && (
-                                                                    <div className="form-enter">
-                                                                        <Label required>Reason for Declination</Label>
-                                                                        <Textarea
-                                                                            rows={2}
-                                                                            value={parcelReviews[app.parcels[activeParcelIndex].id]?.decision_reason || ""}
-                                                                            onChange={(e) => handleParcelReviewChange(app.parcels[activeParcelIndex].id, "decision_reason", e.target.value)}
-                                                                            placeholder="Specify the regulatory basis for declining this specific parcel..."
-                                                                            className="border-red-200 bg-red-50/30 focus:border-red-500 focus:ring-red-500/20"
-                                                                        />
-                                                                    </div>
-                                                                )}
+                                                                                let displayLabel = d;
+                                                                                if (d === "Needs Site Inspection" && hasCompletedInspection) {
+                                                                                    displayLabel = "Needs Inspection Again";
+                                                                                } else if (d === "Approved") {
+                                                                                    displayLabel = "Approve";
+                                                                                } else if (d === "Declined") {
+                                                                                    displayLabel = "Decline";
+                                                                                }
 
-                                                                {/* Inline Inspector Assignment */}
-                                                                {parcelReviews[app.parcels[activeParcelIndex].id]?.decision === "Needs Site Inspection" && (
-                                                                    <div className="form-enter p-4 rounded-xl border border-amber-200 bg-amber-50/30 space-y-3">
-                                                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1">Schedule Field Task</h4>
-                                                                        <div className="grid grid-cols-2 gap-3">
-                                                                            <div>
-                                                                                <Label required>Select Inspector</Label>
-                                                                                <select
-                                                                                    value={parcelReviews[app.parcels[activeParcelIndex].id]?.inspector_id || ""}
-                                                                                    onChange={(e) => handleParcelReviewChange(app.parcels[activeParcelIndex].id, "inspector_id", e.target.value)}
-                                                                                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
-                                                                                >
-                                                                                    <option value="">-- Choose --</option>
-                                                                                    {inspectors.map((i) => (
-                                                                                        <option key={i.id} value={i.id}>
-                                                                                            {i.name}
-                                                                                        </option>
-                                                                                    ))}
-                                                                                </select>
-                                                                            </div>
-                                                                            <div>
-                                                                                <Label required>Inspection Date</Label>
-                                                                                <input
-                                                                                    type="date"
-                                                                                    min={new Date().toISOString().split("T")[0]}
-                                                                                    value={parcelReviews[app.parcels[activeParcelIndex].id]?.scheduled_date || ""}
-                                                                                    onChange={(e) => handleParcelReviewChange(app.parcels[activeParcelIndex].id, "scheduled_date", e.target.value)}
-                                                                                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
-                                                                                />
-                                                                            </div>
+                                                                                return (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        key={d}
+                                                                                        onClick={() => handleParcelReviewChange(activeParcelData.id, "decision", d)}
+                                                                                        className={`px-2 py-3 rounded-xl text-[11px] font-bold transition-all border text-center ${
+                                                                                            isSelected
+                                                                                                ? d === "Approved"
+                                                                                                    ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm"
+                                                                                                    : d === "Declined"
+                                                                                                      ? "bg-red-50 border-red-500 text-red-700 shadow-sm"
+                                                                                                      : "bg-amber-50 border-amber-500 text-amber-700 shadow-sm"
+                                                                                                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                                                                        }`}
+                                                                                    >
+                                                                                        {displayLabel}
+                                                                                    </button>
+                                                                                );
+                                                                            })}
                                                                         </div>
                                                                     </div>
-                                                                )}
 
-                                                                {/* General Findings */}
-                                                                <div>
-                                                                    <Label>Evaluation Findings / Remarks</Label>
-                                                                    <Textarea
-                                                                        rows={2}
-                                                                        value={parcelReviews[app.parcels[activeParcelIndex].id]?.findings || ""}
-                                                                        onChange={(e) => handleParcelReviewChange(app.parcels[activeParcelIndex].id, "findings", e.target.value)}
-                                                                        placeholder="Add any internal notes regarding this parcel..."
-                                                                    />
+                                                                    {/* Conditional Fields based on Decision */}
+                                                                    <div className="space-y-4">
+                                                                        {/* Reason for Declination */}
+                                                                        {parcelReviews[activeParcelData.id]?.decision === "Declined" && (
+                                                                            <div className="form-enter">
+                                                                                <Label required>Reason for Declination</Label>
+                                                                                <Textarea
+                                                                                    rows={2}
+                                                                                    value={parcelReviews[activeParcelData.id]?.decision_reason || ""}
+                                                                                    onChange={(e) => handleParcelReviewChange(activeParcelData.id, "decision_reason", e.target.value)}
+                                                                                    placeholder="Specify the regulatory basis for declining this specific parcel..."
+                                                                                    className="border-red-200 bg-red-50/30 focus:border-red-500 focus:ring-red-500/20"
+                                                                                />
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* Inline Inspector Assignment */}
+                                                                        {parcelReviews[activeParcelData.id]?.decision === "Needs Site Inspection" && (
+                                                                            <div className="form-enter p-4 rounded-xl border border-amber-200 bg-amber-50/30 space-y-3">
+                                                                                <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1">Schedule Field Task</h4>
+                                                                                <div className="grid grid-cols-3 gap-3">
+                                                                                    <div>
+                                                                                        <Label required>Select Inspector</Label>
+                                                                                        <select
+                                                                                            value={parcelReviews[activeParcelData.id]?.inspector_id || ""}
+                                                                                            onChange={(e) => handleParcelReviewChange(activeParcelData.id, "inspector_id", e.target.value)}
+                                                                                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
+                                                                                        >
+                                                                                            <option value="">-- Choose --</option>
+                                                                                            {inspectors.map((i) => (
+                                                                                                <option key={i.id} value={i.id}>
+                                                                                                    {i.name}
+                                                                                                </option>
+                                                                                            ))}
+                                                                                        </select>
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <Label required>Inspection Date</Label>
+                                                                                        <input
+                                                                                            type="date"
+                                                                                            min={new Date().toISOString().split("T")[0]}
+                                                                                            value={parcelReviews[activeParcelData.id]?.scheduled_date || ""}
+                                                                                            onChange={(e) => handleParcelReviewChange(activeParcelData.id, "scheduled_date", e.target.value)}
+                                                                                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
+                                                                                        />
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <Label required>Deadline</Label>
+                                                                                        <input
+                                                                                            type="date"
+                                                                                            min={parcelReviews[activeParcelData.id]?.scheduled_date || new Date().toISOString().split("T")[0]}
+                                                                                            value={parcelReviews[activeParcelData.id]?.deadline_date || ""}
+                                                                                            onChange={(e) => handleParcelReviewChange(activeParcelData.id, "deadline_date", e.target.value)}
+                                                                                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
+                                                                                        />
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* General Findings */}
+                                                                        <div>
+                                                                            <Label>Evaluation Findings / Remarks</Label>
+                                                                            <Textarea
+                                                                                rows={2}
+                                                                                value={parcelReviews[activeParcelData.id]?.findings || ""}
+                                                                                onChange={(e) => handleParcelReviewChange(activeParcelData.id, "findings", e.target.value)}
+                                                                                placeholder="Add any internal notes regarding this parcel..."
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                </>
+                                                            ) : (
+                                                                /* Fallback UI when status is NOT completed */
+                                                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 animate-[formFadeIn_0.3s_ease-out]">
+                                                                    <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                                                                        <svg className="w-4 h-4 text-amber-600 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                        </svg>
+                                                                    </div>
+                                                                    <div>
+                                                                        <h4 className="text-[12px] font-bold text-amber-800">Inspection In Progress</h4>
+                                                                        <p className="text-[11px] text-amber-700 mt-1 leading-relaxed">
+                                                                            Evaluation decisions are temporarily locked. The site inspector is currently processing this parcel. The buttons will
+                                                                            reappear once the status is marked as <strong>Completed</strong>.
+                                                                        </p>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
+                                                            )}
                                                         </div>
                                                     )}
 
                                                     {/* Batch Submit Footer */}
-                                                    <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-3">
-                                                        <button
-                                                            type="button"
-                                                            onClick={handleBatchSubmit}
-                                                            disabled={saving}
-                                                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-[13px] shadow-sm transition-all active:scale-95"
-                                                        >
-                                                            {saving ? "Submitting..." : "Submit Batch Review"}
-                                                            {!saving && (
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                                </svg>
-                                                            )}
-                                                        </button>
-                                                    </div>
+                                                    {isBatchSubmitAllowed && (
+                                                        <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-3 form-enter">
+                                                            <button
+                                                                type="button"
+                                                                onClick={handleBatchSubmit}
+                                                                disabled={saving}
+                                                                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-[13px] shadow-sm transition-all active:scale-95"
+                                                            >
+                                                                {saving ? "Submitting..." : "Submit Batch Review"}
+                                                                {!saving && (
+                                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                                    </svg>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <div className="max-w-2xl mx-auto space-y-6">
-                                                    {/* 1. Horizontal Timeline & Action Header */}
+                                                    {/* Horizontal Timeline & Action Header */}
                                                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col md:flex-row items-center gap-6">
                                                         {/* Horizontal Timeline UI */}
                                                         <div className="w-full flex-1 flex items-center justify-between relative before:absolute before:inset-0 before:top-[14px] before:h-[2px] before:w-full before:bg-slate-100 z-0 px-2">
                                                             {["Received", "Technical Review", "Under SB", "For Release", "Released"].map((step, idx) => {
-                                                                // Map "Under SB" back to the full status for logic checks
                                                                 const stepKey = step === "Under SB" ? "Under Sangguniang Bayan" : step;
                                                                 const isCurrent = app.status === stepKey;
                                                                 const isDenied = app.status === "Denied";
@@ -904,11 +965,10 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
 
                                                                 return (
                                                                     <div key={step} className="relative z-10 flex flex-col items-center gap-2 text-center w-16">
-                                                                        {/* Status Marker */}
                                                                         <div
                                                                             className={`flex items-center justify-center w-7 h-7 rounded-full border-[3px] border-white shadow-sm shrink-0 transition-colors duration-300
-                            ${isCurrent ? "bg-blue-600 shadow-[0_0_0_4px_rgba(37,99,235,0.1)]" : isPassed ? "bg-emerald-500" : "bg-slate-200"}
-                        `}
+                                                                                ${isCurrent ? "bg-blue-600 shadow-[0_0_0_4px_rgba(37,99,235,0.1)]" : isPassed ? "bg-emerald-500" : "bg-slate-200"}
+                                                                            `}
                                                                         >
                                                                             {isPassed ? (
                                                                                 <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
@@ -918,11 +978,10 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                                 <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
                                                                             ) : null}
                                                                         </div>
-                                                                        {/* Label (Adjusted Font Weights) */}
                                                                         <span
                                                                             className={`text-[9px] uppercase tracking-widest leading-tight w-full break-words
-                            ${isCurrent ? "text-blue-700 font-bold" : isPassed ? "text-slate-600 font-semibold" : "text-slate-400 font-medium"}
-                        `}
+                                                                                ${isCurrent ? "text-blue-700 font-bold" : isPassed ? "text-slate-600 font-semibold" : "text-slate-400 font-medium"}
+                                                                            `}
                                                                         >
                                                                             {step}
                                                                         </span>
@@ -931,7 +990,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                             })}
                                                         </div>
 
-                                                        {/* Update Status Action (Right Side) */}
+                                                        {/* Update Status Action */}
                                                         <div className="shrink-0 md:pl-5 md:border-l border-slate-100 flex items-center justify-center w-full md:w-auto pt-4 md:pt-0 border-t md:border-t-0 mt-2 md:mt-0">
                                                             <button
                                                                 onClick={() => setShowStatusModal(true)}
@@ -949,7 +1008,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                         </div>
                                                     </div>
 
-                                                    {/* 2. Dossier / Application Parameters */}
+                                                    {/* Dossier Parameters */}
                                                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                                                         <h4 className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
                                                             <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -987,207 +1046,49 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                         </div>
                                                     </div>
 
-                                                    {/* 3. Conditional Section: Technical Review vs General Parcels Overview */}
-                                                    {app.status === "Technical Review" ? (
-                                                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                                                            {/* Multi-Parcel Tabs */}
-                                                            <div className="bg-slate-50/80 border-b border-slate-200 px-2 pt-2 flex gap-1 overflow-x-auto">
-                                                                {app.parcels?.map((parcel, idx) => {
-                                                                    const isActive = activeParcelIndex === idx;
-                                                                    const decision = parcelReviews[parcel.id]?.decision;
-
-                                                                    // Visual indicator if a tab has a completed decision
-                                                                    const getIndicatorColor = () => {
-                                                                        if (decision === "Approved") return "bg-emerald-500";
-                                                                        if (decision === "Needs Site Inspection") return "bg-amber-500";
-                                                                        if (decision === "Declined") return "bg-red-500";
-                                                                        return "bg-slate-300";
-                                                                    };
-
-                                                                    return (
-                                                                        <button
-                                                                            key={parcel.id}
-                                                                            type="button"
-                                                                            onClick={() => setActiveParcelIndex(idx)}
-                                                                            className={`relative px-4 py-3 text-[12px] font-semibold flex items-center gap-2 rounded-t-lg transition-all ${
-                                                                                isActive
-                                                                                    ? "bg-white text-blue-700 border-t border-x border-slate-200 shadow-[0_4px_0_white_translate-y-[1px]]"
-                                                                                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-100/50"
-                                                                            }`}
-                                                                            style={{ transform: isActive ? "translateY(1px)" : "none" }}
-                                                                        >
-                                                                            <span className={`w-2 h-2 rounded-full ${getIndicatorColor()}`} />
-                                                                            Parcel {idx + 1}{" "}
-                                                                            <span className="font-mono text-[10px] font-medium text-slate-400 ml-1">
-                                                                                ({parcel.property_index_number?.slice(-4) || "---"})
-                                                                            </span>
-                                                                        </button>
-                                                                    );
-                                                                })}
-                                                            </div>
-
-                                                            {/* Active Parcel Form Wrapper */}
-                                                            {app.parcels?.[activeParcelIndex] && (
-                                                                <div className="p-6 space-y-6 form-enter" key={`parcel-${app.parcels[activeParcelIndex].id}`}>
-                                                                    {/* Decision Route */}
-                                                                    <div>
-                                                                        <h4 className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-3">Parcel Evaluation Decision</h4>
-                                                                        <div className="grid grid-cols-3 gap-2">
-                                                                            {["Approved", "Needs Site Inspection", "Declined"].map((d) => {
-                                                                                const currentDecision = parcelReviews[app.parcels[activeParcelIndex].id]?.decision;
-                                                                                const isSelected = currentDecision === d;
-                                                                                return (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        key={d}
-                                                                                        onClick={() => handleParcelReviewChange(app.parcels[activeParcelIndex].id, "decision", d)}
-                                                                                        className={`px-2 py-3 rounded-xl text-[11px] font-semibold transition-all border text-center ${
-                                                                                            isSelected
-                                                                                                ? d === "Approved"
-                                                                                                    ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm"
-                                                                                                    : d === "Declined"
-                                                                                                      ? "bg-red-50 border-red-500 text-red-700 shadow-sm"
-                                                                                                      : "bg-amber-50 border-amber-500 text-amber-700 shadow-sm"
-                                                                                                : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                                                                                        }`}
-                                                                                    >
-                                                                                        {d}
-                                                                                    </button>
-                                                                                );
-                                                                            })}
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {/* Conditional Fields based on Decision */}
-                                                                    <div className="space-y-4">
-                                                                        {/* Reason for Declination */}
-                                                                        {parcelReviews[app.parcels[activeParcelIndex].id]?.decision === "Declined" && (
-                                                                            <div className="form-enter">
-                                                                                <Label required>Reason for Declination</Label>
-                                                                                <Textarea
-                                                                                    rows={2}
-                                                                                    value={parcelReviews[app.parcels[activeParcelIndex].id]?.decision_reason || ""}
-                                                                                    onChange={(e) => handleParcelReviewChange(app.parcels[activeParcelIndex].id, "decision_reason", e.target.value)}
-                                                                                    placeholder="Specify the regulatory basis for declining this specific parcel..."
-                                                                                    className="border-red-200 bg-red-50/30 focus:border-red-500 focus:ring-red-500/20"
-                                                                                />
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* Inline Inspector Assignment */}
-                                                                        {parcelReviews[app.parcels[activeParcelIndex].id]?.decision === "Needs Site Inspection" && (
-                                                                            <div className="form-enter p-4 rounded-xl border border-amber-200 bg-amber-50/30 space-y-3">
-                                                                                <h4 className="text-[10px] font-semibold uppercase tracking-widest text-amber-700 mb-1">Schedule Field Task</h4>
-                                                                                <div className="grid grid-cols-2 gap-3">
-                                                                                    <div>
-                                                                                        <Label required>Select Inspector</Label>
-                                                                                        <select
-                                                                                            value={parcelReviews[app.parcels[activeParcelIndex].id]?.inspector_id || ""}
-                                                                                            onChange={(e) =>
-                                                                                                handleParcelReviewChange(app.parcels[activeParcelIndex].id, "inspector_id", e.target.value)
-                                                                                            }
-                                                                                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
-                                                                                        >
-                                                                                            <option value="">-- Choose --</option>
-                                                                                            {inspectors.map((i) => (
-                                                                                                <option key={i.id} value={i.id}>
-                                                                                                    {i.name}
-                                                                                                </option>
-                                                                                            ))}
-                                                                                        </select>
-                                                                                    </div>
-                                                                                    <div>
-                                                                                        <Label required>Inspection Date</Label>
-                                                                                        <input
-                                                                                            type="date"
-                                                                                            min={new Date().toISOString().split("T")[0]}
-                                                                                            value={parcelReviews[app.parcels[activeParcelIndex].id]?.scheduled_date || ""}
-                                                                                            onChange={(e) =>
-                                                                                                handleParcelReviewChange(app.parcels[activeParcelIndex].id, "scheduled_date", e.target.value)
-                                                                                            }
-                                                                                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
-                                                                                        />
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* General Findings */}
-                                                                        <div>
-                                                                            <Label>Evaluation Findings / Remarks</Label>
-                                                                            <Textarea
-                                                                                rows={2}
-                                                                                value={parcelReviews[app.parcels[activeParcelIndex].id]?.findings || ""}
-                                                                                onChange={(e) => handleParcelReviewChange(app.parcels[activeParcelIndex].id, "findings", e.target.value)}
-                                                                                placeholder="Add any internal notes regarding this parcel..."
-                                                                            />
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-
-                                                            {/* Batch Submit Footer */}
-                                                            <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-3">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={handleBatchSubmit}
-                                                                    disabled={saving}
-                                                                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-[13px] shadow-sm transition-all active:scale-95"
+                                                    {/* Read-only Parcels List */}
+                                                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                                                        <h4 className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
+                                                            <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                <path
+                                                                    strokeLinecap="round"
+                                                                    strokeLinejoin="round"
+                                                                    d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
+                                                                />
+                                                            </svg>
+                                                            Involved Parcels
+                                                        </h4>
+                                                        <div className="space-y-3">
+                                                            {uniqueParcels?.map((parcel, idx) => (
+                                                                <div
+                                                                    key={parcel.id}
+                                                                    onClick={() => setActiveParcelIndex(idx)}
+                                                                    className={`p-3 border rounded-lg cursor-pointer transition-all flex justify-between items-center ${
+                                                                        activeParcelIndex === idx
+                                                                            ? "bg-blue-50 border-blue-200 shadow-sm"
+                                                                            : "bg-slate-50 border-slate-100 hover:border-slate-200 hover:bg-white"
+                                                                    }`}
                                                                 >
-                                                                    {saving ? "Submitting..." : "Submit Batch Review"}
-                                                                    {!saving && (
-                                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                                        </svg>
-                                                                    )}
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        /* Non-Technical Review State: Read-only Parcels List */
-                                                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                                                            <h4 className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
-                                                                <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                    <path
-                                                                        strokeLinecap="round"
-                                                                        strokeLinejoin="round"
-                                                                        d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"
-                                                                    />
-                                                                </svg>
-                                                                Involved Parcels
-                                                            </h4>
-                                                            <div className="space-y-3">
-                                                                {app.parcels?.map((parcel, idx) => (
-                                                                    <div
-                                                                        key={parcel.id}
-                                                                        onClick={() => setActiveParcelIndex(idx)}
-                                                                        className={`p-3 border rounded-lg cursor-pointer transition-all flex justify-between items-center ${
-                                                                            activeParcelIndex === idx
-                                                                                ? "bg-blue-50 border-blue-200 shadow-sm"
-                                                                                : "bg-slate-50 border-slate-100 hover:border-slate-200 hover:bg-white"
+                                                                    <div>
+                                                                        <p className="text-[12px] font-semibold text-slate-800">
+                                                                            Parcel {idx + 1}
+                                                                            <span className="text-slate-400 font-mono text-[10px] ml-1">({parcel.property_index_number || "No PIN"})</span>
+                                                                        </p>
+                                                                        <p className="text-[10px] text-slate-500 mt-0.5">
+                                                                            Lot: {parcel.lot_number || "—"} • Area: {parcel.lot_area_sqm || "—"} SQ.M
+                                                                        </p>
+                                                                    </div>
+                                                                    <span
+                                                                        className={`text-[10px] font-semibold px-2 py-1 rounded shadow-sm border ${
+                                                                            activeParcelIndex === idx ? "bg-blue-600 text-white border-blue-700" : "bg-white text-slate-500 border-slate-200"
                                                                         }`}
                                                                     >
-                                                                        <div>
-                                                                            <p className="text-[12px] font-semibold text-slate-800">
-                                                                                Parcel {idx + 1}
-                                                                                <span className="text-slate-400 font-mono text-[10px] ml-1">({parcel.property_index_number || "No PIN"})</span>
-                                                                            </p>
-                                                                            <p className="text-[10px] text-slate-500 mt-0.5">
-                                                                                Lot: {parcel.lot_number || "—"} • Area: {parcel.lot_area_sqm || "—"} SQ.M
-                                                                            </p>
-                                                                        </div>
-                                                                        <span
-                                                                            className={`text-[10px] font-semibold px-2 py-1 rounded shadow-sm border ${
-                                                                                activeParcelIndex === idx ? "bg-blue-600 text-white border-blue-700" : "bg-white text-slate-500 border-slate-200"
-                                                                            }`}
-                                                                        >
-                                                                            {activeParcelIndex === idx ? "Viewing Map" : "View Map"}
-                                                                        </span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
+                                                                        {activeParcelIndex === idx ? "Viewing Map" : "View Map"}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                    )}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -1199,9 +1100,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                 </div>
             </div>
 
-            {/* Site Inspector Assignment Overlap Drawer */}
             {showAssignDrawer && <AssignInspectorDrawer onClose={() => setShowAssignDrawer(false)} onSubmit={handleAssignSubmit} saving={saving} inspectors={inspectors} />}
-            {/* NEW: General Status Update Drawer */}
             {showStatusModal && <UpdateStatusDrawer onClose={() => setShowStatusModal(false)} onSubmit={handleGeneralStatusSubmit} saving={saving} currentStatus={app.status} />}
         </>
     );
