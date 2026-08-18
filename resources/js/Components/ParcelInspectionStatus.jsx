@@ -38,7 +38,6 @@ function SectionLabel({ children }) {
 export default function ParcelInspectionStatus({ inspectionId, onStatusFetched }) {
     const [inspection, setInspection] = useState(null);
     const [loading, setLoading] = useState(true);
-    // NEW: State for tracking the currently viewed photo
     const [selectedPhoto, setSelectedPhoto] = useState(null);
 
     useEffect(() => {
@@ -60,7 +59,7 @@ export default function ParcelInspectionStatus({ inspectionId, onStatusFetched }
         } else {
             setLoading(false);
         }
-    }, [inspectionId]); // Keep dependencies as is
+    }, [inspectionId, onStatusFetched]);
     
     if (loading) {
         return (
@@ -105,8 +104,17 @@ export default function ParcelInspectionStatus({ inspectionId, onStatusFetched }
         { label: "Remarks", value: inspection.remarks },
     ].filter(block => block.value);
 
-    // Get the accurate photo count (prefer the array length if available)
-    const actualPhotoCount = inspection.field_job_photos?.length || inspection.photo_count || 0;
+    // Normalize photos: Use field_job_photos if available, otherwise map photo_paths into objects
+    const photosToRender = inspection.field_job_photos?.length > 0 
+        ? inspection.field_job_photos 
+        : (inspection.photo_paths || []).map((url, index) => ({
+            id: `fallback-${index}`,
+            photo_url: url,
+            captured_at: inspection.submitted_at // fallback timestamp
+        }));
+
+    // Get the accurate photo count
+    const actualPhotoCount = photosToRender.length || inspection.photo_count || 0;
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
@@ -209,11 +217,11 @@ export default function ParcelInspectionStatus({ inspectionId, onStatusFetched }
                 )}
 
                 {/* Field Photos Grid */}
-                {inspection.field_job_photos && inspection.field_job_photos.length > 0 && (
+                {photosToRender.length > 0 && (
                     <div className="pt-4 border-t border-slate-100">
                         <SectionLabel>Attached Field Photos</SectionLabel>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-2">
-                            {inspection.field_job_photos.map((photo) => (
+                            {photosToRender.map((photo) => (
                                 <button 
                                     type="button"
                                     key={photo.id} 

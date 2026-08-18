@@ -44,18 +44,18 @@ Route::middleware('auth')->group(function () {
         ->name('applications.store')
         ->middleware('role:Planning Officer');
 
-     // ── Drafts / Offline Storage ──
-    Route::get('applications/drafts', [ApplicationController::class, 'draftsIndex'])
+    // ── Drafts / Offline Storage ──
+    // Placed correctly before the /applications/{id} route to avoid wildcard conflicts
+    Route::get('/applications/drafts', [ApplicationController::class, 'draftsIndex'])
         ->name('drafts.index')
-        ->middleware('role:Planning Officer');
+        ->middleware('role:Planning Officer'); // Added middleware for consistency
+        
+    Route::post('/applications/drafts/save', [ApplicationController::class, 'saveDraft'])
+        ->name('drafts.save');
+        
+    Route::delete('/applications/drafts/{id}', [ApplicationController::class, 'destroyDraft'])
+        ->name('drafts.destroy');
 
-    Route::post('applications/drafts/sync-all', [ApplicationController::class, 'syncAllDrafts'])
-        ->name('drafts.syncAll')
-        ->middleware('role:Planning Officer');
-
-    Route::delete('applications/drafts/{id}', [ApplicationController::class, 'destroyDraft'])
-        ->name('drafts.destroy')
-        ->middleware('role:Planning Officer');
     // ── Single-View & Standard Status Transitions ──
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show');
@@ -81,14 +81,10 @@ Route::middleware('auth')->group(function () {
         ->name('technical-review.assign-inspector')
         ->middleware('role:Planning Officer');
 
-   
-
-
-   
+    Route::get('/api/inspections/{localInspectionId}/supabase-data', [TechnicalReviewController::class, 'getSupabaseInspectionData'])
+        ->name('api.inspections.supabase');
 
 });
-
-
 
 // ── Admin-Only Routes ──
 Route::middleware(['auth', 'role:Admin'])->group(function () {

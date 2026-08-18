@@ -97,13 +97,40 @@ class ApplicationController extends Controller
         ]);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+   // ─────────────────────────────────────────────────────────────────────────
     // CREATE — Show encode form
     // ─────────────────────────────────────────────────────────────────────────
-    public function create()
+    public function create(Request $request)
     {
-        return Inertia::render('Applications/Create');
-        // auth is shared globally via HandleInertiaRequests middleware
+        $draftPayload = null;
+        $draftRef = null;
+
+        if ($request->filled('draft_id')) {
+            $draft = DB::table('application_drafts')
+                ->where('id', $request->draft_id)
+                ->where('user_id', Auth::id())
+                ->first();
+
+            if ($draft) {
+                // First decode
+                $decoded = is_string($draft->form_payload) 
+                    ? json_decode($draft->form_payload, true) 
+                    : $draft->form_payload;
+                    
+                // Safety net: Double decode to fix escaped strings
+                if (is_string($decoded)) {
+                    $decoded = json_decode($decoded, true);
+                }
+                    
+                $draftPayload = $decoded;
+                $draftRef = $draft->temp_reference_number;
+            }
+        }
+
+        return Inertia::render('Applications/Create', [
+            'cloudDraftPayload' => $draftPayload,
+            'cloudDraftRef'     => $draftRef
+        ]);
     }
     // ─────────────────────────────────────────────────────────────────────────
     // STORE — Validate and persist new application, with one or more parcels
@@ -556,7 +583,8 @@ class ApplicationController extends Controller
 
         $payload = $request->input('payload');
 
-        DB::table('application_drafts')->updateOrInsert(
+        // Using Eloquent automatically handles created_at and updated_at perfectly
+        ApplicationDraft::updateOrCreate(
             [
                 'temp_reference_number' => $request->input('temp_id'),
                 'user_id' => Auth::id()
@@ -566,13 +594,10 @@ class ApplicationController extends Controller
                 'application_type' => $payload['application_type'] ?? null,
                 'barangay'         => $payload['barangay'] ?? null,
                 'status'           => 'Auto-saved',
-                'form_payload'     => json_encode($payload),
-                'updated_at'       => now(),
-                'created_at'       => DB::raw('COALESCE(created_at, NOW())')
+                'form_payload'     => json_encode($payload)
             ]
         );
 
-        // Changed from 'synchronized_at' to 'saved_at'
         return response()->json(['status' => 'success', 'saved_at' => now()]);
     }
 

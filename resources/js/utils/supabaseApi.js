@@ -1,5 +1,5 @@
 // resources/js/utils/supabaseApi.js
-import { supabase } from './supabaseClient'; 
+import { supabase } from './supabaseClient';
 
 export const fetchParcelInspection = async (inspectionId) => {
     if (!inspectionId) return null; 

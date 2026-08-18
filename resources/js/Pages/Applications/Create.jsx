@@ -76,7 +76,6 @@ function MapController({ brgyData, activeParcelFeature }) {
             const layer = L.geoJSON(activeParcelFeature);
             const bounds = layer.getBounds();
 
-            // Check if bounds are valid before flying
             if (bounds.isValid()) {
                 map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 18, duration: 1.2 });
             } else {
@@ -132,13 +131,9 @@ const Select = ({ children, className = "", hasError = false, ...props }) => (
     </div>
 );
 
-export default function Create({ auth, errors: serverErrors = {} }) {
+export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null }) {
     const userName = auth?.user?.name || "Julience";
     const userRole = auth?.user?.role || "Planning Officer";
-
-    // Grab query parameters to see if we're resuming an existing cloud draft
-    const urlParams = new URLSearchParams(window.location.search);
-    const cloudDraftId = urlParams.get("draft_id");
 
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [clock, setClock] = useState("");
@@ -148,9 +143,9 @@ export default function Create({ auth, errors: serverErrors = {} }) {
     const [errors, setErrors] = useState(serverErrors);
     const formRef = useRef(null);
 
-    // Dynamic tracking reference identifier for safely syncing draft state
+    // Dynamic tracking reference identifier
     const [tempDraftId, setTempDraftId] = useState(() => {
-        return cloudDraftId || localStorage.getItem(DRAFT_UUID_KEY) || "TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase();
+        return cloudDraftRef || "TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase();
     });
     const [syncStatus, setSyncStatus] = useState("Saved locally");
 
@@ -161,26 +156,51 @@ export default function Create({ auth, errors: serverErrors = {} }) {
     const [activeParcelIndex, setActiveParcelIndex] = useState(null);
     const rosarioCenter = [13.8450, 121.2063];
 
-    const [form, setForm] = useState(() => {
-        // Restore a local draft automatically, unless we're resuming a specific cloud draft
-        const structuralBackup = localStorage.getItem(DRAFT_PAYLOAD_KEY);
-        if (structuralBackup && !cloudDraftId) {
-            try {
-                return JSON.parse(structuralBackup);
-            } catch (e) {
-                console.warn("Failed to parse local draft backup:", e);
-            }
+    // Strict Payload Cleaner
+    const cleanPayload = (data) => {
+        if (!data) return null;
+        let parsed = data;
+        if (typeof parsed === 'string') {
+            try { parsed = JSON.parse(parsed); } catch (e) { return null; }
         }
-        return emptyForm();
+        if (typeof parsed === 'object' && parsed !== null && "0" in parsed && "1" in parsed) {
+            return null;
+        }
+        return parsed;
+    };
+
+    // ── DEFENSIVE HYDRATION (Fresh Start Enabled) ──
+    const [form, setForm] = useState(() => {
+        const baseForm = emptyForm();
+        const validCloud = cleanPayload(cloudDraftPayload);
+        if (validCloud) {
+            return {
+                ...baseForm,
+                ...validCloud,
+                parcels: Array.isArray(validCloud.parcels) && validCloud.parcels.length > 0 
+                         ? validCloud.parcels 
+                         : baseForm.parcels
+            };
+        }
+        return baseForm;
     });
 
-    // ── AUTO-SAVE LOGIC ENGINE ──
-    // Persists the working draft locally on every change, and debounces a
-    // background sync to the server so in-progress applications survive a
-    // refresh or a dropped connection.
     useEffect(() => {
-        localStorage.setItem(DRAFT_UUID_KEY, tempDraftId);
-        localStorage.setItem(DRAFT_PAYLOAD_KEY, JSON.stringify(form));
+        const validCloud = cleanPayload(cloudDraftPayload);
+        if (validCloud) {
+            setForm(prev => ({ ...prev, ...validCloud }));
+        }
+    }, [cloudDraftPayload]);
+
+    // ── AUTO-SAVE LOGIC ENGINE ──
+    useEffect(() => {
+        try {
+            localStorage.setItem(DRAFT_UUID_KEY, tempDraftId);
+            localStorage.setItem(DRAFT_PAYLOAD_KEY, JSON.stringify(form));
+        } catch (e) {
+            console.warn("Local storage disabled. Relying on cloud sync.");
+        }
+        
         setSyncStatus("Saving modifications...");
 
         const backgroundSyncTimer = setTimeout(() => {
@@ -189,23 +209,108 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                 return;
             }
 
-            // Background dispatch without breaking user interactions
             axios
-                .post("/applications/draft", {
+                .post("/applications/drafts/save", {
                     temp_id: tempDraftId,
                     payload: form,
                 })
-                .then(() => setSyncStatus("Auto-saved to cloud"))
+                .then(() => setSyncStatus("Auto-saved to drafts"))
                 .catch(() => setSyncStatus("Saved locally (Offline)"));
         }, 3000);
 
-        return () => clearTimeout(backgroundSyncTimer);
+        const handleSuddenExit = () => {
+            if (!form.application_type && !form.applicant_name) return;
+
+            fetch("/applications/drafts/save", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-XSRF-TOKEN": document.cookie.split('; ').find(row => row.startsWith('XSRF-TOKEN='))?.split('=')[1] 
+                },
+                body: JSON.stringify({ temp_id: tempDraftId, payload: form }),
+                keepalive: true 
+            });
+        };
+
+        window.addEventListener('beforeunload', handleSuddenExit);
+
+        return () => {
+            clearTimeout(backgroundSyncTimer);
+            window.removeEventListener('beforeunload', handleSuddenExit);
+        };
     }, [form, tempDraftId]);
 
-    // Clear recovery state entirely upon successful submission
+    // ── MANUAL SAVE BUTTON LOGIC ──
+    const handleManualSave = async () => {
+        if (!form.application_type && !form.applicant_name) {
+            Swal.fire({
+                title: "Empty Form",
+                text: "Please select an Application Category or enter an Applicant Name to save a draft.",
+                icon: "info",
+                customClass: { popup: "swal-small-modal" }
+            });
+            return;
+        }
+
+        setSyncStatus("Saving manually...");
+        try {
+            await axios.post("/applications/drafts/save", {
+                temp_id: tempDraftId,
+                payload: form,
+            });
+            setSyncStatus("Auto-saved to drafts");
+            
+            Swal.fire({
+                title: "Draft Saved!",
+                text: "Your progress has been safely stored.",
+                icon: "success",
+                showCancelButton: true,
+                confirmButtonColor: "#2563eb",
+                cancelButtonColor: "#64748b",
+                confirmButtonText: "Go to Drafts",
+                cancelButtonText: "Keep Editing",
+                customClass: { popup: "swal-small-modal rounded-3xl" }
+            }).then((res) => {
+                if (res.isConfirmed) {
+                    router.get("/applications/drafts");
+                }
+            });
+        } catch (error) {
+            setSyncStatus("Saved locally (Offline)");
+            Swal.fire("Network Error", "Could not reach the server. Ensure you have an active internet connection.", "error");
+        }
+    };
+
+    // ── RESTART/RESET BUTTON LOGIC ──
+    const handleRestart = () => {
+        Swal.fire({
+            title: "Start Over?",
+            text: "This clears the current form entirely. If this was auto-saved, it will remain in your Drafts Workspace.",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#ef4444",
+            cancelButtonColor: "#cbd5e1",
+            confirmButtonText: "Yes, reset form",
+            cancelButtonText: "Cancel",
+            customClass: { popup: "swal-small-modal rounded-3xl" }
+        }).then((res) => {
+            if (res.isConfirmed) {
+                setForm(emptyForm());
+                setCurrentStep(1);
+                setActiveParcelFeature(null);
+                setActiveParcelIndex(null);
+                setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
+                setErrors({});
+            }
+        });
+    };
+
     const clearDraftStateRecord = () => {
-        localStorage.removeItem(DRAFT_UUID_KEY);
-        localStorage.removeItem(DRAFT_PAYLOAD_KEY);
+        try {
+            localStorage.removeItem(DRAFT_UUID_KEY);
+            localStorage.removeItem(DRAFT_PAYLOAD_KEY);
+        } catch(e) {}
     };
 
     const addParcel = () => {
@@ -255,7 +360,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
 
     const parcelFieldError = (index, field) => (errors[`parcels.${index}.${field}`] ? <p className="text-[10px] font-bold text-red-500 mt-1">{errors[`parcels.${index}.${field}`]}</p> : null);
 
-    const totalAreaSqm = form.parcels.reduce((sum, p) => sum + (parseFloat(p.lot_area_sqm) || 0), 0);
+    const totalAreaSqm = (form.parcels || []).reduce((sum, p) => sum + (parseFloat(p.lot_area_sqm) || 0), 0);
 
     const [pinLookupMap, setPinLookupMap] = useState({});
     const [pinLoading, setPinLoading] = useState({});
@@ -330,7 +435,6 @@ export default function Create({ auth, errors: serverErrors = {} }) {
         loadParcelLookup();
     }, []);
 
-    // ── PIN LOOKUP (local geojson cache, falls back to API) ──
     const lookupPin = async (pin) => {
         const normalizedPin = pin?.trim();
         if (!normalizedPin) throw new Error("Property Index Number is required");
@@ -341,7 +445,6 @@ export default function Create({ auth, errors: serverErrors = {} }) {
 
         const res = await fetch(`/api/tax-map/lookup/${encodeURIComponent(normalizedPin)}`);
 
-        // Handle non-JSON or non-200 responses safely
         if (!res.ok) {
             const contentType = res.headers.get("content-type");
             if (contentType && contentType.includes("application/json")) {
@@ -359,7 +462,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
     const handlePinLookup = async (index) => {
         const pin = form.parcels[index]?.property_index_number?.trim();
 
-        const isDuplicate = form.parcels.some((p, i) => i !== index && p.property_index_number?.trim() === pin);
+        const isDuplicate = (form.parcels || []).some((p, i) => i !== index && p.property_index_number?.trim() === pin);
         if (isDuplicate) {
             setErrors((prev) => ({
                 ...prev,
@@ -381,13 +484,12 @@ export default function Create({ auth, errors: serverErrors = {} }) {
             }
 
             setForm((prev) => {
-                // If this is the first (primary) parcel being looked up, set the application-level barangay
                 const newBarangay = index === 0 && data.barangay ? data.barangay : prev.barangay;
 
                 return {
                     ...prev,
                     barangay: newBarangay,
-                    parcels: prev.parcels.map((p, i) =>
+                    parcels: (prev.parcels || []).map((p, i) =>
                         i === index
                             ? {
                                   ...p,
@@ -453,7 +555,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
             cancelButtonColor: "#ef4444",
             confirmButtonText: "Yes",
             customClass: {
-                popup: "swal-small-modal",
+                popup: "swal-small-modal rounded-3xl",
                 title: "text-slate-800 font-black",
             },
         }).then((res) => {
@@ -515,7 +617,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
         if (step === 3) {
             if (!form.barangay?.trim()) newErrors.barangay = "Required";
 
-            if (!form.parcels.length) {
+            if (!form.parcels || form.parcels.length === 0) {
                 newErrors.parcels = "At least one parcel is required";
             } else {
                 const seenPins = new Set();
@@ -586,7 +688,6 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                     },
                 });
 
-                // Drop the local/cloud draft now that submission succeeded
                 clearDraftStateRecord();
                 setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
                 setSyncStatus("Saved locally");
@@ -713,7 +814,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                             <span className="text-[9px] font-bold text-slate-600 tracking-widest uppercase">Rosario, Batangas</span>
                         </div>
                         <div className="hidden md:flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 italic">
-                            <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === "Saving modifications..." ? "bg-amber-400 sync-dot-active" : syncStatus === "Auto-saved to cloud" ? "bg-emerald-500" : "bg-slate-300"}`} />
+                            <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === "Saving modifications..." ? "bg-amber-400 sync-dot-active" : syncStatus === "Auto-saved to drafts" ? "bg-emerald-500" : "bg-slate-300"}`} />
                             {syncStatus}
                         </div>
                     </div>
@@ -767,7 +868,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                     </div>
 
                                     <div className="absolute top-5 left-5 right-5 z-10 flex flex-col gap-3 pointer-events-none">
-                                        {form.parcels.map(
+                                        {(form.parcels || []).map(
                                             (parcel, idx) =>
                                                 idx === activeParcelIndex &&
                                                 parcel.property_index_number &&
@@ -847,7 +948,19 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                             {/* ── STEP 1: SCOPE ── */}
                                             {currentStep === 1 && (
                                                 <div className="form-enter flex-1 flex flex-col">
-                                                    <h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 flex-shrink-0">Application Parameters</h3>
+                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Application Parameters</h3>
+                                                        <div className="flex items-center gap-2">
+                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
+                                                                Restart
+                                                            </button>
+                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
+                                                                Save Draft
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                     <div className="flex-1 flex flex-col gap-y-6">
                                                         <div>
                                                             <Label required hasError={!!errors.application_type}>Application Category</Label>
@@ -898,7 +1011,19 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                             {/* ── STEP 2: PROFILE ── */}
                                             {currentStep === 2 && (
                                                 <div className="form-enter flex-1 flex flex-col">
-                                                    <h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 flex-shrink-0">Applicant Identity</h3>
+                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Applicant Identity</h3>
+                                                        <div className="flex items-center gap-2">
+                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
+                                                                Restart
+                                                            </button>
+                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
+                                                                Save Draft
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                     <div className="space-y-6 flex-1">
                                                         <div className="relative">
                                                             <Label required hasError={!!errors.applicant_name}>Registered Applicant / Corp</Label>
@@ -932,17 +1057,29 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                             {/* ── STEP 3: LOCATION (multi-parcel) ── */}
                                             {currentStep === 3 && (
                                                 <div className="form-enter flex-1 flex flex-col">
-                                                    <h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 flex-shrink-0">Property Location</h3>
+                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Property Location</h3>
+                                                        <div className="flex items-center gap-2">
+                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
+                                                                Restart
+                                                            </button>
+                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
+                                                                Save Draft
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                     <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-1">
 
                                                         <div className="space-y-4">
-                                                            {form.parcels.map((parcel, index) => (
+                                                            {(form.parcels || []).map((parcel, index) => (
                                                                 <div key={index} className="rounded-xl bg-slate-50 p-4 relative">
                                                                     <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/60">
                                                                         <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-blue-700 uppercase tracking-widest">
                                                                             {parcel.parcel_code || `PARCEL ${index + 1}`}
                                                                         </span>
-                                                                        {form.parcels.length > 1 && (
+                                                                        {form.parcels && form.parcels.length > 1 && (
                                                                             <button type="button" onClick={() => removeParcel(index)} className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-wider flex items-center gap-1">
                                                                                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg> Remove
                                                                             </button>
@@ -953,7 +1090,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                                                         <div className="relative">
                                                                             <Label required hasError={!!errors[`parcels.${index}.property_index_number`]}>Property Index Number</Label>
                                                                             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-1">
-                                                                                <Input type="text" value={parcel.property_index_number} onChange={setParcelField(index, "property_index_number")} placeholder="Enter property index number" className="flex-1 bg-white" hasError={!!errors[`parcels.${index}.property_index_number`]} />
+                                                                                <Input type="text" value={parcel.property_index_number || ''} onChange={setParcelField(index, "property_index_number")} placeholder="Enter property index number" className="flex-1 bg-white" hasError={!!errors[`parcels.${index}.property_index_number`]} />
                                                                                 <button type="button" onClick={() => handlePinLookup(index)} disabled={pinLoading[index] || !parcel.property_index_number?.trim()} className={`inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-[12px] font-bold transition-all whitespace-nowrap ${pinLoading[index] || !parcel.property_index_number?.trim() ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
                                                                                     {pinLoading[index] ? "Searching..." : "Lookup Map"}
                                                                                 </button>
@@ -975,7 +1112,19 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                             {/* ── STEP 4: DOSSIER REVIEW ── */}
                                             {currentStep === 4 && (
                                                 <div className="form-enter flex-1 flex flex-col">
-                                                    <h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 flex-shrink-0">Review Summary</h3>
+                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Review Summary</h3>
+                                                        <div className="flex items-center gap-2">
+                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
+                                                                Restart
+                                                            </button>
+                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
+                                                                Save Draft
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                     <div className="flex-1 overflow-y-auto space-y-4 pr-2">
                                                         <div className="bg-slate-50 rounded-xl p-4 relative group">
                                                             <button type="button" onClick={() => setCurrentStep(1)} className="absolute top-4 right-4 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-wider flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg> Edit</button>
@@ -1002,7 +1151,7 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                                             <h4 className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 mb-4 pb-2 border-b border-slate-200/50">3. Geospatial Data</h4>
                                                             <div className="grid grid-cols-2 gap-4">
                                                                 <div className="col-span-2"><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Location</p><p className="text-[13px] font-bold text-slate-800">{form.barangay ? `Brgy. ${form.barangay}` : "—"} </p></div>
-                                                                <div><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Primary Property Index</p><p className="text-[12px] font-mono text-slate-800 uppercase">{form.parcels[0]?.property_index_number || "—"}</p></div>
+                                                                <div><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Primary Property Index</p><p className="text-[12px] font-mono text-slate-800 uppercase">{(form.parcels && form.parcels[0]?.property_index_number) || "—"}</p></div>
                                                                 <div><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Total Lot Area</p><p className="text-[12px] font-mono text-slate-800">{totalAreaSqm > 0 ? `${totalAreaSqm.toFixed(2)} sq.m.` : "—"}</p></div>
                                                             </div>
                                                         </div>
@@ -1013,7 +1162,19 @@ export default function Create({ auth, errors: serverErrors = {} }) {
                                             {/* ── STEP 5: FINAL ASSESSMENT ── */}
                                             {currentStep === 5 && (
                                                 <div className="form-enter flex-1 flex flex-col">
-                                                    <h3 className="text-lg font-black text-slate-800 tracking-tight mb-4 flex-shrink-0">Final Assessment</h3>
+                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Final Assessment</h3>
+                                                        <div className="flex items-center gap-2">
+                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
+                                                                Restart
+                                                            </button>
+                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
+                                                                Save Draft & Exit
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                     <div className="flex-1 flex flex-col justify-center w-full">
                                                         <div className="bg-blue-50/50 rounded-[16px] p-6">
                                                             <div className="text-center mb-6">

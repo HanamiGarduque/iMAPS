@@ -12,6 +12,7 @@ use App\Services\AuditLogger;
 use App\Services\ApplicationStatusTracker;
 
 use Illuminate\Support\Facades\Log; // For placeholder SMS logic
+use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -382,5 +383,43 @@ class TechnicalReviewController extends Controller
         ]);
 
         return redirect()->back()->with('success', 'Site Inspector assigned successfully.');
+    }
+
+    /**
+     * Fetch inspection and photo data directly from Supabase REST API.
+     */
+    public function getSupabaseInspectionData($localInspectionId)
+    {
+        // Ensure you have these defined in your .env file
+        $supabaseUrl = env('SUPABASE_URL'); // e.g., https://laapipjyprmmaylunxib.supabase.co
+        $supabaseKey = env('SUPABASE_SERVICE_ROLE_KEY'); // Use service role for backend operations
+
+        if (!$supabaseUrl || !$supabaseKey) {
+            return response()->json(['error' => 'Supabase credentials missing.'], 500);
+        }
+
+        try {
+            $response = Http::withHeaders([
+                'apikey'        => $supabaseKey,
+                'Authorization' => "Bearer {$supabaseKey}",
+                'Range'         => '0-9' // Limit results just in case
+            ])->get("{$supabaseUrl}/rest/v1/field_jobs", [
+                'local_inspection_id' => "eq.{$localInspectionId}",
+                // The 'select' param mimics your frontend's nested query
+                'select' => 'id,local_inspection_id,status,scheduled_date,deadline_date,submitted_at,inspection_result,is_compliant,findings,observations,discrepancies,recommendations,inspector_notes,remarks,checklist_completed_count,checklist_total_count,checklist_data,photo_count,photo_paths,field_job_photos(id,photo_url,latitude,longitude,captured_at)'
+            ]);
+
+            if ($response->failed()) {
+                return response()->json(['error' => 'Failed to fetch inspection data from Supabase.'], $response->status());
+            }
+
+            $data = $response->json();
+
+            // Return the single record if it exists
+            return response()->json($data[0] ?? null);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Backend error: ' . $e->getMessage()], 500);
+        }
     }
 }   
