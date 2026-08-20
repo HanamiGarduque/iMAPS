@@ -29,15 +29,12 @@ function StatusBadge({ status }) {
 }
 
 // ── GeoJSON Sanitizer Utility ──
-// Deep inspects coordinates to prevent Leaflet NaN crashes
 const hasValidCoords = (coords) => {
     if (!coords) return false;
     if (Array.isArray(coords)) {
-        // If it's a direct coordinate pair [lng, lat]
         if (coords.length === 2 && typeof coords[0] === "number") {
             return !isNaN(coords[0]) && !isNaN(coords[1]);
         }
-        // If it's a nested array (Polygon/MultiPolygon), check recursively
         return coords.length > 0 && coords.every(hasValidCoords);
     }
     return false;
@@ -47,12 +44,9 @@ const sanitizeGeoJSON = (geojson) => {
     if (!geojson || !geojson.features) return geojson;
     const validFeatures = geojson.features.filter((feature) => {
         try {
-            // First pass: manually check for NaN coordinates
             if (!feature.geometry || !hasValidCoords(feature.geometry.coordinates)) {
                 return false;
             }
-
-            // Second pass: let Leaflet verify bounds
             const layer = L.geoJSON(feature);
             const bounds = layer.getBounds();
             const sw = bounds?.getSouthWest();
@@ -75,22 +69,14 @@ function MapController({ brgyData, activeParcelFeature }) {
             if (activeParcelFeature) {
                 const layer = L.geoJSON(activeParcelFeature);
                 const bounds = layer.getBounds();
-
-                // Only fly to bounds if the GeoJSON has valid coordinates
                 if (bounds.isValid()) {
                     map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 18, duration: 1.2 });
-                } else {
-                    console.warn("activeParcelFeature geometry is empty or invalid.");
                 }
             } else if (brgyData) {
                 const layer = L.geoJSON(brgyData);
                 const bounds = layer.getBounds();
-
-                // Only fit bounds if the GeoJSON has valid coordinates
                 if (bounds.isValid()) {
                     map.fitBounds(bounds, { padding: [30, 30] });
-                } else {
-                    console.warn("brgyData geometry is empty or invalid.");
                 }
             }
         } catch (error) {
@@ -100,6 +86,7 @@ function MapController({ brgyData, activeParcelFeature }) {
 
     return null;
 }
+
 // ── Premium Form Controls ──
 function Label({ children, required, hasError }) {
     return (
@@ -215,7 +202,6 @@ function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
 function UpdateStatusDrawer({ onClose, onSubmit, saving, currentStatus }) {
     const [newStatus, setNewStatus] = useState("");
     const [remarks, setRemarks] = useState("");
-
     const availableStatuses = ["Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
 
     return (
@@ -279,7 +265,6 @@ function UpdateStatusDrawer({ onClose, onSubmit, saving, currentStatus }) {
 }
 
 // ── Main Page Component ──
-// Data is gathered synchronously from parent properties
 export default function Show({ auth, application: initialApp, app: alternateApp, inspectors = [], errors: serverErrors = {} }) {
     const app = initialApp || alternateApp || {};
 
@@ -291,14 +276,15 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     }, [app.parcels]);
 
     const [parcelReviews, setParcelReviews] = useState({});
-const [liveStatuses, setLiveStatuses] = useState({});
+    const [liveStatuses, setLiveStatuses] = useState({});
 
     const handleLiveStatusUpdate = (parcelId, status) => {
         setLiveStatuses((prev) => {
-            if (prev[parcelId] === status) return prev; 
+            if (prev[parcelId] === status) return prev;
             return { ...prev, [parcelId]: status };
         });
     };
+
     useEffect(() => {
         if (uniqueParcels && Object.keys(parcelReviews).length === 0) {
             const initial = {};
@@ -333,8 +319,9 @@ const [liveStatuses, setLiveStatuses] = useState({});
     const [errors, setErrors] = useState(serverErrors);
     const [showAssignDrawer, setShowAssignDrawer] = useState(false);
 
-    // Map States
+    // Map States (Database driven via API)
     const [brgyMapData, setBrgyMapData] = useState(null);
+    const [landUseMapData, setLandUseMapData] = useState(null);
     const [parcelMapData, setParcelMapData] = useState(null);
     const [pinLookupMap, setPinLookupMap] = useState({});
     const [activeParcelFeature, setActiveParcelFeature] = useState(null);
@@ -351,16 +338,25 @@ const [liveStatuses, setLiveStatuses] = useState({});
         assigned_notes: "",
     });
 
-    const showToast = (msg, type = "success") => {
-        setToast({ msg, type });
+const showToast = (msg, type = "success") => {
         setTimeout(() => setToast(null), 3000);
     };
 
+    // Fetch layers dynamically from PostGIS API
     useEffect(() => {
-        fetch("/geojson/rosario_brgy_map.geojson")
-            .then((res) => res.json())
-            .then((data) => setBrgyMapData(sanitizeGeoJSON(data)))
-            .catch((err) => console.warn("Failed to load brgy map:", err));
+        fetch("/api/map/barangay_boundary")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (data) setBrgyMapData(sanitizeGeoJSON(data));
+            })
+            .catch((err) => console.warn("Failed to load brgy map from DB:", err));
+
+        fetch("/api/map/land_use_plan")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (data) setLandUseMapData(sanitizeGeoJSON(data));
+            })
+            .catch((err) => console.warn("Failed to load land use plan from DB:", err));
 
         const loadParcelLookup = async () => {
             try {
@@ -368,7 +364,6 @@ const [liveStatuses, setLiveStatuses] = useState({});
                 if (!response.ok) throw new Error("Unable to load parcel lookup data");
                 const payload = await response.json();
 
-                // Sanitize dataset on load to filter corrupt geometry arrays entirely
                 const sanitizedPayload = sanitizeGeoJSON(payload);
                 setParcelMapData(sanitizedPayload);
 
@@ -523,6 +518,20 @@ const [liveStatuses, setLiveStatuses] = useState({});
         fillColor: "#3b82f6",
     };
 
+    const landUseStyles = {
+        Residential: { color: "#16a34a", fillColor: "#22c55e", fillOpacity: 0.3, weight: 1 },
+        Commercial: { color: "#d97706", fillColor: "#f59e0b", fillOpacity: 0.3, weight: 1 },
+        Agricultural: { color: "#65a30d", fillColor: "#84cc16", fillOpacity: 0.3, weight: 1 },
+        Industrial: { color: "#dc2626", fillColor: "#ef4444", fillOpacity: 0.3, weight: 1 },
+        "Agro-industrial": { color: "#7c3aed", fillColor: "#8b5cf6", fillOpacity: 0.3, weight: 1 },
+        default: { color: "#475569", fillColor: "#64748b", fillOpacity: 0.2, weight: 1 },
+    };
+
+    const getLandUseStyle = (feature) => {
+        const classification = feature.properties?.class || feature.properties?.LAND_USE || "default";
+        return landUseStyles[classification] || landUseStyles.default;
+    };
+
     const getParcelStyle = (feature) => {
         const isActive = activeParcelFeature && activeParcelFeature.properties.property_index_number === feature.properties.property_index_number;
         return {
@@ -566,13 +575,9 @@ const [liveStatuses, setLiveStatuses] = useState({});
         );
     };
 
-    // Update the variable extraction
-    // Update the variable extraction
     const activeParcelData = uniqueParcels?.[activeParcelIndex] || uniqueParcels?.[0] || {};
     const siteInspection = activeParcelData?.site_inspection || null;
     const effectiveActiveStatus = liveStatuses[activeParcelData?.id]?.toLowerCase() || siteInspection?.status?.toLowerCase();
-    
-    console.log("Local Inspection ID passing to Supabase:", siteInspection?.id);
     
     const showDecisionButtons = !siteInspection || ["completed", "submitted"].includes(effectiveActiveStatus);
     const hasCompletedInspection = siteInspection && ["completed", "submitted"].includes(effectiveActiveStatus);
@@ -581,6 +586,7 @@ const [liveStatuses, setLiveStatuses] = useState({});
         const effectiveStatus = liveStatuses[parcel.id]?.toLowerCase() || parcel.site_inspection?.status?.toLowerCase();
         return !parcel.site_inspection || ["completed", "submitted"].includes(effectiveStatus);
     });
+
     return (
         <>
             <Head title={`View Application: ${app.reference_number || "Detail"} | iMAPS`} />
@@ -676,7 +682,13 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                                                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                             />
+                                            {/* Land Use Plan Layer (Background Zoning) */}
+                                            {landUseMapData && <GeoJSON data={landUseMapData} style={getLandUseStyle} />}
+
+                                            {/* Barangay Boundaries */}
                                             {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
+
+                                            {/* Parcels */}
                                             {parcelMapData && <GeoJSON key={activeParcelFeature?.properties?.property_index_number || "parcels"} data={parcelMapData} style={getParcelStyle} />}
                                             <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />
                                         </MapContainer>
@@ -703,17 +715,17 @@ const [liveStatuses, setLiveStatuses] = useState({});
 
                                                         <div className="grid grid-cols-2 gap-y-3 gap-x-4">
                                                             <div>
-                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Lot Number</p>
+                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Lot Number</p>
                                                                 <p className="text-[13px] font-bold text-slate-800 leading-tight">{parcel.lot_number || "—"}</p>
                                                             </div>
                                                             <div>
-                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Declared Area</p>
+                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Declared Area</p>
                                                                 <p className="text-[13px] font-mono font-bold text-slate-800 leading-tight">
                                                                     {parcel.lot_area_sqm || "—"} <span className="text-[10px] font-bold text-slate-400 font-sans tracking-wide">SQ.M</span>
                                                                 </p>
                                                             </div>
                                                             <div className="col-span-2">
-                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Jurisdiction</p>
+                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Jurisdiction</p>
                                                                 <p className="text-[13px] font-bold text-slate-800 leading-tight">Brgy. {app.barangay || "—"}</p>
                                                             </div>
                                                             <div>
@@ -733,7 +745,6 @@ const [liveStatuses, setLiveStatuses] = useState({});
 
                                 {/* Right Side Info & Evaluations Panel */}
                                 <div className="flex-1 flex flex-col relative overflow-hidden lg:w-1/2">
-                                    {/* Application Top Summary Header */}
                                     <div className="bg-white px-6 py-5 border-b border-slate-200 shrink-0 z-10 shadow-sm flex items-start justify-between">
                                         <div>
                                             <div className="flex items-center gap-2 mb-1.5">
@@ -752,13 +763,10 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                         </div>
                                     </div>
 
-                                    {/* Scrollable Content Area */}
                                     <div className="flex-1 p-3 overflow-y-auto relative">
                                         <div className="max-w-2xl mx-auto space-y-6">
-                                            {/* Conditional Section: Technical Review vs General Status */}
                                             {app.status === "Technical Review" ? (
                                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                                                    {/* Multi-Parcel Tabs */}
                                                     <div className="bg-slate-50/80 border-b border-slate-200 px-2 pt-2 flex gap-1 overflow-x-auto">
                                                         {uniqueParcels?.map((parcel, idx) => {
                                                             const isActive = activeParcelIndex === idx;
@@ -791,10 +799,8 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                         })}
                                                     </div>
 
-                                                    {/* Active Parcel Form Wrapper */}
                                                     {activeParcelData && (
                                                         <div className="p-6 space-y-6 form-enter" key={`parcel-${activeParcelData.id}`}>
-                                                            {/* Pass the callback down to the inspection component */}
                                                             <ParcelInspectionStatus
                                                                 inspectionId={activeParcelData.site_inspection?.id}
                                                                 onStatusFetched={(status) => handleLiveStatusUpdate(activeParcelData.id, status)}
@@ -839,9 +845,7 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                                         </div>
                                                                     </div>
 
-                                                                    {/* Conditional Fields based on Decision */}
                                                                     <div className="space-y-4">
-                                                                        {/* Reason for Declination */}
                                                                         {parcelReviews[activeParcelData.id]?.decision === "Declined" && (
                                                                             <div className="form-enter">
                                                                                 <Label required>Reason for Declination</Label>
@@ -855,7 +859,6 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                                             </div>
                                                                         )}
 
-                                                                        {/* Inline Inspector Assignment */}
                                                                         {parcelReviews[activeParcelData.id]?.decision === "Needs Site Inspection" && (
                                                                             <div className="form-enter p-4 rounded-xl border border-amber-200 bg-amber-50/30 space-y-3">
                                                                                 <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1">Schedule Field Task</h4>
@@ -899,7 +902,6 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                                             </div>
                                                                         )}
 
-                                                                        {/* General Findings */}
                                                                         <div>
                                                                             <Label>Evaluation Findings / Remarks</Label>
                                                                             <Textarea
@@ -912,7 +914,6 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                                     </div>
                                                                 </>
                                                             ) : (
-                                                                /* Fallback UI when status is NOT completed */
                                                                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 animate-[formFadeIn_0.3s_ease-out]">
                                                                     <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
                                                                         <svg className="w-4 h-4 text-amber-600 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -931,7 +932,6 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                         </div>
                                                     )}
 
-                                                    {/* Batch Submit Footer */}
                                                     {isBatchSubmitAllowed && (
                                                         <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-end gap-3 form-enter">
                                                             <button
@@ -952,9 +952,7 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                 </div>
                                             ) : (
                                                 <div className="max-w-2xl mx-auto space-y-6">
-                                                    {/* Horizontal Timeline & Action Header */}
                                                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col md:flex-row items-center gap-6">
-                                                        {/* Horizontal Timeline UI */}
                                                         <div className="w-full flex-1 flex items-center justify-between relative before:absolute before:inset-0 before:top-[14px] before:h-[2px] before:w-full before:bg-slate-100 z-0 px-2">
                                                             {["Received", "Technical Review", "Under SB", "For Release", "Released"].map((step, idx) => {
                                                                 const stepKey = step === "Under SB" ? "Under Sangguniang Bayan" : step;
@@ -990,7 +988,6 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                             })}
                                                         </div>
 
-                                                        {/* Update Status Action */}
                                                         <div className="shrink-0 md:pl-5 md:border-l border-slate-100 flex items-center justify-center w-full md:w-auto pt-4 md:pt-0 border-t md:border-t-0 mt-2 md:mt-0">
                                                             <button
                                                                 onClick={() => setShowStatusModal(true)}
@@ -1008,7 +1005,6 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                         </div>
                                                     </div>
 
-                                                    {/* Dossier Parameters */}
                                                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                                                         <h4 className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
                                                             <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -1046,7 +1042,6 @@ const [liveStatuses, setLiveStatuses] = useState({});
                                                         </div>
                                                     </div>
 
-                                                    {/* Read-only Parcels List */}
                                                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
                                                         <h4 className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
                                                             <svg className="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">

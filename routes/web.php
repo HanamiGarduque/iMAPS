@@ -6,6 +6,8 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\AuditTrailController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\PublicPortalController;
+use App\Http\Controllers\MapController; 
+use App\Http\Controllers\SettingsController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -22,7 +24,9 @@ Route::get('/', function () {
 
 // ── Authenticated Routes (All Auth Users) ──
 Route::middleware('auth')->group(function () {
-
+    // Map Layer API Endpoint
+    Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])
+        ->name('api.map.layer');
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
@@ -94,6 +98,11 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
 
     Route::get('/audit-log', [AuditTrailController::class, 'index'])
         ->name('audit-log.index');
+        Route::get('/settings', [SettingsController::class, 'index'])
+        ->name('settings.index');
+        
+    Route::post('/settings/upload-shapefile', [SettingsController::class, 'uploadShapefile'])
+        ->name('settings.upload-shapefile');
 });
 
 // ── Public Portal Access ──
