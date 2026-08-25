@@ -7,7 +7,9 @@ use App\Http\Controllers\AuditTrailController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\PublicPortalController;
 use App\Http\Controllers\MapController; 
+use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\Auth\RegisteredUserController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -16,7 +18,7 @@ use Inertia\Inertia;
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin'       => Route::has('login'),
-        'canRegister'    => Route::has('register'),
+        'canRegister'    => false,
         'laravelVersion' => Application::VERSION,
         'phpVersion'     => PHP_VERSION,
     ]);
@@ -93,6 +95,10 @@ Route::middleware('auth')->group(function () {
 // ── Admin-Only Routes ──
 Route::middleware(['auth', 'role:Admin'])->group(function () {
 
+    // Override Default Registration to be Admin-Only
+    Route::get('register-new-account', [RegisteredUserController::class, 'create'])->name('register');
+    Route::post('register-new-account', [RegisteredUserController::class, 'store']);
+
     Route::get('/analytics', [AnalyticsController::class, 'index'])
         ->name('analytics.index');
 
@@ -103,6 +109,12 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
         
     Route::post('/settings/upload-shapefile', [SettingsController::class, 'uploadShapefile'])
         ->name('settings.upload-shapefile');
+
+    Route::post('/settings/upload-tiles', [SettingsController::class, 'uploadRasterTiles']);
+    
+    // User Management
+    Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
+    Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->name('users.sensitive');
 });
 
 // ── Public Portal Access ──

@@ -22,25 +22,40 @@ class MapController extends Controller
 
         $tableName = $allowedLayers[$layer];
 
-        // PostGIS magic query to convert spatial table to GeoJSON
+        // 1. Transform coordinates to WGS84 (EPSG:4326)
+        // 2. Filter out rogue/corrupt geometries that fall outside the Philippines bounds
         $query = "
             SELECT jsonb_build_object(
                 'type',     'FeatureCollection',
-                'features', jsonb_agg(features.feature)
+                'features', COALESCE(jsonb_agg(features.feature), '[]'::jsonb)
             ) as geojson
             FROM (
               SELECT jsonb_build_object(
                 'type',       'Feature',
-                'geometry',   ST_AsGeoJSON(geom)::jsonb,
-                'properties', to_jsonb(inputs) - 'geom'
+                'geometry',   ST_AsGeoJSON(transformed_geom)::jsonb,
+                'properties', to_jsonb(inputs) - 'geom' - 'transformed_geom'
               ) AS feature
-              FROM (SELECT * FROM $tableName) inputs
+              FROM (
+                  SELECT *,
+                  ST_SimplifyPreserveTopology(
+                      CASE 
+                        WHEN ST_XMax(geom) > 5000000 
+                        THEN ST_Transform(ST_SetSRID(geom, 3857), 4326)
+                        WHEN ST_XMax(geom) > 180 OR ST_YMax(geom) > 90 
+                        THEN ST_Transform(ST_SetSRID(geom, 25393), 4326)
+                        ELSE geom 
+                      END, 
+                  0.00005) AS transformed_geom
+                  FROM $tableName WHERE geom IS NOT NULL
+              ) inputs
+              WHERE ST_XMin(transformed_geom) BETWEEN 115 AND 128 
+                AND ST_YMin(transformed_geom) BETWEEN 4 AND 22
             ) features;
         ";
 
         $result = DB::select($query);
-        $geojson = json_decode($result[0]->geojson);
 
-        return response()->json($geojson);
+        // Output the raw JSON string directly from PostGIS with correct headers.
+        return response($result[0]->geojson, 200, ['Content-Type' => 'application/json']);
     }
 }

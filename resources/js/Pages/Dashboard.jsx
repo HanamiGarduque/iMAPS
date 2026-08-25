@@ -15,17 +15,17 @@ const TILE_PROVIDERS = {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19,
     },
-    topo: {
-        label: "Topographic",
-        url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-        attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, SRTM | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
-        maxZoom: 17,
-    },
     satellite: {
         label: "Satellite",
         url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and GIS User Community',
         maxZoom: 19,
+    },
+    hillshade: {
+        label: "Terrain Hillshade",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Earthstar Geographics, etc.',
+        maxZoom: 17,
     },
 };
 
@@ -112,10 +112,11 @@ const getTemporalData = (baseData, name, year) => {
 };
 
 // ── Leaflet Map ──
-function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapClick, appTypeFilter, year }) {
+function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapClick, appTypeFilter, year, mapZoom, onZoomChange }) {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
     const tileLayerRef = useRef(null);
+    const clupTileLayerRef = useRef(null); // Added for Raster Tiles
     const geoLayerRef = useRef(null);
     const zoningLayerRef = useRef(null);
     const activeFeatureRef = useRef(null);
@@ -159,12 +160,34 @@ function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapCli
     };
 
     const zoningPlanColors = {
-        "AgIndZ-PTR": { fill: "#8b5cf6", stroke: "#7c3aed" },
         "R1-Z": { fill: "#22c55e", stroke: "#16a34a" },
         "R2-Z": { fill: "#4ade80", stroke: "#22c55e" },
-        "C/MP-Z": { fill: "#f59e0b", stroke: "#d97706" },
+        "MR2-SZ": { fill: "#86efac", stroke: "#4ade80" },
+        "BR2-SZ": { fill: "#bbf7d0", stroke: "#86efac" },
+        "C1-Z": { fill: "#fcd34d", stroke: "#fbbf24" },
+        "C2-Z": { fill: "#f59e0b", stroke: "#d97706" },
+        "C/MP-Z": { fill: "#d97706", stroke: "#b45309" },
+        "I1-Z": { fill: "#fca5a5", stroke: "#f87171" },
         "I2-Z": { fill: "#ef4444", stroke: "#dc2626" },
+        "I3-Z": { fill: "#b91c1c", stroke: "#991b1b" },
+        "AgIndZ": { fill: "#a78bfa", stroke: "#8b5cf6" },
+        "AgIndZ-PTR": { fill: "#8b5cf6", stroke: "#7c3aed" },
+        "AgIndZ-PGR": { fill: "#7c3aed", stroke: "#6d28d9" },
+        "PDA-SZ": { fill: "#84cc16", stroke: "#65a30d" },
+        "PTA-SZ-RA": { fill: "#a3e635", stroke: "#84cc16" },
+        "5491-APDA-SZ": { fill: "#bef264", stroke: "#a3e635" },
+        "FZ": { fill: "#15803d", stroke: "#166534" },
+        "FR-SZ": { fill: "#166534", stroke: "#14532d" },
+        "GI-Z": { fill: "#3b82f6", stroke: "#2563eb" },
+        "UTS-Z": { fill: "#06b6d4", stroke: "#0891b2" },
+        "CMRF": { fill: "#0ea5e9", stroke: "#0284c7" },
+        "PR-Z": { fill: "#10b981", stroke: "#059669" },
+        "T-Z": { fill: "#f472b6", stroke: "#db2777" }, 
+        "ECT-Z": { fill: "#fb7185", stroke: "#e11d48" },
+        "THSP-SZ": { fill: "#fda4af", stroke: "#f43f5e" },
+        "WZ": { fill: "#38bdf8", stroke: "#0284c7" },
         "ROAD": { fill: "#64748b", stroke: "#475569" },
+        "PROPOSED ROAD": { fill: "#94a3b8", stroke: "#64748b" },
         "DEFAULT": { fill: "#cbd5e1", stroke: "#94a3b8" }
     };
 
@@ -194,7 +217,13 @@ function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapCli
         };
 
         const simulatedTotal = Math.max(1, Math.floor(temporalData.total * (multipliers[filter] || 1)));
-        const baseStyle = { color: "#2563eb", weight: 2, opacity: 1 };
+        
+        // Made base weight thinner
+        const baseStyle = { color: "#2563eb", weight: 1, opacity: 1 };
+
+        if (layer === "zoning") {
+            return { color: "#1e3a8a", weight: 1, fillColor: "transparent", fillOpacity: 0, opacity: 1 };
+        }
 
         if (layer === "status") {
             return { ...baseStyle, fillColor: statusColor(simulatedTotal), fillOpacity: 0.15 };
@@ -218,11 +247,17 @@ function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapCli
             const map = L.default.map(mapRef.current, {
                 center: [13.8450, 121.2060],
                 zoom: 13,
-                zoomControl: false,
+                minZoom: 12,
+                maxZoom: 18,
+                zoomControl: false, // Default zoom control disabled
                 scrollWheelZoom: true,
+                maxBoundsViscosity: 1.0 
             });
 
-            L.default.control.zoom({ position: "bottomleft" }).addTo(map);
+            // Map interaction to sync external custom slider state
+            map.on("zoomend", () => {
+                if (onZoomChange) onZoomChange(map.getZoom());
+            });
 
             const initialProvider = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.standard;
             tileLayerRef.current = L.default
@@ -232,6 +267,14 @@ function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapCli
                     className: "map-tiles",
                 })
                 .addTo(map);
+
+            clupTileLayerRef.current = L.default.tileLayer('/tiles/clup_tiles/{z}/{x}/{y}.png', {
+                maxZoom: 22,
+                maxNativeZoom: 19,
+                opacity: 0.9,
+                zIndex: 10,
+                errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+            });
 
             mapInstanceRef.current = map;
 
@@ -243,42 +286,46 @@ function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapCli
                 }
             });
 
-            // Fetch Layers including Zoning Land Use Plan
             Promise.all([
                 fetch("/api/map/rosario_boundary").then((r) => r.ok ? r.json() : null).catch(() => null),
                 fetch("/api/map/barangay_boundary").then((r) => r.ok ? r.json() : null).catch(() => null),
-                fetch("/api/map/land_use_plan").then((r) => r.ok ? r.json() : null).catch(() => null)
             ])
             .then(([rosarioData, barangayData, landUseData]) => {
                 if (rosarioData && rosarioData.features) {
-                    L.default.geoJSON(rosarioData, {
+                    const rosarioGeo = L.default.geoJSON(rosarioData, {
                         style: {
                             color: "#475569",
                             weight: 3,
                             fillColor: "transparent",
-                            dashArray: "10, 10"
+                            opacity: 1
                         },
                         interactive: false
                     }).addTo(map);
+                    
+                    const rosarioBounds = rosarioGeo.getBounds();
+                    map.setMaxBounds(rosarioBounds.pad(0.1));
                 }
 
                 if (landUseData && landUseData.features) {
                     zoningLayerRef.current = L.default.geoJSON(landUseData, {
                         style: (feature) => {
                             const props = feature.properties || {};
-                            const zoneCode = props.lup_2030 || props.LUP_2030 || "DEFAULT";
+                            const zoneCode = props.lup_2030 || props.LUP_2030 || props.zone_code || props.zone || props.landuse || props.luc || "DEFAULT";
                             const colorConfig = zoningPlanColors[zoneCode] || zoningPlanColors["DEFAULT"];
+                            const isZoningActive = layerRef.current === "zoning";
+                            
                             return {
                                 color: colorConfig.stroke,
                                 weight: 1.5,
                                 fillColor: colorConfig.fill,
-                                fillOpacity: layerRef.current === "zoning" ? 0.65 : 0
+                                fillOpacity: isZoningActive ? 0.50 : 0, // Opacity is now 75%
+                                opacity: isZoningActive ? 1 : 0
                             };
                         },
                         onEachFeature: (feature, layer_feature) => {
                             const props = feature.properties || {};
-                            const zone = props.lup_2030 || props.LUP_2030 || "N/A";
-                            const location = props.location || props.LOCATION || "Unknown";
+                            const zone = props.lup_2030 || props.LUP_2030 || props.zone_code || props.zone || props.landuse || props.luc || "N/A";
+                            const location = props.location || props.LOCATION || props.brgy || "Unknown";
 
                             layer_feature.bindPopup(`
                                 <div class="font-sans min-w-[200px]">
@@ -357,33 +404,21 @@ function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapCli
                                     activeFeatureRef.current = layer_feature;
                                     const currentLayerMode = layerRef.current;
 
+                                    if (currentLayerMode === "zoning") return;
+
                                     if (currentLayerMode === "status") {
-                                        layer_feature.setStyle({
-                                            weight: 4,
-                                            color: "#1e3a8a",
-                                            fillColor: "#2563eb",
-                                            fillOpacity: 0.4,
-                                        });
+                                        layer_feature.setStyle({ weight: 2, color: "#1e3a8a", fillColor: "#2563eb", fillOpacity: 0.4 });
                                         if (onFeatureClick) onFeatureClick(name, bgyData);
                                     } else if (currentLayerMode === "diversity") {
-                                        layer_feature.setStyle({
-                                            weight: 4,
-                                            color: "#b91c1c",
-                                            fillColor: "#ef4444",
-                                            fillOpacity: 0.4,
-                                        });
+                                        layer_feature.setStyle({ weight: 2, color: "#b91c1c", fillColor: "#ef4444", fillOpacity: 0.4 });
                                     } else {
                                         const lu = landUseColors[bgyData.landUse] || landUseColors["Residential"];
-                                        layer_feature.setStyle({
-                                            weight: 4,
-                                            color: lu.stroke,
-                                            fillColor: lu.fill,
-                                            fillOpacity: 0.5,
-                                        });
+                                        layer_feature.setStyle({ weight: 2, color: lu.stroke, fillColor: lu.fill, fillOpacity: 0.5 });
                                     }
                                 });
 
                                 layer_feature.on("mouseover", () => {
+                                    if (layerRef.current === "zoning") return;
                                     layer_feature
                                         .bindTooltip(name, {
                                             permanent: false,
@@ -393,11 +428,12 @@ function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapCli
                                         .openTooltip();
 
                                     if (activeFeatureRef.current !== layer_feature) {
-                                        layer_feature.setStyle({ fillOpacity: 0.35, weight: 3 });
+                                        layer_feature.setStyle({ fillOpacity: 0.35, weight: 1.5 });
                                     }
                                 });
 
                                 layer_feature.on("mouseout", () => {
+                                    if (layerRef.current === "zoning") return;
                                     layer_feature.closeTooltip();
                                     if (activeFeatureRef.current !== layer_feature) {
                                         geoLayerRef.current.resetStyle(layer_feature);
@@ -421,7 +457,13 @@ function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapCli
         };
     }, []);
 
-    // Handle map tile style updates
+    // Listen to changes in zoom level state requested by slider
+    useEffect(() => {
+        if (mapInstanceRef.current && mapInstanceRef.current.getZoom() !== mapZoom) {
+            mapInstanceRef.current.setZoom(mapZoom);
+        }
+    }, [mapZoom]);
+
     useEffect(() => {
         if (!mapInstanceRef.current || !tileLayerRef.current) return;
 
@@ -441,29 +483,41 @@ function LeafletMap({ bgyStats, currentLayer, mapStyle, onFeatureClick, onMapCli
     useEffect(() => {
         if (geoLayerRef.current) {
             geoLayerRef.current.setStyle((feature) => getFeatureStyle(feature, currentLayer, appTypeFilter, year));
-            if (activeFeatureRef.current) {
-                activeFeatureRef.current = null;
-            }
+            if (activeFeatureRef.current) activeFeatureRef.current = null;
         }
+
         if (zoningLayerRef.current) {
             zoningLayerRef.current.setStyle((feature) => {
                 const props = feature.properties || {};
-                const zoneCode = props.lup_2030 || props.LUP_2030 || "DEFAULT";
+                const zoneCode = props.lup_2030 || props.LUP_2030 || props.zone_code || props.zone || props.landuse || props.luc || "DEFAULT";
                 const colorConfig = zoningPlanColors[zoneCode] || zoningPlanColors["DEFAULT"];
+                const isZoningActive = currentLayer === "zoning";
                 return {
                     color: colorConfig.stroke,
                     weight: 1.5,
                     fillColor: colorConfig.fill,
-                    fillOpacity: currentLayer === "zoning" ? 0.65 : 0
+                    fillOpacity: isZoningActive ? 0.75 : 0, // Opacity is now 75%
+                    opacity: isZoningActive ? 1 : 0
                 };
             });
+        }
+        
+        if (currentLayer === "zoning") {
+            if (clupTileLayerRef.current && mapInstanceRef.current && !mapInstanceRef.current.hasLayer(clupTileLayerRef.current)) {
+                mapInstanceRef.current.addLayer(clupTileLayerRef.current);
+            }
+            if (zoningLayerRef.current) zoningLayerRef.current.bringToFront();
+            if (geoLayerRef.current) geoLayerRef.current.bringToFront(); 
+        } else {
+            if (clupTileLayerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(clupTileLayerRef.current)) {
+                mapInstanceRef.current.removeLayer(clupTileLayerRef.current);
+            }
         }
     }, [currentLayer, appTypeFilter, year]);
 
     return <div ref={mapRef} id="map" className="absolute inset-0 z-0" />;
 }
 
-// ── Main Dashboard ──
 export default function Dashboard({ userName, userRole, total, thisMonth, statusMap, bgyStats, recent }) {
     const [activeLayer, setActiveLayer] = useState("status");
     const [mapStyle, setMapStyle] = useState("standard");
@@ -475,6 +529,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     const [year, setYear] = useState(2026);
     const [donutLoaded, setDonutLoaded] = useState(false);
     const [selectedBgy, setSelectedBgy] = useState(null);
+    const [mapZoom, setMapZoom] = useState(13);
 
     const review = statusMap?.["Technical Review"] ?? 0;
     const released = statusMap?.["Released"] ?? 0;
@@ -631,9 +686,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                 ::-webkit-scrollbar-track { background: transparent; }
                 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
                 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-                .leaflet-control-zoom { border: none !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1) !important; margin-left: 24px !important; margin-bottom: 24px !important; }
-                .leaflet-control-zoom a { color: #475569 !important; background: rgba(255,255,255,0.9) !important; backdrop-filter: blur(4px); transition: all 0.2s; }
-                .leaflet-control-zoom a:hover { color: #1a45ee !important; background: #fff !important; }
+                
                 #right-sidebar { position: absolute; top: 24px; right: 24px; bottom: 24px; width: 360px; z-index: 500; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.4); border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; transition: transform 0.4s cubic-bezier(0.4,0,0.2,1); }
                 #right-sidebar-inner { flex: 1; overflow-y: auto; overflow-x: hidden; background: rgba(250, 250, 250, 0.8); }
                 .view-layer-btn { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; background: transparent; width: 100%; text-align: left; border-radius: 8px; border: none; transition: background 0.2s; }
@@ -644,9 +697,12 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                 .view-layer-btn.active .view-layer-radio-dot { opacity: 1; transform: scale(1); }
                 .stat-bar-track { height: 6px; background: #e8f0fe; border-radius: 3px; overflow: hidden; margin-top: 6px; }
                 .stat-bar-fill { height: 100%; border-radius: 3px; transition: width 1s cubic-bezier(0.34,1.56,0.64,1); }
+                
+                /* Styled Range Slider */
                 .timeline-thumb { -webkit-appearance: none; appearance: none; height: 4px; background: linear-gradient(to right, #3b82f6 var(--val, 100%), #e2e8f0 var(--val, 100%)); border-radius: 2px; outline: none; cursor: pointer; }
                 .timeline-thumb::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #3b82f6; border: 2px solid white; box-shadow: 0 0 0 2px rgba(59,130,246,0.25), 0 2px 6px rgba(59,130,246,0.2); cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; }
                 .timeline-thumb::-webkit-slider-thumb:hover { transform: scale(1.2); box-shadow: 0 0 0 4px rgba(59,130,246,0.2), 0 2px 8px rgba(59,130,246,0.25); }
+                
                 .app-table { width: 100%; border-collapse: collapse; font-size: 12px; }
                 .app-table th { background: #f8fafc; color: #64748b; font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; position: sticky; top: 0; z-index: 10; }
                 .app-table td { padding: 10px; border-bottom: 1px solid #f1f5f9; color: #334155; }
@@ -667,48 +723,61 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
 
             <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
                 <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} />
-
+                
                 <div className="flex flex-1 overflow-hidden relative bg-slate-100">
                     <aside className={`absolute top-40 left-0 w-[220px] h-max max-h-[calc(100vh-10rem)] bg-white z-[600] rounded-r-3xl shadow-[4px_4px_24px_rgba(0,0,0,0.1)] flex flex-col py-5 transition-transform duration-500 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
-                        <button onClick={() => setSidebarOpen(!sidebarOpen)} className="absolute top-1/2 -translate-y-1/2 -right-8 w-8 h-12 bg-blue-800 hover:bg-blue-900 text-white rounded-r-xl flex items-center justify-center shadow-md transition-colors focus:outline-none">
-                            <svg className={`w-4 h-4 transition-transform duration-500 ${!sidebarOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-                        </button>
+    <button onClick={() => setSidebarOpen(!sidebarOpen)} className="absolute top-1/2 -translate-y-1/2 -right-8 w-8 h-12 bg-blue-800 hover:bg-blue-900 text-white rounded-r-xl flex items-center justify-center shadow-md transition-colors focus:outline-none">
+        <svg className={`w-4 h-4 transition-transform duration-500 ${!sidebarOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+    </button>
 
-                        <div className="px-5 pb-5 pt-1 border-b border-slate-100 flex flex-col items-center justify-center">
-                            <h1 className="text-3xl font-black text-blue-900 tracking-tighter leading-none">iMAPS</h1>
-                            <span className="text-[10px] font-bold text-blue-700 tracking-[0.2em] uppercase mt-1">Rosario</span>
-                        </div>
+    <div className="px-5 pb-5 pt-1 border-b border-slate-100 flex flex-col items-center justify-center">
+        <h1 className="text-3xl font-black text-blue-900 tracking-tighter leading-none">iMAPS</h1>
+        <span className="text-[10px] font-bold text-blue-700 tracking-[0.2em] uppercase mt-1">Rosario</span>
+    </div>
 
-                        <nav className="flex-1 flex flex-col gap-1 py-4 overflow-y-auto pr-4">
-                            <a href="/dashboard" className="flex items-center gap-3 px-5 py-2.5 bg-blue-800 text-white font-semibold text-sm rounded-r-xl shadow-sm transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-                                <span>Dashboard</span>
-                            </a>
-                            <a href="/applications" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                <span>Applications</span>
-                            </a>
-                            {userRole === "Admin" && (
-                                <>
-                                    <a href="/analytics" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
-                                        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                                        <span>Analytics</span>
-                                    </a>
-                                    <a href="/audit-log" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
-                                        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                        <span>Audit Trail</span>
-                                    </a>
-                                </>
-                            )}
-                        </nav>
+    <nav className="flex-1 flex flex-col gap-1 py-4 overflow-y-auto pr-4">
+        <a href="/dashboard" className="flex items-center gap-3 px-5 py-2.5 bg-blue-800 text-white font-semibold text-sm rounded-r-xl shadow-sm transition-all">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+            <span>Dashboard</span>
+        </a>
+        <a href="/applications" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            <span>Applications</span>
+        </a>
+        <a href="/inspections" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+            <span>Site Inspections</span>
+        </a>
+        
+        {userRole === "Admin" && (
+            <>
+                <a href="/analytics" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
+                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                    <span>Analytics</span>
+                </a>
+                <a href="/users" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
+                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                    <span>User Management</span>
+                </a>
+                <a href="/audit-log" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
+                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span>Audit Trail</span>
+                </a>
+                <a href="/settings" className="flex items-center gap-3 px-5 py-2.5 text-slate-700 hover:bg-blue-50 hover:text-blue-800 font-medium text-sm rounded-r-xl transition-all">
+                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <span>Settings</span>
+                </a>
+            </>
+        )}
+    </nav>
 
-                        <div className="border-t border-slate-100 py-3 mt-2">
-                            <button onClick={handleLogout} className="w-full flex items-center gap-3 px-5 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-blue-700 font-medium text-sm transition-all rounded-r-xl mr-4">
-                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                                <span>Sign Out</span>
-                            </button>
-                        </div>
-                    </aside>
+    <div className="border-t border-slate-100 py-3 mt-2">
+        <button onClick={handleLogout} className="w-full flex items-center gap-3 px-5 py-2.5 text-slate-600 hover:bg-slate-50 hover:text-blue-700 font-medium text-sm transition-all rounded-r-xl mr-4">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+            <span>Sign Out</span>
+        </button>
+    </div>
+</aside>
 
                     <main className="flex-1 relative flex flex-col min-w-0">
                         <LeafletMap 
@@ -717,6 +786,8 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                             mapStyle={mapStyle} 
                             appTypeFilter={appTypeFilter} 
                             year={year} 
+                            mapZoom={mapZoom}
+                            onZoomChange={setMapZoom}
                             onFeatureClick={(name, data) => setSelectedBgy({ name, data })} 
                             onMapClick={() => setSelectedBgy(null)} 
                         />
@@ -762,7 +833,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                             </div>
                         </div>
 
-                        {/* Map Controls: Layer View & Map Style Switcher */}
+                        {/* Map Controls: Layer View, Base Map Style & Zoom Slider */}
                         <div className="absolute bottom-8 left-8 z-[650] flex items-center gap-2">
                             {/* Layer Switcher */}
                             <div className="relative">
@@ -781,6 +852,8 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                                 <div className="view-layer-radio"><div className="view-layer-radio-dot" /></div>
                                                 <span className="text-[12px] font-medium text-slate-700">{l.label}</span>
                                             </button>
+
+
                                         ))}
                                     </div>
                                 </div>
@@ -798,8 +871,8 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                     <div className="p-2 space-y-1">
                                         {[
                                             { key: "standard", label: "Standard Street", desc: "OpenStreetMap road view" },
-                                            { key: "topo", label: "Topographic", desc: "Elevation & terrain features" },
                                             { key: "satellite", label: "Satellite", desc: "Esri high-res aerial imagery" },
+                                            { key: "hillshade", label: "Terrain Hillshade", desc: "Grayscale elevation relief" },
                                         ].map((s) => (
                                             <button 
                                                 key={s.key} 
@@ -815,6 +888,21 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                 <button onClick={() => { setStylePopupOpen(!stylePopupOpen); setLayerPopupOpen(false); }} className={`w-11 h-11 bg-slate-900 hover:bg-black text-white rounded-xl shadow-lg flex items-center justify-center transition-all focus:outline-none ${stylePopupOpen ? "ring-4 ring-slate-400/30" : ""}`}>
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
                                 </button>
+                            </div>
+
+                            {/* Custom Zoom Slider */}
+                            <div className="flex items-center bg-white rounded-xl shadow-lg border border-slate-200 px-3 h-11 ml-1 transition-all">
+                                <svg className="w-4 h-4 text-slate-400 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
+                                <input 
+                                    type="range" 
+                                    min="12" 
+                                    max="18" 
+                                    step="1"
+                                    value={mapZoom}
+                                    onChange={(e) => setMapZoom(parseInt(e.target.value))}
+                                    className="w-24 timeline-thumb h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer" 
+                                    style={{'--val': `${((mapZoom - 12) / 6) * 100}%`}}
+                                />
                             </div>
                         </div>
 
@@ -833,14 +921,17 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                 {activeLayer === "trends" && <TrendsPanel landUseData={landUseData} hotspots={hotspots} />}
                                 {activeLayer === "diversity" && <DiversityPanel donutLoaded={donutLoaded} />}
                                 {activeLayer === "zoning" && (
-                                    <div className="p-4 space-y-4">
+                                    <div className="p-4 space-y-4 h-full overflow-y-auto">
                                         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
-                                            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Zoning Plan Legend</h3>
+                                            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Primary Zoning Classifications</h3>
                                             <div className="space-y-2 text-xs">
-                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#8b5cf6] inline-block" /><span>Agro-Industrial (AgIndZ-PTR)</span></div>
-                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#22c55e] inline-block" /><span>Residential (R1-Z / R2-Z)</span></div>
-                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#f59e0b] inline-block" /><span>Commercial / Multi-Purpose</span></div>
-                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#ef4444] inline-block" /><span>Industrial (I2-Z)</span></div>
+                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#22c55e] inline-block" /><span>Residential Zones (R1, R2, MR2)</span></div>
+                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#f59e0b] inline-block" /><span>Commercial Zones (C1, C2, C/MP)</span></div>
+                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#ef4444] inline-block" /><span>Industrial Zones (I1, I2, I3)</span></div>
+                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#8b5cf6] inline-block" /><span>Agro-Industrial Zones</span></div>
+                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#84cc16] inline-block" /><span>Agricultural Sub-Zones</span></div>
+                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#3b82f6] inline-block" /><span>General Institutional (GI-Z)</span></div>
+                                                <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#15803d] inline-block" /><span>Forest & Parks (FZ, PR-Z)</span></div>
                                                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#64748b] inline-block" /><span>Road / Infrastructure</span></div>
                                             </div>
                                         </div>

@@ -81,8 +81,8 @@ class SettingsController extends Controller
         $dbName = env('DB_DATABASE', 'imaps');
         $dbPass = env('DB_PASSWORD', '');
 
-        // Generate the SQL using shp2pgsql
         $sqlCommand = "shp2pgsql -d -I -s 4326 " . escapeshellarg($shpPath) . " " . escapeshellarg($targetTable);
+        // Generate the SQL using shp2pgsql
         $generateSql = Process::run($sqlCommand);
 
         if ($generateSql->failed()) {
@@ -103,5 +103,32 @@ class SettingsController extends Controller
         }
 
         return back()->with('success', 'Map layer updated successfully!');
+    }
+    public function uploadRasterTiles(Request $request)
+    {
+        $request->validate([
+            'tiles_zip' => 'required|file|mimes:zip|max:204800', // Allow up to 200MB for tile bundles
+        ]);
+
+        $zipFile = $request->file('tiles_zip');
+        
+        // Define destination in the public directory (accessible to the browser)
+        $publicPath = public_path('tiles/clup_tiles');
+        
+        // Clear out the old map tiles to prevent ghost images
+        if (\Illuminate\Support\Facades\File::exists($publicPath)) {
+            \Illuminate\Support\Facades\File::deleteDirectory($publicPath);
+        }
+        
+        // 1. Extract the ZIP directly into the public folder
+        $zip = new ZipArchive;
+        if ($zip->open($zipFile->path()) === TRUE) {
+            $zip->extractTo($publicPath);
+            $zip->close();
+            
+            return back()->with('success', 'CLUP raster map overlay updated successfully!');
+        } else {
+            return back()->withErrors(['tiles_zip' => 'Failed to open the tile zip archive.']);
+        }
     }
 }

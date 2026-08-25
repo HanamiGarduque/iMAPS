@@ -14,6 +14,8 @@ export default function Settings({ auth }) {
     const [uploadLayer, setUploadLayer] = useState("");
     const [selectedFile, setSelectedFile] = useState(null);
     const fileInputRef = useRef(null);
+    const [selectedTileFile, setSelectedTileFile] = useState(null);
+    const tileInputRef = useRef(null);
 
     const [mapSettings, setMapSettings] = useState({
         defaultCenter: "13.8450, 121.2060", // Defaulting to Rosario, Batangas
@@ -80,6 +82,26 @@ export default function Settings({ auth }) {
         console.log("Saving Map Settings:", mapSettings);
         alert("Map settings saved.");
     };
+    const handleTileUploadSubmit = (e) => {
+        e.preventDefault();
+        if (!selectedTileFile) {
+            alert("Please choose a tile .zip file.");
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('tiles_zip', selectedTileFile);
+        
+        router.post('/settings/upload-tiles', formData, {
+            onSuccess: () => {
+                setSelectedTileFile(null);
+                alert("Raster map tiles successfully deployed!");
+            },
+            onError: (errors) => {
+                alert(errors.tiles_zip || "An error occurred during tile upload.");
+            }
+        });
+    };
 
     return (
         <>
@@ -139,7 +161,6 @@ export default function Settings({ auth }) {
                                                 <option value="" disabled>Select layer to update...</option>
                                                 <option value="municipal_boundary">Municipal Boundary</option>
                                                 <option value="barangay_boundary">Barangay Boundary</option>
-                                                <option value="land_use_plan">Comprehensive Land Use Plan (CLUP)</option>
                                             </select>
                                         </div>
 
@@ -185,6 +206,52 @@ export default function Settings({ auth }) {
                                         </button>
                                     </form>
                                 </div>
+                                <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-[0_2px_10px_rgb(0,0,0,0.02)] form-enter h-fit mt-6">
+    <div className="mb-4">
+        <h3 className="text-[14px] font-black text-slate-800">Raster Map Overlay (CLUP)</h3>
+        <p className="text-[11px] font-medium text-slate-500 mt-1">Upload XYZ raster map tiles (.zip containing numbered zoom folders).</p>
+    </div>
+    
+    <form onSubmit={handleTileUploadSubmit} className="space-y-4">
+        <div>
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">Tile Bundle (.zip)</label>
+            <div 
+                onClick={() => tileInputRef.current.click()}
+                className={`w-full border-2 border-dashed rounded-[12px] p-6 text-center cursor-pointer transition-all ${selectedTileFile ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'}`}
+            >
+                <input 
+                    type="file" 
+                    accept=".zip" 
+                    ref={tileInputRef} 
+                    onChange={(e) => setSelectedTileFile(e.target.files[0])} 
+                    className="hidden" 
+                />
+                {selectedTileFile ? (
+                    <div className="flex flex-col items-center gap-2">
+                        <svg className="w-8 h-8 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-[12px] font-bold text-slate-700">{selectedTileFile.name}</span>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center gap-2 text-slate-400">
+                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        <span className="text-[11px] font-medium">Click to browse or drag tile .zip here</span>
+                    </div>
+                )}
+            </div>
+        </div>
+
+        <button 
+            type="submit" 
+            className="w-full mt-2 inline-flex justify-center items-center gap-2 px-5 py-2.5 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold shadow-sm transition-all active:scale-95"
+        >
+            Deploy Raster Tiles
+        </button>
+    </form>
+</div>
 
                                 {/* iMAPS General Settings Module */}
                                 <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-[0_2px_10px_rgb(0,0,0,0.02)] form-enter h-fit" style={{ animationDelay: '0.1s' }}>
