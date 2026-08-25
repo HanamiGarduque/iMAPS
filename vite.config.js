@@ -10,4 +10,10 @@ export default defineConfig({
         }),
         react(),
     ],
+    server: {
+        watch: {
+            // Ignore the massive map tiles directory
+            ignored: ['**/public/tiles/**'] 
+        }
+    }
 })
