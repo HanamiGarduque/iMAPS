@@ -47,8 +47,8 @@ export default function Register() {
 
     const submit = (e) => {
         e.preventDefault();
-        post('/register', {
-            onSuccess: () => setSuccess(true),
+        post('/register-new-account', {
+                onSuccess: () => setSuccess(true),
         });
     };
 
@@ -221,8 +221,8 @@ export default function Register() {
                                 <button onClick={() => setSuccess(false)} className="w-full bg-slate-900 hover:bg-blue-800 text-white text-sm font-semibold py-3 rounded-lg transition-colors mb-4">
                                     Register Another User
                                 </button>
-                                <Link href="/login" className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">
-                                    ← Back to Sign In
+                                <Link href="/users" className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">
+                                    ← Back to User Management Page
                                 </Link>
                             </div>
                         ) : (
@@ -350,18 +350,6 @@ export default function Register() {
                                     >
                                         {processing ? 'Registering...' : 'Create Account'}
                                     </button>
-
-                                    <div className="flex items-center justify-center my-3">
-                                        <div className="border-t border-slate-200 w-full"></div>
-                                        <span className="bg-white px-2 text-[10px] text-slate-400 font-medium">OR</span>
-                                        <div className="border-t border-slate-200 w-full"></div>
-                                    </div>
-
-                                    <div className="text-center">
-                                        <Link href="/login" className="text-xs font-bold text-slate-900 hover:text-blue-700 tracking-wide">
-                                            LOG IN HERE
-                                        </Link>
-                                    </div>
                                 </form>
                             </>
                         )}
