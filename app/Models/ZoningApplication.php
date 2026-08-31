@@ -60,7 +60,8 @@ public function technicalReviews(): HasMany
 
     public static function countThisMonth(): int
     {
-        return static::whereRaw("DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())")
+        return static::whereYear('created_at', now()->year)
+            ->whereMonth('created_at', now()->month)
             ->count();
     }
 

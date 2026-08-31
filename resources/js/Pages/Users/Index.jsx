@@ -7,7 +7,7 @@ import Sidebar from "@/Components/Sidebar";
 export default function Index({ users, filters, auth }) {
     const [clock, setClock] = useState("");
     const [search, setSearch] = useState(filters.search || "");
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const userName = auth?.user?.name || "Administrator";
     const userRole = auth?.user?.role || "Admin";
@@ -42,7 +42,28 @@ export default function Index({ users, filters, auth }) {
     };
 
     const handleLogout = () => {
-        if (confirm("Sign out from iMAPS?")) router.post("/logout");
+        Swal.fire({
+            title: "Sign Out?",
+            text: "Are you sure you want to log out of iMAPS?",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, sign out",
+            cancelButtonText: "Cancel",
+            buttonsStyling: false,
+            customClass: {
+                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
+                title: "text-lg font-bold text-slate-900",
+                htmlContainer: "text-xs text-slate-500",
+                actions: "flex items-center justify-center gap-3 mt-5",
+                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
+                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
+            },
+        }).then((result) => {
+            if (result.isConfirmed) {
+                sessionStorage.removeItem("hasShownWelcome");
+                router.post("/logout");
+            }
+        });
     };
 
     // Prompt Admin Password to Reveal Supabase UUID
@@ -106,12 +127,12 @@ export default function Index({ users, filters, auth }) {
             `}</style>
 
             <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
-                <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} />
+                <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
                 <div className="flex flex-1 h-full overflow-hidden relative">
                     <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="users" />
 
-                    <main className="flex-1 w-full h-full flex flex-col transition-all duration-500 ease-in-out bg-[#f8fafc]" style={{ paddingLeft: sidebarOpen ? "200px" : "0px" }}>
+                    <main className="flex-1 w-full h-full flex flex-col bg-[#f8fafc]">
                         <div className="p-4 md:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1400px] mx-auto w-full">
                            
                             {/* Header Area */}

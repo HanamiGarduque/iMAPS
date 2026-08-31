@@ -1,5 +1,6 @@
     import { useState, useEffect, useRef, useCallback } from 'react';
     import { Head, router, usePage } from '@inertiajs/react';
+    import Swal from 'sweetalert2';
     import {
         Chart as ChartJS,
         ArcElement, BarElement, LineElement, PointElement,
@@ -99,8 +100,32 @@ function Sidebar({ userName, userRole }) {
                         <p className="text-[10px] text-slate-400 mt-0.5">{userRole}</p>
                     </div>
                 </div>
-                <button onClick={() => { if (confirm('Sign out from iMAPS?')) { router.post('/logout'); } }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                <button 
+                    onClick={() => {
+                        Swal.fire({
+                            title: "Sign Out?",
+                            text: "Are you sure you want to log out of iMAPS?",
+                            icon: "warning",
+                            showCancelButton: true,
+                            confirmButtonText: "Yes, sign out",
+                            cancelButtonText: "Cancel",
+                            buttonsStyling: false,
+                            customClass: {
+                                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
+                                title: "text-lg font-bold text-slate-900",
+                                htmlContainer: "text-xs text-slate-500",
+                                actions: "flex items-center justify-center gap-3 mt-5",
+                                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
+                                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
+                            },
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                sessionStorage.removeItem("hasShownWelcome");
+                                router.post("/logout");
+                            }
+                        });
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer">
                     <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                     </svg>

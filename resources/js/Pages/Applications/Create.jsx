@@ -1,54 +1,270 @@
 // resources/js/Pages/Applications/Create.jsx
-import React, { useState, useEffect, useRef } from "react";
-import { Link, Head, router, usePage } from "@inertiajs/react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Link, Head, router } from "@inertiajs/react";
 import axios from "axios";
 import Swal from "sweetalert2";
+import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { Label, Input, Textarea, Select } from "./Components/FormControls";
+import StepCategory from "./Components/StepCategory";
+import StepApplicant from "./Components/StepApplicant";
+import StepPropertyGIS from "./Components/StepPropertyGIS";
+import StepReview from "./Components/StepReview";
+import StepFee from "./Components/StepFee";
 
 const APPLICATION_TYPES = [
     {
         id: "Locational Clearance",
         icon: "M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7",
-        desc: "Standard building clearance.",
+        desc: "Standard municipal building & land clearance",
     },
     {
         id: "Zoning Certification",
         icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
-        desc: "Land use compatibility.",
+        desc: "Land use classification & zoning compliance",
     },
     {
         id: "Development Permit",
         icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4",
-        desc: "For major subdivisions.",
+        desc: "Subdivisions, estates & complex developments",
+    },
+    {
+        id: "Special Land Use Permit",
+        icon: "M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21",
+        desc: "Special projects & institutional variances",
     },
 ];
 
-const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agro-Industrial", "Special Use"];
+const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agricultural"];
 
 const STEPS = [
-    { id: 1, title: "Scope" },
-    { id: 2, title: "Profile" },
-    { id: 3, title: "Location" },
-    { id: 4, title: "Review" },
-    { id: 5, title: "Assess" },
+    { id: 1, title: "Category", label: "Application Category" },
+    { id: 2, title: "Applicant", label: "Applicant Details" },
+    { id: 3, title: "Location", label: "Property & Map" },
+    { id: 4, title: "Review", label: "Review & Confirm" },
+    { id: 5, title: "Fee", label: "Assessment & Fees" },
+];
+
+const ROSARIO_BARANGAYS = [
+    "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
+    "Calantas", "Colongan", "Itlugan", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", "Macalamcam A", 
+    "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", "Mayuro", 
+    "Namuco", "Namunga", "Natu", "Nasi", "Palakpak", "Pinagsibaan", "Poblacion A", "Poblacion B", 
+    "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", "San Carlos", 
+    "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan"
 ];
 
 const DRAFT_UUID_KEY = "imaps_current_draft_uuid";
 const DRAFT_PAYLOAD_KEY = "imaps_local_backup_payload";
+const APPLICANT_REGISTRY_KEY = "imaps_known_applicants_registry";
+
+// ── Official Municipal Assessment Fee Calculation Engine ──
+// Referenced from:
+// 1. Zoning Clearance: ₱720.00 per hectare (1 hectare = 10,000 sq.m, min. ₱720.00)
+// 2. Locational Clearance: HLURB Resolution No. 912, Series of 2013 (based on Bill of Materials / Project Cost)
+// 3. Development Permit: ₱10.00 per square meter
+
+function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
+    const area = Math.max(0, Number(areaSqm) || 0);
+    const cost = Math.max(0, Number(projectCost) || 0);
+    let baseFee = 0;
+    let formulaDesc = "";
+    let rateDetail = "";
+    let calculationSummary = "";
+
+    if (appType === "Zoning Certification" || appType === "Zoning Clearance") {
+        // ₱720.00 per hectare (1 ha = 10,000 sq.m)
+        const hectares = area / 10000;
+        baseFee = Math.max(720, Math.round(hectares * 720 * 100) / 100);
+        formulaDesc = "₱720.00 per hectare (min. ₱720.00)";
+        rateDetail = `${area.toLocaleString()} sq.m (${hectares.toFixed(4)} ha) @ ₱720.00 / hectare`;
+        calculationSummary = hectares <= 1 
+            ? "₱720.00 (Minimum Base 1 Hectare)" 
+            : `${hectares.toFixed(2)} ha × ₱720.00/ha = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+    } else if (appType === "Development Permit") {
+        // ₱10.00 per square meter
+        baseFee = Math.round(area * 10 * 100) / 100;
+        formulaDesc = "₱10.00 per square meter";
+        rateDetail = `${area.toLocaleString()} sq.m @ ₱10.00 / sq.m`;
+        calculationSummary = `${area.toLocaleString()} sq.m × ₱10.00/sq.m = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+    } else if (appType === "Locational Clearance") {
+        // HLURB Resolution No. 912, Series of 2013 (Based on Bill of Materials / Declared Project Cost)
+        if (landUse === "Residential") {
+            if (cost <= 100000) {
+                baseFee = 288.00;
+                rateDetail = "HLURB Tier: Project Cost ≤ ₱100,000 (Flat ₱288.00)";
+                calculationSummary = "Flat ₱288.00 (Cost ≤ ₱100k)";
+            } else if (cost <= 200000) {
+                baseFee = 576.00;
+                rateDetail = "HLURB Tier: Project Cost > ₱100k to ₱200,000 (Flat ₱576.00)";
+                calculationSummary = "Flat ₱576.00 (Cost ≤ ₱200k)";
+            } else {
+                const excess = cost - 200000;
+                const excessFee = excess * 0.001; // 1/10 of 1%
+                baseFee = 720.00 + excessFee;
+                rateDetail = `HLURB Tier: Project Cost > ₱200k (₱720.00 + 0.1% excess)`;
+                calculationSummary = `₱720.00 + (₱${excess.toLocaleString()} × 0.1%) = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+            }
+            formulaDesc = "HLURB 2013 Residential Rates (Bill of Materials)";
+        } else if (landUse === "Institutional") {
+            if (cost <= 2000000) {
+                baseFee = 2880.00;
+                rateDetail = "HLURB Tier: Project Cost ≤ ₱2.0 Million (Flat ₱2,880.00)";
+                calculationSummary = "Flat ₱2,880.00 (Cost ≤ ₱2M)";
+            } else {
+                const excess = cost - 2000000;
+                const excessFee = excess * 0.001;
+                baseFee = 2880.00 + excessFee;
+                rateDetail = `HLURB Tier: Project Cost > ₱2.0M (₱2,880.00 + 0.1% excess)`;
+                calculationSummary = `₱2,880.00 + (₱${excess.toLocaleString()} × 0.1%) = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+            }
+            formulaDesc = "HLURB 2013 Institutional Rates (Bill of Materials)";
+        } else {
+            // Commercial, Industrial, Agro-Industrial, Special Use
+            if (cost < 100000) {
+                baseFee = 1440.00;
+                rateDetail = "HLURB Tier: Project Cost < ₱100,000 (Flat ₱1,440.00)";
+                calculationSummary = "Flat ₱1,440.00 (Cost < ₱100k)";
+            } else if (cost <= 500000) {
+                baseFee = 2160.00;
+                rateDetail = "HLURB Tier: Project Cost ₱100k to ₱500,000 (Flat ₱2,160.00)";
+                calculationSummary = "Flat ₱2,160.00 (Cost ≤ ₱500k)";
+            } else if (cost <= 1000000) {
+                baseFee = 2880.00;
+                rateDetail = "HLURB Tier: Project Cost > ₱500k to ₱1.0 Million (Flat ₱2,880.00)";
+                calculationSummary = "Flat ₱2,880.00 (Cost ≤ ₱1M)";
+            } else if (cost <= 2000000) {
+                baseFee = 4320.00;
+                rateDetail = "HLURB Tier: Project Cost > ₱1.0M to ₱2.0 Million (Flat ₱4,320.00)";
+                calculationSummary = "Flat ₱4,320.00 (Cost ≤ ₱2M)";
+            } else {
+                const excess = cost - 2000000;
+                const excessFee = excess * 0.001;
+                baseFee = 7200.00 + excessFee;
+                rateDetail = `HLURB Tier: Project Cost > ₱2.0M (₱7,200.00 + 0.1% excess)`;
+                calculationSummary = `₱7,200.00 + (₱${excess.toLocaleString()} × 0.1%) = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+            }
+            formulaDesc = `HLURB 2013 ${landUse || "Commercial/Industrial"} Rates (Bill of Materials)`;
+        }
+    } else {
+        // Special Land Use Permit
+        if (cost > 0) {
+            const excess = Math.max(0, cost - 2000000);
+            baseFee = 7200.00 + (excess * 0.001);
+            rateDetail = `Special Rate: ₱7,200.00 + 0.1% of excess cost`;
+            calculationSummary = `₱7,200.00 + (₱${excess.toLocaleString()} × 0.1%) = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        } else {
+            baseFee = Math.max(2500, Math.round(area * 10 * 100) / 100);
+            rateDetail = `${area.toLocaleString()} sq.m @ ₱10.00/sq.m (Min. ₱2,500.00)`;
+            calculationSummary = `${area.toLocaleString()} sq.m × ₱10.00/sq.m = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        }
+        formulaDesc = "Special Land Use Rates";
+    }
+
+    const total = Math.max(0, Math.round(baseFee * 100) / 100);
+
+    return {
+        baseFee,
+        formulaDesc,
+        rateDetail,
+        calculationSummary,
+        cost,
+        area,
+        total,
+    };
+}
+
+// ── Title Case & Formatting Helper ──
+function toTitleCase(str) {
+    if (!str) return "";
+    return str
+        .toLowerCase()
+        .split(" ")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+}
+
+// ── Applicant Registry Helpers ──
+const INITIAL_KNOWN_APPLICANTS = [
+    {
+        first_name: "Julience",
+        middle_name: "Rodriguez",
+        last_name: "Castillo",
+        suffix: "",
+        applicant_name: "Julience Rodriguez Castillo",
+        contact_number: "9494690596",
+        email: "juliencecastillo@gmail.com",
+        representative_name: "",
+    },
+    {
+        first_name: "Maria",
+        middle_name: "Clara",
+        last_name: "Santos",
+        suffix: "",
+        applicant_name: "Maria Clara Santos",
+        contact_number: "9175551234",
+        email: "maria.santos@gmail.com",
+        representative_name: "Atty. Juan Dela Cruz",
+    },
+    {
+        first_name: "Juan",
+        middle_name: "Protacio",
+        last_name: "Rizal",
+        suffix: "Jr.",
+        applicant_name: "Juan Protacio Rizal Jr.",
+        contact_number: "9182345678",
+        email: "juan.rizal@domain.com",
+        representative_name: "",
+    },
+];
+
+function loadApplicantRegistry() {
+    try {
+        const raw = localStorage.getItem(APPLICANT_REGISTRY_KEY);
+        if (!raw) {
+            localStorage.setItem(APPLICANT_REGISTRY_KEY, JSON.stringify(INITIAL_KNOWN_APPLICANTS));
+            return INITIAL_KNOWN_APPLICANTS;
+        }
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : INITIAL_KNOWN_APPLICANTS;
+    } catch (e) {
+        return INITIAL_KNOWN_APPLICANTS;
+    }
+}
+
+function saveApplicantToRegistry(applicant) {
+    if (!applicant?.applicant_name || !applicant?.contact_number) return;
+    try {
+        const list = loadApplicantRegistry();
+        const exists = list.some(
+            (a) => a.contact_number === applicant.contact_number || a.applicant_name.toLowerCase() === applicant.applicant_name.toLowerCase()
+        );
+        if (!exists) {
+            list.unshift(applicant);
+            localStorage.setItem(APPLICANT_REGISTRY_KEY, JSON.stringify(list.slice(0, 50)));
+        }
+    } catch (e) {}
+}
 
 const emptyForm = () => ({
     application_type: "",
     form_number: "",
     land_use_class: "",
     purpose: "",
+    first_name: "",
+    middle_name: "",
+    last_name: "",
+    suffix: "",
     applicant_name: "",
     contact_number: "",
     email: "",
     representative_name: "",
     barangay: "",
+    street_address: "",
+    project_cost: "",
     assessment_fee: "",
     or_number: "",
     remarks: "",
@@ -72,70 +288,212 @@ function MapController({ brgyData, activeParcelFeature }) {
     const map = useMap();
 
     useEffect(() => {
-        if (activeParcelFeature) {
-            const layer = L.geoJSON(activeParcelFeature);
-            const bounds = layer.getBounds();
+        try {
+            map.invalidateSize();
+            if (activeParcelFeature) {
+                const layer = L.geoJSON(activeParcelFeature);
+                const bounds = layer.getBounds();
 
-            if (bounds.isValid()) {
-                map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 18, duration: 1.2 });
-            } else {
-                console.warn("Invalid geometry for the selected parcel.");
-            }
-        } else if (brgyData) {
-            const layer = L.geoJSON(brgyData);
-            const bounds = layer.getBounds();
+                if (bounds.isValid()) {
+                    map.flyToBounds(bounds, { padding: [60, 60], maxZoom: 18, duration: 1.2 });
+                }
+            } else if (brgyData) {
+                const layer = L.geoJSON(brgyData);
+                const bounds = layer.getBounds();
 
-            if (bounds.isValid()) {
-                map.fitBounds(bounds, { padding: [30, 30] });
+                if (bounds.isValid()) {
+                    map.fitBounds(bounds, { padding: [30, 30] });
+                }
             }
+        } catch (e) {
+            console.error("MapController error:", e);
         }
     }, [brgyData, activeParcelFeature, map]);
 
     return null;
 }
 
-// ── Premium Form Controls ──
-function Label({ children, required, hasError }) {
+
+// ── Printable Official Application Routing & Acknowledgement Slip Modal ──
+function RoutingSlipModal({ open, data, onClose, onPrint }) {
+    if (!open || !data) return null;
+
+    const trackingUrl = typeof window !== "undefined" 
+        ? `${window.location.origin}/track?ref=${encodeURIComponent(data.reference_number || "")}`
+        : `https://imaps.rosario-batangas.gov.ph/track?ref=${encodeURIComponent(data.reference_number || "")}`;
+
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(trackingUrl)}`;
+
     return (
-        <label className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest mb-1.5 transition-colors ${hasError ? "text-red-500" : "text-slate-500"}`}>
-            {children}
-            {required && <span className="text-blue-500 font-black text-[14px] leading-none mt-0.5">*</span>}
-        </label>
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in">
+            <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[82vh]">
+                
+                {/* Header Controls (Non-Printable) */}
+                <div className="flex items-center justify-between px-5 py-2.5 border-b border-slate-100 bg-slate-50 print:hidden shrink-0">
+                    <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-xs font-bold text-slate-800">Application Routing Slip Generated</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={onPrint}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
+                            </svg>
+                            <span>Print Slip</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+
+                {/* Printable Document Area */}
+                <div id="printable-routing-slip" className="p-4 sm:p-5 overflow-y-auto space-y-3 bg-white text-slate-900 font-sans">
+                    
+                    {/* Official Document Header */}
+                    <div className="text-center border-b border-slate-900/80 pb-2">
+                        <p className="text-[9px] font-semibold tracking-widest text-slate-500 uppercase">Republic of the Philippines · Province of Batangas</p>
+                        <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-tight text-slate-950 mt-0.5">Municipality of Rosario</h2>
+                        <p className="text-[10px] font-bold tracking-wider uppercase text-blue-700">Municipal Planning and Development Office (MPDO)</p>
+                        <div className="inline-block bg-slate-900 text-white text-[9px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded mt-1">
+                            Official Zoning Application Routing Slip
+                        </div>
+                    </div>
+
+                    {/* Reference No. & Public Tracking QR Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                        <div className="sm:col-span-8 flex flex-col justify-center space-y-1">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Application Reference No.</span>
+                            <h3 className="text-lg sm:text-xl font-mono font-extrabold text-blue-700 tracking-tight">{data.reference_number}</h3>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-slate-600">
+                                <span>Date Filed: <strong className="text-slate-800 font-mono">{data.date_of_application || new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</strong></span>
+                                <span>Encoded By: <strong className="text-slate-800">{data.encoded_by_name || "Planning Staff"}</strong></span>
+                            </div>
+                        </div>
+                        <div className="sm:col-span-4 flex items-center justify-end gap-2.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3">
+                            <div className="text-right">
+                                <p className="text-[10px] font-bold text-slate-700 uppercase">Public Tracking</p>
+                                <p className="text-[9px] text-slate-400">Scan QR to track status</p>
+                            </div>
+                            <div className="bg-white p-1 rounded-lg border border-slate-200 shadow-2xs shrink-0 text-center">
+                                <img src={qrCodeUrl} alt="QR Code Tracking" className="w-12 h-12 object-contain" />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Applicant Profile & Clearance Scope */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Registered Applicant</p>
+                            <p className="font-bold text-slate-900 text-xs sm:text-sm truncate">{data.applicant_name}</p>
+                            <div className="flex items-center gap-3 text-[11px] text-slate-600">
+                                <span className="font-mono">+63 {data.contact_number}</span>
+                                {data.email && <span className="truncate">{data.email}</span>}
+                            </div>
+                            {data.representative_name && (
+                                <p className="text-[10px] text-slate-500 pt-1 border-t border-slate-200 mt-1 truncate">
+                                    Representative: <strong className="text-slate-700">{data.representative_name}</strong>
+                                </p>
+                            )}
+                        </div>
+                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Clearance Classification</p>
+                            <p className="font-bold text-slate-900 text-xs sm:text-sm">{data.application_type}</p>
+                            <div className="flex items-center gap-3 text-[11px] text-slate-600">
+                                <span>Land Use: <strong className="text-slate-800">{data.land_use_class}</strong></span>
+                                {data.project_cost && Number(data.project_cost) > 0 && (
+                                    <span>Project Cost: <strong className="text-slate-800 font-mono">₱ {Number(data.project_cost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+                                )}
+                            </div>
+                            <p className="text-[11px] text-slate-600 truncate">Purpose: <span className="font-medium text-slate-700">{data.purpose}</span></p>
+                        </div>
+                    </div>
+
+                    {/* Location Summary & Assessment Fee Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1.5">
+                            <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Location & Lots Summary</p>
+                                <p className="font-semibold text-slate-800 text-[11px] truncate">{data.street_address ? `${data.street_address}, ` : ""}Brgy. {data.barangay}</p>
+                            </div>
+                            <div className="max-h-16 overflow-y-auto divide-y divide-slate-100 text-[11px]">
+                                {(data.parcels || []).map((parcel, idx) => (
+                                    <div key={idx} className="py-0.5 flex items-center justify-between">
+                                        <span className="font-mono font-semibold text-slate-800 truncate">{parcel.parcel_code || `Lot ${idx + 1}`}: PIN {parcel.property_index_number || "—"}</span>
+                                        <span className="text-slate-600 font-mono text-[10px] shrink-0">{parcel.lot_area_sqm ? `${Number(parcel.lot_area_sqm).toLocaleString()} m²` : ""}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="pt-1 border-t border-slate-200 flex items-center justify-between text-[11px] font-bold text-blue-700">
+                                <span>Total Land Area:</span>
+                                <span className="font-mono">{Number(data.total_area || 0).toLocaleString()} sq.m</span>
+                            </div>
+                        </div>
+
+                        <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 flex flex-col justify-between">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-[9px] font-bold text-blue-800 uppercase tracking-wider">Assessed Clearance Fee</p>
+                                    <p className="text-base sm:text-lg font-mono font-bold text-blue-900 mt-0.5">₱ {Number(data.assessment_fee || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                    <p className="text-[10px] text-blue-700">OR No: <strong className="font-mono">{data.or_number || "To be issued"}</strong></p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[9px] font-bold text-blue-800 uppercase tracking-wider">Pipeline Status</p>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 mt-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                                        Received · Evaluation
+                                    </span>
+                                    <p className="text-[9px] text-slate-500 mt-0.5">Next: Site Inspection</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Official Notice */}
+                    <p className="text-[9px] text-center text-slate-400 pt-1.5 border-t border-slate-100 leading-relaxed">
+                        Present this routing slip to the MPDO Zoning Division for inspection tracking. Scan the QR code for 24/7 public tracking updates.
+                    </p>
+                </div>
+
+                {/* Footer Buttons (Non-Printable) */}
+                <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 print:hidden flex items-center justify-between shrink-0">
+                    <button
+                        type="button"
+                        onClick={onPrint}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
+                        </svg>
+                        <span>Print Routing Slip</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                    >
+                        <span>Done & Return to Applications</span>
+                    </button>
+                </div>
+
+            </div>
+        </div>
     );
 }
 
-const inputBaseStyles = (hasError, readOnly) => `
-    w-full px-3 py-2.5 text-[13px] font-medium transition-all duration-200 outline-none
-    placeholder:text-slate-300 placeholder:font-normal
-    ${
-        readOnly
-            ? "bg-transparent text-slate-600 border-b border-slate-200 rounded-none px-1"
-            : hasError
-              ? "rounded-lg border border-red-300 bg-red-50 focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
-              : "rounded-lg border border-slate-200 bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-    }
-`;
-
-const Input = ({ className = "", hasError = false, readOnly = false, ...props }) => <input className={`${inputBaseStyles(hasError, readOnly)} ${className}`} readOnly={readOnly} {...props} />;
-const Textarea = ({ className = "", hasError = false, ...props }) => <textarea className={`${inputBaseStyles(hasError, false)} resize-none ${className}`} {...props} />;
-const Select = ({ children, className = "", hasError = false, ...props }) => (
-    <div className="relative group">
-        <select className={`${inputBaseStyles(hasError, false)} appearance-none pr-10 cursor-pointer ${className}`} {...props}>
-            {children}
-        </select>
-        <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-slate-400 group-hover:text-blue-500 transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-            </svg>
-        </div>
-    </div>
-);
-
 export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null }) {
-    const userName = auth?.user?.name || "Julience";
+    const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
 
-    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
     const [currentStep, setCurrentStep] = useState(1);
     const [submitting, setSubmitting] = useState(false);
@@ -143,7 +501,13 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const [errors, setErrors] = useState(serverErrors);
     const formRef = useRef(null);
 
-    // Dynamic tracking reference identifier
+    // Smart Features State
+    const [feeMode, setFeeMode] = useState("auto"); // 'auto' | 'manual'
+    const [applicantSuggestion, setApplicantSuggestion] = useState(null);
+    const [showRoutingSlip, setShowRoutingSlip] = useState(false);
+    const [routingSlipData, setRoutingSlipData] = useState(null);
+
+    // Tracking identifier
     const [tempDraftId, setTempDraftId] = useState(() => {
         return cloudDraftRef || "TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase();
     });
@@ -156,7 +520,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const [activeParcelIndex, setActiveParcelIndex] = useState(null);
     const rosarioCenter = [13.8450, 121.2063];
 
-    // Strict Payload Cleaner
+    // Payload cleaner
     const cleanPayload = (data) => {
         if (!data) return null;
         let parsed = data;
@@ -169,7 +533,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         return parsed;
     };
 
-    // ── DEFENSIVE HYDRATION (Fresh Start Enabled) ──
+    // Hydration
     const [form, setForm] = useState(() => {
         const baseForm = emptyForm();
         const validCloud = cleanPayload(cloudDraftPayload);
@@ -185,144 +549,253 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         return baseForm;
     });
 
+    // Valid parcels and total lot area computation (only when PIN is filled)
+    const validParcels = useMemo(() => {
+        return (form.parcels || []).filter((p) => Boolean(p.property_index_number?.trim()));
+    }, [form.parcels]);
+
+    const validParcelsCount = validParcels.length;
+
+    const totalLotArea = useMemo(() => {
+        return validParcels.reduce((acc, p) => acc + (parseFloat(p.lot_area_sqm) || 0), 0);
+    }, [validParcels]);
+
+    // Smart Municipal Fee Calculation Engine
+    const calculatedFeeBreakdown = useMemo(() => {
+        return calculateMunicipalFee(
+            form.application_type || "Locational Clearance",
+            form.land_use_class || "Residential",
+            totalLotArea,
+            form.project_cost || 0
+        );
+    }, [form.application_type, form.land_use_class, totalLotArea, form.project_cost]);
+
+    // Automatically sync calculated fee to form only when on Step 5 in 'auto' mode
     useEffect(() => {
-        const validCloud = cleanPayload(cloudDraftPayload);
-        if (validCloud) {
-            setForm(prev => ({ ...prev, ...validCloud }));
+        if (currentStep === 5 && feeMode === "auto" && calculatedFeeBreakdown) {
+            setForm((prev) => ({
+                ...prev,
+                assessment_fee: calculatedFeeBreakdown.total > 0 ? calculatedFeeBreakdown.total.toFixed(2) : "0.00",
+            }));
         }
-    }, [cloudDraftPayload]);
+    }, [currentStep, feeMode, calculatedFeeBreakdown]);
 
-    // ── AUTO-SAVE LOGIC ENGINE ──
-    useEffect(() => {
-        try {
-            localStorage.setItem(DRAFT_UUID_KEY, tempDraftId);
-            localStorage.setItem(DRAFT_PAYLOAD_KEY, JSON.stringify(form));
-        } catch (e) {
-            console.warn("Local storage disabled. Relying on cloud sync.");
+    // Zoning Compatibility Warning
+    const zoningWarning = useMemo(() => {
+        if (!form.land_use_class || !form.barangay) return null;
+        const isHeavy = ["Industrial", "Special Use", "Agro-Industrial"].includes(form.land_use_class);
+        const urbanPoblacion = ["Poblacion A", "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "San Carlos", "San Roque"];
+        if (isHeavy && urbanPoblacion.includes(form.barangay)) {
+            return `Zoning Notice: Proposed ${form.land_use_class} use in Brgy. ${form.barangay} is within a dense urban settlement and may require Sangguniang Bayan special clearance.`;
         }
-        
-        setSyncStatus("Saving modifications...");
+        return null;
+    }, [form.land_use_class, form.barangay]);
 
-        const backgroundSyncTimer = setTimeout(() => {
-            if (!form.application_type && !form.applicant_name) {
-                setSyncStatus("Saved locally");
-                return;
-            }
-
-            axios
-                .post("/applications/drafts/save", {
-                    temp_id: tempDraftId,
-                    payload: form,
-                })
-                .then(() => setSyncStatus("Auto-saved to drafts"))
-                .catch(() => setSyncStatus("Saved locally (Offline)"));
-        }, 3000);
-
-        const handleSuddenExit = () => {
-            if (!form.application_type && !form.applicant_name) return;
-
-            fetch("/applications/drafts/save", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-XSRF-TOKEN": document.cookie.split('; ').find(row => row.startsWith('XSRF-TOKEN='))?.split('=')[1] 
-                },
-                body: JSON.stringify({ temp_id: tempDraftId, payload: form }),
-                keepalive: true 
-            });
-        };
-
-        window.addEventListener('beforeunload', handleSuddenExit);
-
-        return () => {
-            clearTimeout(backgroundSyncTimer);
-            window.removeEventListener('beforeunload', handleSuddenExit);
-        };
-    }, [form, tempDraftId]);
-
-    // ── MANUAL SAVE BUTTON LOGIC ──
-    const handleManualSave = async () => {
-        if (!form.application_type && !form.applicant_name) {
-            Swal.fire({
-                title: "Empty Form",
-                text: "Please select an Application Category or enter an Applicant Name to save a draft.",
-                icon: "info",
-                customClass: { popup: "swal-small-modal" }
-            });
+    // Applicant Auto-Complete Matcher
+    const checkApplicantMatches = (val, field) => {
+        if (!val || val.trim().length < 3) {
+            setApplicantSuggestion(null);
             return;
         }
+        const registry = loadApplicantRegistry();
+        const query = val.toLowerCase().trim();
+        const match = registry.find((a) => {
+            if (field === "contact_number") return a.contact_number.includes(query);
+            if (field === "email") return a.email?.toLowerCase().includes(query);
+            return (
+                a.applicant_name?.toLowerCase().includes(query) ||
+                a.last_name?.toLowerCase().includes(query) ||
+                a.first_name?.toLowerCase().includes(query)
+            );
+        });
 
-        setSyncStatus("Saving manually...");
-        try {
-            await axios.post("/applications/drafts/save", {
-                temp_id: tempDraftId,
-                payload: form,
-            });
-            setSyncStatus("Auto-saved to drafts");
-            
-            Swal.fire({
-                title: "Draft Saved!",
-                text: "Your progress has been safely stored.",
-                icon: "success",
-                showCancelButton: true,
-                confirmButtonColor: "#2563eb",
-                cancelButtonColor: "#64748b",
-                confirmButtonText: "Go to Drafts",
-                cancelButtonText: "Keep Editing",
-                customClass: { popup: "swal-small-modal rounded-3xl" }
-            }).then((res) => {
-                if (res.isConfirmed) {
-                    router.get("/applications/drafts");
-                }
-            });
-        } catch (error) {
-            setSyncStatus("Saved locally (Offline)");
-            Swal.fire("Network Error", "Could not reach the server. Ensure you have an active internet connection.", "error");
+        if (match && match.applicant_name !== form.applicant_name) {
+            setApplicantSuggestion(match);
+        } else {
+            setApplicantSuggestion(null);
         }
     };
 
-    // ── RESTART/RESET BUTTON LOGIC ──
-    const handleRestart = () => {
-        Swal.fire({
-            title: "Start Over?",
-            text: "This clears the current form entirely. If this was auto-saved, it will remain in your Drafts Workspace.",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonColor: "#ef4444",
-            cancelButtonColor: "#cbd5e1",
-            confirmButtonText: "Yes, reset form",
-            cancelButtonText: "Cancel",
-            customClass: { popup: "swal-small-modal rounded-3xl" }
-        }).then((res) => {
-            if (res.isConfirmed) {
-                setForm(emptyForm());
-                setCurrentStep(1);
-                setActiveParcelFeature(null);
-                setActiveParcelIndex(null);
-                setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
-                setErrors({});
+    const applyApplicantSuggestion = () => {
+        if (!applicantSuggestion) return;
+        setForm((prev) => ({
+            ...prev,
+            first_name: applicantSuggestion.first_name || "",
+            middle_name: applicantSuggestion.middle_name || "",
+            last_name: applicantSuggestion.last_name || "",
+            suffix: applicantSuggestion.suffix || "",
+            applicant_name: applicantSuggestion.applicant_name || "",
+            contact_number: applicantSuggestion.contact_number || "",
+            email: applicantSuggestion.email || "",
+            representative_name: applicantSuggestion.representative_name || "",
+        }));
+        setApplicantSuggestion(null);
+        setFlash({ type: "success", msg: `Auto-filled details for ${applicantSuggestion.applicant_name}.` });
+        setTimeout(() => setFlash(null), 3000);
+    };
+
+    // Global Keyboard Navigation
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                e.preventDefault();
+                if (currentStep === 5) {
+                    handleSubmit(e);
+                } else {
+                    handleNext();
+                }
+                return;
             }
-        });
+
+            if (e.altKey && e.key === "ArrowLeft") {
+                e.preventDefault();
+                handleBack();
+                return;
+            }
+
+            if (e.key === "Enter" && e.target.tagName !== "TEXTAREA" && e.target.type !== "submit" && e.target.type !== "button" && !e.target.dataset.noAdvance) {
+                if (currentStep < 5) {
+                    e.preventDefault();
+                    handleNext();
+                }
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [currentStep, form]);
+
+    useEffect(() => {
+        const validCloud = cleanPayload(cloudDraftPayload);
+        if (validCloud) {
+            setForm((prev) => ({
+                ...prev,
+                ...validCloud,
+                parcels: Array.isArray(validCloud.parcels) && validCloud.parcels.length > 0
+                    ? validCloud.parcels
+                    : prev.parcels,
+            }));
+            if (cloudDraftRef) {
+                setTempDraftId(cloudDraftRef);
+            }
+        }
+    }, [cloudDraftPayload, cloudDraftRef]);
+
+    useEffect(() => {
+        const tick = () => {
+            const now = new Date();
+            setClock(
+                now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
+                " · " +
+                now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })
+            );
+        };
+        tick();
+        const id = setInterval(tick, 1000);
+        return () => clearInterval(id);
+    }, []);
+
+    // Draft persistence handlers
+    const persistDraftState = (uuid, payload) => {
+        try {
+            if (uuid) localStorage.setItem(DRAFT_UUID_KEY, uuid);
+            if (payload) localStorage.setItem(DRAFT_PAYLOAD_KEY, JSON.stringify(payload));
+        } catch (e) {}
     };
 
     const clearDraftStateRecord = () => {
         try {
             localStorage.removeItem(DRAFT_UUID_KEY);
             localStorage.removeItem(DRAFT_PAYLOAD_KEY);
-        } catch(e) {}
+        } catch (e) {}
     };
 
+    // Auto-save sync effect
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            const hasData = form.application_type || form.form_number || form.applicant_name || form.barangay;
+            if (!hasData) return;
+
+            setSyncStatus("Saving modifications...");
+            persistDraftState(tempDraftId, form);
+
+            axios.post("/applications/drafts/autosave", {
+                temp_reference_number: tempDraftId,
+                draft_payload: form,
+            })
+            .then(() => {
+                setSyncStatus("Auto-saved to drafts");
+            })
+            .catch(() => {
+                setSyncStatus("Saved locally");
+            });
+        }, 1200);
+
+        return () => clearTimeout(handler);
+    }, [form, tempDraftId]);
+
+    const handleManualSave = () => {
+        setSyncStatus("Saving modifications...");
+        persistDraftState(tempDraftId, form);
+        axios
+            .post("/applications/drafts/autosave", {
+                temp_reference_number: tempDraftId,
+                draft_payload: form,
+            })
+            .then(() => {
+                setSyncStatus("Auto-saved to drafts");
+                setFlash({ type: "success", msg: `Draft synchronized (${tempDraftId}).` });
+                setTimeout(() => setFlash(null), 3000);
+            })
+            .catch(() => {
+                setSyncStatus("Saved locally");
+                setFlash({ type: "success", msg: "Draft stored to local storage." });
+                setTimeout(() => setFlash(null), 3000);
+            });
+    };
+
+    const handleRestart = () => {
+        Swal.fire({
+            title: "Reset Application Form?",
+            text: "This will clear all entered application fields and draft data. You can start fresh from Step 1.",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, Reset Form",
+            cancelButtonText: "Cancel",
+            buttonsStyling: false,
+            customClass: {
+                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
+                title: "text-lg font-bold text-slate-900",
+                htmlContainer: "text-xs text-slate-500",
+                actions: "flex items-center justify-center gap-3 mt-5",
+                confirmButton: "inline-flex items-center justify-center px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
+                cancelButton: "inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
+            },
+        }).then((res) => {
+            if (res.isConfirmed) {
+                clearDraftStateRecord();
+                setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
+                setForm(emptyForm());
+                setCurrentStep(1);
+                setActiveParcelFeature(null);
+                setActiveParcelIndex(null);
+                setSyncStatus("Saved locally");
+            }
+        });
+    };
+
+    // Parcel Management
     const addParcel = () => {
+        const nextIndex = (form.parcels || []).length + 1;
+        const newCode = `P-${String(nextIndex).padStart(2, "0")}`;
         setForm((prev) => ({
             ...prev,
             parcels: [
-                ...prev.parcels,
+                ...(prev.parcels || []),
                 {
-                    parcel_code: `P-${String(prev.parcels.length + 1).padStart(2, "0")}`,
+                    parcel_code: newCode,
                     property_index_number: "",
                     property_tax_number: "",
-                    barangay: "",
                     lot_number: "",
                     tct_number: "",
                     tax_dec_number: "",
@@ -334,47 +807,51 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const removeParcel = (index) => {
-        setForm((prev) => ({
-            ...prev,
-            parcels: prev.parcels.filter((_, i) => i !== index),
-        }));
-        if (activeParcelIndex === index) setActiveParcelIndex(null);
+        if ((form.parcels || []).length <= 1) return;
+        setForm((prev) => {
+            const nextParcels = prev.parcels.filter((_, i) => i !== index);
+            return {
+                ...prev,
+                parcels: nextParcels.map((p, i) => ({
+                    ...p,
+                    parcel_code: `P-${String(i + 1).padStart(2, "0")}`,
+                })),
+            };
+        });
+        if (activeParcelIndex === index) {
+            setActiveParcelFeature(null);
+            setActiveParcelIndex(null);
+        }
     };
 
     const setParcelField = (index, field) => (e) => {
-        const value = e.target.value;
+        const val = e.target.value;
         setForm((prev) => ({
             ...prev,
-            parcels: prev.parcels.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
+            parcels: (prev.parcels || []).map((p, i) => (i === index ? { ...p, [field]: val } : p)),
         }));
-
-        const nestedField = `parcels.${index}.${field}`;
-        if (errors[nestedField]) {
+        if (errors[`parcels.${index}.${field}`]) {
             setErrors((prev) => {
                 const next = { ...prev };
-                delete next[nestedField];
+                delete next[`parcels.${index}.${field}`];
                 return next;
             });
         }
     };
 
-    const parcelFieldError = (index, field) => (errors[`parcels.${index}.${field}`] ? <p className="text-[10px] font-bold text-red-500 mt-1">{errors[`parcels.${index}.${field}`]}</p> : null);
-
-    const totalAreaSqm = (form.parcels || []).reduce((sum, p) => sum + (parseFloat(p.lot_area_sqm) || 0), 0);
-
-    const [pinLookupMap, setPinLookupMap] = useState({});
     const [pinLoading, setPinLoading] = useState({});
+    const [pinLookupMap, setPinLookupMap] = useState({});
 
     const getGeometryCentroid = (geometry) => {
-        if (!geometry?.type || !geometry.coordinates) return null;
+        if (!geometry || !geometry.coordinates) return null;
 
         const averageRing = (ring) => {
-            if (!Array.isArray(ring) || ring.length === 0) return null;
+            if (!ring || ring.length === 0) return null;
             const totals = ring.reduce(
-                (acc, coordinate) => {
-                    const [lng, lat] = coordinate;
-                    return { lat: acc.lat + lat, lng: acc.lng + lng };
-                },
+                (acc, coord) => ({
+                    lat: acc.lat + Number(coord[1]),
+                    lng: acc.lng + Number(coord[0]),
+                }),
                 { lat: 0, lng: 0 },
             );
             return {
@@ -398,12 +875,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         fetch("/geojson/rosario_brgy_map.geojson")
             .then((res) => res.json())
             .then((data) => setBrgyMapData(data))
-            .catch((err) => console.warn("Failed to load brgy map:", err));
+            .catch(() => {});
 
         const loadParcelLookup = async () => {
             try {
                 const response = await fetch("/geojson/rosario_batangas_dummy_parcels.geojson");
-                if (!response.ok) throw new Error("Unable to load parcel lookup data");
+                if (!response.ok) return;
                 const payload = await response.json();
 
                 setParcelMapData(payload);
@@ -427,9 +904,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 });
 
                 setPinLookupMap(lookupMap);
-            } catch (error) {
-                console.warn("Parcel lookup geojson failed:", error);
-            }
+            } catch (error) {}
         };
 
         loadParcelLookup();
@@ -444,17 +919,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         }
 
         const res = await fetch(`/api/tax-map/lookup/${encodeURIComponent(normalizedPin)}`);
-
         if (!res.ok) {
-            const contentType = res.headers.get("content-type");
-            if (contentType && contentType.includes("application/json")) {
-                const payload = await res.json();
-                throw new Error(payload.message || "PIN not found");
-            } else {
-                throw new Error("Unable to locate parcel. Please check your network or PIN input.");
-            }
+            throw new Error("Unable to locate parcel geometry with the provided PIN.");
         }
-
         const payload = await res.json();
         return payload.data;
     };
@@ -485,10 +952,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
             setForm((prev) => {
                 const newBarangay = index === 0 && data.barangay ? data.barangay : prev.barangay;
+                const newLandUse = data.land_use_class || prev.land_use_class;
 
                 return {
                     ...prev,
                     barangay: newBarangay,
+                    land_use_class: newLandUse,
                     parcels: (prev.parcels || []).map((p, i) =>
                         i === index
                             ? {
@@ -500,6 +969,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                   tct_number: data.tct_number || p.tct_number || "",
                                   tax_dec_number: data.tax_dec_number || p.tax_dec_number || "",
                                   lot_area_sqm: data.lot_area_sqm ?? p.lot_area_sqm,
+                                  land_use_class: data.land_use_class || p.land_use_class || "",
+                                  is_verified: true,
                                   coordinates: data.coordinates || (data.latitude && data.longitude ? `${data.latitude},${data.longitude}` : p.coordinates),
                               }
                             : p,
@@ -513,80 +984,150 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 delete next.barangay;
                 return next;
             });
+            setFlash({ type: "success", msg: `PIN ${pin} verified against municipal approved land use records.` });
+            setTimeout(() => setFlash(null), 3000);
         } catch (err) {
-            const message = err?.message || "Lookup failed";
             setErrors((prev) => ({
                 ...prev,
-                [`parcels.${index}.property_index_number`]: message,
+                [`parcels.${index}.property_index_number`]: err?.message || "PIN not found in approved records",
+            }));
+            setForm((prev) => ({
+                ...prev,
+                parcels: (prev.parcels || []).map((p, i) => i === index ? { ...p, is_verified: false } : p),
             }));
         } finally {
             setPinLoading((prev) => ({ ...prev, [index]: false }));
         }
     };
 
-    useEffect(() => {
-        const tick = () => {
-            const now = new Date();
-            setClock(
-                now.toLocaleDateString("en-PH", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                }) +
-                    " · " +
-                    now.toLocaleTimeString("en-PH", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                    }),
-            );
-        };
-        tick();
-        const id = setInterval(tick, 1000);
-        return () => clearInterval(id);
-    }, []);
+    // Direct GIS Map Click-to-Select Handler
+    const handleSelectMapParcel = (pin, lot, area, brgy, feature) => {
+        const targetIdx = activeParcelIndex !== null ? activeParcelIndex : 0;
+        const pProps = feature?.properties || {};
+        const landUse = pProps.land_use_class || pProps.zoning_class || pProps.land_use || "";
+        const tdNo = pProps.tax_dec_number || pProps.td_no || "";
+        const tctNo = pProps.tct_number || "";
+        
+        if (feature) {
+            setActiveParcelFeature(feature);
+            setActiveParcelIndex(targetIdx);
+        }
+
+        setForm((prev) => {
+            const newBarangay = targetIdx === 0 && brgy ? brgy : prev.barangay;
+            const newLandUse = landUse || prev.land_use_class;
+            return {
+                ...prev,
+                barangay: newBarangay,
+                land_use_class: newLandUse,
+                parcels: (prev.parcels || []).map((p, i) =>
+                    i === targetIdx
+                        ? {
+                              ...p,
+                              property_index_number: pin || p.property_index_number,
+                              lot_number: lot || p.lot_number,
+                              lot_area_sqm: area != null ? String(area) : p.lot_area_sqm,
+                              barangay: brgy || p.barangay,
+                              tax_dec_number: tdNo || p.tax_dec_number,
+                              tct_number: tctNo || p.tct_number,
+                              land_use_class: landUse || p.land_use_class,
+                              is_verified: Boolean(pin),
+                          }
+                        : p
+                ),
+            };
+        });
+
+        setFlash({ type: "success", msg: `Selected lot PIN: ${pin || "Map Polygon"} · Verified with municipal land records` });
+        setTimeout(() => setFlash(null), 3000);
+    };
 
     const handleLogout = () => {
         Swal.fire({
             title: "Sign Out?",
-            text: "Securely end this session?",
+            text: "Are you sure you want to log out of iMAPS?",
             icon: "warning",
             showCancelButton: true,
-            confirmButtonColor: "#1e40af",
-            cancelButtonColor: "#ef4444",
-            confirmButtonText: "Yes",
+            confirmButtonText: "Yes, sign out",
+            cancelButtonText: "Cancel",
+            buttonsStyling: false,
             customClass: {
-                popup: "swal-small-modal rounded-3xl",
-                title: "text-slate-800 font-black",
+                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
+                title: "text-lg font-bold text-slate-900",
+                htmlContainer: "text-xs text-slate-500",
+                actions: "flex items-center justify-center gap-3 mt-5",
+                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
+                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
             },
-        }).then((res) => {
-            if (res.isConfirmed) router.post("/logout");
+        }).then((result) => {
+            if (result.isConfirmed) {
+                sessionStorage.removeItem("hasShownWelcome");
+                router.post("/logout");
+            }
         });
     };
 
     const set = (field) => (e) => {
-        setForm((f) => ({ ...f, [field]: e.target.value }));
-        if (errors[field])
+        const val = e.target.value;
+        setForm((f) => ({ ...f, [field]: val }));
+        if (field === "email") {
+            checkApplicantMatches(val, "email");
+        }
+        if (errors[field]) {
             setErrors((err) => {
                 const n = { ...err };
                 delete n[field];
                 return n;
             });
+        }
+    };
+
+    const handleNameChange = (field) => (e) => {
+        const rawVal = e.target.value;
+        const val = toTitleCase(rawVal);
+        setForm((prev) => {
+            const next = { ...prev, [field]: val };
+            const parts = [
+                next.first_name?.trim(),
+                next.middle_name?.trim(),
+                next.last_name?.trim(),
+                next.suffix?.trim(),
+            ].filter(Boolean);
+
+            return {
+                ...next,
+                applicant_name: parts.join(" "),
+            };
+        });
+
+        checkApplicantMatches(val, field);
+
+        if (errors[field] || errors.applicant_name) {
+            setErrors((prev) => {
+                const next = { ...prev };
+                delete next[field];
+                delete next.applicant_name;
+                return next;
+            });
+        }
     };
 
     const handleTypeSelect = (typeId) => {
         setForm((f) => ({ ...f, application_type: typeId }));
-        if (errors.application_type)
+        if (errors.application_type) {
             setErrors((err) => {
                 const n = { ...err };
                 delete n.application_type;
                 return n;
             });
+        }
     };
 
     const handleContactInput = (e) => {
         let val = e.target.value.replace(/\D/g, "");
         if (val.startsWith("0")) val = val.slice(1);
         setForm((f) => ({ ...f, contact_number: val }));
+        checkApplicantMatches(val, "contact_number");
     };
 
     const handleFeeBlur = (e) => {
@@ -598,24 +1139,26 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         const newErrors = {};
 
         if (step === 1) {
-            if (!form.application_type) newErrors.application_type = "Required";
-            if (!form.form_number?.trim()) newErrors.form_number = "Required";
-            if (!form.land_use_class) newErrors.land_use_class = "Required";
-            if (!form.purpose?.trim()) newErrors.purpose = "Required";
+            if (!form.application_type) newErrors.application_type = "Select an application category";
+            if (!form.form_number?.trim()) newErrors.form_number = "Form number is required";
+            if (!form.land_use_class) newErrors.land_use_class = "Target zoning class is required";
+            if (!form.purpose?.trim()) newErrors.purpose = "Operational purpose is required";
         }
 
         if (step === 2) {
-            if (!form.applicant_name?.trim()) newErrors.applicant_name = "Required";
-            if (!form.contact_number?.trim()) newErrors.contact_number = "Required";
+            if (!form.last_name?.trim()) newErrors.last_name = "Last name is required";
+            if (!form.first_name?.trim()) newErrors.first_name = "First name is required";
+            if (!form.applicant_name?.trim()) newErrors.applicant_name = "Applicant name is required";
+            if (!form.contact_number?.trim()) newErrors.contact_number = "Phone number is required";
             if (!form.email?.trim()) {
-                newErrors.email = "Required";
+                newErrors.email = "Email address is required";
             } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-                newErrors.email = "Enter a valid email";
+                newErrors.email = "Enter a valid email format";
             }
         }
 
         if (step === 3) {
-            if (!form.barangay?.trim()) newErrors.barangay = "Required";
+            if (!form.barangay?.trim()) newErrors.barangay = "Barangay is required";
 
             if (!form.parcels || form.parcels.length === 0) {
                 newErrors.parcels = "At least one parcel is required";
@@ -624,9 +1167,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 form.parcels.forEach((parcel, index) => {
                     const pin = parcel.property_index_number?.trim();
                     if (!pin) {
-                        newErrors[`parcels.${index}.property_index_number`] = "Required";
+                        newErrors[`parcels.${index}.property_index_number`] = "PIN is required";
                     } else if (seenPins.has(pin)) {
-                        newErrors[`parcels.${index}.property_index_number`] = "Duplicate PIN not allowed";
+                        newErrors[`parcels.${index}.property_index_number`] = "Duplicate PIN";
                     } else {
                         seenPins.add(pin);
                     }
@@ -645,7 +1188,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         } else {
             setFlash({
                 type: "error",
-                msg: `Please resolve the highlighted errors in the ${STEPS[currentStep - 1].title} section before proceeding.`,
+                msg: `Please complete the required fields in Step ${currentStep}.`,
             });
             setTimeout(() => setFlash(null), 4000);
         }
@@ -657,79 +1200,78 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const handleSubmit = (e) => {
-        e.preventDefault();
-        if (!form.assessment_fee) {
-            setErrors({
-                assessment_fee: "Assessment fee is required for routing.",
-            });
+        if (e && e.preventDefault) e.preventDefault();
+        if (!form.assessment_fee || Number(form.assessment_fee) < 0) {
+            setErrors({ assessment_fee: "Assessment fee is required." });
             return setFlash({
                 type: "error",
-                msg: "Assessment fee is required.",
+                msg: "Please verify the assessment fee.",
             });
         }
 
         setSubmitting(true);
-        setErrors({});
-
         router.post("/applications/encode", form, {
             onSuccess: (page) => {
-                const ref = page.props.flash?.reference_number || `IMP-${Math.floor(1000 + Math.random() * 9000)}`;
-                Swal.fire({
-                    icon: "success",
-                    title: "Applicant Registered",
-                    html: `<div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-2">
-                             <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Reference Number</span>
-                             <strong class="text-2xl font-mono font-black text-blue-700 tracking-tight">${ref}</strong>
-                           </div>`,
-                    confirmButtonColor: "#2563eb",
-                    customClass: {
-                        popup: "swal-small-modal rounded-3xl",
-                        title: "font-black text-slate-800 text-xl",
-                    },
+                const ref = page.props.flash?.reference_number || `LC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(100 + Math.random() * 900)}`;
+
+                // Save applicant to local registry cache
+                saveApplicantToRegistry({
+                    first_name: form.first_name,
+                    middle_name: form.middle_name,
+                    last_name: form.last_name,
+                    suffix: form.suffix,
+                    applicant_name: form.applicant_name,
+                    contact_number: form.contact_number,
+                    email: form.email,
+                    representative_name: form.representative_name,
                 });
+
+                // Prepare routing slip data
+                setRoutingSlipData({
+                    reference_number: ref,
+                    date_of_application: new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
+                    encoded_by_name: userName,
+                    applicant_name: form.applicant_name,
+                    contact_number: form.contact_number,
+                    email: form.email,
+                    representative_name: form.representative_name,
+                    application_type: form.application_type,
+                    land_use_class: form.land_use_class,
+                    purpose: form.purpose,
+                    barangay: form.barangay,
+                    street_address: form.street_address,
+                    parcels: form.parcels,
+                    total_area: totalLotArea,
+                    project_cost: form.project_cost,
+                    assessment_fee: form.assessment_fee,
+                    or_number: form.or_number,
+                });
+                setShowRoutingSlip(true);
 
                 clearDraftStateRecord();
                 setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
                 setSyncStatus("Saved locally");
-
-                setCurrentStep(1);
-                setActiveParcelFeature(null);
-                setActiveParcelIndex(null);
-                setForm(emptyForm());
             },
             onError: (errs) => {
                 setErrors(errs);
 
                 let targetStep = 5;
-                let stepNames = [];
                 const errKeys = Object.keys(errs);
 
                 if (errKeys.some((k) => ["application_type", "form_number", "land_use_class", "purpose"].includes(k))) {
-                    targetStep = Math.min(targetStep, 1);
-                    if (!stepNames.includes("Scope")) stepNames.push("Scope");
-                }
-                if (errKeys.some((k) => ["applicant_name", "contact_number", "email", "representative_name"].includes(k))) {
-                    targetStep = Math.min(targetStep, 2);
-                    if (!stepNames.includes("Profile")) stepNames.push("Profile");
-                }
-                if (errKeys.some((k) => ["barangay"].includes(k) || k.startsWith("parcels"))) {
-                    targetStep = Math.min(targetStep, 3);
-                    if (!stepNames.includes("Location")) stepNames.push("Location");
-                }
-                if (errKeys.some((k) => ["assessment_fee", "or_number", "remarks"].includes(k))) {
-                    if (!stepNames.includes("Assess")) stepNames.push("Assess");
+                    targetStep = 1;
+                } else if (errKeys.some((k) => ["applicant_name", "contact_number", "email", "representative_name"].includes(k))) {
+                    targetStep = 2;
+                } else if (errKeys.some((k) => ["barangay"].includes(k) || k.startsWith("parcels"))) {
+                    targetStep = 3;
                 }
 
                 setCurrentStep(targetStep);
                 if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
 
-                const firstErrorKey = errKeys[0];
-                const firstErrorMessage = Array.isArray(errs[firstErrorKey]) ? errs[firstErrorKey][0] : errs[firstErrorKey];
-                const stepsString = stepNames.length > 1 ? stepNames.join(" & ") : stepNames[0] || "Application";
-
                 setFlash({
                     type: "error",
-                    msg: `Validation failed in ${stepsString}. Issue: ${firstErrorMessage}`,
+                    msg: "Please resolve the highlighted validation issues.",
                 });
 
                 setTimeout(() => setFlash(null), 5000);
@@ -738,502 +1280,588 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         });
     };
 
-    const fieldError = (field) => {
-        const errorMsg = Array.isArray(errors[field]) ? errors[field][0] : errors[field];
-        return errorMsg ? <p className="absolute -bottom-4 left-1 text-[10px] text-red-500 font-bold whitespace-nowrap">{errorMsg}</p> : null;
-    };
-
     const brgyStyle = {
         color: "#2563eb",
-        weight: 2,
-        opacity: 0.8,
-        fillOpacity: 0.05,
+        weight: 1.5,
+        opacity: 0.7,
+        fillOpacity: 0.04,
         fillColor: "#3b82f6",
     };
 
     const getParcelStyle = (feature) => {
-        const isActive = activeParcelFeature && activeParcelFeature.properties.property_index_number === feature.properties.property_index_number;
+        const isActive = activeParcelFeature && activeParcelFeature.properties?.property_index_number === feature.properties?.property_index_number;
         return {
-            color: isActive ? "#ef4444" : "#f97316",
-            weight: isActive ? 3 : 1,
+            color: isActive ? "#ef4444" : "#2563eb",
+            weight: isActive ? 3 : 1.5,
             opacity: 0.9,
-            fillOpacity: isActive ? 0.6 : 0.3,
-            fillColor: isActive ? "#ef4444" : "#fdba74",
+            fillOpacity: isActive ? 0.5 : 0.2,
+            fillColor: isActive ? "#ef4444" : "#3b82f6",
         };
     };
 
+    const workflowProgress = useMemo(() => {
+        let progress = 0;
+        const step1Done = Boolean(form.application_type && form.form_number?.trim() && form.land_use_class && form.purpose?.trim());
+        const step2Done = Boolean((form.last_name?.trim() && form.first_name?.trim() || form.applicant_name?.trim()) && form.contact_number?.trim() && form.email?.trim());
+        const step3Done = Boolean(form.barangay && form.parcels?.some((p) => p.property_index_number?.trim()));
+        const step4Done = currentStep >= 4;
+        const step5Done = currentStep === 5 && Boolean(form.assessment_fee && Number(form.assessment_fee) >= 0);
+
+        if (step1Done) progress += 20;
+        if (step2Done) progress += 20;
+        if (step3Done) progress += 20;
+        if (step4Done) progress += 20;
+        if (step5Done) progress += 20;
+
+        return progress;
+    }, [form, currentStep]);
+
+    const stepProgress = Math.round((currentStep / 5) * 100);
+
     return (
         <>
-            <Head title="New Application | iMAPS" />
+            <Head title="Encode Application | iMAPS Rosario" />
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500;700&display=swap');
-                #dashboard-root, #dashboard-root :not(.font-mono) { font-family: 'Poppins', sans-serif !important; }
-                #dashboard-root .font-mono, #dashboard-root .font-mono * { font-family: 'DM Mono', monospace !important; }
+                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+                
+                #encode-root {
+                    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                }
+                .font-mono {
+                    font-family: 'JetBrains Mono', monospace !important;
+                }
 
                 ::-webkit-scrollbar { width: 6px; height: 6px; }
                 ::-webkit-scrollbar-track { background: transparent; }
-                ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+                ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+                .leaflet-container { width: 100%; height: 100%; z-index: 0; }
 
-                .form-enter { animation: formFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-                @keyframes formFadeIn { 0% { opacity: 0; transform: translateY(5px); } 100% { opacity: 1; transform: translateY(0); } }
-
-                .swal-small-modal { width: 340px !important; padding: 1.5rem !important; border-radius: 20px !important; }
-
-                .radio-card input:checked + div { border-color: #2563eb; background-color: #eff6ff; box-shadow: inset 0 0 0 1px #2563eb; }
-                .radio-card input:checked + div .icon-box { background-color: #2563eb; color: white; }
-
-                .map-grid-bg { background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 20px 20px; }
-
-                .leaflet-container {
-                    width: 100%;
-                    height: 100%;
-                    z-index: 0;
+                /* SweetAlert Modern iMAPS Theme Overrides */
+                .swal2-container {
+                    backdrop-filter: blur(4px) !important;
+                    background-color: rgba(15, 23, 42, 0.4) !important;
+                }
+                .swal2-popup {
+                    font-family: 'Plus Jakarta Sans', sans-serif !important;
+                    border-radius: 1.5rem !important;
+                    border: 1px solid #e2e8f0 !important;
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15) !important;
+                    padding: 1.75rem !important;
+                }
+                .swal2-icon.swal2-warning {
+                    border-color: #f59e0b !important;
+                    color: #f59e0b !important;
+                    width: 3.5rem !important;
+                    height: 3.5rem !important;
+                    margin: 0.5rem auto 1rem !important;
+                }
+                .swal2-icon.swal2-success {
+                    border-color: #10b981 !important;
+                    color: #10b981 !important;
+                    width: 3.5rem !important;
+                    height: 3.5rem !important;
+                    margin: 0.5rem auto 1rem !important;
+                }
+                .swal2-icon .swal2-icon-content {
+                    font-size: 2.25rem !important;
+                }
+                .swal2-title {
+                    font-size: 1.25rem !important;
+                    font-weight: 700 !important;
+                    color: #0f172a !important;
+                    padding: 0 !important;
+                    margin-bottom: 0.5rem !important;
+                }
+                .swal2-html-container {
+                    font-size: 0.8125rem !important;
+                    color: #64748b !important;
+                    margin: 0 0 1.25rem !important;
+                    line-height: 1.5 !important;
+                }
+                .swal2-actions {
+                    gap: 0.75rem !important;
+                    margin-top: 1rem !important;
                 }
 
-                @keyframes syncPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-                .sync-dot-active { animation: syncPulse 1.4s ease-in-out infinite; }
+                /* Printable Routing Slip Optimizations */
+                @media print {
+                    body * {
+                        visibility: hidden !important;
+                    }
+                    #printable-routing-slip, #printable-routing-slip * {
+                        visibility: visible !important;
+                    }
+                    #printable-routing-slip {
+                        position: fixed !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100vw !important;
+                        height: auto !important;
+                        max-height: 100% !important;
+                        margin: 0 !important;
+                        padding: 1.5rem !important;
+                        background: #ffffff !important;
+                        color: #0f172a !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        z-index: 999999 !important;
+                    }
+                }
             `}</style>
 
-            <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
-                <header className="h-14 bg-white border-b border-slate-200 shadow-sm flex items-center justify-between px-4 sm:px-6 shrink-0 z-[700] sticky top-0">
-                    <div className="flex items-center gap-4 lg:gap-6">
-                        <a href="#" className="flex items-center gap-2.5 group">
-                            <div className="w-7 h-7 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-sm group-hover:shadow-md transition-all">
-                                <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+            <div id="encode-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
+                {/* ── TOP HEADER ── */}
+                <Header 
+                    userName={userName} 
+                    userRole={userRole} 
+                    clock={clock} 
+                    onLogout={handleLogout} 
+                    sidebarOpen={sidebarOpen} 
+                    setSidebarOpen={setSidebarOpen} 
+                />
+
+                <div className="flex-1 overflow-hidden relative flex flex-col min-w-0">
+                    <Sidebar 
+                        userName={userName} 
+                        userRole={userRole} 
+                        sidebarOpen={sidebarOpen} 
+                        setSidebarOpen={setSidebarOpen} 
+                        onLogout={handleLogout} 
+                        activePage="applications" 
+                    />
+
+                    {sidebarOpen && (
+                        <div
+                            onClick={() => setSidebarOpen(false)}
+                            className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] z-[750] transition-opacity duration-300"
+                        />
+                    )}
+
+                    {/* ── SLEEK CONTROL & STEPPER BAR ── */}
+                    <div className="h-14 bg-white border-b border-slate-200/90 px-4 sm:px-6 flex items-center justify-between shrink-0 z-10 shadow-2xs gap-3">
+                        {/* Left: Modern Return to Records Button & Title */}
+                        <div className="flex items-center gap-3 shrink-0">
+                            <Link 
+                                href="/applications" 
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/90 text-slate-700 hover:text-slate-900 text-xs font-semibold border border-slate-200/80 transition-all shadow-2xs active:scale-95 group cursor-pointer"
+                                title="Return to All Records"
+                            >
+                                <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
                                 </svg>
-                            </div>
-                            <span className="font-black text-lg tracking-tight text-slate-800">iMAPS</span>
-                        </a>
-                        <div className="h-4 w-px bg-slate-200 hidden md:block" />
-                        <div className="hidden md:flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-0.5">
-                            <span className="flex h-1.5 w-1.5 relative">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500" />
-                            </span>
-                            <span className="text-[9px] font-bold text-slate-600 tracking-widest uppercase">Rosario, Batangas</span>
-                        </div>
-                        <div className="hidden md:flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 italic">
-                            <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === "Saving modifications..." ? "bg-amber-400 sync-dot-active" : syncStatus === "Auto-saved to drafts" ? "bg-emerald-500" : "bg-slate-300"}`} />
-                            {syncStatus}
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        <div className="hidden sm:flex items-center px-2 py-1 rounded-lg text-slate-500">
-                            <span className="text-[11px] font-mono font-bold tracking-tight">{clock}</span>
-                        </div>
-                        <div className="h-5 w-px bg-slate-200 hidden sm:block" />
-                        <div className="flex items-center gap-2 pl-1 pr-2 py-1 cursor-pointer group hover:bg-slate-50 rounded-lg transition-colors" onClick={handleLogout}>
-                            <div className="relative">
-                                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 to-blue-400 flex items-center justify-center text-white font-bold text-xs shadow-sm">
-                                    {userName?.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-500 border-2 border-white rounded-full" />
-                            </div>
-                            <div className="hidden sm:flex flex-col text-left justify-center">
-                                <p className="text-[11px] font-bold text-slate-700 leading-tight group-hover:text-blue-700 transition-colors">{userName}</p>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-tight mt-0.5">{userRole}</p>
+                                <span>All Records</span>
+                            </Link>
+                            <span className="h-4 w-px bg-slate-200 hidden sm:block" />
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-xs sm:text-sm font-bold text-slate-900 leading-none">New Application</h1>
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 bg-slate-100/90 px-2 py-0.5 rounded-full">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === "Saving modifications..." ? "bg-amber-500 animate-ping" : syncStatus === "Auto-saved to drafts" ? "bg-emerald-500" : "bg-slate-400"}`} />
+                                    <span className="hidden md:inline">{syncStatus}</span>
+                                </span>
                             </div>
                         </div>
-                    </div>
-                </header>
 
-                <div className="flex flex-1 h-full overflow-hidden relative">
-                    <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="applications" />
-
-                    <main className="flex-1 w-full h-full flex flex-col transition-all duration-500 ease-in-out bg-white" style={{ paddingLeft: sidebarOpen ? "200px" : "0px" }}>
-                        <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-                            {flash && (
-                                <div className="fixed top-16 right-6 z-[999] pointer-events-none">
-                                    <div className={`flex items-center gap-2 px-4 py-3 rounded-lg border shadow-xl max-w-sm pointer-events-auto transition-all ${flash.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-800"}`}>
-                                        <p className="font-bold text-[12px] flex-1 leading-tight">{flash.msg}</p>
-                                        <button onClick={() => setFlash(null)} className="text-slate-400 hover:text-slate-800"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="w-full h-full bg-white flex flex-col lg:flex-row flex-1 min-h-0 border-t border-slate-200">
-                                <div className="hidden lg:flex flex-col lg:w-1/2 bg-slate-50 border-r border-slate-200 relative map-grid-bg">
-                                    <div className="absolute inset-0 z-0">
-                                        <MapContainer center={rosarioCenter} zoom={12} zoomControl={false} scrollWheelZoom={true}>
-                                            <TileLayer
-                                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                            />
-                                            {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
-                                            {parcelMapData && <GeoJSON key={activeParcelFeature?.properties.property_index_number || "parcels"} data={parcelMapData} style={getParcelStyle} />}
-                                            <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />
-                                        </MapContainer>
-                                    </div>
-
-                                    <div className="absolute top-5 left-5 right-5 z-10 flex flex-col gap-3 pointer-events-none">
-                                        {(form.parcels || []).map(
-                                            (parcel, idx) =>
-                                                idx === activeParcelIndex &&
-                                                parcel.property_index_number &&
-                                                parcel.lot_number && (
-                                                    <div key={idx} className="bg-white/95 backdrop-blur-sm p-4 rounded-2xl shadow-[0_10px_40px_rgb(0,0,0,0.1)] pointer-events-auto transition-all animate-[formFadeIn_0.3s_ease-out] border border-slate-100 max-w-sm">
-                                                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
-                                                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-700 bg-blue-50/80 px-2 py-1 rounded-[6px] border border-blue-100/50">
-                                                                {parcel.parcel_code} INFO
-                                                            </span>
-                                                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100/80 px-2.5 py-1 rounded-[6px] border border-slate-200/50 uppercase tracking-widest">
-                                                                PIN: {parcel.property_index_number}
-                                                            </span>
-                                                        </div>
-
-                                                        <div className="grid grid-cols-2 gap-y-3 gap-x-4">
-                                                            <div>
-                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Lot Number</p>
-                                                                <p className="text-[13px] font-bold text-slate-800 leading-tight">{parcel.lot_number}</p>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Declared Area</p>
-                                                                <p className="text-[13px] font-mono font-bold text-slate-800 leading-tight">{parcel.lot_area_sqm} <span className="text-[10px] font-bold text-slate-400 font-sans tracking-wide">SQ.M</span></p>
-                                                            </div>
-                                                            <div className="col-span-2">
-                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">Barangay</p>
-                                                                <p className="text-[13px] font-bold text-slate-800 leading-tight">{parcel.barangay}</p>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">TCT / Title No.</p>
-                                                                <p className="text-[12px] font-mono font-medium text-slate-700 uppercase">{parcel.tct_number || "—"}</p>
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Tax Dec No.</p>
-                                                                <p className="text-[12px] font-mono font-medium text-slate-700 uppercase">{parcel.tax_dec_number || "—"}</p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ),
+                        {/* Center: Modern Smart Stepper (No checks, sleek executive numbered design) */}
+                        <div className="flex items-center bg-slate-100/90 p-1 rounded-2xl border border-slate-200/80 gap-1 overflow-x-auto max-w-full">
+                            {STEPS.map((step) => {
+                                const isCompleted = currentStep > step.id;
+                                const isCurrent = currentStep === step.id;
+                                return (
+                                    <button
+                                        key={step.id}
+                                        type="button"
+                                        onClick={() => isCompleted && setCurrentStep(step.id)}
+                                        className={`group flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap select-none ${
+                                            isCurrent
+                                                ? "bg-white text-blue-700 shadow-xs ring-1 ring-slate-200/80 cursor-default font-bold"
+                                                : isCompleted
+                                                ? "text-slate-700 hover:text-blue-700 hover:bg-white/70 cursor-pointer"
+                                                : "text-slate-400 cursor-not-allowed opacity-70"
+                                        }`}
+                                    >
+                                        <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-md transition-colors ${
+                                            isCurrent
+                                                ? "bg-blue-600 text-white shadow-2xs"
+                                                : isCompleted
+                                                ? "bg-blue-50 text-blue-700 border border-blue-200/60 group-hover:bg-blue-600 group-hover:text-white"
+                                                : "bg-slate-200/70 text-slate-400"
+                                        }`}>
+                                            0{step.id}
+                                        </span>
+                                        <span className="tracking-tight">{step.title}</span>
+                                        {isCompleted && (
+                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />
                                         )}
-                                    </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Right: Actions */}
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button 
+                                type="button" 
+                                onClick={handleRestart}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                </svg>
+                                <span className="hidden sm:inline">Reset</span>
+                            </button>
+                            <button 
+                                type="button" 
+                                onClick={handleManualSave}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/80 hover:bg-blue-100 shadow-2xs transition-all active:scale-98 cursor-pointer"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
+                                </svg>
+                                <span>Save Draft</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* ── WORKSPACE ── */}
+                    <main className="flex-1 w-full h-full flex flex-col bg-slate-50 overflow-hidden relative">
+                        {flash && (
+                            <div className="absolute top-4 right-4 z-[999] pointer-events-none animate-in fade-in slide-in-from-top-2">
+                                <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm pointer-events-auto transition-all ${flash.type === "success" ? "bg-slate-900 text-white border-slate-800" : "bg-rose-50 border-rose-200 text-rose-800"}`}>
+                                    <p className="font-semibold text-xs flex-1">{flash.msg}</p>
+                                    <button onClick={() => setFlash(null)} className="text-slate-400 hover:text-slate-200 cursor-pointer">
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
                                 </div>
+                            </div>
+                        )}
 
-                                <div className="flex-1 flex flex-col relative bg-white overflow-hidden lg:w-1/2">
-                                    <div className="bg-white px-6 pt-6 pb-2 shrink-0 relative z-10">
-                                        <div className="flex items-center justify-between w-full relative">
-                                            {STEPS.map((step, index) => {
-                                                const isCompleted = currentStep > step.id;
-                                                const isCurrent = currentStep === step.id;
-                                                return (
-                                                    <div key={step.id} className="flex-1 flex items-center relative group" onClick={() => isCompleted && setCurrentStep(step.id)}>
-                                                        {index !== STEPS.length - 1 && (
-                                                            <div className={`absolute top-1/2 left-[50%] right-[-50%] h-[2px] -translate-y-1/2 z-0 transition-colors duration-300 ${isCompleted ? "bg-blue-200" : "bg-slate-100"}`} />
-                                                        )}
-                                                        <div className={`relative z-10 flex flex-col items-center justify-center w-full gap-2 ${isCompleted ? "cursor-pointer" : ""}`}>
-                                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${isCompleted ? "bg-blue-500 text-white" : isCurrent ? "bg-blue-600 text-white shadow-[0_0_0_4px_rgba(37,99,235,0.15)] scale-110" : "bg-slate-100 text-slate-400"}`}>
-                                                                {isCompleted ? (
-                                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                                                ) : (
-                                                                    <span className="text-[11px] font-black">{step.id}</span>
-                                                                )}
-                                                            </div>
-                                                            <div className="text-center absolute top-9 w-max">
-                                                                <p className={`text-[10px] font-bold tracking-widest uppercase leading-none ${isCurrent ? "text-blue-700" : isCompleted ? "text-slate-800" : "text-slate-400"}`}>
-                                                                    {step.title}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
+                        {/* Background: Subtle Blurred Rosario GIS Map filling all whitespace across all steps */}
+                        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
+                            <div className="absolute inset-0 filter blur-[1.5px] opacity-40 scale-105">
+                                <MapContainer 
+                                    center={rosarioCenter} 
+                                    zoom={12} 
+                                    zoomControl={false} 
+                                    scrollWheelZoom={false} 
+                                    dragging={false} 
+                                    doubleClickZoom={false} 
+                                    touchZoom={false}
+                                    attributionControl={false}
+                                >
+                                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                    {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
+                                </MapContainer>
+                            </div>
+                            {/* Soft frosted vignette overlay to keep text and inputs ultra-crisp */}
+                            <div className="absolute inset-0 bg-gradient-to-b from-slate-100/40 via-slate-50/60 to-slate-100/75" />
+                        </div>
 
-                                    <div ref={formRef} className="flex-1 p-6 md:p-8 flex flex-col relative overflow-y-auto mt-2">
-                                        <form onSubmit={handleSubmit} className="flex-1 flex flex-col h-full w-full max-w-xl mx-auto">
-
-                                            {/* ── STEP 1: SCOPE ── */}
-                                            {currentStep === 1 && (
-                                                <div className="form-enter flex-1 flex flex-col">
-                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Application Parameters</h3>
-                                                        <div className="flex items-center gap-2">
-                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
-                                                                Restart
-                                                            </button>
-                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
-                                                                Save Draft
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex-1 flex flex-col gap-y-6">
-                                                        <div>
-                                                            <Label required hasError={!!errors.application_type}>Application Category</Label>
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
-                                                                {APPLICATION_TYPES.map((type) => (
-                                                                    <label key={type.id} className="radio-card relative cursor-pointer group">
-                                                                        <input type="radio" name="app_type" value={type.id} checked={form.application_type === type.id} onChange={() => handleTypeSelect(type.id)} className="peer sr-only" />
-                                                                        <div className="p-2.5 rounded-xl bg-slate-50 transition-all duration-200 group-hover:bg-slate-100 flex items-center gap-3 border border-transparent">
-                                                                            <div className="icon-box w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center text-slate-400 shrink-0 transition-colors">
-                                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d={type.icon} /></svg>
-                                                                            </div>
-                                                                            <div className="min-w-0 flex-1">
-                                                                                <p className="text-[12px] font-semibold text-slate-800 leading-tight truncate">{type.id}</p>
-                                                                                <p className="text-[10px] font-medium text-slate-500 truncate mt-0.5">{type.desc}</p>
-                                                                            </div>
-                                                                        </div>
-                                                                    </label>
-                                                                ))}
-                                                            </div>
-                                                            {fieldError("application_type")}
-                                                        </div>
-
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                                            <div className="relative flex flex-col">
-                                                                <Label required hasError={!!errors.form_number}>Application Form No.</Label>
-                                                                <Input type="text" value={form.form_number} onChange={set("form_number")} placeholder="Enter form number" hasError={!!errors.form_number} />
-                                                                {fieldError("form_number")}
-                                                            </div>
-                                                            <div className="relative flex flex-col">
-                                                                <Label required hasError={!!errors.land_use_class}>Target Zoning Class</Label>
-                                                                <Select value={form.land_use_class} onChange={set("land_use_class")} hasError={!!errors.land_use_class}>
-                                                                    <option value="" disabled>Select dominant use...</option>
-                                                                    {LAND_USE_CLASSES.map((c) => (<option key={c}>{c}</option>))}
-                                                                </Select>
-                                                                {fieldError("land_use_class")}
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="relative flex-1 flex flex-col">
-                                                            <Label required hasError={!!errors.purpose}>Operational Purpose</Label>
-                                                            <Textarea rows={3} value={form.purpose} onChange={set("purpose")} placeholder="Explicitly detail the intended use of the land or structure..." className="flex-1 min-h-[100px]" hasError={!!errors.purpose} />
-                                                            {fieldError("purpose")}
-                                                        </div>
-                                                    </div>
+                        {/* Foreground: Centered Master Elevated Floating Modal (NON-SCROLLABLE modal wrapper) */}
+                        <div className="relative z-10 flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 lg:p-6 overflow-hidden">
+                            <div className="w-full max-w-5xl h-[calc(100vh-8.5rem)] max-h-[580px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col lg:flex-row shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
+                                
+                                {currentStep === 3 ? (
+                                    /* ── STEP 3: GIS STUDIO (INSIDE FLOATING MODAL) ── */
+                                    <StepPropertyGIS
+                                        form={form}
+                                        set={set}
+                                        setParcelField={setParcelField}
+                                        addParcel={addParcel}
+                                        removeParcel={removeParcel}
+                                        handlePinLookup={handlePinLookup}
+                                        pinLoading={pinLoading}
+                                        errors={errors}
+                                        totalLotArea={totalLotArea}
+                                        zoningWarning={zoningWarning}
+                                        activeParcelIndex={activeParcelIndex}
+                                        activeParcelFeature={activeParcelFeature}
+                                        brgyMapData={brgyMapData}
+                                        parcelMapData={parcelMapData}
+                                        rosarioCenter={rosarioCenter}
+                                        brgyStyle={brgyStyle}
+                                        getParcelStyle={getParcelStyle}
+                                        handleSelectMapParcel={handleSelectMapParcel}
+                                        MapController={MapController}
+                                        ROSARIO_BARANGAYS={ROSARIO_BARANGAYS}
+                                        LAND_USE_CLASSES={LAND_USE_CLASSES}
+                                        handleBack={handleBack}
+                                        handleNext={handleNext}
+                                        formRef={formRef}
+                                        handleSubmit={handleSubmit}
+                                    />
+                                ) : (
+                                    /* ── STEPS 1, 2, 4, 5: LEFT DOSSIER + RIGHT ACTIVE FORM ── */
+                                    <>
+                                        {/* Left: Step Guidance & Application Summary (Light Theme) */}
+                                        <div className="w-full lg:w-76 xl:w-[310px] shrink-0 bg-slate-50/90 border-b lg:border-b-0 lg:border-r border-slate-200/90 p-4 sm:p-5 flex flex-col justify-between overflow-y-auto">
+                                            <div className="space-y-3.5">
+                                                <div>
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 uppercase tracking-wider">
+                                                        Step {currentStep} of 5 · Application Form
+                                                    </span>
+                                                    <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight mt-1.5">
+                                                        {currentStep === 1 && "Application Category"}
+                                                        {currentStep === 2 && "Applicant Information"}
+                                                        {currentStep === 4 && "Review & Confirm"}
+                                                        {currentStep === 5 && "Assessment & Fees"}
+                                                    </h2>
+                                                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                        {currentStep === 1 && "Choose the clearance type and specify the land use and purpose of the application."}
+                                                        {currentStep === 2 && "Enter primary applicant contact details and representative information (if any)."}
+                                                        {currentStep === 4 && "Review all recorded information before setting assessment fees and submitting."}
+                                                        {currentStep === 5 && "Compute assessment fee using municipal zoning formula or enter custom fee."}
+                                                    </p>
                                                 </div>
-                                            )}
 
-                                            {/* ── STEP 2: PROFILE ── */}
-                                            {currentStep === 2 && (
-                                                <div className="form-enter flex-1 flex flex-col">
-                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Applicant Identity</h3>
-                                                        <div className="flex items-center gap-2">
-                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
-                                                                Restart
-                                                            </button>
-                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
-                                                                Save Draft
-                                                            </button>
+                                                {/* Application Summary or Step 4 Review Checklist */}
+                                                {currentStep === 4 ? (
+                                                    /* ── STEP 4: REVIEW & SECTION COMPLETION CHECKLIST ── */
+                                                    <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200/90 shadow-xs space-y-2.5">
+                                                        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ready for Review</span>
+                                                            <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md">3/3 Complete</span>
                                                         </div>
-                                                    </div>
-                                                    <div className="space-y-6 flex-1">
-                                                        <div className="relative">
-                                                            <Label required hasError={!!errors.applicant_name}>Registered Applicant / Corp</Label>
-                                                            <Input type="text" value={form.applicant_name} onChange={set("applicant_name")} placeholder="Exact legal name" hasError={!!errors.applicant_name} />
-                                                            {fieldError("applicant_name")}
-                                                        </div>
-                                                        <div className="grid grid-cols-2 gap-5">
-                                                            <div className="relative">
-                                                                <Label required hasError={!!errors.contact_number}>Primary Phone</Label>
-                                                                <div className="relative">
-                                                                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 font-mono text-[13px] font-bold pointer-events-none">+63</span>
-                                                                    <Input type="tel" value={form.contact_number} onChange={handleContactInput} maxLength={10} placeholder="9XXXXXXXXX" className="pl-11 font-mono" hasError={!!errors.contact_number} />
+
+                                                        <div className="space-y-2 text-xs">
+                                                            <div className="flex items-start gap-2 text-slate-700">
+                                                                <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">1</span>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="font-semibold text-slate-800 text-[11px]">Category & Purpose</p>
+                                                                    <p className="text-[10px] text-slate-500 truncate">{form.application_type || "—"} · {form.land_use_class || "—"}</p>
                                                                 </div>
-                                                                {fieldError("contact_number")}
                                                             </div>
-                                                            <div className="relative">
-                                                                <Label required hasError={!!errors.email}>Email Address</Label>
-                                                                <Input type="email" value={form.email} onChange={set("email")} placeholder="contact@domain.com" hasError={!!errors.email} />
-                                                                {fieldError("email")}
-                                                            </div>
-                                                        </div>
-                                                        <div className="p-4 bg-slate-50 rounded-xl relative mt-2">
-                                                            <Label>Authorized Representative</Label>
-                                                            <Input type="text" value={form.representative_name} onChange={set("representative_name")} placeholder="Full name of representative" className="bg-white mt-1" />
-                                                            <p className="text-[11px] text-slate-500 mt-2 font-medium">Leave blank if the applicant is filing this directly.</p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* ── STEP 3: LOCATION (multi-parcel) ── */}
-                                            {currentStep === 3 && (
-                                                <div className="form-enter flex-1 flex flex-col">
-                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Property Location</h3>
-                                                        <div className="flex items-center gap-2">
-                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
-                                                                Restart
-                                                            </button>
-                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
-                                                                Save Draft
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-1">
-
-                                                        <div className="space-y-4">
-                                                            {(form.parcels || []).map((parcel, index) => (
-                                                                <div key={index} className="rounded-xl bg-slate-50 p-4 relative">
-                                                                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/60">
-                                                                        <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-blue-700 uppercase tracking-widest">
-                                                                            {parcel.parcel_code || `PARCEL ${index + 1}`}
-                                                                        </span>
-                                                                        {form.parcels && form.parcels.length > 1 && (
-                                                                            <button type="button" onClick={() => removeParcel(index)} className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-wider flex items-center gap-1">
-                                                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg> Remove
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-
-                                                                    <div className="grid grid-cols-1 gap-x-4 gap-y-4">
-                                                                        <div className="relative">
-                                                                            <Label required hasError={!!errors[`parcels.${index}.property_index_number`]}>Property Index Number</Label>
-                                                                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-1">
-                                                                                <Input type="text" value={parcel.property_index_number || ''} onChange={setParcelField(index, "property_index_number")} placeholder="Enter property index number" className="flex-1 bg-white" hasError={!!errors[`parcels.${index}.property_index_number`]} />
-                                                                                <button type="button" onClick={() => handlePinLookup(index)} disabled={pinLoading[index] || !parcel.property_index_number?.trim()} className={`inline-flex items-center justify-center rounded-lg px-5 py-2.5 text-[12px] font-bold transition-all whitespace-nowrap ${pinLoading[index] || !parcel.property_index_number?.trim() ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-blue-600 text-white hover:bg-blue-700"}`}>
-                                                                                    {pinLoading[index] ? "Searching..." : "Lookup Map"}
-                                                                                </button>
-                                                                            </div>
-                                                                            {parcelFieldError(index, "property_index_number")}
-                                                                        </div>
-                                                                    </div>
+                                                            <div className="flex items-start gap-2 text-slate-700">
+                                                                <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">2</span>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="font-semibold text-slate-800 text-[11px]">Applicant Details</p>
+                                                                    <p className="text-[10px] text-slate-500 truncate">{form.applicant_name || "—"}</p>
                                                                 </div>
-                                                            ))}
-                                                        </div>
-
-                                                        <button type="button" onClick={addParcel} className="inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50/50 font-bold text-[13px] transition-all flex-shrink-0 mt-2">
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg> Attach Additional Parcel
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* ── STEP 4: DOSSIER REVIEW ── */}
-                                            {currentStep === 4 && (
-                                                <div className="form-enter flex-1 flex flex-col">
-                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Review Summary</h3>
-                                                        <div className="flex items-center gap-2">
-                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
-                                                                Restart
-                                                            </button>
-                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
-                                                                Save Draft
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                                                        <div className="bg-slate-50 rounded-xl p-4 relative group">
-                                                            <button type="button" onClick={() => setCurrentStep(1)} className="absolute top-4 right-4 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-wider flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg> Edit</button>
-                                                            <h4 className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 mb-4 pb-2 border-b border-slate-200/50">1. Scope & Category</h4>
-                                                            <div className="grid grid-cols-2 gap-4">
-                                                                <div><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Application</p><p className="text-[13px] font-bold text-slate-800">{form.application_type || "—"}</p></div>
-                                                                <div><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Zoning Class</p><p className="text-[13px] font-bold text-slate-800">{form.land_use_class || "—"}</p></div>
-                                                                <div className="col-span-2"><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Purpose</p><p className="text-[12px] font-medium text-slate-700 bg-white p-3 rounded-lg border border-slate-100">{form.purpose || "—"}</p></div>
                                                             </div>
-                                                        </div>
-
-                                                        <div className="bg-slate-50 rounded-xl p-4 relative group">
-                                                            <button type="button" onClick={() => setCurrentStep(2)} className="absolute top-4 right-4 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-wider flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg> Edit</button>
-                                                            <h4 className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 mb-4 pb-2 border-b border-slate-200/50">2. Entity Profile</h4>
-                                                            <div className="grid grid-cols-2 gap-4">
-                                                                <div className="col-span-2"><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Principal Applicant</p><p className="text-[13px] font-bold text-slate-800">{form.applicant_name || "—"}</p></div>
-                                                                <div><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Contact</p><p className="text-[12px] font-mono text-slate-800">{form.contact_number ? `+63 ${form.contact_number}` : "—"}</p></div>
-                                                                <div><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Proxy/Rep</p><p className="text-[12px] font-medium text-slate-700">{form.representative_name || "N/A"}</p></div>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="bg-slate-50 rounded-xl p-4 relative group">
-                                                            <button type="button" onClick={() => setCurrentStep(3)} className="absolute top-4 right-4 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors uppercase tracking-wider flex items-center gap-1"><svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg> Edit</button>
-                                                            <h4 className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 mb-4 pb-2 border-b border-slate-200/50">3. Geospatial Data</h4>
-                                                            <div className="grid grid-cols-2 gap-4">
-                                                                <div className="col-span-2"><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Location</p><p className="text-[13px] font-bold text-slate-800">{form.barangay ? `Brgy. ${form.barangay}` : "—"} </p></div>
-                                                                <div><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Primary Property Index</p><p className="text-[12px] font-mono text-slate-800 uppercase">{(form.parcels && form.parcels[0]?.property_index_number) || "—"}</p></div>
-                                                                <div><p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Total Lot Area</p><p className="text-[12px] font-mono text-slate-800">{totalAreaSqm > 0 ? `${totalAreaSqm.toFixed(2)} sq.m.` : "—"}</p></div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* ── STEP 5: FINAL ASSESSMENT ── */}
-                                            {currentStep === 5 && (
-                                                <div className="form-enter flex-1 flex flex-col">
-                                                    <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                                                        <h3 className="text-lg font-black text-slate-800 tracking-tight">Final Assessment</h3>
-                                                        <div className="flex items-center gap-2">
-                                                            <button type="button" onClick={handleRestart} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-red-500 hover:bg-red-50 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> 
-                                                                Restart
-                                                            </button>
-                                                            <button type="button" onClick={handleManualSave} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-bold text-[11px] text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-all uppercase tracking-wider">
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg> 
-                                                                Save Draft & Exit
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex-1 flex flex-col justify-center w-full">
-                                                        <div className="bg-blue-50/50 rounded-[16px] p-6">
-                                                            <div className="text-center mb-6">
-                                                                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 text-blue-600">
-                                                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                                                </div>
-                                                                <h4 className="text-[13px] font-black uppercase tracking-[0.1em] text-blue-800">Official Routing</h4>
-                                                                <p className="text-[12px] text-blue-600/80 font-medium mt-1">Please log the assessment fee before finalizing.</p>
-                                                            </div>
-
-                                                            <div className="space-y-5">
-                                                                <div className="relative">
-                                                                    <Label required hasError={!!errors.assessment_fee}>Calculated Fee</Label>
-                                                                    <div className="relative">
-                                                                        <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-[16px] font-black pointer-events-none">₱</span>
-                                                                        <Input type="number" value={form.assessment_fee} onChange={set("assessment_fee")} onBlur={handleFeeBlur} min="0" step="0.01" placeholder="0.00" className="pl-9 font-mono font-black text-[16px] text-blue-900 bg-white py-3" hasError={!!errors.assessment_fee} />
-                                                                    </div>
-                                                                    {fieldError("assessment_fee")}
-                                                                </div>
-                                                                <div className="relative">
-                                                                    <Label>Official Receipt No.</Label>
-                                                                    <Input type="text" value={form.or_number} onChange={set("or_number")} placeholder="OR-XXXX" className="font-mono uppercase bg-white py-3" />
-                                                                </div>
-                                                                <div className="relative">
-                                                                    <Label>Internal Remarks</Label>
-                                                                    <Textarea rows={2} value={form.remarks} onChange={set("remarks")} placeholder="Deficiencies, notes..." className="bg-white" />
+                                                            <div className="flex items-start gap-2 text-slate-700">
+                                                                <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">3</span>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="font-semibold text-slate-800 text-[11px]">Property Location & Lots</p>
+                                                                    <p className="text-[10px] text-slate-500 truncate">
+                                                                        {form.barangay 
+                                                                            ? `Brgy. ${form.barangay}${validParcelsCount > 0 && totalLotArea > 0 ? ` (${totalLotArea.toLocaleString()} m²)` : ""}` 
+                                                                            : "—"}
+                                                                    </p>
                                                                 </div>
                                                             </div>
                                                         </div>
+
+                                                        <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-500 leading-snug">
+                                                            Review the details on the right. Click <strong className="text-blue-600 font-semibold">Edit</strong> on any section to make changes.
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            )}
-
-                                            {/* ── FOOTER ACTIONS ── */}
-                                            <div className="mt-6 pt-5 flex justify-between items-center border-t border-slate-100 flex-shrink-0 bg-white">
-                                                <button type="button" onClick={handleBack} disabled={currentStep === 1 || submitting} className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg font-bold text-[13px] transition-all ${currentStep === 1 ? "text-slate-300 opacity-50 cursor-not-allowed" : "text-slate-600 bg-slate-100 hover:bg-slate-200"}`}>
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg> Back
-                                                </button>
-
-                                                {currentStep < 5 ? (
-                                                    <button type="button" onClick={handleNext} className="inline-flex items-center gap-1.5 px-7 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-[13px] transition-all active:scale-95">
-                                                        Continue
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                                                    </button>
                                                 ) : (
-                                                    <button type="submit" disabled={submitting} className="inline-flex items-center gap-1.5 px-8 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-black text-[14px] transition-all active:scale-95 disabled:opacity-70">
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                                        {submitting ? "Processing..." : "Confirm & Save"}
-                                                    </button>
+                                                    /* ── STEPS 1, 2, 5: APPLICATION SUMMARY CARD ── */
+                                                    <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200/90 shadow-xs space-y-2">
+                                                        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Application Summary</span>
+                                                            <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-md">{tempDraftId}</span>
+                                                        </div>
+
+                                                        <div className="space-y-1.5 text-xs">
+                                                            <div>
+                                                                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Category</p>
+                                                                <p className="font-bold text-slate-900 mt-0.5 truncate text-[11px]">{form.application_type || "Not selected yet"}</p>
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
+                                                                <div>
+                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Applicant</p>
+                                                                    <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">{form.applicant_name || "—"}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Zoning Class</p>
+                                                                    <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">{form.land_use_class || "—"}</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
+                                                                <div>
+                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Location</p>
+                                                                    <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">
+                                                                        {form.barangay ? (form.street_address ? `${form.street_address}, Brgy. ${form.barangay}` : `Brgy. ${form.barangay}`) : "—"}
+                                                                    </p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Property Lots</p>
+                                                                    <p className="font-mono font-semibold text-slate-800 mt-0.5 text-[11px]">
+                                                                        {validParcelsCount > 0 
+                                                                            ? `${validParcelsCount} lot(s) (${totalLotArea.toLocaleString()} m²)` 
+                                                                            : "—"}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            {currentStep === 5 && form.assessment_fee ? (
+                                                                <div className="pt-1.5 border-t border-slate-100">
+                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Assessment Fee</p>
+                                                                    <p className="font-mono font-bold text-emerald-600 text-xs mt-0.5">₱ {Number(form.assessment_fee).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                    </div>
                                                 )}
                                             </div>
-                                        </form>
-                                    </div>
-                                </div>
+
+                                            {/* Footer of Left Panel: 20% per Step Progress */}
+                                            <div className="pt-3 border-t border-slate-200/90 mt-3 lg:mt-0 space-y-1.5">
+                                                <div className="flex items-center justify-between text-xs">
+                                                    <span className="font-bold text-slate-800 flex items-center gap-1.5 text-[11px]">
+                                                        <span className={`w-2 h-2 rounded-full ${workflowProgress === 100 ? "bg-emerald-500" : "bg-blue-600 animate-pulse"}`} />
+                                                        Workflow Progress
+                                                    </span>
+                                                    <span className="font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-lg text-[11px] shadow-2xs">
+                                                        {workflowProgress}%
+                                                    </span>
+                                                </div>
+                                                <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden">
+                                                    <div 
+                                                        className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500 ease-out"
+                                                        style={{ width: `${workflowProgress}%` }}
+                                                    />
+                                                </div>
+                                                <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                                                    <span>{workflowProgress === 100 ? "Ready for submission" : `${workflowProgress}% completed (Step ${Math.min(5, Math.floor(workflowProgress / 20) + 1)} of 5)`}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ── RIGHT PANEL: ACTIVE FORM SURFACE ── */}
+                                        <div ref={formRef} className="flex-1 p-5 sm:p-6 lg:p-7 flex flex-col justify-between bg-white overflow-y-auto">
+                                            <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
+                                                
+                                                {/* ── STEP 1: SCOPE & PURPOSE ── */}
+                                                {currentStep === 1 && (
+                                                    <StepCategory
+                                                        form={form}
+                                                        set={set}
+                                                        handleTypeSelect={handleTypeSelect}
+                                                        errors={errors}
+                                                        APPLICATION_TYPES={APPLICATION_TYPES}
+                                                        LAND_USE_CLASSES={LAND_USE_CLASSES}
+                                                    />
+                                                )}
+
+                                                {/* ── STEP 2: APPLICANT PROFILE ── */}
+                                                {currentStep === 2 && (
+                                                    <StepApplicant
+                                                        form={form}
+                                                        set={set}
+                                                        handleNameChange={handleNameChange}
+                                                        handleContactInput={handleContactInput}
+                                                        applicantSuggestion={applicantSuggestion}
+                                                        applyApplicantSuggestion={applyApplicantSuggestion}
+                                                        setApplicantSuggestion={setApplicantSuggestion}
+                                                        errors={errors}
+                                                    />
+                                                )}
+
+                                                {/* ── STEP 4: REVIEW & CONFIRM ── */}
+                                                {currentStep === 4 && (
+                                                    <StepReview
+                                                        form={form}
+                                                        totalLotArea={totalLotArea}
+                                                        setCurrentStep={setCurrentStep}
+                                                        onPreviewRoutingSlip={() => {
+                                                            setRoutingSlipData({
+                                                                reference_number: `DRAFT-${form.form_number || tempDraftId}`,
+                                                                date_of_application: new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
+                                                                encoded_by_name: userName,
+                                                                applicant_name: form.applicant_name || "Applicant Name Pending",
+                                                                contact_number: form.contact_number || "—",
+                                                                email: form.email || "—",
+                                                                representative_name: form.representative_name || "",
+                                                                application_type: form.application_type || "Locational Clearance",
+                                                                land_use_class: form.land_use_class || "Residential",
+                                                                purpose: form.purpose || "—",
+                                                                barangay: form.barangay || "—",
+                                                                street_address: form.street_address || "",
+                                                                parcels: form.parcels || [],
+                                                                total_area: totalLotArea,
+                                                                project_cost: form.project_cost || "",
+                                                                assessment_fee: form.assessment_fee || calculatedFeeBreakdown.total,
+                                                                or_number: form.or_number || "",
+                                                            });
+                                                            setShowRoutingSlip(true);
+                                                        }}
+                                                    />
+                                                )}
+
+                                                {/* ── STEP 5: SMART MUNICIPAL FEE CALCULATION & SUBMIT ── */}
+                                                {currentStep === 5 && (
+                                                    <StepFee
+                                                        form={form}
+                                                        set={set}
+                                                        feeMode={feeMode}
+                                                        setFeeMode={setFeeMode}
+                                                        calculatedFeeBreakdown={calculatedFeeBreakdown}
+                                                        errors={errors}
+                                                    />
+                                                )}
+
+                                                {/* ── STEP NAVIGATION CONTROLS ── */}
+                                                <div className="pt-6 border-t border-slate-100 flex items-center justify-between gap-3 mt-auto">
+                                                    {currentStep > 1 ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleBack}
+                                                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
+                                                        >
+                                                            <span>Back</span>
+                                                        </button>
+                                                    ) : <div />}
+
+                                                    {currentStep < 5 ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleNext}
+                                                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 cursor-pointer ml-auto"
+                                                        >
+                                                            <span>{currentStep === 1 ? "Continue to Applicant" : currentStep === 2 ? "Continue to Property Location" : "Proceed to Assessment & Fees"}</span>
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            type="submit"
+                                                            disabled={submitting}
+                                                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
+                                                        >
+                                                            {submitting ? (
+                                                                <>
+                                                                    <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+                                                                    <span>Submitting...</span>
+                                                                </>
+                                                            ) : (
+                                                                <span>Submit & Route to Technical Review</span>
+                                                            )}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </main>
                 </div>
             </div>
+
+            {/* Printable Application Routing Slip Modal */}
+            <RoutingSlipModal
+                open={showRoutingSlip}
+                data={routingSlipData}
+                onClose={() => {
+                    setShowRoutingSlip(false);
+                    if (workflowProgress === 100) {
+                        router.visit("/applications");
+                    }
+                }}
+                onPrint={() => window.print()}
+            />
         </>
     );
 }
