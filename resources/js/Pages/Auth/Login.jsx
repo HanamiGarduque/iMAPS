@@ -265,18 +265,6 @@ export default function Login() {
                             >
                                 {processing ? 'Authenticating...' : 'Login'}
                             </button>
-
-                            <div className="flex items-center justify-center my-6">
-                                <div className="border-t border-slate-200 w-full"></div>
-                                <span className="bg-white px-3 text-xs text-slate-400 font-medium">OR</span>
-                                <div className="border-t border-slate-200 w-full"></div>
-                            </div>
-
-                            <div className="text-center">
-                                <Link href="/register" className="text-xs font-bold text-[#0A2540] hover:text-blue-700 tracking-wide">
-                                    SIGN UP HERE
-                                </Link>
-                            </div>
                         </form>
                     </div>
                 </div>

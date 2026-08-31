@@ -719,9 +719,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             setSyncStatus("Saving modifications...");
             persistDraftState(tempDraftId, form);
 
-            axios.post("/applications/drafts/autosave", {
-                temp_reference_number: tempDraftId,
-                draft_payload: form,
+            axios.post("/applications/drafts/save", {
+                temp_id: tempDraftId,
+                payload: form,
             })
             .then(() => {
                 setSyncStatus("Auto-saved to drafts");
@@ -738,9 +738,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         setSyncStatus("Saving modifications...");
         persistDraftState(tempDraftId, form);
         axios
-            .post("/applications/drafts/autosave", {
-                temp_reference_number: tempDraftId,
-                draft_payload: form,
+            .post("/applications/drafts/save", {
+                temp_id: tempDraftId,
+                payload: form,
             })
             .then(() => {
                 setSyncStatus("Auto-saved to drafts");
