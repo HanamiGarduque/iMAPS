@@ -12,15 +12,7 @@ use Illuminate\Support\Collection;
 class ZoningApplication extends Model
 {
     use HasFactory;
-public function parcels(): HasMany
-{
-    return $this->hasMany(Parcel::class, 'zoning_application_id');
-}
 
-public function technicalReviews(): HasMany
-{
-    return $this->hasMany(TechnicalReview::class, 'zoning_application_id');
-}
     protected $table = 'zoning_applications';
 
     protected $fillable = [
@@ -35,11 +27,6 @@ public function technicalReviews(): HasMany
         'email',
         'representative_name',
         'barangay',
-        'lot_number',
-        'tct_number',
-        'lot_area_sqm',
-        'latitude',
-        'longitude',
         'assessment_fee',
         'or_number',
         'remarks',
@@ -47,11 +34,23 @@ public function technicalReviews(): HasMany
     ];
 
     protected $casts = [
-        'lot_area_sqm'            => 'float',
-        'assessment_fee'      => 'float',
-        'latitude'            => 'float',
-        'longitude'           => 'float',
+        'assessment_fee' => 'float',
     ];
+
+    public function parcels(): HasMany
+    {
+        return $this->hasMany(Parcel::class, 'zoning_application_id');
+    }
+
+    public function technicalReviews(): HasMany
+    {
+        return $this->hasMany(TechnicalReview::class, 'zoning_application_id');
+    }
+
+    public function siteInspections(): HasMany
+    {
+        return $this->hasMany(SiteInspection::class);
+    }
 
     public function encodedBy(): BelongsTo
     {
@@ -110,9 +109,5 @@ public function technicalReviews(): HasMany
         }
 
         return $stats;
-    }
-    public function siteInspections()
-    {
-        return $this->hasMany(SiteInspection::class);
     }
 }

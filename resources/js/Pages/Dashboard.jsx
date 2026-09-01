@@ -355,6 +355,73 @@ function LeafletMap({
         return { ...baseStyle, fillColor: diversityColor(temporalData.diversity), fillOpacity: 0.35 };
     };
 
+    
+    // ── Dynamic Popup HTML Builder ──
+const buildPopupHtml = (name, rawData, currentLayerMode, currentYear, filter) => {
+    const temporalData = getTemporalData(rawData, name, currentYear);
+
+    // Apply the same multipliers used for coloring
+    const multipliers = {
+        "Zoning Certificate": 1,
+        "Locational Clearance": 0.4,
+        "Development Permit": 0.8,
+    };
+    const simulatedTotal = Math.max(1, Math.floor(temporalData.total * (multipliers[filter] || 1)));
+    const simReview = Math.floor(simulatedTotal * 0.2);
+    const simReleased = Math.floor(simulatedTotal * 0.7);
+
+    let dynamicBody = "";
+
+    if (currentLayerMode === "status") {
+        dynamicBody = `
+        <div class="grid grid-cols-3 gap-1.5 text-center">
+            <div class="bg-slate-50 rounded-xl py-2 px-1 border border-slate-200 shadow-sm"><span class="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">Total</span><span class="text-base font-black text-slate-800 font-mono">${simulatedTotal}</span></div>
+            <div class="bg-amber-50 rounded-xl py-2 px-1 border border-amber-200 shadow-sm"><span class="text-[8px] font-bold text-amber-700 uppercase tracking-wider block">Review</span><span class="text-base font-black text-amber-700 font-mono">${simReview}</span></div>
+            <div class="bg-emerald-50 rounded-xl py-2 px-1 border border-emerald-200 shadow-sm"><span class="text-[8px] font-bold text-emerald-700 uppercase tracking-wider block">Released</span><span class="text-base font-black text-emerald-700 font-mono">${simReleased}</span></div>
+        </div>`;
+    } else if (currentLayerMode === "trends") {
+        dynamicBody = `
+        <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 flex items-center justify-between shadow-sm">
+            <span class="text-[10px] font-bold text-indigo-800 uppercase tracking-wider">Year ${currentYear}</span>
+            <span class="text-xs font-black text-indigo-900 bg-indigo-200/50 px-2 py-0.5 rounded-md border border-indigo-200">${temporalData.landUse}</span>
+        </div>`;
+    } else if (currentLayerMode === "diversity") {
+        const pct = Math.round(temporalData.diversity * 100);
+        dynamicBody = `
+        <div class="bg-purple-50 border border-purple-100 rounded-xl p-2.5 shadow-sm">
+            <div class="flex items-end justify-between mb-1.5">
+                <span class="text-[10px] font-bold text-purple-800 uppercase tracking-wider">Mix Score</span>
+                <span class="text-sm font-black text-purple-900 font-mono">${pct}%</span>
+            </div>
+            <div class="w-full h-1.5 bg-purple-200/50 rounded-full overflow-hidden">
+                <div class="h-full bg-gradient-to-r from-purple-400 to-indigo-500 rounded-full" style="width: ${pct}%"></div>
+            </div>
+        </div>`;
+    } else {
+        dynamicBody = `
+        <div class="bg-blue-50 border border-blue-100 rounded-xl p-2.5 shadow-sm">
+            <div class="flex items-center gap-1.5 mb-1">
+                <svg class="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.963 11.963 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                <span class="text-[10px] font-bold text-blue-900 uppercase tracking-wider">CLUP 2030 Context</span>
+            </div>
+            <p class="text-[10px] text-blue-800 leading-tight mt-1">Refer to active map overlay for official zoning bounds.</p>
+        </div>`;
+    }
+
+    return `
+    <div class="min-w-[240px] font-sans p-1">
+        <div class="mb-3 pb-2.5 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h2 class="text-base font-black text-slate-900 tracking-tight flex items-center gap-1.5">${name}</h2>
+                <p class="text-[9px] text-blue-700 font-bold uppercase tracking-widest mt-0.5">Barangay Overview</p>
+            </div>
+            ${currentLayerMode !== 'trends' ? `<span class="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-100">${temporalData.landUse}</span>` : ''}
+        </div>
+        ${dynamicBody}
+    </div>
+    `;
+};
+
     // Initialize Leaflet Map
     useEffect(() => {
         if (mapInstanceRef.current) return;
@@ -489,43 +556,11 @@ function LeafletMap({
                                     diversity: 0.5,
                                 };
 
-                                const popupContent = `
-                                <div class="min-w-[240px] font-sans p-1">
-                                    <div class="mb-3 pb-2.5 border-b border-slate-100 flex items-center justify-between">
-                                        <div>
-                                            <h2 class="text-base font-black text-slate-900 tracking-tight flex items-center gap-1.5">
-                                                ${name}
-                                            </h2>
-                                            <p class="text-[9px] text-blue-700 font-bold uppercase tracking-widest mt-0.5">
-                                                Barangay Overview
-                                            </p>
-                                        </div>
-                                        <span class="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-100">
-                                            ${bgyData.landUse || 'Residential'}
-                                        </span>
-                                    </div>
-                                    <div class="grid grid-cols-3 gap-1.5 text-center">
-                                        <div class="bg-slate-50 rounded-xl py-2 px-1 border border-slate-200 shadow-sm">
-                                            <span class="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">Total</span>
-                                            <span class="text-base font-black text-slate-800 font-mono">${bgyData.total || 0}</span>
-                                        </div>
-                                        <div class="bg-amber-50 rounded-xl py-2 px-1 border border-amber-200 shadow-sm">
-                                            <span class="text-[8px] font-bold text-amber-700 uppercase tracking-wider block">Review</span>
-                                            <span class="text-base font-black text-amber-700 font-mono">${bgyData.review || 0}</span>
-                                        </div>
-                                        <div class="bg-emerald-50 rounded-xl py-2 px-1 border border-emerald-200 shadow-sm">
-                                            <span class="text-[8px] font-bold text-emerald-700 uppercase tracking-wider block">Released</span>
-                                            <span class="text-base font-black text-emerald-700 font-mono">${bgyData.released || 0}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                `;
-
-                                layer_feature.bindPopup(popupContent, {
-                                    className: "custom-bgy-popup",
-                                    closeButton: true,
-                                    autoPanPadding: [50, 50],
-                                });
+                                layer_feature.bindPopup(buildPopupHtml(name, bgyData, layerRef.current, year, appTypeFilter), {
+    className: "custom-bgy-popup",
+    closeButton: true,
+    autoPanPadding: [50, 50],
+});
 
                                 layer_feature.on("click", (e) => {
                                     L.default.DomEvent.stopPropagation(e);
@@ -588,6 +623,15 @@ function LeafletMap({
         };
     }, []);
 
+    // Auto-zoom closer when switching to the CLUP Zoning layer
+    useEffect(() => {
+        if (mapInstanceRef.current && rosarioBoundsRef.current && currentLayer === "zoning") {
+            mapInstanceRef.current.flyToBounds(rosarioBoundsRef.current, {
+                padding: [5, 5], // Tighter padding brings the zoom level closer (e.g., to Z12)
+                duration: 0.8,   // Smooth camera animation
+            });
+        }
+    }, [currentLayer]);
     // Sync Zoom slider
     useEffect(() => {
         if (mapInstanceRef.current && mapInstanceRef.current.getZoom() !== mapZoom) {
@@ -625,8 +669,14 @@ function LeafletMap({
     // Update GeoJSON & CLUP layers on activeLayer / filters / opacity change
     useEffect(() => {
         if (geoLayerRef.current) {
-            geoLayerRef.current.setStyle((feature) => getFeatureStyle(feature, currentLayer, appTypeFilter, year));
-            if (activeFeatureRef.current) activeFeatureRef.current = null;
+        geoLayerRef.current.eachLayer((layer_feature) => {
+                    const props = layer_feature.feature.properties || {};
+                    const name = (props.LOCATION || props.location || props.ADM4_EN || props.name || props.NAME || props.BRGY || props.brgy || "Unknown").trim();
+                    const bgyData = staticBgyData[name] || { total: 0, review: 0, released: 0, landUse: "Residential", diversity: 0.5 };
+                    
+                    layer_feature.setPopupContent(buildPopupHtml(name, bgyData, currentLayer, year, appTypeFilter));
+                });
+                    if (activeFeatureRef.current) activeFeatureRef.current = null;
         }
 
         if (zoningLayerRef.current) {

@@ -9,6 +9,7 @@ use App\Http\Controllers\PublicPortalController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\SearchController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -26,13 +27,15 @@ Route::get('/', function () {
 
 // ── Authenticated Routes (All Auth Users) ──
 Route::middleware('auth')->group(function () {
+
     // Map Layer API Endpoint
     Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])
         ->name('api.map.layer');
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
-
+    // Search
+    Route::get('/api/global-search', [SearchController::class, 'globalSearch'])->middleware('auth');
     // Applications Docket List
     Route::get('/applications', [ApplicationController::class, 'index'])
         ->name('applications.index');

@@ -2,6 +2,23 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 
+// ── Predictive Highlight Helper ──
+const HighlightMatch = ({ text, query }) => {
+    if (!query || !text) return <span>{text}</span>;
+    const parts = text.split(new RegExp(`(${query})`, 'gi'));
+    return (
+        <span>
+            {parts.map((part, i) => 
+                part.toLowerCase() === query.toLowerCase() ? (
+                    <span key={i} className="text-blue-700 bg-blue-100/50">{part}</span>
+                ) : (
+                    <span key={i}>{part}</span>
+                )
+            )}
+        </span>
+    );
+};
+
 export default function Header({ 
     userName = 'Staff Member', 
     userRole = 'Planning Officer', 
@@ -19,7 +36,6 @@ export default function Header({
     const currentComponent = page?.component || '';
 
     const getNavigationBadge = () => {
-        // 1. Explicit prop override if provided
         if (activePage && typeof activePage === 'string' && activePage.trim()) {
             const raw = activePage.trim();
             const normalized = raw.toLowerCase();
@@ -29,7 +45,6 @@ export default function Header({
             return raw.toUpperCase();
         }
 
-        // 2. Parse URL path
         const cleanPath = (currentUrl || '').split('?')[0].split('#')[0];
         const segments = cleanPath.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
         const firstSegment = segments[0]?.toLowerCase() || '';
@@ -58,7 +73,6 @@ export default function Header({
                 return 'PROFILE';
         }
 
-        // 3. Fallback check on Inertia component name
         if (currentComponent) {
             const comp = currentComponent.toLowerCase();
             if (comp.startsWith('dashboard')) return 'DASHBOARD';
@@ -72,7 +86,6 @@ export default function Header({
             if (comp.startsWith('profile')) return 'PROFILE';
         }
 
-        // 4. Dynamic fallback for future routes
         if (firstSegment) {
             return firstSegment.replace(/[-_]+/g, ' ').toUpperCase();
         }
@@ -90,37 +103,47 @@ export default function Header({
     const profileRef = useRef(null);
     const searchRef = useRef(null);
 
+    const [suggestions, setSuggestions] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
+
+    // ── Predictive Search Effect ──
+    useEffect(() => {
+        if (!searchQuery.trim()) {
+            setSuggestions([]);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setIsSearching(true);
+            fetch(`/api/global-search?q=${searchQuery}`)
+                .then(async (response) => {
+                    if (!response.ok) {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then((data) => {
+                    setSuggestions(data);
+                    setIsSearching(false);
+                })
+                .catch((error) => {
+                    console.error("Search failed:", error);
+                    setIsSearching(false);
+                });
+        }, 200);
+
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
     const handleSuggestionClick = (item) => {
         setSearchQuery('');
         setSearchFocused(false);
         if (item.type === 'Barangay' && onSelectLocation) {
-            onSelectLocation(item.label);
+            onSelectLocation({ label: item.label });
+        } else if (item.path) {
+            router.visit(item.path);
         }
     };
-
-    // Rosario Barangays and Application Quick Jumps
-    const rosarioLocations = [
-        { label: 'Poblacion', fullName: 'Poblacion Urban Center', type: 'Barangay', path: '/dashboard?bgy=Poblacion' },
-        { label: 'San Roque', fullName: 'San Roque Commercial Corridor', type: 'Barangay', path: '/dashboard?bgy=San%20Roque' },
-        { label: 'Quilib', fullName: 'Quilib Industrial Hub', type: 'Barangay', path: '/dashboard?bgy=Quilib' },
-        { label: 'San Carlos', fullName: 'San Carlos Agro-Industrial Area', type: 'Barangay', path: '/dashboard?bgy=San%20Carlos' },
-        { label: 'Pinagsibaan', fullName: 'Pinagsibaan Agri-Residential', type: 'Barangay', path: '/dashboard?bgy=Pinagsibaan' },
-        { label: 'Alupay', fullName: 'Alupay Rural Zone', type: 'Barangay', path: '/dashboard?bgy=Alupay' },
-        { label: 'Bayawang', fullName: 'Bayawang Eco-Agricultural Area', type: 'Barangay', path: '/dashboard?bgy=Bayawang' },
-        { label: 'Calitcalit', fullName: 'Calitcalit Agricultural Zone', type: 'Barangay', path: '/dashboard?bgy=Calitcalit' },
-        { label: 'Namuco', fullName: 'Namuco Residential Sector', type: 'Barangay', path: '/dashboard?bgy=Namuco' },
-        { label: 'Timbugan', fullName: 'Timbugan Agricultural Zone', type: 'Barangay', path: '/dashboard?bgy=Timbugan' },
-        { label: 'Locational Clearance', fullName: 'Zoning & Locational Clearance', type: 'Applications', path: '/applications' },
-        { label: 'Building Permit Endorsement', fullName: 'Building Permit Clearance', type: 'Applications', path: '/applications' },
-        { label: 'Zoning Certification', fullName: 'Land Classification Certificate', type: 'Applications', path: '/applications' },
-    ];
-
-    const filteredSuggestions = searchQuery.trim() === '' 
-        ? rosarioLocations.slice(0, 5)
-        : rosarioLocations.filter(item => 
-            item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.fullName.toLowerCase().includes(searchQuery.toLowerCase())
-          ).slice(0, 6);
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -165,7 +188,7 @@ export default function Header({
                 }
             }
 
-            // Command/Ctrl + K for search focus (only on Dashboard / when search is visible)
+            // Command/Ctrl + K for search focus
             if (shouldShowSearch && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
                 e.preventDefault();
                 const searchInput = document.getElementById('global-header-search');
@@ -175,7 +198,7 @@ export default function Header({
                 }
             }
 
-            // ? key for keyboard help modal (guarded against text inputs)
+            // ? key for keyboard help modal
             if (e.key === '?' && !isInputActive) {
                 e.preventDefault();
                 setShortcutsModalOpen(prev => !prev);
@@ -297,7 +320,7 @@ export default function Header({
                 </button>
             </div>
 
-            {/* ── CENTER SECTION: Interactive Spatial Command Search Bar (Only visible in Dashboard) ── */}
+            {/* ── CENTER SECTION: Interactive Spatial Command Search Bar ── */}
             {shouldShowSearch ? (
                 <div className="hidden md:flex items-center flex-1 max-w-xs lg:max-w-md mx-4 relative" ref={searchRef}>
                     <div className="relative w-full group">
@@ -343,74 +366,73 @@ export default function Header({
                         )}
                     </div>
 
-                    {/* Spatial Search Suggestions Dropdown */}
-                    {searchFocused && (
+                    {/* Predictive Spatial Search Suggestions Dropdown */}
+                    {searchFocused && searchQuery.trim() !== '' && (
                         <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2 z-[999] animate-in fade-in slide-in-from-top-2 duration-150">
                             <div className="px-2.5 py-1.5 flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">
-                                <span>Spatial Quick Jump</span>
-                                <span className="text-[10px] font-normal text-slate-400">Click to fly on map</span>
+                                <span>Predictive Results</span>
+                                <span className="text-[10px] font-normal text-slate-400">
+                                    {isSearching ? 'Searching...' : 'Click to jump'}
+                                </span>
                             </div>
                             <div className="py-1 space-y-0.5">
-                                {filteredSuggestions.map((item, idx) => {
-                                    if (item.type === 'Barangay' && onSelectLocation) {
+                                {suggestions.length === 0 && !isSearching ? (
+                                    <div className="px-2.5 py-4 text-center text-xs text-slate-400">
+                                        No results found for "{searchQuery}"
+                                    </div>
+                                ) : (
+                                    suggestions.map((item, idx) => {
+                                        if (item.type === 'Barangay' && onSelectLocation) {
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => handleSuggestionClick(item)}
+                                                    className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left hover:bg-blue-50/80 transition-colors group"
+                                                >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="text-xs font-bold text-slate-800 truncate">
+                                                                <HighlightMatch text={item.label} query={searchQuery} />
+                                                            </p>
+                                                            <p className="text-[10.5px] text-slate-500 truncate">
+                                                                <HighlightMatch text={item.fullName} query={searchQuery} />
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md shrink-0">Barangay</span>
+                                                </button>
+                                            );
+                                        }
+
                                         return (
-                                            <button
+                                            <Link
                                                 key={idx}
-                                                type="button"
+                                                href={item.path}
                                                 onClick={() => handleSuggestionClick(item)}
-                                                className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left hover:bg-blue-50/80 transition-colors group"
+                                                className="flex items-center justify-between px-2.5 py-2 rounded-xl text-xs hover:bg-slate-50 transition-colors group"
                                             >
                                                 <div className="flex items-center gap-2.5 min-w-0">
-                                                    <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                                                        </svg>
+                                                    <div className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <p className="text-xs font-bold text-slate-800 group-hover:text-blue-700 truncate">
-                                                            {item.label}
+                                                        <p className="text-xs font-semibold text-slate-800 truncate">
+                                                            <HighlightMatch text={item.label} query={searchQuery} />
                                                         </p>
                                                         <p className="text-[10.5px] text-slate-500 truncate">
-                                                            {item.fullName}
+                                                            <HighlightMatch text={item.fullName} query={searchQuery} />
                                                         </p>
                                                     </div>
                                                 </div>
-                                                <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">
-                                                    Barangay
-                                                </span>
-                                            </button>
+                                                <span className="text-[10px] font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">{item.type}</span>
+                                            </Link>
                                         );
-                                    }
-
-                                    return (
-                                        <Link
-                                            key={idx}
-                                            href={item.path}
-                                            onClick={() => handleSuggestionClick(item)}
-                                            className="flex items-center justify-between px-2.5 py-2 rounded-xl text-xs hover:bg-slate-50 transition-colors group"
-                                        >
-                                            <div className="flex items-center gap-2.5 min-w-0">
-                                                <div className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
-                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                                    </svg>
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <p className="text-xs font-semibold text-slate-800 group-hover:text-blue-700 truncate">
-                                                        {item.label}
-                                                    </p>
-                                                    <p className="text-[10.5px] text-slate-500 truncate">
-                                                        {item.fullName}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <span className="text-[10px] font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                                                {item.type}
-                                            </span>
-                                        </Link>
-                                    );
-                                })}
+                                    })
+                                )}
                             </div>
                         </div>
                     )}
@@ -469,7 +491,6 @@ export default function Header({
                             profileMenuOpen ? 'bg-slate-100 ring-1 ring-slate-200' : 'hover:bg-slate-100/80'
                         }`}
                     >
-                        {/* Avatar */}
                         <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white font-bold text-xs shadow-xs">
                             {userName?.charAt(0).toUpperCase() || 'S'}
                         </div>
