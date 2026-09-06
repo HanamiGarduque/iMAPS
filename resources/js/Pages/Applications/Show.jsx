@@ -736,6 +736,14 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                             <p className="font-semibold text-slate-800">{parcel.lot_number || "—"}</p>
                                                         </div>
                                                         <div>
+                                                            <p className="text-[10px] text-slate-400 font-medium">ARP Number</p>
+                                                            <p className="font-semibold text-slate-800">{parcel.arp_number || "—"}</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[10px] text-slate-400 font-medium">Survey Number</p>
+                                                            <p className="font-semibold text-slate-800">{parcel.survey_number || "—"}</p>
+                                                        </div>
+                                                        <div>
                                                             <p className="text-[10px] text-slate-400 font-medium">Declared Area</p>
                                                             <p className="font-mono font-semibold text-slate-800">
                                                                 {parcel.lot_area_sqm || "0"} sq.m
@@ -1065,7 +1073,13 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                         <span className="text-slate-500 font-mono text-xs ml-1.5">({parcel.property_index_number || "No PIN"})</span>
                                                                     </p>
                                                                     <p className="text-xs text-slate-500 mt-0.5">
-                                                                        Lot: {parcel.lot_number || "—"} · Area: {parcel.lot_area_sqm || "—"} SQ.M
+                                                                        {parcel.location_address || "No address"} · Brgy. {parcel.barangay || app.barangay || "—"}
+                                                                    </p>
+                                                                    <p className="text-xs text-slate-500 mt-0.5">
+                                                                        Owner: {parcel.owner_name || app.applicant_name || "—"} · Lot: {parcel.lot_number || "—"} · Area: {parcel.lot_area_sqm || "—"} SQ.M
+                                                                    </p>
+                                                                    <p className="text-xs text-blue-700 mt-0.5 font-medium">
+                                                                        Land Use: {parcel.land_use_class || app.land_use_class || "—"}
                                                                     </p>
                                                                 </div>
                                                                 <span

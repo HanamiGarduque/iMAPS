@@ -72,32 +72,7 @@ export default function DiversityPanel({ donutLoaded, overallDiversity, selected
 
     return (
         <div className="flex flex-col gap-3.5 p-3.5 bg-slate-50/50 rounded-3xl max-w-sm">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 p-4 rounded-2xl text-white shadow-md relative overflow-hidden">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <span className="text-[9px] font-bold tracking-widest text-purple-300 uppercase block">
-                            Diversity Index
-                        </span>
-                        <h3 className="text-base font-black tracking-tight text-white mt-0.5">
-                            Land Use & Economic Mix
-                        </h3>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        {onClose && (
-                            <button 
-                                onClick={onClose}
-                                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors text-white/80"
-                            >
-                                ✕
-                            </button>
-                        )}
-                    </div>
-                </div>
-                <p className="text-[10px] text-slate-300 mt-1 leading-snug">
-                    Balance of commercial, residential & industrial activities
-                </p>
-            </div>
+            
 
             {/* 1. Primary Dominance vs Non-Primary Mix Cards */}
             <div className="grid grid-cols-2 gap-2">

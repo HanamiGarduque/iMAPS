@@ -50,16 +50,15 @@ const STATUS_CONFIG = {
 const LAND_USE_BADGES = {
     Residential: "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold",
     Commercial: "bg-amber-50 text-amber-800 border-amber-300 font-bold",
-    Industrial: "bg-rose-50 text-rose-800 border-rose-300 font-bold",
-    "Agro-Industrial": "bg-purple-50 text-purple-800 border-purple-300 font-bold",
-    Agricultural: "bg-lime-50 text-lime-800 border-lime-300 font-bold",
-    Institutional: "bg-sky-50 text-sky-800 border-sky-300 font-bold",
-    "Special Use": "bg-indigo-50 text-indigo-800 border-indigo-300 font-bold",
+    industrial: "bg-rose-50 text-rose-800 border-rose-300 font-bold",
+    "Agri-Industrial": "bg-purple-50 text-purple-800 border-purple-300 font-bold",
+    institutional: "bg-sky-50 text-sky-800 border-sky-300 font-bold",
+    Recreational: "bg-lime-50 text-lime-800 border-lime-300 font-bold",
 };
 
 const STATUSES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
 const APP_TYPES = ["Locational Clearance", "Zoning Certification", "Development Permit", "Special Land Use Permit"];
-const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agro-Industrial", "Agricultural", "Institutional", "Special Use"];
+const LAND_USE_CLASSES = ["Residential", "Commercial", "industrial", "Agri-Industrial", "institutional", "Recreational"];
 const ROSARIO_BARANGAYS = [
     "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
     "Calantas", "Colongan", "Itlugan", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", "Macalamcam A", 

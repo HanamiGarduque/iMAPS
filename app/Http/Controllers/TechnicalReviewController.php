@@ -36,13 +36,18 @@ class TechnicalReviewController extends Controller
             ->with(['parcels' => function ($q) {
                 $q->select(
                     'zoning_application_id',
+                    'location_address',
+                    'barangay',
+                    'owner_name',
                     'latitude',
                     'longitude',
                     'property_index_number',
                     'lot_number',
                     'tct_number',
                     'tax_dec_number',
-                    'lot_area_sqm'
+                    'lot_area_sqm',
+                    'arp_number'
+                    ,'survey_number'
                 );
             }])
             ->where('zoning_applications.status', 'Technical Review');
@@ -74,10 +79,15 @@ class TechnicalReviewController extends Controller
             $app->longitude = $mappedParcel ? $mappedParcel->longitude : null;
 
             $app->property_index_number = $firstParcel ? $firstParcel->property_index_number : null;
+            $app->location_address = $firstParcel ? $firstParcel->location_address : null;
+            $app->parcel_barangay = $firstParcel ? $firstParcel->barangay : null;
+            $app->owner_name = $firstParcel ? $firstParcel->owner_name : null;
             $app->lot_number = $firstParcel ? $firstParcel->lot_number : null;
             $app->tct_number = $firstParcel ? $firstParcel->tct_number : null;
             $app->tax_dec_number = $firstParcel ? $firstParcel->tax_dec_number : null;
             $app->lot_area_sqm = $firstParcel ? $firstParcel->lot_area_sqm : null;
+            $app->arp_number = $firstParcel ? $firstParcel->arp_number : null;
+            $app->survey_number = $firstParcel ? $firstParcel->survey_number : null;
 
             return $app;
         });

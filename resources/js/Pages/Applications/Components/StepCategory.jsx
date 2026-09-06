@@ -8,7 +8,7 @@ export default function StepCategory({
     handleTypeSelect,
     errors = {},
     APPLICATION_TYPES = [],
-    LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agricultural"],
+    LAND_USE_CLASSES = ["Residential", "Commercial", "industrial", "Agri-Industrial", "institutional", "Recreational"],
 }) {
     return (
         <div className="space-y-4">

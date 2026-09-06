@@ -54,7 +54,13 @@ class SearchController extends Controller
                                   ->orWhereRaw('LOWER(lot_number) LIKE ?', [$searchTerm])
                                   ->orWhereRaw('LOWER(tct_number) LIKE ?', [$searchTerm])
                                   ->orWhereRaw('LOWER(tax_dec_number) LIKE ?', [$searchTerm])
-                                  ->orWhereRaw('LOWER(property_index_number) LIKE ?', [$searchTerm]);
+                                              ->orWhereRaw('LOWER(property_index_number) LIKE ?', [$searchTerm])
+                                              ->orWhereRaw('LOWER(arp_number) LIKE ?', [$searchTerm])
+                                              ->orWhereRaw('LOWER(survey_number) LIKE ?', [$searchTerm])
+                                              ->orWhereRaw('LOWER(location_address) LIKE ?', [$searchTerm])
+                                              ->orWhereRaw('LOWER(barangay) LIKE ?', [$searchTerm])
+                                              ->orWhereRaw('LOWER(owner_name) LIKE ?', [$searchTerm])
+                                              ->orWhereRaw('LOWER(land_use_class) LIKE ?', [$searchTerm]);
                   });
         })->limit(10)->get();
 

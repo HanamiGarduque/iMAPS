@@ -38,7 +38,7 @@ const APPLICATION_TYPES = [
     },
 ];
 
-const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agricultural"];
+const LAND_USE_CLASSES = ["Residential", "Commercial", "industrial", "Agri-Industrial", "institutional", "Recreational"];
 
 const STEPS = [
     { id: 1, title: "Category", label: "Application Category" },
@@ -109,7 +109,7 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
                 calculationSummary = `₱720.00 + (₱${excess.toLocaleString()} × 0.1%) = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
             }
             formulaDesc = "HLURB 2013 Residential Rates (Bill of Materials)";
-        } else if (landUse === "Institutional") {
+        } else if (landUse.toLowerCase() === "institutional") {
             if (cost <= 2000000) {
                 baseFee = 2880.00;
                 rateDetail = "HLURB Tier: Project Cost ≤ ₱2.0 Million (Flat ₱2,880.00)";
@@ -123,7 +123,7 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
             }
             formulaDesc = "HLURB 2013 Institutional Rates (Bill of Materials)";
         } else {
-            // Commercial, Industrial, Agro-Industrial, Special Use
+            // Commercial, Industrial, Agri-Industrial, Recreational
             if (cost < 100000) {
                 baseFee = 1440.00;
                 rateDetail = "HLURB Tier: Project Cost < ₱100,000 (Flat ₱1,440.00)";
@@ -272,7 +272,11 @@ const emptyForm = () => ({
     parcels: [
         {
             parcel_code: "P-01",
+            location_address: "",
+            barangay: "",
+            owner_name: "",
             property_index_number: "",
+            arp_number: "",
             property_tax_number: "",
             lot_number: "",
             tct_number: "",
@@ -583,7 +587,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     // Zoning Compatibility Warning
     const zoningWarning = useMemo(() => {
         if (!form.land_use_class || !form.barangay) return null;
-        const isHeavy = ["Industrial", "Special Use", "Agro-Industrial"].includes(form.land_use_class);
+        const isHeavy = ["industrial", "agri-industrial"].includes((form.land_use_class || "").toLowerCase());
         const urbanPoblacion = ["Poblacion A", "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "San Carlos", "San Roque"];
         if (isHeavy && urbanPoblacion.includes(form.barangay)) {
             return `Zoning Notice: Proposed ${form.land_use_class} use in Brgy. ${form.barangay} is within a dense urban settlement and may require Sangguniang Bayan special clearance.`;
@@ -794,7 +798,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 ...(prev.parcels || []),
                 {
                     parcel_code: newCode,
+                    location_address: "",
+                    barangay: "",
+                    owner_name: "",
                     property_index_number: "",
+                    arp_number: "",
+                    survey_number: "",
                     property_tax_number: "",
                     lot_number: "",
                     tct_number: "",
@@ -893,7 +902,11 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     lookupMap[pin] = {
                         feature: feature,
                         property_index_number: pin,
+                        arp_number: feature.properties?.arp_number || feature.properties?.arp_no || "",
+                        survey_number: feature.properties?.survey_number || feature.properties?.survey_no || "",
                         property_tax_number: feature.properties?.property_tax_number || "",
+                        location_address: feature.properties?.location_address || "",
+                        owner_name: feature.properties?.owner_name || "",
                         barangay: feature.properties?.barangay || "",
                         tct_number: feature.properties?.tct_number || "",
                         tax_dec_number: feature.properties?.tax_dec_number || "",
@@ -963,7 +976,11 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                             ? {
                                   ...p,
                                   property_index_number: data.property_index_number || p.property_index_number,
+                                  arp_number: data.arp_number || p.arp_number || "",
+                                  survey_number: data.survey_number || p.survey_number || "",
+                                  location_address: data.location_address || p.location_address || prev.street_address || "",
                                   barangay: data.barangay || p.barangay || "",
+                                  owner_name: data.owner_name || p.owner_name || prev.applicant_name || "",
                                   property_tax_number: data.property_tax_number || p.property_tax_number || "",
                                   lot_number: data.lot_number || p.lot_number || "",
                                   tct_number: data.tct_number || p.tct_number || "",
@@ -1006,7 +1023,11 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         const pProps = feature?.properties || {};
         const landUse = pProps.land_use_class || pProps.zoning_class || pProps.land_use || "";
         const tdNo = pProps.tax_dec_number || pProps.td_no || "";
+        const arpNo = pProps.arp_number || pProps.arp_no || "";
+        const surveyNo = pProps.survey_number || pProps.survey_no || "";
         const tctNo = pProps.tct_number || "";
+        const locationAddress = pProps.location_address || "";
+        const ownerName = pProps.owner_name || "";
         
         if (feature) {
             setActiveParcelFeature(feature);
@@ -1025,9 +1046,13 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                         ? {
                               ...p,
                               property_index_number: pin || p.property_index_number,
+                              arp_number: arpNo || p.arp_number,
+                              survey_number: surveyNo || p.survey_number,
+                              location_address: locationAddress || p.location_address || prev.street_address || "",
                               lot_number: lot || p.lot_number,
                               lot_area_sqm: area != null ? String(area) : p.lot_area_sqm,
                               barangay: brgy || p.barangay,
+                              owner_name: ownerName || p.owner_name || prev.applicant_name || "",
                               tax_dec_number: tdNo || p.tax_dec_number,
                               tct_number: tctNo || p.tct_number,
                               land_use_class: landUse || p.land_use_class,

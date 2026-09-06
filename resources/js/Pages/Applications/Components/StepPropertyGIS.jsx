@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Label, Input, Select } from "./FormControls";
 
-// ── 4 Approved Municipal Zoning Categories ──
+// ── Approved Municipal Zoning Categories ──
 const ZONING_CATEGORIES = [
     {
         id: "Residential",
@@ -34,8 +34,8 @@ const ZONING_CATEGORIES = [
         desc: "Retail, trade, financial institutions, markets & commercial centers.",
     },
     {
-        id: "Industrial",
-        label: "Industrial",
+        id: "industrial",
+        label: "industrial",
         code: "I-1 / I-2 / Agro-Ind",
         badge: "bg-purple-50 text-purple-700 border-purple-200",
         activeBorder: "border-purple-600 bg-purple-50/50 ring-2 ring-purple-500/20",
@@ -47,9 +47,9 @@ const ZONING_CATEGORIES = [
         desc: "Manufacturing, warehousing, fabrication & processing plants.",
     },
     {
-        id: "Agricultural",
-        label: "Agricultural",
-        code: "Agri / Rural",
+        id: "Agri-Industrial",
+        label: "Agri-Industrial",
+        code: "Agri-Ind",
         badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
         activeBorder: "border-emerald-600 bg-emerald-50/50 ring-2 ring-emerald-500/20",
         icon: (
@@ -58,6 +58,32 @@ const ZONING_CATEGORIES = [
             </svg>
         ),
         desc: "Farming, cultivation, agro-production & rural green buffer zones.",
+    },
+    {
+        id: "institutional",
+        label: "institutional",
+        code: "Institutional",
+        badge: "bg-sky-50 text-sky-700 border-sky-200",
+        activeBorder: "border-sky-600 bg-sky-50/50 ring-2 ring-sky-500/20",
+        icon: (
+            <svg className="w-5 h-5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+            </svg>
+        ),
+        desc: "Government, civic, educational, health and public service facilities.",
+    },
+    {
+        id: "Recreational",
+        label: "Recreational",
+        code: "Parks / Leisure",
+        badge: "bg-lime-50 text-lime-700 border-lime-200",
+        activeBorder: "border-lime-600 bg-lime-50/50 ring-2 ring-lime-500/20",
+        icon: (
+            <svg className="w-5 h-5 text-lime-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zm0-13.5v9m-4.5-4.5h9" />
+            </svg>
+        ),
+        desc: "Parks, sports, open-space and community leisure facilities.",
     },
 ];
 
@@ -99,7 +125,7 @@ export default function StepPropertyGIS({
     handleSelectMapParcel,
     MapController,
     ROSARIO_BARANGAYS = [],
-    LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agricultural"],
+    LAND_USE_CLASSES = ["Residential", "Commercial", "industrial", "Agri-Industrial", "institutional", "Recreational"],
     handleBack,
     handleNext,
     formRef,
@@ -180,8 +206,12 @@ export default function StepPropertyGIS({
                                         </div>
                                         <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                                             <div>
-                                                <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Tax Dec. / Lot No.</p>
-                                                <p className="font-semibold text-slate-800 truncate">{parcel.tax_dec_number || parcel.lot_number || "TD Verified"}</p>
+                                                <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">ARP / Tax Dec. No.</p>
+                                                <p className="font-semibold text-slate-800 truncate">{parcel.arp_number || parcel.tax_dec_number || parcel.lot_number || "ARP Verified"}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Survey Number</p>
+                                                <p className="font-semibold text-slate-800 truncate">{parcel.survey_number || "—"}</p>
                                             </div>
                                             <div>
                                                 <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Declared Area</p>
@@ -415,12 +445,28 @@ export default function StepPropertyGIS({
                                             </div>
                                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-white/90 p-2 rounded-lg border border-emerald-100">
                                                 <div>
+                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">ARP Number</p>
+                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.arp_number || "—"}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Survey Number</p>
+                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.survey_number || "—"}</p>
+                                                </div>
+                                                <div>
                                                     <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Tax Dec. / TCT Ref</p>
                                                     <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.tax_dec_number || parcel.tct_number || "TD Recorded"}</p>
                                                 </div>
                                                 <div>
                                                     <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Registered Lot</p>
                                                     <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.lot_number || "—"}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Owner</p>
+                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.owner_name || "—"}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Address</p>
+                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.location_address || "—"}</p>
                                                 </div>
                                                 <div>
                                                     <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Declared Area</p>

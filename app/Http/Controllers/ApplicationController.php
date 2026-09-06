@@ -152,13 +152,14 @@ class ApplicationController extends Controller
         $validated = $request->validate([
             'application_type'    => 'required|in:Locational Clearance,Zoning Certification,Development Permit,Special Land Use Permit',
             'form_number'         => 'required|string|max:255',
-            'land_use_class'      => 'required|string',
+            'land_use_class'      => 'required|in:Residential,Commercial,industrial,Agri-Industrial,institutional,Recreational',
             'purpose'             => 'required|string',
             'applicant_name'      => 'required|string|max:255',
             'contact_number'      => ['required', 'regex:/^(09|\+639|9)\d{9}$/'],
             'email'               => 'nullable|email',
             'representative_name' => 'nullable|string|max:255',
             'barangay'            => 'required|string',
+            'street_address'      => 'nullable|string|max:255',
             'assessment_fee'      => 'required|numeric|min:0',
             'or_number'           => 'nullable|string',
             'remarks'             => 'nullable|string',
@@ -166,7 +167,12 @@ class ApplicationController extends Controller
             // Multi-parcel payload. At least one parcel is required per application.
             'parcels'                  => 'required|array|min:1',
             'parcels.*.parcel_code'    => 'nullable|string|max:20',
+            'parcels.*.location_address' => 'nullable|string|max:255',
+            'parcels.*.barangay'       => 'nullable|string|max:100',
+            'parcels.*.owner_name'     => 'nullable|string|max:255',
             'parcels.*.property_index_number'   => 'required|string|max:100',
+            'parcels.*.arp_number'      => 'nullable|string|max:100',
+            'parcels.*.survey_number'  => 'nullable|string|max:100',
             'parcels.*.lot_number'     => 'nullable|string|max:100',
             'parcels.*.tct_number'     => 'nullable|string|max:100',
             'parcels.*.tax_dec_number' => 'nullable|string|max:100',
@@ -213,6 +219,9 @@ class ApplicationController extends Controller
                 Parcel::create([
                     'zoning_application_id' => $application->id,
                     'parcel_code'           => $parcelData['parcel_code'] ?? sprintf('P-%02d', $index + 1),
+                    'location_address'      => $parcelData['location_address'] ?? $validated['street_address'] ?? null,
+                    'barangay'              => $parcelData['barangay'] ?? $validated['barangay'],
+                    'owner_name'            => $parcelData['owner_name'] ?? $validated['applicant_name'],
                     'lot_number'            => $parcelData['lot_number'] ?? null,
                     'tct_number'            => $parcelData['tct_number'] ?? null,
                     'tax_dec_number'        => $parcelData['tax_dec_number'] ?? null,
@@ -221,6 +230,8 @@ class ApplicationController extends Controller
                     'longitude'             => $lng,
                     'land_use_class'        => $validated['land_use_class'],
                     'property_index_number' => $parcelData['property_index_number'] ?? null,
+                    'arp_number'            => $parcelData['arp_number'] ?? null,
+                    'survey_number'        => $parcelData['survey_number'] ?? null,
                 ]);
             }
 
