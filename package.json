@@ -3,9 +3,12 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build",
-        "dev": "vite"
-    },
+    "dev": "node dev-runner.js",
+    "build": "vite build",
+    "dev:vite": "vite",
+    "dev:laravel": "php artisan serve",
+    "dev:queue": "php artisan queue:work"
+},
     "devDependencies": {
         "@headlessui/react": "^2.0.0",
         "@inertiajs/react": "^2.3.23",
@@ -14,7 +17,7 @@
         "@vitejs/plugin-react": "^4.2.0",
         "autoprefixer": "^10.4.12",
         "axios": "^1.11.0",
-        "concurrently": "^9.0.1",
+        "concurrently": "^9.2.4",
         "laravel-vite-plugin": "^2.0.0",
         "postcss": "^8.4.31",
         "react": "^18.3.1",
@@ -30,4 +33,6 @@
         "react-leaflet": "^4.2.1",
         "sweetalert2": "^11.26.24"
     }
+
+    
 }

@@ -4,12 +4,12 @@ use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\TechnicalReviewController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\AuditTrailController;
-use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\PublicPortalController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -102,8 +102,8 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::get('register-new-account', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('register-new-account', [RegisteredUserController::class, 'store']);
 
-    Route::get('/analytics', [AnalyticsController::class, 'index'])
-        ->name('analytics.index');
+    Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
+    Route::post('/analytics/rerun', [AnalyticsController::class, 'rerun'])->name('analytics.rerun');
 
     Route::get('/audit-log', [AuditTrailController::class, 'index'])
         ->name('audit-log.index');

@@ -12,8 +12,14 @@ export default defineConfig({
     ],
     server: {
         watch: {
-            // Ignore the massive map tiles directory
-            ignored: ['**/public/tiles/**'] 
-        }
-    }
+            // Merged all ignored patterns into a single array
+            ignored: [
+                '**/public/tiles/**',
+                '**/python-analytics/**',
+                '**/ml_service/**',
+                '**/.venv/**',
+                '**/venv/**',
+            ],
+        },
+    },
 })
