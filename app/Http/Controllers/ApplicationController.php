@@ -780,7 +780,7 @@ class ApplicationController extends Controller
                 'application_type' => $payload['application_type'] ?? null,
                 'barangay'         => $payload['barangay'] ?? null,
                 'status'           => 'Auto-saved',
-                'form_payload'     => json_encode($payload)
+                'form_payload'     => $payload
             ]
         );
 

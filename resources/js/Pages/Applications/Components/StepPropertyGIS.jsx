@@ -157,33 +157,47 @@ export default function StepPropertyGIS({
             >
                 <div className="absolute inset-0 z-0">
                     <MapContainer center={rosarioCenter} zoom={12} zoomControl={false} scrollWheelZoom={true}>
-                        <TileLayer
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        />
-                        {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
-                        {parcelMapData && (
-                            <GeoJSON 
-                                key={activeParcelFeature?.properties?.property_index_number || "parcels"} 
-                                data={parcelMapData} 
-                                style={getParcelStyle}
-                                onEachFeature={(feature, layer) => {
-                                    layer.on({
-                                        click: () => {
-                                            const p = feature?.properties || {};
-                                            const pin = p.property_index_number || p.pin || p.PIN;
-                                            const lot = p.lot_number || p.lot_no;
-                                            const area = p.lot_area_sqm || p.area;
-                                            const brgy = p.barangay;
-                                            handleSelectMapParcel(pin, lot, area, brgy, feature);
-                                        },
-                                    });
-                                }}
-                            />
-                        )}
-                        {MapController && <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />}
-                        <MapResizeTrigger isExpanded={isMapExpanded} />
-                    </MapContainer>
+    {/* Base OSM Layer (Bottom) - zIndex 1 */}
+    <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        zIndex={1}
+    />
+    
+    {/* CLUP Land Use Plan Tiles (Middle) - zIndex 10 */}
+    <TileLayer
+        url="/tiles/clup_tiles/{z}/{x}/{y}.png"
+        maxZoom={22}
+        maxNativeZoom={19}
+        opacity={0.85}
+        zIndex={10}
+        errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    />
+
+    {/* GeoJSON Parcels & Boundaries (Top) */}
+    {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
+    {parcelMapData && (
+        <GeoJSON 
+            key={activeParcelFeature?.properties?.property_index_number || "parcels"} 
+            data={parcelMapData} 
+            style={getParcelStyle}
+            onEachFeature={(feature, layer) => {
+                layer.on({
+                    click: () => {
+                        const p = feature?.properties || {};
+                        const pin = p.property_index_number || p.pin || p.PIN;
+                        const lot = p.lot_number || p.lot_no;
+                        const area = p.lot_area_sqm || p.area;
+                        const brgy = p.barangay;
+                        handleSelectMapParcel(pin, lot, area, brgy, feature);
+                    },
+                });
+            }}
+        />
+    )}
+    {MapController && <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />}
+    <MapResizeTrigger isExpanded={isMapExpanded} />
+</MapContainer> 
                 </div>
 
                 {/* Top Controls: Expand / Maximize Map Toggle & Cadastral Verification HUD */}
@@ -213,16 +227,10 @@ export default function StepPropertyGIS({
                                                 <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Survey Number</p>
                                                 <p className="font-semibold text-slate-800 truncate">{parcel.survey_number || "—"}</p>
                                             </div>
-                                            <div>
-                                                <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Declared Area</p>
-                                                <p className="font-mono font-bold text-slate-900">
-                                                    {parcel.lot_area_sqm ? `${Number(parcel.lot_area_sqm).toLocaleString()} sq.m` : "—"}
-                                                </p>
-                                            </div>
                                             <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-100">
                                                 <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Zoning Class:</span>
                                                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                                    {parcel.land_use_class || form.land_use_class || "Residential"}
+                                                    {parcel.land_use_class || "Residential"}
                                                 </span>
                                             </div>
                                         </div>
@@ -333,22 +341,16 @@ export default function StepPropertyGIS({
                         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                             <div className="sm:col-span-6">
                                 <Label required hasError={!!errors.barangay}>Barangay</Label>
-                                <Select value={form.barangay || ""} onChange={set("barangay")} hasError={!!errors.barangay}>
-                                    <option value="" disabled>Select barangay...</option>
-                                    {ROSARIO_BARANGAYS.map((b) => (
-                                        <option key={b} value={b}>Brgy. {b}</option>
-                                    ))}
-                                </Select>
-                                {errors.barangay && <p className="text-xs font-medium text-rose-500 mt-1">{errors.barangay}</p>}
-                            </div>
-                            <div className="sm:col-span-6">
-                                <Label>Street Address / Sitio / Purok</Label>
-                                <Input 
-                                    type="text" 
-                                    value={form.street_address || ""} 
-                                    onChange={set("street_address")} 
-                                    placeholder="e.g. Purok 4, Rizal Street" 
+                                <Input
+                                    type="text"
+                                    readOnly
+                                    value={form.barangay || ""}
+                                    onChange={set("barangay")}
+                                    hasError={!!errors.barangay}
+                                    placeholder="Barangay will populate from the verified GeoJSON parcel"
+                                    className="bg-slate-100/80 cursor-default"
                                 />
+                                {errors.barangay && <p className="text-xs font-medium text-rose-500 mt-1">{errors.barangay}</p>}
                             </div>
                         </div>
 
@@ -443,7 +445,7 @@ export default function StepPropertyGIS({
                                                     {parcel.parcel_code}
                                                 </span>
                                             </div>
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-white/90 p-2 rounded-lg border border-emerald-100">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 text-xs bg-white/90 p-2.5 rounded-lg border border-emerald-100">
                                                 <div>
                                                     <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">ARP Number</p>
                                                     <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.arp_number || "—"}</p>
@@ -468,13 +470,7 @@ export default function StepPropertyGIS({
                                                     <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Address</p>
                                                     <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.location_address || "—"}</p>
                                                 </div>
-                                                <div>
-                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Declared Area</p>
-                                                    <p className="font-mono font-bold text-slate-900 mt-0.5">
-                                                        {parcel.lot_area_sqm ? `${Number(parcel.lot_area_sqm).toLocaleString()} sq.m` : "—"}
-                                                    </p>
-                                                </div>
-                                                <div>
+                                                <div className="sm:col-span-2 xl:col-span-1">
                                                     <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Recorded Zoning</p>
                                                     <p className="font-bold text-blue-700 mt-0.5 truncate">{parcel.land_use_class || form.land_use_class || "Residential"}</p>
                                                 </div>
@@ -583,37 +579,6 @@ export default function StepPropertyGIS({
                                 </div>
                             </div>
 
-                            {/* Cross-referenced PIN details are shown per-parcel above; surface key fields for convenience */}
-                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                                <div>
-                                    <p className="text-[10px] text-slate-400 font-medium">Registered Owner</p>
-                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && activeParcelFeature.properties?.owner_name) || form.parcels?.[0]?.owner_name || "—"}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] text-slate-400 font-medium">TD / ARP / Tax Dec.</p>
-                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && (activeParcelFeature.properties?.tax_dec_number || activeParcelFeature.properties?.arp_number)) || form.parcels?.[0]?.tax_dec_number || form.parcels?.[0]?.arp_number || "—"}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] text-slate-400 font-medium">TCT / OCT / Lot No.</p>
-                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && (activeParcelFeature.properties?.tct_number || activeParcelFeature.properties?.lot_number)) || form.parcels?.[0]?.tct_number || form.parcels?.[0]?.lot_number || "—"}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] text-slate-400 font-medium">Survey No.</p>
-                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && activeParcelFeature.properties?.survey_number) || form.parcels?.[0]?.survey_number || "—"}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] text-slate-400 font-medium">Total Land Area</p>
-                                    <p className="font-mono font-bold text-slate-900">{form.parcels?.[0]?.lot_area_sqm ? `${Number(form.parcels[0].lot_area_sqm).toLocaleString()} sq.m` : "—"}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] text-slate-400 font-medium">Existing Land Use</p>
-                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && activeParcelFeature.properties?.land_use_class) || form.parcels?.[0]?.existing_land_use || form.land_use_class || "—"}</p>
-                                </div>
-                                <div className="sm:col-span-3">
-                                    <p className="text-[10px] text-slate-400 font-medium">Location</p>
-                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && `${activeParcelFeature.properties?.barangay || ""}, ${activeParcelFeature.properties?.municipality || "Rosario"}, ${activeParcelFeature.properties?.province || "Batangas"}`) || (form.parcels?.[0] && `${form.parcels[0].barangay || ""}${form.parcels[0].municipality ? `, ${form.parcels[0].municipality}` : ""}${form.parcels[0].province ? `, ${form.parcels[0].province}` : ""}`) || "—"}</p>
-                                </div>
-                            </div>
                         </div>
                     </div>
 

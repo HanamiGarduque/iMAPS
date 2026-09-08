@@ -26,7 +26,18 @@ class ZoningApplication extends Model
         'contact_number',
         'email',
         'representative_name',
+        'corporation_name',
+        'corporation_contact',
+        'corporation_address',
         'barangay',
+        'building_area',
+        'area_to_develop',
+        'number_of_saleable_lots',
+        'project_type_business_name',
+        'project_cost',
+        'right_over_land',
+        'project_tenure',
+        'preferred_release_mode',
         'assessment_fee',
         'or_number',
         'remarks',
@@ -34,7 +45,11 @@ class ZoningApplication extends Model
     ];
 
     protected $casts = [
-        'assessment_fee' => 'float',
+        'assessment_fee'          => 'float',
+        'building_area'           => 'float',
+        'area_to_develop'         => 'float',
+        'project_cost'            => 'float',
+        'number_of_saleable_lots' => 'integer',
     ];
 
     public function parcels(): HasMany

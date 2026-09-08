@@ -77,10 +77,6 @@ export default function StepReview({
                         <p className="font-mono font-semibold text-slate-900">{form.contact_number ? `+63 ${form.contact_number}` : "—"}</p>
                     </div>
                     <div>
-                        <p className="text-[10px] text-slate-400 font-medium">Address</p>
-                        <p className="font-medium text-slate-900">{form.applicant_address || "—"}</p>
-                    </div>
-                    <div>
                         <p className="text-[10px] text-slate-400 font-medium">Email</p>
                         <p className="font-medium text-slate-900">{form.email || "—"}</p>
                     </div>

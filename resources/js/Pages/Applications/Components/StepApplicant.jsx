@@ -137,14 +137,39 @@ export default function StepApplicant({
                 </div>
             </div>
 
-            <div className="mt-4">
-                <Label>Applicant Address</Label>
+            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 mt-3">
+                <Label>Corporation / Company (Optional)</Label>
                 <Input
                     type="text"
-                    value={form.applicant_address || ""}
-                    onChange={set("applicant_address")}
-                    placeholder="House No., Street, Sitio / Purok, Barangay"
+                    value={form.corporation_name || ""}
+                    onChange={set("corporation_name")}
+                    placeholder="Registered corporation / company name"
+                    className="bg-white mt-1"
                 />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    <div>
+                        <Label>Corporation Contact (Optional)</Label>
+                        <div className="relative">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+63</span>
+                            <Input
+                                type="tel"
+                                value={form.corporation_contact || ""}
+                                onChange={(e) => set("corporation_contact")(e)}
+                                placeholder="9XXXXXXXXX"
+                                className="pl-12 font-mono"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <Label>Corporation Address (Optional)</Label>
+                        <Input
+                            type="text"
+                            value={form.corporation_address || ""}
+                            onChange={set("corporation_address")}
+                            placeholder="Registered office address"
+                        />
+                    </div>
+                </div>
             </div>
 
             <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 mt-3">
@@ -183,40 +208,7 @@ export default function StepApplicant({
                 <p className="text-xs text-slate-400 mt-1">Leave blank if the applicant is filing directly without an authorized representative.</p>
             </div>
 
-            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 mt-3">
-                <Label>Corporation / Company (Optional)</Label>
-                <Input
-                    type="text"
-                    value={form.corporation_name || ""}
-                    onChange={set("corporation_name")}
-                    placeholder="Registered corporation / company name"
-                    className="bg-white mt-1"
-                />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                    <div>
-                        <Label>Corporation Contact (Optional)</Label>
-                        <div className="relative">
-                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+63</span>
-                            <Input
-                                type="tel"
-                                value={form.corporation_contact || ""}
-                                onChange={(e) => set("corporation_contact")(e)}
-                                placeholder="9XXXXXXXXX"
-                                className="pl-12 font-mono"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <Label>Corporation Address (Optional)</Label>
-                        <Input
-                            type="text"
-                            value={form.corporation_address || ""}
-                            onChange={set("corporation_address")}
-                            placeholder="Registered office address"
-                        />
-                    </div>
-                </div>
-            </div>
+
         </div>
     );
 }
