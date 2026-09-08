@@ -3,6 +3,7 @@ import React from "react";
 
 export default function StepReview({
     form,
+    set,
     totalLotArea = 0,
     setCurrentStep,
     onPreviewRoutingSlip,
@@ -76,12 +77,26 @@ export default function StepReview({
                         <p className="font-mono font-semibold text-slate-900">{form.contact_number ? `+63 ${form.contact_number}` : "—"}</p>
                     </div>
                     <div>
+                        <p className="text-[10px] text-slate-400 font-medium">Address</p>
+                        <p className="font-medium text-slate-900">{form.applicant_address || "—"}</p>
+                    </div>
+                    <div>
                         <p className="text-[10px] text-slate-400 font-medium">Email</p>
                         <p className="font-medium text-slate-900">{form.email || "—"}</p>
                     </div>
+
                     <div>
                         <p className="text-[10px] text-slate-400 font-medium">Representative</p>
                         <p className="font-medium text-slate-700">{form.representative_name || "Self / Direct"}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] text-slate-400 font-medium">Representative Contact / Address</p>
+                        <p className="font-medium text-slate-700">{form.representative_contact ? `+63 ${form.representative_contact}` : "—"}{form.representative_address ? (form.representative_contact ? ` · ${form.representative_address}` : form.representative_address) : ""}</p>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                        <p className="text-[10px] text-slate-400 font-medium">Corporation / Company</p>
+                        <p className="font-medium text-slate-700">{form.corporation_name || "—"}{form.corporation_contact ? ` · +63 ${form.corporation_contact}` : ""}{form.corporation_address ? (form.corporation_contact ? ` · ${form.corporation_address}` : ` · ${form.corporation_address}`) : ""}</p>
                     </div>
                 </div>
             </div>
@@ -117,6 +132,28 @@ export default function StepReview({
                                 : "—"}
                         </p>
                     </div>
+                </div>
+            </div>
+
+            {/* Preferred Mode of Release / Decision */}
+            <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 relative shadow-2xs">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">4. Preferred Mode of Release</h4>
+                <p className="text-[11px] text-slate-500 mb-3">Choose how the applicant prefers to receive the decision.</p>
+                <div className="flex items-center gap-3">
+                    <select
+                        value={form.preferred_release_mode || ""}
+                        onChange={set ? set("preferred_release_mode") : () => {}}
+                        className="text-xs rounded-lg border px-3 py-2"
+                    >
+                        <option value="">Select preferred mode</option>
+                        <option value="Pick-up">Pick-up</option>
+                        <option value="By mail - Applicant">By mail (Applicant)</option>
+                        <option value="By mail - Authorized Representative">By mail (Authorized Representative)</option>
+                    </select>
+
+                    {form.preferred_release_mode && (
+                        <div className="text-xs text-slate-600">Selected: <strong className="text-slate-800">{form.preferred_release_mode}</strong></div>
+                    )}
                 </div>
             </div>
         </div>

@@ -43,7 +43,7 @@ const getTemporalData = (baseData, name, year) => {
     let currentLandUse = baseData?.landUse || baseData?.Primary_Zone || baseData?.primaryZone;
     if (!currentLandUse) {
         if (urbanCore.includes(name)) currentLandUse = "Commercial";
-        else if (industrialCorridor.includes(name)) currentLandUse = "Agro-industrial";
+        else if (industrialCorridor.includes(name)) currentLandUse = "Agro-Industrial";
         else if (residentialSprawl.includes(name)) currentLandUse = "Residential";
         else currentLandUse = "Agricultural";
     }
@@ -63,8 +63,8 @@ const getTemporalData = (baseData, name, year) => {
         if (year >= 2022 && currentLandUse === "Residential") currentLandUse = "Commercial";
     } else if (industrialCorridor.includes(name)) {
         growthRate = 3.8;
-        if (year >= 2021 && currentLandUse === "Agricultural") currentLandUse = "Agro-industrial";
-        if (year >= 2024 && currentLandUse === "Agro-industrial") currentLandUse = "Industrial";
+        if (year >= 2021 && currentLandUse === "Agricultural") currentLandUse = "Agro-Industrial";
+        if (year >= 2024 && currentLandUse === "Agro-Industrial") currentLandUse = "Industrial";
     } else if (residentialSprawl.includes(name)) {
         growthRate = 2.8;
         if (year >= 2023 && currentLandUse === "Agricultural") currentLandUse = "Residential";
@@ -192,7 +192,7 @@ function LeafletMap({
         Agricultural: { fill: "#84cc16", stroke: "#65a30d" },
         Commercial: { fill: "#f59e0b", stroke: "#d97706" },
         Industrial: { fill: "#ef4444", stroke: "#dc2626" },
-        "Agro-industrial": { fill: "#8b5cf6", stroke: "#7c3aed" },
+        "Agro-Industrial": { fill: "#8b5cf6", stroke: "#7c3aed" },
         Special: { fill: "#64748b", stroke: "#475569" },
     };
 
@@ -725,7 +725,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
         diversity: {
             label: "Diversity Index",
             title: "Land Use & Economic Mix",
-            desc: "Balance of commercial, residential & industrial activities",
+            desc: "Balance of commercial, residential & Industrial activities",
             gradient: "from-purple-900 to-indigo-950",
             icon: (
                 <svg className="w-4 h-4 text-purple-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -753,15 +753,15 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
         ["Residential", Math.floor(82 * trendFactor), Math.min(100, Math.floor(40 * trendFactor * 0.8)), "#22c55e", "#dcfce7"],
         ["Commercial", Math.floor(34 * trendFactor * 1.5), Math.min(100, Math.floor(17 * trendFactor * 1.2)), "#f59e0b", "#fef3c7"],
         ["Agricultural", Math.floor(44 / trendFactor), Math.floor(22 / trendFactor), "#84cc16", "#ecfccb"],
-        ["Agro-industrial", Math.floor(14 * trendFactor * 1.8), Math.min(100, Math.floor(7 * trendFactor * 1.5)), "#8b5cf6", "#f3e8ff"],
+        ["Agro-Industrial", Math.floor(14 * trendFactor * 1.8), Math.min(100, Math.floor(7 * trendFactor * 1.5)), "#8b5cf6", "#f3e8ff"],
         ["Industrial", Math.floor(22 * trendFactor), Math.min(100, Math.floor(11 * trendFactor)), "#ef4444", "#fee2e2"],
         ["Special projects", Math.floor(7 * trendFactor), Math.min(100, Math.floor(3 * trendFactor)), "#64748b", "#f1f5f9"],
     ].sort((a, b) => b[1] - a[1]), [trendFactor]);
 
     const hotspots = useMemo(() => [
         { rank: 1, name: "San Roque", type: year >= 2023 ? "Commercial" : "Residential", color: year >= 2023 ? "#f59e0b" : "#22c55e", bg: year >= 2023 ? "#fef3c7" : "#dcfce7", count: Math.floor(42 * trendFactor) },
-        { rank: 2, name: "Quilib", type: year >= 2024 ? "Industrial" : "Agro-industrial", color: year >= 2024 ? "#ef4444" : "#8b5cf6", bg: year >= 2024 ? "#fee2e2" : "#f3e8ff", count: Math.floor(38 * trendFactor) },
-        { rank: 3, name: "San Carlos", type: year >= 2024 ? "Industrial" : "Agro-industrial", color: year >= 2024 ? "#ef4444" : "#8b5cf6", bg: year >= 2024 ? "#fee2e2" : "#f3e8ff", count: Math.floor(35 * trendFactor) },
+        { rank: 2, name: "Quilib", type: year >= 2024 ? "Industrial" : "Agro-Industrial", color: year >= 2024 ? "#ef4444" : "#8b5cf6", bg: year >= 2024 ? "#fee2e2" : "#f3e8ff", count: Math.floor(38 * trendFactor) },
+        { rank: 3, name: "San Carlos", type: year >= 2024 ? "Industrial" : "Agro-Industrial", color: year >= 2024 ? "#ef4444" : "#8b5cf6", bg: year >= 2024 ? "#fee2e2" : "#f3e8ff", count: Math.floor(35 * trendFactor) },
         { rank: 4, name: "Poblacion B", type: "Commercial", color: "#f59e0b", bg: "#fef3c7", count: Math.floor(31 * trendFactor) },
         { rank: 5, name: "Pinagsibaan", type: year >= 2023 ? "Residential" : "Agricultural", color: year >= 2023 ? "#22c55e" : "#84cc16", bg: year >= 2023 ? "#dcfce7" : "#ecfccb", count: Math.floor(28 * trendFactor) },
     ], [trendFactor, year]);

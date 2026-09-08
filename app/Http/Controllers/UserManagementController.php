@@ -132,7 +132,7 @@ class UserManagementController extends Controller
                     'locational' => $userApps->where('application_type', 'Locational Clearance')->count(),
                     'development' => $userApps->where('application_type', 'Development Permit')->count(),
                     'zoning' => $userApps->where('application_type', 'Zoning Certification')->count(),
-                    'special' => $userApps->where('application_type', 'Special Land Use Permit')->count(),
+                    'special' => $userApps->where('application_type', 'Preliminary Approval and Locational Clearance (PALC)')->count(),
                 ];
 
                 $status = [

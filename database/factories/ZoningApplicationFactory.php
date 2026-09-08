@@ -30,7 +30,7 @@ class ZoningApplicationFactory extends Factory
     ];
 
     private const LAND_USE_CLASSES = [
-        'Residential', 'Commercial', 'industrial', 'Agri-Industrial', 'institutional', 'Recreational',
+        'Residential', 'Commercial', 'Industrial', 'Agri-Industrial', 'Institutional', 'Recreational',
     ];
 
     // Rosario, Batangas center: 13.8410, 121.2062

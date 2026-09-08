@@ -87,7 +87,7 @@ const ROSARIO_LOCATION_PRESETS = [
         coords: "13.8820, 121.2310",
         lat: 13.8820,
         lng: 121.2310,
-        desc: "Northern agricultural and agro-industrial zone",
+        desc: "Northern agricultural and agro-Industrial zone",
     },
 ];
 

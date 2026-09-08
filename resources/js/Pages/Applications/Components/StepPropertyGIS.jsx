@@ -34,8 +34,8 @@ const ZONING_CATEGORIES = [
         desc: "Retail, trade, financial institutions, markets & commercial centers.",
     },
     {
-        id: "industrial",
-        label: "industrial",
+        id: "Industrial",
+        label: "Industrial",
         code: "I-1 / I-2 / Agro-Ind",
         badge: "bg-purple-50 text-purple-700 border-purple-200",
         activeBorder: "border-purple-600 bg-purple-50/50 ring-2 ring-purple-500/20",
@@ -60,8 +60,8 @@ const ZONING_CATEGORIES = [
         desc: "Farming, cultivation, agro-production & rural green buffer zones.",
     },
     {
-        id: "institutional",
-        label: "institutional",
+        id: "Institutional",
+        label: "Institutional",
         code: "Institutional",
         badge: "bg-sky-50 text-sky-700 border-sky-200",
         activeBorder: "border-sky-600 bg-sky-50/50 ring-2 ring-sky-500/20",
@@ -125,7 +125,7 @@ export default function StepPropertyGIS({
     handleSelectMapParcel,
     MapController,
     ROSARIO_BARANGAYS = [],
-    LAND_USE_CLASSES = ["Residential", "Commercial", "industrial", "Agri-Industrial", "institutional", "Recreational"],
+    LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"],
     handleBack,
     handleNext,
     formRef,
@@ -503,91 +503,117 @@ export default function StepPropertyGIS({
                             </button>
                         </div>
 
-                        {/* ── SECTION 2: LAND CLASSIFICATION DETERMINATION (4 CORE ZONING CATEGORIES) ── */}
+                        {/* ── SECTION 2: PROJECT AREA & ADDITIONAL LOCATION DETAILS ── */}
                         <div className="space-y-3 pt-2 border-t border-slate-100">
                             <div>
                                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                                     <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                                    2. Determine Land Classification
+                                    2. Project Area & Location Details
                                 </h4>
-                                <p className="text-[11px] text-slate-500">
-                                    Confirm whether the property falls under one of the 4 approved municipal zoning categories:
-                                </p>
+                                <p className="text-[11px] text-slate-500">Specify project area, tenure and other location metadata retrieved from PIN lookup where available.</p>
                             </div>
 
-                            {/* 4 Zoning Category Selection Cards */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                {ZONING_CATEGORIES.map((cat) => {
-                                    const isSelected = (form.land_use_class || "").toLowerCase() === cat.id.toLowerCase();
-                                    return (
-                                        <button
-                                            key={cat.id}
-                                            type="button"
-                                            onClick={() => handleSelectZoningCategory(cat.id)}
-                                            className={`flex items-start gap-3 p-3 rounded-2xl border text-left transition-all cursor-pointer active:scale-98 ${
-                                                isSelected 
-                                                    ? `${cat.activeBorder} shadow-sm` 
-                                                    : "border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/70"
-                                            }`}
-                                        >
-                                            <div className={`p-2 rounded-xl shrink-0 ${isSelected ? "bg-white shadow-xs" : "bg-slate-100"}`}>
-                                                {cat.icon}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between gap-1 mb-0.5">
-                                                    <span className="text-xs font-bold text-slate-900">{cat.label}</span>
-                                                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md border ${cat.badge}`}>
-                                                        {cat.code}
-                                                    </span>
-                                                </div>
-                                                <p className="text-[10px] text-slate-500 leading-snug">{cat.desc}</p>
-                                                {isSelected && (
-                                                    <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-blue-700">
-                                                        <svg className="w-3 h-3 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                                        </svg>
-                                                        <span>Selected Classification</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </button>
-                                    );
-                                })}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <Label>Building Area (sq.m)</Label>
+                                    <Input
+                                        type="number"
+                                        value={form.building_area || ""}
+                                        onChange={set("building_area")}
+                                        placeholder="e.g. 120.5"
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Area to be Developed (sq.m)</Label>
+                                    <Input
+                                        type="number"
+                                        value={form.area_to_develop || ""}
+                                        onChange={set("area_to_develop")}
+                                        placeholder="e.g. 500.00"
+                                    />
+                                </div>
+                                <div>
+                                    <Label>Number of Saleable Lots</Label>
+                                    <Input
+                                        type="number"
+                                        value={form.number_of_saleable_lots || ""}
+                                        onChange={set("number_of_saleable_lots")}
+                                        placeholder="e.g. 10"
+                                    />
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                    <Label>Project Type / Business Name (Optional)</Label>
+                                    <Input
+                                        type="text"
+                                        value={form.project_type_business_name || ""}
+                                        onChange={set("project_type_business_name")}
+                                        placeholder="e.g. Residential Subdivision / Juan's Hardware"
+                                    />
+                                </div>
+
+                                <div>
+                                    <Label>Project Cost (₱)</Label>
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        value={form.project_cost || ""}
+                                        onChange={set("project_cost")}
+                                        placeholder="e.g. 1000000.00"
+                                    />
+                                </div>
+
+                                <div>
+                                    <Label>Right over Land</Label>
+                                    <Select value={form.right_over_land || ""} onChange={set("right_over_land")}>
+                                        <option value="">Select</option>
+                                        <option value="Owner">Owner</option>
+                                        <option value="Lessee">Lessee</option>
+                                        <option value="Others">Others</option>
+                                    </Select>
+                                </div>
+
+                                <div>
+                                    <Label>Project Tenure</Label>
+                                    <Select value={form.project_tenure || ""} onChange={set("project_tenure")}>
+                                        <option value="">Select</option>
+                                        <option value="Permanent">Permanent</option>
+                                        <option value="Temporary">Temporary</option>
+                                    </Select>
+                                </div>
                             </div>
 
-                            {/* Zoning Compatibility Status Banner */}
-                            {form.land_use_class ? (
-                                <div className="p-3 bg-blue-50/70 border border-blue-200 text-blue-900 rounded-2xl text-xs flex items-start gap-2.5 animate-in fade-in">
-                                    <svg className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <div>
-                                        <p className="font-bold text-blue-900">
-                                            Determined Zoning: <span className="underline decoration-blue-400">{form.land_use_class}</span>
-                                        </p>
-                                        <p className="text-[11px] text-blue-700 mt-0.5 leading-tight">
-                                            Property is cross-referenced and classified under the approved <b>{form.land_use_class}</b> zoning category for Rosario, Batangas.
-                                        </p>
-                                    </div>
+                            {/* Cross-referenced PIN details are shown per-parcel above; surface key fields for convenience */}
+                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                <div>
+                                    <p className="text-[10px] text-slate-400 font-medium">Registered Owner</p>
+                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && activeParcelFeature.properties?.owner_name) || form.parcels?.[0]?.owner_name || "—"}</p>
                                 </div>
-                            ) : (
-                                <div className="p-2.5 bg-amber-50/80 border border-amber-200 text-amber-900 rounded-xl text-xs flex items-center gap-2">
-                                    <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                                    </svg>
-                                    <span>Please select one of the 4 zoning classifications above to proceed.</span>
+                                <div>
+                                    <p className="text-[10px] text-slate-400 font-medium">TD / ARP / Tax Dec.</p>
+                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && (activeParcelFeature.properties?.tax_dec_number || activeParcelFeature.properties?.arp_number)) || form.parcels?.[0]?.tax_dec_number || form.parcels?.[0]?.arp_number || "—"}</p>
                                 </div>
-                            )}
-
-                            {/* Zoning Variance Notice Banner if any */}
-                            {zoningWarning && (
-                                <div className="p-3 bg-amber-50/90 border border-amber-200 text-amber-900 rounded-2xl text-xs flex items-start gap-2.5 animate-in fade-in">
-                                    <svg className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                                    </svg>
-                                    <p className="leading-snug font-medium">{zoningWarning}</p>
+                                <div>
+                                    <p className="text-[10px] text-slate-400 font-medium">TCT / OCT / Lot No.</p>
+                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && (activeParcelFeature.properties?.tct_number || activeParcelFeature.properties?.lot_number)) || form.parcels?.[0]?.tct_number || form.parcels?.[0]?.lot_number || "—"}</p>
                                 </div>
-                            )}
+                                <div>
+                                    <p className="text-[10px] text-slate-400 font-medium">Survey No.</p>
+                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && activeParcelFeature.properties?.survey_number) || form.parcels?.[0]?.survey_number || "—"}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] text-slate-400 font-medium">Total Land Area</p>
+                                    <p className="font-mono font-bold text-slate-900">{form.parcels?.[0]?.lot_area_sqm ? `${Number(form.parcels[0].lot_area_sqm).toLocaleString()} sq.m` : "—"}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] text-slate-400 font-medium">Existing Land Use</p>
+                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && activeParcelFeature.properties?.land_use_class) || form.parcels?.[0]?.existing_land_use || form.land_use_class || "—"}</p>
+                                </div>
+                                <div className="sm:col-span-3">
+                                    <p className="text-[10px] text-slate-400 font-medium">Location</p>
+                                    <p className="font-semibold text-slate-800">{(activeParcelFeature && `${activeParcelFeature.properties?.barangay || ""}, ${activeParcelFeature.properties?.municipality || "Rosario"}, ${activeParcelFeature.properties?.province || "Batangas"}`) || (form.parcels?.[0] && `${form.parcels[0].barangay || ""}${form.parcels[0].municipality ? `, ${form.parcels[0].municipality}` : ""}${form.parcels[0].province ? `, ${form.parcels[0].province}` : ""}`) || "—"}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 

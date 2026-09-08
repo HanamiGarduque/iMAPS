@@ -736,14 +736,6 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                             <p className="font-semibold text-slate-800">{parcel.lot_number || "—"}</p>
                                                         </div>
                                                         <div>
-                                                            <p className="text-[10px] text-slate-400 font-medium">ARP Number</p>
-                                                            <p className="font-semibold text-slate-800">{parcel.arp_number || "—"}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[10px] text-slate-400 font-medium">Survey Number</p>
-                                                            <p className="font-semibold text-slate-800">{parcel.survey_number || "—"}</p>
-                                                        </div>
-                                                        <div>
                                                             <p className="text-[10px] text-slate-400 font-medium">Declared Area</p>
                                                             <p className="font-mono font-semibold text-slate-800">
                                                                 {parcel.lot_area_sqm || "0"} sq.m

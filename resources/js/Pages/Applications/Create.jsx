@@ -32,13 +32,14 @@ const APPLICATION_TYPES = [
         desc: "Subdivisions, estates & complex developments",
     },
     {
-        id: "Special Land Use Permit",
+        id: "Preliminary Approval and Locational Clearance (PALC)",
         icon: "M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21",
-        desc: "Special projects & institutional variances",
+        desc: "Preliminary Approval & Locational Clearance applications (PALC).",
     },
+
 ];
 
-const LAND_USE_CLASSES = ["Residential", "Commercial", "industrial", "Agri-Industrial", "institutional", "Recreational"];
+const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"];
 
 const STEPS = [
     { id: 1, title: "Category", label: "Application Category" },
@@ -109,7 +110,7 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
                 calculationSummary = `₱720.00 + (₱${excess.toLocaleString()} × 0.1%) = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
             }
             formulaDesc = "HLURB 2013 Residential Rates (Bill of Materials)";
-        } else if (landUse.toLowerCase() === "institutional") {
+        } else if (landUse.toLowerCase() === "Institutional") {
             if (cost <= 2000000) {
                 baseFee = 2880.00;
                 rateDetail = "HLURB Tier: Project Cost ≤ ₱2.0 Million (Flat ₱2,880.00)";
@@ -259,12 +260,25 @@ const emptyForm = () => ({
     last_name: "",
     suffix: "",
     applicant_name: "",
+    applicant_address: "",
     contact_number: "",
     email: "",
     representative_name: "",
+    representative_address: "",
+    representative_contact: "",
+    corporation_name: "",
+    corporation_address: "",
+    corporation_contact: "",
     barangay: "",
     street_address: "",
     project_cost: "",
+    building_area: "",
+    area_to_develop: "",
+    number_of_saleable_lots: "",
+    project_type_business_name: "",
+    right_over_land: "",
+    project_tenure: "",
+    preferred_release_mode: "",
     assessment_fee: "",
     or_number: "",
     remarks: "",
@@ -281,7 +295,11 @@ const emptyForm = () => ({
             lot_number: "",
             tct_number: "",
             tax_dec_number: "",
+            survey_number: "",
             lot_area_sqm: "",
+            existing_land_use: "",
+            municipality: "",
+            province: "",
             coordinates: "",
         },
     ],
@@ -587,7 +605,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     // Zoning Compatibility Warning
     const zoningWarning = useMemo(() => {
         if (!form.land_use_class || !form.barangay) return null;
-        const isHeavy = ["industrial", "agri-industrial"].includes((form.land_use_class || "").toLowerCase());
+        const isHeavy = ["Industrial", "agri-Industrial"].includes((form.land_use_class || "").toLowerCase());
         const urbanPoblacion = ["Poblacion A", "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "San Carlos", "San Roque"];
         if (isHeavy && urbanPoblacion.includes(form.barangay)) {
             return `Zoning Notice: Proposed ${form.land_use_class} use in Brgy. ${form.barangay} is within a dense urban settlement and may require Sangguniang Bayan special clearance.`;
@@ -1789,6 +1807,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                 {currentStep === 4 && (
                                                     <StepReview
                                                         form={form}
+                                                        set={set}
                                                         totalLotArea={totalLotArea}
                                                         setCurrentStep={setCurrentStep}
                                                         onPreviewRoutingSlip={() => {

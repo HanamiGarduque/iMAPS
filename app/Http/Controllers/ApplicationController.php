@@ -150,9 +150,9 @@ class ApplicationController extends Controller
         }
 
         $validated = $request->validate([
-            'application_type'    => 'required|in:Locational Clearance,Zoning Certification,Development Permit,Special Land Use Permit',
+            'application_type'    => 'required|in:Locational Clearance,Zoning Certification,Development Permit,Preliminary Approval and Locational Clearance (PALC)',
             'form_number'         => 'required|string|max:255',
-            'land_use_class'      => 'required|in:Residential,Commercial,industrial,Agri-Industrial,institutional,Recreational',
+            'land_use_class'      => 'required|in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational',
             'purpose'             => 'required|string',
             'applicant_name'      => 'required|string|max:255',
             'contact_number'      => ['required', 'regex:/^(09|\+639|9)\d{9}$/'],
@@ -367,7 +367,7 @@ class ApplicationController extends Controller
                         'clup_zone' => 'AgIndZ',
                         'zoning_classification' => 'Agro-Industrial Zone',
                         'is_compliant' => true,
-                        'compliance_notes' => 'Compliant with CLUP 2030 agro-industrial zone overlay regulations.',
+                        'compliance_notes' => 'Compliant with CLUP 2030 agro-Industrial zone overlay regulations.',
                         'technical_review_status' => 'Pending Review',
                         'site_inspection' => null,
                     ]
@@ -379,7 +379,7 @@ class ApplicationController extends Controller
                         'review_round' => 1,
                         'reviewed_by_name' => 'Engr. Alex Reyes',
                         'decision' => 'Needs Site Inspection',
-                        'findings' => 'Structural layout adheres to CLUP setback guidelines. Ground perimeter inspection recommended for industrial drainage runoff.',
+                        'findings' => 'Structural layout adheres to CLUP setback guidelines. Ground perimeter inspection recommended for Industrial drainage runoff.',
                         'decision_reason' => null,
                         'created_at' => '2026-08-28 11:45:00',
                     ]
@@ -696,7 +696,7 @@ class ApplicationController extends Controller
             'Locational Clearance'    => 'LC',
             'Zoning Certification'    => 'ZC',
             'Development Permit'      => 'DP',
-            'Special Land Use Permit' => 'SP',
+            'Preliminary Approval and Locational Clearance (PALC)' => 'PALC',
         ];
 
         $code = $typeCodes[$type] ?? 'ZA';
