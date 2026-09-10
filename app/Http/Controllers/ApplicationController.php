@@ -156,7 +156,7 @@ class ApplicationController extends Controller
             'purpose'             => 'required|string',
             'applicant_name'      => 'required|string|max:255',
             'contact_number'      => ['required', 'regex:/^(09|\+639|9)\d{9}$/'],
-            'email'               => 'nullable|email',
+            'email'               => 'required|email',
             'representative_name' => 'nullable|string|max:255',
             'barangay'            => 'required|string',
             'street_address'      => 'nullable|string|max:255',
@@ -291,6 +291,7 @@ class ApplicationController extends Controller
             ->first();
 
         $inspectors = User::where('role', 'Site Inspector')
+            ->whereNotNull('supabase_uuid')
             ->select('id', 'name')
             ->orderBy('name')
             ->get();

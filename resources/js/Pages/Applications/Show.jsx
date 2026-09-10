@@ -306,6 +306,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                     inspector_id: p.site_inspection?.inspector_id || "",
                     scheduled_date: p.site_inspection?.scheduled_date ? p.site_inspection.scheduled_date.split("T")[0] : "",
                     deadline_date: p.site_inspection?.deadline_date ? p.site_inspection.deadline_date.split("T")[0] : "",
+                    assigned_notes: p.site_inspection?.assigned_notes || "",
                 };
             });
             setParcelReviews(initial);
@@ -909,6 +910,15 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                                         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
                                                                                     />
                                                                                 </div>
+                                                                            </div>
+                                                                            <div>
+                                                                                <Label>Inspection Focus & Notes</Label>
+                                                                                <Textarea
+                                                                                    rows={3}
+                                                                                    value={parcelReviews[activeParcelData.id]?.assigned_notes || ""}
+                                                                                    onChange={(e) => handleParcelReviewChange(activeParcelData.id, "assigned_notes", e.target.value)}
+                                                                                    placeholder="Add specific instructions or focus areas for the field inspection..."
+                                                                                />
                                                                             </div>
                                                                         </div>
                                                                     )}
