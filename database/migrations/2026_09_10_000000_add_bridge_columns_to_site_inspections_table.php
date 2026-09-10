@@ -46,6 +46,30 @@ return new class extends Migration
                 $table->text('assigned_notes')->nullable()->after('deadline_date');
             });
         }
+
+        if (!Schema::hasColumn('site_inspections', 'findings')) {
+            Schema::table('site_inspections', function (Blueprint $table) {
+                $table->text('findings')->nullable();
+            });
+        }
+
+        if (!Schema::hasColumn('site_inspections', 'recommendation')) {
+            Schema::table('site_inspections', function (Blueprint $table) {
+                $table->string('recommendation')->nullable();
+            });
+        }
+
+        if (!Schema::hasColumn('site_inspections', 'remarks')) {
+            Schema::table('site_inspections', function (Blueprint $table) {
+                $table->text('remarks')->nullable();
+            });
+        }
+
+        if (!Schema::hasColumn('site_inspections', 'is_compliant')) {
+            Schema::table('site_inspections', function (Blueprint $table) {
+                $table->boolean('is_compliant')->nullable();
+            });
+        }
     }
 
     public function down(): void
