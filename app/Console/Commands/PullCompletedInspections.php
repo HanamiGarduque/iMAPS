@@ -38,7 +38,7 @@ class PullCompletedInspections extends Command
 
         foreach ($completedJobs as $job) {
             // 2. Wrap local database updates in a transaction to prevent partial saves
-            DB::transaction(function () use ($job, $supabase, &$syncedCount) {
+            DB::transaction(function () use ($job, &$syncedCount) {
                 
                 $localInspection = SiteInspection::find($job['local_inspection_id']);
 
@@ -52,13 +52,7 @@ class PullCompletedInspections extends Command
                         'completed_at' => now(), // Or use $job['updated_at']
                     ]);
 
-                    // 4. Clean up Supabase
-                    // Because we set up ON DELETE CASCADE in our SQL schema earlier,
-                    // deleting the parent application will automatically delete the parcels and the job!
-                    if (isset($job['supabase_application_id'])) {
-                        $supabase->delete('supabase_zoning_applications', 'id', $job['supabase_application_id']);
-                    }
-
+                    // Retain the completed Supabase records for FieldSync history and safe retries.
                     $syncedCount++;
                 } else {
                     Log::warning("Supabase sync issue: Local inspection ID {$job['local_inspection_id']} not found.");

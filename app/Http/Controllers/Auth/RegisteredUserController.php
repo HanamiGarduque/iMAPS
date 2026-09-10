@@ -33,6 +33,7 @@ class RegisteredUserController extends Controller
 
         $handshakeKey = Str::random(60); 
         $phtTimestamp = now('Asia/Manila')->format('Y-m-d H:i:s'); 
+        $supabaseUserId = null;
 
         if ($request->role === 'Site Inspector') {
             $supabaseUrl = config('services.supabase.url');
@@ -86,7 +87,8 @@ class RegisteredUserController extends Controller
             'email'         => $request->email,
             'role'          => $request->role,    
             'password'      => Hash::make($request->password),
-            'handshake_key' => $handshakeKey, 
+            'handshake_key' => $handshakeKey,
+            'supabase_uuid' => $supabaseUserId,
         ]);
 
         event(new Registered($user));

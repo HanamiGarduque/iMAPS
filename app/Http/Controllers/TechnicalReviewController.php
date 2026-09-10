@@ -379,18 +379,33 @@ class TechnicalReviewController extends Controller
     {
         $validated = $request->validate([
             'zoning_application_id' => 'required|exists:zoning_applications,id',
+            'parcel_id'             => 'required|exists:parcels,id',
             'inspector_id'          => 'required|exists:users,id',
             'scheduled_date'        => 'required|date|after_or_equal:today',
             'assigned_notes'        => 'nullable|string',
         ]);
 
-        SiteInspection::create([
+        $parcelBelongsToApplication = Parcel::whereKey($validated['parcel_id'])
+            ->where('zoning_application_id', $validated['zoning_application_id'])
+            ->exists();
+
+        if (!$parcelBelongsToApplication) {
+            throw ValidationException::withMessages([
+                'parcel_id' => 'The selected parcel does not belong to the specified application.',
+            ]);
+        }
+
+        $inspection = SiteInspection::create([
             'zoning_application_id' => $validated['zoning_application_id'],
+            'parcel_id'             => $validated['parcel_id'],
             'inspector_id'          => $validated['inspector_id'],
             'scheduled_date'        => $validated['scheduled_date'],
             'assigned_notes'        => $validated['assigned_notes'] ?? null,
             'status'                => 'Pending',
         ]);
+
+        // Push the new inspection to Supabase so FieldSync can pick it up
+        PushInspectionToSupabase::dispatch($inspection);
 
         return redirect()->back()->with('success', 'Site Inspector assigned successfully.');
     }
@@ -401,8 +416,8 @@ class TechnicalReviewController extends Controller
     public function getSupabaseInspectionData($localInspectionId)
     {
         // Ensure you have these defined in your .env file
-        $supabaseUrl = env('SUPABASE_URL'); // e.g., https://laapipjyprmmaylunxib.supabase.co
-        $supabaseKey = env('SUPABASE_SERVICE_ROLE_KEY'); // Use service role for backend operations
+        $supabaseUrl = config('services.supabase.url');
+        $supabaseKey = config('services.supabase.service_key'); // SUPABASE_SERVICE_KEY in .env
 
         if (!$supabaseUrl || !$supabaseKey) {
             return response()->json(['error' => 'Supabase credentials missing.'], 500);

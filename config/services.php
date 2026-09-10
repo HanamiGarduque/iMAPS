@@ -38,6 +38,8 @@ return [
     'url'         => env('SUPABASE_URL'),
     'anon_key'    => env('SUPABASE_ANON_KEY'),
     'service_key' => env('SUPABASE_SERVICE_KEY'),
+    // Alias used by PushInspectionToSupabase job (config('services.supabase.key'))
+    'key'         => env('SUPABASE_SERVICE_KEY'),
 
     'fastapi' => [
     'base_url' => env('FASTAPI_BASE_URL', 'http://127.0.0.1:8001'),

@@ -111,17 +111,32 @@ class PushInspectionToSupabase implements ShouldQueue
             // ==========================================
             // 5. Push to field_jobs
             // ==========================================
+            // Preserve the current FieldSync lifecycle state when this job is retried.
+            $existingJobResponse = $http->get("{$supabaseUrl}/rest/v1/field_jobs", [
+                'local_inspection_id' => "eq.{$this->inspection->id}",
+                'select' => 'status',
+                'limit' => 1,
+            ]);
+
+            if (!$existingJobResponse->successful()) {
+                throw new \Exception("Field Job Lookup Failed: " . $existingJobResponse->body());
+            }
+
+            $existingJob = $existingJobResponse->json()[0] ?? null;
+
             // ADDED: ?on_conflict=local_inspection_id
-            $jobResponse = $http->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=local_inspection_id", [
+            $jobPayload = [
                 'local_inspection_id'     => $this->inspection->id,
                 'supabase_application_id' => $supabaseAppId,
                 'supabase_parcel_id'      => $supabaseParcelId,
-                'status'                  => 'Pending',
+                'status'                  => $existingJob['status'] ?? 'Pending',
                 'scheduled_date'          => $this->inspection->scheduled_date->format('Y-m-d'),
                 'deadline_date'           => $this->inspection->deadline_date ? $this->inspection->deadline_date->format('Y-m-d') : null,
                 'assigned_inspector_id'   => $this->resolveSupabaseUserId($this->inspection->inspector_id), 
                 'inspector_notes'         => $this->inspection->assigned_notes,
-            ]);
+            ];
+
+            $jobResponse = $http->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=local_inspection_id", $jobPayload);
 
             if (!$jobResponse->successful()) throw new \Exception("Field Job Sync Failed: " . $jobResponse->body());
 
