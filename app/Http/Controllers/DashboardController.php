@@ -78,10 +78,10 @@ class DashboardController extends Controller
 
         // 2. Query Approved & Active Permits to dynamically adjust live on-ground land-use mix
         $permitWeightsQuery = DB::table('zoning_applications')
-            ->select('barangay', 'land_use_class', DB::raw('COUNT(*) as permit_cnt'))
+            ->select('barangay', 'target_land_use_class', DB::raw('COUNT(*) as permit_cnt'))
             ->whereNotNull('barangay')
             ->where('barangay', '!=', '')
-            ->groupBy('barangay', 'land_use_class')
+            ->groupBy('barangay', 'target_land_use_class')
             ->get();
 
         $permitAreaMap = [
@@ -98,7 +98,7 @@ class DashboardController extends Controller
         $bgyTotalPermits = [];
         foreach ($permitWeightsQuery as $pw) {
             $bName = trim($pw->barangay);
-            $cls = trim($pw->land_use_class ?? 'Residential');
+            $cls = trim($pw->target_land_use_class ?? 'Residential');
             $cnt = (int)$pw->permit_cnt;
             $bgyPermitMix[$bName][$cls] = ($bgyPermitMix[$bName][$cls] ?? 0) + $cnt;
             $bgyTotalPermits[$bName] = ($bgyTotalPermits[$bName] ?? 0) + $cnt;
@@ -491,7 +491,7 @@ class DashboardController extends Controller
         ];
 
         $recent = (clone $query)->with('parcels:id,zoning_application_id,latitude,longitude,lot_number,lot_area_sqm,tax_dec_number')
-            ->select('id', 'reference_number', 'applicant_name', 'application_type', 'status', 'barangay', 'purpose', 'land_use_class', 'created_at')
+            ->select('id', 'reference_number', 'applicant_name', 'application_type', 'status', 'barangay', 'purpose', 'target_land_use_class', 'created_at')
             ->orderByDesc('created_at')
             ->get();
 
