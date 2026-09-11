@@ -4,42 +4,45 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use RuntimeException;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasColumn('users', 'supabase_uuid')) {
+        if (!Schema::hasColumn('users', 'handshake_key')) {
             Schema::table('users', function (Blueprint $table) {
-                $table->uuid('supabase_uuid')->nullable()->after('id');
+                $table->string('handshake_key')->nullable()->after('id');
             });
         }
 
         $hasUniqueIndex = collect(Schema::getIndexes('users'))->contains(function (array $index) {
+            $columns = $index['columns'] ?? [];
+
             return ($index['unique'] ?? false)
-                && ($index['columns'] ?? []) === ['supabase_uuid'];
+                && is_array($columns)
+                && in_array('handshake_key', $columns, true);
         });
 
         if ($hasUniqueIndex) {
             return;
         }
 
-        $hasDuplicateUuids = DB::table('users')
-            ->select('supabase_uuid')
-            ->whereNotNull('supabase_uuid')
-            ->groupBy('supabase_uuid')
+        $hasDuplicateHandshakeKeys = DB::table('users')
+            ->select('handshake_key')
+            ->whereNotNull('handshake_key')
+            ->where('handshake_key', '!=', '')
+            ->groupBy('handshake_key')
             ->havingRaw('COUNT(*) > 1')
             ->exists();
 
-        if ($hasDuplicateUuids) {
+        if ($hasDuplicateHandshakeKeys) {
             throw new RuntimeException(
-                'Cannot add a unique constraint to users.supabase_uuid because duplicate non-null values exist.'
+                'Cannot add a unique constraint to users.handshake_key because duplicate non-null values exist.'
             );
         }
 
         Schema::table('users', function (Blueprint $table) {
-            $table->unique('supabase_uuid');
+            $table->unique('handshake_key');
         });
     }
 

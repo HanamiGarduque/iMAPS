@@ -95,7 +95,7 @@ class TechnicalReviewController extends Controller
 
         // Fetch specifically Site Inspectors
         $inspectors = User::where('role', 'Site Inspector')
-            ->whereNotNull('supabase_uuid')
+            ->whereNotNull('handshake_key')
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
@@ -124,7 +124,7 @@ class TechnicalReviewController extends Controller
                 'nullable',
                 Rule::exists('users', 'id')->where(fn ($query) => $query
                     ->where('role', 'Site Inspector')
-                    ->whereNotNull('supabase_uuid')),
+                    ->whereNotNull('handshake_key')),
             ],
             'scheduled_date'     => 'required_if:decision,Needs Site Inspection|nullable|date|after_or_equal:today',
             'deadline_date'      => 'required_if:decision,Needs Site Inspection|nullable|date|after_or_equal:scheduled_date',
@@ -276,7 +276,7 @@ class TechnicalReviewController extends Controller
                 'nullable',
                 Rule::exists('users', 'id')->where(fn ($query) => $query
                     ->where('role', 'Site Inspector')
-                    ->whereNotNull('supabase_uuid')),
+                    ->whereNotNull('handshake_key')),
             ],
             'reviews.*.scheduled_date'           => 'nullable|date|after_or_equal:today',
             'reviews.*.deadline_date'            => 'nullable|date|after_or_equal:reviews.*.scheduled_date', 
@@ -421,7 +421,7 @@ class TechnicalReviewController extends Controller
                 'required',
                 Rule::exists('users', 'id')->where(fn ($query) => $query
                     ->where('role', 'Site Inspector')
-                    ->whereNotNull('supabase_uuid')),
+                    ->whereNotNull('handshake_key')),
             ],
             'scheduled_date'        => 'required|date|after_or_equal:today',
             'deadline_date'         => 'required|date|after_or_equal:scheduled_date',

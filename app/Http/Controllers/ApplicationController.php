@@ -448,7 +448,7 @@ class ApplicationController extends Controller
             ->first();
 
         $inspectors = User::where('role', 'Site Inspector')
-            ->whereNotNull('supabase_uuid')
+            ->whereNotNull('handshake_key') // Ensure only inspectors with handshake_key are fetched
             ->select('id', 'name')
             ->orderBy('name')
             ->get();

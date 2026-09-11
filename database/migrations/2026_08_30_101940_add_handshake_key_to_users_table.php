@@ -10,18 +10,37 @@ return new class extends Migration
      * Run the migrations.
      */
     public function up(): void
-{
-    Schema::table('users', function (Blueprint $table) {
-        $table->string('handshake_key')->nullable()->unique();
-    });
-}
+    {
+        if (!Schema::hasColumn('users', 'handshake_key')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->string('handshake_key')->nullable()->after('id');
+            });
+        }
+
+        $hasUniqueIndex = collect(Schema::getIndexes('users'))->contains(function (array $index) {
+            $columns = $index['columns'] ?? [];
+
+            return ($index['unique'] ?? false)
+                && is_array($columns)
+                && in_array('handshake_key', $columns, true);
+        });
+
+        if (! $hasUniqueIndex) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->unique('handshake_key');
+            });
+        }
+    }
+
     /**
      * Reverse the migrations.
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            //
-        });
+        if (Schema::hasColumn('users', 'handshake_key')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('handshake_key');
+            });
+        }
     }
 };

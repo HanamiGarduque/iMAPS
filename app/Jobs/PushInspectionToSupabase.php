@@ -156,10 +156,10 @@ class PushInspectionToSupabase implements ShouldQueue
         $user = \App\Models\User::find($localUserId);
 
         // Fail loudly if the user doesn't exist or hasn't been linked to Supabase yet
-        if (!$user || !$user->supabase_uuid) {
+        if (!$user || !$user->handshake_key) {
             throw new \Exception("Local User ID {$localUserId} does not have a mapped Supabase UUID.");
         }
         
-        return $user->supabase_uuid; 
+        return $user->handshake_key; 
     }
 }

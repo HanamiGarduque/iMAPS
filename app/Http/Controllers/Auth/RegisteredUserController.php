@@ -88,7 +88,6 @@ class RegisteredUserController extends Controller
             'role'          => $request->role,    
             'password'      => Hash::make($request->password),
             'handshake_key' => $handshakeKey,
-            'supabase_uuid' => $supabaseUserId,
         ]);
 
         event(new Registered($user));
