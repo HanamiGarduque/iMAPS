@@ -22,3 +22,11 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+# Python Virtual Environments & Caches
+python-analytics/venv/
+python-analytics/.venv/
+ml_service/venv/
+venv/
+.venv/
+__pycache__/
+*.pyc

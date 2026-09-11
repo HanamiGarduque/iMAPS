@@ -15,7 +15,6 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
-        'supabase_uuid',
         'last_login',
         'handshake_key', // Added to allow mass assignment
     ];

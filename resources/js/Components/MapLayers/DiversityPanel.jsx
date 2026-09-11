@@ -50,7 +50,7 @@ export default function DiversityPanel({
     onSelectBgy,
     bgyStats = {},
     diversityTierFilter = "all",
-    onSelectDiversityTier = () => {},
+    onSelectDiversityTier = () => { },
 }) {
     const [activeTab, setActiveTab] = useState("corridors"); // "corridors" | "farming"
     const [searchQuery, setSearchQuery] = useState("");
@@ -392,11 +392,10 @@ export default function DiversityPanel({
                         <span className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">
                             Vs. Municipal Mean ({municipalMean.toFixed(2)})
                         </span>
-                        <span className={`text-[9.5px] font-semibold font-mono px-2 py-0.5 rounded ${
-                            diffFromAvg >= 0
+                        <span className={`text-[9.5px] font-semibold font-mono px-2 py-0.5 rounded ${diffFromAvg >= 0
                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                 : "bg-amber-50 text-amber-700 border border-amber-200"
-                        }`}>
+                            }`}>
                             {diffFromAvg >= 0 ? `+${pctDiff}%` : `${pctDiff}%`} vs municipal mean
                         </span>
                     </div>
@@ -674,18 +673,16 @@ export default function DiversityPanel({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("corridors")}
-                                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
-                                    activeTab === "corridors" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-500 hover:text-slate-800"
-                                }`}
+                                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${activeTab === "corridors" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-500 hover:text-slate-800"
+                                    }`}
                             >
                                 High Mix
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("farming")}
-                                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
-                                    activeTab === "farming" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-500 hover:text-slate-800"
-                                }`}
+                                className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${activeTab === "farming" ? "bg-white text-slate-900 shadow-xs font-bold" : "text-slate-500 hover:text-slate-800"
+                                    }`}
                             >
                                 Agricultural
                             </button>

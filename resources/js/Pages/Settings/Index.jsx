@@ -80,8 +80,8 @@ export default function Settings({ auth = {} }) {
             const now = new Date();
             setClock(
                 now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
-                    " · " +
-                    now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })
+                " · " +
+                now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })
             );
         };
         tick();
@@ -396,7 +396,7 @@ export default function Settings({ auth = {} }) {
 
                     <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
                         <div className="p-6 sm:p-8 flex-1 flex flex-col h-full overflow-y-auto max-w-6xl mx-auto w-full gap-5">
-                            
+
                             {/* ── HEADER SECTION ── */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 shrink-0">
                                 <div>
@@ -424,11 +424,10 @@ export default function Settings({ auth = {} }) {
                             {statusMessage && (
                                 <div
                                     role="status"
-                                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs font-medium transition-all shrink-0 ${
-                                        statusMessage.type === "success"
+                                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs font-medium transition-all shrink-0 ${statusMessage.type === "success"
                                             ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                                             : "border-rose-200 bg-rose-50 text-rose-800"
-                                    }`}
+                                        }`}
                                 >
                                     <div className="flex items-center gap-2">
                                         <span className={`w-2 h-2 rounded-full ${statusMessage.type === "success" ? "bg-emerald-500" : "bg-rose-500"}`} />
@@ -482,11 +481,10 @@ export default function Settings({ auth = {} }) {
                                                 key={tab.id}
                                                 type="button"
                                                 onClick={() => setActiveTab(tab.id)}
-                                                className={`py-3 px-1 border-b-2 text-xs font-medium transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
-                                                    isSelected
+                                                className={`py-3 px-1 border-b-2 text-xs font-medium transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${isSelected
                                                         ? "border-blue-600 text-blue-600 font-semibold"
                                                         : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
-                                                }`}
+                                                    }`}
                                             >
                                                 <span className={isSelected ? "text-blue-600" : "text-slate-400"}>
                                                     {tab.icon}
@@ -541,17 +539,15 @@ export default function Settings({ auth = {} }) {
                                                                 role="button"
                                                                 tabIndex="0"
                                                                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setUploadLayer(meta.id); }}
-                                                                className={`p-4 rounded-xl border text-left cursor-pointer transition-all duration-150 relative ${
-                                                                    isSelected
+                                                                className={`p-4 rounded-xl border text-left cursor-pointer transition-all duration-150 relative ${isSelected
                                                                         ? "border-blue-600 bg-blue-50/40 text-blue-950 ring-1 ring-blue-600/30 shadow-2xs"
                                                                         : "border-slate-200 hover:border-slate-300 bg-white text-slate-700 hover:bg-slate-50/60 shadow-2xs"
-                                                                }`}
+                                                                    }`}
                                                             >
                                                                 <div className="flex items-center justify-between gap-2 mb-2">
                                                                     <span className="text-xs font-bold text-slate-900">{meta.title}</span>
-                                                                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${
-                                                                        isSelected ? "bg-blue-600 border-blue-600 text-white" : "border-slate-300 bg-white"
-                                                                    }`}>
+                                                                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${isSelected ? "bg-blue-600 border-blue-600 text-white" : "border-slate-300 bg-white"
+                                                                        }`}>
                                                                         {isSelected && (
                                                                             <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
                                                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
@@ -559,11 +555,10 @@ export default function Settings({ auth = {} }) {
                                                                         )}
                                                                     </div>
                                                                 </div>
-                                                                <p className={`text-[11px] font-mono inline-block px-1.5 py-0.5 rounded border truncate max-w-full ${
-                                                                    isSelected
+                                                                <p className={`text-[11px] font-mono inline-block px-1.5 py-0.5 rounded border truncate max-w-full ${isSelected
                                                                         ? "text-blue-700 bg-blue-100/50 border-blue-200"
                                                                         : "text-slate-600 bg-slate-100 border-slate-200"
-                                                                }`}>
+                                                                    }`}>
                                                                     {meta.table}
                                                                 </p>
                                                                 <div className="mt-3 pt-2.5 border-t border-slate-100 text-[10.5px] text-slate-500 font-mono">
@@ -605,13 +600,12 @@ export default function Settings({ auth = {} }) {
                                                             fileInputRef.current?.click();
                                                         }
                                                     }}
-                                                    className={`border-2 border-dashed rounded-xl p-7 text-center cursor-pointer transition-all duration-150 ${
-                                                        isDraggingShape
+                                                    className={`border-2 border-dashed rounded-xl p-7 text-center cursor-pointer transition-all duration-150 ${isDraggingShape
                                                             ? "border-blue-500 bg-blue-50/70 ring-2 ring-blue-500/20"
                                                             : selectedFile
-                                                            ? "border-slate-300 bg-slate-50/40"
-                                                            : "border-slate-200 hover:border-slate-300 bg-slate-50/40 hover:bg-slate-50"
-                                                    }`}
+                                                                ? "border-slate-300 bg-slate-50/40"
+                                                                : "border-slate-200 hover:border-slate-300 bg-slate-50/40 hover:bg-slate-50"
+                                                        }`}
                                                 >
                                                     {selectedFile ? (
                                                         <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-2xs max-w-lg mx-auto text-left">
@@ -838,13 +832,12 @@ export default function Settings({ auth = {} }) {
                                                             tileInputRef.current?.click();
                                                         }
                                                     }}
-                                                    className={`border-2 border-dashed rounded-xl p-7 text-center cursor-pointer transition-all duration-150 ${
-                                                        isDraggingTile
+                                                    className={`border-2 border-dashed rounded-xl p-7 text-center cursor-pointer transition-all duration-150 ${isDraggingTile
                                                             ? "border-blue-500 bg-blue-50/70 ring-2 ring-blue-500/20"
                                                             : selectedTileFile
-                                                            ? "border-slate-300 bg-slate-50/40"
-                                                            : "border-slate-200 hover:border-slate-300 bg-slate-50/40 hover:bg-slate-50"
-                                                    }`}
+                                                                ? "border-slate-300 bg-slate-50/40"
+                                                                : "border-slate-200 hover:border-slate-300 bg-slate-50/40 hover:bg-slate-50"
+                                                        }`}
                                                 >
                                                     {selectedTileFile ? (
                                                         <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-2xs max-w-lg mx-auto text-left">
@@ -1054,11 +1047,10 @@ export default function Settings({ auth = {} }) {
                                     key={tab.id}
                                     type="button"
                                     onClick={() => setGuideTab(tab.id)}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                                        guideTab === tab.id
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${guideTab === tab.id
                                             ? "bg-slate-100 text-slate-900 font-semibold"
                                             : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
-                                    }`}
+                                        }`}
                                 >
                                     {tab.label}
                                 </button>

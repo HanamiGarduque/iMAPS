@@ -19,6 +19,8 @@ export default function Show({ auth, parcel }) {
                     <div className="p-4 sm:p-8 bg-white shadow sm:rounded-lg">
                         <h3 className="text-lg font-medium text-gray-900 mb-4">Parcel Information</h3>
                         <p>PIN: {parcel.property_index_number}</p>
+                        <p>ARP Number: {parcel.arp_number || '—'}</p>
+                        <p>Survey Number: {parcel.survey_number || '—'}</p>
                         {/* ... */}
                     </div>
 

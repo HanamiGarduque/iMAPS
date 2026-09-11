@@ -28,10 +28,10 @@ class DashboardController extends Controller
             ->groupBy('status')
             ->pluck('cnt', 'status');
 
-        $bgyRows = (clone $query)->select('barangay', 'status', 'land_use_class', DB::raw('COUNT(*) as cnt'))
+        $bgyRows = (clone $query)->select('barangay', 'status', 'target_land_use_class', DB::raw('COUNT(*) as cnt'))
             ->whereNotNull('barangay')
             ->where('barangay', '!=', '')
-            ->groupBy('barangay', 'status', 'land_use_class')
+            ->groupBy('barangay', 'status', 'target_land_use_class')
             ->get();
 
         $bgyStats = [];
@@ -39,10 +39,10 @@ class DashboardController extends Controller
             $b = trim($row->barangay);
             if (!isset($bgyStats[$b])) {
                 $bgyStats[$b] = [
-                    'Total' => 0, 
-                    'Technical Review' => 0, 
+                    'Total' => 0,
+                    'Technical Review' => 0,
                     'Released' => 0,
-                    'Primary_Zone' => $row->land_use_class ?? 'Residential'
+                    'Primary_Zone' => $row->target_land_use_class ?? 'Residential'
                 ];
             }
             if (stripos($row->status, 'Review') !== false) {

@@ -11,6 +11,9 @@ class Parcel extends Model
     protected $fillable = [
         'zoning_application_id',
         'parcel_code',
+        'location_address',
+        'barangay',
+        'owner_name',
         'lot_number',
         'tct_number',
         'tax_dec_number',
@@ -19,6 +22,8 @@ class Parcel extends Model
         'longitude',
         'land_use_class',
         'property_index_number',
+        'arp_number',
+        'survey_number',
     ];
 
     protected $casts = [

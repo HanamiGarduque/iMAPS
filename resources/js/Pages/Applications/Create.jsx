@@ -14,6 +14,18 @@ import StepApplicant from "./Components/StepApplicant";
 import StepPropertyGIS from "./Components/StepPropertyGIS";
 import StepReview from "./Components/StepReview";
 import StepFee from "./Components/StepFee";
+const AMENDMENT_TYPES = [
+    {
+        id: "Petition for Rezoning",
+        icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4",
+        desc: "Request to modify existing zoning classification of a specific property.",
+    },
+    {
+        id: "Petition for Reclassification",
+        icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+        desc: "Request to reclassify agricultural land to non-agricultural uses.",
+    },
+];
 
 const APPLICATION_TYPES = [
     {
@@ -32,13 +44,14 @@ const APPLICATION_TYPES = [
         desc: "Subdivisions, estates & complex developments",
     },
     {
-        id: "Special Land Use Permit",
+        id: "Preliminary Approval and Locational Clearance (PALC)",
         icon: "M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21",
-        desc: "Special projects & institutional variances",
+        desc: "Preliminary Approval & Locational Clearance applications (PALC).",
     },
+
 ];
 
-const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agricultural"];
+const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"];
 
 const STEPS = [
     { id: 1, title: "Category", label: "Application Category" },
@@ -109,7 +122,7 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
                 calculationSummary = `₱720.00 + (₱${excess.toLocaleString()} × 0.1%) = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
             }
             formulaDesc = "HLURB 2013 Residential Rates (Bill of Materials)";
-        } else if (landUse === "Institutional") {
+        } else if (landUse.toLowerCase() === "Institutional") {
             if (cost <= 2000000) {
                 baseFee = 2880.00;
                 rateDetail = "HLURB Tier: Project Cost ≤ ₱2.0 Million (Flat ₱2,880.00)";
@@ -123,7 +136,7 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
             }
             formulaDesc = "HLURB 2013 Institutional Rates (Bill of Materials)";
         } else {
-            // Commercial, Industrial, Agro-Industrial, Special Use
+            // Commercial, Industrial, Agri-Industrial, Recreational
             if (cost < 100000) {
                 baseFee = 1440.00;
                 rateDetail = "HLURB Tier: Project Cost < ₱100,000 (Flat ₱1,440.00)";
@@ -250,9 +263,10 @@ function saveApplicantToRegistry(applicant) {
 }
 
 const emptyForm = () => ({
+    application_stream: "permit", // Defaults to Track A
     application_type: "",
     form_number: "",
-    land_use_class: "",
+    target_land_use_class: "",
     purpose: "",
     first_name: "",
     middle_name: "",
@@ -262,23 +276,54 @@ const emptyForm = () => ({
     contact_number: "",
     email: "",
     representative_name: "",
+    representative_address: "",
+    representative_contact: "",
+    corporation_name: "",
+    corporation_address: "",
+    corporation_contact: "",
     barangay: "",
     street_address: "",
     project_cost: "",
-    assessment_fee: "",
+    building_area: "",
+    area_to_develop: "",
+    number_of_saleable_lots: "",
+    project_type_business_name: "",
+    right_over_land: "",
+    project_tenure: "",
+    preferred_release_mode: "",
+    zoning_certificate_fee: "",
+    locational_clearance_fee: "",
+    development_permit_fee: "",
+    other_fees: "",
+    penalty_fee: "",
+    date_of_receipt: new Date().toISOString().split("T")[0], // Default to today
+    assessment_fee: "0.00",
     or_number: "",
     remarks: "",
+    
 
     parcels: [
         {
             parcel_code: "P-01",
+            location_address: "",
+            barangay: "",
+            owner_name: "",
             property_index_number: "",
-            property_tax_number: "",
+            arp_number: "",
             lot_number: "",
             tct_number: "",
             tax_dec_number: "",
+            survey_number: "",
             lot_area_sqm: "",
-            coordinates: "",
+            land_use_class: "",
+            coordinates: "",decision: "",
+            decision_reason: "",
+            findings: "",
+            inspector_id: "",
+            scheduled_date: "",
+            deadline_date: "",
+
+            
         },
     ],
 });
@@ -489,8 +534,7 @@ function RoutingSlipModal({ open, data, onClose, onPrint }) {
     );
 }
 
-export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null }) {
-    const userName = auth?.user?.name || "Planning Officer";
+export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null, inspectors = [] }) {    const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -583,7 +627,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     // Zoning Compatibility Warning
     const zoningWarning = useMemo(() => {
         if (!form.land_use_class || !form.barangay) return null;
-        const isHeavy = ["Industrial", "Special Use", "Agro-Industrial"].includes(form.land_use_class);
+        const isHeavy = ["Industrial", "agri-Industrial"].includes((form.land_use_class || "").toLowerCase());
         const urbanPoblacion = ["Poblacion A", "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "San Carlos", "San Roque"];
         if (isHeavy && urbanPoblacion.includes(form.barangay)) {
             return `Zoning Notice: Proposed ${form.land_use_class} use in Brgy. ${form.barangay} is within a dense urban settlement and may require Sangguniang Bayan special clearance.`;
@@ -640,7 +684,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                 e.preventDefault();
                 if (currentStep === 5) {
-                    handleSubmit(e);
+                    if (!submitting) handleSubmit(e);
                 } else {
                     handleNext();
                 }
@@ -794,13 +838,23 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 ...(prev.parcels || []),
                 {
                     parcel_code: newCode,
+                    location_address: "",
+                    barangay: "",
+                    owner_name: "",
                     property_index_number: "",
-                    property_tax_number: "",
+                    arp_number: "",
+                    survey_number: "",
                     lot_number: "",
                     tct_number: "",
                     tax_dec_number: "",
                     lot_area_sqm: "",
                     coordinates: "",
+                    decision: "",
+                    decision_reason: "",
+                    findings: "",
+                    inspector_id: "",
+                    scheduled_date: "",
+                    deadline_date: "",
                 },
             ],
         }));
@@ -870,16 +924,39 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
         return null;
     };
+    const fetchZoningByCoords = async (lat, lng) => {
+        if (!lat || !lng) return null;
+        try {
+            const res = await fetch(`/api/map/zoning-lookup?lat=${lat}&lng=${lng}`);
+            if (!res.ok) return null;
+            const payload = await res.json();
+            return payload.lup_2030;
+        } catch (e) {
+            return null;
+        }
+    };
+    const fetchZoningByParcelArea = async (pin) => {
+        if (!pin) return null;
+        try {
+            const res = await fetch(`/api/map/zoning-area-lookup?pin=${encodeURIComponent(pin)}`);
+            if (!res.ok) return null;
+            const payload = await res.json();
+            return payload.lup_2030;
+        } catch (e) {
+            return null;
+        }
+    };
 
     useEffect(() => {
-        fetch("/geojson/rosario_brgy_map.geojson")
+        fetch("/api/map/barangay_boundary")
             .then((res) => res.json())
             .then((data) => setBrgyMapData(data))
             .catch(() => {});
 
         const loadParcelLookup = async () => {
             try {
-                const response = await fetch("/geojson/rosario_batangas_dummy_parcels.geojson");
+                // Fetch live cadastral parcels from the database engine
+                const response = await fetch("/api/map/land_parcels");
                 if (!response.ok) return;
                 const payload = await response.json();
 
@@ -893,11 +970,15 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     lookupMap[pin] = {
                         feature: feature,
                         property_index_number: pin,
-                        property_tax_number: feature.properties?.property_tax_number || "",
+                        arp_number: feature.properties?.arp_number || feature.properties?.arp_no || "",
+                        survey_number: feature.properties?.survey_number || feature.properties?.survey_no || "",
+                        location_address: feature.properties?.location_address || "",
+                        owner_name: feature.properties?.owner_name || "",
                         barangay: feature.properties?.barangay || "",
                         tct_number: feature.properties?.tct_number || "",
                         tax_dec_number: feature.properties?.tax_dec_number || "",
                         lot_number: feature.properties?.lot_number || "",
+                        land_use_class: feature.properties?.land_use_class || "",
                         lot_area_sqm: feature.properties?.lot_area_sqm != null ? String(feature.properties.lot_area_sqm) : "",
                         coordinates: centroid ? `${centroid.lat.toFixed(6)},${centroid.lng.toFixed(6)}` : "",
                     };
@@ -931,10 +1012,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
         const isDuplicate = (form.parcels || []).some((p, i) => i !== index && p.property_index_number?.trim() === pin);
         if (isDuplicate) {
-            setErrors((prev) => ({
-                ...prev,
-                [`parcels.${index}.property_index_number`]: "This PIN is already attached to another parcel.",
-            }));
+            setErrors((prev) => ({ ...prev, [`parcels.${index}.property_index_number`]: "This PIN is already attached to another parcel." }));
             setFlash({ type: "error", msg: "Duplicate PIN detected." });
             setTimeout(() => setFlash(null), 4000);
             return;
@@ -944,70 +1022,89 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
         try {
             const data = await lookupPin(pin);
-
             if (data.feature) {
                 setActiveParcelFeature(data.feature);
                 setActiveParcelIndex(index);
             }
 
+            const cadastralZoneClass = data.land_use_class || data.zoning_plan_class || data.recorded_land_use_class || "";
+            let clupZoningClass = "Unmapped in CLUP"; 
+            
+            // ── Spatial Area Intersection Override using PIN ──
+            const spatialZoning = await fetchZoningByParcelArea(pin);
+            if (spatialZoning) {
+                clupZoningClass = spatialZoning; // Strictly matches spatial polygon intersection from land_use_plan
+            }
+
+            let coordsStr = data.coordinates || (data.latitude && data.longitude ? `${data.latitude},${data.longitude}` : null);
+
             setForm((prev) => {
                 const newBarangay = index === 0 && data.barangay ? data.barangay : prev.barangay;
-                const newLandUse = data.land_use_class || prev.land_use_class;
-
                 return {
                     ...prev,
                     barangay: newBarangay,
-                    land_use_class: newLandUse,
                     parcels: (prev.parcels || []).map((p, i) =>
                         i === index
                             ? {
                                   ...p,
                                   property_index_number: data.property_index_number || p.property_index_number,
+                                  arp_number: data.arp_number || p.arp_number || "",
+                                  survey_number: data.survey_number || p.survey_number || "",
+                                  location_address: data.location_address || p.location_address || prev.street_address || "",
                                   barangay: data.barangay || p.barangay || "",
-                                  property_tax_number: data.property_tax_number || p.property_tax_number || "",
+                                  owner_name: data.owner_name || p.owner_name || prev.applicant_name || "",
                                   lot_number: data.lot_number || p.lot_number || "",
                                   tct_number: data.tct_number || p.tct_number || "",
                                   tax_dec_number: data.tax_dec_number || p.tax_dec_number || "",
                                   lot_area_sqm: data.lot_area_sqm ?? p.lot_area_sqm,
-                                  land_use_class: data.land_use_class || p.land_use_class || "",
+                                  cadastral_zone: cadastralZoneClass,
+                                  land_use_class: clupZoningClass, // Spatially queried via PostGIS geometry intersection
                                   is_verified: true,
-                                  coordinates: data.coordinates || (data.latitude && data.longitude ? `${data.latitude},${data.longitude}` : p.coordinates),
+                                  coordinates: coordsStr || p.coordinates,
                               }
                             : p,
                     ),
                 };
             });
-
             setErrors((prev) => {
                 const next = { ...prev };
                 delete next[`parcels.${index}.property_index_number`];
                 delete next.barangay;
                 return next;
             });
-            setFlash({ type: "success", msg: `PIN ${pin} verified against municipal approved land use records.` });
+            setFlash({ type: "success", msg: `PIN ${pin} cross-referenced with spatial land use geometry.` });
             setTimeout(() => setFlash(null), 3000);
         } catch (err) {
-            setErrors((prev) => ({
-                ...prev,
-                [`parcels.${index}.property_index_number`]: err?.message || "PIN not found in approved records",
-            }));
-            setForm((prev) => ({
-                ...prev,
-                parcels: (prev.parcels || []).map((p, i) => i === index ? { ...p, is_verified: false } : p),
-            }));
+            setErrors((prev) => ({ ...prev, [`parcels.${index}.property_index_number`]: err?.message || "PIN not found in approved records" }));
+            setForm((prev) => ({ ...prev, parcels: (prev.parcels || []).map((p, i) => i === index ? { ...p, is_verified: false } : p) }));
         } finally {
             setPinLoading((prev) => ({ ...prev, [index]: false }));
         }
     };
-
     // Direct GIS Map Click-to-Select Handler
-    const handleSelectMapParcel = (pin, lot, area, brgy, feature) => {
+    const handleSelectMapParcel = async (pin, lot, area, brgy, feature) => {
         const targetIdx = activeParcelIndex !== null ? activeParcelIndex : 0;
         const pProps = feature?.properties || {};
-        const landUse = pProps.land_use_class || pProps.zoning_class || pProps.land_use || "";
-        const tdNo = pProps.tax_dec_number || pProps.td_no || "";
-        const tctNo = pProps.tct_number || "";
         
+        const centroid = getGeometryCentroid(feature?.geometry);
+        const cadastralZoneClass = pProps.land_use_class || pProps.zoning_class || pProps.land_use || "";
+        let clupZoningClass = cadastralZoneClass || "Unmapped in CLUP";
+        
+        // ── Spatial Area Intersection Override using PIN ──
+        if (pin) {
+            const spatialZoning = await fetchZoningByParcelArea(pin);
+            if (spatialZoning) {
+                clupZoningClass = spatialZoning;
+            }
+        }
+
+        const tdNo = pProps.tax_dec_number || pProps.td_no || "";
+        const arpNo = pProps.arp_number || pProps.arp_no || "";
+        const surveyNo = pProps.survey_number || pProps.survey_no || "";
+        const tctNo = pProps.tct_number || "";
+        const locationAddress = pProps.location_address || "";
+        const ownerName = pProps.owner_name || "";
+
         if (feature) {
             setActiveParcelFeature(feature);
             setActiveParcelIndex(targetIdx);
@@ -1015,30 +1112,34 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
         setForm((prev) => {
             const newBarangay = targetIdx === 0 && brgy ? brgy : prev.barangay;
-            const newLandUse = landUse || prev.land_use_class;
             return {
                 ...prev,
                 barangay: newBarangay,
-                land_use_class: newLandUse,
                 parcels: (prev.parcels || []).map((p, i) =>
                     i === targetIdx
                         ? {
                               ...p,
                               property_index_number: pin || p.property_index_number,
+                              arp_number: arpNo || p.arp_number,
+                              survey_number: surveyNo || p.survey_number,
+                              location_address: locationAddress || p.location_address || prev.street_address || "",
                               lot_number: lot || p.lot_number,
                               lot_area_sqm: area != null ? String(area) : p.lot_area_sqm,
                               barangay: brgy || p.barangay,
+                              owner_name: ownerName || p.owner_name || prev.applicant_name || "",
                               tax_dec_number: tdNo || p.tax_dec_number,
                               tct_number: tctNo || p.tct_number,
-                              land_use_class: landUse || p.land_use_class,
+                              cadastral_zone: cadastralZoneClass, 
+                              land_use_class: clupZoningClass, // Spatially queried via geometry intersection
                               is_verified: Boolean(pin),
+                              coordinates: centroid ? `${centroid.lat.toFixed(6)},${centroid.lng.toFixed(6)}` : p.coordinates,
                           }
                         : p
                 ),
             };
         });
 
-        setFlash({ type: "success", msg: `Selected lot PIN: ${pin || "Map Polygon"} · Verified with municipal land records` });
+        setFlash({ type: "success", msg: `Selected lot PIN: ${pin || "Map Polygon"} · Zoning verified via area geometry` });
         setTimeout(() => setFlash(null), 3000);
     };
 
@@ -1113,7 +1214,21 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const handleTypeSelect = (typeId) => {
-        setForm((f) => ({ ...f, application_type: typeId }));
+        setForm((f) => {
+            const current = (f.application_type || "")
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean);
+                
+            const next = current.includes(typeId)
+                ? current.filter((item) => item !== typeId)
+                : [...current, typeId];
+
+            return {
+                ...f,
+                application_type: next.join(", "),
+            };
+        });
         if (errors.application_type) {
             setErrors((err) => {
                 const n = { ...err };
@@ -1141,9 +1256,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         if (step === 1) {
             if (!form.application_type) newErrors.application_type = "Select an application category";
             if (!form.form_number?.trim()) newErrors.form_number = "Form number is required";
-            if (!form.land_use_class) newErrors.land_use_class = "Target zoning class is required";
             if (!form.purpose?.trim()) newErrors.purpose = "Operational purpose is required";
-        }
+    }
 
         if (step === 2) {
             if (!form.last_name?.trim()) newErrors.last_name = "Last name is required";
@@ -1155,10 +1269,20 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
                 newErrors.email = "Enter a valid email format";
             }
+            if (form.corporation_contact && (form.corporation_contact.length !== 10 || !form.corporation_contact.startsWith("9"))) {
+                newErrors.corporation_contact = "Must be exactly 10 digits starting with 9";
+            }
+            if (form.representative_contact && (form.representative_contact.length !== 10 || !form.representative_contact.startsWith("9"))) {
+                newErrors.representative_contact = "Must be exactly 10 digits starting with 9";
+            }
         }
 
         if (step === 3) {
             if (!form.barangay?.trim()) newErrors.barangay = "Barangay is required";
+            
+            if (form.application_stream === "amendment" && !form.target_land_use_class) {
+                newErrors.target_land_use_class = "Target zoning class is required";
+            }
 
             if (!form.parcels || form.parcels.length === 0) {
                 newErrors.parcels = "At least one parcel is required";
@@ -1173,7 +1297,34 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     } else {
                         seenPins.add(pin);
                     }
+
+                    // --- NEW: Enforce that an evaluation decision is selected ---
+                    if (!parcel.decision) {
+                        newErrors[`parcels.${index}.decision`] = "Evaluation decision is required";
+                    }
+
+                    // --- Existing 3-Way Decision Validation ---
+                    if (parcel.decision === "Needs Site Inspection") {
+                        if (!parcel.inspector_id) newErrors[`parcels.${index}.inspector_id`] = "Required";
+                        if (!parcel.scheduled_date) newErrors[`parcels.${index}.scheduled_date`] = "Required";
+                        if (!parcel.deadline_date) newErrors[`parcels.${index}.deadline_date`] = "Required";
+                    }
+
+                    if (parcel.decision === "Declined" && !parcel.decision_reason?.trim()) {
+                        newErrors[`parcels.${index}.decision_reason`] = "Required for declined parcels";
+                    }
                 });
+            }
+        }
+
+        if (step === 4) {
+            if (!form.preferred_release_mode) {
+                newErrors.preferred_release_mode = "Preferred mode of release is required.";
+            }
+        }
+        if (step === 5) {
+            if (!form.or_number?.trim()) {
+                newErrors.or_number = "Official Receipt (OR) number is required.";
             }
         }
 
@@ -1200,6 +1351,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const handleSubmit = (e) => {
+        if (submitting) return;
         if (e && e.preventDefault) e.preventDefault();
         if (!form.assessment_fee || Number(form.assessment_fee) < 0) {
             setErrors({ assessment_fee: "Assessment fee is required." });
@@ -1210,7 +1362,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         }
 
         setSubmitting(true);
-        router.post("/applications/encode", form, {
+
+        const payload = {
+            ...form,
+            draft_id: tempDraftId,
+        };
+        router.post("/applications/encode", payload, {
             onSuccess: (page) => {
                 const ref = page.props.flash?.reference_number || `LC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(100 + Math.random() * 900)}`;
 
@@ -1262,19 +1419,26 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     targetStep = 1;
                 } else if (errKeys.some((k) => ["applicant_name", "contact_number", "email", "representative_name"].includes(k))) {
                     targetStep = 2;
-                } else if (errKeys.some((k) => ["barangay"].includes(k) || k.startsWith("parcels"))) {
+                // Added target_land_use_class to correctly route Step 3 failures
+                } else if (errKeys.some((k) => ["barangay", "target_land_use_class"].includes(k) || k.startsWith("parcels"))) {
                     targetStep = 3;
+                } else if (errKeys.some((k) => ["preferred_release_mode"].includes(k))) {
+                    targetStep = 4;
                 }
 
                 setCurrentStep(targetStep);
                 if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
 
+                // Dynamically extract the exact backend error message, prioritizing Database exceptions
+                const firstErrorKey = errKeys[0];
+                const actualErrorMessage = errs.db || errs[firstErrorKey] || "Please resolve the highlighted validation issues.";
+
                 setFlash({
                     type: "error",
-                    msg: "Please resolve the highlighted validation issues.",
+                    msg: actualErrorMessage,
                 });
 
-                setTimeout(() => setFlash(null), 5000);
+                setTimeout(() => setFlash(null), 6000);
             },
             onFinish: () => setSubmitting(false),
         });
@@ -1301,9 +1465,17 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     const workflowProgress = useMemo(() => {
         let progress = 0;
-        const step1Done = Boolean(form.application_type && form.form_number?.trim() && form.land_use_class && form.purpose?.trim());
+        const step1Done = Boolean(
+            form.application_type &&
+            form.form_number?.trim() &&
+            form.purpose?.trim()
+        );
         const step2Done = Boolean((form.last_name?.trim() && form.first_name?.trim() || form.applicant_name?.trim()) && form.contact_number?.trim() && form.email?.trim());
-        const step3Done = Boolean(form.barangay && form.parcels?.some((p) => p.property_index_number?.trim()));
+        const step3Done = Boolean(
+            form.barangay && 
+            form.parcels?.some((p) => p.property_index_number?.trim()) &&
+            (form.application_stream !== "amendment" || form.target_land_use_class)
+        );        
         const step4Done = currentStep >= 4;
         const step5Done = currentStep === 5 && Boolean(form.assessment_fee && Number(form.assessment_fee) >= 0);
 
@@ -1568,12 +1740,14 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                     <StepPropertyGIS
                                         form={form}
                                         set={set}
+                                        setForm={setForm}
                                         setParcelField={setParcelField}
                                         addParcel={addParcel}
                                         removeParcel={removeParcel}
                                         handlePinLookup={handlePinLookup}
                                         pinLoading={pinLoading}
                                         errors={errors}
+                                        inspectors={inspectors} 
                                         totalLotArea={totalLotArea}
                                         zoningWarning={zoningWarning}
                                         activeParcelIndex={activeParcelIndex}
@@ -1742,6 +1916,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                         handleTypeSelect={handleTypeSelect}
                                                         errors={errors}
                                                         APPLICATION_TYPES={APPLICATION_TYPES}
+                                                        AMENDMENT_TYPES={AMENDMENT_TYPES}
                                                         LAND_USE_CLASSES={LAND_USE_CLASSES}
                                                     />
                                                 )}
@@ -1764,6 +1939,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                 {currentStep === 4 && (
                                                     <StepReview
                                                         form={form}
+                                                        set={set}
+                                                        errors={errors}
                                                         totalLotArea={totalLotArea}
                                                         setCurrentStep={setCurrentStep}
                                                         onPreviewRoutingSlip={() => {
@@ -1788,6 +1965,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                             });
                                                             setShowRoutingSlip(true);
                                                         }}
+                                                        
                                                     />
                                                 )}
 

@@ -8,16 +8,33 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            // Added as nullable in case not all users have a Supabase account yet
-            $table->uuid('supabase_uuid')->nullable()->unique()->after('id');
+        if (!Schema::hasColumn('users', 'handshake_key')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->string('handshake_key')->nullable()->after('id');
+            });
+        }
+
+        $hasUniqueIndex = collect(Schema::getIndexes('users'))->contains(function (array $index) {
+            $columns = $index['columns'] ?? [];
+
+            return ($index['unique'] ?? false)
+                && is_array($columns)
+                && in_array('handshake_key', $columns, true);
         });
+
+        if (! $hasUniqueIndex) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->unique('handshake_key');
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('supabase_uuid');
-        });
+        if (Schema::hasColumn('users', 'handshake_key')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('handshake_key');
+            });
+        }
     }
 };

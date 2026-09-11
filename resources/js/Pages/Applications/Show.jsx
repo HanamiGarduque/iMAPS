@@ -306,6 +306,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                     inspector_id: p.site_inspection?.inspector_id || "",
                     scheduled_date: p.site_inspection?.scheduled_date ? p.site_inspection.scheduled_date.split("T")[0] : "",
                     deadline_date: p.site_inspection?.deadline_date ? p.site_inspection.deadline_date.split("T")[0] : "",
+                    assigned_notes: p.site_inspection?.assigned_notes || "",
                 };
             });
             setParcelReviews(initial);
@@ -364,8 +365,11 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
             .then((data) => setLandUseMapData(sanitizeGeoJSON(data)))
             .catch(() => {});
 
-        fetch("/geojson/rosario_batangas_dummy_parcels.geojson")
-            .then((res) => res.json())
+        fetch("/api/map/land_parcels")
+            .then((res) => {
+                if (!res.ok) throw new Error("Unable to load land parcel layer");
+                return res.json();
+            })
             .then((data) => {
                 const sanitized = sanitizeGeoJSON(data);
                 setParcelMapData(sanitized);
@@ -910,6 +914,15 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                                     />
                                                                                 </div>
                                                                             </div>
+                                                                            <div>
+                                                                                <Label>Inspection Focus & Notes</Label>
+                                                                                <Textarea
+                                                                                    rows={3}
+                                                                                    value={parcelReviews[activeParcelData.id]?.assigned_notes || ""}
+                                                                                    onChange={(e) => handleParcelReviewChange(activeParcelData.id, "assigned_notes", e.target.value)}
+                                                                                    placeholder="Add specific instructions or focus areas for the field inspection..."
+                                                                                />
+                                                                            </div>
                                                                         </div>
                                                                     )}
 
@@ -1065,7 +1078,13 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                         <span className="text-slate-500 font-mono text-xs ml-1.5">({parcel.property_index_number || "No PIN"})</span>
                                                                     </p>
                                                                     <p className="text-xs text-slate-500 mt-0.5">
-                                                                        Lot: {parcel.lot_number || "—"} · Area: {parcel.lot_area_sqm || "—"} SQ.M
+                                                                        {parcel.location_address || "No address"} · Brgy. {parcel.barangay || app.barangay || "—"}
+                                                                    </p>
+                                                                    <p className="text-xs text-slate-500 mt-0.5">
+                                                                        Owner: {parcel.owner_name || app.applicant_name || "—"} · Lot: {parcel.lot_number || "—"} · Area: {parcel.lot_area_sqm || "—"} SQ.M
+                                                                    </p>
+                                                                    <p className="text-xs text-blue-700 mt-0.5 font-medium">
+                                                                        Land Use: {parcel.land_use_class || app.land_use_class || "—"}
                                                                     </p>
                                                                 </div>
                                                                 <span

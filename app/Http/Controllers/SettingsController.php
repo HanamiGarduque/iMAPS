@@ -77,6 +77,7 @@ class SettingsController extends Controller
             'municipal_boundary' => 'public.rosario_boundary',
             'barangay_boundary'  => 'public.barangay_boundary',
             'land_use_plan'      => 'public.land_use_plan',
+            'land_parcels'       => 'public.land_parcels',
         ];
         
         $targetTable = $tableMapping[$request->layer_type] ?? null;

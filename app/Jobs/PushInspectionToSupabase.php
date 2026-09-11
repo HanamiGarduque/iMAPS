@@ -65,7 +65,7 @@ class PushInspectionToSupabase implements ShouldQueue
                 'local_application_id' => $application->id,
                 'reference_number'     => $application->reference_number,
                 'application_type'     => $application->application_type,
-                'land_use_class'       => $application->land_use_class,
+                'land_use_class'       => $application->target_land_use_class ?? $application->land_use_class,
                 'applicant_name'       => $application->applicant_name,
                 'representative_name'  => $application->representative_name,
                 'contact_number'       => $application->contact_number,
@@ -89,12 +89,17 @@ class PushInspectionToSupabase implements ShouldQueue
                 'local_parcel_id'         => $parcel->id,
                 'supabase_application_id' => $supabaseAppId,
                 'parcel_code'             => $parcel->parcel_code,
+                'location_address'        => $parcel->location_address,
+                'barangay'                => $parcel->barangay,
+                'owner_name'              => $parcel->owner_name,
                 'lot_number'              => $parcel->lot_number,
                 'tct_number'              => $parcel->tct_number,
                 'tax_dec_number'          => $parcel->tax_dec_number,
                 'lot_area_sqm'            => $parcel->lot_area_sqm,
                 'land_use_class'          => $parcel->land_use_class,
                 'property_index_number'   => $parcel->property_index_number,
+                'arp_number'              => $parcel->arp_number,
+                'survey_number'           => $parcel->survey_number,
                 'latitude'                => $parcel->latitude,
                 'longitude'               => $parcel->longitude,
                 'geom'                    => $geom,
@@ -106,17 +111,32 @@ class PushInspectionToSupabase implements ShouldQueue
             // ==========================================
             // 5. Push to field_jobs
             // ==========================================
+            // Preserve the current FieldSync lifecycle state when this job is retried.
+            $existingJobResponse = $http->get("{$supabaseUrl}/rest/v1/field_jobs", [
+                'local_inspection_id' => "eq.{$this->inspection->id}",
+                'select' => 'status',
+                'limit' => 1,
+            ]);
+
+            if (!$existingJobResponse->successful()) {
+                throw new \Exception("Field Job Lookup Failed: " . $existingJobResponse->body());
+            }
+
+            $existingJob = $existingJobResponse->json()[0] ?? null;
+
             // ADDED: ?on_conflict=local_inspection_id
-            $jobResponse = $http->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=local_inspection_id", [
+            $jobPayload = [
                 'local_inspection_id'     => $this->inspection->id,
                 'supabase_application_id' => $supabaseAppId,
                 'supabase_parcel_id'      => $supabaseParcelId,
-                'status'                  => 'Pending',
+                'status'                  => $existingJob['status'] ?? 'Pending',
                 'scheduled_date'          => $this->inspection->scheduled_date->format('Y-m-d'),
                 'deadline_date'           => $this->inspection->deadline_date ? $this->inspection->deadline_date->format('Y-m-d') : null,
                 'assigned_inspector_id'   => $this->resolveSupabaseUserId($this->inspection->inspector_id), 
                 'inspector_notes'         => $this->inspection->assigned_notes,
-            ]);
+            ];
+
+            $jobResponse = $http->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=local_inspection_id", $jobPayload);
 
             if (!$jobResponse->successful()) throw new \Exception("Field Job Sync Failed: " . $jobResponse->body());
 
@@ -135,11 +155,37 @@ class PushInspectionToSupabase implements ShouldQueue
     {
         $user = \App\Models\User::find($localUserId);
 
-        // Fail loudly if the user doesn't exist or hasn't been linked to Supabase yet
-        if (!$user || !$user->supabase_uuid) {
-            throw new \Exception("Local User ID {$localUserId} does not have a mapped Supabase UUID.");
+        if (!$user || !$user->handshake_key) {
+            throw new \Exception("Local User ID {$localUserId} does not have a mapped Supabase profile via handshake_key.");
         }
-        
-        return $user->supabase_uuid; 
+
+        $supabaseUrl = config('services.supabase.url') ?? env('SUPABASE_URL');
+        $supabaseKey = config('services.supabase.service_key') ?? config('services.supabase.key') ?? env('SUPABASE_SERVICE_KEY');
+
+        if (empty($supabaseUrl) || empty($supabaseKey)) {
+            throw new \Exception('Supabase credentials are missing while resolving the inspector profile.');
+        }
+
+        $response = Http::withHeaders([
+            'apikey' => $supabaseKey,
+            'Authorization' => 'Bearer ' . $supabaseKey,
+            'Content-Type' => 'application/json',
+        ])->get("{$supabaseUrl}/rest/v1/profiles", [
+            'select' => 'id',
+            'handshake_key' => 'eq.' . $user->handshake_key,
+            'limit' => 1,
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception("Failed to resolve Supabase profile for local user {$localUserId}: " . $response->body());
+        }
+
+        $profile = $response->json()[0] ?? null;
+
+        if (!$profile || empty($profile['id'])) {
+            throw new \Exception("No Supabase profile found for local user {$localUserId}. Expected a profile where handshake_key = {$user->handshake_key}.");
+        }
+
+        return $profile['id'];
     }
 }

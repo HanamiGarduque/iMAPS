@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log; // For placeholder SMS logic
 use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
@@ -27,7 +28,7 @@ class TechnicalReviewController extends Controller
                 'zoning_applications.id',
                 'zoning_applications.reference_number',
                 'zoning_applications.application_type',
-                'zoning_applications.land_use_class',
+                'zoning_applications.target_land_use_class',
                 'zoning_applications.status',
                 'zoning_applications.applicant_name',
                 'zoning_applications.barangay',
@@ -36,13 +37,18 @@ class TechnicalReviewController extends Controller
             ->with(['parcels' => function ($q) {
                 $q->select(
                     'zoning_application_id',
+                    'location_address',
+                    'barangay',
+                    'owner_name',
                     'latitude',
                     'longitude',
                     'property_index_number',
                     'lot_number',
                     'tct_number',
                     'tax_dec_number',
-                    'lot_area_sqm'
+                    'lot_area_sqm',
+                    'arp_number'
+                    ,'survey_number'
                 );
             }])
             ->where('zoning_applications.status', 'Technical Review');
@@ -74,16 +80,22 @@ class TechnicalReviewController extends Controller
             $app->longitude = $mappedParcel ? $mappedParcel->longitude : null;
 
             $app->property_index_number = $firstParcel ? $firstParcel->property_index_number : null;
+            $app->location_address = $firstParcel ? $firstParcel->location_address : null;
+            $app->parcel_barangay = $firstParcel ? $firstParcel->barangay : null;
+            $app->owner_name = $firstParcel ? $firstParcel->owner_name : null;
             $app->lot_number = $firstParcel ? $firstParcel->lot_number : null;
             $app->tct_number = $firstParcel ? $firstParcel->tct_number : null;
             $app->tax_dec_number = $firstParcel ? $firstParcel->tax_dec_number : null;
             $app->lot_area_sqm = $firstParcel ? $firstParcel->lot_area_sqm : null;
+            $app->arp_number = $firstParcel ? $firstParcel->arp_number : null;
+            $app->survey_number = $firstParcel ? $firstParcel->survey_number : null;
 
             return $app;
         });
 
         // Fetch specifically Site Inspectors
         $inspectors = User::where('role', 'Site Inspector')
+            ->whereNotNull('handshake_key')
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
@@ -107,14 +119,35 @@ class TechnicalReviewController extends Controller
             'decision_reason'    => 'required_if:decision,Declined|nullable|string',
 
             // Validation for Site Inspection assignment
-            'inspector_id'       => 'required_if:decision,Needs Site Inspection|nullable|exists:users,id',
+            'inspector_id'       => [
+                'required_if:decision,Needs Site Inspection',
+                'nullable',
+                Rule::exists('users', 'id')->where(fn ($query) => $query
+                    ->where('role', 'Site Inspector')
+                    ->whereNotNull('handshake_key')),
+            ],
             'scheduled_date'     => 'required_if:decision,Needs Site Inspection|nullable|date|after_or_equal:today',
             'deadline_date'      => 'required_if:decision,Needs Site Inspection|nullable|date|after_or_equal:scheduled_date',
             'assigned_notes'     => 'nullable|string',
 
-            // Allow an optional parcel_id in case this is called for a single specific parcel
-            'parcel_id'          => 'nullable|exists:parcels,id',
+            'parcel_id'          => 'required_if:decision,Needs Site Inspection|nullable|exists:parcels,id',
+        ], [
+            'inspector_id.exists' => 'The selected inspector must be a Site Inspector with an active FieldSync account.',
         ]);
+
+        if ($validated['decision'] === 'Needs Site Inspection') {
+            $parcel = Parcel::whereKey($validated['parcel_id'])
+                ->where('zoning_application_id', $validated['id'])
+                ->first();
+
+            if (!$parcel) {
+                throw ValidationException::withMessages([
+                    'parcel_id' => 'The selected parcel does not belong to the specified application.',
+                ]);
+            }
+
+            $this->validateFieldSyncParcelCoordinates($parcel);
+        }
 
         DB::transaction(function () use ($validated) {
             // Eager load parcels so we can extract the parcel_id
@@ -239,13 +272,20 @@ class TechnicalReviewController extends Controller
             'reviews.*.decision'                 => 'required|string|in:Approved,Needs Site Inspection,Declined',
             'reviews.*.findings'                 => 'nullable|string',
             'reviews.*.decision_reason'          => 'nullable|string',
-            'reviews.*.inspector_id'             => 'nullable|exists:users,id',
+            'reviews.*.inspector_id'             => [
+                'nullable',
+                Rule::exists('users', 'id')->where(fn ($query) => $query
+                    ->where('role', 'Site Inspector')
+                    ->whereNotNull('handshake_key')),
+            ],
             'reviews.*.scheduled_date'           => 'nullable|date|after_or_equal:today',
             'reviews.*.deadline_date'            => 'nullable|date|after_or_equal:reviews.*.scheduled_date', 
             'reviews.*.assigned_notes'           => 'nullable|string',
+        ], [
+            'reviews.*.inspector_id.exists' => 'The selected inspector must be a Site Inspector with an active FieldSync account.',
         ]);
 
-        $application = ZoningApplication::with('parcels:id,zoning_application_id')
+        $application = ZoningApplication::with('parcels:id,zoning_application_id,latitude,longitude')
             ->findOrFail($validated['application_id']);
         $validParcelIds = $application->parcels->pluck('id')->all();
 
@@ -265,6 +305,13 @@ class TechnicalReviewController extends Controller
                 throw ValidationException::withMessages([
                     "reviews.$parcelId.inspector_id" => 'Inspector, scheduled date, and deadline are required when the decision is "Needs Site Inspection".',
                 ]);
+            }
+
+            if ($review['decision'] === 'Needs Site Inspection') {
+                $this->validateFieldSyncParcelCoordinates(
+                    $application->parcels->firstWhere('id', (int) $parcelId),
+                    "reviews.$parcelId.parcel_id"
+                );
             }
 
             if ($review['decision'] === 'Declined' && empty($review['decision_reason'])) {
@@ -369,20 +416,61 @@ class TechnicalReviewController extends Controller
     {
         $validated = $request->validate([
             'zoning_application_id' => 'required|exists:zoning_applications,id',
-            'inspector_id'          => 'required|exists:users,id',
+            'parcel_id'             => 'required|exists:parcels,id',
+            'inspector_id'          => [
+                'required',
+                Rule::exists('users', 'id')->where(fn ($query) => $query
+                    ->where('role', 'Site Inspector')
+                    ->whereNotNull('handshake_key')),
+            ],
             'scheduled_date'        => 'required|date|after_or_equal:today',
+            'deadline_date'         => 'required|date|after_or_equal:scheduled_date',
             'assigned_notes'        => 'nullable|string',
+        ], [
+            'inspector_id.exists' => 'The selected inspector must be a Site Inspector with an active FieldSync account.',
         ]);
 
-        SiteInspection::create([
+        $parcel = Parcel::whereKey($validated['parcel_id'])
+            ->where('zoning_application_id', $validated['zoning_application_id'])
+            ->first();
+
+        if (!$parcel) {
+            throw ValidationException::withMessages([
+                'parcel_id' => 'The selected parcel does not belong to the specified application.',
+            ]);
+        }
+
+        $this->validateFieldSyncParcelCoordinates($parcel);
+
+        $inspection = SiteInspection::create([
             'zoning_application_id' => $validated['zoning_application_id'],
+            'parcel_id'             => $validated['parcel_id'],
             'inspector_id'          => $validated['inspector_id'],
             'scheduled_date'        => $validated['scheduled_date'],
+            'deadline_date'         => $validated['deadline_date'],
             'assigned_notes'        => $validated['assigned_notes'] ?? null,
             'status'                => 'Pending',
         ]);
 
+        // Push the new inspection to Supabase so FieldSync can pick it up
+        PushInspectionToSupabase::dispatch($inspection);
+
         return redirect()->back()->with('success', 'Site Inspector assigned successfully.');
+    }
+
+    private function validateFieldSyncParcelCoordinates(?Parcel $parcel, string $errorKey = 'parcel_id'): void
+    {
+        if (
+            !$parcel
+            || is_null($parcel->latitude)
+            || is_null($parcel->longitude)
+            || !is_numeric($parcel->latitude)
+            || !is_numeric($parcel->longitude)
+        ) {
+            throw ValidationException::withMessages([
+                $errorKey => 'The selected parcel has no valid GPS target. Verify or select the parcel location before assigning a site inspection.',
+            ]);
+        }
     }
 
     /**
@@ -391,8 +479,8 @@ class TechnicalReviewController extends Controller
     public function getSupabaseInspectionData($localInspectionId)
     {
         // Ensure you have these defined in your .env file
-        $supabaseUrl = env('SUPABASE_URL'); // e.g., https://laapipjyprmmaylunxib.supabase.co
-        $supabaseKey = env('SUPABASE_SERVICE_ROLE_KEY'); // Use service role for backend operations
+        $supabaseUrl = config('services.supabase.url');
+        $supabaseKey = config('services.supabase.service_key'); // SUPABASE_SERVICE_KEY in .env
 
         if (!$supabaseUrl || !$supabaseKey) {
             return response()->json(['error' => 'Supabase credentials missing.'], 500);

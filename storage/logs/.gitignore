@@ -1,2 +1,8 @@
 *
 !.gitignore
+
+# Python Virtual Environments & Caches
+ml_service/venv/
+ml_service/__pycache__/
+ml_service/*.pyc
+.pytest_cache/

@@ -51,15 +51,14 @@ const LAND_USE_BADGES = {
     Residential: "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold",
     Commercial: "bg-amber-50 text-amber-800 border-amber-300 font-bold",
     Industrial: "bg-rose-50 text-rose-800 border-rose-300 font-bold",
-    "Agro-Industrial": "bg-purple-50 text-purple-800 border-purple-300 font-bold",
-    Agricultural: "bg-lime-50 text-lime-800 border-lime-300 font-bold",
+    "Agri-Industrial": "bg-purple-50 text-purple-800 border-purple-300 font-bold",
     Institutional: "bg-sky-50 text-sky-800 border-sky-300 font-bold",
-    "Special Use": "bg-indigo-50 text-indigo-800 border-indigo-300 font-bold",
+    Recreational: "bg-lime-50 text-lime-800 border-lime-300 font-bold",
 };
 
 const STATUSES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
-const APP_TYPES = ["Locational Clearance", "Zoning Certification", "Development Permit", "Special Land Use Permit"];
-const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agro-Industrial", "Agricultural", "Institutional", "Special Use"];
+const APP_TYPES = ["Locational Clearance", "Zoning Certification", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)"];
+const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"];
 const ROSARIO_BARANGAYS = [
     "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
     "Calantas", "Colongan", "Itlugan", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", "Macalamcam A", 
@@ -197,7 +196,7 @@ const SAMPLE_APPLICATIONS = [
         representative_name: "Clarissa Ramos",
         contact_number: "0919-445-6672",
         email: "cramos@greenpower.ph",
-        application_type: "Special Land Use Permit",
+        application_type: "Preliminary Approval and Locational Clearance (PALC)",
         purpose: "5MW ground-mounted solar utility substation installation",
         land_use_class: "Special Use",
         barangay: "Pinagsibaan",
@@ -297,7 +296,7 @@ const SAMPLE_APPLICATIONS = [
         representative_name: "Atty. Vincent Cruz",
         contact_number: "0920-881-2299",
         email: "legal@telecominfra.ph",
-        application_type: "Special Land Use Permit",
+        application_type: "Preliminary Approval and Locational Clearance (PALC)",
         purpose: "48-meter 5G cellular transceiver tower structure and shelter",
         land_use_class: "Special Use",
         barangay: "Calantas",

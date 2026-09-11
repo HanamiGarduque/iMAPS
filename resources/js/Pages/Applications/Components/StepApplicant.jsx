@@ -137,7 +137,49 @@ export default function StepApplicant({
                 </div>
             </div>
 
-            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200">
+            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 mt-3">
+                <Label>Corporation / Company (Optional)</Label>
+                <Input
+                    type="text"
+                    value={form.corporation_name || ""}
+                    onChange={set("corporation_name")}
+                    placeholder="Registered corporation / company name"
+                    className="bg-white mt-1"
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    <div>
+                        <Label>Corporation Contact (Optional)</Label>
+                        <div className="relative">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+63</span>
+                            <Input
+                                type="tel"
+                                value={form.corporation_contact || ""}
+                                onChange={(e) => {
+                                    let val = e.target.value.replace(/\D/g, "");
+                                    if (val.startsWith("0")) val = val.slice(1);
+                                    set("corporation_contact")({ target: { value: val } });
+                                }}
+                                maxLength={10}
+                                placeholder="9XXXXXXXXX"
+                                className="pl-12 font-mono"
+                                hasError={!!errors.corporation_contact}
+                            />
+                            {errors.corporation_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.corporation_contact}</p>}
+                        </div>
+                    </div>
+                    <div>
+                        <Label>Corporation Address (Optional)</Label>
+                        <Input
+                            type="text"
+                            value={form.corporation_address || ""}
+                            onChange={set("corporation_address")}
+                            placeholder="Registered office address"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 mt-3">
                 <Label>Authorized Representative (Optional)</Label>
                 <Input 
                     type="text" 
@@ -146,8 +188,41 @@ export default function StepApplicant({
                     placeholder="Full legal name of representative / architect / attorney" 
                     className="bg-white mt-1" 
                 />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                    <div>
+                        <Label>Representative Contact (Optional)</Label>
+                        <div className="relative">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+63</span>
+                            <Input
+                                type="tel"
+                                value={form.representative_contact || ""}
+                                onChange={(e) => {
+                                    let val = e.target.value.replace(/\D/g, "");
+                                    if (val.startsWith("0")) val = val.slice(1);
+                                    set("representative_contact")({ target: { value: val } });
+                                }}
+                                maxLength={10}
+                                placeholder="9XXXXXXXXX"
+                                className="pl-12 font-mono"
+                                hasError={!!errors.representative_contact}
+                            />
+                            {errors.representative_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.representative_contact}</p>}
+                        </div>
+                    </div>
+                    <div>
+                        <Label>Representative Address (Optional)</Label>
+                        <Input
+                            type="text"
+                            value={form.representative_address || ""}
+                            onChange={set("representative_address")}
+                            placeholder="Address of authorized representative"
+                        />
+                    </div>
+                </div>
                 <p className="text-xs text-slate-400 mt-1">Leave blank if the applicant is filing directly without an authorized representative.</p>
             </div>
+
+
         </div>
     );
 }

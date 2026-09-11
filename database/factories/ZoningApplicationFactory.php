@@ -30,7 +30,7 @@ class ZoningApplicationFactory extends Factory
     ];
 
     private const LAND_USE_CLASSES = [
-        'Residential', 'Commercial', 'Industrial', 'Agro-Industrial', 'Special Use',
+        'Residential', 'Commercial', 'Industrial', 'Agri-Industrial', 'Institutional', 'Recreational',
     ];
 
     // Rosario, Batangas center: 13.8410, 121.2062
@@ -81,8 +81,8 @@ class ZoningApplicationFactory extends Factory
             'assessment_fee'      => $this->faker->randomFloat(2, 500, 50000),
             'or_number'           => $this->faker->optional(0.5)->numerify('OR-#######'),
             'remarks'             => $this->faker->optional(0.4)->sentence(),
-            'encoded_by'          => User::inRandomOrder()->value('id'),
-            'land_use_class'      => $this->faker->randomElement(self::LAND_USE_CLASSES),
+            'encoded_by'              => User::inRandomOrder()->value('id'),
+            'target_land_use_class'   => $this->faker->randomElement(self::LAND_USE_CLASSES),
         ];
     }
 }
