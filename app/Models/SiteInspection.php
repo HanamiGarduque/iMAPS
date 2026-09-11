@@ -24,6 +24,10 @@ class SiteInspection extends Model
         'completed_at',
         'assigned_notes',
         'parcel_id',
+        'findings',
+        'recommendation',
+        'remarks',
+        'is_compliant',
     ];
 
     /**
