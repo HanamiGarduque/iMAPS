@@ -28,6 +28,17 @@ class SiteInspection extends Model
         'recommendation',
         'remarks',
         'is_compliant',
+        'submitted_at',
+        'inspection_result',
+        'observations',
+        'discrepancies',
+        'recommendations',
+        'inspector_notes',
+        'checklist_data',
+        'confirmed_latitude',
+        'confirmed_longitude',
+        'gps_accuracy_m',
+        'gps_confirmed_at',
     ];
 
     /**
@@ -36,9 +47,15 @@ class SiteInspection extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'scheduled_date' => 'date',
-        'deadline_date' => 'date',
-        'completed_at'   => 'datetime',
+        'scheduled_date'      => 'date',
+        'deadline_date'       => 'date',
+        'completed_at'        => 'datetime',
+        'submitted_at'        => 'datetime',
+        'checklist_data'      => 'array',
+        'confirmed_latitude'  => 'float',
+        'confirmed_longitude' => 'float',
+        'gps_accuracy_m'      => 'float',
+        'gps_confirmed_at'    => 'datetime',
     ];
 
     /**
