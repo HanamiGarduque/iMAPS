@@ -155,11 +155,37 @@ class PushInspectionToSupabase implements ShouldQueue
     {
         $user = \App\Models\User::find($localUserId);
 
-        // Fail loudly if the user doesn't exist or hasn't been linked to Supabase yet
         if (!$user || !$user->handshake_key) {
-            throw new \Exception("Local User ID {$localUserId} does not have a mapped Supabase UUID.");
+            throw new \Exception("Local User ID {$localUserId} does not have a mapped Supabase profile via handshake_key.");
         }
-        
-        return $user->handshake_key; 
+
+        $supabaseUrl = config('services.supabase.url') ?? env('SUPABASE_URL');
+        $supabaseKey = config('services.supabase.service_key') ?? config('services.supabase.key') ?? env('SUPABASE_SERVICE_KEY');
+
+        if (empty($supabaseUrl) || empty($supabaseKey)) {
+            throw new \Exception('Supabase credentials are missing while resolving the inspector profile.');
+        }
+
+        $response = Http::withHeaders([
+            'apikey' => $supabaseKey,
+            'Authorization' => 'Bearer ' . $supabaseKey,
+            'Content-Type' => 'application/json',
+        ])->get("{$supabaseUrl}/rest/v1/profiles", [
+            'select' => 'id',
+            'handshake_key' => 'eq.' . $user->handshake_key,
+            'limit' => 1,
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception("Failed to resolve Supabase profile for local user {$localUserId}: " . $response->body());
+        }
+
+        $profile = $response->json()[0] ?? null;
+
+        if (!$profile || empty($profile['id'])) {
+            throw new \Exception("No Supabase profile found for local user {$localUserId}. Expected a profile where handshake_key = {$user->handshake_key}.");
+        }
+
+        return $profile['id'];
     }
 }

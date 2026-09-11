@@ -684,7 +684,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                 e.preventDefault();
                 if (currentStep === 5) {
-                    handleSubmit(e);
+                    if (!submitting) handleSubmit(e);
                 } else {
                     handleNext();
                 }
@@ -1351,6 +1351,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const handleSubmit = (e) => {
+        if (submitting) return;
         if (e && e.preventDefault) e.preventDefault();
         if (!form.assessment_fee || Number(form.assessment_fee) < 0) {
             setErrors({ assessment_fee: "Assessment fee is required." });
@@ -1361,12 +1362,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         }
 
         setSubmitting(true);
-    
+
         const payload = {
             ...form,
-            draft_id: tempDraftId 
+            draft_id: tempDraftId,
         };
-        router.post("/applications/encode", form, {
+        router.post("/applications/encode", payload, {
             onSuccess: (page) => {
                 const ref = page.props.flash?.reference_number || `LC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(100 + Math.random() * 900)}`;
 

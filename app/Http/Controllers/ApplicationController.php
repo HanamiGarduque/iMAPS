@@ -415,12 +415,13 @@ class ApplicationController extends Controller
                     performedBy: Auth::id(),
                     note: 'Application automatically moved from Received to Technical Review upon encoding.'
                 );
-                if ($request->filled('draft_id')) {
+            }
+
+            if ($request->filled('draft_id')) {
                 DB::table('application_drafts')
                     ->where('temp_reference_number', $request->input('draft_id'))
                     ->where('user_id', Auth::id())
                     ->delete();
-            }
             }
 
             DB::commit();
