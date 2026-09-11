@@ -1,46 +1,106 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 
-export default function Index({ users, filters, auth }) {
+export default function Index({ users = { data: [], links: [] }, filters = {}, role_counts = {}, auth = {} }) {
     const [clock, setClock] = useState("");
-    const [search, setSearch] = useState(filters.search || "");
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [search, setSearch] = useState(filters.search || "");
+    const [statusFilter, setStatusFilter] = useState("all"); // 'all' | 'active' | 'inactive'
+    const [viewMode, setViewMode] = useState(() => {
+        if (typeof window !== "undefined") {
+            return localStorage.getItem("imaps_users_view") || "table";
+        }
+        return "table";
+    });
 
+    // Authenticated user
+    const currentUserId = auth?.user?.id;
+    const currentUserEmail = (auth?.user?.email || "").toLowerCase();
     const userName = auth?.user?.name || "Administrator";
     const userRole = auth?.user?.role || "Admin";
 
-    const [unlockedData, setUnlockedData] = useState({});
-    
+    // Modals
+    const [statsModalUser, setStatsModalUser] = useState(null);
     const [editingUser, setEditingUser] = useState(null);
-    const [isSaving, setIsSaving] = useState(false);
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
 
+    // Password Reset Modal
+    const [passwordResetUser, setPasswordResetUser] = useState(null);
+    const [newPasswordInput, setNewPasswordInput] = useState("");
+    const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
+    const [showResetPassword, setShowResetPassword] = useState(false);
+    const [passwordResetError, setPasswordResetError] = useState("");
+    const [isResettingPassword, setIsResettingPassword] = useState(false);
+
+    const handleSetViewMode = (mode) => {
+        setViewMode(mode);
+        if (typeof window !== "undefined") {
+            localStorage.setItem("imaps_users_view", mode);
+        }
+    };
+
+    // Live clock ticker
     useEffect(() => {
         const tick = () => {
             const now = new Date();
-            setClock(now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) + " · " + now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }));
+            setClock(
+                now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
+                " · " +
+                now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })
+            );
         };
         tick();
         const id = setInterval(tick, 1000);
         return () => clearInterval(id);
     }, []);
 
+    // Debounced search (300ms)
     useEffect(() => {
         const t = setTimeout(() => {
-            if (search !== filters.search) {
-                router.get("/users", { ...filters, search, page: 1 }, { preserveState: true, replace: true });
+            if (search !== (filters.search || "")) {
+                router.get(
+                    "/users",
+                    { ...filters, search: search || undefined, page: 1 },
+                    { preserveState: true, replace: true }
+                );
             }
-        }, 400);
+        }, 300);
         return () => clearTimeout(t);
     }, [search]);
-    
-    const applyFilter = (newFilters) => router.get("/users", { ...filters, ...newFilters, page: 1 }, { preserveState: true, replace: true });
-    
+
+    // Keyboard shortcut (Escape closes open modals)
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === "Escape") {
+                if (statsModalUser) setStatsModalUser(null);
+                if (editingUser) setEditingUser(null);
+                if (passwordResetUser) {
+                    setPasswordResetUser(null);
+                    setNewPasswordInput("");
+                    setConfirmPasswordInput("");
+                    setPasswordResetError("");
+                }
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [statsModalUser, editingUser, passwordResetUser]);
+
+    const applyFilter = (newFilters) => {
+        router.get(
+            "/users",
+            { ...filters, ...newFilters, page: 1 },
+            { preserveState: true, replace: true }
+        );
+    };
+
     const clearFilters = () => {
         setSearch("");
+        setStatusFilter("all");
         router.get("/users", {}, { preserveState: true, replace: true });
     };
 
@@ -54,12 +114,14 @@ export default function Index({ users, filters, auth }) {
             cancelButtonText: "Cancel",
             buttonsStyling: false,
             customClass: {
-                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
-                title: "text-lg font-bold text-slate-900",
+                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
+                title: "text-base font-bold text-slate-900",
                 htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-5",
-                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
-                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
+                actions: "flex items-center justify-center gap-3 mt-4",
+                confirmButton:
+                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
+                cancelButton:
+                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
             },
         }).then((result) => {
             if (result.isConfirmed) {
@@ -69,605 +131,1074 @@ export default function Index({ users, filters, auth }) {
         });
     };
 
-    const getInitials = (name) => name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    // Client-side status filtering on current page items
+    const displayedUsers = useMemo(() => {
+        if (!users?.data) return [];
+        return users.data.filter((u) => {
+            if (statusFilter === "active") return !!u.is_active;
+            if (statusFilter === "inactive") return !u.is_active;
+            return true;
+        });
+    }, [users?.data, statusFilter]);
 
-    // Horizontal View Stats Modal
-    const handleViewStats = (user) => {
-        let statsHtml = '';
-        if (user.role === 'Planning Officer') {
-            const stats = user.stats || {
-                total_fees: "₱0.00",
-                top_barangay: "N/A",
-                types: { locational: 0, development: 0, zoning: 0, special: 0 },
-                status: { released: 0, pending: 0, denied: 0 }
+    // Live counts for tabs (Uses persistent role_counts from backend, never collapses to 0)
+    const summaryStats = useMemo(() => {
+        if (role_counts && Object.keys(role_counts).length > 0) {
+            return {
+                total: role_counts.total ?? 0,
+                poCount: role_counts.po ?? 0,
+                inspectorCount: role_counts.inspector ?? 0,
+                adminCount: role_counts.admin ?? 0,
             };
-
-            statsHtml = `
-                <div class="flex flex-col md:flex-row gap-6 text-left">
-                    <!-- Left Column: User Summary -->
-                    <div class="w-full md:w-1/3 flex flex-col items-center justify-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-full h-16 bg-gradient-to-r from-emerald-500 to-teal-600"></div>
-                        <div class="w-20 h-20 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl font-black mb-3 border-4 border-white shadow-md relative z-10">
-                            ${getInitials(user.name)}
-                        </div>
-                        <h3 class="text-[17px] font-black text-slate-800 text-center leading-tight mb-1 relative z-10">${user.name}</h3>
-                        <span class="inline-flex px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold uppercase tracking-widest mb-6 relative z-10">Planning Officer</span>
-                        
-                        <div class="w-full border-t border-slate-100 pt-5 text-center mt-auto">
-                            <div class="text-4xl font-black text-slate-800">${user.encoded_applications_count || 0}</div>
-                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Total Encoded</div>
-                        </div>
-                    </div>
-
-                    <!-- Right Column: Metrics Grid -->
-                    <div class="w-full md:w-2/3 flex flex-col gap-4">
-                        <!-- Top Highlights -->
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
-                                    <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                    Financial Volume
-                                </div>
-                                <div class="text-xl font-black text-emerald-600 truncate">${stats.total_fees}</div>
-                            </div>
-                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
-                                    <svg class="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                    Top Barangay
-                                </div>
-                                <div class="text-xl font-black text-blue-600 truncate">${stats.top_barangay}</div>
-                            </div>
-                        </div>
-
-                        <!-- Breakdowns -->
-                        <div class="grid grid-cols-2 gap-4 flex-1">
-                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-100 pb-2">By App Type</div>
-                                <div class="flex flex-col gap-2.5 text-xs flex-1 justify-center">
-                                    <div class="flex justify-between items-center"><span class="text-slate-500 font-medium">Locational</span> <span class="font-black text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">${stats.types.locational}</span></div>
-                                    <div class="flex justify-between items-center"><span class="text-slate-500 font-medium">Development</span> <span class="font-black text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">${stats.types.development}</span></div>
-                                    <div class="flex justify-between items-center"><span class="text-slate-500 font-medium">Zoning Cert</span> <span class="font-black text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">${stats.types.zoning}</span></div>
-                                    <div class="flex justify-between items-center"><span class="text-slate-500 font-medium">Special Use</span> <span class="font-black text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">${stats.types.special}</span></div>
-                                </div>
-                            </div>
-                            
-                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-100 pb-2">Success Rate</div>
-                                <div class="flex flex-col gap-2 flex-1 justify-center">
-                                    <div class="flex items-center justify-between bg-emerald-50 text-emerald-700 rounded-lg p-2 border border-emerald-100">
-                                        <span class="text-[10px] font-bold uppercase tracking-wider">Released</span>
-                                        <span class="text-[15px] font-black">${stats.status.released}</span>
-                                    </div>
-                                    <div class="flex items-center justify-between bg-amber-50 text-amber-700 rounded-lg p-2 border border-amber-100">
-                                        <span class="text-[10px] font-bold uppercase tracking-wider">Pending</span>
-                                        <span class="text-[15px] font-black">${stats.status.pending}</span>
-                                    </div>
-                                    <div class="flex items-center justify-between bg-red-50 text-red-700 rounded-lg p-2 border border-red-100">
-                                        <span class="text-[10px] font-bold uppercase tracking-wider">Denied</span>
-                                        <span class="text-[15px] font-black">${stats.status.denied}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        } else if (user.role === 'Site Inspector') {
-            const stats = user.inspector_stats || {
-                total_caseload: 0, 
-                status: { pending: 0, in_progress: 0, completed: 0 },
-                initiative_rate: 0, compliance_rate: 0, rework_frequency: 0, 
-                avg_photos: 0, checklist_accuracy: 0
-            };
-
-            statsHtml = `
-                <div class="flex flex-col md:flex-row gap-6 text-left">
-                    <!-- Left Column: User Summary -->
-                    <div class="w-full md:w-1/3 flex flex-col items-center justify-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-full h-16 bg-gradient-to-r from-amber-500 to-orange-500"></div>
-                        <div class="w-20 h-20 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center text-3xl font-black mb-3 border-4 border-white shadow-md relative z-10">
-                            ${getInitials(user.name)}
-                        </div>
-                        <h3 class="text-[17px] font-black text-slate-800 text-center leading-tight mb-1 relative z-10">${user.name}</h3>
-                        <span class="inline-flex px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-bold uppercase tracking-widest mb-6 relative z-10">Site Inspector</span>
-                        
-                        <div class="w-full border-t border-slate-100 pt-5 text-center mt-auto">
-                            <div class="text-4xl font-black text-slate-800">${stats.total_caseload}</div>
-                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Total Caseload</div>
-                        </div>
-                    </div>
-
-                    <!-- Right Column: Metrics Grid -->
-                    <div class="w-full md:w-2/3 flex flex-col gap-4">
-                        <!-- Top Highlights -->
-                        <div class="grid grid-cols-3 gap-4">
-                            <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-center">
-                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Initiative Rate</div>
-                                <div class="text-lg font-black text-amber-600">${stats.initiative_rate}%</div>
-                            </div>
-                            <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-center">
-                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Compliance Rate</div>
-                                <div class="text-lg font-black text-emerald-600">${stats.compliance_rate}%</div>
-                            </div>
-                            <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-center">
-                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Checklist Acc.</div>
-                                <div class="text-lg font-black text-blue-600">${stats.checklist_accuracy}%</div>
-                            </div>
-                        </div>
-
-                        <!-- Breakdowns -->
-                        <div class="grid grid-cols-2 gap-4 flex-1">
-                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-100 pb-2">Status Breakdown</div>
-                                <div class="flex flex-col gap-2 flex-1 justify-center">
-                                    <div class="flex items-center justify-between bg-emerald-50 text-emerald-700 rounded-lg p-2 border border-emerald-100">
-                                        <span class="text-[10px] font-bold uppercase tracking-wider">Completed</span>
-                                        <span class="text-[15px] font-black">${stats.status.completed}</span>
-                                    </div>
-                                    <div class="flex items-center justify-between bg-blue-50 text-blue-700 rounded-lg p-2 border border-blue-100">
-                                        <span class="text-[10px] font-bold uppercase tracking-wider">In Progress</span>
-                                        <span class="text-[15px] font-black">${stats.status.in_progress}</span>
-                                    </div>
-                                    <div class="flex items-center justify-between bg-slate-50 text-slate-700 rounded-lg p-2 border border-slate-200">
-                                        <span class="text-[10px] font-bold uppercase tracking-wider">Pending</span>
-                                        <span class="text-[15px] font-black">${stats.status.pending}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col">
-                                <div class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-100 pb-2">Quality & Evidence</div>
-                                <div class="flex flex-col gap-3 text-xs flex-1 justify-center">
-                                    <div class="flex justify-between items-center"><span class="text-slate-500 font-medium">Avg Photos/Job</span> <span class="font-black text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">${stats.avg_photos}</span></div>
-                                    <div class="flex justify-between items-center"><span class="text-slate-500 font-medium">Reworks Required</span> <span class="font-black text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-100">${stats.rework_frequency}</span></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            // Ensure you update the width parameter in the Swal call below to '750px' for both roles[cite: 2].
-        } else {
-            statsHtml = `<div class="text-sm font-medium text-slate-500 italic text-center py-10 bg-white rounded-xl border border-slate-200 shadow-sm">— System Administrator —<br/>No specific field metrics tracked.</div>`;
         }
+        const rawList = users?.data || [];
+        const total = users?.total || rawList.length;
+        const poCount = rawList.filter((u) => u.role === "Planning Officer").length;
+        const inspectorCount = rawList.filter((u) => u.role === "Site Inspector").length;
+        const adminCount = rawList.filter((u) => u.role === "Admin").length;
 
-        Swal.fire({
-            html: `<div class="p-2 bg-slate-50/50 mt-4">${statsHtml}</div>`,
-            showConfirmButton: false,
-            showCloseButton: true,
-            customClass: { popup: 'rounded-2xl border border-slate-200' },
-            width: user.role === 'Planning Officer' ? '750px' : '600px'
-        });
+        return { total, poCount, inspectorCount, adminCount };
+    }, [users, role_counts]);
+
+    // Initials helper
+    const getInitials = (name) => {
+        if (!name) return "U";
+        const parts = name.trim().split(/\s+/);
+        if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     };
 
-    const handleRevealSecurity = async (userId, userName) => {
-        const { value: adminPassword, isConfirmed } = await Swal.fire({
-            title: `Authenticate`,
-            html: `
-                <p class="text-xs text-slate-500 mb-3">Enter your admin password to view <b>${userName}'s</b> secure data.</p>
-                <div class="relative w-full flex items-center">
-                    <input type="password" id="swal-password" class="swal2-input !m-0 !w-full !pr-10" placeholder="Admin Password" autocapitalize="off" autocorrect="off">
-                    <button type="button" id="toggle-password" class="absolute right-3 text-slate-400 hover:text-slate-600 focus:outline-none">
-                        <svg id="eye-icon" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                    </button>
-                </div>
-            `,
-            showCancelButton: true,
-            confirmButtonColor: '#1e3a8a',
-            confirmButtonText: 'Decrypt',
-            didOpen: () => {
-                const input = document.getElementById('swal-password');
-                const btn = document.getElementById('toggle-password');
-                const icon = document.getElementById('eye-icon');
-                
-                btn.addEventListener('click', () => {
-                    if (input.type === 'password') {
-                        input.type = 'text';
-                        icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />`;
-                    } else {
-                        input.type = 'password';
-                        icon.innerHTML = `<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />`;
-                    }
-                });
-            },
-            preConfirm: () => {
-                const password = document.getElementById('swal-password').value;
-                if (!password) Swal.showValidationMessage('Password is required');
-                return password;
-            }
-        });
-
-        if (isConfirmed && adminPassword) {
-            try {
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-                const response = await axios.post('/users/sensitive-data', {
-                    admin_password: adminPassword,
-                    target_user_id: userId
-                }, {
-                    headers: {
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-                
-                if (response.data.success) {
-                    setUnlockedData(prev => ({ ...prev, [userId]: response.data.supabase_uuid }));
-                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Data Decrypted', showConfirmButton: false, timer: 2000 });
-                } else {
-                    Swal.fire('Access Denied', response.data.message || 'Incorrect password.', 'error');
-                }
-            } catch (error) {
-                if (error.response) {
-                    Swal.fire(`Server Error (${error.response.status})`, error.response.data?.message || 'Server error', 'error');
-                } else {
-                    Swal.fire('Client Error', error.message, 'error');
-                }
-            }
+    // Date formatting
+    const formatDateOnly = (dateString) => {
+        if (!dateString) return "—";
+        try {
+            return new Date(dateString).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+            });
+        } catch {
+            return dateString;
         }
     };
 
-    const handleResetPassword = async (userId, userName) => {
-        const { value: formValues } = await Swal.fire({
-            title: 'Reset Password',
-            html: `
-                <p class="text-xs text-slate-500 mb-4">Set a new password for <b>${userName}</b>.</p>
-                <div class="relative w-full flex flex-col gap-3">
-                    <input type="password" id="new-password" class="swal2-input !m-0 !w-full" placeholder="New Password" autocapitalize="off" autocorrect="off">
-                    <input type="password" id="confirm-password" class="swal2-input !m-0 !w-full" placeholder="Confirm Password" autocapitalize="off" autocorrect="off">
-                </div>
-            `,
-            showCancelButton: true,
-            confirmButtonColor: '#ef4444',
-            confirmButtonText: 'Force Reset',
-            preConfirm: () => {
-                const p1 = document.getElementById('new-password').value;
-                const p2 = document.getElementById('confirm-password').value;
-                if (!p1 || !p2) Swal.showValidationMessage('Both fields are required');
-                if (p1 !== p2) Swal.showValidationMessage('Passwords do not match');
-                if (p1.length < 8) Swal.showValidationMessage('Password must be at least 8 characters');
-                return p1;
-            }
-        });
+    const formatRelativeOrDate = (dateString) => {
+        if (!dateString) return "Never";
+        try {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffDays = Math.floor(diffHours / 24);
 
-        if (formValues) {
-            try {
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-                const response = await axios.post('/users/reset-password', {
-                    target_user_id: userId,
-                    new_password: formValues
-                }, {
-                    headers: {
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
-                
-                if (response.data.success) {
-                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Password Reset Successfully', showConfirmButton: false, timer: 2000 });
-                }
-            } catch (error) {
-                const errorMsg = error.response?.data?.message || 'Server connection failed.';
-                Swal.fire('Error', errorMsg, 'error');
-            }
+            if (diffHours < 1) return "Just now";
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays === 1) return "Yesterday";
+            if (diffDays < 7) return `${diffDays}d ago`;
+
+            return date.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+            });
+        } catch {
+            return dateString;
         }
     };
 
+    // Role badge configuration matching the exact design
+    const getRoleBadge = (role) => {
+        switch (role) {
+            case "Admin":
+                return {
+                    label: "System Admin",
+                    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+                    avatarBg: "bg-slate-100 text-slate-700 border-slate-200",
+                };
+            case "Planning Officer":
+                return {
+                    label: "Planning Officer",
+                    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+                    avatarBg: "bg-slate-100 text-slate-700 border-slate-200",
+                };
+            case "Site Inspector":
+                return {
+                    label: "Site Inspector",
+                    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+                    avatarBg: "bg-slate-100 text-slate-700 border-slate-200",
+                };
+            default:
+                return {
+                    label: role || "Staff",
+                    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
+                    avatarBg: "bg-slate-100 text-slate-700 border-slate-200",
+                };
+        }
+    };
+
+    // Submit Edit User Profile
     const submitEditProfile = async (e) => {
         e.preventDefault();
-        setIsSaving(true);
+        if (!editingUser) return;
+        setIsSavingProfile(true);
+
         try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            const response = await axios.post(`/users/${editingUser.id}/update`, editingUser, {
-                headers: {
-                    'X-CSRF-TOKEN': csrfToken,
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+            const response = await axios.post(
+                `/users/${editingUser.id}/update`,
+                {
+                    name: editingUser.name,
+                    email: editingUser.email,
+                    is_active: editingUser.is_active,
+                },
+                {
+                    headers: {
+                        "X-CSRF-TOKEN": csrfToken,
+                        Accept: "application/json",
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
                 }
-            });
-            
+            );
+
             if (response.data.success) {
-                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Profile Updated', showConfirmButton: false, timer: 2000 });
+                Swal.fire({
+                    toast: true,
+                    position: "top-end",
+                    icon: "success",
+                    title: "User Profile Updated",
+                    showConfirmButton: false,
+                    timer: 2000,
+                });
                 setEditingUser(null);
-                router.reload({ only: ['users'] });
+                router.reload({ only: ["users"] });
             }
         } catch (error) {
-            const errorMsg = error.response?.data?.message || 'Server connection failed.';
-            Swal.fire('Error', errorMsg, 'error');
+            const errorMsg = error.response?.data?.message || "Failed to update profile. Check form inputs.";
+            Swal.fire({
+                icon: "error",
+                title: "Update Failed",
+                text: errorMsg,
+                customClass: {
+                    popup: "rounded-2xl border border-slate-200 shadow-xl",
+                    confirmButton: "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-semibold",
+                },
+            });
         } finally {
-            setIsSaving(false);
+            setIsSavingProfile(false);
         }
     };
 
-    const formatDateOnly = (dateString) => {
-        if (!dateString) return "Unknown";
-        return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    };
+    // Submit Force Password Reset
+    const submitForcePasswordReset = async (e) => {
+        e.preventDefault();
+        if (!passwordResetUser) return;
 
-    const formatDate = (dateString) => {
-        if (!dateString) return "Never logged in";
-        const d = new Date(dateString);
-        return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) + " " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    };
+        if (!newPasswordInput || !confirmPasswordInput) {
+            setPasswordResetError("Both password fields are required.");
+            return;
+        }
 
-    const getRoleTheme = (role) => {
-        switch(role) {
-            case 'Admin': return { bg: 'bg-gradient-to-r from-blue-600 to-indigo-700', text: 'text-blue-700', border: 'border-blue-200', iconBg: 'bg-blue-50' };
-            case 'Planning Officer': return { bg: 'bg-gradient-to-r from-emerald-500 to-teal-600', text: 'text-emerald-700', border: 'border-emerald-200', iconBg: 'bg-emerald-50' };
-            case 'Site Inspector': return { bg: 'bg-gradient-to-r from-amber-500 to-orange-500', text: 'text-amber-700', border: 'border-amber-200', iconBg: 'bg-amber-50' };
-            default: return { bg: 'bg-gradient-to-r from-slate-500 to-slate-700', text: 'text-slate-700', border: 'border-slate-200', iconBg: 'bg-slate-50' };
+        if (newPasswordInput.length < 8) {
+            setPasswordResetError("Password must contain at least 8 characters.");
+            return;
+        }
+
+        if (newPasswordInput !== confirmPasswordInput) {
+            setPasswordResetError("Passwords do not match.");
+            return;
+        }
+
+        setIsResettingPassword(true);
+        setPasswordResetError("");
+
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+            const response = await axios.post(
+                "/users/reset-password",
+                {
+                    target_user_id: passwordResetUser.id,
+                    new_password: newPasswordInput,
+                },
+                {
+                    headers: {
+                        "X-CSRF-TOKEN": csrfToken,
+                        Accept: "application/json",
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                }
+            );
+
+            if (response.data.success) {
+                Swal.fire({
+                    toast: true,
+                    position: "top-end",
+                    icon: "success",
+                    title: "Password Reset Successfully",
+                    showConfirmButton: false,
+                    timer: 2200,
+                });
+                setPasswordResetUser(null);
+                setNewPasswordInput("");
+                setConfirmPasswordInput("");
+            }
+        } catch (error) {
+            const msg = error.response?.data?.message || "Password reset failed. Please verify credentials.";
+            setPasswordResetError(msg);
+        } finally {
+            setIsResettingPassword(false);
         }
     };
 
     return (
         <>
             <Head title="User Management | iMAPS" />
+
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500;700&display=swap');
-                #dashboard-root, #dashboard-root :not(.font-mono) { font-family: 'Poppins', sans-serif !important; }
-                #dashboard-root .font-mono, #dashboard-root .font-mono * { font-family: 'DM Mono', monospace !important; }
+                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+                
+                #users-page-root {
+                    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                }
+                .font-mono {
+                    font-family: 'JetBrains Mono', monospace !important;
+                }
+
                 ::-webkit-scrollbar { width: 6px; height: 6px; }
                 ::-webkit-scrollbar-track { background: transparent; }
-                ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-                .form-enter { animation: formFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-                @keyframes formFadeIn { 0% { opacity: 0; transform: translateY(5px); } 100% { opacity: 1; transform: translateY(0); } }
+                ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+                ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
             `}</style>
 
-            <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
-                <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+            <div id="users-page-root" className="bg-slate-50/75 text-slate-800 h-screen flex flex-col overflow-hidden antialiased">
+                <Header
+                    userName={userName}
+                    userRole={userRole}
+                    clock={clock}
+                    onLogout={handleLogout}
+                    sidebarOpen={sidebarOpen}
+                    setSidebarOpen={setSidebarOpen}
+                    activePage="users"
+                />
 
-                <div className="flex flex-1 h-full overflow-hidden relative">
-                    <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="users" />
+                <div className="flex-1 overflow-hidden relative flex flex-col min-w-0">
+                    <Sidebar
+                        userName={userName}
+                        userRole={userRole}
+                        sidebarOpen={sidebarOpen}
+                        setSidebarOpen={setSidebarOpen}
+                        onLogout={handleLogout}
+                        activePage="users"
+                    />
 
-                    <main className="flex-1 w-full h-full flex flex-col bg-[#f8fafc]">
-                        <div className="p-4 md:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1400px] mx-auto w-full">
-                           
-                            <div className="mb-4 flex-shrink-0 flex items-center justify-between gap-4 form-enter">
+                    {sidebarOpen && (
+                        <div
+                            onClick={() => setSidebarOpen(false)}
+                            className="absolute inset-0 bg-slate-900/20 backdrop-blur-xs z-[750] transition-opacity duration-200"
+                        />
+                    )}
+
+                    <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
+                        <div className="p-6 sm:p-8 flex-1 flex flex-col h-full overflow-y-auto max-w-6xl mx-auto w-full gap-5">
+
+                            {/* ── HEADER SECTION ── */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 shrink-0">
                                 <div>
-                                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                        <span className="text-slate-800">Security</span>
-                                        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                                        <span className="text-slate-500">Access Control</span>
-                                    </div>
-                                    <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none">User Management</h2>
+                                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                                        User Management
+                                    </h1>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Manage municipal planning staff, site inspectors, and system administrators.
+                                    </p>
                                 </div>
-                                
-                                <Link 
-                                    href="/register-new-account" 
-                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-[10px] bg-slate-900 hover:bg-slate-800 text-white text-[12px] font-bold shadow-sm transition-all active:scale-95"
-                                >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
-                                    Register New Account
-                                </Link>
+
+                                <div className="flex items-center gap-2.5">
+                                    <Link
+                                        href="/register-new-account"
+                                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-98 cursor-pointer"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                        </svg>
+                                        <span>Register New Account</span>
+                                    </Link>
+                                </div>
                             </div>
 
-                            <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-[0_2px_10px_rgb(0,0,0,0.02)] mb-4 flex-shrink-0 form-enter flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-                                <div className="flex items-center gap-3 flex-wrap">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 bg-slate-50 px-2 py-1 rounded">Role</span>
-                                        {["", "Admin", "Planning Officer", "Site Inspector"].map((r) => (
+                            {/* ── ROLE TABS & FILTERS BAR (EXACT ORIGINAL DESIGN) ── */}
+                            <div className="border-b border-slate-200/80 pb-0.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
+                                <nav className="-mb-px flex space-x-6 sm:space-x-8 overflow-x-auto" aria-label="Staff Roles">
+                                    {[
+                                        { id: "", label: "All Staff", count: summaryStats.total },
+                                        { id: "Planning Officer", label: "Planning Officers", count: summaryStats.poCount },
+                                        { id: "Site Inspector", label: "Site Inspectors", count: summaryStats.inspectorCount },
+                                        { id: "Admin", label: "Administrators", count: summaryStats.adminCount },
+                                    ].map((tab) => {
+                                        const isSelected = (filters.role || "") === tab.id;
+                                        return (
                                             <button
-                                                key={r || "all"}
-                                                onClick={() => applyFilter({ role: r })}
-                                                className={`text-[11px] font-bold px-3 py-1.5 rounded-[8px] transition-all border ${
-                                                    (filters.role || "") === r
-                                                        ? "bg-blue-50 border-blue-200 text-blue-700 shadow-sm"
-                                                        : "bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50"
-                                                }`}
+                                                key={tab.id || "all"}
+                                                type="button"
+                                                onClick={() => applyFilter({ role: tab.id })}
+                                                className={`py-3 px-1 border-b-2 text-xs font-medium transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${isSelected
+                                                    ? "border-blue-600 text-blue-600 font-semibold"
+                                                    : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+                                                    }`}
                                             >
-                                                {r || "All Staff"}
+                                                <span>{tab.label}</span>
+                                                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold transition-colors ${isSelected
+                                                    ? "bg-blue-100 text-blue-700"
+                                                    : "bg-slate-100 text-slate-500"
+                                                    }`}>
+                                                    {tab.count}
+                                                </span>
                                             </button>
-                                        ))}
-                                    </div>
-                                    {(filters.search || filters.role) && (
-                                        <button onClick={clearFilters} className="text-[10px] font-bold uppercase tracking-widest text-red-500 hover:text-red-700 flex items-center gap-1 ml-2">
-                                            Reset
-                                        </button>
-                                    )}
-                                </div>
+                                        );
+                                    })}
+                                </nav>
 
-                                <div className="relative w-full lg:w-[280px]">
-                                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                    <input
-                                        type="text"
-                                        value={search}
-                                        onChange={(e) => setSearch(e.target.value)}
-                                        placeholder="Search name or email..."
-                                        className="w-full rounded-[10px] border border-slate-200 bg-slate-50 pl-9 pr-3 py-2 text-[12px] font-medium text-slate-800 transition-all focus:bg-white focus:outline-none focus:border-blue-500"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex-1 overflow-auto form-enter pr-2">
-                                {users.data.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center p-8 mt-10">
-                                        <p className="text-[12px] font-medium text-slate-500">No users match your criteria.</p>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-10">
-                                        {users.data.map((u) => {
-                                            const theme = getRoleTheme(u.role);
-                                            
+                                {/* Quick Search & Controls */}
+                                <div className="flex items-center gap-2.5 pb-2 md:pb-0">
+                                    {/* Status Switch */}
+                                    <div className="inline-flex items-center rounded-lg border border-slate-200/90 p-0.5 bg-white shadow-2xs">
+                                        {[
+                                            { label: "All", val: "all" },
+                                            { label: "Active", val: "active" },
+                                            { label: "Suspended", val: "inactive" },
+                                        ].map((s) => {
+                                            const active = statusFilter === s.val;
                                             return (
-                                                <div key={u.id} className={`bg-white rounded-[20px] border-2 shadow-sm flex flex-col overflow-hidden hover:shadow-md transition-all duration-300 relative group min-h-[380px] ${!u.is_active ? 'border-red-200' : 'border-slate-200/60 hover:border-slate-300'}`}>
-                                                    
-                                                    {/* Card Holo / Banner */}
-                                                    <div className={`h-24 w-full ${!u.is_active ? 'bg-red-500' : theme.bg} relative`}>
-                                                        {!u.is_active && (
-                                                            <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm text-red-600 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm">
-                                                                Blocked
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Avatar overlapping banner */}
-                                                    <div className="relative -mt-12 flex justify-center z-10 mb-2">
-                                                        <div className={`w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black shadow-md border-4 border-white ${u.is_active ? `${theme.iconBg} ${theme.text}` : 'bg-red-50 text-red-400'}`}>
-                                                            {getInitials(u.name)}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Card Body */}
-                                                    <div className="px-5 flex-1 flex flex-col">
-                                                        <div className="text-center mb-4">
-                                                            <h3 className={`text-[18px] font-black leading-tight mb-0.5 transition-colors ${!u.is_active ? 'text-red-700' : 'text-slate-800 group-hover:text-blue-600'}`}>{u.name}</h3>
-                                                            <p className="text-[11px] font-mono text-slate-500 truncate mb-2">{u.email}</p>
-                                                            <span className={`inline-flex px-3 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-widest ${!u.is_active ? 'border-red-200 bg-red-50 text-red-700' : `${theme.border} ${theme.iconBg} ${theme.text}`}`}>
-                                                                {u.role}
-                                                            </span>
-                                                        </div>
-
-                                                        {/* Metadata */}
-                                                        <div className="grid grid-cols-2 gap-2 mb-4 px-1 mt-auto">
-                                                            <div>
-                                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Joined</div>
-                                                                <div className="text-[10px] font-medium text-slate-700">{formatDateOnly(u.created_at)}</div>
-                                                            </div>
-                                                            <div className="text-right">
-                                                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Last Login</div>
-                                                                <div className="text-[10px] font-medium text-slate-700">{formatDate(u.last_login)}</div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Footer Actions */}
-                                                    <div className="p-3 border-t border-slate-100 bg-slate-50 flex gap-2 shrink-0">
-                                                        <button 
-                                                            onClick={() => setEditingUser({ ...u })}
-                                                            className="flex-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-bold py-2 rounded-xl transition-colors shadow-sm"
-                                                        >
-                                                            Edit Profile
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleViewStats(u)}
-                                                            className="flex-1 bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-200 text-blue-600 text-[11px] font-bold py-2 rounded-xl transition-colors shadow-sm"
-                                                        >
-                                                            View Stats
-                                                        </button>
-                                                    </div>
-                                                </div>
+                                                <button
+                                                    key={s.val}
+                                                    type="button"
+                                                    onClick={() => setStatusFilter(s.val)}
+                                                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer ${active
+                                                        ? "bg-slate-100 text-slate-800 font-semibold"
+                                                        : "text-slate-500 hover:text-slate-800"
+                                                        }`}
+                                                >
+                                                    {s.label}
+                                                </button>
                                             );
                                         })}
                                     </div>
-                                )}
+
+                                    {/* Search Input */}
+                                    <div className="relative w-48 sm:w-56">
+                                        <svg
+                                            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                                        </svg>
+                                        <input
+                                            type="text"
+                                            value={search}
+                                            onChange={(e) => setSearch(e.target.value)}
+                                            placeholder="Search name or email..."
+                                            className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-7 py-1 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-2xs transition-all"
+                                        />
+                                        {search && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSearch("")}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* View Mode Toggle */}
+                                    <div className="inline-flex items-center rounded-lg border border-slate-200/90 p-0.5 bg-white shadow-2xs">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSetViewMode("table")}
+                                            title="Table View"
+                                            className={`p-1 rounded-md transition-all cursor-pointer ${viewMode === "table"
+                                                ? "bg-slate-100 text-slate-900 font-semibold"
+                                                : "text-slate-400 hover:text-slate-700"
+                                                }`}
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSetViewMode("grid")}
+                                            title="Grid View"
+                                            className={`p-1 rounded-md transition-all cursor-pointer ${viewMode === "grid"
+                                                ? "bg-slate-100 text-slate-900 font-semibold"
+                                                : "text-slate-400 hover:text-slate-700"
+                                                }`}
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
+
+                            {/* ── TABLE OR DIRECTORY CARDS ── */}
+                            {displayedUsers.length === 0 ? (
+                                <div className="bg-white rounded-xl border border-slate-200/90 p-12 text-center shadow-xs">
+                                    <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-sm font-semibold text-slate-800">No staff found</h3>
+                                    <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                                        No accounts match your active search or filter.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={clearFilters}
+                                        className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 shadow-2xs transition-colors cursor-pointer"
+                                    >
+                                        Clear Filters
+                                    </button>
+                                </div>
+                            ) : viewMode === "table" ? (
+                                /* ── SCROLLABLE HIGH-DENSITY ENTERPRISE TABLE ── */
+                                <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
+                                    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200/80 shadow-2xs">
+                                                <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                                    <th className="py-3 px-5">Name</th>
+                                                    <th className="py-3 px-4">Role</th>
+                                                    <th className="py-3 px-4">Status</th>
+                                                    <th className="py-3 px-4">Last Active</th>
+                                                    <th className="py-3 px-5 text-right">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 text-xs">
+                                                {displayedUsers.map((u) => {
+                                                    const roleInfo = getRoleBadge(u.role);
+                                                    const isSelf = currentUserId === u.id || (currentUserEmail && currentUserEmail === (u.email || "").toLowerCase());
+                                                    const isOfficer = u.role === "Planning Officer";
+                                                    const isInspector = u.role === "Site Inspector";
+
+                                                    return (
+                                                        <tr
+                                                            key={u.id}
+                                                            className={`hover:bg-slate-50/70 transition-colors ${!u.is_active ? "bg-rose-50/15" : ""
+                                                                }`}
+                                                        >
+                                                            {/* User Column */}
+                                                            <td className="py-3.5 px-5">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div
+                                                                        className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-xs border shrink-0 ${roleInfo.avatarBg}`}
+                                                                    >
+                                                                        {getInitials(u.name)}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="font-semibold text-slate-900 truncate">
+                                                                                {u.name}
+                                                                            </span>
+                                                                            {isSelf && (
+                                                                                <span className="inline-flex px-1.5 py-0.2 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                                                                    You
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="text-slate-400 text-[11px] truncate font-mono">
+                                                                            {u.email}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+
+                                                            {/* Role Column */}
+                                                            <td className="py-3.5 px-4 whitespace-nowrap">
+                                                                <span
+                                                                    className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${roleInfo.badgeClass}`}
+                                                                >
+                                                                    {roleInfo.label}
+                                                                </span>
+                                                            </td>
+
+                                                            {/* Status Column */}
+                                                            <td className="py-3.5 px-4 whitespace-nowrap">
+                                                                {u.is_active ? (
+                                                                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                                        Active
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1.5 text-xs text-rose-600 font-medium">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                                                        Suspended
+                                                                    </span>
+                                                                )}
+                                                            </td>
+
+                                                            {/* Last Active Column */}
+                                                            <td className="py-3.5 px-4 whitespace-nowrap">
+                                                                <div className="text-slate-700 text-xs">
+                                                                    {formatRelativeOrDate(u.last_login)}
+                                                                </div>
+                                                                <div className="text-slate-400 text-[10px]">
+                                                                    Joined {formatDateOnly(u.created_at)}
+                                                                </div>
+                                                            </td>
+
+                                                            {/* Actions Column */}
+                                                            <td className="py-3.5 px-5 text-right whitespace-nowrap">
+                                                                <div className="flex items-center justify-end gap-1.5">
+                                                                    {(isOfficer || isInspector) && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setStatsModalUser(u)}
+                                                                            title="View Metrics"
+                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-200/80 hover:border-blue-200 shadow-2xs transition-colors cursor-pointer"
+                                                                        >
+                                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    )}
+
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setEditingUser({ ...u })}
+                                                                        title="Edit Profile"
+                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 border border-slate-200/80 hover:border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                                                                    >
+                                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H8.25A2.25 2.25 0 016 18.75V14" />
+                                                                        </svg>
+                                                                    </button>
+
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setPasswordResetUser(u);
+                                                                            setNewPasswordInput("");
+                                                                            setConfirmPasswordInput("");
+                                                                            setPasswordResetError("");
+                                                                        }}
+                                                                        title="Reset Password"
+                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200/80 hover:border-rose-200 shadow-2xs transition-colors cursor-pointer"
+                                                                    >
+                                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                                                                        </svg>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* ── DIRECTORY GRID VIEW ── */
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-6">
+                                    {displayedUsers.map((u) => {
+                                        const roleInfo = getRoleBadge(u.role);
+                                        const isSelf = currentUserId === u.id || (currentUserEmail && currentUserEmail === (u.email || "").toLowerCase());
+                                        const isOfficer = u.role === "Planning Officer";
+                                        const isInspector = u.role === "Site Inspector";
+
+                                        return (
+                                            <div
+                                                key={u.id}
+                                                className={`bg-white rounded-xl border p-5 transition-all shadow-xs hover:border-slate-300 flex flex-col justify-between ${!u.is_active ? "border-rose-200 bg-rose-50/10" : "border-slate-200/90"
+                                                    }`}
+                                            >
+                                                <div>
+                                                    <div className="flex items-center justify-between gap-2 mb-3">
+                                                        <span
+                                                            className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${roleInfo.badgeClass}`}
+                                                        >
+                                                            {roleInfo.label}
+                                                        </span>
+
+                                                        <div className="flex items-center gap-1.5">
+                                                            {isSelf && (
+                                                                <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                                                    You
+                                                                </span>
+                                                            )}
+                                                            {u.is_active ? (
+                                                                <span className="inline-flex items-center gap-1 text-[11px] text-slate-600">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                                    Active
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 text-[11px] text-rose-600 font-medium">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                                                    Suspended
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-start gap-3 mb-3">
+                                                        <div
+                                                            className={`w-9 h-9 rounded-full flex items-center justify-center font-semibold text-xs border shrink-0 ${roleInfo.avatarBg}`}
+                                                        >
+                                                            {getInitials(u.name)}
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <h3 className="text-sm font-semibold text-slate-900 truncate">
+                                                                {u.name}
+                                                            </h3>
+                                                            <p className="text-xs text-slate-400 truncate font-mono mt-0.5">
+                                                                {u.email}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                                                    <span className="text-[11px] text-slate-400">
+                                                        {formatRelativeOrDate(u.last_login)}
+                                                    </span>
+
+                                                    <div className="flex items-center gap-1.5">
+                                                        {(isOfficer || isInspector) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setStatsModalUser(u)}
+                                                                title="View Metrics"
+                                                                className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-200/80 hover:border-blue-200 shadow-2xs transition-colors cursor-pointer"
+                                                            >
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                                                                </svg>
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setEditingUser({ ...u })}
+                                                            title="Edit Profile"
+                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 border border-slate-200/80 hover:border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H8.25A2.25 2.25 0 016 18.75V14" />
+                                                            </svg>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setPasswordResetUser(u);
+                                                                setNewPasswordInput("");
+                                                                setConfirmPasswordInput("");
+                                                                setPasswordResetError("");
+                                                            }}
+                                                            title="Reset Password"
+                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200/80 hover:border-rose-200 shadow-2xs transition-colors cursor-pointer"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {/* ── PAGINATION CONTROLS ── */}
+                            {users?.last_page > 1 && (
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-200/80 pb-4">
+                                    <p className="text-xs text-slate-500">
+                                        Showing <span className="font-semibold text-slate-800">{users.from || 1}</span> to{" "}
+                                        <span className="font-semibold text-slate-800">{users.to || displayedUsers.length}</span> of{" "}
+                                        <span className="font-semibold text-slate-800">{users.total}</span> accounts
+                                    </p>
+
+                                    <div className="flex items-center gap-1">
+                                        {users.links.map((link, i) => (
+                                            <button
+                                                key={i}
+                                                disabled={!link.url || link.active}
+                                                onClick={() => link.url && router.get(link.url, {}, { preserveState: true })}
+                                                className={`inline-flex items-center justify-center min-w-[32px] h-8 px-2 rounded-lg text-xs font-medium border transition-all cursor-pointer ${link.active
+                                                    ? "bg-blue-600 border-blue-600 text-white font-semibold shadow-2xs"
+                                                    : !link.url
+                                                        ? "opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400"
+                                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                                    }`}
+                                                dangerouslySetInnerHTML={{ __html: link.label }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </main>
-                </div>
-            </div>
+                </div >
+            </div >
 
-            {/* Edit Profile Modal */}
-            {editingUser && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white rounded-xl w-full max-w-md flex flex-col shadow-2xl relative overflow-hidden">
-                        
-                        <div className="flex justify-between items-center p-6 border-b border-slate-100">
-                            <div>
-                                <h2 className="text-xl font-bold text-slate-900">Edit User Profile</h2>
-                                <p className="text-xs text-slate-500 mt-1">Modify account details and access level.</p>
-                            </div>
-                            <button onClick={() => setEditingUser(null)} className="text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 p-1.5 rounded-md transition-colors">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-
-                        <form onSubmit={submitEditProfile} className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Full Name</label>
-                                <input 
-                                    type="text" 
-                                    value={editingUser.name}
-                                    onChange={(e) => setEditingUser({...editingUser, name: e.target.value})}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none"
-                                    required
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Email Address</label>
-                                <input 
-                                    type="email" 
-                                    value={editingUser.email}
-                                    onChange={(e) => setEditingUser({...editingUser, email: e.target.value})}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none"
-                                    required
-                                />
-                            </div>
-
-
-                            {!editingUser.is_active && (
-                                <div className="flex items-start gap-3 mt-1 bg-red-50 p-4 rounded-xl border border-red-100">
-                                    <div className="flex items-center h-5">
-                                        <input 
-                                            id="unblock-checkbox"
-                                            type="checkbox"
-                                            checked={editingUser.is_active}
-                                            onChange={(e) => setEditingUser({...editingUser, is_active: e.target.checked})}
-                                            className="w-4 h-4 text-blue-600 bg-white border-red-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
-                                        />
+            {/* ── MODAL 1: OFFICER & INSPECTOR METRICS ── */}
+            {
+                statsModalUser && (
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
+                    >
+                        <div className="bg-white rounded-2xl w-full max-w-xl flex flex-col shadow-xl border border-slate-200 overflow-hidden font-sans">
+                            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
+                                <div className="flex items-center gap-3">
+                                    <div
+                                        className={`w-9 h-9 rounded-full flex items-center justify-center font-semibold text-xs border ${getRoleBadge(statsModalUser.role).avatarBg
+                                            }`}
+                                    >
+                                        {getInitials(statsModalUser.name)}
                                     </div>
-                                    <div className="flex flex-col">
-                                        <label htmlFor="unblock-checkbox" className="text-sm font-bold text-red-700 cursor-pointer">
-                                            Unblock Account
-                                        </label>
-                                        <p className="text-xs text-red-500/80 mt-0.5">Check this box to restore system access.</p>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="text-sm font-bold text-slate-900">
+                                                {statsModalUser.name}
+                                            </h2>
+                                            <span className="text-[10px] px-2 py-0.5 rounded border border-slate-200 bg-white font-medium text-slate-600">
+                                                {statsModalUser.role}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-slate-400 font-mono mt-0.5">
+                                            {statsModalUser.email}
+                                        </p>
                                     </div>
                                 </div>
-                            )}
 
-                            {editingUser.is_active && (
-                                <div className="flex items-start gap-3 mt-1 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                    <div className="flex items-center h-5">
-                                        <input 
-                                            id="block-checkbox"
-                                            type="checkbox"
-                                            checked={!editingUser.is_active}
-                                            onChange={(e) => setEditingUser({...editingUser, is_active: !e.target.checked})}
-                                            className="w-4 h-4 text-red-600 bg-white border-slate-300 rounded focus:ring-red-500 focus:ring-2 cursor-pointer"
-                                        />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <label htmlFor="block-checkbox" className="text-sm font-bold text-slate-700 cursor-pointer">
-                                            Manually Block Account
-                                        </label>
-                                        <p className="text-xs text-slate-500 mt-0.5">Check this box to immediately revoke access.</p>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="flex justify-between items-center pt-4 mt-2 border-t border-slate-100">
-                                <button 
-                                    type="button" 
-                                    onClick={() => handleResetPassword(editingUser.id, editingUser.name)}
-                                    className="px-4 py-2 text-[11px] font-bold text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200 uppercase tracking-widest"
+                                <button
+                                    type="button"
+                                    onClick={() => setStatsModalUser(null)}
+                                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
                                 >
-                                    Force Reset Key
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                 </button>
-                                <div className="flex gap-2">
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setEditingUser(null)}
-                                        className="px-4 py-2.5 text-sm font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                            </div>
+
+                            <div className="p-5 overflow-y-auto max-h-[75vh] space-y-4 text-xs">
+                                {statsModalUser.role === "Planning Officer" && (
+                                    <>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
+                                                <div className="text-[10px] text-slate-400 uppercase font-semibold">Total Encoded</div>
+                                                <div className="text-lg font-bold text-slate-900 mt-0.5">
+                                                    {statsModalUser.encoded_applications_count || 0}
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
+                                                <div className="text-[10px] text-slate-400 uppercase font-semibold">Total Fees</div>
+                                                <div className="text-base font-bold text-emerald-700 mt-0.5 truncate font-mono">
+                                                    {statsModalUser.stats?.total_fees || "₱0.00"}
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
+                                                <div className="text-[10px] text-slate-400 uppercase font-semibold">Top Barangay</div>
+                                                <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">
+                                                    {statsModalUser.stats?.top_barangay || "N/A"}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="border border-slate-200/80 rounded-xl p-4">
+                                            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
+                                                Application Breakdown
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                                                    <span className="text-slate-600">Locational Clearance</span>
+                                                    <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.locational || 0}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                                                    <span className="text-slate-600">Development Permit</span>
+                                                    <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.development || 0}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                                                    <span className="text-slate-600">Zoning Certification</span>
+                                                    <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.zoning || 0}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center py-1">
+                                                    <span className="text-slate-600">Special Land Use</span>
+                                                    <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.special || 0}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {statsModalUser.role === "Site Inspector" && (
+                                    <>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
+                                                <div className="text-[10px] text-slate-400 uppercase font-semibold">Total Caseload</div>
+                                                <div className="text-lg font-bold text-slate-900 mt-0.5">
+                                                    {statsModalUser.inspector_stats?.total_caseload || 0}
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
+                                                <div className="text-[10px] text-slate-400 uppercase font-semibold">Compliance</div>
+                                                <div className="text-lg font-bold text-emerald-700 mt-0.5">
+                                                    {statsModalUser.inspector_stats?.compliance_rate || 0}%
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
+                                                <div className="text-[10px] text-slate-400 uppercase font-semibold">Checklist Acc.</div>
+                                                <div className="text-lg font-bold text-blue-700 mt-0.5">
+                                                    {statsModalUser.inspector_stats?.checklist_accuracy || 0}%
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="border border-slate-200/80 rounded-xl p-4">
+                                            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
+                                                Inspection Status
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                                                    <span className="text-slate-600">Completed Inspections</span>
+                                                    <span className="font-semibold text-slate-800">{statsModalUser.inspector_stats?.status?.completed || 0}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center py-1 border-b border-slate-100">
+                                                    <span className="text-slate-600">In Progress</span>
+                                                    <span className="font-semibold text-slate-800">{statsModalUser.inspector_stats?.status?.in_progress || 0}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center py-1">
+                                                    <span className="text-slate-600">Pending Assignment</span>
+                                                    <span className="font-semibold text-slate-800">{statsModalUser.inspector_stats?.status?.pending || 0}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => setStatsModalUser(null)}
+                                    className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold cursor-pointer transition-colors"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* ── MODAL 2: EDIT USER PROFILE ── */}
+            {
+                editingUser && (
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
+                    >
+                        <div className="bg-white rounded-2xl w-full max-w-md flex flex-col shadow-xl border border-slate-200 overflow-hidden font-sans">
+                            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-900">Edit Account</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">Modify profile and access status.</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingUser(null)}
+                                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+                                >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <form onSubmit={submitEditProfile} className="p-5 space-y-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">Full Name</label>
+                                    <input
+                                        type="text"
+                                        value={editingUser.name}
+                                        onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">Email Address</label>
+                                    <input
+                                        type="email"
+                                        value={editingUser.email}
+                                        onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Account Status</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingUser({ ...editingUser, is_active: true })}
+                                            className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors ${editingUser.is_active
+                                                ? "bg-emerald-50 border-emerald-300 text-emerald-800 font-semibold"
+                                                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                }`}
+                                        >
+                                            <span className={`w-1.5 h-1.5 rounded-full ${editingUser.is_active ? "bg-emerald-500" : "bg-slate-300"}`}></span>
+                                            Active
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingUser({ ...editingUser, is_active: false })}
+                                            className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors ${!editingUser.is_active
+                                                ? "bg-rose-50 border-rose-300 text-rose-800 font-semibold"
+                                                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                }`}
+                                        >
+                                            <span className={`w-1.5 h-1.5 rounded-full ${!editingUser.is_active ? "bg-rose-500" : "bg-slate-300"}`}></span>
+                                            Suspended
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const userToReset = { ...editingUser };
+                                            setEditingUser(null);
+                                            setPasswordResetUser(userToReset);
+                                            setNewPasswordInput("");
+                                            setConfirmPasswordInput("");
+                                            setPasswordResetError("");
+                                        }}
+                                        className="text-xs font-medium text-rose-600 hover:text-rose-700 cursor-pointer hover:underline"
+                                    >
+                                        Reset Password
+                                    </button>
+
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingUser(null)}
+                                            className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-600 cursor-pointer"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={isSavingProfile}
+                                            className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
+                                        >
+                                            {isSavingProfile ? "Saving..." : "Save"}
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* ── MODAL 3: RESET PASSWORD ── */}
+            {
+                passwordResetUser && (
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
+                    >
+                        <div className="bg-white rounded-2xl w-full max-w-sm flex flex-col shadow-xl border border-slate-200 overflow-hidden font-sans">
+                            <div className="p-5 border-b border-slate-100">
+                                <h3 className="text-sm font-bold text-slate-900">Reset Password</h3>
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Set a new password for <b>{passwordResetUser.name}</b>.
+                                </p>
+                            </div>
+
+                            <form onSubmit={submitForcePasswordReset} className="p-5 space-y-3">
+                                {passwordResetError && (
+                                    <div className="p-2 rounded-md bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                                        {passwordResetError}
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">New Password</label>
+                                    <input
+                                        type={showResetPassword ? "text" : "password"}
+                                        value={newPasswordInput}
+                                        onChange={(e) => setNewPasswordInput(e.target.value)}
+                                        placeholder="At least 8 characters"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">Confirm Password</label>
+                                    <input
+                                        type={showResetPassword ? "text" : "password"}
+                                        value={confirmPasswordInput}
+                                        onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                                        placeholder="Re-type new password"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-1.5 pt-1">
+                                    <input
+                                        id="show-pass"
+                                        type="checkbox"
+                                        checked={showResetPassword}
+                                        onChange={(e) => setShowResetPassword(e.target.checked)}
+                                        className="rounded border-slate-300 text-blue-600 text-xs"
+                                    />
+                                    <label htmlFor="show-pass" className="text-xs text-slate-500 cursor-pointer">
+                                        Show password
+                                    </label>
+                                </div>
+
+                                <div className="flex items-center justify-end gap-2 pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPasswordResetUser(null);
+                                            setNewPasswordInput("");
+                                            setConfirmPasswordInput("");
+                                            setPasswordResetError("");
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-600 cursor-pointer"
                                     >
                                         Cancel
                                     </button>
-                                    <button 
-                                        type="submit" 
-                                        disabled={isSaving}
-                                        className="px-4 py-2.5 text-sm font-bold text-white bg-[#0A2540] hover:bg-blue-800 rounded-lg transition-colors disabled:opacity-70 flex items-center gap-2"
+                                    <button
+                                        type="submit"
+                                        disabled={isResettingPassword}
+                                        className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
                                     >
-                                        {isSaving ? 'Saving...' : 'Save Changes'}
+                                        {isResettingPassword ? "Updating..." : "Confirm Reset"}
                                     </button>
                                 </div>
-                            </div>
-                        </form>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
         </>
     );
 }

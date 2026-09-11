@@ -1,0 +1,1062 @@
+{
+  "type": "FeatureCollection",
+  "name": "rosario_barangay_centroids",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 1,
+      "properties": {
+        "id": 1,
+        "name": "Alupay",
+        "diversity": 0.63,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 737,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.29952,
+          13.84346
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 2,
+      "properties": {
+        "id": 2,
+        "name": "Antipolo",
+        "diversity": 0.09,
+        "tier": "Specialized Agriculture",
+        "color": "#94d180",
+        "height": 174,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.309776,
+          13.701158
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 3,
+      "properties": {
+        "id": 3,
+        "name": "Bagong Pook",
+        "diversity": 0.76,
+        "tier": "High Urban Mix",
+        "color": "#94d180",
+        "height": 901,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.220057,
+          13.842048
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 4,
+      "properties": {
+        "id": 4,
+        "name": "Balibago",
+        "diversity": 0.31,
+        "tier": "Rural Agro-Community",
+        "color": "#94d180",
+        "height": 374,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.285638,
+          13.856026
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 5,
+      "properties": {
+        "id": 5,
+        "name": "Bayawang",
+        "diversity": 0.56,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 653,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.274808,
+          13.78683
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 6,
+      "properties": {
+        "id": 6,
+        "name": "Baybayin",
+        "diversity": 0.8,
+        "tier": "High Urban Mix",
+        "color": "#94d180",
+        "height": 952,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.259792,
+          13.823794
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 7,
+      "properties": {
+        "id": 7,
+        "name": "Bulihan",
+        "diversity": 0.65,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 762,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.231218,
+          13.79896
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 8,
+      "properties": {
+        "id": 8,
+        "name": "Cahigam",
+        "diversity": 0.67,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 787,
+        "primaryZone": "PTA-SZ-RA",
+        "zoneLabel": "Protection Agricultural Rice Area",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.24899,
+          13.804697
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 9,
+      "properties": {
+        "id": 9,
+        "name": "Calantas",
+        "diversity": 0.32,
+        "tier": "Rural Agro-Community",
+        "color": "#94d180",
+        "height": 385,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.309791,
+          13.738286
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 10,
+      "properties": {
+        "id": 10,
+        "name": "Colongan",
+        "diversity": 0.75,
+        "tier": "High Urban Mix",
+        "color": "#5bb93c",
+        "height": 888,
+        "primaryZone": "FZ",
+        "zoneLabel": "Forest Zone",
+        "clupColor": "#5bb93c"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.178059,
+          13.79965
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 11,
+      "properties": {
+        "id": 11,
+        "name": "Itlugan",
+        "diversity": 0.77,
+        "tier": "High Urban Mix",
+        "color": "#94d180",
+        "height": 913,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.204872,
+          13.821013
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 12,
+      "properties": {
+        "id": 12,
+        "name": "Lumbangan",
+        "diversity": 0.72,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 850,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.265373,
+          13.81617
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 13,
+      "properties": {
+        "id": 13,
+        "name": "Maalas-As",
+        "diversity": 0.81,
+        "tier": "High Urban Mix",
+        "color": "#5bb93c",
+        "height": 965,
+        "primaryZone": "FZ",
+        "zoneLabel": "Forest Zone",
+        "clupColor": "#5bb93c"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.210822,
+          13.810805
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 14,
+      "properties": {
+        "id": 14,
+        "name": "Mabato",
+        "diversity": 0.51,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 594,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.29777,
+          13.810309
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 15,
+      "properties": {
+        "id": 15,
+        "name": "Mabunga",
+        "diversity": 0.38,
+        "tier": "Rural Agro-Community",
+        "color": "#94d180",
+        "height": 448,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.301525,
+          13.78219
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 16,
+      "properties": {
+        "id": 16,
+        "name": "Macalamcam A",
+        "diversity": 0.19,
+        "tier": "Specialized Agriculture",
+        "color": "#94d180",
+        "height": 258,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.304114,
+          13.857334
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 17,
+      "properties": {
+        "id": 17,
+        "name": "Macalamcam B",
+        "diversity": 0.42,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 492,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.328145,
+          13.864017
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 18,
+      "properties": {
+        "id": 18,
+        "name": "Malaya",
+        "diversity": 0.47,
+        "tier": "Balanced Agro-Town",
+        "color": "#5bb93c",
+        "height": 548,
+        "primaryZone": "FZ",
+        "zoneLabel": "Forest Zone",
+        "clupColor": "#5bb93c"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.170562,
+          13.851361
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 19,
+      "properties": {
+        "id": 19,
+        "name": "Maligaya",
+        "diversity": 0.7,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 824,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.274164,
+          13.816244
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 20,
+      "properties": {
+        "id": 20,
+        "name": "Marilag",
+        "diversity": 0.64,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 750,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.175876,
+          13.852664
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 21,
+      "properties": {
+        "id": 21,
+        "name": "Masaya",
+        "diversity": 0.83,
+        "tier": "High Urban Mix",
+        "color": "#de29c0",
+        "height": 991,
+        "primaryZone": "I1-Z",
+        "zoneLabel": "Light Industrial",
+        "clupColor": "#de29c0"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.188454,
+          13.833319
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 22,
+      "properties": {
+        "id": 22,
+        "name": "Matamis",
+        "diversity": 0.14,
+        "tier": "Specialized Agriculture",
+        "color": "#94d180",
+        "height": 214,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.32661,
+          13.719224
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 23,
+      "properties": {
+        "id": 23,
+        "name": "Mavalor",
+        "diversity": 0.68,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 799,
+        "primaryZone": "PTA-SZ-RA",
+        "zoneLabel": "Protection Agricultural Rice Area",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.229358,
+          13.818024
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 24,
+      "properties": {
+        "id": 24,
+        "name": "Mayuro",
+        "diversity": 0.66,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 774,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.263903,
+          13.787706
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 25,
+      "properties": {
+        "id": 25,
+        "name": "Namuco",
+        "diversity": 0.73,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 862,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.204089,
+          13.837477
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 26,
+      "properties": {
+        "id": 26,
+        "name": "Namunga",
+        "diversity": 0.81,
+        "tier": "High Urban Mix",
+        "color": "#fffc2b",
+        "height": 965,
+        "primaryZone": "R1-Z",
+        "zoneLabel": "Low-Density Residential",
+        "clupColor": "#fffc2b"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.195858,
+          13.842826
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 27,
+      "properties": {
+        "id": 27,
+        "name": "Natu",
+        "diversity": 0.56,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 653,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.269031,
+          13.84223
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 28,
+      "properties": {
+        "id": 28,
+        "name": "Nazi",
+        "diversity": 0.5,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 582,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.30647,
+          13.776993
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 29,
+      "properties": {
+        "id": 29,
+        "name": "Palakpak",
+        "diversity": 0.5,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 582,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.331414,
+          13.706859
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 30,
+      "properties": {
+        "id": 30,
+        "name": "Pinagsibaan",
+        "diversity": 0.75,
+        "tier": "High Urban Mix",
+        "color": "#94d180",
+        "height": 888,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.318286,
+          13.846126
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 31,
+      "properties": {
+        "id": 31,
+        "name": "Barangay A (Pob.)",
+        "diversity": 0.5,
+        "tier": "Balanced Agro-Town",
+        "color": "#fffc2b",
+        "height": 582,
+        "primaryZone": "R2-Z",
+        "zoneLabel": "Medium-Density Residential",
+        "clupColor": "#fffc2b"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.209673,
+          13.845343
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 32,
+      "properties": {
+        "id": 32,
+        "name": "Barangay B (Pob.)",
+        "diversity": 0.5,
+        "tier": "Balanced Agro-Town",
+        "color": "#fffc2b",
+        "height": 582,
+        "primaryZone": "R1-Z",
+        "zoneLabel": "Low-Density Residential",
+        "clupColor": "#fffc2b"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.207314,
+          13.845555
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 33,
+      "properties": {
+        "id": 33,
+        "name": "Barangay C (Pob.)",
+        "diversity": 0.5,
+        "tier": "Balanced Agro-Town",
+        "color": "#eb3356",
+        "height": 582,
+        "primaryZone": "C2-Z",
+        "zoneLabel": "Commercial-2 Zone",
+        "clupColor": "#eb3356"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.203706,
+          13.847057
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 34,
+      "properties": {
+        "id": 34,
+        "name": "Barangay D (Pob.)",
+        "diversity": 0.5,
+        "tier": "Balanced Agro-Town",
+        "color": "#eb3356",
+        "height": 582,
+        "primaryZone": "C1-Z",
+        "zoneLabel": "Commercial-1 Zone",
+        "clupColor": "#eb3356"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.203891,
+          13.843953
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 35,
+      "properties": {
+        "id": 35,
+        "name": "Barangay E (Pob.)",
+        "diversity": 0.5,
+        "tier": "Balanced Agro-Town",
+        "color": "#fffc2b",
+        "height": 582,
+        "primaryZone": "R2-Z",
+        "zoneLabel": "Medium-Density Residential",
+        "clupColor": "#fffc2b"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.205727,
+          13.84138
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 36,
+      "properties": {
+        "id": 36,
+        "name": "Putingkahoy",
+        "diversity": 0.67,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 787,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.318763,
+          13.829277
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 37,
+      "properties": {
+        "id": 37,
+        "name": "Quilib",
+        "diversity": 0.65,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 762,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.200275,
+          13.86018
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 38,
+      "properties": {
+        "id": 38,
+        "name": "Salao",
+        "diversity": 0.45,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 525,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.351559,
+          13.862531
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 39,
+      "properties": {
+        "id": 39,
+        "name": "San Carlos",
+        "diversity": 0.53,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 617,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.258434,
+          13.854922
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 40,
+      "properties": {
+        "id": 40,
+        "name": "San Ignacio",
+        "diversity": 0.71,
+        "tier": "Diverse Growth Node",
+        "color": "#de29c0",
+        "height": 837,
+        "primaryZone": "I1-Z",
+        "zoneLabel": "Light Industrial",
+        "clupColor": "#de29c0"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.181783,
+          13.831425
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 41,
+      "properties": {
+        "id": 41,
+        "name": "San Isidro",
+        "diversity": 0.76,
+        "tier": "High Urban Mix",
+        "color": "#94d180",
+        "height": 901,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.30566,
+          13.810613
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 42,
+      "properties": {
+        "id": 42,
+        "name": "San Jose",
+        "diversity": 0.77,
+        "tier": "High Urban Mix",
+        "color": "#94d180",
+        "height": 913,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.230089,
+          13.841924
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 43,
+      "properties": {
+        "id": 43,
+        "name": "San Roque",
+        "diversity": 0.69,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 812,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.204468,
+          13.851798
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 44,
+      "properties": {
+        "id": 44,
+        "name": "Santa Cruz",
+        "diversity": 0.43,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 503,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.183384,
+          13.855122
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 45,
+      "properties": {
+        "id": 45,
+        "name": "Timbugan",
+        "diversity": 0.73,
+        "tier": "Diverse Growth Node",
+        "color": "#5bb93c",
+        "height": 862,
+        "primaryZone": "FZ",
+        "zoneLabel": "Forest Zone",
+        "clupColor": "#5bb93c"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.185884,
+          13.802944
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 46,
+      "properties": {
+        "id": 46,
+        "name": "Tiquiwan",
+        "diversity": 0.68,
+        "tier": "Diverse Growth Node",
+        "color": "#94d180",
+        "height": 799,
+        "primaryZone": "PTA-SZ-RA",
+        "zoneLabel": "Protection Agricultural Rice Area",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.247385,
+          13.8311
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 47,
+      "properties": {
+        "id": 47,
+        "name": "Leviste (Tubahan)",
+        "diversity": 0.5,
+        "tier": "Balanced Agro-Town",
+        "color": "#94d180",
+        "height": 582,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.278392,
+          13.77351
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 48,
+      "properties": {
+        "id": 48,
+        "name": "Tulos",
+        "diversity": 0.09,
+        "tier": "Specialized Agriculture",
+        "color": "#94d180",
+        "height": 174,
+        "primaryZone": "PDA-SZ",
+        "zoneLabel": "Production Agricultural",
+        "clupColor": "#94d180"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.289354,
+          13.717689
+        ]
+      }
+    }
+  ]
+}
