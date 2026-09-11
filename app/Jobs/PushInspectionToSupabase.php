@@ -65,7 +65,7 @@ class PushInspectionToSupabase implements ShouldQueue
                 'local_application_id' => $application->id,
                 'reference_number'     => $application->reference_number,
                 'application_type'     => $application->application_type,
-                'land_use_class'       => $application->land_use_class,
+                'land_use_class'       => $application->target_land_use_class ?? $application->land_use_class,
                 'applicant_name'       => $application->applicant_name,
                 'representative_name'  => $application->representative_name,
                 'contact_number'       => $application->contact_number,

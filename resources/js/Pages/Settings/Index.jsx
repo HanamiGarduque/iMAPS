@@ -120,6 +120,15 @@ const LAYER_METADATA = {
         tag: "Zoning & CLUP",
         color: "purple",
     },
+    land_parcels: {
+        title: "Cadastral Land Parcels",
+        table: "public.land_parcels",
+        geometry: "MultiPolygon / Polygon",
+        crs: "EPSG:4326 (WGS 84)",
+        desc: "Individual lot boundaries for tracking locational clearances and development permits.",
+        tag: "Cadastral Lots",
+        color: "amber",
+    },
 };
 
 export default function Settings({ auth = {} }) {
@@ -242,7 +251,7 @@ export default function Settings({ auth = {} }) {
             Swal.fire({
                 icon: "warning",
                 title: "Invalid File Format",
-                text: "Please select a valid .zip archive containing your shapefile bundle (.shp, .shx, .dbf, .prj).",
+                text: "Please select a valid .zip archive containing your shapefile bundle (.shp, .shx, .dbf, .prj, .cpg).",
                 customClass: { popup: "rounded-3xl", confirmButton: "bg-blue-600 text-white px-4 py-2 rounded-xl text-xs" },
             });
             if (e.target) e.target.value = null;
@@ -794,7 +803,7 @@ export default function Settings({ auth = {} }) {
                                                                         Click to browse or drag shapefile .zip here
                                                                     </p>
                                                                     <p className="text-[11px] text-slate-400 mt-0.5 font-medium">
-                                                                        Must contain .shp, .shx, .dbf, and .prj files (Max 50MB)
+                                                                        Must contain .shp, .shx, .dbf, .prj, and .cpg files (Max 50MB)
                                                                     </p>
                                                                 </div>
                                                             </>
@@ -853,6 +862,7 @@ export default function Settings({ auth = {} }) {
                                                         { ext: ".shx", label: "Spatial index positional offset format", req: "Mandatory" },
                                                         { ext: ".dbf", label: "dBase tabular attributes (names, codes, areas)", req: "Mandatory" },
                                                         { ext: ".prj", label: "Coordinate system projection metadata", req: "Mandatory" },
+                                                        { ext: ".cpg", label: "Character encoding specification", req: "Mandatory" },
                                                     ].map((item) => (
                                                         <div key={item.ext} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 text-xs">
                                                             <div className="flex items-center gap-2">
@@ -1410,8 +1420,7 @@ export default function Settings({ auth = {} }) {
                             <div className="p-3 rounded-2xl bg-blue-50/60 border border-blue-100">
                                 <p className="font-bold text-blue-900 mb-1">1. Shapefile Compression</p>
                                 <p className="text-[11px] leading-relaxed">
-                                    Ensure all shapefiles are bundled inside a root <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.zip</code> without nested subfolders. The <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.shp</code>, <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.shx</code>, <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.dbf</code>, and <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.prj</code> files must share the identical filename.
-                                </p>
+Ensure all shapefiles are bundled inside a root <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.zip</code> without nested subfolders. The <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.shp</code>, <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.shx</code>, <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.dbf</code>, <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.prj</code>, and <code className="bg-white px-1 py-0.5 rounded border border-blue-200">.cpg</code> files must share the identical filename.                                </p>
                             </div>
 
                             <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">

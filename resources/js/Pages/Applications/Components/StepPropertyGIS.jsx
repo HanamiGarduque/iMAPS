@@ -1,11 +1,63 @@
 // resources/js/Pages/Applications/Components/StepPropertyGIS.jsx
 import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
-import L from "leaflet";
+import ParcelInspectionScheduler from "./ParcelInspectionScheduler";
 import "leaflet/dist/leaflet.css";
 import { Label, Input, Select } from "./FormControls";
 
 // ── Approved Municipal Zoning Categories ──
+const ZONING_SUB_CLASSES = [
+    {
+        name: "Residential",
+        items: [
+            { code: "R1-Z", label: "Residential-1 Zone" },
+            { code: "R2-Z", label: "Residential-2 Zone" },
+            { code: "MR2-SZ", label: "Maximum R-2 Sub-Zone" },
+            { code: "BR2-SZ", label: "Basic R-2 Sub-Zone" },
+        ],
+    },
+    {
+        name: "Commercial",
+        items: [
+            { code: "C1-Z", label: "Commercial-1 Zone" },
+            { code: "C2-Z", label: "Commercial-2 Zone" },
+            { code: "C/MP-Z", label: "Cemetery/ Memorial Park Zone" },
+        ],
+    },
+    {
+        name: "Industrial",
+        items: [
+            { code: "I1-Z", label: "Industrial-1 Zone" },
+            { code: "I2-Z", label: "Industrial-2 Zone" },
+            { code: "I3-Z", label: "Industrial-3 Zone" },
+        ],
+    },
+    {
+        name: "Agri-Industrial",
+        items: [
+            { code: "AgIndZ", label: "Agri-Industrial Zone" },
+            { code: "AgIndZ-PTR", label: "Agri-Industrial Zone Poultry" },
+            { code: "AgIndZ-PGR", label: "Agri-Industrial Zone Piggery" },
+        ],
+    },
+    {
+        name: "Institutional",
+        items: [
+            { code: "GI-Z", label: "General Institutional Zone" },
+            { code: "UTS-Z", label: "Utility, Transportation, and Services" },
+            { code: "CMRF", label: "Central Materials Recovery Facility" },
+        ],
+    },
+    {
+        name: "Recreational",
+        items: [
+            { code: "PR-Z", label: "Parks and Recreation Zone" },
+            { code: "T-Z", label: "Tourism Zone" },
+            { code: "ECT-Z", label: "Eco-Tourism Zone" },
+        ],
+    },
+];
+
 const ZONING_CATEGORIES = [
     {
         id: "Residential",
@@ -107,6 +159,7 @@ function MapResizeTrigger({ isExpanded }) {
 export default function StepPropertyGIS({
     form,
     set,
+    setForm,
     setParcelField,
     addParcel,
     removeParcel,
@@ -124,7 +177,7 @@ export default function StepPropertyGIS({
     getParcelStyle,
     handleSelectMapParcel,
     MapController,
-    ROSARIO_BARANGAYS = [],
+    inspectors = [],
     LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"],
     handleBack,
     handleNext,
@@ -132,6 +185,12 @@ export default function StepPropertyGIS({
     handleSubmit,
 }) {
     const [isMapExpanded, setIsMapExpanded] = useState(false);
+    const shouldShowTargetZoning = form.application_stream === "amendment";
+    const selectedApplicationTypes = (form.application_type || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+    const isRezoningApplication = selectedApplicationTypes.includes("Petition for Rezoning");
 
     const handleSelectZoningCategory = (catId) => {
         // Update main form land use class
@@ -143,6 +202,32 @@ export default function StepPropertyGIS({
             const targetIdx = activeParcelIndex !== null ? activeParcelIndex : 0;
             setParcelField(targetIdx, "land_use_class")({ target: { value: catId } });
         }
+    };
+
+    // ── Phase 2: Evaluation Engine (Cadastral vs CLUP Cross-Reference) ──
+    const isAmendmentStream = form.application_stream === "amendment";
+    
+    // Check if any parcel has a mismatch to lock progression globally
+    const isProgressionLocked = (form.parcels || []).some(p => {
+        const cadastral = p.cadastral_zone?.trim().toLowerCase();
+        const clup = p.land_use_class?.trim().toLowerCase();
+        return p.is_verified && cadastral && clup && cadastral !== clup;
+    }) && !isAmendmentStream;
+
+    const handleSwitchStream = (newType, parcelIndex) => {
+        // Grab ONLY the parcel that triggered the amendment
+        const triggeringParcel = form.parcels[parcelIndex];
+        
+        // Reset the parcel code to P-01 since it will be the only one left
+        triggeringParcel.parcel_code = "P-01";
+
+        setForm((prev) => ({
+            ...prev,
+            application_stream: "amendment",
+            application_type: newType,
+            // Override the array to retain ONLY the problematic parcel
+            parcels: [triggeringParcel], 
+        }));
     };
 
     return (
@@ -157,52 +242,48 @@ export default function StepPropertyGIS({
             >
                 <div className="absolute inset-0 z-0">
                     <MapContainer center={rosarioCenter} zoom={12} zoomControl={false} scrollWheelZoom={true}>
-    {/* Base OSM Layer (Bottom) - zIndex 1 */}
-    <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        zIndex={1}
-    />
-    
-    {/* CLUP Land Use Plan Tiles (Middle) - zIndex 10 */}
-    <TileLayer
-        url="/tiles/clup_tiles/{z}/{x}/{y}.png"
-        maxZoom={22}
-        maxNativeZoom={19}
-        opacity={0.85}
-        zIndex={10}
-        errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
-    />
+                        <TileLayer
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            zIndex={1}
+                        />
+                        
+                        <TileLayer
+                            url="/tiles/clup_tiles/{z}/{x}/{y}.png"
+                            maxZoom={22}
+                            maxNativeZoom={19}
+                            opacity={0.85}
+                            zIndex={10}
+                            errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+                        />
 
-    {/* GeoJSON Parcels & Boundaries (Top) */}
-    {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
-    {parcelMapData && (
-        <GeoJSON 
-            key={activeParcelFeature?.properties?.property_index_number || "parcels"} 
-            data={parcelMapData} 
-            style={getParcelStyle}
-            onEachFeature={(feature, layer) => {
-                layer.on({
-                    click: () => {
-                        const p = feature?.properties || {};
-                        const pin = p.property_index_number || p.pin || p.PIN;
-                        const lot = p.lot_number || p.lot_no;
-                        const area = p.lot_area_sqm || p.area;
-                        const brgy = p.barangay;
-                        handleSelectMapParcel(pin, lot, area, brgy, feature);
-                    },
-                });
-            }}
-        />
-    )}
-    {MapController && <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />}
-    <MapResizeTrigger isExpanded={isMapExpanded} />
-</MapContainer> 
+                        {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
+                        {parcelMapData && (
+                            <GeoJSON 
+                                key={activeParcelFeature?.properties?.property_index_number || "parcels"} 
+                                data={parcelMapData} 
+                                style={getParcelStyle}
+                                onEachFeature={(feature, layer) => {
+                                    layer.on({
+                                        click: () => {
+                                            const p = feature?.properties || {};
+                                            const pin = p.property_index_number || p.pin || p.PIN;
+                                            const lot = p.lot_number || p.lot_no;
+                                            const area = p.lot_area_sqm || p.area;
+                                            const brgy = p.barangay;
+                                            handleSelectMapParcel(pin, lot, area, brgy, feature);
+                                        },
+                                    });
+                                }}
+                            />
+                        )}
+                        {MapController && <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />}
+                        <MapResizeTrigger isExpanded={isMapExpanded} />
+                    </MapContainer> 
                 </div>
 
                 {/* Top Controls: Expand / Maximize Map Toggle & Cadastral Verification HUD */}
                 <div className="absolute top-3 left-3 right-3 z-10 flex items-start justify-between gap-2 pointer-events-none">
-                    {/* Active Selected Lot HUD */}
                     <div className="pointer-events-auto">
                         {(form.parcels || []).map(
                             (parcel, idx) =>
@@ -220,7 +301,7 @@ export default function StepPropertyGIS({
                                         </div>
                                         <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                                             <div>
-                                                <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">ARP / Tax Dec. No.</p>
+                                                <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">ARP / Tax Dec.</p>
                                                 <p className="font-semibold text-slate-800 truncate">{parcel.arp_number || parcel.tax_dec_number || parcel.lot_number || "ARP Verified"}</p>
                                             </div>
                                             <div>
@@ -228,9 +309,9 @@ export default function StepPropertyGIS({
                                                 <p className="font-semibold text-slate-800 truncate">{parcel.survey_number || "—"}</p>
                                             </div>
                                             <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-100">
-                                                <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Zoning Class:</span>
+                                                <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Land Use Classification:</span>
                                                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                                    {parcel.land_use_class || "Residential"}
+                                                    {parcel.cadastral_zone }
                                                 </span>
                                             </div>
                                         </div>
@@ -239,7 +320,6 @@ export default function StepPropertyGIS({
                         )}
                     </div>
 
-                    {/* Expand / Maximize Map Toggle Button */}
                     <div className="pointer-events-auto flex items-center gap-1.5">
                         <button
                             type="button"
@@ -266,7 +346,6 @@ export default function StepPropertyGIS({
                     </div>
                 </div>
 
-                {/* Floating "Back to Form" action button when in maximized map mode */}
                 {isMapExpanded && (
                     <div className="absolute bottom-4 right-4 z-10 animate-in fade-in slide-in-from-bottom-2">
                         <button
@@ -282,7 +361,6 @@ export default function StepPropertyGIS({
                     </div>
                 )}
 
-                {/* Bottom Map Legend */}
                 <div className="absolute bottom-3 left-3 z-10 bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-xl shadow-md border border-slate-200/80 text-[11px] font-medium text-slate-600 flex items-center gap-3">
                     <span className="flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-sm bg-blue-500/40 border border-blue-600" /> Barangay
@@ -294,7 +372,7 @@ export default function StepPropertyGIS({
                 </div>
             </div>
 
-            {/* ── RIGHT: PROPERTY FORM PANEL (HIDDEN WHEN MAP MAXIMIZED) ── */}
+            {/* ── RIGHT: PROPERTY FORM PANEL ── */}
             <div 
                 ref={formRef} 
                 className={`${
@@ -305,7 +383,6 @@ export default function StepPropertyGIS({
             >
                 <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
                     <div className="space-y-4">
-                        {/* Step Header */}
                         <div className="flex items-start justify-between">
                             <div>
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 uppercase tracking-wider">
@@ -323,7 +400,40 @@ export default function StepPropertyGIS({
                             )}
                         </div>
 
-                        {/* Mobile Map Toggle Button (When on small screens) */}
+                        {shouldShowTargetZoning && (
+                            <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-2 mb-2">
+                                <div>
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-blue-800">Legislative Amendment Target</h4>
+                                    <p className="text-[11px] text-blue-600 mb-2">Specify the proposed zoning class for this request.</p>
+                                </div>
+                                <Label required hasError={!!errors.target_land_use_class}>Target Zoning Classification</Label>
+                                <Select 
+                                    value={form.target_land_use_class || ""} 
+                                    onChange={set("target_land_use_class")} 
+                                    hasError={!!errors.target_land_use_class}
+                                    className="bg-white"
+                                >
+                                    <option value="" disabled>Select target zoning...</option>
+                                    {isRezoningApplication ? (
+                                        ZONING_SUB_CLASSES.map((group) => (
+                                            <optgroup key={group.name} label={group.name} className="font-bold text-slate-900 bg-slate-50">
+                                                {group.items.map((item) => (
+                                                    <option key={item.code} value={item.code} className="font-medium text-slate-700 bg-white">
+                                                        {item.label} ({item.code})
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        ))
+                                    ) : (
+                                        LAND_USE_CLASSES.map((c) => (
+                                            <option key={c} value={c} className="font-medium text-slate-700">{c}</option>
+                                        ))
+                                    )}
+                                </Select>
+                                {errors.target_land_use_class && <p className="text-xs font-medium text-rose-500 mt-1">{errors.target_land_use_class}</p>}
+                            </div>
+                        )}
+
                         <div className="lg:hidden">
                             <button
                                 type="button"
@@ -337,7 +447,6 @@ export default function StepPropertyGIS({
                             </button>
                         </div>
 
-                        {/* Location & Address Specification */}
                         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                             <div className="sm:col-span-6">
                                 <Label required hasError={!!errors.barangay}>Barangay</Label>
@@ -397,7 +506,7 @@ export default function StepPropertyGIS({
                                                 type="text" 
                                                 value={parcel.property_index_number || ""} 
                                                 onChange={setParcelField(index, "property_index_number")} 
-                                                placeholder="e.g. 04010-01-0001" 
+                                                placeholder="e.g. 04-01-021-XXX-XX-XXX" 
                                                 className="flex-1 font-mono bg-white uppercase" 
                                                 hasError={!!errors[`parcels.${index}.property_index_number`]} 
                                             />
@@ -445,35 +554,14 @@ export default function StepPropertyGIS({
                                                     {parcel.parcel_code}
                                                 </span>
                                             </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 text-xs bg-white/90 p-2.5 rounded-lg border border-emerald-100">
-                                                <div>
-                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">ARP Number</p>
-                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.arp_number || "—"}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Survey Number</p>
-                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.survey_number || "—"}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Tax Dec. / TCT Ref</p>
-                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.tax_dec_number || parcel.tct_number || "TD Recorded"}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Registered Lot</p>
-                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.lot_number || "—"}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Owner</p>
-                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.owner_name || "—"}</p>
-                                                </div>
-                                                <div>
-                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Address</p>
-                                                    <p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.location_address || "—"}</p>
-                                                </div>
-                                                <div className="sm:col-span-2 xl:col-span-1">
-                                                    <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Recorded Zoning</p>
-                                                    <p className="font-bold text-blue-700 mt-0.5 truncate">{parcel.land_use_class || form.land_use_class || "Residential"}</p>
-                                                </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 text-xs bg-white/90 p-2.5 rounded-lg border border-emerald-100">
+                                                <div><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">ARP Number</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.arp_number || "—"}</p></div>
+                                                <div><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Survey Number</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.survey_number || "—"}</p></div>
+                                                <div><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Registered Lot</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.lot_number || "—"}</p></div>
+                                                <div><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Owner</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.owner_name || "—"}</p></div>
+                                                
+                                                <div className="sm:col-span-2"><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Cadastral Zoning (Assessor)</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.cadastral_zone || "—"}</p></div>
+                                                <div className="sm:col-span-2"><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">CLUP 2030 Zoning (MPDO)</p><p className="font-bold text-blue-700 mt-0.5 truncate">{parcel.land_use_class || "—"}</p></div>
                                             </div>
                                         </div>
                                     ) : (
@@ -484,6 +572,92 @@ export default function StepPropertyGIS({
                                             <span>Enter the PIN printed on the applicant's Tax Declaration and click <b>Verify with Land Records</b>, or click the parcel on the GIS map.</span>
                                         </div>
                                     )}
+
+                                    {/* ── PER-PARCEL MISMATCH INTERCEPT BANNER ── */}
+                                    {(() => {
+                                        if (!parcel.is_verified || !parcel.land_use_class || !parcel.cadastral_zone) return null;
+                                        const cadastral = parcel.cadastral_zone.trim().toLowerCase();
+                                        const clup = parcel.land_use_class.trim().toLowerCase();
+                                        
+                                        if (cadastral === clup) return null;
+
+                                        let parcelIntercept = null;
+                                        if (isAmendmentStream) {
+                                            parcelIntercept = {
+                                                color: "blue",
+                                                icon: <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />,
+                                                title: "Legislative Track Activated",
+                                                message: "You have explicitly requested a legislative amendment for this lot. This file will bypass standard clearance checks."
+                                            };
+                                        } else if (cadastral.includes("agri") || cadastral.includes("agricultural") || cadastral.includes("agind")) {
+                                            parcelIntercept = {
+                                                color: "rose",
+                                                icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />,
+                                                title: "System Stop: Cadastral Zoning Discrepancy",
+                                                message: `The Assessor's cadastral record classifies this lot as "${parcel.cadastral_zone}", but the spatial Land Use Plan designates it as "${parcel.land_use_class}".`,
+                                                action: { label: "Switch to Reclassification Stream", type: "Petition for Reclassification" }
+                                            };
+                                        } else {
+                                            parcelIntercept = {
+                                                color: "amber",
+                                                icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />,
+                                                title: "System Intercept: Zoning Map Amendment Required",
+                                                message: `The Assessor's cadastral record classifies this lot as "${parcel.cadastral_zone}", but the spatial Land Use Plan designates it as "${parcel.land_use_class}".`,
+                                                action: { label: "Switch to Rezoning Stream", type: "Petition for Rezoning" }
+                                            };
+                                        }
+
+                                        return (
+                                            <div className={`mt-3 p-3.5 rounded-xl border flex items-start gap-3 animate-in fade-in shadow-xs ${
+                                                parcelIntercept.color === 'blue' ? 'bg-blue-50/80 border-blue-200' :
+                                                parcelIntercept.color === 'rose' ? 'bg-rose-50/80 border-rose-200' :
+                                                'bg-amber-50/80 border-amber-200'
+                                            }`}>
+                                                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                                                    parcelIntercept.color === 'blue' ? 'bg-blue-100 text-blue-700' :
+                                                    parcelIntercept.color === 'rose' ? 'bg-rose-100 text-rose-700' :
+                                                    'bg-amber-100 text-amber-700'
+                                                }`}>
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">{parcelIntercept.icon}</svg>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className={`text-xs font-bold ${
+                                                        parcelIntercept.color === 'blue' ? 'text-blue-900' :
+                                                        parcelIntercept.color === 'rose' ? 'text-rose-900' :
+                                                        'text-amber-900'
+                                                    }`}>{parcelIntercept.title}</h4>
+                                                    <p className={`text-[11px] mt-0.5 leading-relaxed ${
+                                                        parcelIntercept.color === 'blue' ? 'text-blue-800' :
+                                                        parcelIntercept.color === 'rose' ? 'text-rose-800' :
+                                                        'text-amber-800'
+                                                    }`}>{parcelIntercept.message}</p>
+                                                    
+                                                    {parcelIntercept.action && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSwitchStream(parcelIntercept.action.type, index)}
+                                                            className={`mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-xs cursor-pointer ${
+                                                                parcelIntercept.color === 'rose' 
+                                                                    ? 'bg-rose-600 hover:bg-rose-700 text-white' 
+                                                                    : 'bg-amber-600 hover:bg-amber-700 text-white'
+                                                            }`}
+                                                        >
+                                                            <span>{parcelIntercept.action.label}</span>
+                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    <ParcelInspectionScheduler
+                                        index={index}
+                                        parcel={parcel}
+                                        setParcelField={setParcelField}
+                                        inspectors={inspectors}
+                                        errors={errors}
+                                    />
                                 </div>
                             ))}
 
@@ -594,7 +768,12 @@ export default function StepPropertyGIS({
                         <button
                             type="button"
                             onClick={handleNext}
-                            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 cursor-pointer ml-auto"
+                            disabled={isProgressionLocked}
+                            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-xs font-semibold shadow-sm transition-all ml-auto ${
+                                isProgressionLocked 
+                                    ? "bg-slate-300 cursor-not-allowed opacity-70" 
+                                    : "bg-blue-600 hover:bg-blue-700 active:scale-98 cursor-pointer"
+                            }`}
                         >
                             <span>Continue to Review</span>
                         </button>

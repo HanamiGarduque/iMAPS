@@ -29,9 +29,10 @@ Route::get('/', function () {
 Route::middleware('auth')->group(function () {
 
     // Map Layer API Endpoint
-    Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])
-        ->name('api.map.layer');
-    // Dashboard
+    // Place specific zoning lookup routes before the generic layer wildcard to avoid route collision
+    Route::get('/api/map/zoning-lookup', [MapController::class, 'getZoningByCoordinates']);
+    Route::get('/api/map/zoning-area-lookup', [MapController::class, 'getZoningByParcelArea']);
+    Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])->name('api.map.layer'); // Generic layer access (whitelisted inside controller) // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
     // Search

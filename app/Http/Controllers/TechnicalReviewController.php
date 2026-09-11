@@ -27,7 +27,7 @@ class TechnicalReviewController extends Controller
                 'zoning_applications.id',
                 'zoning_applications.reference_number',
                 'zoning_applications.application_type',
-                'zoning_applications.land_use_class',
+                'zoning_applications.target_land_use_class',
                 'zoning_applications.status',
                 'zoning_applications.applicant_name',
                 'zoning_applications.barangay',

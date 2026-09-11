@@ -69,7 +69,7 @@ return new class extends Migration
 
             $table->timestamps();
 
-            $table->string('land_use_class', 100)->nullable();
+            $table->string('target_land_use_class', 100)->nullable();
         });
     }
 
