@@ -541,6 +541,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const [clock, setClock] = useState("");
     const [currentStep, setCurrentStep] = useState(1);
     const [submitting, setSubmitting] = useState(false);
+    const [submissionFinalized, setSubmissionFinalized] = useState(false);
     const [flash, setFlash] = useState(null);
     const [errors, setErrors] = useState(serverErrors);
     const formRef = useRef(null);
@@ -684,7 +685,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                 e.preventDefault();
                 if (currentStep === 5) {
-                    if (!submitting) handleSubmit(e);
+                    if (!submitting && !submissionFinalized) handleSubmit(e);
                 } else {
                     handleNext();
                 }
@@ -756,6 +757,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     // Auto-save sync effect
     useEffect(() => {
+        if (submissionFinalized) return;
+
         const handler = setTimeout(() => {
             const hasData = form.application_type || form.form_number || form.applicant_name || form.barangay;
             if (!hasData) return;
@@ -776,9 +779,11 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         }, 1200);
 
         return () => clearTimeout(handler);
-    }, [form, tempDraftId]);
+    }, [form, tempDraftId, submissionFinalized]);
 
     const handleManualSave = () => {
+        if (submissionFinalized) return;
+
         setSyncStatus("Saving modifications...");
         persistDraftState(tempDraftId, form);
         axios
@@ -1351,7 +1356,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const handleSubmit = (e) => {
-        if (submitting) return;
+        if (submitting || submissionFinalized) return;
         if (e && e.preventDefault) e.preventDefault();
         if (!form.assessment_fee || Number(form.assessment_fee) < 0) {
             setErrors({ assessment_fee: "Assessment fee is required." });
@@ -1361,6 +1366,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             });
         }
 
+        setSubmissionFinalized(true);
         setSubmitting(true);
 
         const payload = {
@@ -1371,7 +1377,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             onSuccess: (page) => {
                 const ref = page.props.flash?.reference_number || `LC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(100 + Math.random() * 900)}`;
 
-                // Save applicant to local registry cache
                 saveApplicantToRegistry({
                     first_name: form.first_name,
                     middle_name: form.middle_name,
@@ -1383,7 +1388,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     representative_name: form.representative_name,
                 });
 
-                // Prepare routing slip data
                 setRoutingSlipData({
                     reference_number: ref,
                     date_of_application: new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
@@ -1407,9 +1411,11 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                 clearDraftStateRecord();
                 setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
-                setSyncStatus("Saved locally");
+                setSyncStatus("Submitted");
+                setSubmissionFinalized(true);
             },
             onError: (errs) => {
+                setSubmissionFinalized(false);
                 setErrors(errs);
 
                 let targetStep = 5;
@@ -1419,7 +1425,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     targetStep = 1;
                 } else if (errKeys.some((k) => ["applicant_name", "contact_number", "email", "representative_name"].includes(k))) {
                     targetStep = 2;
-                // Added target_land_use_class to correctly route Step 3 failures
                 } else if (errKeys.some((k) => ["barangay", "target_land_use_class"].includes(k) || k.startsWith("parcels"))) {
                     targetStep = 3;
                 } else if (errKeys.some((k) => ["preferred_release_mode"].includes(k))) {
@@ -1429,7 +1434,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 setCurrentStep(targetStep);
                 if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
 
-                // Dynamically extract the exact backend error message, prioritizing Database exceptions
                 const firstErrorKey = errKeys[0];
                 const actualErrorMessage = errs.db || errs[firstErrorKey] || "Please resolve the highlighted validation issues.";
 
@@ -1995,6 +1999,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                                                     {currentStep < 5 ? (
                                                         <button
+                                                            key="next-btn"
                                                             type="button"
                                                             onClick={handleNext}
                                                             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 cursor-pointer ml-auto"
@@ -2003,6 +2008,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                         </button>
                                                     ) : (
                                                         <button
+                                                            key="submit-btn"
                                                             type="submit"
                                                             disabled={submitting}
                                                             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
@@ -2013,7 +2019,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                                     <span>Submitting...</span>
                                                                 </>
                                                             ) : (
-                                                                <span>Submit & Route to Technical Review</span>
+                                                                <span>Submit Application</span>
                                                             )}
                                                         </button>
                                                     )}
