@@ -171,9 +171,34 @@ class UserManagementController extends Controller
             }
         }
 
+        // 6. Calculate total role counts across all users (respecting search if active)
+        $roleCounts = [
+            'total' => DB::table('users')->when($search, function($q) use ($search) {
+                $q->where(function($sub) use ($search) {
+                    $sub->where('name', 'ilike', "%{$search}%")->orWhere('email', 'ilike', "%{$search}%");
+                });
+            })->count(),
+            'po' => DB::table('users')->where('role', 'Planning Officer')->when($search, function($q) use ($search) {
+                $q->where(function($sub) use ($search) {
+                    $sub->where('name', 'ilike', "%{$search}%")->orWhere('email', 'ilike', "%{$search}%");
+                });
+            })->count(),
+            'inspector' => DB::table('users')->where('role', 'Site Inspector')->when($search, function($q) use ($search) {
+                $q->where(function($sub) use ($search) {
+                    $sub->where('name', 'ilike', "%{$search}%")->orWhere('email', 'ilike', "%{$search}%");
+                });
+            })->count(),
+            'admin' => DB::table('users')->where('role', 'Admin')->when($search, function($q) use ($search) {
+                $q->where(function($sub) use ($search) {
+                    $sub->where('name', 'ilike', "%{$search}%")->orWhere('email', 'ilike', "%{$search}%");
+                });
+            })->count(),
+        ];
+
         return Inertia::render('Users/Index', [
             'users' => $users,
-            'filters' => $request->only(['search', 'role'])
+            'filters' => $request->only(['search', 'role']),
+            'role_counts' => $roleCounts,
         ]);
     }
 

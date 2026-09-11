@@ -1,387 +1,509 @@
-import { useState, useEffect } from 'react'
-import { Head, router } from '@inertiajs/react'
+import React, { useState, useEffect } from "react";
+import { Head, router, Link } from "@inertiajs/react";
+import Swal from "sweetalert2";
+import Header from "@/Components/Header";
+import Sidebar from "@/Components/Sidebar";
 
-// ── Action chip config ──
-const ACTION_CONFIG = {
-    APPLICATION_CREATED: { bg: '#f0fdf4', color: '#16a34a', dotBg: '#16a34a', ringBg: '#dcfce7' },
-    STATUS_UPDATE:       { bg: '#eff6ff', color: '#1a45ee', dotBg: '#1a45ee', ringBg: '#dbeafe' },
-}
+export default function Index({
+    logs = { data: [], links: [] },
+    actions = [],
+    stats = [],
+    filters = {},
+    auth = {},
+}) {
+    const [clock, setClock] = useState("");
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [search, setSearch] = useState(filters.search || "");
+    const [expandedId, setExpandedId] = useState(null);
 
-function ActionChip({ action }) {
-    const cfg = ACTION_CONFIG[action] || { bg: '#f1f5f9', color: '#64748b' }
-    return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
-            style={{ background: cfg.bg, color: cfg.color }}>
-            {action.replace(/_/g, ' ')}
-        </span>
-    )
-}
+    const userName = auth?.user?.name || "Administrator";
+    const userRole = auth?.user?.role || "Admin";
 
-function TimelineDot({ action }) {
-    const cfg = ACTION_CONFIG[action] || { dotBg: '#94a3b8', ringBg: '#f1f5f9' }
-
-    const icon = action === 'APPLICATION_CREATED' ? (
-        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-        </svg>
-    ) : action === 'STATUS_UPDATE' ? (
-        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-    ) : (
-        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-    )
-
-    return (
-        <div className="absolute left-2 top-3.5 w-[18px] h-[18px] rounded-full border-2 border-white flex items-center justify-center z-10"
-            style={{ background: cfg.dotBg, boxShadow: `0 0 0 2px ${cfg.ringBg}` }}>
-            {icon}
-        </div>
-    )
-}
-
-// ── Sidebar ──
-function Sidebar({ userName, userRole }) {
-    const navItems = [
-        { href: '/dashboard',    label: 'Dashboard',    icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
-        { href: '/applications', label: 'Applications', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
-        { href: '/analytics',    label: 'Analytics',    icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
-        { href: '/audit-log',    label: 'Audit Trail',  icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4', active: true },
-    ]
-
-    return (
-        <aside className="w-[220px] bg-white border-r border-slate-100 flex flex-col shrink-0">
-            <div className="px-4 py-4 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                        </svg>
-                    </div>
-                    <span className="font-bold text-slate-900 text-sm">iMAPS</span>
-                </div>
-            </div>
-
-            <nav className="flex-1 flex flex-col gap-1 p-3">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest px-2 mb-1">Menu</p>
-                {navItems.map(item => (
-                    <a key={item.href} href={item.href}
-                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13.5px] font-medium transition-all ${item.active ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
-                        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
-                            <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-                        </svg>
-                        {item.label}
-                    </a>
-                ))}
-            </nav>
-
-            <div className="border-t border-slate-100 p-3">
-                <div className="flex items-center gap-2 px-2 py-2 mb-1">
-                    <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs">
-                        {userName?.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                        <p className="text-xs font-semibold text-slate-800 leading-none">{userName}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{userRole}</p>
-                    </div>
-                </div>
-                <a href="/logout"
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
-                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    Sign Out
-                </a>
-            </div>
-        </aside>
-    )
-}
-
-// ── Main Page ──
-export default function Index({ logs, actions, stats, filters, auth }) {
-    const [search, setSearch] = useState(filters.search || '')
-    const [clock, setClock]   = useState('')
-
-    const userName = auth?.user?.name || 'Staff'
-    const userRole = auth?.user?.role || 'Planning Officer'
-
-    // Live clock
+    // Live clock ticker
     useEffect(() => {
         const tick = () => {
-            const now = new Date()
+            const now = new Date();
             setClock(
-                now.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) +
-                ' · ' + now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
-            )
-        }
-        tick()
-        const id = setInterval(tick, 1000)
-        return () => clearInterval(id)
-    }, [])
+                now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
+                " · " +
+                now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })
+            );
+        };
+        tick();
+        const id = setInterval(tick, 1000);
+        return () => clearInterval(id);
+    }, []);
 
-    // Debounced search
+    // Debounced search (300ms)
     useEffect(() => {
         const t = setTimeout(() => {
-            if (search !== filters.search) {
-                router.get('/audit-log', { ...filters, search, page: 1 }, { preserveState: true, replace: true })
+            if (search !== (filters.search || "")) {
+                router.get(
+                    "/audit-log",
+                    { ...filters, search: search || undefined, page: 1 },
+                    { preserveState: true, replace: true }
+                );
             }
-        }, 400)
-        return () => clearTimeout(t)
-    }, [search])
+        }, 300);
+        return () => clearTimeout(t);
+    }, [search]);
 
     const applyAction = (action) => {
-        router.get('/audit-log', { ...filters, action, page: 1 }, { preserveState: true, replace: true })
-    }
+        router.get(
+            "/audit-log",
+            { ...filters, action: action || undefined, page: 1 },
+            { preserveState: true, replace: true }
+        );
+    };
 
     const clearFilters = () => {
-        setSearch('')
-        router.get('/audit-log', {}, { preserveState: true, replace: true })
-    }
+        setSearch("");
+        router.get("/audit-log", {}, { preserveState: true, replace: true });
+    };
 
-    const hasFilters = filters.search || filters.action
+    const toggleExpand = (id) => {
+        setExpandedId((prev) => (prev === id ? null : id));
+    };
 
-    // Group logs by date
-    const grouped = {}
-    logs.data.forEach(log => {
-        const date = log.performed_at?.slice(0, 10)
-        if (!grouped[date]) grouped[date] = []
-        grouped[date].push(log)
-    })
+    const handleLogout = () => {
+        Swal.fire({
+            title: "Sign Out?",
+            text: "Are you sure you want to log out of iMAPS?",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, sign out",
+            cancelButtonText: "Cancel",
+            buttonsStyling: false,
+            customClass: {
+                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
+                title: "text-base font-bold text-slate-900",
+                htmlContainer: "text-xs text-slate-500",
+                actions: "flex items-center justify-center gap-3 mt-4",
+                confirmButton:
+                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
+                cancelButton:
+                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
+            },
+        }).then((result) => {
+            if (result.isConfirmed) {
+                sessionStorage.removeItem("hasShownWelcome");
+                router.post("/logout");
+            }
+        });
+    };
 
-    const formatDate = (dateStr) => {
-        const d    = new Date(dateStr)
-        const today = new Date().toISOString().slice(0, 10)
-        const label = d.toLocaleDateString('en-PH', { month: 'long', day: '2-digit', year: 'numeric' })
-        return { label, isToday: dateStr === today }
-    }
+    // Format action label cleanly (no raw snake_case)
+    const formatActionLabel = (action) => {
+        if (!action) return "Event";
+        return action
+            .replace(/_/g, " ")
+            .toLowerCase()
+            .replace(/\b\w/g, (char) => char.toUpperCase());
+    };
 
-    const formatTime = (dt) =>
-        new Date(dt).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
+    // Initials helper
+    const getInitials = (name) => {
+        if (!name) return "SY";
+        const parts = name.trim().split(/\s+/);
+        if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    };
+
+    // Date/time formatting helpers
+    const formatDate = (dateString) => {
+        if (!dateString) return "—";
+        try {
+            return new Date(dateString).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+            });
+        } catch {
+            return dateString;
+        }
+    };
+
+    const formatTime = (dateString) => {
+        if (!dateString) return "";
+        try {
+            return new Date(dateString).toLocaleTimeString("en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+            });
+        } catch {
+            return "";
+        }
+    };
+
+    const hasFilters = !!filters.search || !!filters.action;
 
     return (
         <>
-            <Head title="Audit Trail | iMAPS" />
+            <Head title="Audit Trail & Monitoring | iMAPS" />
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
-                body { font-family: 'DM Sans', sans-serif; background: #f8fafc; }
-                ::-webkit-scrollbar { width: 5px; }
-                ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 3px; }
-                @keyframes fadeUp { from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);} }
-                .fade-up { animation: fadeUp .3s ease both; }
-                .timeline-line::before {
-                    content: '';
-                    position: absolute;
-                    left: 10px; top: 0; bottom: 0;
-                    width: 1px;
-                    background: linear-gradient(to bottom, #e2e8f0 95%, transparent 100%);
+                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+                #audit-page-root {
+                    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                }
+                .font-mono {
+                    font-family: 'JetBrains Mono', monospace !important;
+                }
+
+                ::-webkit-scrollbar {
+                    width: 6px;
+                    height: 6px;
+                }
+                ::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                ::-webkit-scrollbar-thumb {
+                    background: #cbd5e1;
+                    border-radius: 9999px;
+                }
+                ::-webkit-scrollbar-thumb:hover {
+                    background: #94a3b8;
                 }
             `}</style>
 
-            <div className="flex h-screen overflow-hidden">
-                <Sidebar userName={userName} userRole={userRole} />
+            <div id="audit-page-root" className="bg-slate-100/60 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
+                <Header
+                    userName={userName}
+                    userRole={userRole}
+                    clock={clock}
+                    onLogout={handleLogout}
+                    sidebarOpen={sidebarOpen}
+                    setSidebarOpen={setSidebarOpen}
+                    activePage="audit-log"
+                />
 
-                <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex-1 overflow-hidden relative flex flex-col min-w-0">
+                    <Sidebar
+                        userName={userName}
+                        userRole={userRole}
+                        sidebarOpen={sidebarOpen}
+                        setSidebarOpen={setSidebarOpen}
+                        onLogout={handleLogout}
+                        activePage="audit-log"
+                    />
 
-                    {/* Top bar */}
-                    <header className="h-14 bg-white border-b border-slate-100 flex items-center justify-between px-5 shrink-0 z-10">
-                        <div className="flex items-center gap-2">
-                            <span className="text-slate-400 text-xs hidden sm:block">MPDO Rosario, Batangas</span>
-                        </div>
-                        <span className="text-xs text-slate-400 font-mono hidden md:block">{clock}</span>
-                    </header>
+                    {sidebarOpen && (
+                        <div
+                            onClick={() => setSidebarOpen(false)}
+                            className="absolute inset-0 bg-slate-900/20 backdrop-blur-xs z-[750] transition-opacity duration-200"
+                        />
+                    )}
 
-                    {/* Main */}
-                    <main className="flex-1 overflow-y-auto px-6 py-6">
+                    <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
+                        <div className="p-6 sm:p-8 flex-1 flex flex-col h-full overflow-y-auto max-w-6xl mx-auto w-full gap-5">
 
-                        {/* Header row */}
-                        <div className="flex items-start justify-between mb-5 fade-up flex-wrap gap-4">
-                            <div>
-                                <h1 className="text-lg font-semibold text-slate-900">Audit Trail</h1>
-                                <p className="text-xs text-slate-400 mt-0.5">
-                                    {logs.total} event{logs.total !== 1 ? 's' : ''}
-                                    {hasFilters ? ' — filtered' : ' total'}
-                                </p>
-                            </div>
-
-                            {/* Stats */}
-                            <div className="flex items-center gap-3">
-                                {stats.map(s => (
-                                    <div key={s.action}
-                                        className="text-center px-4 py-2 bg-white rounded-xl border border-slate-100"
-                                        style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-                                        <p className="text-lg font-bold text-slate-900 font-mono">{s.cnt}</p>
-                                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">
-                                            {s.action.replace(/_/g, ' ')}
-                                        </p>
+                            {/* ── HEADER SECTION ── */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 shrink-0">
+                                <div>
+                                    <div className="flex items-center gap-2.5">
+                                        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                                            Audit Trail
+                                        </h1>
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                            Monitoring Active
+                                        </span>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Continuous immutable event feed and compliance trace of municipal planning activities.
+                                    </p>
+                                </div>
 
-                        {/* Search + filters */}
-                        <div className="fade-up mb-4">
-                            <div className="relative mb-3">
-                                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
-                                    fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
-                                <input type="text" value={search}
-                                    onChange={e => setSearch(e.target.value)}
-                                    placeholder="Search by reference number, applicant name, or performed by…"
-                                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-800 transition-colors hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500"
-                                />
-                                {search && (
-                                    <button onClick={() => setSearch('')}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 transition-colors">
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-mono text-slate-600 bg-white border border-slate-200/90 px-3 py-1.5 rounded-lg shadow-2xs">
+                                        {logs.total} {logs.total === 1 ? "Event Recorded" : "Events Recorded"}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* ── ACTION TABS & CONTROLS BAR ── */}
+                            <div className="border-b border-slate-200/80 pb-0.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
+                                <nav className="-mb-px flex space-x-6 sm:space-x-8 overflow-x-auto" aria-label="Audit Actions">
+                                    {[
+                                        { id: "", label: "All Events" },
+                                        ...actions.map((act) => ({
+                                            id: act,
+                                            label: formatActionLabel(act),
+                                        })),
+                                    ].map((tab) => {
+                                        const isSelected = (filters.action || "") === tab.id;
+                                        return (
+                                            <button
+                                                key={tab.id || "all"}
+                                                type="button"
+                                                onClick={() => applyAction(tab.id)}
+                                                className={`py-3 px-1 border-b-2 text-xs font-medium transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+                                                    isSelected
+                                                        ? "border-blue-600 text-blue-600 font-semibold"
+                                                        : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
+                                                }`}
+                                            >
+                                                <span>{tab.label}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </nav>
+
+                                {/* Fast Search Bar */}
+                                <div className="flex items-center gap-2.5 pb-2 md:pb-0">
+                                    <div className="relative w-64 sm:w-72">
+                                        <svg
+                                            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                                         </svg>
-                                    </button>
-                                )}
+                                        <input
+                                            type="text"
+                                            value={search}
+                                            onChange={(e) => setSearch(e.target.value)}
+                                            placeholder="Search reference, applicant, performer..."
+                                            className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-7 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-2xs transition-all"
+                                        />
+                                        {search && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSearch("")}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
 
-                            {/* Action filter pills */}
-                            <div className="flex flex-wrap gap-2 items-center">
-                                <span className="text-[11px] text-slate-400 font-medium">Action:</span>
-                                <button onClick={() => applyAction('')}
-                                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition-all ${(filters.action || '') === '' ? 'border-blue-600 text-blue-600 bg-blue-50 font-semibold' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'}`}>
-                                    All
-                                </button>
-                                {actions.map(a => (
-                                    <button key={a} onClick={() => applyAction(a)}
-                                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border transition-all ${filters.action === a ? 'border-blue-600 text-blue-600 bg-blue-50 font-semibold' : 'border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'}`}>
-                                        {a.replace(/_/g, ' ')}
-                                    </button>
-                                ))}
-                                {hasFilters && (
-                                    <button onClick={clearFilters}
-                                        className="ml-auto text-xs text-slate-400 hover:text-red-500 transition-colors flex items-center gap-1">
-                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                        Clear filters
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Timeline */}
-                        <div className="fade-up">
+                            {/* ── ENTERPRISE AUDIT MONITORING STREAM (BALANCED & CLEAN) ── */}
                             {logs.data.length === 0 ? (
-                                <div className="bg-white rounded-2xl border border-slate-200 py-16 text-center"
-                                    style={{ boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
-                                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
-                                        <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                <div className="bg-white rounded-xl border border-slate-200/90 p-12 text-center shadow-xs">
+                                    <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                     </div>
-                                    <p className="text-sm font-medium text-slate-700 mb-1">No audit events found.</p>
-                                    <p className="text-xs text-slate-400">Try adjusting your search or filters.</p>
+                                    <h3 className="text-sm font-semibold text-slate-800">No audit records found</h3>
+                                    <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                                        No log entries match your active query or action filter.
+                                    </p>
+                                    {hasFilters && (
+                                        <button
+                                            type="button"
+                                            onClick={clearFilters}
+                                            className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 shadow-2xs transition-colors cursor-pointer"
+                                        >
+                                            Clear Filters
+                                        </button>
+                                    )}
                                 </div>
                             ) : (
-                                <div className="space-y-6">
-                                    {Object.entries(grouped).map(([date, dayLogs]) => {
-                                        const { label, isToday } = formatDate(date)
-                                        return (
-                                            <div key={date}>
-                                                {/* Date separator */}
-                                                <div className="flex items-center gap-3 mb-4">
-                                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap flex items-center gap-2">
-                                                        {label}
-                                                        {isToday && (
-                                                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-semibold normal-case tracking-normal">
-                                                                Today
-                                                            </span>
-                                                        )}
-                                                    </span>
-                                                    <div className="flex-1 h-px bg-slate-100" />
-                                                    <span className="text-[11px] text-slate-300 font-medium whitespace-nowrap">
-                                                        {dayLogs.length} event{dayLogs.length !== 1 ? 's' : ''}
-                                                    </span>
-                                                </div>
+                                <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
+                                    <div className="overflow-y-auto divide-y divide-slate-100 max-h-[calc(100vh-270px)]">
+                                        {logs.data.map((log) => {
+                                            const isExpanded = expandedId === log.id;
+                                            return (
+                                                <div
+                                                    key={log.id}
+                                                    className="group transition-colors"
+                                                >
+                                                    {/* Primary Event Monitoring Row */}
+                                                    <div
+                                                        onClick={() => toggleExpand(log.id)}
+                                                        className="p-4 sm:px-6 sm:py-4 hover:bg-slate-50/70 transition-colors flex items-start gap-4 sm:gap-6 cursor-pointer select-none"
+                                                    >
+                                                        {/* 1. Left: Chronological Timestamp with Timeline Node */}
+                                                        <div className="flex items-start gap-3 shrink-0 pt-0.5 w-24 sm:w-28">
+                                                            <div className="font-mono text-right w-full">
+                                                                <div className="text-xs font-semibold text-slate-800 whitespace-nowrap">
+                                                                    {formatTime(log.performed_at) || "—"}
+                                                                </div>
+                                                                <div className="text-[10.5px] text-slate-400 font-medium whitespace-nowrap">
+                                                                    {formatDate(log.performed_at)}
+                                                                </div>
+                                                            </div>
 
-                                                {/* Timeline items */}
-                                                <div className="relative timeline-line space-y-1 pl-1">
-                                                    {dayLogs.map(log => (
-                                                        <div key={log.id} className="relative pl-10 pb-1">
-                                                            <TimelineDot action={log.action} />
+                                                            {/* Timeline Trace Node */}
+                                                            <div className="pt-1.5 shrink-0 hidden sm:block">
+                                                                <span className="block w-2 h-2 rounded-full bg-slate-300 group-hover:bg-blue-600 transition-colors ring-2 ring-white" />
+                                                            </div>
+                                                        </div>
 
-                                                            {/* Card */}
-                                                            <div className="bg-white border border-slate-100 rounded-xl px-4 py-3 transition-all hover:border-slate-200 hover:shadow-sm">
-                                                                <div className="flex items-start justify-between gap-3 flex-wrap">
-                                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                                        <ActionChip action={log.action} />
-                                                                        {log.reference_number && (
-                                                                            <a href={`/applications?search=${log.reference_number}`}
-                                                                                className="font-mono text-[11px] font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full transition-colors">
+                                                        {/* 2. Center: Event Core (Clean Action Badge, Reference Code, and Description) */}
+                                                        <div className="min-w-0 flex-1 space-y-1.5">
+                                                            {/* Line 1: Action Badge & Target Application Reference */}
+                                                            <div className="flex items-center gap-2.5 flex-wrap">
+                                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                                                    {formatActionLabel(log.action)}
+                                                                </span>
+
+                                                                {log.reference_number && (
+                                                                    <Link
+                                                                        href={`/applications?search=${log.reference_number}`}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        className="font-mono text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1"
+                                                                        title="Inspect Application"
+                                                                    >
+                                                                        {log.reference_number}
+                                                                    </Link>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Line 2: Audit Description / Note */}
+                                                            {log.note ? (
+                                                                <p className="text-xs text-slate-600 leading-relaxed font-sans max-w-2xl">
+                                                                    {log.note}
+                                                                </p>
+                                                            ) : (
+                                                                <p className="text-xs text-slate-400 italic font-sans">
+                                                                    Routine compliance event recorded with no additional remarks.
+                                                                </p>
+                                                            )}
+                                                        </div>
+
+                                                        {/* 3. Right: Actor / Performer & Applicant Details (Balanced Layout) */}
+                                                        <div className="shrink-0 flex items-center gap-3.5 text-right pt-0.5">
+                                                            <div className="hidden md:block text-right">
+                                                                <div className="text-xs font-semibold text-slate-800">
+                                                                    {log.performed_by_name || "System"}
+                                                                </div>
+                                                                <div className="text-[11px] text-slate-400 font-medium truncate max-w-[180px]">
+                                                                    {log.applicant_name ? log.applicant_name : "System Process"}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Performer Avatar Initials Circle */}
+                                                            <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 border border-slate-200 flex items-center justify-center font-semibold text-[11px] shrink-0 group-hover:border-slate-300 transition-colors">
+                                                                {getInitials(log.performed_by_name || "System")}
+                                                            </div>
+
+                                                            {/* Expand Chevron Icon */}
+                                                            <button
+                                                                type="button"
+                                                                className="p-1 text-slate-400 group-hover:text-slate-700 transition-colors cursor-pointer"
+                                                                title={isExpanded ? "Collapse record" : "Expand record"}
+                                                            >
+                                                                <svg
+                                                                    className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? "rotate-180 text-blue-600" : ""}`}
+                                                                    fill="none"
+                                                                    viewBox="0 0 24 24"
+                                                                    stroke="currentColor"
+                                                                    strokeWidth="2"
+                                                                >
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                                </svg>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Expanded Audit Payload Drawer */}
+                                                    {isExpanded && (
+                                                        <div className="px-5 sm:px-8 pb-4 pt-1 bg-slate-50/90 border-t border-slate-100 text-xs">
+                                                            <div className="p-3.5 rounded-lg bg-white border border-slate-200/90 shadow-2xs space-y-2.5 font-mono">
+                                                                <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-[11px] text-slate-400">
+                                                                    <span className="font-semibold text-slate-700 uppercase tracking-wider">Audit Record Payload</span>
+                                                                    <span>RECORD_ID: EVT-{String(log.id).padStart(5, "0")}</span>
+                                                                </div>
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-[11px]">
+                                                                    <div>
+                                                                        <span className="text-slate-400">Exact Timestamp: </span>
+                                                                        <span className="text-slate-800 font-medium">{log.performed_at || "—"}</span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="text-slate-400">Action Type: </span>
+                                                                        <span className="text-slate-800 font-medium">{log.action}</span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="text-slate-400">Performed By: </span>
+                                                                        <span className="text-slate-800 font-medium">{log.performed_by_name || "System"}</span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="text-slate-400">Target Reference: </span>
+                                                                        {log.reference_number ? (
+                                                                            <Link
+                                                                                href={`/applications?search=${log.reference_number}`}
+                                                                                className="text-blue-600 hover:underline font-semibold"
+                                                                            >
                                                                                 {log.reference_number}
-                                                                            </a>
+                                                                            </Link>
+                                                                        ) : (
+                                                                            <span className="text-slate-500">None</span>
                                                                         )}
                                                                     </div>
-                                                                    <span className="text-[11px] text-slate-400 font-mono shrink-0">
-                                                                        {formatTime(log.performed_at)}
-                                                                    </span>
+                                                                    {log.applicant_name && (
+                                                                        <div className="sm:col-span-2">
+                                                                            <span className="text-slate-400">Applicant: </span>
+                                                                            <span className="text-slate-800 font-medium">{log.applicant_name}</span>
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="sm:col-span-2">
+                                                                        <span className="text-slate-400">Audit Description: </span>
+                                                                        <span className="text-slate-800 font-sans text-xs">{log.note || "No details provided"}</span>
+                                                                    </div>
                                                                 </div>
-
-                                                                {log.applicant_name && (
-                                                                    <p className="text-[12px] font-semibold text-slate-700 mt-1.5">
-                                                                        {log.applicant_name}
-                                                                    </p>
-                                                                )}
-
-                                                                {log.note && (
-                                                                    <p className="text-[12px] text-slate-500 mt-1 leading-snug">
-                                                                        {log.note}
-                                                                    </p>
-                                                                )}
-
-                                                                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-50">
-                                                                    <svg className="w-3 h-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                                                    </svg>
-                                                                    <span className="text-[11px] text-slate-400">
-                                                                        {log.performed_by_name || 'System'}
+                                                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                                                                    <span className="inline-flex items-center gap-1.5">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                                        Immutable Compliance Audit Record
                                                                     </span>
+                                                                    {log.reference_number && (
+                                                                        <Link
+                                                                            href={`/applications?search=${log.reference_number}`}
+                                                                            className="text-blue-600 hover:text-blue-700 font-semibold font-sans hover:underline inline-flex items-center gap-1"
+                                                                        >
+                                                                            Open Application →
+                                                                        </Link>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                    ))}
+                                                    )}
                                                 </div>
-                                            </div>
-                                        )
-                                    })}
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── PAGINATION CONTROLS (MATCHING USER MANAGEMENT) ── */}
+                            {logs?.last_page > 1 && (
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-200/80 pb-4 shrink-0">
+                                    <p className="text-xs text-slate-500">
+                                        Showing <span className="font-semibold text-slate-800">{logs.from || 1}</span> to{" "}
+                                        <span className="font-semibold text-slate-800">{logs.to || logs.data.length}</span> of{" "}
+                                        <span className="font-semibold text-slate-800">{logs.total}</span> events
+                                    </p>
+
+                                    <div className="flex items-center gap-1">
+                                        {logs.links.map((link, i) => (
+                                            <button
+                                                key={i}
+                                                disabled={!link.url || link.active}
+                                                onClick={() => link.url && router.get(link.url, {}, { preserveState: true })}
+                                                className={`inline-flex items-center justify-center min-w-[32px] h-8 px-2 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
+                                                    link.active
+                                                        ? "bg-blue-600 border-blue-600 text-white font-semibold shadow-2xs"
+                                                        : !link.url
+                                                        ? "opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400"
+                                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                                }`}
+                                                dangerouslySetInnerHTML={{ __html: link.label }}
+                                            />
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>
-
-                        {/* Pagination */}
-                        {logs.last_page > 1 && (
-                            <div className="flex items-center justify-between mt-6 fade-up">
-                                <p className="text-xs text-slate-400">
-                                    Showing {logs.from}–{logs.to} of {logs.total}
-                                </p>
-                                <div className="flex items-center gap-1.5">
-                                    {logs.links.map((link, i) => (
-                                        <button key={i}
-                                            disabled={!link.url}
-                                            onClick={() => link.url && router.get(link.url, {}, { preserveState: true })}
-                                            className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-xs font-medium border transition-all
-                                                ${link.active ? 'bg-blue-600 border-blue-600 text-white' : ''}
-                                                ${!link.url ? 'opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400' : ''}
-                                                ${link.url && !link.active ? 'border-slate-200 bg-white text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50' : ''}
-                                            `}
-                                            dangerouslySetInnerHTML={{ __html: link.label }}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
                     </main>
                 </div>
             </div>
         </>
-    )
+    );
 }

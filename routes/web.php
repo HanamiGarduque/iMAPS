@@ -119,6 +119,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     // User Management
     Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
     Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->name('users.sensitive');
+    Route::post('/users/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
     Route::post('/users/{id}/update', [UserManagementController::class, 'updateProfile'])->name('users.update-profile');
 });
 
