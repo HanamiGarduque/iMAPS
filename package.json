@@ -3,12 +3,12 @@
     "private": true,
     "type": "module",
     "scripts": {
-    "dev": "node dev-runner.js",
-    "build": "vite build",
-    "dev:vite": "vite",
-    "dev:laravel": "php artisan serve",
-    "dev:queue": "php artisan queue:work"
-},
+        "dev": "node dev-runner.js",
+        "build": "vite build",
+        "dev:vite": "vite",
+        "dev:laravel": "php artisan serve",
+        "dev:queue": "php artisan queue:work"
+    },
     "devDependencies": {
         "@headlessui/react": "^2.0.0",
         "@inertiajs/react": "^2.3.23",
@@ -31,8 +31,7 @@
         "leaflet": "^1.9.4",
         "react-chartjs-2": "^5.3.1",
         "react-leaflet": "^4.2.1",
+        "recharts": "^3.10.1",
         "sweetalert2": "^11.26.24"
     }
-
-    
 }

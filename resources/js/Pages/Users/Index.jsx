@@ -295,7 +295,7 @@ export default function Index({ users, filters, auth }) {
                 });
                 
                 if (response.data.success) {
-                    setUnlockedData(prev => ({ ...prev, [userId]: response.data.supabase_uuid }));
+                    setUnlockedData(prev => ({ ...prev, [userId]: response.data.handshake_key }));
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Data Decrypted', showConfirmButton: false, timer: 2000 });
                 } else {
                     Swal.fire('Access Denied', response.data.message || 'Incorrect password.', 'error');

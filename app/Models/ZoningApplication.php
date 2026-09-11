@@ -17,15 +17,21 @@ class ZoningApplication extends Model
 
     protected $fillable = [
         'reference_number',
+        'application_stream',
+        'sb_ordinance_number',
+        'dar_clearance_ref',
         'form_number',
         'application_type',
         'land_use_class',
+        'target_land_use_class',
         'status',
         'purpose',
         'applicant_name',
         'contact_number',
         'email',
         'representative_name',
+        'representative_address',
+        'representative_contact',
         'corporation_name',
         'corporation_contact',
         'corporation_address',
@@ -42,6 +48,12 @@ class ZoningApplication extends Model
         'or_number',
         'remarks',
         'encoded_by',
+        'zoning_certificate_fee',
+        'locational_clearance_fee',
+        'development_permit_fee',
+        'other_fees',
+        'penalty_fee',
+        'date_of_receipt',
     ];
 
     protected $casts = [
@@ -49,8 +61,29 @@ class ZoningApplication extends Model
         'building_area'           => 'float',
         'area_to_develop'         => 'float',
         'project_cost'            => 'float',
+        'zoning_certificate_fee'   => 'float',
+        'locational_clearance_fee' => 'float',
+        'development_permit_fee'   => 'float',
+        'other_fees'               => 'float',
+        'penalty_fee' => 'float',
+        'date_of_receipt' => 'date',
         'number_of_saleable_lots' => 'integer',
+        
     ];
+
+    protected $appends = ['land_use_class'];
+
+    public function getLandUseClassAttribute(): ?string
+    {
+        return $this->attributes['target_land_use_class']
+            ?? $this->attributes['land_use_class']
+            ?? null;
+    }
+
+    public function setLandUseClassAttribute($value): void
+    {
+        $this->attributes['target_land_use_class'] = $value;
+    }
 
     public function parcels(): HasMany
     {

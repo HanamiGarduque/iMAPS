@@ -154,10 +154,17 @@ export default function StepApplicant({
                             <Input
                                 type="tel"
                                 value={form.corporation_contact || ""}
-                                onChange={(e) => set("corporation_contact")(e)}
+                                onChange={(e) => {
+                                    let val = e.target.value.replace(/\D/g, "");
+                                    if (val.startsWith("0")) val = val.slice(1);
+                                    set("corporation_contact")({ target: { value: val } });
+                                }}
+                                maxLength={10}
                                 placeholder="9XXXXXXXXX"
                                 className="pl-12 font-mono"
+                                hasError={!!errors.corporation_contact}
                             />
+                            {errors.corporation_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.corporation_contact}</p>}
                         </div>
                     </div>
                     <div>
@@ -189,10 +196,17 @@ export default function StepApplicant({
                             <Input
                                 type="tel"
                                 value={form.representative_contact || ""}
-                                onChange={(e) => set("representative_contact")(e)}
+                                onChange={(e) => {
+                                    let val = e.target.value.replace(/\D/g, "");
+                                    if (val.startsWith("0")) val = val.slice(1);
+                                    set("representative_contact")({ target: { value: val } });
+                                }}
+                                maxLength={10}
                                 placeholder="9XXXXXXXXX"
                                 className="pl-12 font-mono"
+                                hasError={!!errors.representative_contact}
                             />
+                            {errors.representative_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.representative_contact}</p>}
                         </div>
                     </div>
                     <div>

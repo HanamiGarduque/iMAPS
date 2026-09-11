@@ -365,8 +365,11 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
             .then((data) => setLandUseMapData(sanitizeGeoJSON(data)))
             .catch(() => {});
 
-        fetch("/geojson/rosario_batangas_dummy_parcels.geojson")
-            .then((res) => res.json())
+        fetch("/api/map/land_parcels")
+            .then((res) => {
+                if (!res.ok) throw new Error("Unable to load land parcel layer");
+                return res.json();
+            })
             .then((data) => {
                 const sanitized = sanitizeGeoJSON(data);
                 setParcelMapData(sanitized);

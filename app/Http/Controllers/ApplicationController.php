@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Models\TechnicalReview;
 use App\Services\AuditLogger;
 use App\Models\ApplicationDraft;
+use App\Models\SiteInspection;
+use App\Jobs\PushInspectionToSupabase; 
 use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
 use Illuminate\Http\Request;
@@ -46,7 +48,7 @@ class ApplicationController extends Controller
                 'zoning_applications.id',
                 'zoning_applications.reference_number',
                 'zoning_applications.application_type',
-                'zoning_applications.land_use_class',
+                'zoning_applications.target_land_use_class',
                 'zoning_applications.status',
                 'zoning_applications.applicant_name',
                 'zoning_applications.barangay',
@@ -104,8 +106,7 @@ class ApplicationController extends Controller
             'status_counts' => $statusCounts,
         ]);
     }
-
-   // ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
     // CREATE — Show encode form
     // ─────────────────────────────────────────────────────────────────────────
     public function create(Request $request)
@@ -135,24 +136,56 @@ class ApplicationController extends Controller
             }
         }
 
+        // --- NEW: Fetch Site Inspectors ---
+        $inspectors = User::where('role', 'Site Inspector')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
         return Inertia::render('Applications/Create', [
             'cloudDraftPayload' => $draftPayload,
-            'cloudDraftRef'     => $draftRef
+            'cloudDraftRef'     => $draftRef,
+            'inspectors'        => $inspectors // --- NEW: Pass inspectors to the view ---
         ]);
     }
     // ─────────────────────────────────────────────────────────────────────────
     // STORE — Validate and persist new application, with one or more parcels
     // ─────────────────────────────────────────────────────────────────────────
-    public function store(Request $request)
+   public function store(Request $request)
     {
         if (Auth::user()->role !== 'Planning Officer') {
             return back()->withErrors(['auth' => 'You are not authorized to perform this action.']);
         }
 
+        $targetLandUseClass = $request->input('target_land_use_class');
+
+        $applicationTypeInput = trim((string) ($request->input('application_type') ?? ''));
+        $applicationTypeValues = array_values(array_filter(array_map('trim', explode(',', $applicationTypeInput)), fn ($item) => $item !== ''));
+        $allowedApplicationTypes = [
+            'Locational Clearance',
+            'Zoning Certification',
+            'Development Permit',
+            'Preliminary Approval and Locational Clearance (PALC)',
+            'Petition for Rezoning',
+            'Petition for Reclassification',
+        ];
+
+        if (!empty($applicationTypeInput) && !empty($applicationTypeValues)) {
+            foreach ($applicationTypeValues as $selectedType) {
+                if (!in_array($selectedType, $allowedApplicationTypes, true)) {
+                    return back()->withErrors(['application_type' => 'Invalid application category selected.']);
+                }
+            }
+        }
+
+        $request->merge(['application_type' => implode(', ', $applicationTypeValues)]);
+
         $validated = $request->validate([
-            'application_type'    => 'required|in:Locational Clearance,Zoning Certification,Development Permit,Preliminary Approval and Locational Clearance (PALC)',
+            'application_stream'  => 'required|in:permit,amendment',
+            'application_type'    => 'required|string|max:255',
             'form_number'         => 'required|string|max:255',
-            'land_use_class'      => 'required|in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational',
+            'target_land_use_class' => ['nullable', 'in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational,R1-Z,R2-Z,MR2-SZ,BR2-SZ,C1-Z,C2-Z,C/MP-Z,I1-Z,I2-Z,I3-Z,AgIndZ,AgIndZ-PTR,AgIndZ-PGR,GI-Z,UTS-Z,CMRF,PR-Z,T-Z,ECT-Z'],
+            'land_use_class'        => ['nullable', 'in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational,R1-Z,R2-Z,MR2-SZ,BR2-SZ,C1-Z,C2-Z,C/MP-Z,I1-Z,I2-Z,I3-Z,AgIndZ,AgIndZ-PTR,AgIndZ-PGR,GI-Z,UTS-Z,CMRF,PR-Z,T-Z,ECT-Z'],
             'purpose'             => 'required|string',
             'applicant_name'      => 'required|string|max:255',
             'contact_number'      => ['required', 'regex:/^(09|\+639|9)\d{9}$/'],
@@ -161,28 +194,62 @@ class ApplicationController extends Controller
             'barangay'            => 'required|string',
             'street_address'      => 'nullable|string|max:255',
             'assessment_fee'      => 'required|numeric|min:0',
-            'or_number'           => 'nullable|string',
+            'or_number'              => 'required|string|max:255',            
             'remarks'             => 'nullable|string',
+            'corporation_contact'    => ['nullable', 'regex:/^9\d{9}$/'],
+            'representative_contact' => ['nullable', 'regex:/^9\d{9}$/'],
+            'preferred_release_mode' => 'required|string',
+            'zoning_certificate_fee'   => 'nullable|numeric|min:0',
+            'locational_clearance_fee' => 'nullable|numeric|min:0',
+            'development_permit_fee'   => 'nullable|numeric|min:0',
+            'other_fees'               => 'nullable|numeric|min:0',
+            'penalty_fee'      => 'nullable|numeric|min:0',
+            'date_of_receipt'  => 'required|date',
+            'corporation_name'           => 'nullable|string|max:255',
+            'corporation_address'        => 'nullable|string|max:255',
+            'representative_address'     => 'nullable|string|max:255',
+            'building_area'              => 'nullable|numeric|min:0',
+            'area_to_develop'            => 'nullable|numeric|min:0',
+            'number_of_saleable_lots'    => 'nullable|integer|min:0',
+            'project_type_business_name' => 'nullable|string|max:255',
+            'project_cost'               => 'nullable|numeric|min:0',
+            'right_over_land'            => 'nullable|string|max:100',
+            'project_tenure'             => 'nullable|string|max:100',
 
-            // Multi-parcel payload. At least one parcel is required per application.
-            'parcels'                  => 'required|array|min:1',
-            'parcels.*.parcel_code'    => 'nullable|string|max:20',
-            'parcels.*.location_address' => 'nullable|string|max:255',
-            'parcels.*.barangay'       => 'nullable|string|max:100',
-            'parcels.*.owner_name'     => 'nullable|string|max:255',
-            'parcels.*.property_index_number'   => 'required|string|max:100',
-            'parcels.*.arp_number'      => 'nullable|string|max:100',
-            'parcels.*.survey_number'  => 'nullable|string|max:100',
-            'parcels.*.lot_number'     => 'nullable|string|max:100',
-            'parcels.*.tct_number'     => 'nullable|string|max:100',
-            'parcels.*.tax_dec_number' => 'nullable|string|max:100',
-            'parcels.*.lot_area_sqm'   => 'nullable|numeric|min:0',
-            'parcels.*.coordinates'    => ['nullable', 'regex:/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/'],
+            // Multi-parcel payload
+            'parcels'                      => 'required|array|min:1',
+            'parcels.*.parcel_code'        => 'nullable|string|max:20',
+            'parcels.*.location_address'   => 'nullable|string|max:255',
+            'parcels.*.barangay'           => 'nullable|string|max:100',
+            'parcels.*.owner_name'         => 'nullable|string|max:255',
+            'parcels.*.property_index_number' => 'required|string|max:100',
+            'parcels.*.arp_number'        => 'nullable|string|max:100',
+            'parcels.*.survey_number'     => 'nullable|string|max:100',
+            'parcels.*.lot_number'        => 'nullable|string|max:100',
+            'parcels.*.tct_number'        => 'nullable|string|max:100',
+            'parcels.*.tax_dec_number'    => 'nullable|string|max:100',
+            'parcels.*.land_use_class'    => 'nullable|string|max:100',
+            'parcels.*.lot_area_sqm'      => 'nullable|numeric|min:0',
+            'parcels.*.coordinates'       => ['nullable', 'regex:/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/'],
+
+            // --- NEW: Dynamic Validation for Evaluation Decisions & Site Inspections ---
+            'parcels.*.decision'          => 'nullable|string|in:Approved,Needs Site Inspection,Declined',
+            'parcels.*.decision_reason'   => 'required_if:parcels.*.decision,Declined|nullable|string',
+            'parcels.*.findings'          => 'nullable|string',
+            'parcels.*.inspector_id'      => 'required_if:parcels.*.decision,Needs Site Inspection|nullable|exists:users,id',
+            'parcels.*.scheduled_date'    => 'required_if:parcels.*.decision,Needs Site Inspection|nullable|date|after_or_equal:today',
+            'parcels.*.deadline_date'     => 'required_if:parcels.*.decision,Needs Site Inspection|nullable|date|after_or_equal:parcels.*.scheduled_date',
         ]);
 
-        // Generate reference number
+        $targetLandUseClass = $validated['target_land_use_class'] ?? $validated['land_use_class'] ?? $targetLandUseClass;
+
+        if ($validated['application_stream'] === 'amendment' && empty($targetLandUseClass)) {
+            return back()->withErrors(['target_land_use_class' => 'Target zoning classification is required for legislative amendments.']);
+        } elseif ($validated['application_stream'] === 'permit') {
+            $targetLandUseClass = null;
+        }
+
         $referenceNumber = $this->generateReferenceNumber(
-            $validated['application_type'],
             now()->toDateString()
         );
 
@@ -190,52 +257,44 @@ class ApplicationController extends Controller
         try {
             // 1. Create the application with the initial 'Received' status
             $application = ZoningApplication::create([
-                'reference_number'    => $referenceNumber,
-                'form_number'         => $validated['form_number'],
-                'application_type'    => $validated['application_type'],
-                'land_use_class'      => $validated['land_use_class'],
-                'status'              => 'Received',
-                'purpose'             => $validated['purpose'],
-                'applicant_name'      => $validated['applicant_name'],
-                'contact_number'      => preg_replace('/\D/', '', $validated['contact_number']),
-                'email'               => $validated['email'] ?? null,
-                'representative_name' => $validated['representative_name'] ?? null,
-                'barangay'            => $validated['barangay'],
-                'assessment_fee'      => $validated['assessment_fee'],
-                'or_number'           => $validated['or_number'] ?? null,
-                'remarks'             => $validated['remarks'] ?? null,
-                'encoded_by'          => Auth::id(),
+                'reference_number'           => $referenceNumber,
+                'application_stream'         => $validated['application_stream'],
+                'form_number'                => $validated['form_number'],
+                'application_type'           => $validated['application_type'],
+                'target_land_use_class'      => $targetLandUseClass,
+                'status'                     => 'Received',
+                'purpose'                    => $validated['purpose'],
+                'applicant_name'             => $validated['applicant_name'],
+                'contact_number'             => preg_replace('/\D/', '', $validated['contact_number']),
+                'email'                      => $validated['email'] ?? null,
+                'corporation_name'           => $validated['corporation_name'] ?? null,
+                'corporation_address'        => $validated['corporation_address'] ?? null,
+                'corporation_contact'        => $validated['corporation_contact'] ?? null,
+                'representative_name'        => $validated['representative_name'] ?? null,
+                'representative_address'     => $validated['representative_address'] ?? null,
+                'representative_contact'     => $validated['representative_contact'] ?? null,
+                'barangay'                   => $validated['barangay'],
+                'street_address'             => $validated['street_address'] ?? null,
+                'building_area'              => $validated['building_area'] ?? null,
+                'area_to_develop'            => $validated['area_to_develop'] ?? null,
+                'number_of_saleable_lots'    => $validated['number_of_saleable_lots'] ?? null,
+                'project_type_business_name' => $validated['project_type_business_name'] ?? null,
+                'project_cost'               => $validated['project_cost'] ?? null,
+                'right_over_land'            => $validated['right_over_land'] ?? null,
+                'project_tenure'             => $validated['project_tenure'] ?? null,
+                'preferred_release_mode'     => $validated['preferred_release_mode'],
+                'assessment_fee'             => $validated['assessment_fee'],
+                'zoning_certificate_fee'     => $validated['zoning_certificate_fee'] ?? 0,
+                'locational_clearance_fee'   => $validated['locational_clearance_fee'] ?? 0,
+                'development_permit_fee'     => $validated['development_permit_fee'] ?? 0,
+                'other_fees'                 => $validated['other_fees'] ?? 0,
+                'penalty_fee'                => $validated['penalty_fee'] ?? 0,
+                'date_of_receipt'            => $validated['date_of_receipt'],
+                'or_number'                  => $validated['or_number'],
+                'remarks'                    => $validated['remarks'] ?? null,
+                'encoded_by'                 => Auth::id(),
             ]);
 
-            foreach ($validated['parcels'] as $index => $parcelData) {
-                $lat = null;
-                $lng = null;
-                if (!empty($parcelData['coordinates'])) {
-                    [$lat, $lng] = array_map('trim', explode(',', $parcelData['coordinates'], 2));
-                    $lat = (float) $lat;
-                    $lng = (float) $lng;
-                }
-
-                Parcel::create([
-                    'zoning_application_id' => $application->id,
-                    'parcel_code'           => $parcelData['parcel_code'] ?? sprintf('P-%02d', $index + 1),
-                    'location_address'      => $parcelData['location_address'] ?? $validated['street_address'] ?? null,
-                    'barangay'              => $parcelData['barangay'] ?? $validated['barangay'],
-                    'owner_name'            => $parcelData['owner_name'] ?? $validated['applicant_name'],
-                    'lot_number'            => $parcelData['lot_number'] ?? null,
-                    'tct_number'            => $parcelData['tct_number'] ?? null,
-                    'tax_dec_number'        => $parcelData['tax_dec_number'] ?? null,
-                    'lot_area_sqm'          => $parcelData['lot_area_sqm'] ?? null,
-                    'latitude'              => $lat,
-                    'longitude'             => $lng,
-                    'land_use_class'        => $validated['land_use_class'],
-                    'property_index_number' => $parcelData['property_index_number'] ?? null,
-                    'arp_number'            => $parcelData['arp_number'] ?? null,
-                    'survey_number'        => $parcelData['survey_number'] ?? null,
-                ]);
-            }
-
-            // 2. Log the 'Received' status
             ApplicationStatusTracker::log(
                 $application->reference_number,
                 $application->applicant_name,
@@ -249,26 +308,125 @@ class ApplicationController extends Controller
                 note: sprintf('Application encoded by staff with %d parcel(s).', count($validated['parcels']))
             );
 
-            // 3. Automatically transition to 'Technical Review'
-            $application->update(['status' => 'Technical Review']);
+            $decisionsSeen = [];
 
-            // 4. Log the transition
-            ApplicationStatusTracker::log(
-                $application->reference_number,
-                $application->applicant_name,
-                'Technical Review'
-            );
+            // 2. Map parcels and conditionally process evaluations & site inspections
+            foreach ($validated['parcels'] as $index => $parcelData) {
+                $lat = null;
+                $lng = null;
+                if (!empty($parcelData['coordinates'])) {
+                    [$lat, $lng] = array_map('trim', explode(',', $parcelData['coordinates'], 2));
+                    $lat = (float) $lat;
+                    $lng = (float) $lng;
+                }
 
-            AuditLogger::log(
-                applicationId: $application->id,
-                action: 'STATUS_UPDATE',
-                performedBy: Auth::id(),
-                note: 'Application automatically moved from Received to Technical Review upon encoding.'
-            );
+                $parcelLandUseClass = $parcelData['land_use_class'] ?? $parcelData['land_use'] ?? $parcelData['zoning_class'] ?? null;
+
+                $parcel = Parcel::create([
+                    'zoning_application_id' => $application->id,
+                    'parcel_code'           => $parcelData['parcel_code'] ?? sprintf('P-%02d', $index + 1),
+                    'location_address'      => $parcelData['location_address'] ?? $validated['street_address'] ?? null,
+                    'barangay'              => $parcelData['barangay'] ?? $validated['barangay'],
+                    'owner_name'            => $parcelData['owner_name'] ?? $validated['applicant_name'],
+                    'lot_number'            => $parcelData['lot_number'] ?? null,
+                    'tct_number'            => $parcelData['tct_number'] ?? null,
+                    'tax_dec_number'        => $parcelData['tax_dec_number'] ?? null,
+                    'lot_area_sqm'          => $parcelData['lot_area_sqm'] ?? null,
+                    'latitude'              => $lat,
+                    'longitude'             => $lng,
+                    'land_use_class'        => $parcelLandUseClass,
+                    'property_index_number' => $parcelData['property_index_number'] ?? null,
+                    'arp_number'            => $parcelData['arp_number'] ?? null,
+                    'survey_number'         => $parcelData['survey_number'] ?? null,
+                ]);
+
+                // --- NEW: Execute Evaluation Logic if defined on the frontend ---
+                if (!empty($parcelData['decision'])) {
+                    $decisionsSeen[] = $parcelData['decision'];
+                    $siteInspectionId = null;
+
+                    if ($parcelData['decision'] === 'Needs Site Inspection') {
+                        $inspection = SiteInspection::create([
+                            'zoning_application_id' => $application->id,
+                            'parcel_id'             => $parcel->id,
+                            'inspector_id'          => $parcelData['inspector_id'],
+                            'scheduled_date'        => $parcelData['scheduled_date'],
+                            'deadline_date'         => $parcelData['deadline_date'],
+                            'status'                => 'Pending',
+                        ]);
+                        
+                        $siteInspectionId = $inspection->id;
+                        
+                        // Push inspection task directly to Supabase
+                        PushInspectionToSupabase::dispatch($inspection);
+                    }
+
+                    TechnicalReview::create([
+                        'zoning_application_id'   => $application->id,
+                        'parcel_id'               => $parcel->id,
+                        'reviewed_by'             => Auth::id(),
+                        'review_round'            => 1,
+                        'decision'                => $parcelData['decision'],
+                        'decision_reason'         => $parcelData['decision_reason'] ?? null,
+                        'findings'                => $parcelData['findings'] ?? null,
+                        'site_inspection_task_id' => $siteInspectionId,
+                        'reviewed_at'             => now(),
+                    ]);
+                }
+            }
+
+            // 3. Roll up overall status dynamically based on "restrictive precedence"
+            if (!empty($decisionsSeen)) {
+                if (in_array('Declined', $decisionsSeen, true)) {
+                    $application->update(['status' => 'Denied']);
+                } elseif (!in_array('Needs Site Inspection', $decisionsSeen, true)) {
+                    // All parcels evaluated as "Approved" without site inspections needed
+                    $application->update(['status' => 'Under Sangguniang Bayan']);
+                } else {
+                    $application->update(['status' => 'Technical Review']);
+                }
+
+                ApplicationStatusTracker::log(
+                    $application->reference_number,
+                    $application->applicant_name,
+                    $application->status
+                );
+
+                AuditLogger::log(
+                    applicationId: $application->id,
+                    action: 'STATUS_UPDATE',
+                    performedBy: Auth::id(),
+                    note: "Application automatically moved to {$application->status} based on initial encoded parcel evaluations."
+                );
+
+            } else {
+                // Default transition if no evaluations were assigned during encoding
+                $application->update(['status' => 'Technical Review']);
+                
+                ApplicationStatusTracker::log(
+                    $application->reference_number,
+                    $application->applicant_name,
+                    'Technical Review'
+                );
+
+                AuditLogger::log(
+                    applicationId: $application->id,
+                    action: 'STATUS_UPDATE',
+                    performedBy: Auth::id(),
+                    note: 'Application automatically moved from Received to Technical Review upon encoding.'
+                );
+            }
+
+            if ($request->filled('draft_id')) {
+                DB::table('application_drafts')
+                    ->where('temp_reference_number', $request->input('draft_id'))
+                    ->where('user_id', Auth::id())
+                    ->delete();
+            }
 
             DB::commit();
             return back()
-                ->with('success', 'Application encoded and moved to Technical Review successfully.')
+                ->with('success', "Application encoded successfully. Status: {$application->status}")
                 ->with('reference_number', $referenceNumber);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -291,7 +449,7 @@ class ApplicationController extends Controller
             ->first();
 
         $inspectors = User::where('role', 'Site Inspector')
-            ->whereNotNull('supabase_uuid')
+            ->whereNotNull('handshake_key') // Ensure only inspectors with handshake_key are fetched
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
@@ -691,16 +849,10 @@ class ApplicationController extends Controller
         return null;
     }
 
-    private function generateReferenceNumber(string $type, string $date): string
+    private function generateReferenceNumber(string $date): string
     {
-        $typeCodes = [
-            'Locational Clearance'    => 'LC',
-            'Zoning Certification'    => 'ZC',
-            'Development Permit'      => 'DP',
-            'Preliminary Approval and Locational Clearance (PALC)' => 'PALC',
-        ];
-
-        $code = $typeCodes[$type] ?? 'ZA';
+        // Use a generalized prefix for all application streams and types
+        $code = 'APP'; 
         $year = (new \DateTime($date))->format('Y');
         $seq  = $this->getNextSequence($code, $year);
 
@@ -763,6 +915,10 @@ class ApplicationController extends Controller
     // ── BACKGROUND AUTO-SAVE ENDPOINT ──
     public function saveDraft(Request $request)
     {
+        if (!Auth::check()) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
         $request->validate([
             'temp_id' => 'required|string',
             'payload' => 'required|array'
