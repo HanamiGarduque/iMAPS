@@ -1,13 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import {
-    Map as MapLibreMap,
-    AttributionControl,
-    Popup as MapLibrePopup,
-    setWorkerUrl,
-} from "maplibre-gl";
+import { Map as MapLibreMap, setWorkerUrl } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { DIVERSITY_TIERS, getDiversityTheme } from "@/utils/diversityTheme";
+import { getLens, resolveLensValue, DIVERSITY_LENSES } from "@/utils/diversityTheme";
+import { getZoneInfo } from "@/utils/clupZones";
+import useReducedMotion from "@/utils/useReducedMotion";
+import { loadBarangayBoundaries, resolveBarangayName } from "@/utils/mapData";
 
 // Configure MapLibre Web Worker for Vite bundling
 try {
@@ -22,18 +20,35 @@ const ROSARIO_BOUNDS = [
     [121.3685, 13.8783],
 ];
 const ROSARIO_CENTER = [121.258, 13.805];
+const DEFAULT_PITCH = 54;
+const DEFAULT_BEARING = -18;
 
-// High-Resolution Aerial Satellite Basemap
-const SATELLITE_TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+// The canvas is a flat, solid ground plane. There is no basemap: aerial
+// imagery underneath coloured prisms competed with the very fills that carry
+// the meaning, and left the view looking like two maps fighting. Rosario's
+// barangays now sit isolated on a clean sheet.
+const CANVAS = "#f8f9fa";
+const GROUND = "#eef1f4";
+const INK = "#0f172a";
+const HAIRLINE = "#cbd5e1";
 
-// Official CLUP 2030 Master Zoning Categories for Legend
-const CLUP_ZONING_LEGEND = [
-    { label: "Agricultural Sub-Zone", code: "PDA-SZ / PTA", color: "#94d180", desc: "Crop cultivation & rice protection" },
-    { label: "Forest & Protection Zone", code: "FZ / THSP", color: "#5bb93c", desc: "Forest reserve & watershed buffers" },
-    { label: "Residential Zones", code: "R1-Z / R2-Z", color: "#fffc2b", desc: "Low & medium-density housing" },
-    { label: "Commercial Core Zones", code: "C1-Z / C2-Z", color: "#eb3356", desc: "Trade, retail & service centers" },
-    { label: "Industrial & Manufacturing", code: "I1-Z", color: "#de29c0", desc: "Agri-industrial & light manufacturing" },
-];
+const SRC_PRISMS = "diversity-source";
+const SRC_LABELS = "diversity-centroids";
+const SRC_PARCELS = "clup-parcels";
+const LYR_PRISMS = "diversity-prisms";
+const LYR_FOOTPRINTS = "diversity-footprints";
+const LYR_LABELS = "diversity-labels";
+const LYR_PARCELS = "clup-parcels-extrusion";
+const LYR_PARCEL_LINES = "clup-parcels-lines";
+
+// Motion constants, so the whole scene shares one rhythm.
+const MORPH_MS = 650;
+const FADE_MS = 260;
+const FLIGHT_MS = 1100;
+const ORBIT_DEG_PER_SEC = 7.5;
+const PARCEL_HEIGHT = 190;
+
+const easeSine = (t) => 0.5 - 0.5 * Math.cos(Math.PI * t);
 
 // RFC 7946 Right-Hand Rule Polygon Winding Fix for MapLibre 3D
 function signedArea(ring) {
@@ -70,935 +85,1099 @@ function ensureRFC7946Winding(geojson) {
     return geojson;
 }
 
-// Diversity score range never literally serializes Infinity into a MapLibre
-// expression, so clamp the open ends of the tier scale to safe finite bounds.
-function tierBounds(tier) {
-    return [tier.min === -Infinity ? -1 : tier.min, tier.max === Infinity ? 2 : tier.max];
+// Area-weighted centroid of a polygon ring (the standard shoelace formula).
+//
+// Replaces a plain average of the ring's vertices, which pulls the point toward
+// whichever edge happens to be most finely sampled — noticeable on barangays
+// with one detailed boundary and three straight ones, where labels drifted off
+// centre and the camera framed the wrong part of the shape.
+function ringCentroid(ring) {
+    let twiceArea = 0;
+    let x = 0;
+    let y = 0;
+
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [x0, y0] = ring[j];
+        const [x1, y1] = ring[i];
+        const cross = x0 * y1 - x1 * y0;
+        twiceArea += cross;
+        x += (x0 + x1) * cross;
+        y += (y0 + y1) * cross;
+    }
+
+    if (twiceArea === 0) {
+        // Degenerate ring (collinear or a single point): fall back to the mean.
+        const sum = ring.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
+        return [sum[0] / ring.length, sum[1] / ring.length];
+    }
+
+    return [x / (3 * twiceArea), y / (3 * twiceArea)];
 }
 
-// Builds a MapLibre boolean expression matching features whose "diversity"
-// property falls inside the given tier's range, or null when no tier is active.
-function buildTierMatchExpr(tierId) {
-    if (!tierId || tierId === "all") return null;
-    const tier = DIVERSITY_TIERS.find((t) => t.id === tierId);
-    if (!tier) return null;
-    const [min, max] = tierBounds(tier);
-    return ["all", [">=", ["get", "diversity"], min], ["<", ["get", "diversity"], max]];
+function ringArea(ring) {
+    let twiceArea = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        twiceArea += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    }
+    return Math.abs(twiceArea / 2);
 }
 
-export default function MapLibre3DView({
-    selectedBgy,
-    onFeatureClick,
-    onMapClick,
-    bgyStats = {},
-    overallDiversity = null,
-    rightPanelOpen,
-    diversityTierFilter = "all",
-    onSelectDiversityTier = () => {},
-}) {
-    const mapContainerRef = useRef(null);
-    const mapRef = useRef(null);
-    const geojsonDataRef = useRef(null);
-    const hoveredFeatureIdRef = useRef(null);
-    const selectedFeatureIdRef = useRef(null);
-    const standingPopupRef = useRef(null);
-    const orbitIntervalRef = useRef(null);
-    const diversityTierRef = useRef(diversityTierFilter);
+function polygonCentroid(feature) {
+    const stored = feature.properties?.centroid;
+    if (Array.isArray(stored) && stored.length === 2) return stored;
 
-    const [isOrbiting, setIsOrbiting] = useState(false);
-    const [currentBearing, setCurrentBearing] = useState(-18);
-    const [currentPitch, setCurrentPitch] = useState(58);
-    const [hoverInfo, setHoverInfo] = useState(null);
-    const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
-    const [loadState, setLoadState] = useState("loading"); // "loading" | "ready" | "error"
+    const geom = feature.geometry;
+    if (!geom || !geom.coordinates) return ROSARIO_CENTER;
 
-    useEffect(() => {
-        diversityTierRef.current = diversityTierFilter;
-        const map = mapRef.current;
-        if (map && map.isStyleLoaded()) {
-            applyTierFilterStyle(map, diversityTierFilter);
-            updatePrismHeights(map.getPitch(), selectedBgy?.name || null);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [diversityTierFilter]);
+    // For a MultiPolygon take the largest part: a barangay with an offshore
+    // sliver should be labelled on its mainland, not between the two.
+    let ring;
+    if (geom.type === "Polygon") {
+        ring = geom.coordinates[0];
+    } else if (geom.type === "MultiPolygon") {
+        let best = null;
+        let bestArea = -1;
+        geom.coordinates.forEach((poly) => {
+            const outer = poly[0];
+            if (!outer || outer.length < 3) return;
+            const a = ringArea(outer);
+            if (a > bestArea) { bestArea = a; best = outer; }
+        });
+        ring = best;
+    }
 
-    // Smooth cinematic flight with sinusoidal deceleration
-    const smoothFlyToCentroid = useCallback(
-        (coords, targetZoom = 12.8) => {
-            const map = mapRef.current;
-            if (!map || !coords) return;
+    if (!ring || ring.length < 3) return ROSARIO_CENTER;
+    return ringCentroid(ring);
+}
 
-            map.flyTo({
-                center: coords,
-                zoom: targetZoom,
-                pitch: 56,
-                bearing: map.getBearing(),
-                speed: 0.8,
-                curve: 1.4,
-                padding: {
-                    top: 80,
-                    bottom: 110, // accommodate bottom camera dock
-                    left: 80,
-                    right: rightPanelOpen ? 430 : 80,
-                },
-                easing: (t) => 0.5 - 0.5 * Math.cos(Math.PI * t), // Sinusoidal ease-in-out
-                essential: true,
-            });
-        },
-        [rightPanelOpen]
-    );
+const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
-    // Update 3D prism heights: Top-down flattening vs isolated standing mode.
-    // Also dims prisms that fall outside the active diversity tier filter.
-    const updatePrismHeights = useCallback((pitchVal, bgyMatchName = null) => {
-        const map = mapRef.current;
-        if (!map || !map.isStyleLoaded() || !map.getLayer("diversity-3d-prisms")) return;
+// Builds the rendered FeatureCollection from the raw geometry plus the live
+// backend stats.
+//
+// Note it is *lens-independent*: every lens's height, colour, band and label
+// are baked in side by side (`h_mix`/`h_drift`, `c_mix`/`c_drift`, …) and the
+// paint expressions pick which pair to read. That matters for motion — MapLibre
+// only animates `fill-extrusion-height-transition` when the *paint property*
+// changes, not when the source data changes, so rebuilding the data on every
+// lens switch made all 48 prisms jump to their new heights instantly. Switching
+// an expression against stable data lets the GPU morph them, and leaves
+// feature-state (selection, hover) untouched.
+//
+// The geometry file still ships a baked `diversity`/`height`/`color` from the
+// day it was exported; none of it is read. Everything derives from bgyStats,
+// which DashboardController recomputes on every request — so the prisms and the
+// side panel can never disagree about a barangay's score.
+//
+// Every value written into `properties` is a scalar: MapLibre serialises nested
+// arrays and objects to JSON strings on the way out of queryRenderedFeatures.
+function buildFeatures(baseGeo, bgyStats) {
+    const features = (baseGeo?.features || []).map((f, idx) => {
+        const name = resolveBarangayName(f.properties);
+        const stat = bgyStats?.[name] || {};
+        const centroid = polygonCentroid(f);
 
-        const isTopDown = pitchVal < 30;
-        const tierMatch = buildTierMatchExpr(diversityTierRef.current);
+        const props = {
+            name,
+            permitCount: stat.permitCount ?? stat.Total ?? 0,
+            clusterName: stat.cluster?.name || "",
+            clusterColor: stat.cluster?.color || "#64748b",
+            primaryZone: stat.Primary_Zone || "",
+            cx: centroid[0],
+            cy: centroid[1],
+        };
 
-        if (isTopDown) {
-            // Planar 2D choropleth view: flattens heights to 0 to prevent muddy overlapping borders
-            map.setPaintProperty("diversity-3d-prisms", "fill-extrusion-height", 0);
-            map.setPaintProperty(
-                "diversity-3d-prisms",
-                "fill-extrusion-opacity",
-                tierMatch ? ["case", tierMatch, 0.92, 0.12] : 0.88
-            );
-        } else {
-            // 3D Oblique View
-            if (bgyMatchName) {
-                // Isolated standing prism mode: clicked barangay stands proud, others lower smoothly
-                map.setPaintProperty("diversity-3d-prisms", "fill-extrusion-height", [
-                    "case",
-                    ["==", ["get", "name"], bgyMatchName],
-                    ["*", ["coalesce", ["get", "height"], 700], 1.25],
-                    40, // Unselected blocks lower smoothly to subtle base
-                ]);
-                map.setPaintProperty("diversity-3d-prisms", "fill-extrusion-opacity", [
-                    "case",
-                    ["==", ["get", "name"], bgyMatchName],
-                    0.96,
-                    0.45,
-                ]);
-            } else {
-                map.setPaintProperty("diversity-3d-prisms", "fill-extrusion-height", [
-                    "coalesce",
-                    ["get", "height"],
-                    500,
-                ]);
-                map.setPaintProperty(
-                    "diversity-3d-prisms",
-                    "fill-extrusion-opacity",
-                    tierMatch ? ["case", tierMatch, 0.94, 0.10] : 0.94
-                );
-            }
-        }
-    }, []);
-
-    // Recolors the barangay footprint outlines to the active diversity tier's
-    // stroke color, dimming everything outside the filter. Mirrors the 2D map's
-    // boundary-tinting behavior so the two map modes read as one visual system.
-    const applyTierFilterStyle = (map, tierFilter) => {
-        if (!map || !map.getLayer("diversity-3d-footprints")) return;
-        const tierMatch = buildTierMatchExpr(tierFilter);
-        const tier = DIVERSITY_TIERS.find((t) => t.id === tierFilter);
-
-        if (!tierMatch || !tier) {
-            map.setPaintProperty("diversity-3d-footprints", "line-color", "#ffffff");
-            map.setPaintProperty("diversity-3d-footprints", "line-width", 2.0);
-            map.setPaintProperty("diversity-3d-footprints", "line-opacity", 0.95);
-            return;
-        }
-
-        map.setPaintProperty("diversity-3d-footprints", "line-color", ["case", tierMatch, tier.stroke, "#ffffff"]);
-        map.setPaintProperty("diversity-3d-footprints", "line-width", ["case", tierMatch, 3, 1.1]);
-        map.setPaintProperty("diversity-3d-footprints", "line-opacity", ["case", tierMatch, 1, 0.18]);
-    };
-
-    // Setup 3D GeoJSON source, extrusion layer, and centroid labels
-    const setup3DLayers = (map, geoData) => {
-        if (!map || !geoData) return;
-
-        // Clean up any existing layers and sources first to prevent collision errors
-        if (map.getLayer("diversity-3d-labels")) map.removeLayer("diversity-3d-labels");
-        if (map.getLayer("diversity-3d-footprints")) map.removeLayer("diversity-3d-footprints");
-        if (map.getLayer("diversity-3d-prisms")) map.removeLayer("diversity-3d-prisms");
-        if (map.getSource("diversity-centroids-source")) map.removeSource("diversity-centroids-source");
-        if (map.getSource("diversity-3d-source")) map.removeSource("diversity-3d-source");
-
-        // 1. Add 3D Extruded Polygons Source
-        map.addSource("diversity-3d-source", {
-            type: "geojson",
-            data: geoData,
-            promoteId: "id",
+        DIVERSITY_LENSES.forEach((lensDef) => {
+            const r = resolveLensValue(lensDef.id, stat);
+            props[`h_${lensDef.id}`] = r.height;
+            props[`c_${lensDef.id}`] = r.color;
+            props[`b_${lensDef.id}`] = r.band.id;
+            props[`l_${lensDef.id}`] = r.formatted;
+            props[`cls_${lensDef.id}`] = r.band.classification;
         });
 
-        // 2. Add Centroid Labels Source
-        const centroidFeatures = geoData.features.map((f) => {
-            let center = f.properties?.centroid;
-            if (!center && f.geometry) {
-                const geomCoords =
-                    f.geometry.type === "Polygon"
-                        ? f.geometry.coordinates[0]
-                        : f.geometry.coordinates[0]?.[0] || [];
-                let sx = 0, sy = 0;
-                geomCoords.forEach((p) => { sx += p[0]; sy += p[1]; });
-                center = geomCoords.length ? [sx / geomCoords.length, sy / geomCoords.length] : ROSARIO_CENTER;
-            }
+        return {
+            type: "Feature",
+            // `gid` is the boundary table's primary key; stable ids matter
+            // because feature-state (hover, selection) is keyed by them.
+            id: f.properties?.gid ?? (typeof f.id === "number" ? f.id : idx + 1),
+            geometry: f.geometry,
+            properties: props,
+        };
+    });
+
+    return { type: "FeatureCollection", features };
+}
+
+function toCentroidCollection(fc) {
+    return {
+        type: "FeatureCollection",
+        features: fc.features.map((f) => ({
+            type: "Feature",
+            id: f.id,
+            geometry: { type: "Point", coordinates: [f.properties.cx, f.properties.cy] },
+            properties: { ...f.properties },
+        })),
+    };
+}
+
+// Parcels of one barangay, coloured by official flat CLUP category.
+//
+// The endpoint already scopes by barangay, so the filter below is a defensive
+// fallback for the case where the query parameter is dropped and the full
+// municipal set comes back.
+function buildParcelFeatures(parcelGeo, barangayName) {
+    if (!parcelGeo?.features || !barangayName) return EMPTY_FC;
+    const target = barangayName.trim().toLowerCase();
+
+    const features = parcelGeo.features
+        .filter((f) => {
+            const p = f.properties || {};
+            const loc = (p.location || p.LOCATION || p.barangay || "").trim().toLowerCase();
+            return loc === target;
+        })
+        .map((f, idx) => {
+            const p = f.properties || {};
+            const code = p.lup_2030 || p.LUP_2030 || p.zone_code || p.zone || "";
+            const zone = getZoneInfo(code);
             return {
                 type: "Feature",
-                id: f.id || f.properties?.id,
-                geometry: {
-                    type: "Point",
-                    coordinates: center,
-                },
+                id: idx + 1,
+                geometry: f.geometry,
                 properties: {
-                    name: f.properties?.name,
-                    diversity: f.properties?.diversity || 0.5,
-                    primaryZone: f.properties?.primaryZone || "PDA-SZ",
-                    zoneLabel: f.properties?.zoneLabel || "Agricultural",
-                    color: f.properties?.color || "#94d180",
-                    centroid: center,
+                    zoneCode: zone.code,
+                    zoneLabel: zone.label,
+                    fill: zone.fill,
+                    stroke: zone.stroke,
                 },
             };
         });
 
-        map.addSource("diversity-centroids-source", {
-            type: "geojson",
-            data: {
-                type: "FeatureCollection",
-                features: centroidFeatures,
-            },
-            promoteId: "id",
+    return { type: "FeatureCollection", features };
+}
+
+export default function MapLibre3DView({
+    // False while the view is kept mounted but hidden behind the 2D map.
+    active = true,
+    selectedBgy,
+    onFeatureClick,
+    onMapClick,
+    bgyStats = {},
+    rightPanelOpen,
+    panelWidth = 380,
+    lens = "mix",
+    bandFilter = "all",
+    hoveredBgy = null,
+    onHoverBgy = () => {},
+    onParcelsVisible = () => {},
+}) {
+    const mapContainerRef = useRef(null);
+    const mapRef = useRef(null);
+
+    const baseGeoRef = useRef(null);
+    const parcelCacheRef = useRef({});
+    const parcelFetchRef = useRef({});
+    const featureIndexRef = useRef({});
+    const hoveredIdRef = useRef(null);
+    const selectedIdRef = useRef(null);
+    const selectedNameRef = useRef(null);
+
+    const lensRef = useRef(lens);
+    const bandRef = useRef(bandFilter);
+    const reducedRef = useRef(false);
+    const styleReadyRef = useRef(false);
+    const flightTargetRef = useRef(null);
+    const lastFlownRef = useRef(null);
+    // Tracks whether a barangay was selected a moment ago, so the deselect
+    // branch above can tell "just cleared" apart from "already empty".
+    const hadSelectionRef = useRef(false);
+    const isFlatRef = useRef(false);
+    const hasEnteredRef = useRef(false);
+
+    const orbitRafRef = useRef(null);
+    const orbitLastTsRef = useRef(0);
+
+    // Hover position is written straight to the DOM node; only the *content*
+    // lives in React state, keyed by barangay, so moving the mouse across one
+    // prism re-renders nothing.
+    const hoverElRef = useRef(null);
+    const hoverRafRef = useRef(null);
+    const hoverPointRef = useRef({ x: 0, y: 0 });
+
+    // The map's event handlers are bound once, in the init effect. Reading the
+    // callbacks through a ref keeps them current; captured directly, a click
+    // would forever see the first render's props (which, for `rightPanelOpen`,
+    // meant the panel re-opened itself every time even after being closed).
+    const callbacksRef = useRef({});
+    callbacksRef.current = { onFeatureClick, onMapClick, onHoverBgy, onParcelsVisible };
+
+    const prefersReducedMotion = useReducedMotion();
+
+    const [isOrbiting, setIsOrbiting] = useState(false);
+    const [currentBearing, setCurrentBearing] = useState(DEFAULT_BEARING);
+    const [currentPitch, setCurrentPitch] = useState(DEFAULT_PITCH);
+    const [hoverCard, setHoverCard] = useState(null);
+    const [loadState, setLoadState] = useState("loading");
+
+    useEffect(() => { reducedRef.current = prefersReducedMotion; }, [prefersReducedMotion]);
+
+    // ── Paint expressions ────────────────────────────────────────────────────
+    // Each is applied once per user action, never per animation frame — that
+    // per-frame re-authoring is what used to make the prisms crawl.
+
+    const heightExpression = useCallback((lensId, flat) => {
+        if (flat) return 0;
+        return [
+            "case",
+            // The selected barangay drops to the ground and opens up into its
+            // CLUP parcels, which stand in its place.
+            ["boolean", ["feature-state", "selected"], false],
+            0,
+            ["to-number", ["get", `h_${lensId}`]],
+        ];
+    }, []);
+
+    const colorExpression = useCallback((lensId) => [
+        "case",
+        ["boolean", ["feature-state", "hover"], false],
+        INK,
+        ["coalesce", ["get", `c_${lensId}`], "#94a3b8"],
+    ], []);
+
+    const opacityExpression = useCallback((lensId, band, hasSelection) => {
+        if (hasSelection) {
+            // Isolation: the selected prism sits flattened at ground level
+            // (its height already collapses to 0 above) with its parcels
+            // standing through it, and everything else disappears rather than
+            // staying visible underneath — the band filter is moot while one
+            // barangay has the floor.
+            return ["case", ["boolean", ["feature-state", "selected"], false], 0.55, 0];
+        }
+        if (!band || band === "all") {
+            return [
+                "case",
+                ["boolean", ["feature-state", "hover"], false], 0.98,
+                0.92,
+            ];
+        }
+        return [
+            "case",
+            ["boolean", ["feature-state", "selected"], false], 0.98,
+            ["==", ["get", `b_${lensId}`], band], 0.95,
+            0.12,
+        ];
+    }, []);
+
+    // One place that pushes the active lens and band filter into the layers.
+    // Switching expressions against stable data is what lets the declared
+    // transitions animate the change.
+    const applyPaint = useCallback(() => {
+        const map = mapRef.current;
+        if (!map || !styleReadyRef.current || !map.getLayer(LYR_PRISMS)) return;
+
+        const lensId = lensRef.current;
+        const band = bandRef.current;
+        const selectedName = selectedNameRef.current;
+        const hasSelection = Boolean(selectedName);
+
+        map.setPaintProperty(LYR_PRISMS, "fill-extrusion-height", heightExpression(lensId, isFlatRef.current));
+        map.setPaintProperty(LYR_PRISMS, "fill-extrusion-color", colorExpression(lensId));
+        map.setPaintProperty(LYR_PRISMS, "fill-extrusion-opacity", opacityExpression(lensId, band, hasSelection));
+
+        // Parcels have to flatten with everything else. Pinned at a constant
+        // height they stayed standing as 190m blocks over an otherwise flat map
+        // whenever the camera went top-down with a barangay selected.
+        if (map.getLayer(LYR_PARCELS)) {
+            map.setPaintProperty(
+                LYR_PARCELS,
+                "fill-extrusion-height",
+                isFlatRef.current ? 0 : PARCEL_HEIGHT
+            );
+        }
+
+        if (map.getLayer(LYR_FOOTPRINTS)) {
+            // Boundary hairlines follow the same isolation as the fill — a
+            // ghost outline of every other barangay would still be "showing"
+            // them, just faintly.
+            //
+            // In Oblique/Dramatic the hairlines are also hidden outright, even
+            // with nothing selected. Real barangay boundaries frequently follow
+            // rivers, so at full height the pale hairline tangles into a
+            // distracting network of light lines threading across the terrain
+            // — and it's redundant there anyway, since the prisms' own walls
+            // and height differences already separate one barangay from the
+            // next. Top-Down keeps them: flattened to a choropleth, the walls
+            // are gone, and the boundary is the only thing left marking where
+            // one barangay ends and another begins.
+            const showAllBoundaries = isFlatRef.current && !hasSelection;
+            map.setPaintProperty(
+                LYR_FOOTPRINTS,
+                "line-opacity",
+                showAllBoundaries
+                    ? 0.95
+                    : ["case", ["boolean", ["feature-state", "selected"], false], 1, 0]
+            );
+        }
+
+        if (map.getLayer(LYR_LABELS)) {
+            // Layout properties don't transition, but the label text has to
+            // follow the lens or the number beside a barangay would be stale.
+            map.setLayoutProperty(LYR_LABELS, "text-field", [
+                "concat", ["get", "name"], "   ", ["get", `l_${lensId}`],
+            ]);
+            // The centroid-labels source never receives feature-state (only
+            // the prisms source does — feature-state is scoped per source, not
+            // shared across them even when the ids line up), so isolation here
+            // compares the label's own `name` property against the selected
+            // name directly rather than reading `feature-state.selected`.
+            map.setPaintProperty(
+                LYR_LABELS,
+                "text-opacity",
+                hasSelection
+                    ? ["case", ["==", ["get", "name"], selectedName], 1, 0]
+                    : (!band || band === "all" ? 1 : ["case", ["==", ["get", `b_${lensId}`], band], 1, 0.15])
+            );
+        }
+    }, [heightExpression, colorExpression, opacityExpression]);
+
+    const syncSourceData = useCallback(() => {
+        const map = mapRef.current;
+        if (!map || !styleReadyRef.current || !baseGeoRef.current) return;
+        const src = map.getSource(SRC_PRISMS);
+        const labelSrc = map.getSource(SRC_LABELS);
+        if (!src) return;
+
+        const fc = buildFeatures(baseGeoRef.current, bgyStats);
+
+        const index = {};
+        fc.features.forEach((f) => {
+            index[f.properties.name.toLowerCase()] = {
+                id: f.id,
+                centroid: [f.properties.cx, f.properties.cy],
+                properties: f.properties,
+            };
         });
+        featureIndexRef.current = index;
 
-        // 3. Add 3D Extrusion Prisms Layer with CLUP 2030 Official Colors
-        if (!map.getLayer("diversity-3d-prisms")) {
+        src.setData(fc);
+        if (labelSrc) labelSrc.setData(toCentroidCollection(fc));
+
+        // setData clears every feature-state on the source, which would silently
+        // drop the selected prism's state on a data refresh.
+        if (selectedIdRef.current !== null) {
+            map.setFeatureState({ source: SRC_PRISMS, id: selectedIdRef.current }, { selected: true });
+        }
+        if (hoveredIdRef.current !== null) {
+            map.setFeatureState({ source: SRC_PRISMS, id: hoveredIdRef.current }, { hover: true });
+        }
+    }, [bgyStats]);
+
+    // Parcel geometry is fetched per barangay, lazily, and cached by name.
+    //
+    // This used to pull every parcel in the municipality (513 of them) and
+    // filter client-side on each click. The endpoint now scopes in PostGIS, so
+    // a selection transfers only that barangay's parcels — 13 for Alupay rather
+    // than 513 — and there is no full scan per selection.
+    const fetchParcelsFor = useCallback((name) => {
+        const key = name.toLowerCase();
+        const cached = parcelCacheRef.current[key];
+        if (cached) return Promise.resolve(cached);
+
+        const inFlight = parcelFetchRef.current[key];
+        if (inFlight) return inFlight;
+
+        const req = fetch(`/api/map/land_use_plan?barangay=${encodeURIComponent(name)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+                const parcels = data ? buildParcelFeatures(ensureRFC7946Winding(data), name) : EMPTY_FC;
+                parcelCacheRef.current[key] = parcels;
+                return parcels;
+            })
+            .catch(() => {
+                // Parcels are an enhancement; the prisms still work without them.
+                parcelCacheRef.current[key] = EMPTY_FC;
+                return EMPTY_FC;
+            })
+            .finally(() => {
+                delete parcelFetchRef.current[key];
+            });
+
+        parcelFetchRef.current[key] = req;
+        return req;
+    }, []);
+
+    const showParcelsFor = useCallback((name) => {
+        const map = mapRef.current;
+        if (!map || !styleReadyRef.current) return;
+        const src = map.getSource(SRC_PARCELS);
+        if (!src) return;
+
+        if (!name) {
+            src.setData(EMPTY_FC);
+            callbacksRef.current.onParcelsVisible?.(false);
+            return;
+        }
+
+        fetchParcelsFor(name).then((parcels) => {
+            // The selection may have moved on while the request was in flight.
+            if (selectedNameRef.current !== name) return;
+            const stillThere = mapRef.current && mapRef.current.getSource(SRC_PARCELS);
+            if (!stillThere) return;
+            stillThere.setData(parcels);
+            callbacksRef.current.onParcelsVisible?.(parcels.features.length > 0);
+        });
+    }, [fetchParcelsFor]);
+
+    // ── Camera ───────────────────────────────────────────────────────────────
+
+    const cameraPadding = useCallback(() => ({
+        top: 80,
+        bottom: 120,
+        left: 70,
+        right: rightPanelOpen ? panelWidth + 50 : 70,
+    }), [rightPanelOpen, panelWidth]);
+
+    const flyToBarangay = useCallback((name) => {
+        const map = mapRef.current;
+        if (!map) return;
+        const entry = featureIndexRef.current[(name || "").toLowerCase()];
+        if (!entry) return;
+
+        if (flightTargetRef.current === entry.id) return;
+        flightTargetRef.current = entry.id;
+
+        const target = {
+            center: entry.centroid,
+            // Close enough that the barangay's parcels are legible once it
+            // opens up.
+            zoom: Math.max(map.getZoom(), 13.1),
+            pitch: Math.max(map.getPitch(), 45),
+            padding: cameraPadding(),
+        };
+
+        if (reducedRef.current) {
+            map.jumpTo(target);
+            flightTargetRef.current = null;
+            return;
+        }
+
+        map.stop();
+        map.easeTo({ ...target, duration: FLIGHT_MS, easing: easeSine, essential: true });
+        map.once("moveend", () => { flightTargetRef.current = null; });
+    }, [cameraPadding]);
+
+    const frameMunicipality = useCallback((animate = true) => {
+        const map = mapRef.current;
+        if (!map) return;
+        let target = null;
+        try {
+            const cam = map.cameraForBounds(ROSARIO_BOUNDS, { padding: cameraPadding() });
+            if (cam) target = { center: cam.center, zoom: Math.min(cam.zoom, 11.8), pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING };
+        } catch (e) { /* fall through */ }
+        if (!target) target = { center: ROSARIO_CENTER, zoom: 11.5, pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING };
+        target.padding = cameraPadding();
+
+        if (!animate || reducedRef.current) {
+            map.jumpTo(target);
+            return;
+        }
+        map.stop();
+        map.easeTo({ ...target, duration: FLIGHT_MS, easing: easeSine, essential: true });
+    }, [cameraPadding]);
+
+    // ── Layer setup ──────────────────────────────────────────────────────────
+
+    const setupLayers = useCallback((map) => {
+        const fc = buildFeatures(baseGeoRef.current, bgyStats);
+
+        const index = {};
+        fc.features.forEach((f) => {
+            index[f.properties.name.toLowerCase()] = {
+                id: f.id,
+                centroid: [f.properties.cx, f.properties.cy],
+                properties: f.properties,
+            };
+        });
+        featureIndexRef.current = index;
+
+        if (!map.getSource(SRC_PRISMS)) map.addSource(SRC_PRISMS, { type: "geojson", data: fc });
+        if (!map.getSource(SRC_LABELS)) map.addSource(SRC_LABELS, { type: "geojson", data: toCentroidCollection(fc) });
+        if (!map.getSource(SRC_PARCELS)) map.addSource(SRC_PARCELS, { type: "geojson", data: EMPTY_FC });
+
+        // Ground plate: a flat wash under the municipality so the prisms have
+        // something to stand on rather than floating on the page.
+        if (!map.getLayer("diversity-ground")) {
             map.addLayer({
-                id: "diversity-3d-prisms",
+                id: "diversity-ground",
+                type: "fill",
+                source: SRC_PRISMS,
+                paint: { "fill-color": GROUND, "fill-opacity": 1 },
+            });
+        }
+
+        if (!map.getLayer(LYR_PRISMS)) {
+            map.addLayer({
+                id: LYR_PRISMS,
                 type: "fill-extrusion",
-                source: "diversity-3d-source",
+                source: SRC_PRISMS,
                 paint: {
-                    "fill-extrusion-height": ["coalesce", ["get", "height"], 500],
+                    // Starts flat so the town can rise out of the ground once.
+                    "fill-extrusion-height": 0,
                     "fill-extrusion-base": 0,
-                    "fill-extrusion-color": [
-                        "case",
-                        ["boolean", ["feature-state", "selected"], false],
-                        "#38bdf8",
-                        ["boolean", ["feature-state", "hover"], false],
-                        "#67e8f9",
-                        ["coalesce", ["get", "color"], "#94d180"],
-                    ],
-                    "fill-extrusion-opacity": 0.94,
+                    "fill-extrusion-color": colorExpression(lensRef.current),
+                    "fill-extrusion-opacity": 0.92,
                     "fill-extrusion-vertical-gradient": true,
-                    "fill-extrusion-height-transition": { duration: 900, delay: 0 },
-                    "fill-extrusion-color-transition": { duration: 400, delay: 0 },
+                    // Declared once. Nothing re-authors these at runtime.
+                    "fill-extrusion-height-transition": { duration: MORPH_MS, delay: 0 },
+                    "fill-extrusion-color-transition": { duration: MORPH_MS, delay: 0 },
+                    "fill-extrusion-opacity-transition": { duration: FADE_MS, delay: 0 },
                 },
             });
         }
 
-        // 4. Luminous Barangay Boundary Footprint Outlines
-        if (!map.getLayer("diversity-3d-footprints")) {
+        // Selected barangay's CLUP parcels, standing where its prism was.
+        if (!map.getLayer(LYR_PARCELS)) {
             map.addLayer({
-                id: "diversity-3d-footprints",
-                type: "line",
-                source: "diversity-3d-source",
+                id: LYR_PARCELS,
+                type: "fill-extrusion",
+                source: SRC_PARCELS,
                 paint: {
-                    "line-color": "#ffffff",
-                    "line-width": 2.0,
-                    "line-opacity": 0.95,
+                    "fill-extrusion-height": isFlatRef.current ? 0 : PARCEL_HEIGHT,
+                    "fill-extrusion-base": 0,
+                    "fill-extrusion-color": ["coalesce", ["get", "fill"], "#cbd5e1"],
+                    "fill-extrusion-opacity": 0.95,
+                    "fill-extrusion-vertical-gradient": true,
+                    "fill-extrusion-height-transition": { duration: MORPH_MS, delay: 120 },
                 },
             });
         }
 
-        // 5. Crisp Centroid Labels with Dynamic High-Contrast Halo
-        if (!map.getLayer("diversity-3d-labels")) {
+        if (!map.getLayer(LYR_PARCEL_LINES)) {
             map.addLayer({
-                id: "diversity-3d-labels",
-                type: "symbol",
-                source: "diversity-centroids-source",
-                layout: {
-                    "text-field": ["get", "name"],
-                    "text-font": ["Noto Sans Regular"],
-                    "text-size": [
-                        "interpolate",
-                        ["linear"],
-                        ["zoom"],
-                        11, 10,
-                        13, 12,
-                        15, 14,
+                id: LYR_PARCEL_LINES,
+                type: "line",
+                source: SRC_PARCELS,
+                paint: { "line-color": "#ffffff", "line-width": 0.6, "line-opacity": 0.55 },
+            });
+        }
+
+        if (!map.getLayer(LYR_FOOTPRINTS)) {
+            map.addLayer({
+                id: LYR_FOOTPRINTS,
+                type: "line",
+                source: SRC_PRISMS,
+                paint: {
+                    // Dark hairlines, not the white ones the satellite basemap
+                    // needed — on a light canvas white boundaries vanish.
+                    "line-color": [
+                        "case",
+                        ["boolean", ["feature-state", "selected"], false], INK,
+                        HAIRLINE,
                     ],
-                    "text-offset": [0, -1.2],
+                    "line-width": [
+                        "case",
+                        ["boolean", ["feature-state", "selected"], false], 2.4,
+                        ["boolean", ["feature-state", "hover"], false], 1.8,
+                        0.9,
+                    ],
+                    // Starts hidden (matches applyPaint's Oblique/Dramatic
+                    // case) since the scene opens at DEFAULT_PITCH, which is
+                    // oblique. applyPaint's first pass — fired once the style
+                    // settles — is what actually reveals them if the camera
+                    // starts or moves into Top-Down.
+                    "line-opacity": 0,
+                    "line-width-transition": { duration: FADE_MS, delay: 0 },
+                    "line-color-transition": { duration: FADE_MS, delay: 0 },
+                    // Without this, toggling Top-Down <-> Oblique/Dramatic pops
+                    // the boundaries in and out instantly instead of fading —
+                    // the only opacity property in this layer that was missing
+                    // its matching transition.
+                    "line-opacity-transition": { duration: FADE_MS, delay: 0 },
+                },
+            });
+        }
+
+        if (!map.getLayer(LYR_LABELS)) {
+            map.addLayer({
+                id: LYR_LABELS,
+                type: "symbol",
+                source: SRC_LABELS,
+                layout: {
+                    "text-field": ["concat", ["get", "name"], "   ", ["get", "valueLabel"]],
+                    "text-font": ["Noto Sans Regular"],
+                    "text-size": ["interpolate", ["linear"], ["zoom"], 11, 10, 13, 11.5, 15, 13],
+                    "text-offset": [0, -1.1],
                     "text-anchor": "bottom",
                     "text-allow-overlap": false,
-                    "text-ignore-placement": false,
-                    "text-max-width": 8,
+                    "text-max-width": 9,
                 },
                 paint: {
-                    "text-color": "#ffffff",
-                    "text-halo-color": "#050b14",
-                    "text-halo-width": 3.5,
-                    "text-halo-blur": 1,
+                    // Dark ink with a light halo, inverted for the light canvas.
+                    "text-color": INK,
+                    "text-halo-color": CANVAS,
+                    "text-halo-width": 2,
+                    "text-halo-blur": 0.4,
+                    "text-opacity": 1,
+                    "text-opacity-transition": { duration: FADE_MS, delay: 0 },
                 },
             });
         }
+    }, [bgyStats, colorExpression]);
 
-        // 6. Interactive Mouse Events
-        map.on("mousemove", "diversity-3d-prisms", (e) => {
-            if (e.features && e.features.length > 0) {
-                map.getCanvas().style.cursor = "pointer";
-                const feat = e.features[0];
+    // ── Init ─────────────────────────────────────────────────────────────────
 
-                if (hoveredFeatureIdRef.current !== null && hoveredFeatureIdRef.current !== feat.id) {
-                    map.setFeatureState(
-                        { source: "diversity-3d-source", id: hoveredFeatureIdRef.current },
-                        { hover: false }
-                    );
-                }
-
-                hoveredFeatureIdRef.current = feat.id;
-                map.setFeatureState(
-                    { source: "diversity-3d-source", id: feat.id },
-                    { hover: true }
-                );
-
-                setHoverInfo({
-                    x: e.point.x,
-                    y: e.point.y,
-                    properties: feat.properties,
-                });
-            }
-        });
-
-        map.on("mouseleave", "diversity-3d-prisms", () => {
-            map.getCanvas().style.cursor = "";
-            if (hoveredFeatureIdRef.current !== null) {
-                map.setFeatureState(
-                    { source: "diversity-3d-source", id: hoveredFeatureIdRef.current },
-                    { hover: false }
-                );
-                hoveredFeatureIdRef.current = null;
-            }
-            setHoverInfo(null);
-        });
-
-        map.on("click", "diversity-3d-prisms", (e) => {
-            if (e.features && e.features.length > 0) {
-                const feat = e.features[0];
-                const bgyName = feat.properties.name;
-                const centroid = feat.properties.centroid || [e.lngLat.lng, e.lngLat.lat];
-
-                if (onFeatureClick) {
-                    onFeatureClick(bgyName, feat.properties);
-                }
-
-                smoothFlyToCentroid(centroid);
-            }
-        });
-    };
-
-    // Initialize MapLibre 3D Scene with Aerial Satellite basemap
     useEffect(() => {
-        if (!mapContainerRef.current) return;
-
-        const initialStyle = {
-            version: 8,
-            glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-            sources: {
-                "base-raster-satellite": {
-                    type: "raster",
-                    tiles: [SATELLITE_TILE],
-                    tileSize: 256,
-                    attribution: '&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Aerial Satellite Imagery',
-                },
-            },
-            layers: [
-                {
-                    id: "base-layer-satellite",
-                    type: "raster",
-                    source: "base-raster-satellite",
-                    minzoom: 0,
-                    maxzoom: 19,
-                },
-            ],
-        };
+        if (!mapContainerRef.current || mapRef.current) return;
 
         const map = new MapLibreMap({
             container: mapContainerRef.current,
-            style: initialStyle,
+            // No raster sources at all: a solid background layer is the entire
+            // basemap.
+            style: {
+                version: 8,
+                glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+                sources: {},
+                layers: [{ id: "canvas", type: "background", paint: { "background-color": CANVAS } }],
+            },
             center: ROSARIO_CENTER,
             zoom: 11.5,
-            pitch: 58,
-            bearing: -18,
+            pitch: DEFAULT_PITCH,
+            bearing: DEFAULT_BEARING,
             maxPitch: 75,
             antialias: true,
             attributionControl: false,
         });
 
-        map.addControl(new AttributionControl({ compact: true }), "bottom-right");
         mapRef.current = map;
 
-        fetch("/geojson/rosario_3d_diversity_extrusions.geojson")
-            .then((res) => {
-                if (!res.ok) throw new Error("HTTP " + res.status);
-                return res.json();
+        loadBarangayBoundaries()
+            .then((raw) => {
+                if (raw && raw.features && raw.features.length) return raw;
+                // Fall back to the bundled export if PostGIS is unreachable, so
+                // the view still renders rather than showing an error card.
+                console.warn("Falling back to bundled barangay geometry");
+                return fetch("/geojson/rosario_3d_diversity_extrusions.geojson").then((r) => r.json());
             })
-            .then((rawGeoData) => {
-                const geoData = ensureRFC7946Winding(rawGeoData);
-                geojsonDataRef.current = geoData;
+            .then((raw) => {
+                if (!raw || !raw.features) throw new Error("No barangay geometry");
+                baseGeoRef.current = ensureRFC7946Winding(raw);
 
-                let readyFired = false;
+                let fired = false;
                 const onReady = () => {
-                    if (readyFired) return;
-                    if (!mapRef.current) return;
-                    readyFired = true;
+                    if (fired || !mapRef.current) return;
+                    fired = true;
+                    styleReadyRef.current = true;
 
-                    // Enhanced 3D Sun Lighting: warm directional light for distinct building facets & roofs
                     if (map.setLight) {
                         try {
-                            map.setLight({
-                                anchor: "viewport",
-                                color: "#ffffff",
-                                intensity: 0.95,
-                                position: [1.8, 135, 55],
-                            });
-                        } catch (e) {}
+                            // Softer, higher-key lighting to suit a light ground
+                            // plane; the old warm key was tuned for satellite.
+                            map.setLight({ anchor: "viewport", color: "#ffffff", intensity: 0.55, position: [1.5, 200, 40] });
+                        } catch (e) { /* older style spec */ }
                     }
 
-                    setup3DLayers(map, geoData);
-                    applyTierFilterStyle(map, diversityTierRef.current);
+                    setupLayers(map);
                     setLoadState("ready");
+                    frameMunicipality(!reducedRef.current);
 
-                    try {
-                        const cam = map.cameraForBounds(ROSARIO_BOUNDS, {
-                            padding: {
-                                top: 60,
-                                bottom: 90,
-                                left: 60,
-                                right: rightPanelOpen ? 400 : 60,
-                            },
-                        });
-
-                        if (cam) {
-                            map.easeTo({
-                                center: cam.center,
-                                zoom: Math.min(cam.zoom, 11.8),
-                                pitch: 58,
-                                bearing: -18,
-                                duration: 1000,
-                            });
-                        }
-                    } catch (e) {}
+                    const enter = () => {
+                        if (hasEnteredRef.current || !mapRef.current) return;
+                        hasEnteredRef.current = true;
+                        applyPaint();
+                    };
+                    map.once("idle", enter);
+                    setTimeout(enter, 1800);
                 };
 
-                if (map.isStyleLoaded()) {
-                    onReady();
-                } else {
+                if (map.isStyleLoaded()) onReady();
+                else {
                     map.once("styledata", onReady);
                     map.once("load", onReady);
                 }
             })
             .catch((err) => {
-                console.error("Error loading 3D GeoJSON:", err);
+                console.error("Error loading 3D diversity geometry:", err);
                 setLoadState("error");
             });
 
-        // Click outside to deselect
-        map.on("click", (e) => {
-            const features = map.queryRenderedFeatures(e.point, {
-                layers: ["diversity-3d-prisms", "diversity-3d-labels"].filter((id) => !!map.getLayer(id)),
-            });
+        // ── Interaction ──────────────────────────────────────────────────────
 
-            if (features.length === 0) {
-                if (selectedFeatureIdRef.current !== null) {
-                    map.setFeatureState(
-                        { source: "diversity-3d-source", id: selectedFeatureIdRef.current },
-                        { selected: false }
-                    );
-                    selectedFeatureIdRef.current = null;
-                }
-                if (standingPopupRef.current) {
-                    standingPopupRef.current.remove();
-                    standingPopupRef.current = null;
-                }
-                updatePrismHeights(map.getPitch(), null);
-                if (onMapClick) onMapClick();
+        const handleMove = (e) => {
+            if (!e.features || !e.features.length) return;
+            const feat = e.features[0];
+            map.getCanvas().style.cursor = "pointer";
+
+            hoverPointRef.current = { x: e.point.x, y: e.point.y };
+            if (hoverRafRef.current === null) {
+                hoverRafRef.current = requestAnimationFrame(() => {
+                    hoverRafRef.current = null;
+                    const el = hoverElRef.current;
+                    if (!el) return;
+                    const { x, y } = hoverPointRef.current;
+                    const rect = map.getCanvas().getBoundingClientRect();
+                    const flipX = x > rect.width - 150;
+                    const flipY = y < 180;
+                    el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(${flipX ? "-100%" : "-50%"}, ${flipY ? "14px" : "-100%"})`;
+                });
             }
-        });
 
-        map.on("rotate", () => setCurrentBearing(Math.round(map.getBearing())));
-        map.on("pitch", () => {
+            if (hoveredIdRef.current === feat.id) return;
+
+            if (hoveredIdRef.current !== null) {
+                map.setFeatureState({ source: SRC_PRISMS, id: hoveredIdRef.current }, { hover: false });
+            }
+            hoveredIdRef.current = feat.id;
+            map.setFeatureState({ source: SRC_PRISMS, id: feat.id }, { hover: true });
+
+            setHoverCard(feat.properties);
+            callbacksRef.current.onHoverBgy?.(feat.properties.name);
+        };
+
+        const handleLeave = () => {
+            map.getCanvas().style.cursor = "";
+            if (hoveredIdRef.current !== null) {
+                map.setFeatureState({ source: SRC_PRISMS, id: hoveredIdRef.current }, { hover: false });
+                hoveredIdRef.current = null;
+            }
+            setHoverCard(null);
+            callbacksRef.current.onHoverBgy?.(null);
+        };
+
+        const handleClick = (e) => {
+            if (!e.features || !e.features.length) return;
+            // Selection is state; the camera reacts to state in one place. This
+            // handler deliberately does not move the camera itself.
+            callbacksRef.current.onFeatureClick?.(e.features[0].properties.name);
+        };
+
+        const handleBackgroundClick = (e) => {
+            const layers = [LYR_PRISMS, LYR_LABELS, LYR_PARCELS].filter((id) => map.getLayer(id));
+            if (!layers.length) return;
+            if (map.queryRenderedFeatures(e.point, { layers }).length === 0) callbacksRef.current.onMapClick?.();
+        };
+
+        map.on("mousemove", LYR_PRISMS, handleMove);
+        map.on("mouseleave", LYR_PRISMS, handleLeave);
+        map.on("click", LYR_PRISMS, handleClick);
+        map.on("click", handleBackgroundClick);
+
+        map.on("moveend", () => {
+            setCurrentBearing(Math.round(map.getBearing()));
             const p = Math.round(map.getPitch());
             setCurrentPitch(p);
-            updatePrismHeights(p, selectedBgy?.name);
+
+            // Flatten only when the view has actually settled top-down, with
+            // hysteresis so grazing the threshold mid-flight doesn't collapse
+            // the whole town. One transition, not sixty.
+            const flat = isFlatRef.current ? p < 25 : p < 12;
+            if (flat !== isFlatRef.current) {
+                isFlatRef.current = flat;
+                applyPaint();
+            }
         });
 
-        return () => {
-            if (orbitIntervalRef.current) clearInterval(orbitIntervalRef.current);
-            if (standingPopupRef.current) {
-                standingPopupRef.current.remove();
-                standingPopupRef.current = null;
+        const stopOrbitOnInput = () => {
+            if (orbitRafRef.current !== null) {
+                cancelAnimationFrame(orbitRafRef.current);
+                orbitRafRef.current = null;
+                setIsOrbiting(false);
             }
-            map.remove();
         };
+        const canvas = map.getCanvas();
+        canvas.addEventListener("mousedown", stopOrbitOnInput);
+        canvas.addEventListener("wheel", stopOrbitOnInput, { passive: true });
+        canvas.addEventListener("touchstart", stopOrbitOnInput, { passive: true });
+
+        const handleVisibility = () => { if (document.hidden) stopOrbitOnInput(); };
+        document.addEventListener("visibilitychange", handleVisibility);
+
+        return () => {
+            if (orbitRafRef.current !== null) cancelAnimationFrame(orbitRafRef.current);
+            if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current);
+            canvas.removeEventListener("mousedown", stopOrbitOnInput);
+            canvas.removeEventListener("wheel", stopOrbitOnInput);
+            canvas.removeEventListener("touchstart", stopOrbitOnInput);
+            document.removeEventListener("visibilitychange", handleVisibility);
+            styleReadyRef.current = false;
+            map.remove();
+            mapRef.current = null;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Handle container resize & camera re-centering when right panel toggles
+    // Lens switch: repaint only. Because every lens's values are already in the
+    // source, this is a paint-property change, which the declared height and
+    // colour transitions animate — the town re-forms over MORPH_MS instead of
+    // snapping to the new metric.
     useEffect(() => {
-        const timer = setTimeout(() => {
-            if (mapRef.current) {
-                mapRef.current.resize();
-                if (selectedBgy && selectedBgy.name && geojsonDataRef.current) {
-                    const match = geojsonDataRef.current.features?.find(
-                        (f) => f.properties?.name?.toLowerCase() === selectedBgy.name.toLowerCase()
-                    );
-                    if (match && match.properties?.centroid) {
-                        smoothFlyToCentroid(match.properties.centroid);
-                    }
-                }
-            }
-        }, 320);
-        return () => clearTimeout(timer);
-    }, [rightPanelOpen, selectedBgy, smoothFlyToCentroid]);
+        lensRef.current = lens;
+        if (!styleReadyRef.current) return;
+        applyPaint();
+    }, [lens, applyPaint]);
 
-    // Handle selectedBgy changes: smooth elevation and sleek anchor badge
+    // Live stats changed (a new permit, a fresh request): rebuild the source.
+    useEffect(() => {
+        if (!styleReadyRef.current) return;
+        syncSourceData();
+        applyPaint();
+    }, [bgyStats, syncSourceData, applyPaint]);
+
+    useEffect(() => {
+        bandRef.current = bandFilter;
+        if (!styleReadyRef.current) return;
+        applyPaint();
+    }, [bandFilter, applyPaint]);
+
+    // Selection: feature-state drives the paint, parcels replace the prism, and
+    // this is the only place the camera flies — in either direction. Clicking
+    // a barangay flies in (flyToBarangay); clicking empty space used to clear
+    // the selection and drop the parcels but leave the camera sitting on the
+    // now-empty ground, with no way back except the manual Reset button. The
+    // 2D map already flew back to the municipal bounds on deselect; this makes
+    // 3D match it.
     useEffect(() => {
         const map = mapRef.current;
-        if (!map || !map.isStyleLoaded() || !geojsonDataRef.current) return;
+        if (!map || !styleReadyRef.current) return;
 
-        if (selectedBgy && selectedBgy.name) {
-            const targetName = selectedBgy.name.toLowerCase();
-            const features = geojsonDataRef.current.features || [];
-            const match = features.find(
-                (f) => f.properties?.name?.toLowerCase() === targetName || f.properties?.ADM4_EN?.toLowerCase() === targetName
-            );
+        const name = selectedBgy?.name || null;
+        selectedNameRef.current = name;
 
-            if (match) {
-                if (selectedFeatureIdRef.current !== null) {
-                    map.setFeatureState(
-                        { source: "diversity-3d-source", id: selectedFeatureIdRef.current },
-                        { selected: false }
-                    );
-                }
-                selectedFeatureIdRef.current = match.id;
-                map.setFeatureState(
-                    { source: "diversity-3d-source", id: match.id },
-                    { selected: true }
-                );
-
-                updatePrismHeights(map.getPitch(), match.properties.name);
-
-                // Show standing pillar 3D badge directly anchored above clicked barangay
-                if (standingPopupRef.current) {
-                    standingPopupRef.current.remove();
-                    standingPopupRef.current = null;
-                }
-
-                const centroid = match.properties.centroid || ROSARIO_CENTER;
-                const clupColor = match.properties.color || "#94d180";
-                const popupEl = document.createElement("div");
-                popupEl.className =
-                    "flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/97 text-slate-800 border border-cyan-300 shadow-[0_12px_32px_rgba(0,0,0,0.22)] backdrop-blur-md ring-1 ring-cyan-100";
-                popupEl.innerHTML = `
-                    <span class="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" style="background-color: ` + clupColor + `; box-shadow: 0 0 8px ` + clupColor + `"></span>
-                    <span class="font-black text-xs text-slate-900 tracking-wide">Brgy. ` + match.properties.name + `</span>
-                    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 font-bold border border-cyan-200">
-                        Index: ` + (Number(match.properties.diversity) || 0).toFixed(2) + `
-                    </span>
-                    <span class="text-[9.5px] font-bold px-1.5 py-0.5 rounded border" style="background-color: ` + clupColor + `20; border-color: ` + clupColor + `50; color: ` + clupColor + `">
-                        ` + (match.properties.zoneLabel || match.properties.primaryZone || "CLUP Zone") + `
-                    </span>
-                `;
-
-                standingPopupRef.current = new MapLibrePopup({
-                    closeButton: false,
-                    closeOnClick: false,
-                    anchor: "bottom",
-                    offset: [0, -32],
-                    className: "standing-pillar-popup pointer-events-none",
-                })
-                    .setLngLat(centroid)
-                    .setDOMContent(popupEl)
-                    .addTo(map);
-
-                smoothFlyToCentroid(centroid);
-            }
-        } else {
-            if (selectedFeatureIdRef.current !== null) {
-                map.setFeatureState(
-                    { source: "diversity-3d-source", id: selectedFeatureIdRef.current },
-                    { selected: false }
-                );
-                selectedFeatureIdRef.current = null;
-            }
-
-            updatePrismHeights(map.getPitch(), null);
-
-            if (standingPopupRef.current) {
-                standingPopupRef.current.remove();
-                standingPopupRef.current = null;
-            }
+        if (selectedIdRef.current !== null) {
+            map.setFeatureState({ source: SRC_PRISMS, id: selectedIdRef.current }, { selected: false });
+            selectedIdRef.current = null;
         }
-    }, [selectedBgy, smoothFlyToCentroid, updatePrismHeights]);
 
-    // Camera perspective presets
+        if (!name) {
+            lastFlownRef.current = null;
+            showParcelsFor(null);
+            applyPaint();
+            // Fly back only on an actual deselection (there was a barangay a
+            // moment ago), not on every render where nothing is selected —
+            // this effect also re-runs on lens change, and re-centring the
+            // camera every time someone switches lenses while browsing the
+            // municipal view would be its own new annoyance.
+            if (hadSelectionRef.current) {
+                frameMunicipality(!reducedRef.current);
+            }
+            hadSelectionRef.current = false;
+            return;
+        }
+
+        const entry = featureIndexRef.current[name.toLowerCase()];
+        if (!entry) return;
+
+        selectedIdRef.current = entry.id;
+        map.setFeatureState({ source: SRC_PRISMS, id: entry.id }, { selected: true });
+        applyPaint();
+        showParcelsFor(name);
+        hadSelectionRef.current = true;
+
+        // Fly only when the selection itself changed. This effect also re-runs
+        // on lens change, and must not yank the camera back on those passes.
+        if (lastFlownRef.current !== name) {
+            lastFlownRef.current = name;
+            flyToBarangay(name);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedBgy?.name, lens, applyPaint, showParcelsFor, frameMunicipality]);
+
+    // Mirror the panel's hover onto the map, so the explorer list and the
+    // prisms behave like one instrument.
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !styleReadyRef.current) return;
+
+        if (hoveredIdRef.current !== null) {
+            map.setFeatureState({ source: SRC_PRISMS, id: hoveredIdRef.current }, { hover: false });
+            hoveredIdRef.current = null;
+        }
+        if (!hoveredBgy) return;
+
+        const entry = featureIndexRef.current[hoveredBgy.toLowerCase()];
+        if (!entry) return;
+        hoveredIdRef.current = entry.id;
+        map.setFeatureState({ source: SRC_PRISMS, id: entry.id }, { hover: true });
+    }, [hoveredBgy]);
+
+    // Panel toggle: resize and re-pad only. This used to re-fly the camera to
+    // the selection, which yanked the view mid-interaction.
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const map = mapRef.current;
+            if (!map) return;
+            map.resize();
+            if (reducedRef.current) map.jumpTo({ padding: cameraPadding() });
+            else map.easeTo({ padding: cameraPadding(), duration: 420, easing: easeSine });
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [rightPanelOpen, cameraPadding]);
+
+    // The view stays mounted when hidden so returning to it is instant. While
+    // hidden it must not keep spinning the camera (the orbit loop would burn
+    // frames nobody sees), and on reappearing it re-measures in case the window
+    // or the panel changed size in the meantime.
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!active) {
+            if (orbitRafRef.current !== null) {
+                cancelAnimationFrame(orbitRafRef.current);
+                orbitRafRef.current = null;
+                setIsOrbiting(false);
+            }
+            return;
+        }
+        if (map) requestAnimationFrame(() => mapRef.current && mapRef.current.resize());
+    }, [active]);
+
+    // ── Controls ─────────────────────────────────────────────────────────────
+
     const setCameraPerspective = (pitch, bearing) => {
         const map = mapRef.current;
         if (!map) return;
-        map.easeTo({
-            pitch,
-            bearing,
-            duration: 900,
-            easing: (t) => 0.5 - 0.5 * Math.cos(Math.PI * t),
-        });
-    };
-
-    // Reset camera to default municipal view
-    const resetToInitialView = () => {
-        const map = mapRef.current;
-        if (!map) return;
-        map.flyTo({
-            center: ROSARIO_CENTER,
-            zoom: 11.5,
-            pitch: 58,
-            bearing: -18,
-            speed: 0.8,
-            duration: 1100,
-            easing: (t) => 0.5 - 0.5 * Math.cos(Math.PI * t),
-            padding: {
-                top: 60,
-                bottom: 90,
-                left: 60,
-                right: rightPanelOpen ? 400 : 60,
-            },
-        });
-    };
-
-    // Toggle 360-degree continuous rotation
-    const toggleCinematicOrbit = () => {
-        const map = mapRef.current;
-        if (!map) return;
-
-        if (isOrbiting) {
-            clearInterval(orbitIntervalRef.current);
-            orbitIntervalRef.current = null;
-            setIsOrbiting(false);
-        } else {
-            setIsOrbiting(true);
-            orbitIntervalRef.current = setInterval(() => {
-                if (!mapRef.current) return;
-                map.rotateTo((map.getBearing() + 0.35) % 360, { duration: 0 });
-            }, 30);
+        if (reducedRef.current) {
+            map.jumpTo({ pitch, bearing });
+            return;
         }
+        map.stop();
+        map.easeTo({ pitch, bearing, duration: 800, easing: easeSine, essential: true });
     };
+
+    const toggleOrbit = () => {
+        const map = mapRef.current;
+        if (!map) return;
+
+        if (orbitRafRef.current !== null) {
+            cancelAnimationFrame(orbitRafRef.current);
+            orbitRafRef.current = null;
+            setIsOrbiting(false);
+            return;
+        }
+
+        setIsOrbiting(true);
+        orbitLastTsRef.current = 0;
+
+        // Delta-time stepping: a fixed degrees-per-second regardless of frame
+        // rate, instead of the old fixed 0.35°-per-tick setInterval that
+        // drifted whenever the machine was busy.
+        const step = (ts) => {
+            const m = mapRef.current;
+            if (!m) return;
+            const last = orbitLastTsRef.current || ts;
+            const dt = Math.min(64, ts - last);
+            orbitLastTsRef.current = ts;
+            m.setBearing((m.getBearing() + (ORBIT_DEG_PER_SEC * dt) / 1000) % 360);
+            orbitRafRef.current = requestAnimationFrame(step);
+        };
+        orbitRafRef.current = requestAnimationFrame(step);
+    };
+
+    const activeLens = getLens(lens);
 
     return (
-        <div className="relative w-full h-full overflow-hidden bg-slate-100">
-            {/* Custom CSS overrides to eliminate MapLibre default white popup card */}
-            <style>{`
-                .standing-pillar-popup .maplibregl-popup-content {
-                    background: transparent !important;
-                    padding: 0 !important;
-                    border: none !important;
-                    box-shadow: none !important;
-                }
-                .standing-pillar-popup .maplibregl-popup-tip {
-                    border-top-color: rgba(255, 255, 255, 0.97) !important;
-                    margin-top: -1px;
-                }
-            `}</style>
-
-            {/* MapLibre WebGL Canvas Container */}
+        <div className="relative w-full h-full overflow-hidden" style={{ backgroundColor: CANVAS }}>
             <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
 
-            {/* Loading / Error Overlay */}
             {loadState !== "ready" && (
-                <div className="absolute inset-0 z-[950] flex items-center justify-center bg-white/90 backdrop-blur-sm pointer-events-none">
+                <div
+                    className="absolute inset-0 z-[950] flex items-center justify-center pointer-events-none"
+                    style={{ backgroundColor: CANVAS }}
+                >
                     {loadState === "loading" ? (
-                        <div className="flex flex-col items-center gap-3 text-slate-800">
-                            <div className="w-9 h-9 rounded-full border-2 border-cyan-200 border-t-cyan-600 animate-spin" />
-                            <span className="text-xs font-bold tracking-wide text-slate-500">Loading 3D Diversity Extrusions...</span>
+                        <div className="flex flex-col items-center gap-3">
+                            <div className="w-8 h-8 rounded-full border-2 border-slate-200 border-t-slate-900 animate-spin" />
+                            <span className="text-[11.5px] font-semibold text-slate-500">Building massing model…</span>
                         </div>
                     ) : (
                         <div className="flex flex-col items-center gap-2 text-center px-6 max-w-xs">
-                            <div className="w-9 h-9 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 font-black">!</div>
-                            <span className="text-xs font-bold text-rose-600">Couldn't load the 3D diversity layer</span>
-                            <span className="text-[10.5px] text-slate-500">Check your connection and switch back to 2D, or reload the page to try again.</span>
+                            <div className="w-8 h-8 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 font-bold">!</div>
+                            <span className="text-[11.5px] font-bold text-rose-600">Couldn't load the 3D layer</span>
+                            <span className="text-[11px] text-slate-500">Switch to 2D from the toolbar above, or reload to try again.</span>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* BOTTOM-MIDDLE FLOATING DOCK (Camera Perspectives + Orbit + Reset) */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[450] flex items-center justify-center gap-2 p-2 rounded-2xl bg-white/95 backdrop-blur-xl border border-slate-200/80 shadow-[0_16px_40px_rgba(0,0,0,0.18)] pointer-events-auto">
-
-                {/* Camera Perspectives */}
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            {/* Camera dock */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[450] flex items-center bg-white border border-slate-300 rounded-md shadow-sm pointer-events-auto overflow-hidden">
+                {[
+                    { label: "Oblique", pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING, active: currentPitch >= 40 && currentPitch <= 64 },
+                    { label: "Dramatic", pitch: 70, bearing: -32, active: currentPitch > 64 },
+                    { label: "Top-Down", pitch: 0, bearing: 0, active: currentPitch < 40 },
+                ].map((preset, idx) => (
                     <button
-                        onClick={() => setCameraPerspective(58, -18)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                            currentPitch >= 45 && currentPitch <= 62
-                                ? "bg-blue-600 text-white shadow-sm ring-1 ring-blue-400"
-                                : "text-slate-500 hover:bg-white hover:text-slate-900"
-                        }`}
-                        title="Standard 3D Oblique Perspective (58°)"
+                        key={preset.label}
+                        onClick={() => setCameraPerspective(preset.pitch, preset.bearing)}
+                        className={`px-3 py-1.5 text-[11.5px] font-bold transition-colors cursor-pointer ${
+                            idx > 0 ? "border-l border-slate-300" : ""
+                        } ${preset.active ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}
+                        title={`${preset.label} view (${preset.pitch}°)`}
                     >
-                        Standard 3D
+                        {preset.label}
                     </button>
+                ))}
 
-                    <button
-                        onClick={() => setCameraPerspective(70, -32)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                            currentPitch > 62
-                                ? "bg-blue-600 text-white shadow-sm ring-1 ring-blue-400"
-                                : "text-slate-500 hover:bg-white hover:text-slate-900"
-                        }`}
-                        title="Dramatic Aerial Angle (70°)"
-                    >
-                        Dramatic
-                    </button>
+                <button
+                    onClick={toggleOrbit}
+                    disabled={prefersReducedMotion}
+                    className={`px-3 py-1.5 text-[11.5px] font-bold border-l border-slate-300 flex items-center gap-1.5 transition-colors ${
+                        prefersReducedMotion
+                            ? "bg-white text-slate-300 cursor-not-allowed"
+                            : isOrbiting
+                            ? "bg-slate-900 text-white cursor-pointer"
+                            : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
+                    }`}
+                    title={prefersReducedMotion ? "Disabled while your system requests reduced motion" : isOrbiting ? "Stop orbit" : "Slowly orbit the municipality"}
+                >
+                    <svg className={`w-3.5 h-3.5 ${isOrbiting ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span className="hidden sm:inline">Orbit</span>
+                </button>
 
-                    <button
-                        onClick={() => setCameraPerspective(20, 0)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                            currentPitch < 35
-                                ? "bg-blue-600 text-white shadow-sm ring-1 ring-blue-400"
-                                : "text-slate-500 hover:bg-white hover:text-slate-900"
-                        }`}
-                        title="Top-Down Planimetric View (Flattens 3D borders)"
-                    >
-                        2D Flat
-                    </button>
-                </div>
+                <button
+                    onClick={() => frameMunicipality(true)}
+                    className="px-3 py-1.5 text-[11.5px] font-bold border-l border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+                    title="Frame the whole municipality"
+                >
+                    Reset
+                </button>
 
-                <div className="w-[1px] h-5 bg-slate-200" />
-
-                {/* Action Tools: Orbit & Reset */}
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={toggleCinematicOrbit}
-                        className={`p-1.5 px-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                            isOrbiting
-                                ? "bg-purple-600 text-white border-purple-400 animate-pulse"
-                                : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 hover:text-slate-900"
-                        }`}
-                        title={isOrbiting ? "Stop 360° Orbit" : "Start 360° Continuous Orbit"}
-                    >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        <span className="hidden sm:inline">{isOrbiting ? "Orbiting" : "Orbit"}</span>
-                    </button>
-
-                    <button
-                        onClick={resetToInitialView}
-                        className="p-1.5 px-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100 hover:text-slate-900 transition-all cursor-pointer"
-                        title="Reset Camera to Municipal Overview"
-                    >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                        </svg>
-                        <span className="hidden sm:inline">Reset</span>
-                    </button>
-                </div>
+                <span className="px-3 py-1.5 text-[10px] font-mono tabular-nums text-slate-400 border-l border-slate-300 hidden lg:block">
+                    {currentPitch}° / {currentBearing}°
+                </span>
             </div>
 
-            {/* BOTTOM-LEFT 3D LEGEND (CLUP 2030 Colors + Collapsible) */}
-            <div className="absolute bottom-6 left-6 z-[450] pointer-events-auto">
-                {isLegendCollapsed ? (
-                    <button
-                        type="button"
-                        onClick={() => setIsLegendCollapsed(false)}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/95 text-slate-800 border border-slate-200/80 shadow-[0_4px_16px_rgba(0,0,0,0.12)] backdrop-blur-md hover:bg-white transition-all cursor-pointer"
-                    >
-                        <div className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
-                        <span className="text-xs font-bold tracking-wide">CLUP 2030 Legend</span>
-                        <span className="text-slate-400 text-xs font-mono">▲ Expand</span>
-                    </button>
-                ) : (
-                    <div className="bg-white/95 backdrop-blur-xl rounded-2xl border border-slate-200/80 shadow-[0_12px_32px_rgba(0,0,0,0.15)] p-4 w-72 text-slate-800 transition-all">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2.5">
-                            <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-600 flex items-center justify-center shadow">
-                                    <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h4 className="text-xs font-bold text-slate-900 tracking-wide">
-                                        CLUP 2030 Master Zoning
-                                    </h4>
-                                    <span className="text-[10px] text-cyan-700 font-mono">
-                                        Extruded by Diversity Index
-                                    </span>
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setIsLegendCollapsed(true)}
-                                className="text-slate-400 hover:text-slate-900 text-xs p-1 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-                                title="Collapse Legend"
+            {/* Hover card. Position is written to this node on a rAF; only the
+                content below is React state, keyed by barangay. */}
+            <div
+                ref={hoverElRef}
+                className="absolute top-0 left-0 pointer-events-none z-[900] will-change-transform"
+                style={{ visibility: hoverCard ? "visible" : "hidden" }}
+            >
+                {hoverCard && (
+                    <div className="bg-white border border-slate-300 rounded-md shadow-md min-w-[200px] mb-3 overflow-hidden animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-slate-200">
+                            <span className="text-[12px] font-bold text-slate-900 truncate">{hoverCard.name}</span>
+                            <span
+                                className="text-[11px] font-mono tabular-nums font-bold px-1.5 rounded-sm shrink-0"
+                                style={{ backgroundColor: hoverCard[`c_${lens}`], color: "#fff" }}
                             >
-                                ✕
-                            </button>
-                        </div>
-
-                        {/* Standing Barangay Selection Indicator */}
-                        {selectedBgy?.name ? (
-                            <div className="mb-2.5 p-2 rounded-xl bg-cyan-50 border border-cyan-200 flex items-center justify-between text-[11px]">
-                                <div className="flex items-center gap-1.5 truncate">
-                                    <span className="w-2 h-2 rounded-full bg-cyan-500 shrink-0 animate-ping" />
-                                    <span className="font-bold text-cyan-800 truncate">
-                                        Brgy. {selectedBgy.name}
-                                    </span>
-                                </div>
-                                <span className="text-[9px] font-mono text-cyan-700 shrink-0 font-bold">
-                                    3D Pillar Standing
-                                </span>
-                            </div>
-                        ) : (
-                            <div className="mb-2.5 px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-[10.5px] text-slate-500 flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
-                                <span>Click any barangay to elevate 3D prism</span>
-                            </div>
-                        )}
-
-                        {/* CLUP 2030 Official Color Swatches */}
-                        <div className="space-y-1.5 mb-3">
-                            {CLUP_ZONING_LEGEND.map((item) => (
-                                <div key={item.label} className="flex items-center justify-between text-[11px]">
-                                    <div className="flex items-center gap-2 truncate pr-1">
-                                        <span
-                                            className="w-3.5 h-3.5 rounded shadow-xs shrink-0 border border-black/10"
-                                            style={{ backgroundColor: item.color }}
-                                        />
-                                        <span className="font-semibold text-slate-700 truncate">
-                                            {item.label}
-                                        </span>
-                                    </div>
-                                    <span className="font-mono text-[9.5px] text-slate-400 shrink-0">
-                                        {item.code}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Diversity Mix Spectrum: same Viridis scale & tier filter as the 2D map legend */}
-                        <div className="pt-2.5 border-t border-slate-100 space-y-1.5">
-                            <div className="flex items-center justify-between text-[9.5px] text-slate-500 font-bold uppercase tracking-wider">
-                                <span>Mix Spectrum · Click to Filter</span>
-                                {diversityTierFilter !== "all" && (
-                                    <button
-                                        type="button"
-                                        onClick={() => onSelectDiversityTier("all")}
-                                        className="text-cyan-700 hover:text-cyan-800 underline cursor-pointer normal-case font-bold"
-                                    >
-                                        Show All
-                                    </button>
-                                )}
-                            </div>
-
-                            <div className="h-2 w-full rounded-full shadow-inner bg-gradient-to-r from-[#440154] via-[#3b528b] via-[#21918c] via-[#5ec962] to-[#fde725] relative">
-                                {overallDiversity && typeof overallDiversity.score === "number" && (
-                                    <div
-                                        className="absolute -top-0.5 w-3 h-3 bg-white border-2 border-[#21918c] rounded-full shadow-md -translate-x-1/2 cursor-help"
-                                        style={{ left: `${Math.min(100, Math.max(0, overallDiversity.score * 100))}%` }}
-                                        title={`Rosario Municipal Score: ${overallDiversity.score.toFixed(2)}`}
-                                    />
-                                )}
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-1">
-                                {DIVERSITY_TIERS.map((tier) => {
-                                    const isSelected = diversityTierFilter === tier.id;
-                                    return (
-                                        <button
-                                            key={tier.id}
-                                            type="button"
-                                            onClick={() => onSelectDiversityTier(isSelected ? "all" : tier.id)}
-                                            className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-lg text-left transition-all cursor-pointer ${
-                                                isSelected
-                                                    ? "bg-slate-900 ring-1 ring-slate-900"
-                                                    : "hover:bg-slate-100"
-                                            }`}
-                                            title={`Filter 3D map to ${tier.label}`}
-                                        >
-                                            <span
-                                                className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs ring-1 ring-black/10"
-                                                style={{ backgroundColor: tier.fill }}
-                                            />
-                                            <span className={`text-[10px] truncate ${isSelected ? "font-bold text-white" : "text-slate-600"}`}>
-                                                {tier.label}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* Z-Axis Metric Note */}
-                        <div className="pt-2 mt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
-                            <span className="flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                                Height = Mix (0.00 – 1.00)
+                                {hoverCard[`l_${lens}`]}
                             </span>
-                            <span className="font-mono text-cyan-700 font-bold">
-                                Aerial 3D
-                            </span>
+                        </div>
+                        <div className="px-2.5 py-1.5 space-y-0.5">
+                            <div className="text-[11px] font-semibold text-slate-700">{hoverCard[`cls_${lens}`]}</div>
+                            <div className="text-[10px] text-slate-500">{activeLens.metricLabel}</div>
+                            {hoverCard.clusterName && (
+                                <div className="flex items-center gap-1.5 pt-1 mt-1 border-t border-slate-200">
+                                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: hoverCard.clusterColor }} />
+                                    <span className="text-[10px] text-slate-500 truncate">{hoverCard.clusterName}</span>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
             </div>
-
-            {/* Hover Tooltip in 3D Space */}
-            {hoverInfo && hoverInfo.properties && (
-                <div
-                    className="absolute pointer-events-none z-[900] -translate-x-1/2 -translate-y-full mb-3"
-                    style={{ left: hoverInfo.x, top: hoverInfo.y }}
-                >
-                    <div className="bg-white/97 backdrop-blur-xl border border-slate-200 rounded-xl p-3 shadow-2xl min-w-[210px] text-slate-800 animate-fade-in ring-1 ring-cyan-100">
-                        <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-slate-100">
-                            <h5 className="font-black text-sm text-slate-900">
-                                {hoverInfo.properties.name}
-                            </h5>
-                            <span
-                                className="w-2.5 h-2.5 rounded-full"
-                                style={{ backgroundColor: hoverInfo.properties.color || "#94d180" }}
-                            />
-                        </div>
-
-                        <div className="space-y-1 text-xs">
-                            <div className="flex items-center justify-between">
-                                <span className="text-slate-500 text-[11px]">CLUP Zone:</span>
-                                <span className="font-bold text-slate-700">
-                                    {hoverInfo.properties.zoneLabel || hoverInfo.properties.primaryZone}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-slate-500 text-[11px]">Simpson's Mix:</span>
-                                <span
-                                    className="font-mono font-bold px-1.5 rounded text-white"
-                                    style={{ backgroundColor: getDiversityTheme(hoverInfo.properties.diversity).stroke }}
-                                >
-                                    {Number(hoverInfo.properties.diversity || 0).toFixed(2)}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-slate-500 text-[11px]">Tier:</span>
-                                <span className="font-bold text-slate-700">
-                                    {getDiversityTheme(hoverInfo.properties.diversity).classification}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="mt-2 pt-1.5 border-t border-slate-100 text-[9.5px] text-cyan-700 font-bold flex items-center justify-between">
-                            <span>Click to elevate 3D pillar</span>
-                            <span>→</span>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

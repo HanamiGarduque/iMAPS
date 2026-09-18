@@ -65,6 +65,26 @@ class DashboardController extends Controller
         $municipalTotal = 0;
         $municipalZones = [];
 
+        // ── Real Barangay Land Area (from the official boundary layer) ──
+        // The side panel used to show a hardcoded municipal total (14,700 ha)
+        // and fall back to a bundled static-fixture file per barangay for area,
+        // both wrong: the real PostGIS sum is ~22,666 ha, and e.g. Alupay's
+        // fixture said 502 ha against a real 567 ha. `barangay_boundary` already
+        // carries the authoritative `land_area` (square metres) for all 48
+        // barangays; nothing was reading it. Keyed the same way as $bgyStats
+        // below (trimmed location name) so both line up without a rename.
+        $bgyLandArea = [];
+        $municipalAreaSqm = 0.0;
+        foreach (DB::table('barangay_boundary')->select('location', 'land_area')->get() as $row) {
+            $loc = trim((string) $row->location);
+            if ($loc === '') {
+                continue;
+            }
+            $sqm = (float) $row->land_area;
+            $bgyLandArea[$loc] = $sqm;
+            $municipalAreaSqm += $sqm;
+        }
+
         foreach ($landUseQuery as $lu) {
             $b = trim($lu->location);
             $area = (float) $lu->feature_area;
@@ -271,6 +291,10 @@ class DashboardController extends Controller
             $bgyStats[$b]['distribution'] = $liveDistribution;
             $bgyStats[$b]['baselineDistribution'] = $baseDistribution;
             $bgyStats[$b]['permitCount'] = $bgyPCount;
+            // Real area in hectares, from the boundary layer rather than the
+            // land-use-plan parcel sum (which can undercount where parcels
+            // don't fully tile the barangay, e.g. unmapped/road gaps).
+            $bgyStats[$b]['areaHa'] = round(($bgyLandArea[$b] ?? 0) / 10000, 1);
         }
 
         // Apply Simpson's Diversity Index Formula (Municipal Level)
@@ -306,7 +330,10 @@ class DashboardController extends Controller
             'primary' => $munDistribution[0]['name'] ?? 'Multi-Sector',
             'distribution' => array_slice($munDistribution, 0, 4), // Keep top 4 for donut chart
             'topBarangays' => array_slice($rankedBgys, 0, 8),
-            'lowBarangays' => array_slice(array_reverse($rankedBgys), 0, 5)
+            'lowBarangays' => array_slice(array_reverse($rankedBgys), 0, 5),
+            // Real municipal total, replacing a hardcoded 14700 that had
+            // drifted ~54% below the actual PostGIS figure.
+            'totalAreaHa' => round($municipalAreaSqm / 10000, 1),
         ];
 
         // ── 6-Class Standard CLUP Land Use Mapping & Urban Growth Metrics ──

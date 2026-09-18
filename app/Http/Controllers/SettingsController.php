@@ -116,6 +116,13 @@ class SettingsController extends Controller
             return back()->withErrors(['shapefile_zip' => 'Database import failed. Check PostgreSQL permissions.']);
         }
 
+        // The map API serves layers from cache; retire it so the next request
+        // rebuilds from the table that was just replaced — then rebuild it
+        // straight away, after this response is sent, so the next person to open
+        // the dashboard isn't the one who waits ~20s for land_use_plan.
+        MapController::flushLayerCache();
+        dispatch(fn () => MapController::warmLayerCache())->afterResponse();
+
         return back()->with('success', 'Map layer updated successfully!');
     }
     public function uploadRasterTiles(Request $request)

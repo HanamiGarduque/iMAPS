@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react";
 import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
@@ -8,9 +8,49 @@ import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
 import ZoningPanel from "@/Components/MapLayers/ZoningPanel";
 import MapLegend from "@/Components/MapLayers/MapLegend";
-import MapLibre3DView from "@/Components/MapLayers/MapLibre3DView";
+import DiversityLegend from "@/Components/MapLayers/DiversityLegend";
+import DiversityControls from "@/Components/MapLayers/DiversityControls";
 import { ROSARIO_GROWTH_ESTABLISHMENTS, getEstablishmentsForYear, YEAR_MILESTONES } from "@/data/rosarioEstablishments";
-import { getDiversityTheme } from "@/utils/diversityTheme";
+import { getLens, resolveLensValue, matchesBand, DIVERSITY_LENSES } from "@/utils/diversityTheme";
+import { getZoneInfo } from "@/utils/clupZones";
+import { loadBarangayBoundaries, loadMunicipalBoundary, loadLandUsePlan, resolveBarangayName } from "@/utils/mapData";
+import useReducedMotion from "@/utils/useReducedMotion";
+
+// The 3D view is split into its own chunk. It pulls in maplibre-gl, which made
+// up most of a 1.2 MB Dashboard bundle that every user downloaded on every
+// visit — including the many who never open 3D. It now loads on first use, and
+// is warmed during idle time after first paint so that first use is instant.
+const MapLibre3DView = lazy(() => import("@/Components/MapLayers/MapLibre3DView"));
+
+// Placeholder while a lazily-loaded map chunk arrives. Solid and on the same
+// canvas colour as the maps, so the swap-in doesn't flash.
+function MapLoadingState({ label }) {
+    return (
+        <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: "#f8f9fa" }}>
+            <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 rounded-full border-2 border-slate-200 border-t-slate-900 animate-spin" />
+                <span className="text-[11.5px] font-semibold text-slate-500">{label}</span>
+            </div>
+        </div>
+    );
+}
+
+// Width of the docked diversity panel. Must stay in step with the literal
+// `sm:w-[380px]` on the panel element — Tailwind's JIT only sees literal class
+// strings, so this constant cannot generate it. It exists so both maps can
+// offset their camera by the right amount.
+const DIVERSITY_PANEL_WIDTH = 380;
+
+// Runs `fn` when the browser is idle, so background preparation never competes
+// with first paint or with the user's first interactions. Safari has no
+// requestIdleCallback, hence the timeout fallback.
+function whenIdle(fn) {
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        window.requestIdleCallback(fn, { timeout: 2500 });
+    } else {
+        setTimeout(fn, 600);
+    }
+}
 
 // ── Tile Layer Configuration ──
 const TILE_PROVIDERS = {
@@ -357,9 +397,13 @@ function LeafletMap({
     clupOpacity = 0.85,
     resetTrigger,
     searchTargetBgy,
-    diversityTierFilter = "all",
-    showDiversityLabels = false,
+    diversityLens = "mix",
+    diversityBandFilter = "all",
+    hoveredBgy = null,
+    onHoverBgy = () => {},
     rightPanelOpen = true,
+    panelWidth = 380,
+    onParcelsVisible = () => {},
 }) {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
@@ -367,6 +411,14 @@ function LeafletMap({
     const clupTileLayerRef = useRef(null);
     const geoLayerRef = useRef(null);
     const zoningLayerRef = useRef(null);
+    const zoningPromiseRef = useRef(null);
+    // Declared up here, ahead of every effect: these are read in dependency
+    // arrays, which evaluate during render, so declaring them lower down would
+    // throw a temporal-dead-zone ReferenceError on the first render.
+    const [zoningReady, setZoningReady] = useState(false);
+    // Effects that style the barangay polygons must re-run once they exist;
+    // with progressive loading they can now arrive after those effects fire.
+    const [barangaysReady, setBarangaysReady] = useState(false);
     const applicationsLayerRef = useRef(null);
     const establishmentsLayerRef = useRef(null);
     const diversityLabelsLayerRef = useRef(null);
@@ -380,18 +432,24 @@ function LeafletMap({
     const opacityRef = useRef(clupOpacity);
     const appFilterRef = useRef(appTypeFilter);
     const yearRef = useRef(year);
-    const diversityTierRef = useRef(diversityTierFilter);
-    const showLabelsRef = useRef(showDiversityLabels);
+    const diversityLensRef = useRef(diversityLens);
+    const diversityBandRef = useRef(diversityBandFilter);
     const rightPanelOpenRef = useRef(rightPanelOpen);
     const selectedBgyRef = useRef(selectedBgy);
     const popupTimerRef = useRef(null);
+
+    // Matches the 3D view: when the OS asks for reduced motion the camera
+    // jumps instead of flying.
+    const prefersReducedMotion = useReducedMotion();
+    const reducedMotionRef = useRef(prefersReducedMotion);
+    useEffect(() => { reducedMotionRef.current = prefersReducedMotion; }, [prefersReducedMotion]);
 
     useEffect(() => { layerRef.current = currentLayer; }, [currentLayer]);
     useEffect(() => { opacityRef.current = clupOpacity; }, [clupOpacity]);
     useEffect(() => { appFilterRef.current = appTypeFilter; }, [appTypeFilter]);
     useEffect(() => { yearRef.current = year; }, [year]);
-    useEffect(() => { diversityTierRef.current = diversityTierFilter; }, [diversityTierFilter]);
-    useEffect(() => { showLabelsRef.current = showDiversityLabels; }, [showDiversityLabels]);
+    useEffect(() => { diversityLensRef.current = diversityLens; }, [diversityLens]);
+    useEffect(() => { diversityBandRef.current = diversityBandFilter; }, [diversityBandFilter]);
     useEffect(() => { rightPanelOpenRef.current = rightPanelOpen; }, [rightPanelOpen]);
     useEffect(() => { selectedBgyRef.current = selectedBgy; }, [selectedBgy]);
 
@@ -410,6 +468,14 @@ function LeafletMap({
                 landUse: stat.Primary_Zone || stat.primaryZone || "Residential",
                 diversity: stat.diversity ?? 0.0,
                 distribution: stat.distribution || [],
+                // Carried through so the 2D map can resolve either lens from the
+                // same record the 3D map and the side panel use.
+                variance: stat.variance ?? 0,
+                varianceStatus: stat.varianceStatus || "",
+                clupTargetDiversity: stat.clupTargetDiversity ?? null,
+                pressure: stat.pressure || null,
+                cluster: stat.cluster || null,
+                permitCount: stat.permitCount ?? stat.Total ?? 0,
             };
         });
         return map;
@@ -424,168 +490,18 @@ function LeafletMap({
         return "#dbeafe";
     };
 
-    const landUseColors = {
-        Residential: { fill: "#22c55e", stroke: "#16a34a" },
-        Agricultural: { fill: "#84cc16", stroke: "#65a30d" },
-        Commercial: { fill: "#f59e0b", stroke: "#d97706" },
-        Industrial: { fill: "#ef4444", stroke: "#dc2626" },
-        "Agro-Industrial": { fill: "#8b5cf6", stroke: "#7c3aed" },
-        Special: { fill: "#64748b", stroke: "#475569" },
-    };
 
-    const zoningPlanColors = {
-        "R1-Z": { fill: "#fffc2b", stroke: "#e6e326" },
-        "R2-Z": { fill: "#fffc2b", stroke: "#e6e326" },
-        "MR2-SZ": { fill: "#ffc92b", stroke: "#e5b426" },
-        "BR2-SZ": { fill: "#ffc92b", stroke: "#e5b426" },
-        "C1-Z": { fill: "#eb3356", stroke: "#d32e4d" },
-        "C2-Z": { fill: "#eb3356", stroke: "#d32e4d" },
-        "C/MP-Z": { fill: "#36ff39", stroke: "#30e533" },
-        "I1-Z": { fill: "#de29c0", stroke: "#c725ac" },
-        "I2-Z": { fill: "#de29c0", stroke: "#c725ac" },
-        "I3-Z": { fill: "#de29c0", stroke: "#c725ac" },
-        "AgIndZ": { fill: "#ff7cae", stroke: "#e56f9c" },
-        "AgIndZ-PTR": { fill: "#ff7cae", stroke: "#e56f9c" },
-        "AgIndZ-PGR": { fill: "#ff7cae", stroke: "#e56f9c" },
-        "PDA-SZ": { fill: "#94d180", stroke: "#85bc73" },
-        "PTA-SZ-RA": { fill: "#94d180", stroke: "#85bc73" },
-        "5491-APDA-SZ": { fill: "#61631f", stroke: "#57591c" },
-        "FZ": { fill: "#5bb93c", stroke: "#51a636" },
-        "FR-SZ": { fill: "#5bb93c", stroke: "#51a636" },
-        "GI-Z": { fill: "#6146db", stroke: "#573fc5" },
-        "UTS-Z": { fill: "#969696", stroke: "#878787" },
-        "CMRF": { fill: "#969696", stroke: "#878787" },
-        "PR-Z": { fill: "#36ff39", stroke: "#30e533" },
-        "T-Z": { fill: "#ffa97a", stroke: "#e5986d" },
-        "ECT-Z": { fill: "#ffa97a", stroke: "#e5986d" },
-        "THSP-SZ": { fill: "#5bb93c", stroke: "#51a636" },
-        "WZ": { fill: "#2dcacd", stroke: "#28b5b8" },
-        "ROAD": { fill: "#969696", stroke: "#878787" },
-        "PROPOSED ROAD": { fill: "#969696", stroke: "#878787" },
-        "DEFAULT": { fill: "#cbd5e1", stroke: "#94a3b8" }
-    };
+    // Zone colour and label both come from the shared CLUP dictionary now.
+    // This file used to keep its own `zoningPlanColors` table in parallel with
+    // the panel's, in raw QGIS neon, so the same parcel could render one colour
+    // on the map and a different one in the breakdown beside it.
+    const getZoneDisplayInfo = (code) => getZoneInfo(code);
 
-    const getZoneDisplayInfo = (code) => {
-        const c = String(code || "").trim();
-        const config = zoningPlanColors[c] || zoningPlanColors["DEFAULT"];
-        const labels = {
-            "R1-Z": "Low-Density Residential (R-1)",
-            "R2-Z": "Medium-Density Residential (R-2)",
-            "MR2-SZ": "Maximum R-2 Sub-Zone",
-            "BR2-SZ": "Basic R-2 Sub-Zone",
-            "C1-Z": "Commercial-1 Zone (C-1)",
-            "C2-Z": "Commercial-2 Zone (C-2)",
-            "C/MP-Z": "Cemetery / Memorial Park",
-            "I1-Z": "Light Industrial (I-1)",
-            "I2-Z": "Medium Industrial (I-2)",
-            "I3-Z": "Heavy Industrial (I-3)",
-            "AgIndZ": "Agri-Industrial Zone",
-            "AgIndZ-PTR": "Agri-Industrial Poultry",
-            "AgIndZ-PGR": "Agri-Industrial Piggery",
-            "PDA-SZ": "Production Agricultural Sub-Zone",
-            "PTA-SZ-RA": "Protection Agricultural Rice Area",
-            "5491-APDA-SZ": "Buffer / Greenbelt Sub-Zone",
-            "FZ": "Forest Zone",
-            "FR-SZ": "Forest Reserve Sub-Zone",
-            "GI-Z": "General Institutional Zone",
-            "UTS-Z": "Utilities & Transport Zone",
-            "CMRF": "Materials Recovery Facility",
-            "PR-Z": "Parks & Recreation Zone",
-            "T-Z": "Tourism Zone",
-            "ECT-Z": "Eco-Tourism Zone",
-            "THSP-SZ": "Tombol Hill Special Protection",
-            "WZ": "Water Zone",
-            "ROAD": "Road Network",
-            "PROPOSED ROAD": "Proposed Bypass Network",
-        };
-        return {
-            label: labels[c] || c || "Zoning Parcel",
-            code: c,
-            fill: config.fill,
-            stroke: config.stroke,
-        };
-    };
-
-    const buildDiversityXRayPopup = (name, divScore, theme, bgyData) => {
-        const munDiff = Math.round((divScore - 0.62) * 100);
-        const diffLabel = munDiff >= 0 ? `+${munDiff}% vs Town Avg (0.62)` : `${munDiff}% vs Town Avg (0.62)`;
-        const cleanId = name.replace(/[^a-zA-Z0-9]/g, "-");
-        const distribution = bgyData?.distribution || [];
-        const topDist = distribution.slice(0, 4);
-
-        const distributionHtml = topDist.length > 0 ? topDist.map((item) => {
-            const zInfo = getZoneDisplayInfo(item.name);
-            return `
-                <div class="flex items-center justify-between px-2 py-1 rounded border text-[10px] bg-slate-50/80 border-slate-200">
-                    <div class="flex items-center gap-1.5 min-w-0 truncate">
-                        <span class="w-2 h-2 rounded-xs shrink-0 ring-1 ring-black/10" style="background-color: ${zInfo.fill};"></span>
-                        <span class="font-semibold text-slate-800 truncate">${zInfo.label}</span>
-                    </div>
-                    <span class="font-mono font-bold text-slate-900 shrink-0 ml-1.5">${item.value}%</span>
-                </div>
-            `;
-        }).join("") : `<div class="text-[10px] text-slate-400 font-medium py-0.5">No zoning records available.</div>`;
-
-        return `
-            <div class="p-2.5 font-sans min-w-[240px] max-w-[275px]">
-                <div class="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-200">
-                    <div>
-                        <span class="text-[8px] font-bold uppercase tracking-wider text-slate-400 block">
-                            CLUP 2030 Land Use
-                        </span>
-                        <h4 class="text-xs font-bold text-slate-900 leading-tight">
-                            Brgy. ${name}
-                        </h4>
-                    </div>
-                    <span class="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded text-white shrink-0" style="background-color: ${theme.fill};">
-                        Index: ${Number(divScore).toFixed(2)}
-                    </span>
-                </div>
-
-                <div class="mt-1.5 py-1 px-2 rounded bg-slate-50 border border-slate-200 flex items-center justify-between text-[10px]">
-                    <span class="font-bold text-slate-700 truncate mr-1">${theme.classification}</span>
-                    <span class="font-mono font-semibold text-slate-600 text-[9px] shrink-0">
-                        ${diffLabel}
-                    </span>
-                </div>
-
-                <!-- Internal Micro-Zoning Classification Mix -->
-                <div class="mt-1.5 pt-1.5 border-t border-slate-100">
-                    <div class="flex items-center justify-between mb-1">
-                        <span class="text-[8px] font-bold uppercase tracking-wider text-slate-400">
-                            Land Use Mix:
-                        </span>
-                        <span class="text-[8px] font-medium text-slate-400">
-                            CLUP 2030
-                        </span>
-                    </div>
-                    <div class="space-y-0.5">
-                        ${distributionHtml}
-                    </div>
-                </div>
-
-                <!-- Footer action -->
-                <div class="mt-2 pt-1.5 border-t border-slate-100">
-                    <button id="bgy-clear-btn-${cleanId}" class="w-full py-1 px-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 font-semibold text-[10.5px] transition-colors cursor-pointer border border-slate-200 text-center">
-                        Deselect Barangay
-                    </button>
-                </div>
-            </div>
-        `;
-    };
-
-    const attachPopupButtons = (name, bgyData) => {
-        const cleanId = name.replace(/[^a-zA-Z0-9]/g, "-");
-        setTimeout(() => {
-            const clearBtn = document.getElementById(`bgy-clear-btn-${cleanId}`);
-            if (clearBtn) {
-                clearBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    if (onMapClick) onMapClick();
-                };
-            }
-        }, 50);
-    };
+    // The barangay X-Ray popup that used to live here is gone. It was a
+    // translucent card floating on the map, which put its text over whatever
+    // colour happened to be underneath; everything it showed — score, tier,
+    // land-use mix — now lives in the docked panel on the right, with more
+    // room and a solid background.
 
     // Smoothly focus on any clicked barangay with silky smooth panning/zooming and zero header overlap
     const focusBarangayOnMap = (targetLayer, name, bgyData) => {
@@ -600,11 +516,12 @@ function LeafletMap({
         const w = size.x || 1000;
         const h = size.y || 700;
 
-        // Horizontally: center in the open map area (accounting for the ~390px right intelligence panel)
-        const sidebarWidth = rightPanelOpenRef.current ? 390 : 0;
+        // Horizontally: centre in whatever map area the docked panel leaves open.
+        const sidebarWidth = rightPanelOpenRef.current ? panelWidth : 0;
         const targetScreenX = Math.max(140, (w - sidebarWidth) / 2);
-        // Vertically: position centroid in the lower 60% of viewport so the upward popup has plenty of clearance below header
-        const targetScreenY = Math.min(h - 100, Math.max(300, 100 + (h - 100) * 0.62));
+        // Vertically: centre it. With the popup gone there is nothing that needs
+        // clearance below the header, so the barangay sits in the middle.
+        const targetScreenY = h / 2;
 
         import("leaflet").then((L) => {
             const centroidPoint = mapInstanceRef.current.project(centroid, targetZoom);
@@ -615,7 +532,9 @@ function LeafletMap({
             const newCenter = mapInstanceRef.current.unproject(newCenterPoint, targetZoom);
 
             const isZoomChanging = Math.abs(currentZoom - targetZoom) > 0.15;
-            if (isZoomChanging) {
+            if (reducedMotionRef.current) {
+                mapInstanceRef.current.setView(newCenter, targetZoom, { animate: false });
+            } else if (isZoomChanging) {
                 mapInstanceRef.current.flyTo(newCenter, targetZoom, {
                     duration: 1.1,
                     easeLinearity: 0.15,
@@ -632,43 +551,15 @@ function LeafletMap({
                 popupTimerRef.current = null;
             }
 
-            if (layerRef.current === "diversity") {
-                const divScore = bgyData?.diversity ?? 0;
-                const theme = getDiversityTheme(divScore);
-                const popupContent = buildDiversityXRayPopup(name, divScore, theme, bgyData);
-
-                targetLayer.bindPopup(popupContent, {
-                    className: "custom-app-popup",
-                    maxWidth: 280,
-                    autoPan: false,
-                    closeButton: true,
-                });
-
-                // Open popup smoothly as camera reaches position to prevent DOM reflow jitter during pan
-                popupTimerRef.current = setTimeout(() => {
-                    if (mapInstanceRef.current && selectedBgyRef.current && selectedBgyRef.current.name?.toLowerCase() === name.toLowerCase()) {
-                        targetLayer.openPopup();
-                        attachPopupButtons(name, bgyData);
-                    }
-                }, 420);
-
-                targetLayer.off("popupclose");
-                targetLayer.on("popupclose", () => {
-                    if (selectedBgyRef.current && selectedBgyRef.current.name?.toLowerCase() === name.toLowerCase()) {
-                        if (onMapClick) onMapClick();
-                    }
-                });
-            } else {
-                mapInstanceRef.current.closePopup();
-            }
+            // No popup in diversity mode any more — the docked panel is the
+            // detail surface, so the map just frames the barangay.
+            mapInstanceRef.current.closePopup();
         });
     };
 
     const getFeatureStyle = (feature, layer, filter, currentYear) => {
         const props = feature.properties || {};
-        const name = (
-            props.LOCATION || props.location || props.ADM4_EN || props.name || props.NAME || props.BRGY || props.brgy || ""
-        ).trim();
+        const name = resolveBarangayName(props);
         const bgyData = staticBgyData[name] || { total: 0, landUse: "Residential", diversity: 0.5 };
         const temporalData = getTemporalData(bgyData, name, currentYear);
 
@@ -680,31 +571,77 @@ function LeafletMap({
         }
 
         if (layer === "diversity") {
-            const isSelected = selectedBgy && selectedBgy.name && selectedBgy.name.trim().toLowerCase() === name.toLowerCase();
-            const activeTier = diversityTierRef.current || "all";
-            const divScore = bgyData?.diversity ?? 0;
-            const theme = getDiversityTheme(divScore);
-            const matchesTier = activeTier === "all" || theme.tier === activeTier;
+            // Read the selection from the ref, not the `selectedBgy` prop.
+            // Leaflet's L.geoJSON freezes the `style` function it's given at
+            // layer-creation time (mount, inside a `[]`-deps effect) and reuses
+            // that exact closure forever on every `resetStyle()` call — e.g. on
+            // mouseout. A closure over the prop would forever see whatever
+            // `selectedBgy` was AT MOUNT (null, on first load), so isolation
+            // would silently stop working the moment a barangay was hovered and
+            // un-hovered. `selectedBgyRef` is a ref: reading `.current` always
+            // gets the live value regardless of which render's closure asks.
+            const selName = (selectedBgyRef.current?.name || "").trim().toLowerCase();
+            const anySelected = Boolean(selName);
+            const isSelected = anySelected && selName === name.toLowerCase();
+            const activeBand = diversityBandRef.current || "all";
+            const resolved = resolveLensValue(diversityLensRef.current, bgyData);
+            const inBand = activeBand === "all" || resolved.band.id === activeBand;
 
+            // This layer used to paint every barangay with a fully transparent
+            // fill, so the "Diversity Index map" showed no diversity at all —
+            // just boundaries floating over the CLUP raster. It is now a real
+            // choropleth of the active lens, with the plan still legible
+            // underneath through the fill.
+            // Outline only: the selected barangay opens up to show its CLUP
+            // parcels underneath, so its own fill steps out of the way.
+            //
+            // `fill: false` rather than `fillOpacity: 0` — an invisible fill is
+            // still hit-tested, and since the barangay outlines render above the
+            // parcels it would swallow every hover meant for the zones inside.
             if (isSelected) {
                 return {
-                    color: "#1e3a8a",           // Bold Navy administrative border
-                    weight: 3.5,
+                    color: "#0f172a",
+                    weight: 2.4,
                     dashArray: null,
-                    fillColor: "transparent",   // 100% transparent so official CLUP zoning underneath is crystal clear
-                    fillOpacity: 0,
+                    fill: false,
                     opacity: 1,
                 };
             }
 
-            // Clean administrative boundary over the CLUP master zoning map: NO solid purple covers
+            // Isolation: while one barangay is open, every other barangay goes
+            // fully invisible rather than staying colored underneath, so its
+            // parcels are the only thing left competing for attention. The
+            // shape is still there and still clickable — hovering shows its
+            // tooltip and clicking it switches the selection — it just doesn't
+            // render, the same way the selected barangay's own fill doesn't.
+            if (anySelected) {
+                return {
+                    color: "#0f172a",
+                    weight: 0,
+                    fillColor: "transparent",
+                    fillOpacity: 0,
+                    opacity: 0,
+                };
+            }
+
+            if (!inBand) {
+                return {
+                    color: "#94a3b8",
+                    weight: 0.6,
+                    dashArray: "3, 3",
+                    fillColor: "#e2e8f0",
+                    fillOpacity: 0.12,
+                    opacity: 0.35,
+                };
+            }
+
             return {
-                color: matchesTier ? (activeTier === "all" ? "#334155" : theme.stroke) : "#94a3b8",
-                weight: matchesTier ? (activeTier === "all" ? 1.2 : 2.5) : 0.6,
-                dashArray: activeTier !== "all" && matchesTier ? null : "3, 3",
-                fillColor: "transparent",       // No solid purple covers: let CLUP render clearly
-                fillOpacity: 0,
-                opacity: matchesTier ? (activeTier === "all" ? 0.85 : 0.95) : 0.25,
+                color: resolved.stroke,
+                weight: activeBand === "all" ? 1.2 : 2.2,
+                dashArray: null,
+                fillColor: resolved.color,
+                fillOpacity: 0.68,
+                opacity: 0.9,
             };
         }
 
@@ -751,6 +688,7 @@ function LeafletMap({
                     paddingBottomRight: [sidebarWidth + 20, 40],
                     duration: 1.0,
                     easeLinearity: 0.15,
+                    animate: !reducedMotionRef.current,
                 });
             }
             prevSelectedBgyRef.current = null;
@@ -763,9 +701,7 @@ function LeafletMap({
 
         geoLayerRef.current.eachLayer((l) => {
             const props = l.feature?.properties || {};
-            const name = (
-                props.LOCATION || props.location || props.ADM4_EN || props.name || props.NAME || props.BRGY || props.brgy || ""
-            ).trim();
+            const name = resolveBarangayName(props);
 
             if (name && name.toLowerCase() === targetName) {
                 matchedLayer = l;
@@ -781,13 +717,25 @@ function LeafletMap({
             const isStatus = currentLayer === "status";
             const isTrends = currentLayer === "trends";
             const isDiversity = currentLayer === "diversity";
-            matchedLayer.setStyle({
-                weight: isStatus ? 2.5 : 3.5,
-                color: isStatus ? "#2563eb" : (isTrends ? "#2563eb" : (isDiversity ? "#1e3a8a" : "#1e3a8a")),
-                fillColor: isStatus ? "#3b82f6" : (isTrends ? "#3b82f6" : (isDiversity ? "transparent" : "#2563eb")),
-                fillOpacity: isStatus ? 0.08 : (isTrends ? 0.12 : (isDiversity ? 0.02 : 0.6)),
-                dashArray: "",
-            });
+            if (isDiversity) {
+                // Outline only — the barangay's CLUP parcels render inside it,
+                // and `fill: false` lets their tooltips receive the mouse.
+                matchedLayer.setStyle({
+                    weight: 2.4,
+                    color: "#0f172a",
+                    fill: false,
+                    opacity: 1,
+                    dashArray: "",
+                });
+            } else {
+                matchedLayer.setStyle({
+                    weight: isStatus ? 2.5 : 3.5,
+                    color: isStatus ? "#2563eb" : (isTrends ? "#2563eb" : "#1e3a8a"),
+                    fillColor: isStatus ? "#3b82f6" : (isTrends ? "#3b82f6" : "#2563eb"),
+                    fillOpacity: isStatus ? 0.08 : (isTrends ? 0.12 : 0.6),
+                    dashArray: "",
+                });
+            }
             matchedLayer.bringToFront();
 
             const bgyData = staticBgyData[selectedBgy.name] || selectedBgy.data || {};
@@ -819,7 +767,97 @@ function LeafletMap({
                 focusBarangayOnMap(matchedLayer, selectedBgy.name, bgyData);
             }
         }
-    }, [selectedBgy, currentLayer, applications, staticBgyData]);
+    }, [selectedBgy, currentLayer, applications, staticBgyData, barangaysReady]);
+
+    // The land-use plan is the heaviest thing on this page (513 parcels,
+    // ~830 KB compressed) and only the CLUP 2030 and Urban Growth layers, plus a
+    // selected barangay in the diversity view, ever show it. It used to be
+    // fetched and attached at mount on every visit.
+    //
+    // Now it is *built* on demand — or during idle time right after first paint,
+    // so it is usually ready before anyone clicks — and *attached* only while a
+    // layer shows it (see the style-sync effect). Attachment matters as much as
+    // loading: an attached Leaflet layer re-projects and redraws every path on
+    // every pan and zoom even at zero opacity, so the Status map was quietly
+    // redrawing 513 invisible polygons whenever it moved.
+
+    const ensureZoningLayer = () => {
+        if (zoningLayerRef.current) return Promise.resolve(zoningLayerRef.current);
+        if (zoningPromiseRef.current) return zoningPromiseRef.current;
+
+        zoningPromiseRef.current = Promise.all([loadLandUsePlan(), import("leaflet")])
+            .then(([landUseData, L]) => {
+                if (!mapInstanceRef.current || !landUseData || !landUseData.features) {
+                    zoningPromiseRef.current = null; // allow a retry on next need
+                    return null;
+                }
+                zoningLayerRef.current = L.default.geoJSON(landUseData, {
+                    style: (feature) => {
+                        const props = feature.properties || {};
+                        const rawZone = props.lup_2030 || props.LUP_2030 || props.zone_code || props.zone || props.landuse || props.luc || "DEFAULT";
+                        const zoneCode = String(rawZone).trim();
+                        const colorConfig = getZoneInfo(zoneCode);
+                        const isZoningActive = layerRef.current === "zoning";
+                        const isTrendsActive = layerRef.current === "trends";
+                        const isLandUsePlanVisible = isZoningActive || isTrendsActive;
+
+                        return {
+                            color: colorConfig.stroke,
+                            weight: isTrendsActive ? 1 : 1.5,
+                            fillColor: colorConfig.fill,
+                            fillOpacity: isTrendsActive ? 0.65 : (isZoningActive ? opacityRef.current : 0),
+                            opacity: isLandUsePlanVisible ? 0.9 : 0
+                        };
+                    },
+                    onEachFeature: (feature, parcelLayer) => {
+                        // Identify the zones a diversity click reveals. Without
+                        // this the parcels are legible as colour but anonymous,
+                        // and the legend key only names categories, not the
+                        // specific sub-zone under the cursor.
+                        const props = feature.properties || {};
+                        const rawZone = props.lup_2030 || props.LUP_2030 || props.zone_code || props.zone || "";
+                        const zone = getZoneInfo(String(rawZone).trim());
+
+                        parcelLayer.on("mouseover", (e) => {
+                            if (layerRef.current !== "diversity") return;
+                            // Only the revealed barangay's parcels are interactive;
+                            // the rest are invisible and must not answer the mouse.
+                            const parcelBgy = (props.location || props.LOCATION || props.barangay || "").trim().toLowerCase();
+                            const sel = (selectedBgyRef.current?.name || "").trim().toLowerCase();
+                            if (!sel || parcelBgy !== sel) return;
+
+                            L.default.DomEvent.stopPropagation(e);
+                            parcelLayer
+                                .bindTooltip(
+                                    `<div class="font-sans">
+                                        <div class="font-bold text-slate-900">${zone.label}</div>
+                                        <div class="text-[10px] text-slate-500 font-mono">${zone.code || "—"} · ${zone.categoryLabel || ""}</div>
+                                    </div>`,
+                                    { className: "diversity-tooltip font-sans text-xs", sticky: true }
+                                )
+                                .openTooltip(e.latlng);
+                            parcelLayer.setStyle({ weight: 1.6, color: "#0f172a", opacity: 1 });
+                        });
+
+                        parcelLayer.on("mouseout", () => {
+                            parcelLayer.closeTooltip();
+                            if (layerRef.current === "diversity") {
+                                parcelLayer.setStyle({ weight: 0.6, color: "#ffffff", opacity: 0.55 });
+                            }
+                        });
+                    }
+                });
+                setZoningReady(true);
+                return zoningLayerRef.current;
+            })
+            .catch((err) => {
+                zoningPromiseRef.current = null;
+                console.warn("Land-use plan load error:", err);
+                return null;
+            });
+
+        return zoningPromiseRef.current;
+    };
 
     useEffect(() => {
         if (mapInstanceRef.current) return;
@@ -872,12 +910,19 @@ function LeafletMap({
             establishmentsLayerRef.current = L.default.layerGroup().addTo(map);
             diversityLabelsLayerRef.current = L.default.layerGroup().addTo(map);
 
-            Promise.all([
-                fetch("/api/map/rosario_boundary").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-                fetch("/api/map/barangay_boundary").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-                fetch("/api/map/land_use_plan").then((r) => (r.ok ? r.json() : null)).catch(() => null),
-            ])
-            .then(([rosarioData, barangayData, landUseData]) => {
+            // Each layer draws the moment its own data arrives.
+            //
+            // This was a single Promise.all over the boundary, the barangays and
+            // the land-use plan, with all drawing inside one `.then()` — so the
+            // 24 KB municipal outline and the 161 KB barangays sat waiting on the
+            // land-use plan, which on a cold server took ~20s to build. The map
+            // stayed blank the whole time. The land-use plan is no longer part of
+            // first paint at all (see ensureZoningLayer).
+            //
+            // The loaders are cached module-level promises shared with the 3D
+            // view, so toggling 2D/3D never refetches geometry.
+            loadMunicipalBoundary().then((rosarioData) => {
+                if (mapInstanceRef.current !== map) return; // unmounted meanwhile
                 if (rosarioData && rosarioData.features) {
                     const rosarioGeo = L.default.geoJSON(rosarioData, {
                         style: {
@@ -894,38 +939,17 @@ function LeafletMap({
                     rosarioBoundsRef.current = rosarioBounds;
                     map.setMaxBounds(rosarioBounds.pad(0.75));
                 }
+            });
 
-                if (landUseData && landUseData.features) {
-                    zoningLayerRef.current = L.default.geoJSON(landUseData, {
-                        style: (feature) => {
-                            const props = feature.properties || {};
-                            const rawZone = props.lup_2030 || props.LUP_2030 || props.zone_code || props.zone || props.landuse || props.luc || "DEFAULT";
-                            const zoneCode = String(rawZone).trim();
-                            const colorConfig = zoningPlanColors[zoneCode] || zoningPlanColors["DEFAULT"];
-                            const isZoningActive = layerRef.current === "zoning";
-                            const isTrendsActive = layerRef.current === "trends";
-                            const isLandUsePlanVisible = isZoningActive || isTrendsActive;
-
-                            return {
-                                color: colorConfig.stroke,
-                                weight: isTrendsActive ? 1 : 1.5,
-                                fillColor: colorConfig.fill,
-                                fillOpacity: isTrendsActive ? 0.65 : (isZoningActive ? opacityRef.current : 0),
-                                opacity: isLandUsePlanVisible ? 0.9 : 0
-                            };
-                        }
-                    }).addTo(map);
-                }
-
+            loadBarangayBoundaries().then((barangayData) => {
+                if (mapInstanceRef.current !== map) return;
                 if (barangayData && barangayData.features) {
                     geoLayerRef.current = L.default
                         .geoJSON(barangayData, {
                             style: (feature) => getFeatureStyle(feature, layerRef.current, appTypeFilter, year),
                             onEachFeature: (feature, layer_feature) => {
                                 const props = feature.properties || {};
-                                const name = (
-                                    props.LOCATION || props.location || props.ADM4_EN || props.name || props.NAME || props.BRGY || props.brgy || "Unknown"
-                                ).trim();
+                                const name = resolveBarangayName(props);
 
                                 const bgyData = staticBgyData[name] || {
                                     total: 0,
@@ -954,19 +978,19 @@ function LeafletMap({
                                     if (isTrends && dominantZoneText) {
                                         tooltipContent = `<div class="font-bold text-slate-800">${name}</div><div class="text-[10px] text-blue-600 font-medium">${dominantZoneText} Zone</div>`;
                                     } else if (isDiversity) {
-                                        const divScore = bgyData?.diversity ?? 0;
-                                        const theme = getDiversityTheme(divScore);
+                                        const activeLens = getLens(diversityLensRef.current);
+                                        const resolved = resolveLensValue(diversityLensRef.current, bgyData);
                                         tooltipContent = `
                                             <div class="font-sans px-1 py-0.5">
                                                 <div class="flex items-center gap-1.5">
-                                                    <span class="w-2.5 h-2.5 rounded-full shadow-xs" style="background-color: ${theme.fill}"></span>
+                                                    <span class="w-2.5 h-2.5 rounded-full shadow-xs" style="background-color: ${resolved.color}"></span>
                                                     <span class="font-bold text-slate-900">${name}</span>
-                                                    <span class="font-mono text-[10px] font-black px-1.5 py-0.2 rounded text-white" style="background-color: ${theme.fill}">
-                                                        ${Number(divScore).toFixed(2)}
+                                                    <span class="font-mono text-[10px] font-black px-1.5 py-0.2 rounded text-white" style="background-color: ${resolved.stroke}">
+                                                        ${resolved.formatted}
                                                     </span>
                                                 </div>
                                                 <div class="text-[10px] font-semibold text-slate-500 mt-0.5">
-                                                    ${theme.classification} · <span class="text-slate-400 font-normal">${dominantZoneText}</span>
+                                                    ${resolved.band.classification} · <span class="text-slate-400 font-normal">${activeLens.metricLabel}</span>
                                                 </div>
                                             </div>
                                         `;
@@ -977,16 +1001,35 @@ function LeafletMap({
                                             permanent: false,
                                             direction: "center",
                                             className: isDiversity
-                                                ? "font-sans text-xs bg-white/95 text-slate-900 border border-slate-200 shadow-xl px-3 py-1.5 rounded-xl backdrop-blur-md"
+                                                ? "diversity-tooltip font-sans text-xs"
                                                 : "font-sans text-xs font-bold bg-white/95 text-slate-800 border border-slate-200 shadow-xl px-3 py-1.5 rounded-xl backdrop-blur-md",
                                         })
                                         .openTooltip();
 
+                                    if (isDiversity) onHoverBgy(name);
+
                                     if (activeFeatureRef.current !== layer_feature) {
                                         if (isDiversity) {
-                                            const divScore = bgyData?.diversity ?? 0;
-                                            const theme = getDiversityTheme(divScore);
-                                            layer_feature.setStyle({ fillOpacity: 0.90, weight: 3, color: theme.stroke });
+                                            // While a barangay is isolated, every other shape stays
+                                            // invisible even on hover — lighting one up would defeat
+                                            // the isolation. It still gets a tooltip and still switches
+                                            // the selection on click, so it's discoverable without
+                                            // being visible.
+                                            const isolated = Boolean(selectedBgyRef.current?.name);
+                                            if (!isolated) {
+                                                // Lift the fill and thicken the edge. The old version
+                                                // raised fillOpacity on a fill that was transparent,
+                                                // so hovering a barangay did nothing visible at all.
+                                                const resolved = resolveLensValue(diversityLensRef.current, bgyData);
+                                                layer_feature.setStyle({
+                                                    fillColor: resolved.color,
+                                                    fillOpacity: 0.9,
+                                                    weight: 3,
+                                                    color: "#0f172a",
+                                                    opacity: 1,
+                                                });
+                                                layer_feature.bringToFront();
+                                            }
                                         } else {
                                             const hoverOpacity = isTrends ? 0.08 : 0.45;
                                             const hoverColor = isTrends ? "#2563eb" : undefined;
@@ -997,6 +1040,7 @@ function LeafletMap({
 
                                 layer_feature.on("mouseout", () => {
                                     layer_feature.closeTooltip();
+                                    if (layerRef.current === "diversity") onHoverBgy(null);
                                     if (activeFeatureRef.current !== layer_feature) {
                                         geoLayerRef.current.resetStyle(layer_feature);
                                     }
@@ -1006,7 +1050,20 @@ function LeafletMap({
                         .addTo(map);
 
                     map.fitBounds(geoLayerRef.current.getBounds(), { padding: [25, 25] });
+                    setBarangaysReady(true);
                 }
+
+                // The map is usable now. Spend the idle time that follows getting
+                // every other layer ready, so the first click on CLUP 2030, Urban
+                // Growth or the 3D diversity view opens fully formed instead of
+                // starting a download.
+                whenIdle(() => {
+                    if (mapInstanceRef.current !== map) return;
+                    ensureZoningLayer();
+                    // Warms the lazily-split 3D chunk (maplibre-gl) into the
+                    // module cache; React.lazy then resolves it instantly.
+                    import("@/Components/MapLayers/MapLibre3DView").catch(() => {});
+                });
             })
             .catch((err) => console.warn("GeoJSON load error:", err));
         });
@@ -1056,8 +1113,26 @@ function LeafletMap({
                     className: "map-tiles",
                 })
                 .addTo(mapInstanceRef.current);
+            if (layerRef.current === "diversity") tileLayerRef.current.remove();
         });
     }, [mapStyle]);
+
+    // The diversity module has no basemap at all: the barangays sit isolated on
+    // a solid canvas. Street tiles and aerial imagery both competed with the
+    // choropleth that carries the meaning, so they come off entirely here and
+    // go straight back for every other layer.
+    useEffect(() => {
+        const map = mapInstanceRef.current;
+        const tiles = tileLayerRef.current;
+        if (!map || !tiles) return;
+
+        if (currentLayer === "diversity") {
+            if (map.hasLayer(tiles)) map.removeLayer(tiles);
+        } else if (!map.hasLayer(tiles)) {
+            tiles.addTo(map);
+            tiles.bringToBack();
+        }
+    }, [currentLayer]);
 
     // Live update GeoJSON styling when filters or active data change
     useEffect(() => {
@@ -1077,96 +1152,171 @@ function LeafletMap({
         const isDiversityActive = currentLayer === "diversity";
         const isLandUsePlanVisible = isZoningActive || isTrendsActive || isDiversityActive;
 
-        if (zoningLayerRef.current) {
+        // In diversity mode the CLUP parcels are drawn for the *selected*
+        // barangay only. Spreading them under the whole municipality turned the
+        // choropleth to mud; confined to one barangay they answer the obvious
+        // follow-up question — "what is this place actually made of?" — and
+        // match the mix breakdown in the panel swatch for swatch.
+        const selectedName = (selectedBgy?.name || "").trim().toLowerCase();
+
+        // Attach the parcels only while something shows them. If they are
+        // needed before the idle-time prefetch finished, start (or join) the
+        // build now; `zoningReady` re-runs this effect when it lands.
+        const needsParcels = isZoningActive || isTrendsActive || (isDiversityActive && Boolean(selectedName));
+        const map = mapInstanceRef.current;
+        if (needsParcels && !zoningLayerRef.current) {
+            ensureZoningLayer();
+        }
+        if (map && zoningLayerRef.current) {
+            const attached = map.hasLayer(zoningLayerRef.current);
+            if (needsParcels && !attached) map.addLayer(zoningLayerRef.current);
+            if (!needsParcels && attached) map.removeLayer(zoningLayerRef.current);
+        }
+
+        if (zoningLayerRef.current && needsParcels) {
             zoningLayerRef.current.setStyle((feature) => {
                 const props = feature.properties || {};
-                const rawZone = props.lup_2030 || props.LUP_2030 || props.zone_code || props.zone || props.landuse || props.luc || "DEFAULT";
-                const zoneCode = String(rawZone).trim();
-                const colorConfig = zoningPlanColors[zoneCode] || zoningPlanColors["DEFAULT"];
+                const rawZone = props.lup_2030 || props.LUP_2030 || props.zone_code || props.zone || props.landuse || props.luc || "";
+                const zone = getZoneInfo(String(rawZone).trim());
+
+                if (isDiversityActive) {
+                    const parcelBgy = (props.location || props.LOCATION || props.barangay || "").trim().toLowerCase();
+                    const inSelected = selectedName && parcelBgy === selectedName;
+                    return {
+                        color: "#ffffff",
+                        weight: inSelected ? 0.6 : 0,
+                        fillColor: zone.fill,
+                        fillOpacity: inSelected ? 0.92 : 0,
+                        opacity: inSelected ? 0.55 : 0,
+                    };
+                }
 
                 return {
-                    color: colorConfig.stroke,
+                    color: zone.stroke,
                     weight: isTrendsActive ? 1 : 1.5,
-                    fillColor: colorConfig.fill,
-                    fillOpacity: isTrendsActive ? 0.65 : (isDiversityActive ? 0.85 : (isZoningActive ? clupOpacity : 0)),
+                    fillColor: zone.fill,
+                    fillOpacity: isTrendsActive ? 0.65 : (isZoningActive ? clupOpacity : 0),
                     opacity: isLandUsePlanVisible ? 0.9 : 0
                 };
             });
         }
 
-        if (clupTileLayerRef.current) {
-            clupTileLayerRef.current.setOpacity(clupOpacity);
-        }
-
-        // Raster tiles are rendered for CLUP 2030, Urban Growth, AND Diversity Index layer
-        if (isZoningActive || isTrendsActive || isDiversityActive) {
+        // The pre-rendered CLUP raster stays off in diversity mode — it is a
+        // picture of the whole plan and cannot be clipped to one barangay.
+        if (isZoningActive || isTrendsActive) {
             if (clupTileLayerRef.current && mapInstanceRef.current && !mapInstanceRef.current.hasLayer(clupTileLayerRef.current)) {
                 mapInstanceRef.current.addLayer(clupTileLayerRef.current);
             }
             if (clupTileLayerRef.current) {
-                clupTileLayerRef.current.setOpacity(
-                    isDiversityActive ? 0.85 : (isTrendsActive ? 0.65 : clupOpacity)
-                );
+                clupTileLayerRef.current.setOpacity(isTrendsActive ? 0.65 : clupOpacity);
             }
-        } else {
-            if (clupTileLayerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(clupTileLayerRef.current)) {
-                mapInstanceRef.current.removeLayer(clupTileLayerRef.current);
-            }
+        } else if (clupTileLayerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(clupTileLayerRef.current)) {
+            mapInstanceRef.current.removeLayer(clupTileLayerRef.current);
+        }
+
+        if (isDiversityActive) {
+            // Only claim the parcels are on screen once they really are, so the
+            // legend's zone key doesn't appear ahead of the zones it keys.
+            onParcelsVisible(Boolean(selectedName) && Boolean(zoningLayerRef.current));
         }
 
         if (isLandUsePlanVisible) {
-            if (zoningLayerRef.current) zoningLayerRef.current.bringToFront();
+            if (zoningLayerRef.current && needsParcels) zoningLayerRef.current.bringToFront();
             if (geoLayerRef.current) geoLayerRef.current.bringToFront();
         }
-    }, [currentLayer, appTypeFilter, year, clupOpacity, staticBgyData, diversityTierFilter, showDiversityLabels, selectedBgy]);
 
-    // Render floating score chips on each barangay centroid when diversity layer labels are enabled
-    useEffect(() => {
-        if (!diversityLabelsLayerRef.current || !geoLayerRef.current) return;
+        // Barangay outlines draw above the parcels, but the selected barangay's
+        // fill would hide them, so it renders as an outline only.
+        if (isDiversityActive && selectedName && geoLayerRef.current) {
+            geoLayerRef.current.eachLayer((lf) => {
+                const p = lf.feature?.properties || {};
+                const n = resolveBarangayName(p);
+                if (n.toLowerCase() === selectedName) {
+                    lf.setStyle({ fill: false, weight: 2.4, color: "#0f172a", opacity: 1 });
+                    lf.bringToFront();
+                }
+            });
+        }
+    }, [currentLayer, appTypeFilter, year, clupOpacity, staticBgyData, diversityLens, diversityBandFilter, selectedBgy, zoningReady, barangaysReady]);
+
+    // Centroid score chips for the 2D map, with greedy collision decluttering.
+    //
+    // MapLibre declutters symbol layers for free (`text-allow-overlap: false`),
+    // which is why the 3D view can label all 48 barangays at any zoom. Leaflet
+    // has no equivalent, so this used to hide every label below zoom 13 rather
+    // than show 48 overlapping chips. Instead, place chips in priority order
+    // (strongest value under the active lens first) and skip any whose box
+    // would overlap one already placed. Zooming in frees space, so more labels
+    // appear — the same behaviour, done by hand.
+    const renderDiversityChips = useCallback(() => {
+        const map = mapInstanceRef.current;
+        if (!map || !diversityLabelsLayerRef.current || !geoLayerRef.current) return;
         diversityLabelsLayerRef.current.clearLayers();
 
-        if (currentLayer !== "diversity" || !showDiversityLabels) return;
+        if (layerRef.current !== "diversity") return;
+
+        const activeBand = diversityBandRef.current || "all";
+        const lensId = diversityLensRef.current;
+        const selectedName = (selectedBgyRef.current?.name || "").toLowerCase();
+
+        // While a barangay is isolated every other shape is invisible, so a
+        // floating score chip hovering over blank canvas would be an orphaned
+        // label with nothing underneath it. The selected barangay's own name
+        // and score already live in the docked panel, so nothing needs a chip.
+        if (selectedName) return;
 
         import("leaflet").then((L) => {
+            if (!diversityLabelsLayerRef.current || !geoLayerRef.current || !mapInstanceRef.current) return;
+
+            const candidates = [];
             geoLayerRef.current.eachLayer((layer_feature) => {
-                const props = layer_feature.feature?.properties || {};
-                const name = (
-                    props.LOCATION || props.location || props.ADM4_EN || props.name || props.NAME || props.BRGY || props.brgy || ""
-                ).trim();
+                const name = resolveBarangayName(layer_feature.feature?.properties);
+                if (!name) return;
                 const bgyData = staticBgyData[name] || {};
-                const divScore = bgyData.diversity ?? 0;
-                const theme = getDiversityTheme(divScore);
-                const activeTier = diversityTierRef.current || "all";
-                const matchesTier = activeTier === "all" || theme.tier === activeTier;
+                if (!matchesBand(lensId, activeBand, bgyData)) return;
+                if (selectedName && name.toLowerCase() === selectedName) return;
 
-                if (!matchesTier) return;
-                // If a barangay is selected in diversity mode, skip its centroid badge to avoid overlapping the X-Ray popup
-                if (selectedBgy && selectedBgy.name && selectedBgy.name.toLowerCase() === name.toLowerCase()) return;
+                const resolved = resolveLensValue(lensId, bgyData);
+                candidates.push({ name, bgyData, resolved, layer_feature });
+            });
 
+            // Priority: the barangays a planner most needs to see. Drift ranks
+            // by distance from the plan in either direction; mix by score.
+            candidates.sort((a, b) =>
+                lensId === "drift"
+                    ? Math.abs(b.resolved.value) - Math.abs(a.resolved.value)
+                    : b.resolved.value - a.resolved.value
+            );
+
+            const placed = [];
+            const CHAR_PX = 6.1;   // approx width per character at the chip's size
+            const PAD_PX = 34;     // chip padding + the value badge
+            const HEIGHT_PX = 20;
+            const GUTTER = 3;
+
+            candidates.forEach(({ name, resolved, layer_feature }) => {
                 const center = layer_feature.getBounds().getCenter();
+                const pt = mapInstanceRef.current.latLngToContainerPoint(center);
+                const w = name.length * CHAR_PX + PAD_PX;
+                const box = {
+                    left: pt.x - w / 2 - GUTTER,
+                    right: pt.x + w / 2 + GUTTER,
+                    top: pt.y - HEIGHT_PX / 2 - GUTTER,
+                    bottom: pt.y + HEIGHT_PX / 2 + GUTTER,
+                };
+
+                const collides = placed.some(
+                    (q) => box.left < q.right && box.right > q.left && box.top < q.bottom && box.bottom > q.top
+                );
+                if (collides) return;
+                placed.push(box);
+
                 const labelIcon = L.default.divIcon({
                     className: "diversity-centroid-chip",
                     html: `
-                        <div style="
-                            display: inline-flex;
-                            align-items: center;
-                            gap: 4px;
-                            padding: 2.5px 7px;
-                            border-radius: 9999px;
-                            background-color: ${theme.fill};
-                            color: white;
-                            font-family: ui-sans-serif, system-ui, sans-serif;
-                            font-size: 10px;
-                            font-weight: 800;
-                            box-shadow: 0 4px 14px rgba(0,0,0,0.35);
-                            border: 1.5px solid white;
-                            white-space: nowrap;
-                            pointer-events: auto;
-                            cursor: pointer;
-                            transform: translate(-50%, -50%);
-                        " title="${name}: ${Number(divScore).toFixed(2)} (${theme.classification})">
+                        <div class="diversity-chip-inner" style="background-color: ${resolved.stroke};" title="${name}: ${resolved.formatted} (${resolved.band.classification})">
                             <span>${name}</span>
-                            <span style="background: rgba(0,0,0,0.28); padding: 1px 4.5px; border-radius: 4px; font-family: monospace; font-size: 9.5px; font-weight: 900;">${Number(divScore).toFixed(2)}</span>
+                            <span class="diversity-chip-value">${resolved.formatted}</span>
                         </div>
                     `,
                     iconSize: [0, 0],
@@ -1177,10 +1327,59 @@ function LeafletMap({
                     L.default.DomEvent.stopPropagation(e);
                     layer_feature.fire("click");
                 });
+                marker.on("mouseover", () => onHoverBgy(name));
+                marker.on("mouseout", () => onHoverBgy(null));
                 diversityLabelsLayerRef.current.addLayer(marker);
             });
         });
-    }, [currentLayer, showDiversityLabels, diversityTierFilter, staticBgyData, selectedBgy]);
+    }, [staticBgyData, onHoverBgy]);
+
+    useEffect(() => {
+        renderDiversityChips();
+    }, [currentLayer, diversityLens, diversityBandFilter, staticBgyData, selectedBgy, renderDiversityChips, barangaysReady]);
+
+    // Which labels fit depends on the current viewport, so re-place them once
+    // the camera settles.
+    useEffect(() => {
+        const map = mapInstanceRef.current;
+        if (!map) return;
+        const onSettled = () => renderDiversityChips();
+        map.on("moveend", onSettled);
+        map.on("zoomend", onSettled);
+        return () => {
+            map.off("moveend", onSettled);
+            map.off("zoomend", onSettled);
+        };
+    }, [renderDiversityChips]);
+
+    // Mirror the side panel's hover onto the 2D polygons, so the explorer list
+    // and the map behave like one instrument (the 3D view does the same).
+    useEffect(() => {
+        if (currentLayer !== "diversity" || !geoLayerRef.current) return;
+
+        let hoveredLayer = null;
+        geoLayerRef.current.eachLayer((layer_feature) => {
+            const props = layer_feature.feature?.properties || {};
+            const name = resolveBarangayName(props);
+
+            if (hoveredBgy && name.toLowerCase() === hoveredBgy.toLowerCase()) {
+                hoveredLayer = layer_feature;
+            }
+        });
+
+        if (!hoveredLayer || hoveredLayer === activeFeatureRef.current) return;
+
+        const bgyData = staticBgyData[hoveredBgy] || {};
+        const resolved = resolveLensValue(diversityLens, bgyData);
+        hoveredLayer.setStyle({ fillColor: resolved.color, fillOpacity: 0.9, weight: 3, color: "#0f172a", opacity: 1 });
+        hoveredLayer.bringToFront();
+
+        return () => {
+            if (hoveredLayer && geoLayerRef.current && hoveredLayer !== activeFeatureRef.current) {
+                geoLayerRef.current.resetStyle(hoveredLayer);
+            }
+        };
+    }, [hoveredBgy, currentLayer, diversityLens, staticBgyData]);
 
     // Smooth Fly-To handler when selecting application or barangay cluster
     useEffect(() => {
@@ -1610,7 +1809,6 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     const [year, setYear] = useState(2026);
     const [isPlaying, setIsPlaying] = useState(false);
     const [clupOpacity, setClupOpacity] = useState(0.85);
-    const [donutLoaded, setDonutLoaded] = useState(false);
     const [selectedBgy, setSelectedBgy] = useState(null);
     const [mapZoom, setMapZoom] = useState(13);
     const [resetTrigger, setResetTrigger] = useState(0);
@@ -1620,10 +1818,27 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     const [hoveredAppId, setHoveredAppId] = useState(null);
     const [flyToTarget, setFlyToTarget] = useState(null);
     const [statusSearchQuery, setStatusSearchQuery] = useState("");
-    const [diversityTierFilter, setDiversityTierFilter] = useState("all");
-    const [diversityLens, setDiversityLens] = useState("diversity");
-    const [showDiversityLabels, setShowDiversityLabels] = useState(false);
-    const [is3DMode, setIs3DMode] = useState(false);
+    const [diversityBandFilter, setDiversityBandFilter] = useState("all");
+    const [diversityLens, setDiversityLens] = useState("mix");
+    const [is3DMode, setIs3DMode] = useState(true);
+    const show3D = is3DMode && activeLayer === "diversity";
+    // Once the 3D view has been created it stays mounted (hidden when not in
+    // use), so returning to it is instant rather than a WebGL rebuild.
+    const [has3DMounted, setHas3DMounted] = useState(false);
+    useEffect(() => {
+        if (show3D) setHas3DMounted(true);
+    }, [show3D]);
+    const [hoveredBgy, setHoveredBgy] = useState(null);
+    // True while CLUP parcels are actually drawn, so the legend only shows the
+    // zone key when there are zones on screen to key.
+    // Each map reports its own parcels. With both maps kept mounted, a shared
+    // flag let the hidden one overwrite the visible one's answer. Declared
+    // before `parcelsVisible` below reads them — as a plain `const`, reading
+    // either one earlier is a temporal-dead-zone ReferenceError on every render
+    // (this shipped broken once already: it crashed the whole dashboard white).
+    const [parcels2D, setParcels2D] = useState(false);
+    const [parcels3D, setParcels3D] = useState(false);
+    const parcelsVisible = show3D ? parcels3D : parcels2D;
 
     // Listen for custom inspect events dispatched by Leaflet popup buttons
     useEffect(() => {
@@ -1642,6 +1857,10 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     const handleStatusFilterChange = useCallback((newFilter) => {
         setStatusFilter(newFilter);
     }, []);
+
+    // The diversity module gets the docked, opaque treatment; the other layers
+    // keep the floating panel until they get their own design pass.
+    const isDiversityModule = activeLayer === "diversity";
 
     const isBgyActive = Boolean(selectedBgy);
     const displayTotal = isBgyActive ? (selectedBgy.data.Total ?? selectedBgy.data.total ?? 0) : (total || 0);
@@ -1701,17 +1920,21 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
         return list.slice(0, 5);
     }, [recent, isBgyActive, selectedBgy]);
 
-    // Real per-tier barangay counts for the diversity legend (replaces hardcoded counts)
-    const diversityTierCounts = useMemo(() => {
-        const counts = { high: 0, diverse: 0, moderate: 0, developing: 0, monoculture: 0 };
-        Object.values(bgyStats || {}).forEach((stat) => {
-            const score = stat?.diversity;
-            if (typeof score !== "number") return;
-            const tier = getDiversityTheme(score).tier;
-            if (counts[tier] !== undefined) counts[tier] += 1;
-        });
-        return counts;
-    }, [bgyStats]);
+    // Switching lens invalidates the active band id (a "diverse" band has no
+    // meaning under the drift lens), so the filter resets with the question.
+    const handleSelectLens = useCallback((lensId) => {
+        setDiversityLens(lensId);
+        setDiversityBandFilter("all");
+    }, []);
+
+    const municipalMean = useMemo(() => {
+        if (typeof overallDiversity?.score === "number") return overallDiversity.score;
+        const values = Object.values(bgyStats || {})
+            .map((s) => s?.diversity)
+            .filter((v) => typeof v === "number");
+        if (!values.length) return 0;
+        return values.reduce((a, b) => a + b, 0) / values.length;
+    }, [overallDiversity, bgyStats]);
 
     const handleAppTypeChange = (type) => {
         setAppTypeFilter(type);
@@ -1773,18 +1996,15 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     }, [isPlaying, activeLayer]);
 
     useEffect(() => {
-        if (activeLayer === "diversity") {
-            setTimeout(() => setDonutLoaded(true), 150);
-            setIs3DMode(true);
-        } else {
-            setDonutLoaded(false);
-            setDiversityTierFilter("all");
-            setDiversityLens("diversity");
-            setShowDiversityLabels(false);
-            setIs3DMode(false);
+        if (activeLayer !== "diversity") {
+            setDiversityBandFilter("all");
+            setDiversityLens("mix");
         }
         setSelectedBgy(null);
         setSearchTargetBgy(null);
+        setHoveredBgy(null);
+        setParcels2D(false);
+        setParcels3D(false);
     }, [activeLayer]);
 
     const handleSelectLocation = (loc) => {
@@ -1803,6 +2023,13 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
             if (e.key === "3") { e.preventDefault(); setActiveLayer("diversity"); }
             if (e.key === "4") { e.preventDefault(); setActiveLayer("zoning"); }
             if (e.key.toLowerCase() === "i") { e.preventDefault(); setRightPanelOpen((prev) => !prev); }
+            if (e.key.toLowerCase() === "l" && activeLayer === "diversity") {
+                e.preventDefault();
+                const ids = DIVERSITY_LENSES.map((l) => l.id);
+                const next = ids[(ids.indexOf(diversityLens) + 1) % ids.length];
+                setDiversityLens(next);
+                setDiversityBandFilter("all");
+            }
             if (e.key.toLowerCase() === "f") {
                 e.preventDefault();
                 if (!document.fullscreenElement) {
@@ -1818,7 +2045,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [sidebarOpen]);
+    }, [sidebarOpen, activeLayer, diversityLens]);
 
     const handleLogout = () => {
         Swal.fire({
@@ -1920,6 +2147,20 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                 #dashboard-root, #dashboard-root :not(.font-mono) { font-family: 'Plus Jakarta Sans', sans-serif !important; }
                 #dashboard-root .font-mono, #dashboard-root .font-mono * { font-family: 'JetBrains Mono', monospace !important; }
                 #map, .leaflet-container { background: #f8fafc !important; }
+                /* Diversity module: barangays sit isolated on a solid canvas. */
+                .diversity-canvas .leaflet-container { background: #f8f9fa !important; }
+                /* Solid tooltips. Translucent cards over live map colour put
+                   their text on an unpredictable background. */
+                .diversity-tooltip {
+                    background: #ffffff !important;
+                    border: 1px solid #cbd5e1 !important;
+                    border-radius: 4px !important;
+                    box-shadow: 0 2px 6px rgba(15,23,42,0.12) !important;
+                    backdrop-filter: none !important;
+                    padding: 6px 9px !important;
+                    color: #0f172a !important;
+                }
+                .diversity-tooltip::before { display: none !important; }
                 .swal-small-toast { width: auto !important; padding: 0.5rem 0.75rem !important; min-height: unset !important; border-radius: 12px !important; }
                 .swal-small-modal { width: 340px !important; padding: 1.5rem !important; border-radius: 20px !important; }
                 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -1935,9 +2176,39 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                 .custom-app-popup .leaflet-popup-tip { background: rgba(255, 255, 255, 0.98); }
                 .custom-app-popup .leaflet-popup-close-button { color: #94a3b8 !important; margin-top: 8px !important; margin-right: 8px !important; font-size: 16px !important; }
                 .custom-app-marker-container { background: transparent !important; border: none !important; }
+
+                /* Leaflet redraws SVG paths by setting attributes, so filter and
+                   hover changes snapped instantly. Transitioning the presentation
+                   attributes lets the 2D choropleth cross-fade the way the 3D
+                   prisms do. */
+                .leaflet-interactive {
+                    transition: fill 260ms ease, fill-opacity 260ms ease, stroke 200ms ease, stroke-width 200ms ease, stroke-opacity 200ms ease;
+                }
+                .diversity-centroid-chip { background: transparent !important; border: none !important; }
+                .diversity-chip-inner {
+                    display: inline-flex; align-items: center; gap: 4px;
+                    padding: 2.5px 7px; border-radius: 9999px;
+                    color: #fff; font-size: 10px; font-weight: 800; white-space: nowrap;
+                    border: 1.5px solid #fff; box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+                    transform: translate(-50%, -50%); cursor: pointer;
+                    animation: imaps-fade-in 200ms ease both;
+                }
+                .diversity-chip-value {
+                    background: rgba(0,0,0,0.28); padding: 1px 4.5px; border-radius: 4px;
+                    font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 900;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .leaflet-interactive { transition: none; }
+                    .diversity-chip-inner { animation: none; }
+                }
             `}</style>
 
-            <div id="dashboard-root" className="bg-slate-900 font-sans text-slate-800 h-screen flex flex-col overflow-hidden select-none">
+            <div
+                id="dashboard-root"
+                className={`bg-slate-900 font-sans text-slate-800 h-screen flex flex-col overflow-hidden select-none ${
+                    isDiversityModule ? "diversity-canvas" : ""
+                }`}
+            >
                 <Header 
                     userName={userName} 
                     userRole={userRole} 
@@ -1967,21 +2238,19 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                     )}
 
                     <main className="absolute inset-0 flex flex-col min-w-0 h-full overflow-hidden">
-                        {is3DMode && activeLayer === "diversity" ? (
-                            <MapLibre3DView
-                                selectedBgy={selectedBgy}
-                                onFeatureClick={(name, data) => {
-                                    setSelectedBgy({ name, data });
-                                    if (!rightPanelOpen) setRightPanelOpen(true);
-                                }}
-                                onMapClick={() => setSelectedBgy(null)}
-                                bgyStats={bgyStats}
-                                overallDiversity={overallDiversity}
-                                rightPanelOpen={rightPanelOpen}
-                                diversityTierFilter={diversityTierFilter}
-                                onSelectDiversityTier={setDiversityTierFilter}
-                            />
-                        ) : (
+                        {/* Both maps stay mounted once created and are shown or hidden,
+                            instead of an either/or conditional. The conditional
+                            destroyed the Leaflet map — and every layer built on it,
+                            including the idle-prepared land-use parcels — each time
+                            someone opened the 3D diversity view, then rebuilt it all
+                            on the way back. Hidden with `visibility` rather than
+                            `display: none` so each keeps its real size and never
+                            needs re-measuring when it reappears. */}
+                        <div
+                            className="absolute inset-0"
+                            style={{ visibility: show3D ? "hidden" : "visible" }}
+                            aria-hidden={show3D}
+                        >
                             <LeafletMap
                                 bgyStats={bgyStats}
                                 applications={recent}
@@ -1998,9 +2267,13 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                 clupOpacity={clupOpacity}
                                 resetTrigger={resetTrigger}
                                 searchTargetBgy={searchTargetBgy}
-                                diversityTierFilter={diversityTierFilter}
-                                showDiversityLabels={showDiversityLabels}
+                                diversityLens={diversityLens}
+                                diversityBandFilter={diversityBandFilter}
+                                hoveredBgy={hoveredBgy}
+                                onHoverBgy={setHoveredBgy}
+                                onParcelsVisible={setParcels2D}
                                 rightPanelOpen={rightPanelOpen}
+                                panelWidth={DIVERSITY_PANEL_WIDTH}
                                 onZoomChange={setMapZoom}
                                 onInspectApp={setInspectedApp}
                                 onFeatureClick={(name, data) => {
@@ -2009,17 +2282,59 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                 }}
                                 onMapClick={() => setSelectedBgy(null)}
                             />
+                        </div>
+
+                        {has3DMounted && (
+                            <div
+                                className="absolute inset-0"
+                                style={{ visibility: show3D ? "visible" : "hidden" }}
+                                aria-hidden={!show3D}
+                            >
+                                <Suspense fallback={<MapLoadingState label="Loading 3D view…" />}>
+                                    <MapLibre3DView
+                                        active={show3D}
+                                        selectedBgy={selectedBgy}
+                                        onFeatureClick={(name) => {
+                                            // Always resolve against the live backend record rather
+                                            // than the map feature's own properties, so the panel and
+                                            // the map can never show two different scores.
+                                            setSelectedBgy({ name, data: bgyStats?.[name] || {} });
+                                            if (!rightPanelOpen) setRightPanelOpen(true);
+                                        }}
+                                        onMapClick={() => setSelectedBgy(null)}
+                                        bgyStats={bgyStats}
+                                        rightPanelOpen={rightPanelOpen}
+                                        panelWidth={DIVERSITY_PANEL_WIDTH}
+                                        lens={diversityLens}
+                                        bandFilter={diversityBandFilter}
+                                        hoveredBgy={hoveredBgy}
+                                        onHoverBgy={setHoveredBgy}
+                                        onParcelsVisible={setParcels3D}
+                                    />
+                                </Suspense>
+                            </div>
                         )}
 
-                        {(!is3DMode || activeLayer !== "diversity") && (
-                            <MapLegend
-                                activeLayer={activeLayer}
-                                year={year}
-                                diversityTierFilter={diversityTierFilter}
-                                onSelectDiversityTier={setDiversityTierFilter}
-                                meanScore={overallDiversity?.score ?? 0}
-                                tierCounts={diversityTierCounts}
-                            />
+                        {activeLayer === "diversity" ? (
+                            <>
+                                <DiversityControls
+                                    lens={diversityLens}
+                                    onSelectLens={handleSelectLens}
+                                    is3D={is3DMode}
+                                    onToggle3D={setIs3DMode}
+                                />
+                                <DiversityLegend
+                                    lens={diversityLens}
+                                    bandFilter={diversityBandFilter}
+                                    onSelectBand={setDiversityBandFilter}
+                                    bgyStats={bgyStats}
+                                    overallDiversity={overallDiversity}
+                                    is3D={is3DMode}
+                                    showZoneKey={parcelsVisible}
+                                />
+                            </>
+                        ) : (
+                            <MapLegend activeLayer={activeLayer} year={year} />
                         )}
 
                         {/* Top-Left Mode Selector & 2D/3D Diversity Switcher */}
@@ -2055,7 +2370,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                         label: "Diversity Index",
                                         shortLabel: "Diversity",
                                         key: "3",
-                                        badge: "0.78",
+                                        badge: municipalMean.toFixed(2),
                                         icon: (
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
@@ -2279,11 +2594,16 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                             </button>
                         </div>
 
-                        {/* Bottom-Left Quick GIS Toolbar (Leaflet 2D only) */}
+                        {/* Quick GIS Toolbar (Leaflet 2D only). In diversity mode the
+                            lens legend owns the bottom-left corner, so the toolbar
+                            moves to bottom-centre; the base-map switcher is dropped
+                            there because that module has no basemap to switch. */}
                         {(!is3DMode || activeLayer !== "diversity") && (
                             <>
-                                <div className="absolute bottom-6 left-6 z-[600] flex items-center gap-2 transition-all duration-300">
-                                    <div className="relative">
+                                <div className={`absolute bottom-6 z-[600] flex items-center gap-2 transition-all duration-300 ${
+                                    isDiversityModule ? "left-1/2 -translate-x-1/2" : "left-6"
+                                }`}>
+                                    <div className={`relative ${isDiversityModule ? "hidden" : ""}`}>
                                         <div
                                             className={`bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200/80 w-[240px] mb-3 absolute bottom-full left-0 overflow-hidden transition-all duration-300 ${
                                                 stylePopupOpen
@@ -2397,11 +2717,15 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                     </button>
                                 </div>
 
-                                <div className="absolute bottom-1.5 left-6 z-[400] pointer-events-none text-[9px] font-mono text-slate-600 bg-white/80 backdrop-blur-sm px-2 py-0.5 rounded-md border border-slate-200/50 shadow-xs flex items-center gap-1.5">
-                                    <span className="font-bold text-blue-700">Z{mapZoom}</span>
-                                    <span className="text-slate-300">·</span>
-                                    <span>13.8450° N, 121.2060° E</span>
-                                </div>
+                                {/* The coordinate readout shares the bottom-left corner
+                                    with the diversity legend, so it stands down there. */}
+                                {activeLayer !== "diversity" && (
+                                    <div className="absolute bottom-1.5 left-6 z-[400] pointer-events-none text-[9px] font-mono text-slate-600 bg-white/80 backdrop-blur-sm px-2 py-0.5 rounded-md border border-slate-200/50 shadow-xs flex items-center gap-1.5">
+                                        <span className="font-bold text-blue-700">Z{mapZoom}</span>
+                                        <span className="text-slate-300">·</span>
+                                        <span>13.8450° N, 121.2060° E</span>
+                                    </div>
+                                )}
                             </>
                         )}
 
@@ -2439,13 +2763,27 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                         {/* Collapsible Right Intelligence Panel */}
                         <div
                             id="right-sidebar"
-                            className={`absolute right-4 top-4 bottom-4 w-full sm:w-[320px] lg:w-[350px] xl:w-[375px] max-w-[calc(100vw-2rem)] z-[500] bg-white/98 backdrop-blur-2xl shadow-2xl border border-slate-200/90 rounded-3xl flex flex-col overflow-hidden transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
-                                rightPanelOpen ? "translate-x-0" : "translate-x-[calc(100%+1.5rem)] pointer-events-none"
+                            className={`absolute z-[500] flex flex-col overflow-hidden transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+                                isDiversityModule
+                                    // Docked: flush to the right edge, fully opaque, square
+                                    // corners. It used to float inset with a backdrop blur,
+                                    // which put panel text over live map colour and wasted
+                                    // the screen edge.
+                                    ? `right-0 top-0 bottom-0 w-full sm:w-[380px] max-w-full bg-white border-l border-slate-200 shadow-[-1px_0_0_0_rgba(15,23,42,0.04)] ${
+                                          rightPanelOpen ? "translate-x-0" : "translate-x-full pointer-events-none"
+                                      }`
+                                    : `right-4 top-4 bottom-4 w-full sm:w-[320px] lg:w-[350px] xl:w-[375px] max-w-[calc(100vw-2rem)] bg-white/98 backdrop-blur-2xl shadow-2xl border border-slate-200/90 rounded-3xl ${
+                                          rightPanelOpen ? "translate-x-0" : "translate-x-[calc(100%+1.5rem)] pointer-events-none"
+                                      }`
                             }`}
                         >
                             <button
                                 onClick={() => setRightPanelOpen(!rightPanelOpen)}
-                                className="absolute top-6 -left-10 w-10 h-11 bg-white/95 backdrop-blur-xl border-l border-y border-slate-200/80 shadow-lg text-slate-600 hover:text-blue-700 rounded-l-2xl flex items-center justify-center transition-all focus:outline-none z-10 pointer-events-auto"
+                                className={`absolute top-6 -left-9 w-9 h-10 flex items-center justify-center transition-colors focus:outline-none z-10 pointer-events-auto ${
+                                    isDiversityModule
+                                        ? "bg-white border border-r-0 border-slate-200 rounded-l-md text-slate-500 hover:text-slate-900"
+                                        : "bg-white/95 backdrop-blur-xl border-l border-y border-slate-200/80 shadow-lg text-slate-600 hover:text-blue-700 rounded-l-2xl"
+                                }`}
                                 title={rightPanelOpen ? "Collapse Intelligence Panel" : "Expand Intelligence Panel"}
                             >
                                 <svg
@@ -2461,39 +2799,71 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                 </svg>
                             </button>
 
-                            <div
-                                className={`shrink-0 bg-gradient-to-r ${rsConfig[activeLayer].gradient} text-white px-5 py-4 flex items-center justify-between border-b border-white/10`}
-                            >
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-bold uppercase tracking-widest text-blue-200">
-                                            {rsConfig[activeLayer].label}
+                            {isDiversityModule ? (
+                                // Solid module header. The gradient/glass treatment the
+                                // other layers use would fight the docked panel's flat
+                                // surface, and its own identity block sits right below.
+                                <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-3 bg-slate-900 text-white">
+                                    <div className="min-w-0">
+                                        <span className="text-[9.5px] font-bold uppercase tracking-[0.1em] text-slate-400 block">
+                                            {rsConfig.diversity.label}
                                         </span>
-                                    </div>
-                                    <h2 className="text-lg font-black tracking-tight mt-0.5 leading-tight text-white">
-                                        {rsConfig[activeLayer].title}
-                                    </h2>
-                                    <p className="text-[11px] text-slate-300 mt-0.5 font-medium leading-tight">
-                                        {rsConfig[activeLayer].desc}
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center shadow-inner border border-white/20 shrink-0">
-                                        {rsConfig[activeLayer].icon}
+                                        <h2 className="text-[13px] font-bold tracking-tight leading-tight truncate">
+                                            {rsConfig.diversity.title}
+                                        </h2>
                                     </div>
                                     <button
                                         onClick={() => setRightPanelOpen(false)}
-                                        className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white flex items-center justify-center transition-colors shrink-0 ml-1"
-                                        title="Collapse Panel"
+                                        className="w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors shrink-0 cursor-pointer"
+                                        title="Collapse panel"
                                     >
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                                         </svg>
                                     </button>
                                 </div>
-                            </div>
+                            ) : (
+                                <div
+                                    className={`shrink-0 bg-gradient-to-r ${rsConfig[activeLayer].gradient} text-white px-5 py-4 flex items-center justify-between border-b border-white/10`}
+                                >
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-blue-200">
+                                                {rsConfig[activeLayer].label}
+                                            </span>
+                                        </div>
+                                        <h2 className="text-lg font-black tracking-tight mt-0.5 leading-tight text-white">
+                                            {rsConfig[activeLayer].title}
+                                        </h2>
+                                        <p className="text-[11px] text-slate-300 mt-0.5 font-medium leading-tight">
+                                            {rsConfig[activeLayer].desc}
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center shadow-inner border border-white/20 shrink-0">
+                                            {rsConfig[activeLayer].icon}
+                                        </div>
+                                        <button
+                                            onClick={() => setRightPanelOpen(false)}
+                                            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white flex items-center justify-center transition-colors shrink-0 ml-1"
+                                            title="Collapse Panel"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
-                            <div className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50/70">
+                            {/* The diversity panel manages its own sticky header and
+                                scroll region, so it gets a plain flex container rather
+                                than this wrapper's scroller (which would nest two). */}
+                            <div className={`flex-1 min-h-0 overflow-x-hidden ${
+                                isDiversityModule
+                                    ? "overflow-hidden flex flex-col bg-white"
+                                    : "overflow-y-auto bg-slate-50/70"
+                            }`}>
                                 {activeLayer === "status" && (
                                     <StatusPanel
                                         total={displayTotal}
@@ -2535,14 +2905,17 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
 
                                 {activeLayer === "diversity" && (
                                     <DiversityPanel
-                                        donutLoaded={donutLoaded}
                                         overallDiversity={overallDiversity}
                                         selectedBgy={selectedBgy}
                                         onClearBgy={() => setSelectedBgy(null)}
                                         onSelectBgy={(name) => handleSelectLocation({ label: name })}
                                         bgyStats={bgyStats}
-                                        diversityTierFilter={diversityTierFilter}
-                                        onSelectDiversityTier={setDiversityTierFilter}
+                                        lens={diversityLens}
+                                        onSelectLens={handleSelectLens}
+                                        bandFilter={diversityBandFilter}
+                                        onSelectBand={setDiversityBandFilter}
+                                        hoveredBgy={hoveredBgy}
+                                        onHoverBgy={setHoveredBgy}
                                     />
                                 )}
 
