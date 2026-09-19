@@ -236,6 +236,7 @@ class ApplicationController extends Controller
             'parcels.*.decision'          => 'nullable|string|in:Approved,Needs Site Inspection,Declined',
             'parcels.*.decision_reason'   => 'required_if:parcels.*.decision,Declined|nullable|string',
             'parcels.*.findings'          => 'nullable|string',
+            'parcels.*.assigned_notes'    => 'nullable|string',
             'parcels.*.inspector_id'      => 'required_if:parcels.*.decision,Needs Site Inspection|nullable|exists:users,id',
             'parcels.*.scheduled_date'    => 'required_if:parcels.*.decision,Needs Site Inspection|nullable|date|after_or_equal:today',
             'parcels.*.deadline_date'     => 'required_if:parcels.*.decision,Needs Site Inspection|nullable|date|after_or_equal:parcels.*.scheduled_date',
@@ -346,18 +347,21 @@ class ApplicationController extends Controller
                     $siteInspectionId = null;
 
                     if ($parcelData['decision'] === 'Needs Site Inspection') {
+                        $assigningOfficer = $this->currentPlanningOfficerAssignmentActor();
+
                         $inspection = SiteInspection::create([
-                            'zoning_application_id' => $application->id,
-                            'parcel_id'             => $parcel->id,
-                            'inspector_id'          => $parcelData['inspector_id'],
-                            'scheduled_date'        => $parcelData['scheduled_date'],
-                            'deadline_date'         => $parcelData['deadline_date'],
-                            'status'                => 'Pending',
+                            'zoning_application_id'      => $application->id,
+                            'parcel_id'                  => $parcel->id,
+                            'inspector_id'               => $parcelData['inspector_id'],
+                            'scheduled_date'             => $parcelData['scheduled_date'],
+                            'deadline_date'              => $parcelData['deadline_date'],
+                            'assigned_notes'             => $parcelData['assigned_notes'] ?? null,
+                            'assigned_by_imaps_user_id'  => $assigningOfficer['id'],
+                            'assigned_by_name'           => $assigningOfficer['name'],
+                            'status'                     => 'Pending',
                         ]);
-                        
+
                         $siteInspectionId = $inspection->id;
-                        
-                        // Push inspection task directly to Supabase
                         PushInspectionToSupabase::dispatch($inspection);
                     }
 
@@ -488,6 +492,20 @@ class ApplicationController extends Controller
             'inspectors'       => $inspectors,
             'statusOrder'      => self::STATUS_ORDER,
         ]);
+    }
+
+    private function currentPlanningOfficerAssignmentActor(): array
+    {
+        $user = Auth::user();
+
+        if (!$user || $user->role !== 'Planning Officer') {
+            throw new \RuntimeException('Only an authenticated Planning Officer can assign or reassign a site inspection.');
+        }
+
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+        ];
     }
 
     private function getSampleApplicationData(int $id): object

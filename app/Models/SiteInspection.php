@@ -23,6 +23,8 @@ class SiteInspection extends Model
         'deadline_date',
         'completed_at',
         'assigned_notes',
+        'assigned_by_imaps_user_id',
+        'assigned_by_name',
         'parcel_id',
         'findings',
         'recommendation',
