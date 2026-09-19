@@ -18,7 +18,7 @@ class SettingsController extends Controller
     public function uploadShapefile(Request $request)
     {
         $request->validate([
-            'layer_type' => 'required|string|in:municipal_boundary,barangay_boundary,land_use_plan',
+            'layer_type' => 'required|string|in:municipal_boundary,barangay_boundary,land_use_plan,land_parcels',
             'shapefile_zip' => 'required|file|mimes:zip|max:51200', // 50MB max
         ]);
 
@@ -59,9 +59,9 @@ class SettingsController extends Controller
         $baseName = $shpFile->getFilenameWithoutExtension();
         $dir = $shpFile->getPath();
 
-        // 3. Validate the Big Four exist together
+        // 3. Validate the Big Five exist together
         $missing = [];
-        foreach (['shx', 'dbf', 'prj'] as $ext) {
+        foreach (['shx', 'dbf', 'prj', 'cpg'] as $ext) {
             if (!File::exists("$dir/$baseName.$ext")) {
                 $missing[] = ".$ext";
             }

@@ -248,13 +248,12 @@ class ApplicationController extends Controller
         } elseif ($validated['application_stream'] === 'permit') {
             $targetLandUseClass = null;
         }
-
-        $referenceNumber = $this->generateReferenceNumber(
-            now()->toDateString()
-        );
-
         DB::beginTransaction();
         try {
+            $referenceNumber = $this->generateReferenceNumber(
+                now()->toDateString()
+            );
+
             // 1. Create the application with the initial 'Received' status
             $application = ZoningApplication::create([
                 'reference_number'           => $referenceNumber,
@@ -861,20 +860,18 @@ class ApplicationController extends Controller
 
     private function getNextSequence(string $typeCode, string $year): int
     {
-        DB::table('application_sequences')->upsert(
-            [
-                'type_code' => $typeCode,
-                'year'      => $year,
-                'last_seq'  => 1,
-            ],
-            ['type_code', 'year'],
-            ['last_seq' => DB::raw('application_sequences.last_seq + 1')]
-        );
+        $latest = DB::table('zoning_applications')
+            ->where('reference_number', 'like', "{$typeCode}-{$year}-%")
+            ->lockForUpdate()
+            ->orderBy('reference_number', 'desc')
+            ->value('reference_number');
 
-        return (int) DB::table('application_sequences')
-            ->where('type_code', $typeCode)
-            ->where('year', $year)
-            ->value('last_seq');
+        if ($latest) {
+            $parts = explode('-', $latest);
+            return (int) end($parts) + 1;
+        }
+
+        return 1;
     }
 
 

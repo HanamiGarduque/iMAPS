@@ -104,7 +104,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::post('register-new-account', [RegisteredUserController::class, 'store']);
 
     Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
-    Route::post('/analytics/rerun', [AnalyticsController::class, 'rerun'])->name('analytics.rerun');
+    Route::post('/api/forecast', [AnalyticsController::class, 'forecast'])->name('analytics.forecast');
 
     Route::get('/audit-log', [AuditTrailController::class, 'index'])
         ->name('audit-log.index');

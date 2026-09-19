@@ -30,6 +30,14 @@ const LAYER_METADATA = {
         crs: "EPSG:4326 (WGS 84)",
         desc: "Official Comprehensive Land Use Plan (CLUP) zoning classification polygons.",
     },
+    land_parcels: {
+        id: "land_parcels",
+        title: "Land Parcels",
+        table: "public.land_parcels",
+        geometry: "MultiPolygon",
+        crs: "EPSG:4326 (WGS 84)",
+        desc: "Cadastral land parcels defining individual property boundaries.",
+    },
 };
 
 export default function Settings({ auth = {} }) {
@@ -529,7 +537,7 @@ export default function Settings({ auth = {} }) {
                                                     </label>
                                                     <span className="text-[11px] text-slate-400">Click to choose target table</span>
                                                 </div>
-                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                                     {Object.values(LAYER_METADATA).map((meta) => {
                                                         const isSelected = uploadLayer === meta.id;
                                                         return (
@@ -646,7 +654,7 @@ export default function Settings({ auth = {} }) {
                                                                 Archive must contain the required core ESRI component files:
                                                             </p>
                                                             <div className="flex items-center justify-center gap-1.5 mt-2.5">
-                                                                {['.shp', '.shx', '.dbf', '.prj'].map((ext) => (
+                                                                {['.shp', '.shx', '.dbf', '.prj', '.cpg'].map((ext) => (
                                                                     <span key={ext} className="text-[10px] font-mono bg-white border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded shadow-2xs">
                                                                         {ext}
                                                                     </span>
