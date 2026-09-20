@@ -153,6 +153,7 @@ class TechnicalReviewController extends Controller
             // Eager load parcels so we can extract the parcel_id
             $application = ZoningApplication::with('parcels')->findOrFail($validated['id']);
             $oldStatus = $application->status;
+            $assigningOfficer = $this->currentPlanningOfficerAssignmentActor();
 
             // 1. Update main application status ONLY if it's a final decision
             if ($validated['decision'] === 'Approved') {
@@ -183,19 +184,20 @@ class TechnicalReviewController extends Controller
                     $inspection = SiteInspection::updateOrCreate(
                         [
                             'zoning_application_id' => $application->id,
-                            'parcel_id'             => $parcel->id, 
+                            'parcel_id'             => $parcel->id,
                         ],
                         [
-                            'inspector_id'          => $validated['inspector_id'],
-                            'scheduled_date'        => $validated['scheduled_date'],
-                            'deadline_date'         => $validated['deadline_date'],
-                            'assigned_notes'        => $validated['assigned_notes'] ?? null,
-                            'status'                => 'Pending',
+                            'inspector_id'              => $validated['inspector_id'],
+                            'scheduled_date'            => $validated['scheduled_date'],
+                            'deadline_date'             => $validated['deadline_date'],
+                            'assigned_notes'            => $validated['assigned_notes'] ?? null,
+                            'assigned_by_imaps_user_id' => $assigningOfficer['id'],
+                            'assigned_by_name'          => $assigningOfficer['name'],
+                            'status'                    => 'Pending',
                         ]
                     );
                     $siteInspectionId = $inspection->id;
-                    // Dispatch the Sync Job
-    PushInspectionToSupabase::dispatch($inspection);
+                    PushInspectionToSupabase::dispatch($inspection);
                 }
 
                 // Create the technical review row for the parcel
@@ -323,6 +325,7 @@ class TechnicalReviewController extends Controller
 
         DB::transaction(function () use ($application, $validated) {
             $reviews = $validated['reviews'];
+            $assigningOfficer = $this->currentPlanningOfficerAssignmentActor();
 
             // Shared review round across all parcels for this single submission.
             $currentRound = TechnicalReview::where('zoning_application_id', $application->id)->max('review_round') ?? 0;
@@ -342,18 +345,17 @@ class TechnicalReviewController extends Controller
                             'parcel_id'             => $parcelId,
                         ],
                         [
-                            'inspector_id'          => $review['inspector_id'],
-                            'scheduled_date'        => $review['scheduled_date'],
-                            'deadline_date'         => $review['deadline_date'], 
-                            'assigned_notes'        => $review['assigned_notes'] ?? null,
-                            'status'                => 'Pending',
+                            'inspector_id'              => $review['inspector_id'],
+                            'scheduled_date'            => $review['scheduled_date'],
+                            'deadline_date'             => $review['deadline_date'],
+                            'assigned_notes'            => $review['assigned_notes'] ?? null,
+                            'assigned_by_imaps_user_id' => $assigningOfficer['id'],
+                            'assigned_by_name'          => $assigningOfficer['name'],
+                            'status'                    => 'Pending',
                         ]
                     );
 
                     $siteInspectionId = $inspection->id;
-                    
-                    // --- NEW LINE ADDED HERE ---
-                    // Dispatch the Sync Job to Supabase
                     PushInspectionToSupabase::dispatch($inspection);
                 }
 
@@ -441,21 +443,39 @@ class TechnicalReviewController extends Controller
         }
 
         $this->validateFieldSyncParcelCoordinates($parcel);
+        $assigningOfficer = $this->currentPlanningOfficerAssignmentActor();
 
         $inspection = SiteInspection::create([
-            'zoning_application_id' => $validated['zoning_application_id'],
-            'parcel_id'             => $validated['parcel_id'],
-            'inspector_id'          => $validated['inspector_id'],
-            'scheduled_date'        => $validated['scheduled_date'],
-            'deadline_date'         => $validated['deadline_date'],
-            'assigned_notes'        => $validated['assigned_notes'] ?? null,
-            'status'                => 'Pending',
+            'zoning_application_id'      => $validated['zoning_application_id'],
+            'parcel_id'                  => $validated['parcel_id'],
+            'inspector_id'               => $validated['inspector_id'],
+            'scheduled_date'             => $validated['scheduled_date'],
+            'deadline_date'              => $validated['deadline_date'],
+            'assigned_notes'             => $validated['assigned_notes'] ?? null,
+            'assigned_by_imaps_user_id'  => $assigningOfficer['id'],
+            'assigned_by_name'           => $assigningOfficer['name'],
+            'status'                     => 'Pending',
         ]);
 
-        // Push the new inspection to Supabase so FieldSync can pick it up
         PushInspectionToSupabase::dispatch($inspection);
 
         return redirect()->back()->with('success', 'Site Inspector assigned successfully.');
+    }
+
+    private function currentPlanningOfficerAssignmentActor(): array
+    {
+        $user = auth()->user();
+
+        if (!$user || $user->role !== 'Planning Officer') {
+            throw ValidationException::withMessages([
+                'inspector_id' => 'Only an authenticated Planning Officer can assign or reassign a site inspection.',
+            ]);
+        }
+
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+        ];
     }
 
     private function validateFieldSyncParcelCoordinates(?Parcel $parcel, string $errorKey = 'parcel_id'): void

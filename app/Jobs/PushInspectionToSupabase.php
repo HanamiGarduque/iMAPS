@@ -125,16 +125,20 @@ class PushInspectionToSupabase implements ShouldQueue
             $existingJob = $existingJobResponse->json()[0] ?? null;
 
             // ADDED: ?on_conflict=local_inspection_id
-            $jobPayload = [
-                'local_inspection_id'     => $this->inspection->id,
-                'supabase_application_id' => $supabaseAppId,
-                'supabase_parcel_id'      => $supabaseParcelId,
-                'status'                  => $existingJob['status'] ?? 'Pending',
-                'scheduled_date'          => $this->inspection->scheduled_date->format('Y-m-d'),
-                'deadline_date'           => $this->inspection->deadline_date ? $this->inspection->deadline_date->format('Y-m-d') : null,
-                'assigned_inspector_id'   => $this->resolveSupabaseUserId($this->inspection->inspector_id), 
-                'inspector_notes'         => $this->inspection->assigned_notes,
-            ];
+            $jobPayload = self::withAssigningOfficerProvenance(
+                [
+                    'local_inspection_id'     => $this->inspection->id,
+                    'supabase_application_id' => $supabaseAppId,
+                    'supabase_parcel_id'      => $supabaseParcelId,
+                    'status'                  => $existingJob['status'] ?? 'assigned',
+                    'scheduled_date'          => $this->inspection->scheduled_date->format('Y-m-d'),
+                    'deadline_date'           => $this->inspection->deadline_date ? $this->inspection->deadline_date->format('Y-m-d') : null,
+                    'assigned_inspector_id'   => $this->resolveSupabaseUserId($this->inspection->inspector_id),
+                    'assignment_instructions' => $this->inspection->assigned_notes,
+                ],
+                $this->inspection->assigned_by_imaps_user_id,
+                $this->inspection->assigned_by_name,
+            );
 
             $jobResponse = $http->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=local_inspection_id", $jobPayload);
 
@@ -146,6 +150,86 @@ class PushInspectionToSupabase implements ShouldQueue
             Log::error("Supabase Sync Error: " . $e->getMessage());
             throw $e; 
         }
+    }
+
+    /**
+     * Forward only the persisted assigning officer provenance. The queued job
+     * must never infer or resolve an actor from the active session context; it
+     * only sends the latest stored planning-officer snapshot from the
+     * inspection row.
+     */
+    public static function withAssigningOfficerProvenance(array $payload, $assignedByImapsUserId = null, $assignedByName = null): array
+    {
+        $userId = $assignedByImapsUserId ?? null;
+        $name = $assignedByName ?? null;
+
+        if ($userId === null && $name === null) {
+            return $payload;
+        }
+
+        if (self::isUnusableAssigningOfficerProvenance($userId, $name)) {
+            if (($userId !== null && $userId !== '') || ($name !== null && trim((string) $name) !== '')) {
+                if (function_exists('app') && app() !== null && app()->bound('log')) {
+                    Log::warning('Skipping unusable assigning-officer provenance payload values.', [
+                        'user_id' => $userId,
+                        'name' => $name,
+                    ]);
+                }
+            }
+            return $payload;
+        }
+
+        $normalizedUserId = self::normalizeAssigningOfficerUserId($userId);
+        $normalizedName = self::normalizeAssigningOfficerName($name);
+
+        $payload['assigned_by_imaps_user_id'] = $normalizedUserId;
+        $payload['assigned_by_name'] = $normalizedName;
+
+        return $payload;
+    }
+
+    public static function isUnusableAssigningOfficerProvenance($assignedByImapsUserId, $assignedByName): bool
+    {
+        $hasUserId = $assignedByImapsUserId !== null && trim((string) $assignedByImapsUserId) !== '';
+        $hasName = is_string($assignedByName) ? trim($assignedByName) !== '' : ($assignedByName !== null && trim((string) $assignedByName) !== '');
+
+        if (!$hasUserId && !$hasName) {
+            return false;
+        }
+
+        if (!$hasUserId || !$hasName) {
+            return true;
+        }
+
+        $normalizedUserId = self::normalizeAssigningOfficerUserId($assignedByImapsUserId);
+        $normalizedName = self::normalizeAssigningOfficerName($assignedByName);
+
+        return $normalizedUserId === null || $normalizedName === null;
+    }
+
+    private static function normalizeAssigningOfficerUserId($value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $normalized = trim((string) $value);
+        if ($normalized === '' || !preg_match('/^\d+$/', $normalized)) {
+            return null;
+        }
+
+        $intValue = (int) $normalized;
+        return $intValue >= 0 ? $intValue : null;
+    }
+
+    private static function normalizeAssigningOfficerName($value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $normalized = trim((string) $value);
+        return $normalized === '' ? null : $normalized;
     }
 
     /**
