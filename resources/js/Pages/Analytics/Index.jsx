@@ -38,9 +38,12 @@ const parseCSV = (text, limit = 10) => {
     return { headers, rows, totalRows: lines.length - 1 };
 };
 
-export default function AnalyticsIndex({ userName = "Planning Officer", userRole = "Administrator", initialForecasts = [], initialMetrics = null, latestRun = null }) {
+export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initialMetrics = null, latestRun = null }) {
+    const userName = auth?.user?.name || "Planning Officer";
+    const userRole = auth?.user?.role || "Administrator";
+    
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [clock, setClock] = useState(new Date());
+    const [clock, setClock] = useState("");
 
     const [activeTab, setActiveTab] = useState("forecast"); // 'forecast' | 'intake' | 'metrics'
     const [selectedFileName, setSelectedFileName] = useState("");
@@ -58,8 +61,7 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
     const [forecastHorizon, setForecastHorizon] = useState(12);
     const [applicationType, setApplicationType] = useState("Locational Clearance");
     const [exogenousVars, setExogenousVars] = useState(["rainfall_index", "business_permit_surge"]);
-    const [useAutoArima, setUseAutoArima] = useState(true);
-    const [arimaParams, setArimaParams] = useState({ p: 1, d: 1, q: 1, P: 0, D: 1, Q: 1, m: 12 });
+
 
     // ── Forecast Result States ──
     const [forecastData, setForecastData] = useState(initialForecasts || []);
@@ -181,8 +183,8 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                 forecast_periods: Number(forecastHorizon),
                 frequency: "M",
                 exogenous_variables: exogenousVars,
-                use_auto_arima: useAutoArima,
-                manual_params: useAutoArima ? null : arimaParams,
+                use_auto_arima: true,
+                manual_params: null,
             };
 
             const response = await axios.post("/api/forecast", payload);
@@ -191,7 +193,7 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                 setModelMetrics(response.data.model_metrics || { aic: 1204.5, rmse: 14.2 });
                 setStatusMessage({
                     type: "success",
-                    text: `SARIMAX projections generated successfully for ${forecastHorizon} months horizon.`,
+                    text: `Forecast generated successfully.`,
                 });
             } else {
                 throw new Error("Invalid response format from analytics service.");
@@ -272,16 +274,13 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                             {/* ── HEADER SECTION ── */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 shrink-0">
                                 <div>
-                                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Analytics & SARIMAX Forecasting</h1>
+                                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Analytics & Forecasting</h1>
                                     <p className="text-xs text-slate-500 mt-1">
-                                        Geospatial time-series modeling, monthly application intake analysis, and locational clearance projections.
+                                        View time-series forecasts and monthly application intake data.
                                     </p>
                                 </div>
 
                                 <div className="flex items-center gap-2.5">
-                                    <span className="text-[11px] font-mono text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200/90 shadow-2xs">
-                                        Microservice: FastAPI · statsmodels
-                                    </span>
                                     <button
                                         type="button"
                                         onClick={handleGenerateForecast}
@@ -298,7 +297,7 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
                                                 </svg>
-                                                <span>Re-run SARIMAX</span>
+                                                <span>Generate Forecast</span>
                                             </>
                                         )}
                                     </button>
@@ -335,7 +334,7 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                     {[
                                         {
                                             id: "forecast",
-                                            label: "Forecast & Modeling",
+                                            label: "Forecast",
                                             icon: (
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
@@ -344,7 +343,7 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                         },
                                         {
                                             id: "intake",
-                                            label: "Historical Intake Data",
+                                            label: "Intake Data",
                                             icon: (
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
@@ -385,7 +384,7 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                             <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs overflow-hidden">
                                                 <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                                                     <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                                                        Data Intake Package
+                                                        Data Source
                                                     </h2>
                                                     <span className="text-[11px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                                                         .csv / .xlsx
@@ -457,7 +456,7 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                             <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs overflow-hidden">
                                                 <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                                                     <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                                                        SARIMAX Model Parameters
+                                                        Model Parameters
                                                     </h2>
                                                 </div>
                                                 <div className="p-5 space-y-4">
@@ -470,22 +469,22 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                                             onChange={(e) => setForecastHorizon(e.target.value)}
                                                             className="w-full bg-white border border-slate-200 text-slate-800 text-xs rounded-lg px-3 py-2 focus:ring-1 focus:ring-blue-600 focus:border-blue-600 outline-hidden font-medium"
                                                         >
-                                                            <option value={3}>3 Months Horizon (Short-term)</option>
-                                                            <option value={6}>6 Months Horizon (Bi-annual Outlook)</option>
-                                                            <option value={12}>12 Months Horizon (Full Annual Projections)</option>
+                                                            <option value={3}>3 Months</option>
+                                                            <option value={6}>6 Months</option>
+                                                            <option value={12}>12 Months</option>
                                                         </select>
                                                     </div>
 
                                                     <div>
                                                         <label className="block text-xs font-semibold text-slate-800 mb-2">
-                                                            Exogenous External Factors (Regressors)
+                                                            External Factors (Regressors)
                                                         </label>
                                                         <div className="space-y-2">
                                                             {[
-                                                                { id: "rainfall_index", label: "Rainfall & Weather Dips (Construction)" },
-                                                                { id: "inflation_rate", label: "Macroeconomic Inflation Rates" },
-                                                                { id: "business_permit_surge", label: "Q1 Business Permit Renewal Surges" },
-                                                                { id: "election_year", label: "Election Year Cyclical Trends" },
+                                                                { id: "rainfall_index", label: "Rainfall Index" },
+                                                                { id: "inflation_rate", label: "Inflation Rate" },
+                                                                { id: "business_permit_surge", label: "Business Permit Surge" },
+                                                                { id: "election_year", label: "Election Year" },
                                                             ].map((item) => (
                                                                 <label key={item.id} className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer select-none">
                                                                     <input
@@ -499,47 +498,6 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                                             ))}
                                                         </div>
                                                     </div>
-
-                                                    <div className="pt-3 border-t border-slate-100">
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <span className="text-xs font-semibold text-slate-800">Auto-ARIMA (Hyperparameter Search)</span>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={useAutoArima}
-                                                                onChange={(e) => setUseAutoArima(e.target.checked)}
-                                                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
-                                                            />
-                                                        </div>
-
-                                                        {!useAutoArima && (
-                                                            <div className="grid grid-cols-4 gap-2 pt-2 bg-slate-50 p-3 rounded-lg border border-slate-200/80">
-                                                                <div className="col-span-4 text-[11px] font-bold text-slate-700">ARIMA (p, d, q)</div>
-                                                                {["p", "d", "q"].map((k) => (
-                                                                    <input
-                                                                        key={k}
-                                                                        type="number"
-                                                                        placeholder={k}
-                                                                        value={arimaParams[k]}
-                                                                        onChange={(e) => setArimaParams({ ...arimaParams, [k]: Number(e.target.value) })}
-                                                                        className="bg-white border border-slate-200 text-slate-800 text-xs rounded p-1.5 text-center font-mono"
-                                                                    />
-                                                                ))}
-                                                                <div className="col-span-1"></div>
-
-                                                                <div className="col-span-4 text-[11px] font-bold text-slate-700 mt-1">Seasonal (P, D, Q, m)</div>
-                                                                {["P", "D", "Q", "m"].map((k) => (
-                                                                    <input
-                                                                        key={k}
-                                                                        type="number"
-                                                                        placeholder={k}
-                                                                        value={arimaParams[k]}
-                                                                        onChange={(e) => setArimaParams({ ...arimaParams, [k]: Number(e.target.value) })}
-                                                                        className="bg-white border border-slate-200 text-slate-800 text-xs rounded p-1.5 text-center font-mono"
-                                                                    />
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -551,10 +509,10 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                                 <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                                     <div>
                                                         <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                                                            Projected Clearance Volumes
+                                                            Projected Volumes
                                                         </h2>
                                                         <p className="text-[11px] text-slate-500 mt-0.5">
-                                                            Historical Actuals vs. SARIMAX Model Forecast with 95% Confidence Bounds
+                                                            Historical Actuals vs Forecast with 95% Confidence Bounds
                                                         </p>
                                                     </div>
                                                     <span className="text-[11px] font-mono text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md shrink-0">
@@ -617,7 +575,7 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                                             </div>
                                                             <p className="text-xs font-semibold text-slate-700">No Forecast Generated Yet</p>
                                                             <p className="text-[11px] text-slate-400 mt-1 max-w-sm">
-                                                                Click "Re-run SARIMAX" or upload an intake dataset to execute the time-series forecasting model.
+                                                                Click "Generate Forecast" or upload an intake dataset to execute the time-series model.
                                                             </p>
                                                         </div>
                                                     )}
@@ -635,9 +593,9 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                                     <div>
                                                         <p className="text-[10.5px] uppercase tracking-wider font-bold text-slate-400">Predicted Peak Volume</p>
                                                         <p className="text-lg font-bold text-slate-900 mt-0.5">
-                                                            {forecastData.length > 0 ? "162 applications" : "—"}
+                                                            {forecastData.length > 0 ? `${forecastData[forecastData.length - 1]?.predicted_volume || 0} applications` : "—"}
                                                         </p>
-                                                        <p className="text-[11px] text-slate-500">March 2027 Projected</p>
+                                                        <p className="text-[11px] text-slate-500">Projected Peak Volume</p>
                                                     </div>
                                                 </div>
 
@@ -650,41 +608,14 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                                     <div>
                                                         <p className="text-[10.5px] uppercase tracking-wider font-bold text-slate-400">Model Accuracy (RMSE)</p>
                                                         <p className="text-lg font-bold text-slate-900 mt-0.5">
-                                                            {modelMetrics?.rmse ? `${modelMetrics.rmse} (AIC: ${modelMetrics.aic})` : "—"}
+                                                            {modelMetrics?.rmse ? `${modelMetrics.rmse.toFixed(2)}` : "—"}
                                                         </p>
-                                                        <p className="text-[11px] text-slate-500">Statistical 95% Confidence</p>
+                                                        <p className="text-[11px] text-slate-500">Lower is better</p>
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            {/* Sync to Map Overlay CTA */}
-                                            <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-xl border border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                                <div>
-                                                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                                                        Municipal Spatial Heatmap Integration
-                                                    </h3>
-                                                    <p className="text-[11px] text-slate-400 mt-0.5">
-                                                        Push forecasted growth vectors directly onto the municipal GIS parcel map layers.
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        Swal.fire({
-                                                            icon: "success",
-                                                            title: "Map Synchronized",
-                                                            text: "SARIMAX forecasted growth rates were pushed to the GIS map heatmap layer.",
-                                                            customClass: { popup: "rounded-2xl", confirmButton: "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs" },
-                                                        });
-                                                    }}
-                                                    className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer shrink-0"
-                                                >
-                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.284a2.25 2.25 0 00-2.012 0L2.616 5.72c-.381.19-.622.58-.622 1.006v11.43c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
-                                                    </svg>
-                                                    <span>Sync to GIS Map</span>
-                                                </button>
-                                            </div>
+
                                         </div>
                                     </div>
                                 </div>
@@ -697,10 +628,10 @@ export default function AnalyticsIndex({ userName = "Planning Officer", userRole
                                         <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                             <div>
                                                 <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                                                    Historical Locational Clearance Intake Records
+                                                    Historical Intake Records
                                                 </h2>
                                                 <p className="text-[11px] text-slate-500 mt-0.5">
-                                                    Preview of ingested data validated for time-series aggregation and exogenous merging
+                                                    Preview of uploaded data
                                                 </p>
                                             </div>
                                             <span className="text-[11px] font-mono text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 shrink-0">

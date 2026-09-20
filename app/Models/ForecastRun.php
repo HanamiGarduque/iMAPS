@@ -6,8 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 
 class ForecastRun extends Model
 {
-    use HasFactory;
-
     protected $fillable = [
         'application_type',
         'forecast_periods',
