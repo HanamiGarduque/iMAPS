@@ -159,6 +159,27 @@ export default function StepReview({
                     )}
                 </div>
             </div>
+
+            {/* Remarks */}
+            <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 relative shadow-2xs">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">5. Remarks</h4>
+                <p className="text-[11px] text-slate-500 mb-3">Add any additional remarks about the application (optional).</p>
+                
+                <textarea
+                    rows={3}
+                    value={form.remarks || ""}
+                    onChange={set ? set("remarks") : () => {}}
+                    className={`w-full text-xs rounded-lg border px-3 py-2 outline-none transition-all ${
+                        errors.remarks 
+                            ? "border-rose-500 bg-rose-50/30 text-rose-700 ring-2 ring-rose-500/50" 
+                            : "border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 bg-white"
+                    }`}
+                    placeholder="Enter remarks..."
+                />
+                {errors.remarks && (
+                    <p className="text-[10px] font-bold text-rose-600 mt-1.5">{errors.remarks}</p>
+                )}
+            </div>
         </div>
     );
 }

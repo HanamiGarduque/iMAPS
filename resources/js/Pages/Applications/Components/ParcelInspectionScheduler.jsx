@@ -100,25 +100,20 @@ export default function ParcelInspectionScheduler({
                         />
                         {errors[`parcels.${index}.deadline_date`] && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors[`parcels.${index}.deadline_date`]}</p>}
                     </div>
+                    <div className="sm:col-span-3">
+                        <Label hasError={!!errors[`parcels.${index}.assigned_notes`]}>Assignment Instructions</Label>
+                        <Textarea
+                            rows={2}
+                            value={parcel.assigned_notes || ""}
+                            onChange={setParcelField(index, "assigned_notes")}
+                            placeholder="Add any instructions or notes for the site inspector..."
+                            hasError={!!errors[`parcels.${index}.assigned_notes`]}
+                        />
+                        {errors[`parcels.${index}.assigned_notes`] && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors[`parcels.${index}.assigned_notes`]}</p>}
+                    </div>
                 </div>
             )}
 
-            {/* Global Findings Block (Visible only if a decision is made) */}
-            {decision && (
-                <div className={`mt-3 pt-3 border-t animate-in fade-in slide-in-from-top-2 ${
-                    decision === 'Approved' ? 'border-emerald-200/60' :
-                    decision === 'Declined' ? 'border-rose-200/60' :
-                    'border-amber-200/60'
-                }`}>
-                    <Label>Evaluation Findings / Internal Remarks</Label>
-                    <Textarea
-                        rows={2}
-                        value={parcel.findings || ""}
-                        onChange={setParcelField(index, "findings")}
-                        placeholder="Add any internal technical notes regarding this parcel..."
-                    />
-                </div>
-            )}
         </div>
     );
 }

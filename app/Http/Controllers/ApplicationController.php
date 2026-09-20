@@ -357,7 +357,7 @@ class ApplicationController extends Controller
                             'assigned_notes'             => $parcelData['assigned_notes'] ?? null,
                             'assigned_by_imaps_user_id'  => $assigningOfficer['id'],
                             'assigned_by_name'           => $assigningOfficer['name'],
-                            'status'                     => 'Pending',
+                            'status'                     => 'assigned',
                         ]);
 
                         $siteInspectionId = $inspection->id;

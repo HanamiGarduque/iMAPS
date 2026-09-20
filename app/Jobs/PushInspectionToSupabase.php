@@ -67,7 +67,7 @@ class PushInspectionToSupabase implements ShouldQueue
                 'application_type'     => $application->application_type,
                 'land_use_class'       => $application->target_land_use_class ?? $application->land_use_class,
                 'applicant_name'       => $application->applicant_name,
-                'representative_name'  => $application->representative_name,
+                'representative_name'  => $application->representative_name ?: 'Self-represented',
                 'contact_number'       => $application->contact_number,
                 'email'                => $application->email,
                 'purpose'              => $application->purpose,
@@ -80,9 +80,17 @@ class PushInspectionToSupabase implements ShouldQueue
             // ==========================================
             // 4. Push to supabase_parcels
             // ==========================================
-            $geom = ($parcel->longitude && $parcel->latitude) 
-                ? "POINT({$parcel->longitude} {$parcel->latitude})" 
-                : null; 
+            $landParcel = null;
+            if (!empty($parcel->property_index_number)) {
+                $landParcel = \Illuminate\Support\Facades\DB::table('land_parcels')
+                    ->selectRaw('ST_AsText(geom) as wkt_geom')
+                    ->where('property_index_number', $parcel->property_index_number)
+                    ->first();
+            }
+
+            $geom = ($landParcel && $landParcel->wkt_geom) 
+                ? $landParcel->wkt_geom 
+                : (($parcel->longitude && $parcel->latitude) ? "POINT({$parcel->longitude} {$parcel->latitude})" : null); 
 
             // ADDED: ?on_conflict=local_parcel_id
             $parcelResponse = $http->post("{$supabaseUrl}/rest/v1/supabase_parcels?on_conflict=local_parcel_id", [

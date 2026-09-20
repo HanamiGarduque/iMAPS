@@ -45,6 +45,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/technical-review', [TechnicalReviewController::class, 'index'])
         ->name('technicalreview.index');
 
+    // Site Inspections List
+    Route::get('/site-inspections', [\App\Http\Controllers\SiteInspectionController::class, 'index'])
+        ->name('site-inspections.index')
+        ->middleware('role:Admin');
+    Route::post('/site-inspections/sync', [\App\Http\Controllers\SiteInspectionController::class, 'forceSync'])
+        ->name('site-inspections.sync')
+        ->middleware('role:Admin');
+    Route::get('/site-inspections/{id}', [\App\Http\Controllers\SiteInspectionController::class, 'show'])
+        ->name('site-inspections.show')
+        ->middleware('role:Admin');
+
     // ── Application Creation Form (Must be placed before wildcard {id} route) ──
     Route::get('/applications/encode', [ApplicationController::class, 'create'])
         ->name('applications.create')

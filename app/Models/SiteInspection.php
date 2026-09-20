@@ -75,4 +75,12 @@ class SiteInspection extends Model
     {
         return $this->belongsTo(User::class, 'inspector_id');
     }
+
+    /**
+     * Get the parcel associated with this inspection.
+     */
+    public function parcel(): BelongsTo
+    {
+        return $this->belongsTo(Parcel::class, 'parcel_id');
+    }
 }

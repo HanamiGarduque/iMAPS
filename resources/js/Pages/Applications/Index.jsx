@@ -57,15 +57,16 @@ const LAND_USE_BADGES = {
 };
 
 const STATUSES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
-const APP_TYPES = ["Locational Clearance", "Zoning Certification", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)"];
+const APP_TYPES = ["Locational Clearance", "Zoning Certification", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)", "Petition for Rezoning", "Petition for Reclassification"];
 const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"];
 const ROSARIO_BARANGAYS = [
-    "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
-    "Calantas", "Colongan", "Itlugan", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", "Macalamcam A", 
-    "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", "Mayuro", 
-    "Namuco", "Namunga", "Natu", "Nasi", "Palakpak", "Pinagsibaan", "Poblacion A", "Poblacion B", 
-    "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", "San Carlos", 
-    "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan"
+    "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
+    "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", 
+    "Macalamcam A", "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", 
+    "Mayuro", "Namuco", "Namunga", "Natu", "Nazi", "Palacpac", "Pinagsibaan", "Poblacion A", 
+    "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", 
+    "San Carlos", "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan", 
+    "Tiquiwan", "Tulos"
 ];
 
 // Approximate coordinates in Rosario, Batangas for GIS mapping
@@ -574,7 +575,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const [currentPage, setCurrentPage] = useState(Number(urlParams.get("page")) || 1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [copiedRef, setCopiedRef] = useState(null);
-    const [viewMode, setViewMode] = useState("table"); // 'table' | 'kanban' | 'map'
+    const [viewMode, setViewMode] = useState("folder"); // 'folder' | 'kanban'
+    const [selectedFolder, setSelectedFolder] = useState(null);
     const [isCompact, setIsCompact] = useState(false);
 
     // ── NEW FEATURES STATE ──
@@ -583,9 +585,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const [dateFrom, setDateFrom] = useState(urlParams.get("date_from") || filters?.date_from || "");
     const [dateTo, setDateTo] = useState(urlParams.get("date_to") || filters?.date_to || "");
     const [dateFilterOpen, setDateFilterOpen] = useState(false);
-
-    // 2. Quick Peek Slide-Over Drawer
-    const [peekItem, setPeekItem] = useState(null);
 
     // 3. Column Visibility Customizer
     const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
@@ -847,12 +846,26 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     // Client-side pagination calculation
     const totalPages = Math.max(1, Math.ceil(filteredList.length / pageSize));
     
-    // Paginated slice
     const paginatedRecords = useMemo(() => {
         if (filteredList.length <= 10) return filteredList;
         const startIdx = (currentPage - 1) * pageSize;
         return filteredList.slice(startIdx, startIdx + pageSize);
     }, [filteredList, currentPage, pageSize]);
+
+    // Group records by applicant name for the Folder view
+    const folderGroups = useMemo(() => {
+        const groups = {};
+        // Group ALL filtered records, or just paginated? Usually it's better to group all filtered 
+        // to show accurate folders, but since it's client-side paginated we can group the filteredList
+        // and let them browse. But wait, pagination applies to rows. If we group filteredList, 
+        // we might have many folders.
+        filteredList.forEach(app => {
+            const name = (app.corporation_name || app.applicant_name)?.trim() || 'Unknown Applicant';
+            if (!groups[name]) groups[name] = [];
+            groups[name].push(app);
+        });
+        return groups;
+    }, [filteredList]);
 
     const startIndex = (currentPage - 1) * pageSize + 1;
     const endIndex = Math.min(currentPage * pageSize, filteredList.length);
@@ -1020,21 +1033,21 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                 </div>
 
                                 <div className="flex items-center gap-2 flex-wrap">
-                                    {/* 3-Way View Switcher: Table | Board | GIS Map */}
+                                    {/* 2-Way View Switcher: Board | Folders */}
                                     <div className="bg-white p-0.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center">
                                         <button
                                             type="button"
-                                            onClick={() => setViewMode("table")}
+                                            onClick={() => setViewMode("folder")}
                                             className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                                                viewMode === "table"
+                                                viewMode === "folder"
                                                     ? "bg-slate-900 text-white shadow-2xs"
                                                     : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
                                             }`}
                                         >
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
                                             </svg>
-                                            <span>Table</span>
+                                            <span>Folders</span>
                                         </button>
 
                                         <button
@@ -1050,21 +1063,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 4.5v15m6-15v15m-10.5-15h15a2.25 2.25 0 012.25 2.25v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75A2.25 2.25 0 014.5 4.5z" />
                                             </svg>
                                             <span>Board</span>
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => setViewMode("map")}
-                                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                                                viewMode === "map"
-                                                    ? "bg-blue-600 text-white shadow-2xs"
-                                                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                            }`}
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0z" />
-                                            </svg>
-                                            <span>GIS Map</span>
                                         </button>
                                     </div>
 
@@ -1122,88 +1120,13 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                 </div>
                             </div>
 
-                            {/* ── 1. SMART INTERACTIVE WORKFLOW STATUS CARDS (KPIS + FILTERS) ── */}
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 shrink-0 no-print">
-                                {[
-                                    {
-                                        id: "",
-                                        label: "All Applications",
-                                        count: totalCount,
-                                        sub: "Active Registry",
-                                        dot: "bg-blue-600",
-                                        activeClass: "border-blue-600 ring-2 ring-blue-500/15 bg-blue-50/30",
-                                    },
-                                    {
-                                        id: "Received",
-                                        label: "Received",
-                                        count: receivedCount,
-                                        sub: `${receivedPct}% Intake`,
-                                        dot: "bg-emerald-500",
-                                        activeClass: "border-emerald-500 ring-2 ring-emerald-500/15 bg-emerald-50/30",
-                                    },
-                                    {
-                                        id: "Technical Review",
-                                        label: "Tech Review",
-                                        count: reviewCount,
-                                        sub: `${reviewPct}% In Review`,
-                                        dot: "bg-amber-500",
-                                        activeClass: "border-amber-500 ring-2 ring-amber-500/15 bg-amber-50/30",
-                                    },
-                                    {
-                                        id: "Under Sangguniang Bayan",
-                                        label: "SB Legislative",
-                                        count: sbCount,
-                                        sub: `${sbPct}% Committee`,
-                                        dot: "bg-purple-500",
-                                        activeClass: "border-purple-500 ring-2 ring-purple-500/15 bg-purple-50/30",
-                                    },
-                                    {
-                                        id: "For Release",
-                                        label: "For Release",
-                                        count: forReleaseCount,
-                                        sub: `${forReleasePct}% Pending Sign`,
-                                        dot: "bg-sky-500",
-                                        activeClass: "border-sky-500 ring-2 ring-sky-500/15 bg-sky-50/30",
-                                    },
-                                    {
-                                        id: "Released",
-                                        label: "Released / Ready",
-                                        count: releasedCount,
-                                        sub: `${releasedPct}% Completed`,
-                                        dot: "bg-indigo-600",
-                                        activeClass: "border-indigo-500 ring-2 ring-indigo-500/15 bg-indigo-50/30",
-                                    },
-                                ].map((tab) => {
-                                    const isSelected = selectedStatus === tab.id;
-                                    return (
-                                        <button
-                                            key={tab.id || "all"}
-                                            type="button"
-                                            onClick={() => { setSelectedStatus(tab.id); setCurrentPage(1); }}
-                                            className={`p-3 rounded-2xl bg-white border text-left transition-all cursor-pointer shadow-2xs hover:border-slate-300 relative overflow-hidden group ${
-                                                isSelected ? tab.activeClass : "border-slate-200/90 hover:bg-slate-50/50"
-                                            }`}
-                                        >
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-[11px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors truncate">
-                                                    {tab.label}
-                                                </span>
-                                                <span className={`w-2 h-2 rounded-full ${tab.dot} shrink-0`} />
-                                            </div>
-                                            <div className="mt-1 flex items-baseline justify-between">
-                                                <span className="text-xl font-bold text-slate-900 font-mono tracking-tight">{tab.count}</span>
-                                                <span className="text-[10px] text-slate-400 font-semibold">{tab.sub}</span>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+               
 
                             {/* ── 2. UNIFIED COMMAND & SEARCH BAR ── */}
                             <div className="bg-white p-2.5 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col gap-2 shrink-0 no-print">
-                                <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2">
+                                <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
                                     {/* Main Search Input */}
-                                    <div className="relative flex-1 min-w-[200px]">
+                                    <div className="relative w-full lg:w-80 shrink-0">
                                         <svg
                                             className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
                                             fill="none"
@@ -1236,8 +1159,10 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                         </div>
                                     </div>
 
-                                    {/* Dropdown Filters */}
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
+                                    {/* Right Side: Filters & Controls */}
+                                    <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4">
+                                        {/* Dropdown Filters */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 items-center">
                                         {/* Category Filter */}
                                         <div className="min-w-[125px]">
                                             <DropdownSelect
@@ -1245,17 +1170,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                 onChange={(val) => { setSelectedCategory(val); setCurrentPage(1); }}
                                                 options={APP_TYPES}
                                                 allLabel="All Categories"
-                                                withSearch={false}
-                                            />
-                                        </div>
-
-                                        {/* Land Use Filter */}
-                                        <div className="min-w-[120px]">
-                                            <DropdownSelect
-                                                value={selectedLandUse}
-                                                onChange={(val) => { setSelectedLandUse(val); setCurrentPage(1); }}
-                                                options={LAND_USE_CLASSES}
-                                                allLabel="All Land Uses"
                                                 withSearch={false}
                                             />
                                         </div>
@@ -1285,7 +1199,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                         </div>
                                     </div>
 
-                                    {/* Utility Controls: Date Range, Columns, Density, Clear */}
+                                    {/* Utility Controls: Date Range, Clear */}
                                     <div className="flex items-center gap-1.5 shrink-0 self-end lg:self-auto">
                                         {/* Date Range Popover Button */}
                                         <div className="relative" ref={dateFilterRef}>
@@ -1367,62 +1281,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                             )}
                                         </div>
 
-                                        {/* Column Customizer */}
-                                        <div className="relative" ref={columnSettingsRef}>
-                                            <button
-                                                type="button"
-                                                onClick={() => setColumnSettingsOpen(!columnSettingsOpen)}
-                                                className="text-xs font-semibold px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
-                                                title="Show/hide optional columns"
-                                            >
-                                                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
-                                                </svg>
-                                                <span>Columns</span>
-                                            </button>
-
-                                            {columnSettingsOpen && (
-                                                <div className="absolute right-0 mt-1.5 z-50 bg-white rounded-2xl shadow-xl border border-slate-200/90 p-3 min-w-[200px] animate-in fade-in zoom-in-95">
-                                                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Optional Columns</p>
-                                                    <div className="space-y-1.5">
-                                                        {[
-                                                            { key: "lot_area", label: "Lot Area (sq.m)" },
-                                                            { key: "tct_number", label: "TCT / Lot Number" },
-                                                            { key: "contact", label: "Contact Phone / Email" },
-                                                            { key: "remarks", label: "Application Remarks" },
-                                                        ].map((col) => (
-                                                            <label key={col.key} className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer hover:text-slate-900">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={visibleColumns[col.key]}
-                                                                    onChange={(e) => setVisibleColumns((prev) => ({ ...prev, [col.key]: e.target.checked }))}
-                                                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                                                />
-                                                                <span>{col.label}</span>
-                                                            </label>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Density Switcher */}
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsCompact(!isCompact)}
-                                            className={`text-xs font-semibold px-2.5 py-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                                                isCompact
-                                                    ? "bg-slate-100 border-slate-300 text-slate-900"
-                                                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                                            }`}
-                                            title="Toggle compact row spacing"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-                                            </svg>
-                                            <span>{isCompact ? "Compact" : "Comfortable"}</span>
-                                        </button>
-
                                         {hasActiveFilters && (
                                             <button
                                                 onClick={clearFilters}
@@ -1435,6 +1293,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                 <span>Reset</span>
                                             </button>
                                         )}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1488,359 +1347,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                 )}
                             </div>
 
-                            {/* ── DATA VIEW (TABLE / PIPELINE KANBAN / GIS MAP) ── */}
-                            {viewMode === "table" ? (
-                                <div className="flex-1 bg-white rounded-2xl shadow-2xs border border-slate-200/90 overflow-hidden flex flex-col min-h-0 relative">
-                                    {paginatedRecords.length === 0 ? (
-                                        <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-                                            <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-200/60 mb-3.5 shadow-2xs">
-                                                <svg className="w-7 h-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                                </svg>
-                                            </div>
-                                            <h3 className="text-base font-bold text-slate-900">No applications match your filters</h3>
-                                            <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                                                No application records found for the selected criteria. Try adjusting keywords or resetting filters.
-                                            </p>
-                                            {hasActiveFilters && (
-                                                <button
-                                                    onClick={clearFilters}
-                                                    className="mt-4 px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
-                                                >
-                                                    Clear All Filters
-                                                </button>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="flex-1 overflow-auto">
-                                            <table className="w-full text-left border-collapse whitespace-nowrap">
-                                                <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-xs z-10 border-b border-slate-200/90 select-none">
-                                                    <tr>
-                                                        {/* Sortable Header: Application Ref */}
-                                                        <th 
-                                                            onClick={() => handleHeaderSort("ref")}
-                                                            className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 group"
-                                                        >
-                                                            <div className="flex items-center gap-1">
-                                                                <span>Application Ref</span>
-                                                                <span className="text-[10px] text-slate-400 group-hover:text-blue-600">
-                                                                    {selectedSort === "ref_asc" ? "▲" : "⇅"}
-                                                                </span>
-                                                            </div>
-                                                        </th>
-
-                                                        {/* Sortable Header: Applicant */}
-                                                        <th 
-                                                            onClick={() => handleHeaderSort("applicant")}
-                                                            className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 group"
-                                                        >
-                                                            <div className="flex items-center gap-1">
-                                                                <span>Applicant & Entity</span>
-                                                                <span className="text-[10px] text-slate-400 group-hover:text-blue-600">
-                                                                    {selectedSort === "applicant_asc" ? "▲" : selectedSort === "applicant_desc" ? "▼" : "⇅"}
-                                                                </span>
-                                                            </div>
-                                                        </th>
-
-                                                        <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                                            Category & Purpose
-                                                        </th>
-
-                                                        <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                                            Barangay Jurisdiction
-                                                        </th>
-
-                                                        {/* Optional column: Lot Area */}
-                                                        {visibleColumns.lot_area && (
-                                                            <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                                                Lot Area (sqm)
-                                                            </th>
-                                                        )}
-
-                                                        {/* Optional column: TCT Number */}
-                                                        {visibleColumns.tct_number && (
-                                                            <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                                                TCT / Lot No
-                                                            </th>
-                                                        )}
-
-                                                        {/* Sortable Header: Filing Date */}
-                                                        <th 
-                                                            onClick={() => handleHeaderSort("date")}
-                                                            className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 group"
-                                                        >
-                                                            <div className="flex items-center gap-1">
-                                                                <span>Filing Date</span>
-                                                                <span className="text-[10px] text-slate-400 group-hover:text-blue-600">
-                                                                    {selectedSort === "oldest" ? "▲" : selectedSort === "newest" ? "▼" : "⇅"}
-                                                                </span>
-                                                            </div>
-                                                        </th>
-
-                                                        {/* Sortable Header: Assessment Fee (Right-Aligned) */}
-                                                        <th 
-                                                            onClick={() => handleHeaderSort("fee")}
-                                                            className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider cursor-pointer hover:text-blue-600 group text-right"
-                                                        >
-                                                            <div className="flex items-center justify-end gap-1">
-                                                                <span className="text-[10px] text-slate-400 group-hover:text-blue-600">
-                                                                    {selectedSort === "fee_asc" ? "▲" : selectedSort === "fee_desc" ? "▼" : "⇅"}
-                                                                </span>
-                                                                <span>Assessment Fee</span>
-                                                            </div>
-                                                        </th>
-
-                                                        <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                                            Status
-                                                        </th>
-
-                                                        <th className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider text-right">
-                                                            Action
-                                                        </th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {paginatedRecords.map((app, index) => {
-                                                        const refCode = app?.reference_number || `APP-${app?.id || 0}`;
-                                                        const isCopied = copiedRef === refCode;
-                                                        const landUseBadgeStyle = LAND_USE_BADGES[app?.land_use_class] || "bg-slate-100 text-slate-700 border-slate-200/80";
-                                                        const isCorp = isCorporateEntity(app?.applicant_name);
-                                                        const isKeyboardFocused = focusedRowIndex === index;
-
-                                                        return (
-                                                            <tr 
-                                                                key={app?.id || refCode} 
-                                                                onClick={() => router.visit(`/applications/${app?.id || 101}`)}
-                                                                className={`hover:bg-blue-50/40 hover:border-l-4 hover:border-l-blue-600 transition-all group cursor-pointer ${
-                                                                    isKeyboardFocused ? "ring-2 ring-blue-500 ring-inset bg-blue-50/70" : ""
-                                                                } ${
-                                                                    isCompact ? "py-2" : ""
-                                                                }`}
-                                                            >
-                                                                {/* Application Ref */}
-                                                                <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"}`}>
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <span className="font-mono text-xs font-bold text-blue-700 hover:text-blue-900 group-hover:underline">
-                                                                            {refCode}
-                                                                        </span>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={(e) => handleCopyRef(e, refCode)}
-                                                                            title="Copy reference code"
-                                                                            className="text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-all p-1 cursor-pointer"
-                                                                        >
-                                                                            {isCopied ? (
-                                                                                <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-600">
-                                                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                                                                    </svg>
-                                                                                    Copied
-                                                                                </span>
-                                                                            ) : (
-                                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
-                                                                                </svg>
-                                                                            )}
-                                                                        </button>
-                                                                    </div>
-                                                                </td>
-
-                                                                {/* Applicant Details & Icon */}
-                                                                <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"}`}>
-                                                                    <div className="flex items-center gap-2.5">
-                                                                        <div className={`w-7 h-7 rounded-full border text-xs font-bold flex items-center justify-center shrink-0 ${
-                                                                            isCorp
-                                                                                ? "bg-blue-50 border-blue-200 text-blue-700"
-                                                                                : "bg-slate-100 border-slate-200 text-slate-700"
-                                                                        }`}>
-                                                                            {isCorp ? "🏢" : (app?.applicant_name ? app.applicant_name.charAt(0).toUpperCase() : "👤")}
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                                                                                {app?.applicant_name || "—"}
-                                                                            </p>
-                                                                            {app?.representative_name && (
-                                                                                <p className="text-[10px] text-slate-400 font-medium">
-                                                                                    Rep: {app.representative_name}
-                                                                                </p>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-
-                                                                {/* Category & Purpose with Land Use Badge */}
-                                                                <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"}`}>
-                                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                                        <span className="text-xs font-semibold text-slate-800">{app?.application_type || "—"}</span>
-                                                                        {app?.land_use_class && (
-                                                                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${landUseBadgeStyle}`}>
-                                                                                {app.land_use_class}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <p className="text-[11px] text-slate-400 truncate max-w-[220px] mt-0.5 font-medium" title={app?.purpose}>
-                                                                        {app?.purpose || "—"}
-                                                                    </p>
-                                                                </td>
-
-                                                                {/* Barangay Jurisdiction (Clean Text) */}
-                                                                <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"}`}>
-                                                                    <span className="text-xs font-medium text-slate-700">
-                                                                        Brgy. {app?.barangay || "—"}
-                                                                    </span>
-                                                                </td>
-
-                                                                {/* Optional Column: Lot Area */}
-                                                                {visibleColumns.lot_area && (
-                                                                    <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"} font-mono text-xs text-slate-700`}>
-                                                                        {app?.lot_area_sqm ? `${Number(app.lot_area_sqm).toLocaleString()} sqm` : "—"}
-                                                                    </td>
-                                                                )}
-
-                                                                {/* Optional Column: TCT No */}
-                                                                {visibleColumns.tct_number && (
-                                                                    <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"} font-mono text-xs text-slate-600`}>
-                                                                        {app?.tct_number || "—"}
-                                                                    </td>
-                                                                )}
-
-                                                                {/* Filing Date */}
-                                                                <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"}`}>
-                                                                    <span className="text-xs text-slate-600 font-mono">
-                                                                        {formatDate(app?.created_at)}
-                                                                    </span>
-                                                                </td>
-
-                                                                {/* Assessment Fee & Verified Tag (Right-Aligned) */}
-                                                                <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"} text-right`}>
-                                                                    <div className="font-mono text-xs font-bold text-slate-900">
-                                                                        {formatFee(app?.assessment_fee)}
-                                                                    </div>
-                                                                    {app?.or_number && (
-                                                                        <div className="inline-flex items-center justify-end gap-1 text-[10px] text-emerald-600 font-mono">
-                                                                            <span>{app.or_number}</span>
-                                                                            <span className="text-emerald-500 font-bold">✓</span>
-                                                                        </div>
-                                                                    )}
-                                                                </td>
-
-                                                                {/* Status */}
-                                                                <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"}`}>
-                                                                    <StatusBadge status={app?.status} />
-                                                                </td>
-
-                                                                {/* Actions (Peek Drawer + Direct View) */}
-                                                                <td className={`px-4 ${isCompact ? "py-2.5" : "py-3.5"} text-right`}>
-                                                                    <div className="inline-flex items-center gap-1.5 justify-end" onClick={(e) => e.stopPropagation()}>
-                                                                        {/* Quick Peek Drawer Trigger */}
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => setPeekItem(app)}
-                                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                                                                            title="Quick peek overview"
-                                                                        >
-                                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
-                                                                            </svg>
-                                                                        </button>
-
-                                                                        {/* View Link */}
-                                                                        <Link
-                                                                            href={`/applications/${app?.id || 101}`}
-                                                                            className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100/80 px-2.5 py-1 rounded-xl transition-all shadow-2xs cursor-pointer"
-                                                                        >
-                                                                            <span>View</span>
-                                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                                                                            </svg>
-                                                                        </Link>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-
-                                    {/* ── NUMBERED PAGINATION BAR (ONLY IF RECORDS > 10) ── */}
-                                    {filteredList.length > 10 && (
-                                        <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/70 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 no-print">
-                                            <div className="flex items-center gap-3">
-                                                <p className="text-xs text-slate-500 font-medium">
-                                                    Showing <span className="font-semibold text-slate-800">{filteredList.length > 0 ? startIndex : 0}</span> to <span className="font-semibold text-slate-800">{endIndex}</span> of{" "}
-                                                    <span className="font-semibold text-slate-800">{filteredList.length}</span> applications
-                                                </p>
-
-                                                {/* Page Size Selector */}
-                                                <div className="flex items-center gap-1.5 text-xs text-slate-400 pl-3 border-l border-slate-200">
-                                                    <span>Show:</span>
-                                                    <select
-                                                        value={pageSize}
-                                                        onChange={(e) => {
-                                                            setPageSize(Number(e.target.value));
-                                                            setCurrentPage(1);
-                                                        }}
-                                                        className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-semibold text-slate-700 outline-none cursor-pointer"
-                                                    >
-                                                        <option value={10}>10</option>
-                                                        <option value={20}>20</option>
-                                                        <option value={50}>50</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-
-                                            {/* Numbered Page Buttons */}
-                                            <div className="flex items-center gap-1.5">
-                                                <button
-                                                    type="button"
-                                                    disabled={currentPage <= 1}
-                                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                                                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all border ${
-                                                        currentPage <= 1
-                                                            ? "opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400"
-                                                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300 cursor-pointer"
-                                                    }`}
-                                                >
-                                                    Previous
-                                                </button>
-
-                                                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
-                                                    const isActive = currentPage === pageNum;
-                                                    return (
-                                                        <button
-                                                            key={pageNum}
-                                                            type="button"
-                                                            onClick={() => setCurrentPage(pageNum)}
-                                                            className={`min-w-[32px] h-8 px-2 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
-                                                                isActive
-                                                                    ? "bg-blue-600 border-blue-600 text-white shadow-xs"
-                                                                    : "bg-white border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300"
-                                                            }`}
-                                                        >
-                                                            {pageNum}
-                                                        </button>
-                                                    );
-                                                })}
-
-                                                <button
-                                                    type="button"
-                                                    disabled={currentPage >= totalPages}
-                                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                                                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all border ${
-                                                        currentPage >= totalPages
-                                                            ? "opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400"
-                                                            : "border-slate-200 bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-300 cursor-pointer"
-                                                    }`}
-                                                >
-                                                    Next
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : viewMode === "kanban" ? (
+                            {/* ── DATA VIEW (PIPELINE KANBAN / FOLDERS) ── */}
+                            {viewMode === "kanban" ? (
                                 /* ── KANBAN PIPELINE BOARD VIEW ── */
                                 <div className="flex-1 overflow-x-auto min-h-0 pb-2">
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 min-w-[1000px] h-full">
@@ -1919,187 +1427,124 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     </div>
                                 </div>
                             ) : (
-                                /* ── INTERACTIVE GIS MAP VIEW ── */
-                                <div className="flex-1 bg-white rounded-2xl shadow-2xs border border-slate-200/90 overflow-hidden flex flex-col min-h-0 relative">
-                                    <div className="p-3 bg-slate-50/90 border-b border-slate-200 flex items-center justify-between z-10">
-                                        <div className="flex items-center gap-2">
-                                            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-ping" />
-                                            <p className="text-xs font-bold text-slate-800">
-                                                Municipal GIS Overlay · {filteredList.length} Geocoded Applications
-                                            </p>
-                                        </div>
-                                        <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
-                                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Received</span>
-                                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Review</span>
-                                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500" /> SB</span>
-                                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-600" /> Released</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex-1 w-full h-full relative">
-                                        <MapContainer
-                                            center={[13.8475, 121.2058]}
-                                            zoom={13}
-                                            scrollWheelZoom={true}
-                                            className="w-full h-full"
-                                            style={{ height: "100%", width: "100%" }}
-                                        >
-                                            <TileLayer
-                                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                            />
-                                            <MapViewRecenter bounds={mapBounds} />
-
-                                            {filteredList.map((app) => {
-                                                const coords = BARANGAY_COORDS[app.barangay] || BARANGAY_COORDS["Default"];
-                                                const refNo = app.reference_number || `APP-${app.id}`;
-                                                const markerIcon = createCustomMarker(app.status, refNo);
-
-                                                return (
-                                                    <Marker key={app.id} position={coords} icon={markerIcon}>
-                                                        <Popup className="custom-leaflet-popup">
-                                                            <div className="p-1 min-w-[220px]">
-                                                                <div className="flex items-center justify-between gap-1 mb-1">
-                                                                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                                                                        {refNo}
-                                                                    </span>
-                                                                    <StatusBadge status={app.status} />
-                                                                </div>
-                                                                <h4 className="text-xs font-bold text-slate-900 mt-1">{app.applicant_name}</h4>
-                                                                <p className="text-[11px] text-slate-500 mt-0.5">{app.purpose}</p>
-                                                                <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-xs">
-                                                                    <span className="font-semibold text-slate-700">Brgy. {app.barangay}</span>
-                                                                    <span className="font-mono font-bold text-slate-900">{formatFee(app.assessment_fee)}</span>
-                                                                </div>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => router.visit(`/applications/${app.id || 101}`)}
-                                                                    className="mt-2.5 w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold text-center transition-colors block cursor-pointer"
-                                                                >
-                                                                    Open Full Dossier
-                                                                </button>
-                                                            </div>
-                                                        </Popup>
-                                                    </Marker>
-                                                );
-                                            })}
-                                        </MapContainer>
-                                    </div>
+                                /* ── FOLDER GRID VIEW ── */
+                                <div className="flex-1 bg-white rounded-2xl shadow-2xs border border-slate-200/90 overflow-y-auto p-6 relative">
+                                    {selectedFolder ? (
+                                        <>
+                                            <div className="flex items-center gap-3 mb-8">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setSelectedFolder(null)}
+                                                    className="flex items-center justify-center w-8 h-8 bg-white border border-slate-200/80 rounded-full hover:bg-slate-50 text-slate-500 hover:text-blue-600 shadow-sm transition-all ring-1 ring-black/[0.02]"
+                                                >
+                                                    <svg className="w-4 h-4 -ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                                                </button>
+                                                <div>
+                                                    <h3 className="text-[15px] font-bold text-slate-900 tracking-tight">{selectedFolder}</h3>
+                                                    <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">{(folderGroups[selectedFolder] || []).length} Document{(folderGroups[selectedFolder] || []).length !== 1 ? 's' : ''}</p>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
+                                                {(folderGroups[selectedFolder] || []).map((item, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        className="group flex flex-col items-center p-3 rounded-2xl transition-all cursor-pointer hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 border border-transparent hover:border-slate-200/60"
+                                                        onClick={() => router.visit(`/applications/${item.id || 101}`)}
+                                                    >
+                                                        <div className="relative mb-3 transition-transform duration-300 text-slate-300 group-hover:text-blue-500">
+                                                            <svg width="72" height="72" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-md text-blue-500 group-hover:drop-shadow-lg transition-all duration-300">
+                                                                <path d="M22 14C22 10.6863 24.6863 8 28 8H60L82 30V86C82 89.3137 79.3137 92 76 92H28C24.6863 92 22 89.3137 22 86V14Z" fill="url(#doc-base)"/>
+                                                                <path d="M60 8V24C60 27.3137 62.6863 30 66 30H82L60 8Z" fill="url(#doc-fold)"/>
+                                                                <rect x="34" y="44" width="32" height="5" rx="2.5" fill="#CBD5E1"/>
+                                                                <rect x="34" y="58" width="20" height="5" rx="2.5" fill="#CBD5E1"/>
+                                                                <rect x="34" y="72" width="26" height="5" rx="2.5" fill="#CBD5E1"/>
+                                                                <rect x="34" y="24" width="12" height="12" rx="4" fill="#3B82F6"/>
+                                                                <defs>
+                                                                    <linearGradient id="doc-base" x1="52" y1="8" x2="52" y2="92" gradientUnits="userSpaceOnUse">
+                                                                        <stop stopColor="#ffffff"/>
+                                                                        <stop offset="1" stopColor="#F1F5F9"/>
+                                                                    </linearGradient>
+                                                                    <linearGradient id="doc-fold" x1="71" y1="8" x2="71" y2="30" gradientUnits="userSpaceOnUse">
+                                                                        <stop stopColor="#E0E7FF"/>
+                                                                        <stop offset="1" stopColor="#93C5FD"/>
+                                                                    </linearGradient>
+                                                                </defs>
+                                                            </svg>
+                                                        </div>
+                                                        <span className="text-[12px] font-bold text-slate-700 leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
+                                                            {item.reference_number || `APP-${item.id}`}
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400 font-medium mt-1">
+                                                            {item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : "—"}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
+                                                {Object.entries(folderGroups).map(([applicant, apps]) => (
+                                                    <div
+                                                        key={applicant}
+                                                        className="group cursor-pointer flex flex-col items-center p-2 rounded-xl hover:bg-blue-50/50 transition-colors"
+                                                        onClick={() => setSelectedFolder(applicant)}
+                                                        title={`View ${apps.length} application(s) for ${applicant}`}
+                                                    >
+                                                        <div className="relative mb-3 transition-transform duration-200 group-hover:scale-105 group-hover:-translate-y-1">
+                                                            {/* Custom SVG folder icon mimicking desktop file explorer folders */}
+                                                            <svg
+                                                                width="76"
+                                                                height="76"
+                                                                viewBox="0 0 100 100"
+                                                                fill="none"
+                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                className="drop-shadow-sm text-blue-500"
+                                                            >
+                                                                {/* Back flap of folder */}
+                                                                <path d="M10 28C10 24.6863 12.6863 22 16 22H36.1716C37.7628 22 39.2889 22.6321 40.4142 23.7574L46.5858 29.9289C47.7111 31.0543 49.2372 31.6863 50.8284 31.6863H84C87.3137 31.6863 90 34.3726 90 37.6863V76C90 79.3137 87.3137 82 84 82H16C12.6863 82 10 79.3137 10 76V28Z" fill="url(#folder-back)"/>
+                                                                {/* Front flap */}
+                                                                <path d="M10 40C10 36.6863 12.6863 34 16 34H84C87.3137 34 90 36.6863 90 40V76C90 79.3137 87.3137 82 84 82H16C12.6863 82 10 79.3137 10 76V40Z" fill="url(#folder-front)"/>
+                                                                <defs>
+                                                                    <linearGradient id="folder-back" x1="50" y1="22" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+                                                                        <stop stopColor="#60A5FA" />
+                                                                        <stop offset="1" stopColor="#3B82F6" />
+                                                                    </linearGradient>
+                                                                    <linearGradient id="folder-front" x1="50" y1="34" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+                                                                        <stop stopColor="#93C5FD" />
+                                                                        <stop offset="1" stopColor="#2563EB" />
+                                                                    </linearGradient>
+                                                                </defs>
+                                                            </svg>
+                                                            
+                                                            {/* Count badge styled like notification pills */}
+                                                            <span className="absolute -bottom-1 -right-1 bg-white text-slate-800 text-[10px] font-black px-1.5 py-0.5 min-w-[20px] rounded-full shadow-sm border border-slate-200">
+                                                                {apps.length}
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-[11px] font-bold text-slate-700 leading-snug line-clamp-2 px-1 group-hover:text-blue-700">
+                                                            {applicant}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {Object.keys(folderGroups).length === 0 && (
+                                                <div className="flex flex-col items-center justify-center h-full text-slate-400 p-10">
+                                                    <svg className="w-12 h-12 mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                    </svg>
+                                                    <p className="font-semibold">No applicants found</p>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </div>
 
 
 
-                        {/* ── QUICK PEEK SLIDE-OVER DRAWER ── */}
-                        {peekItem && (
-                            <div className="fixed inset-0 z-[800] flex justify-end animate-in fade-in duration-200">
-                                <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-[2px]" onClick={() => setPeekItem(null)} />
-                                <div className="relative w-full max-w-md bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col z-10 animate-in slide-in-from-right duration-250">
-                                    <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-lg">
-                                                {peekItem.reference_number || `APP-${peekItem.id}`}
-                                            </span>
-                                            <StatusBadge status={peekItem.status} />
-                                        </div>
-                                        <button
-                                            onClick={() => setPeekItem(null)}
-                                            className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
-                                        >
-                                            ✕
-                                        </button>
-                                    </div>
-
-                                    <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
-                                        {/* Applicant Card */}
-                                        <div>
-                                            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Applicant Profile</h3>
-                                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
-                                                <p className="font-bold text-slate-900 text-sm">{peekItem.applicant_name}</p>
-                                                {peekItem.representative_name && (
-                                                    <p className="text-slate-600 font-medium">Representative: {peekItem.representative_name}</p>
-                                                )}
-                                                {peekItem.contact_number && (
-                                                    <p className="text-slate-500 font-mono">Phone: {peekItem.contact_number}</p>
-                                                )}
-                                                {peekItem.email && (
-                                                    <p className="text-slate-500 font-mono">Email: {peekItem.email}</p>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Property Jurisdiction & Land Use */}
-                                        <div>
-                                            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Property & Zoning Details</h3>
-                                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2">
-                                                <div className="flex justify-between">
-                                                    <span className="text-slate-500">Barangay</span>
-                                                    <span className="font-semibold text-slate-900">Brgy. {peekItem.barangay}</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-slate-500">Zoning Class</span>
-                                                    <span className={`px-2 py-0.5 rounded text-[10px] ${LAND_USE_BADGES[peekItem.land_use_class] || "bg-slate-100"}`}>
-                                                        {peekItem.land_use_class}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-slate-500">Lot & TCT</span>
-                                                    <span className="font-mono text-slate-800">{peekItem.lot_number || "—"} ({peekItem.tct_number || "—"})</span>
-                                                </div>
-                                                <div className="flex justify-between">
-                                                    <span className="text-slate-500">Lot Area</span>
-                                                    <span className="font-mono font-semibold text-slate-900">{peekItem.lot_area_sqm ? `${Number(peekItem.lot_area_sqm).toLocaleString()} sq.m` : "—"}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Purpose & Remarks */}
-                                        <div>
-                                            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Project Purpose</h3>
-                                            <p className="text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-100 font-medium leading-relaxed">
-                                                {peekItem.purpose || "—"}
-                                            </p>
-                                        </div>
-
-                                        {peekItem.remarks && (
-                                            <div>
-                                                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Staff Remarks</h3>
-                                                <p className="text-slate-600 bg-amber-50/50 p-3 rounded-xl border border-amber-200/60 font-medium text-[11px]">
-                                                    {peekItem.remarks}
-                                                </p>
-                                            </div>
-                                        )}
-
-                                        {/* Assessment & OR */}
-                                        <div>
-                                            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Assessment & Payment</h3>
-                                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex justify-between items-center">
-                                                <div>
-                                                    <span className="text-[10px] text-slate-400 uppercase block font-semibold">Total Assessment</span>
-                                                    <span className="text-base font-bold font-mono text-slate-900">{formatFee(peekItem.assessment_fee)}</span>
-                                                </div>
-                                                {peekItem.or_number && (
-                                                    <span className="text-xs font-mono font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
-                                                        {peekItem.or_number} ✓
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="p-4 border-t border-slate-100 bg-slate-50/70 flex gap-2">
-                                        <Link
-                                            href={`/applications/${peekItem.id || 101}`}
-                                            className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs text-center shadow-xs transition-all"
-                                        >
-                                            Open Full Evaluation Workbench
-                                        </Link>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
+                        {/* ── END OF MAIN CONTENT ── */}
                     </main>
                 </div>
             </div>

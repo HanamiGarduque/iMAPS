@@ -302,7 +302,6 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                 initial[p.id] = {
                     decision: tr.decision || "",
                     decision_reason: tr.decision_reason || "",
-                    findings: tr.findings || "",
                     inspector_id: p.site_inspection?.inspector_id || "",
                     scheduled_date: p.site_inspection?.scheduled_date ? p.site_inspection.scheduled_date.split("T")[0] : "",
                     deadline_date: p.site_inspection?.deadline_date ? p.site_inspection.deadline_date.split("T")[0] : "",
@@ -926,15 +925,6 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                         </div>
                                                                     )}
 
-                                                                    <div>
-                                                                        <Label>Evaluation Findings / Internal Remarks</Label>
-                                                                        <Textarea
-                                                                            rows={2}
-                                                                            value={parcelReviews[activeParcelData.id]?.findings || ""}
-                                                                            onChange={(e) => handleParcelReviewChange(activeParcelData.id, "findings", e.target.value)}
-                                                                            placeholder="Add any internal technical notes regarding this parcel..."
-                                                                        />
-                                                                    </div>
                                                                 </div>
                                                             </>
                                                         ) : (
