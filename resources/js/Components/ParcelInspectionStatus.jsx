@@ -4,11 +4,22 @@ import { fetchParcelInspection } from "@/utils/supabaseApi";
 
 // ── Badge Configuration ──
 const STATUS_CONFIG = {
-    assigned: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
-    in_progress: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
-    submitted: { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },
-    completed: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
+    Pending: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
+    Ongoing: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
+    Completed: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
 };
+
+export const getInspectionStatusLabel = (status) => ({
+    assigned: "Pending",
+    Pending: "Pending",
+    pending: "Pending",
+    in_progress: "Ongoing",
+    "in-progress": "Ongoing",
+    ongoing: "Ongoing",
+    completed: "Completed",
+    Completed: "Completed",
+    submitted: "Completed",
+}[status] ?? status);
 
 const RESULT_CONFIG = {
     Compliant: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
@@ -20,7 +31,7 @@ const RESULT_CONFIG = {
 function StatusBadge({ label, type = "status" }) {
     if (!label) return null;
     const cfg = type === "status" 
-        ? STATUS_CONFIG[label?.toLowerCase()] || { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200" }
+        ? STATUS_CONFIG[label] || { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200" }
         : RESULT_CONFIG[label] || { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200" };
 
     return (
@@ -101,7 +112,6 @@ export default function ParcelInspectionStatus({ inspectionId, onStatusFetched }
         { label: "Discrepancies", value: inspection.discrepancies },
         { label: "Recommendations", value: inspection.recommendations },
         { label: "Inspector Notes", value: inspection.inspector_notes },
-        { label: "Remarks", value: inspection.remarks },
     ].filter(block => block.value);
 
     // Normalize photos: Use field_job_photos if available, otherwise map photo_paths into objects
@@ -128,7 +138,7 @@ export default function ParcelInspectionStatus({ inspectionId, onStatusFetched }
                         Site Inspection Report
                     </h3>
                     <div className="h-4 w-px bg-slate-300 hidden sm:block" />
-                    <StatusBadge label={inspection.status} type="status" />
+                    <StatusBadge label={getInspectionStatusLabel(inspection.status)} type="status" />
                     {inspection.inspection_result && <StatusBadge label={inspection.inspection_result} type="result" />}
                 </div>
                 

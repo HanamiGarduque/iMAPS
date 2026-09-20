@@ -22,7 +22,6 @@ export const fetchParcelInspection = async (inspectionId) => {
                 discrepancies,
                 recommendations,
                 inspector_notes,
-                remarks,
                 
                 checklist_completed_count,
                 checklist_total_count,

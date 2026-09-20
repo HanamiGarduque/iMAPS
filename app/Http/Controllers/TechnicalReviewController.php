@@ -193,7 +193,7 @@ class TechnicalReviewController extends Controller
                             'assigned_notes'            => $validated['assigned_notes'] ?? null,
                             'assigned_by_imaps_user_id' => $assigningOfficer['id'],
                             'assigned_by_name'          => $assigningOfficer['name'],
-                            'status'                    => 'Pending',
+                            'status'                    => 'assigned',
                         ]
                     );
                     $siteInspectionId = $inspection->id;
@@ -351,7 +351,7 @@ class TechnicalReviewController extends Controller
                             'assigned_notes'            => $review['assigned_notes'] ?? null,
                             'assigned_by_imaps_user_id' => $assigningOfficer['id'],
                             'assigned_by_name'          => $assigningOfficer['name'],
-                            'status'                    => 'Pending',
+                            'status'                    => 'assigned',
                         ]
                     );
 
@@ -454,7 +454,7 @@ class TechnicalReviewController extends Controller
             'assigned_notes'             => $validated['assigned_notes'] ?? null,
             'assigned_by_imaps_user_id'  => $assigningOfficer['id'],
             'assigned_by_name'           => $assigningOfficer['name'],
-            'status'                     => 'Pending',
+            'status'                     => 'assigned',
         ]);
 
         PushInspectionToSupabase::dispatch($inspection);
@@ -514,7 +514,7 @@ class TechnicalReviewController extends Controller
             ])->get("{$supabaseUrl}/rest/v1/field_jobs", [
                 'local_inspection_id' => "eq.{$localInspectionId}",
                 // The 'select' param mimics your frontend's nested query
-                'select' => 'id,local_inspection_id,status,scheduled_date,deadline_date,submitted_at,inspection_result,is_compliant,findings,observations,discrepancies,recommendations,inspector_notes,remarks,checklist_completed_count,checklist_total_count,checklist_data,photo_count,photo_paths,field_job_photos(id,photo_url,latitude,longitude,captured_at)'
+                'select' => 'id,local_inspection_id,status,scheduled_date,deadline_date,submitted_at,inspection_result,is_compliant,findings,observations,discrepancies,recommendations,inspector_notes,checklist_completed_count,checklist_total_count,checklist_data,photo_count,photo_paths,field_job_photos(id,photo_url,latitude,longitude,captured_at)'
             ]);
 
             if ($response->failed()) {

@@ -28,7 +28,6 @@ class SiteInspection extends Model
         'parcel_id',
         'findings',
         'recommendation',
-        'remarks',
         'is_compliant',
         'submitted_at',
         'inspection_result',
