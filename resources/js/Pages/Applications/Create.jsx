@@ -541,6 +541,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const [clock, setClock] = useState("");
     const [currentStep, setCurrentStep] = useState(1);
     const [submitting, setSubmitting] = useState(false);
+    const submittingRef = useRef(false);
+    const [submissionSucceeded, setSubmissionSucceeded] = useState(false);
     const [flash, setFlash] = useState(null);
     const [errors, setErrors] = useState(serverErrors);
     const formRef = useRef(null);
@@ -1350,9 +1352,34 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
     };
 
+    useEffect(() => {
+        const removeInvalidListener = router.on("invalid", (event) => {
+            const status = event.detail.response?.status ?? 0;
+            if (status !== 419 && status < 500) return;
+
+            event.preventDefault();
+            const msg = status === 419
+                ? "Your session or CSRF token expired. Your form and draft were preserved; refresh and submit again."
+                : "The server failed before confirming the application. Your form and draft were preserved.";
+            setFlash({ type: "error", msg });
+        });
+        const removeExceptionListener = router.on("exception", (event) => {
+            event.preventDefault();
+            setFlash({
+                type: "error",
+                msg: "The application could not reach the server. Your form and draft were preserved.",
+            });
+        });
+
+        return () => {
+            removeInvalidListener();
+            removeExceptionListener();
+        };
+    }, []);
+
     const handleSubmit = (e) => {
-        if (submitting) return;
         if (e && e.preventDefault) e.preventDefault();
+        if (submittingRef.current) return;
         if (!form.assessment_fee || Number(form.assessment_fee) < 0) {
             setErrors({ assessment_fee: "Assessment fee is required." });
             return setFlash({
@@ -1361,15 +1388,27 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             });
         }
 
+        submittingRef.current = true;
         setSubmitting(true);
+        setSubmissionSucceeded(false);
 
         const payload = {
             ...form,
             draft_id: tempDraftId,
         };
         router.post("/applications/encode", payload, {
+            preserveState: true,
             onSuccess: (page) => {
-                const ref = page.props.flash?.reference_number || `LC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(100 + Math.random() * 900)}`;
+                const ref = page.props.flash?.reference_number;
+                const successMessage = page.props.flash?.success;
+                if (!ref || !successMessage) {
+                    setFlash({
+                        type: "error",
+                        msg: "The server did not confirm that the application was saved. Your form and draft were preserved.",
+                    });
+                    return;
+                }
+                setSubmissionSucceeded(true);
 
                 // Save applicant to local registry cache
                 saveApplicantToRegistry({
@@ -1440,7 +1479,10 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                 setTimeout(() => setFlash(null), 6000);
             },
-            onFinish: () => setSubmitting(false),
+            onFinish: () => {
+                submittingRef.current = false;
+                setSubmitting(false);
+            },
         });
     };
 
@@ -2034,7 +2076,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 data={routingSlipData}
                 onClose={() => {
                     setShowRoutingSlip(false);
-                    if (workflowProgress === 100) {
+                    if (submissionSucceeded) {
                         router.visit("/applications");
                     }
                 }}

@@ -879,11 +879,30 @@ class ApplicationController extends Controller
 
     private function getNextSequence(string $typeCode, string $year): int
     {
+        $sequenceExists = DB::table('application_sequences')
+            ->where('type_code', $typeCode)
+            ->where('year', $year)
+            ->exists();
+
+        $initialSequence = 1;
+        if (!$sequenceExists) {
+            $prefix = $typeCode . '-' . $year . '-';
+            $initialSequence = DB::table('zoning_applications')
+                ->where('reference_number', 'like', $prefix . '%')
+                ->pluck('reference_number')
+                ->map(function (string $reference) use ($prefix): int {
+                    $suffix = substr($reference, strlen($prefix));
+
+                    return preg_match('/^\d{5}$/', $suffix) === 1 ? (int) $suffix : 0;
+                })
+                ->max() + 1;
+        }
+
         DB::table('application_sequences')->upsert(
             [
                 'type_code' => $typeCode,
                 'year'      => $year,
-                'last_seq'  => 1,
+                'last_seq'  => $initialSequence,
             ],
             ['type_code', 'year'],
             ['last_seq' => DB::raw('application_sequences.last_seq + 1')]
