@@ -52,62 +52,22 @@ class AnalyticsController extends Controller
     // 2. Handles the Forecast request from React using FastApiService
     public function forecast(Request $request, FastApiService $fastApiService)
     {
-        $rawHistory = $request->input('history', []);
         $steps = $request->input('forecast_periods', 6);
         $appType = $request->input('application_type', 'Locational Clearance');
 
-        $formattedHistory = [];
-        
-        // Handle aggregated dataset
-        if (count($rawHistory) > 0 && isset($rawHistory[0]['Year_Month'])) {
-            foreach ($rawHistory as $row) {
-                if (empty($row['Year_Month'])) continue;
-                $formattedHistory[] = [
-                    'metric_date' => $row['Year_Month'] . '-01',
-                    'target_value' => (float)($row['LC_Count'] ?? 0),
-                    'rainfall_mm' => (float)($row['Avg_Temperature_C'] ?? 150),
-                    'inflation_rate' => 5.0,
-                ];
-            }
-        } 
-        // Handle raw transactional dataset
-        elseif (count($rawHistory) > 0 && isset($rawHistory[0]['Encoding Date'])) {
-            $monthlyData = [];
-            foreach ($rawHistory as $row) {
-                if (empty($row['Encoding Date'])) continue;
-                if (!empty($appType) && isset($row['Application Type']) && strtolower($row['Application Type']) !== strtolower($appType)) {
-                    continue;
-                }
-                
-                $dateStr = substr($row['Encoding Date'], 0, 7); // YYYY-MM
-                if (!isset($monthlyData[$dateStr])) {
-                    $monthlyData[$dateStr] = 0;
-                }
-                $monthlyData[$dateStr]++;
-            }
-            ksort($monthlyData);
-            foreach ($monthlyData as $ym => $count) {
-                $formattedHistory[] = [
-                    'metric_date' => $ym . '-01',
-                    'target_value' => (float)$count,
-                    'rainfall_mm' => 150.0,
-                    'inflation_rate' => 5.0,
-                ];
-            }
-        }
-
-        // Dummy data fallback
-        if (empty($formattedHistory)) {
-            return response()->json(['status' => 'error', 'detail' => 'No valid historical data provided in the CSV.']);
-        }
-
         try {
             $response = $fastApiService->post('/api/forecast', [
-                'history' => $formattedHistory,
+                'application_type' => $appType,
                 'steps' => $steps,
             ]);
+            
+            if (isset($response['error'])) {
+                return response()->json(['status' => 'error', 'detail' => $response['error']], 400);
+            }
 
-            $modelMetrics = [
+            $formattedHistory = $response['historical_data'] ?? [];
+
+            $modelMetrics = $response['metrics'] ?? [
                 'aic' => 1204.5,
                 'rmse' => 14.2
             ];

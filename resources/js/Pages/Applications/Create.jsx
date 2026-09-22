@@ -300,7 +300,6 @@ const emptyForm = () => ({
     date_of_receipt: new Date().toISOString().split("T")[0], // Default to today
     assessment_fee: "0.00",
     or_number: "",
-    remarks: "",
     
 
     parcels: [
