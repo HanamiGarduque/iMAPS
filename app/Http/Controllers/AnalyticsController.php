@@ -10,6 +10,29 @@ use Inertia\Inertia;
 
 class AnalyticsController extends Controller
 {
+
+    // 3. Handles uploading CPI Excel file
+    public function uploadCpi(Request $request)
+    {
+        \Illuminate\Support\Facades\Log::info('uploadCpi hit');
+        $request->validate([
+            'cpi_file' => 'required|file' // relaxed mimes for better compatibility
+        ]);
+        
+        $file = $request->file('cpi_file');
+        $fileName = 'cpi_data.xlsx';
+        $destinationPath = base_path('python-analytics/data');
+
+        try {
+            $file->move($destinationPath, $fileName);
+            \Illuminate\Support\Facades\Log::info('File moved successfully');
+            return back()->with('success', 'CPI data updated successfully.');
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Upload error: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to upload CPI file: ' . $e->getMessage()]);
+        }
+    }
+
     // 1. Renders the React Analytics Page
     public function index()
     {

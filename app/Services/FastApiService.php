@@ -16,7 +16,7 @@ class FastApiService
     public function __construct()
     {
         $this->baseUrl = config('services.fastapi.base_url');
-        $this->timeout = config('services.fastapi.timeout', 30);
+        $this->timeout = config('services.fastapi.timeout', 120);
     }
 
     /**

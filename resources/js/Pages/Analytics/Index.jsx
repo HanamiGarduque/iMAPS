@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Head, router } from "@inertiajs/react";
+import { Head, router, useForm, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import Header from "@/Components/Header";
@@ -150,6 +150,7 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
     const [loading, setLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState("forecasting");
 
     // ── Forecast Result States ──
     const [forecastData, setForecastData] = useState(initialForecasts || []);
@@ -157,6 +158,39 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
 
     // ── Chart pagination ──
     const [chartPage, setChartPage] = useState(0);
+
+    const { props } = usePage();
+    const { data, setData, post, processing, errors } = useForm({
+        cpi_file: null,
+    });
+    
+    const handleCpiUpload = (e) => {
+        e.preventDefault();
+        console.log("Upload button clicked. Sending file:", data.cpi_file);
+        post('/api/analytics/upload-cpi', {
+            onSuccess: () => {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'CPI Data Updated',
+                    text: 'The latest CPI Excel file has been securely uploaded.',
+                    confirmButtonColor: '#2563eb'
+                });
+                setData('cpi_file', null);
+                document.getElementById('cpi-file-upload').value = '';
+                // Refresh forecast data if needed, or user can click generate
+                handleGenerateForecast();
+            },
+            onError: (err) => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Upload Failed',
+                    text: err.cpi_file || err.error || 'Something went wrong uploading the file.',
+                    confirmButtonColor: '#e53e3e'
+                });
+            }
+        });
+    };
+
 
     // ── Live Clock ──
     useEffect(() => {
@@ -248,7 +282,9 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
         forecastStartIndex >= 0 ? allChartData[forecastStartIndex]?.date : null;
 
     const totalPages = Math.ceil(allChartData.length / PAGE_SIZE);
-    const pagedData = allChartData.slice(chartPage * PAGE_SIZE, (chartPage + 1) * PAGE_SIZE);
+    const endIndex = allChartData.length - (chartPage * PAGE_SIZE);
+    const startIndex = Math.max(0, endIndex - PAGE_SIZE);
+    const pagedData = allChartData.slice(startIndex, endIndex);
 
     // ── Last forecast value (end of forecast range) ──
     const lastForecast = [...forecastData].reverse().find((d) => d.predicted_volume != null);
@@ -275,7 +311,7 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
 
     return (
         <>
-            <Head title="Analytics & SARIMAX Forecasting | iMAPS" />
+            <Head title="Reports & Forecasting | iMAPS" />
 
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
@@ -297,7 +333,7 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
                     onLogout={handleLogout}
                     sidebarOpen={sidebarOpen}
                     setSidebarOpen={setSidebarOpen}
-                    activePage="analytics"
+                    activePage="reports-and-forecasting"
                 />
 
                 <div className="flex-1 overflow-hidden relative flex flex-col min-w-0">
@@ -307,7 +343,7 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
                         sidebarOpen={sidebarOpen}
                         setSidebarOpen={setSidebarOpen}
                         onLogout={handleLogout}
-                        activePage="analytics"
+                        activePage="reports-and-forecasting"
                     />
 
                     {sidebarOpen && (
@@ -323,7 +359,7 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
                             {/* ── PAGE HEADER ── */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 shrink-0">
                                 <div>
-                                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Analytics & Forecasting</h1>
+                                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Reports & Forecasting</h1>
                                     <p className="text-xs text-slate-500 mt-1">
                                         SARIMAX time-series model · Locational Clearance applications · Monthly frequency
                                     </p>
@@ -336,7 +372,106 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
                                 )}
                             </div>
 
-                            {/* ── CHART CARD ── */}
+                            
+                            {/* ── TAB NAVIGATION ── */}
+                            <div className="border-b border-slate-200/80 shrink-0">
+                                <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                                    <button
+                                        onClick={() => setActiveTab("reports")}
+                                        className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-xs transition-colors ${
+                                            activeTab === "reports"
+                                                ? "border-blue-600 text-blue-600"
+                                                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            Standard Reports
+                                        </div>
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab("forecasting")}
+                                        className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-xs transition-colors ${
+                                            activeTab === "forecasting"
+                                                ? "border-blue-600 text-blue-600"
+                                                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13h2.626c.825 0 1.549-.54 1.76-1.334l.872-3.266A2 2 0 0110.198 7h3.604a2 2 0 011.94 1.4l.872 3.266c.21.794.935 1.334 1.76 1.334H21M7 21h10M12 17v4" />
+                                            </svg>
+                                            SARIMAX Forecasting
+                                        </div>
+                                    </button>
+                                </nav>
+                            </div>
+
+
+                            {/* ── REPORTS TAB ── */}
+                            {activeTab === "reports" && (
+                                <div className="animate-in fade-in duration-300">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                                        {[
+                                            {
+                                                title: "Monthly Clearances",
+                                                desc: "Summary of locational clearances issued per month, categorized by barangay.",
+                                                icon: (
+                                                    <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                    </svg>
+                                                ),
+                                                bg: "bg-blue-50"
+                                            },
+                                            {
+                                                title: "Zoning Classifications",
+                                                desc: "Distribution of approved applications across different zoning classifications (residential, commercial, etc).",
+                                                icon: (
+                                                    <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                                                    </svg>
+                                                ),
+                                                bg: "bg-emerald-50"
+                                            },
+                                            {
+                                                title: "Annual Revenue Estimate",
+                                                desc: "Projected vs actual fees collected from zoning and locational clearance applications.",
+                                                icon: (
+                                                    <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                ),
+                                                bg: "bg-amber-50"
+                                            }
+                                        ].map((report, i) => (
+                                            <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 flex flex-col h-full hover:shadow-md transition-shadow">
+                                                <div className={`w-10 h-10 rounded-lg ${report.bg} flex items-center justify-center mb-4`}>
+                                                    {report.icon}
+                                                </div>
+                                                <h3 className="text-sm font-bold text-slate-900">{report.title}</h3>
+                                                <p className="text-xs text-slate-500 mt-2 flex-1 leading-relaxed">{report.desc}</p>
+                                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
+                                                    <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">PDF / Excel</span>
+                                                    <button className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1">
+                                                        Generate
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── FORECASTING TAB ── */}
+                            {activeTab === "forecasting" && (
+                                <div className="space-y-6 animate-in fade-in duration-300">
+                                    {/* ── CHART CARD ── */}
                             <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col shrink-0">
                                 {/* Card Header */}
                                 <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -349,6 +484,20 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
+                                        <button 
+                                            onClick={handleGenerateForecast}
+                                            disabled={loading}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 hover:bg-blue-100 hover:border-blue-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-xs mr-2"
+                                        >
+                                            {loading ? (
+                                                <span className="w-3.5 h-3.5 border-2 border-blue-700/30 border-t-blue-700 rounded-full animate-spin" />
+                                            ) : (
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                </svg>
+                                            )}
+                                            Re-run Forecast (Last 60 Mos)
+                                        </button>
                                         <span className="text-[11px] font-mono text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-md">
                                             Monthly
                                         </span>
@@ -459,38 +608,40 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
                                             {totalPages > 1 && (
                                                 <div className="flex items-center justify-between px-1 pt-1 border-t border-slate-100">
                                                     <p className="text-[11px] text-slate-400 font-mono">
-                                                        Showing {chartPage * PAGE_SIZE + 1}–{Math.min((chartPage + 1) * PAGE_SIZE, allChartData.length)} of {allChartData.length} months
+                                                        Showing records {startIndex + 1}–{endIndex} of {allChartData.length} (Oldest to Newest)
                                                     </p>
                                                     <div className="flex items-center gap-1.5">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setChartPage((p) => Math.max(0, p - 1))}
-                                                            disabled={chartPage === 0}
-                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-xs"
-                                                        >
-                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                                                            </svg>
-                                                            Previous
-                                                        </button>
-                                                        {/* Page dots */}
-                                                        <div className="flex items-center gap-1">
-                                                            {Array.from({ length: totalPages }).map((_, i) => (
-                                                                <button
-                                                                    key={i}
-                                                                    type="button"
-                                                                    onClick={() => setChartPage(i)}
-                                                                    className={`w-2 h-2 rounded-full transition-all ${i === chartPage ? "bg-blue-600 w-4" : "bg-slate-300 hover:bg-slate-400"}`}
-                                                                />
-                                                            ))}
-                                                        </div>
                                                         <button
                                                             type="button"
                                                             onClick={() => setChartPage((p) => Math.min(totalPages - 1, p + 1))}
                                                             disabled={chartPage === totalPages - 1}
                                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-xs"
                                                         >
-                                                            Next
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                                                            </svg>
+                                                            Older Data
+                                                        </button>
+                                                        {/* Page dots (reversed visual logic so left = older, right = newer) */}
+                                                        <div className="flex items-center gap-1">
+                                                            {Array.from({ length: totalPages }).reverse().map((_, i) => {
+                                                                const actualIndex = totalPages - 1 - i;
+                                                                return (
+                                                                <button
+                                                                    key={actualIndex}
+                                                                    type="button"
+                                                                    onClick={() => setChartPage(actualIndex)}
+                                                                    className={`w-2 h-2 rounded-full transition-all ${actualIndex === chartPage ? "bg-blue-600 w-4" : "bg-slate-300 hover:bg-slate-400"}`}
+                                                                />
+                                                            )})}
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setChartPage((p) => Math.max(0, p - 1))}
+                                                            disabled={chartPage === 0}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-xs"
+                                                        >
+                                                            Newer Data
                                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                                                             </svg>
@@ -638,6 +789,62 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
                                     })}
                                 </div>
                             </div>
+
+                            {/* ── CPI EXOGENOUS DATA CARD ── */}
+                            <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs overflow-hidden shrink-0 mt-6">
+                                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div>
+                                        <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                                            Update Inflation Data (CPI)
+                                        </h2>
+                                        <p className="text-[11px] text-slate-500 mt-0.5">
+                                            The SARIMAX model uses Consumer Price Index (CPI) as an exogenous variable.
+                                        </p>
+                                    </div>
+                                    <a 
+                                        href="https://openstat.psa.gov.ph:443/PXWeb/sq/411ac3f5-5844-4e30-90cd-8a4ce24748bd" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors shadow-xs shrink-0"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                        Download from PSA OpenSTAT
+                                    </a>
+                                </div>
+                                <div className="p-5">
+                                    <form onSubmit={handleCpiUpload} className="flex items-center gap-4">
+                                        <div className="flex-1">
+                                            <input 
+                                                type="file" 
+                                                id="cpi-file-upload"
+                                                accept=".xlsx,.xls"
+                                                onChange={e => setData('cpi_file', e.target.files[0])}
+                                                className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-lg cursor-pointer"
+                                            />
+                                        </div>
+                                        <button 
+                                            type="submit" 
+                                            disabled={!data.cpi_file || processing}
+                                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            {processing ? (
+                                                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            ) : (
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                </svg>
+                                            )}
+                                            Upload & Overwrite
+                                        </button>
+                                    </form>
+                                    {errors.cpi_file && <p className="text-xs text-rose-500 mt-2">{errors.cpi_file}</p>}
+                                </div>
+                            </div>
+
+                                </div>
+                            )}
 
                         </div>
                     </main>
