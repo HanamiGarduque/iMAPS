@@ -50,4 +50,29 @@ class ApplicationSubmissionClientContractTest extends TestCase
         $this->assertMatchesRegularExpression('/onFinish: \(\) => \{\s*submittingRef\.current = false;\s*setSubmitting\(false\);/s', $this->createSource);
         $this->assertStringContainsString('disabled={submitting}', $this->createSource);
     }
+
+    public function test_autosave_is_cancelled_and_ignored_during_final_submission(): void
+    {
+        $this->assertStringContainsString('autosaveControllerRef.current?.abort();', $this->createSource);
+        $this->assertStringContainsString('if (submittingRef.current || submissionSucceeded) return;', $this->createSource);
+        $this->assertStringContainsString('signal: controller.signal', $this->createSource);
+        $this->assertStringContainsString('if (axios.isCancel(error)) return;', $this->createSource);
+    }
+
+    public function test_transport_errors_are_scoped_to_final_submission_and_success_clears_stale_errors(): void
+    {
+        $this->assertMatchesRegularExpression('/router\.on\("invalid".*?if \(!submittingRef\.current\) return;/s', $this->createSource);
+        $this->assertMatchesRegularExpression('/router\.on\("exception".*?if \(!submittingRef\.current\) return;/s', $this->createSource);
+        $this->assertMatchesRegularExpression('/setSubmissionSucceeded\(true\);\s*setErrors\(\{\}\);\s*setFlash\(null\);/s', $this->createSource);
+    }
+
+    public function test_drafts_persist_and_restore_the_current_wizard_step(): void
+    {
+        $this->assertStringContainsString('const DRAFT_STEP_KEY = "_wizard_step";', $this->createSource);
+        $this->assertStringContainsString('loadLocalDraftPayload()', $this->createSource);
+        $this->assertStringContainsString('cloudDraftRef || loadLocalDraftId()', $this->createSource);
+        $this->assertStringContainsString('useState(() => draftStep(initialDraftPayload))', $this->createSource);
+        $this->assertStringContainsString('draftPayload(form, currentStep)', $this->createSource);
+        $this->assertStringContainsString('[form, tempDraftId, currentStep, submissionSucceeded]', $this->createSource);
+    }
 }

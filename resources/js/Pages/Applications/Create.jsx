@@ -72,7 +72,58 @@ const ROSARIO_BARANGAYS = [
 
 const DRAFT_UUID_KEY = "imaps_current_draft_uuid";
 const DRAFT_PAYLOAD_KEY = "imaps_local_backup_payload";
+const DRAFT_STEP_KEY = "_wizard_step";
 const APPLICANT_REGISTRY_KEY = "imaps_known_applicants_registry";
+
+function parseDraftPayload(data) {
+    if (!data) return null;
+
+    let parsed = data;
+    if (typeof parsed === "string") {
+        try {
+            parsed = JSON.parse(parsed);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    if (typeof parsed !== "object" || parsed === null || ("0" in parsed && "1" in parsed)) {
+        return null;
+    }
+
+    return parsed;
+}
+
+function loadLocalDraftPayload() {
+    try {
+        return parseDraftPayload(localStorage.getItem(DRAFT_PAYLOAD_KEY));
+    } catch (e) {
+        return null;
+    }
+}
+
+function loadLocalDraftId() {
+    try {
+        return localStorage.getItem(DRAFT_UUID_KEY);
+    } catch (e) {
+        return null;
+    }
+}
+
+function draftStep(payload) {
+    const step = Number(payload?.[DRAFT_STEP_KEY]);
+    return Number.isInteger(step) && step >= 1 && step <= 5 ? step : 1;
+}
+
+function draftForm(payload) {
+    if (!payload) return null;
+    const { [DRAFT_STEP_KEY]: ignoredStep, ...formPayload } = payload;
+    return formPayload;
+}
+
+function draftPayload(form, currentStep) {
+    return { ...form, [DRAFT_STEP_KEY]: currentStep };
+}
 
 // ── Official Municipal Assessment Fee Calculation Engine ──
 // Referenced from:
@@ -319,6 +370,7 @@ const emptyForm = () => ({
             coordinates: "",decision: "",
             decision_reason: "",
             findings: "",
+            assigned_notes: "",
             inspector_id: "",
             scheduled_date: "",
             deadline_date: "",
@@ -537,11 +589,16 @@ function RoutingSlipModal({ open, data, onClose, onPrint }) {
 export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null, inspectors = [] }) {    const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
 
+    const initialDraftPayload = useMemo(
+        () => parseDraftPayload(cloudDraftPayload) || loadLocalDraftPayload(),
+        [cloudDraftPayload]
+    );
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
-    const [currentStep, setCurrentStep] = useState(1);
+    const [currentStep, setCurrentStep] = useState(() => draftStep(initialDraftPayload));
     const [submitting, setSubmitting] = useState(false);
     const submittingRef = useRef(false);
+    const autosaveControllerRef = useRef(null);
     const [submissionSucceeded, setSubmissionSucceeded] = useState(false);
     const [flash, setFlash] = useState(null);
     const [errors, setErrors] = useState(serverErrors);
@@ -555,7 +612,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     // Tracking identifier
     const [tempDraftId, setTempDraftId] = useState(() => {
-        return cloudDraftRef || "TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase();
+        return cloudDraftRef || loadLocalDraftId() || "TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase();
     });
     const [syncStatus, setSyncStatus] = useState("Saved locally");
 
@@ -566,29 +623,16 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const [activeParcelIndex, setActiveParcelIndex] = useState(null);
     const rosarioCenter = [13.8450, 121.2063];
 
-    // Payload cleaner
-    const cleanPayload = (data) => {
-        if (!data) return null;
-        let parsed = data;
-        if (typeof parsed === 'string') {
-            try { parsed = JSON.parse(parsed); } catch (e) { return null; }
-        }
-        if (typeof parsed === 'object' && parsed !== null && "0" in parsed && "1" in parsed) {
-            return null;
-        }
-        return parsed;
-    };
-
     // Hydration
     const [form, setForm] = useState(() => {
         const baseForm = emptyForm();
-        const validCloud = cleanPayload(cloudDraftPayload);
-        if (validCloud) {
+        const restoredForm = draftForm(initialDraftPayload);
+        if (restoredForm) {
             return {
                 ...baseForm,
-                ...validCloud,
-                parcels: Array.isArray(validCloud.parcels) && validCloud.parcels.length > 0 
-                         ? validCloud.parcels 
+                ...restoredForm,
+                parcels: Array.isArray(restoredForm.parcels) && restoredForm.parcels.length > 0
+                         ? restoredForm.parcels
                          : baseForm.parcels
             };
         }
@@ -712,7 +756,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     }, [currentStep, form]);
 
     useEffect(() => {
-        const validCloud = cleanPayload(cloudDraftPayload);
+        const validCloud = draftForm(parseDraftPayload(cloudDraftPayload));
         if (validCloud) {
             setForm((prev) => ({
                 ...prev,
@@ -721,6 +765,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     ? validCloud.parcels
                     : prev.parcels,
             }));
+            setCurrentStep(draftStep(parseDraftPayload(cloudDraftPayload)));
             if (cloudDraftRef) {
                 setTempDraftId(cloudDraftRef);
             }
@@ -756,37 +801,60 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         } catch (e) {}
     };
 
-    // Auto-save sync effect
+    // Auto-save sync effect. Its transport state is deliberately isolated from
+    // final submission so an expired/cancelled draft request cannot surface as
+    // an application submission failure.
     useEffect(() => {
+        if (submittingRef.current || submissionSucceeded) return;
+
         const handler = setTimeout(() => {
             const hasData = form.application_type || form.form_number || form.applicant_name || form.barangay;
-            if (!hasData) return;
+            if (!hasData || submittingRef.current) return;
 
+            const payload = draftPayload(form, currentStep);
+            const controller = new AbortController();
+            autosaveControllerRef.current?.abort();
+            autosaveControllerRef.current = controller;
             setSyncStatus("Saving modifications...");
-            persistDraftState(tempDraftId, form);
+            persistDraftState(tempDraftId, payload);
 
             axios.post("/applications/drafts/save", {
                 temp_id: tempDraftId,
-                payload: form,
+                payload,
+            }, {
+                signal: controller.signal,
             })
             .then(() => {
-                setSyncStatus("Auto-saved to drafts");
+                if (!submittingRef.current && !submissionSucceeded) {
+                    setSyncStatus("Auto-saved to drafts");
+                }
             })
-            .catch(() => {
-                setSyncStatus("Saved locally");
+            .catch((error) => {
+                if (axios.isCancel(error)) return;
+                if (!submittingRef.current && !submissionSucceeded) {
+                    setSyncStatus("Saved locally");
+                }
+            })
+            .finally(() => {
+                if (autosaveControllerRef.current === controller) {
+                    autosaveControllerRef.current = null;
+                }
             });
         }, 1200);
 
         return () => clearTimeout(handler);
-    }, [form, tempDraftId]);
+    }, [form, tempDraftId, currentStep, submissionSucceeded]);
 
     const handleManualSave = () => {
+        if (submittingRef.current || submissionSucceeded) return;
+
+        const payload = draftPayload(form, currentStep);
         setSyncStatus("Saving modifications...");
-        persistDraftState(tempDraftId, form);
+        persistDraftState(tempDraftId, payload);
         axios
             .post("/applications/drafts/save", {
                 temp_id: tempDraftId,
-                payload: form,
+                payload,
             })
             .then(() => {
                 setSyncStatus("Auto-saved to drafts");
@@ -1354,6 +1422,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     useEffect(() => {
         const removeInvalidListener = router.on("invalid", (event) => {
+            if (!submittingRef.current) return;
             const status = event.detail.response?.status ?? 0;
             if (status !== 419 && status < 500) return;
 
@@ -1364,6 +1433,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             setFlash({ type: "error", msg });
         });
         const removeExceptionListener = router.on("exception", (event) => {
+            if (!submittingRef.current) return;
             event.preventDefault();
             setFlash({
                 type: "error",
@@ -1388,9 +1458,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             });
         }
 
+        autosaveControllerRef.current?.abort();
+        autosaveControllerRef.current = null;
         submittingRef.current = true;
         setSubmitting(true);
         setSubmissionSucceeded(false);
+        setFlash(null);
 
         const payload = {
             ...form,
@@ -1409,6 +1482,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     return;
                 }
                 setSubmissionSucceeded(true);
+                setErrors({});
+                setFlash(null);
 
                 // Save applicant to local registry cache
                 saveApplicantToRegistry({
@@ -1727,6 +1802,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                             <button 
                                 type="button" 
                                 onClick={handleManualSave}
+                                disabled={submitting || submissionSucceeded}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/80 hover:bg-blue-100 shadow-2xs transition-all active:scale-98 cursor-pointer"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">

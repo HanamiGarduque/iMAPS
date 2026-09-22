@@ -46,18 +46,22 @@ function SectionLabel({ children }) {
     return <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{children}</p>;
 }
 
-export default function ParcelInspectionStatus({ inspectionId, onStatusFetched }) {
-    const [inspection, setInspection] = useState(null);
+export default function ParcelInspectionStatus({ inspectionId, localInspection = null, onStatusFetched }) {
+    const [inspection, setInspection] = useState(localInspection);
     const [loading, setLoading] = useState(true);
     const [selectedPhoto, setSelectedPhoto] = useState(null);
 
     useEffect(() => {
         const getInspection = async () => {
             setLoading(true);
-            const data = await fetchParcelInspection(inspectionId);
+            const remoteInspection = await fetchParcelInspection(inspectionId);
+            const data = remoteInspection
+                ? { ...localInspection, ...remoteInspection }
+                : localInspection;
             setInspection(data);
-            
-            // Tell the parent component what the live Supabase status is!
+
+            // The local record is authoritative enough to avoid a false "no record"
+            // state when the browser's Supabase request is unavailable or RLS-filtered.
             if (data && onStatusFetched) {
                 onStatusFetched(data.status);
             }
@@ -70,7 +74,7 @@ export default function ParcelInspectionStatus({ inspectionId, onStatusFetched }
         } else {
             setLoading(false);
         }
-    }, [inspectionId, onStatusFetched]);
+    }, [inspectionId, localInspection, onStatusFetched]);
     
     if (loading) {
         return (

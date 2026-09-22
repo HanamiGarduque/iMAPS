@@ -464,9 +464,15 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                 break;
             }
 
-            if (review.decision === "Needs Site Inspection" && (!review.inspector_id || !review.scheduled_date || !review.deadline_date)) {
+            if (["Needs Site Inspection", "Requires Reinspection"].includes(review.decision) && (!review.inspector_id || !review.scheduled_date || !review.deadline_date)) {
                 isValid = false;
                 errorMessage = `Inspector, scheduled date, and deadline are required for Parcel ${i + 1}.`;
+                break;
+            }
+
+            if (review.decision === "Requires Reinspection" && !review.assigned_notes?.trim()) {
+                isValid = false;
+                errorMessage = `Assignment instructions are required for the reinspection of Parcel ${i + 1}.`;
                 break;
             }
         }
@@ -497,7 +503,17 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
             onError: (errs) => {
                 setErrors(errs);
                 setSaving(false);
-                showToast("Batch submission failed. Please verify the input values.", "error");
+                const validationMessages = [...new Set(
+                    Object.values(errs || {})
+                        .flatMap((message) => Array.isArray(message) ? message : [message])
+                        .filter((message) => typeof message === "string" && message.trim())
+                )];
+                showToast(
+                    validationMessages.length
+                        ? validationMessages.join(" ")
+                        : "Batch submission failed. Please try again or contact support.",
+                    "error"
+                );
             },
         });
     };
@@ -817,6 +833,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                     <div className="p-5 space-y-4" key={`parcel-${activeParcelData.id}`}>
                                                         <ParcelInspectionStatus
                                                             inspectionId={activeParcelData.site_inspection?.id}
+                                                            localInspection={activeParcelData.site_inspection}
                                                             onStatusFetched={(status) => handleLiveStatusUpdate(activeParcelData.id, status)}
                                                         />
                                                         
@@ -824,14 +841,14 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                             <>
                                                                 <div>
                                                                     <Label>Parcel Evaluation Decision</Label>
-                                                                    <div className="grid grid-cols-3 gap-2.5 mt-1">
-                                                                        {["Approved", "Needs Site Inspection", "Declined"].map((d) => {
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-1">
+                                                                        {["Approved", hasCompletedInspection ? "Requires Reinspection" : "Needs Site Inspection", "Declined"].map((d) => {
                                                                             const currentDecision = parcelReviews[activeParcelData.id]?.decision;
                                                                             const isSelected = currentDecision === d;
 
                                                                             let displayLabel = d;
-                                                                            if (d === "Needs Site Inspection" && hasCompletedInspection) {
-                                                                                displayLabel = "Re-inspect Parcel";
+                                                                            if (d === "Requires Reinspection") {
+                                                                                displayLabel = "Schedule Reinspection";
                                                                             } else if (d === "Approved") {
                                                                                 displayLabel = "Approve";
                                                                             } else if (d === "Declined") {
@@ -874,7 +891,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                         </div>
                                                                     )}
 
-                                                                    {parcelReviews[activeParcelData.id]?.decision === "Needs Site Inspection" && (
+                                                                    {["Needs Site Inspection", "Requires Reinspection"].includes(parcelReviews[activeParcelData.id]?.decision) && (
                                                                         <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50/40 space-y-3">
                                                                             <h4 className="text-xs font-bold text-amber-800">Schedule Field Task</h4>
                                                                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -915,7 +932,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                                 </div>
                                                                             </div>
                                                                             <div>
-                                                                                <Label>Inspection Focus & Notes</Label>
+                                                                                <Label>Assignment Instructions</Label>
                                                                                 <Textarea
                                                                                     rows={3}
                                                                                     value={parcelReviews[activeParcelData.id]?.assigned_notes || ""}

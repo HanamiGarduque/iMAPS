@@ -11,11 +11,19 @@ use Illuminate\Support\Facades\Log;
 
 class PullCompletedInspections extends Command
 {
-    protected $signature = 'sync:pull-inspections';
+    protected $signature = 'sync:pull-inspections
+                            {--local-inspection-id= : Only pull the completed job for this local inspection ID}';
     protected $description = 'Pulls completed site inspections from Supabase and syncs them locally';
 
     public function handle(SupabaseService $supabase)
     {
+        $localInspectionId = $this->option('local-inspection-id');
+        if ($localInspectionId !== null && (! ctype_digit((string) $localInspectionId) || (int) $localInspectionId <= 0)) {
+            $this->error('The --local-inspection-id option must be a positive integer.');
+
+            return self::INVALID;
+        }
+
         $this->info("Fetching completed jobs from Supabase...");
 
         // 1. Fetch only the completed-result fields persisted by the Phase 5A contract.
@@ -37,7 +45,12 @@ class PullCompletedInspections extends Command
             'gps_confirmed_at',
         ]);
 
-        $response = $supabase->select('field_jobs', $fields, ['status' => 'eq.completed']);
+        $filters = ['status' => 'eq.completed'];
+        if ($localInspectionId !== null) {
+            $filters['local_inspection_id'] = 'eq.'.(int) $localInspectionId;
+        }
+
+        $response = $supabase->select('field_jobs', $fields, $filters);
 
         if ($response->failed()) {
             $this->error("Failed to connect to Supabase.");

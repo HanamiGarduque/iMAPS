@@ -60,6 +60,28 @@ class SiteInspection extends Model
     ];
 
     /**
+     * Build a clean inspection round for the same application and parcel.
+     *
+     * Deliberately returns a new, unsaved model: completed-round evidence and
+     * identity are never copied or updated. The caller owns persistence and
+     * dispatch after its surrounding transaction succeeds.
+     */
+    public function newRound(array $assignment): self
+    {
+        return new self([
+            'zoning_application_id'     => $this->zoning_application_id,
+            'parcel_id'                 => $this->parcel_id,
+            'inspector_id'              => $assignment['inspector_id'],
+            'scheduled_date'            => $assignment['scheduled_date'],
+            'deadline_date'             => $assignment['deadline_date'],
+            'assigned_notes'            => $assignment['assigned_notes'] ?? null,
+            'assigned_by_imaps_user_id' => $assignment['assigned_by_imaps_user_id'],
+            'assigned_by_name'          => $assignment['assigned_by_name'],
+            'status'                    => 'assigned',
+        ]);
+    }
+
+    /**
      * Get the application associated with the inspection.
      */
     public function zoningApplication(): BelongsTo

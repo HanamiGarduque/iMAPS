@@ -32,6 +32,19 @@ class Loop2AssignmentInstructionsOwnershipTest extends TestCase
         );
     }
 
+    public function test_scheduler_has_a_dedicated_assignment_instructions_field_separate_from_findings(): void
+    {
+        $path = dirname(__DIR__, 2) . '/resources/js/Pages/Applications/Components/ParcelInspectionScheduler.jsx';
+        $source = file_get_contents($path);
+        $this->assertNotFalse($source, "Could not read $path");
+
+        $this->assertStringContainsString('<Label>Assignment Instructions</Label>', $source);
+        $this->assertStringContainsString('value={parcel.assigned_notes || ""}', $source);
+        $this->assertStringContainsString('onChange={setParcelField(index, "assigned_notes")}', $source);
+        $this->assertStringContainsString('value={parcel.findings || ""}', $source);
+        $this->assertStringContainsString('onChange={setParcelField(index, "findings")}', $source);
+    }
+
     // ── 2. Payload does NOT write inspector_notes ──────────────────────────────
 
     public function test_payload_does_not_contain_inspector_notes_key(): void

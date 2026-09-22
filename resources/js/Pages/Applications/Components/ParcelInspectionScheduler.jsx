@@ -62,7 +62,7 @@ export default function ParcelInspectionScheduler({
             )}
 
             {/* Site Inspection Scheduling Block */}
-            {decision === "Needs Site Inspection" && (
+            {(["Needs Site Inspection", "Requires Reinspection"].includes(decision)) ? (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 mt-3 border-t border-amber-200/60 animate-in fade-in slide-in-from-top-2">
                     <div>
                         <Label required hasError={!!errors[`parcels.${index}.inspector_id`]}>Select Inspector</Label>
@@ -100,8 +100,17 @@ export default function ParcelInspectionScheduler({
                         />
                         {errors[`parcels.${index}.deadline_date`] && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors[`parcels.${index}.deadline_date`]}</p>}
                     </div>
+                    <div className="sm:col-span-3">
+                        <Label>Assignment Instructions</Label>
+                        <Textarea
+                            rows={3}
+                            value={parcel.assigned_notes || ""}
+                            onChange={setParcelField(index, "assigned_notes")}
+                            placeholder="Add specific instructions or focus areas for the field inspection..."
+                        />
+                    </div>
                 </div>
-            )}
+            ) : null}
 
             {/* Global Findings Block (Visible only if a decision is made) */}
             {decision && (

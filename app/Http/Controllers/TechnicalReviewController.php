@@ -120,22 +120,22 @@ class TechnicalReviewController extends Controller
 
             // Validation for Site Inspection assignment
             'inspector_id'       => [
-                'required_if:decision,Needs Site Inspection',
+                'required_if:decision,Needs Site Inspection,Requires Reinspection',
                 'nullable',
                 Rule::exists('users', 'id')->where(fn ($query) => $query
                     ->where('role', 'Site Inspector')
                     ->whereNotNull('handshake_key')),
             ],
-            'scheduled_date'     => 'required_if:decision,Needs Site Inspection|nullable|date|after_or_equal:today',
-            'deadline_date'      => 'required_if:decision,Needs Site Inspection|nullable|date|after_or_equal:scheduled_date',
+            'scheduled_date'     => 'required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:today',
+            'deadline_date'      => 'required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:scheduled_date',
             'assigned_notes'     => 'nullable|string',
 
-            'parcel_id'          => 'required_if:decision,Needs Site Inspection|nullable|exists:parcels,id',
+            'parcel_id'          => 'required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|exists:parcels,id',
         ], [
             'inspector_id.exists' => 'The selected inspector must be a Site Inspector with an active FieldSync account.',
         ]);
 
-        if ($validated['decision'] === 'Needs Site Inspection') {
+        if (in_array($validated['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)) {
             $parcel = Parcel::whereKey($validated['parcel_id'])
                 ->where('zoning_application_id', $validated['id'])
                 ->first();
@@ -179,22 +179,12 @@ class TechnicalReviewController extends Controller
             foreach ($parcelsToProcess as $parcel) {
                 $siteInspectionId = null;
 
-                if ($validated['decision'] === 'Needs Site Inspection') {
-                    // Prevent duplicate parcel site inspections by using updateOrCreate
-                    $inspection = SiteInspection::updateOrCreate(
-                        [
-                            'zoning_application_id' => $application->id,
-                            'parcel_id'             => $parcel->id,
-                        ],
-                        [
-                            'inspector_id'              => $validated['inspector_id'],
-                            'scheduled_date'            => $validated['scheduled_date'],
-                            'deadline_date'             => $validated['deadline_date'],
-                            'assigned_notes'            => $validated['assigned_notes'] ?? null,
-                            'assigned_by_imaps_user_id' => $assigningOfficer['id'],
-                            'assigned_by_name'          => $assigningOfficer['name'],
-                            'status'                    => 'assigned',
-                        ]
+                if (in_array($validated['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)) {
+                    $inspection = $this->createInspectionRound(
+                        $application,
+                        $parcel,
+                        $validated,
+                        $assigningOfficer,
                     );
                     $siteInspectionId = $inspection->id;
                     PushInspectionToSupabase::dispatch($inspection);
@@ -271,7 +261,7 @@ class TechnicalReviewController extends Controller
         $validated = $request->validate([
             'application_id'                     => 'required|exists:zoning_applications,id',
             'reviews'                            => 'required|array|min:1',
-            'reviews.*.decision'                 => 'required|string|in:Approved,Needs Site Inspection,Declined',
+            'reviews.*.decision'                 => 'required|string|in:Approved,Needs Site Inspection,Requires Reinspection,Declined',
             'reviews.*.findings'                 => 'nullable|string',
             'reviews.*.decision_reason'          => 'nullable|string',
             'reviews.*.inspector_id'             => [
@@ -301,15 +291,21 @@ class TechnicalReviewController extends Controller
             }
 
             if (
-                $review['decision'] === 'Needs Site Inspection'
+                in_array($review['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)
                 && (empty($review['inspector_id']) || empty($review['scheduled_date']) || empty($review['deadline_date']))
             ) {
                 throw ValidationException::withMessages([
-                    "reviews.$parcelId.inspector_id" => 'Inspector, scheduled date, and deadline are required when the decision is "Needs Site Inspection".',
+                    "reviews.$parcelId.inspector_id" => 'Inspector, scheduled date, and deadline are required when a site inspection round is requested.',
                 ]);
             }
 
-            if ($review['decision'] === 'Needs Site Inspection') {
+            if ($review['decision'] === 'Requires Reinspection' && empty(trim((string) ($review['assigned_notes'] ?? '')))) {
+                throw ValidationException::withMessages([
+                    "reviews.$parcelId.assigned_notes" => 'Assignment instructions are required when scheduling a reinspection round.',
+                ]);
+            }
+
+            if (in_array($review['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)) {
                 $this->validateFieldSyncParcelCoordinates(
                     $application->parcels->firstWhere('id', (int) $parcelId),
                     "reviews.$parcelId.parcel_id"
@@ -337,22 +333,12 @@ class TechnicalReviewController extends Controller
                 $decisionsSeen[] = $review['decision'];
 
                 $siteInspectionId = null;
-                if ($review['decision'] === 'Needs Site Inspection') {
-                    // Prevent duplicate parcel site inspections by using updateOrCreate
-                    $inspection = SiteInspection::updateOrCreate(
-                        [
-                            'zoning_application_id' => $application->id,
-                            'parcel_id'             => $parcelId,
-                        ],
-                        [
-                            'inspector_id'              => $review['inspector_id'],
-                            'scheduled_date'            => $review['scheduled_date'],
-                            'deadline_date'             => $review['deadline_date'],
-                            'assigned_notes'            => $review['assigned_notes'] ?? null,
-                            'assigned_by_imaps_user_id' => $assigningOfficer['id'],
-                            'assigned_by_name'          => $assigningOfficer['name'],
-                            'status'                    => 'assigned',
-                        ]
+                if (in_array($review['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)) {
+                    $inspection = $this->createInspectionRound(
+                        $application,
+                        $application->parcels->firstWhere('id', (int) $parcelId),
+                        $review,
+                        $assigningOfficer,
                     );
 
                     $siteInspectionId = $inspection->id;
@@ -374,7 +360,7 @@ class TechnicalReviewController extends Controller
             
             if (in_array('Declined', $decisionsSeen, true)) {
                 $application->status = 'Denied';
-            } elseif (!in_array('Needs Site Inspection', $decisionsSeen, true)) {
+            } elseif (!array_intersect(['Needs Site Inspection', 'Requires Reinspection'], $decisionsSeen)) {
                 // If no inspections are needed and nothing is declined, 
                 // we can advance to the next logical step.
                 $application->status = 'Under Sangguniang Bayan';
@@ -460,6 +446,62 @@ class TechnicalReviewController extends Controller
         PushInspectionToSupabase::dispatch($inspection);
 
         return redirect()->back()->with('success', 'Site Inspector assigned successfully.');
+    }
+
+    private function createInspectionRound(
+        ZoningApplication $application,
+        Parcel $parcel,
+        array $assignment,
+        array $assigningOfficer,
+    ): SiteInspection {
+        $latestInspection = SiteInspection::query()
+            ->where('zoning_application_id', $application->id)
+            ->where('parcel_id', $parcel->id)
+            ->latest('id')
+            ->lockForUpdate()
+            ->first();
+
+        $assignmentData = [
+            'inspector_id'              => $assignment['inspector_id'],
+            'scheduled_date'            => $assignment['scheduled_date'],
+            'deadline_date'             => $assignment['deadline_date'],
+            'assigned_notes'            => $assignment['assigned_notes'] ?? null,
+            'assigned_by_imaps_user_id' => $assigningOfficer['id'],
+            'assigned_by_name'          => $assigningOfficer['name'],
+        ];
+
+        if (($assignment['decision'] ?? null) === 'Requires Reinspection') {
+            if (!$latestInspection || $latestInspection->status !== 'completed') {
+                throw ValidationException::withMessages([
+                    'decision' => 'Requires Reinspection needs a completed inspection round for this parcel.',
+                ]);
+            }
+
+            $inspection = $latestInspection->newRound($assignmentData);
+            $inspection->save();
+
+            return $inspection;
+        }
+
+        if ($latestInspection) {
+            if ($latestInspection->status === 'completed') {
+                throw ValidationException::withMessages([
+                    'decision' => 'A completed inspection cannot be reassigned. Use Requires Reinspection to create a new round.',
+                ]);
+            }
+
+            $latestInspection->fill([...$assignmentData, 'status' => 'assigned']);
+            $latestInspection->save();
+
+            return $latestInspection;
+        }
+
+        return SiteInspection::create([
+            'zoning_application_id' => $application->id,
+            'parcel_id'             => $parcel->id,
+            ...$assignmentData,
+            'status'                => 'assigned',
+        ]);
     }
 
     private function currentPlanningOfficerAssignmentActor(): array

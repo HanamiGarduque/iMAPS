@@ -1,0 +1,136 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Jobs\PushInspectionToSupabase;
+use App\Models\SiteInspection;
+use Tests\TestCase;
+
+class Loop4ReinspectionNewRoundTest extends TestCase
+{
+    public function test_new_round_has_new_identity_clean_evidence_and_latest_po_provenance(): void
+    {
+        $roundOne = new SiteInspection([
+            'zoning_application_id' => 25,
+            'parcel_id' => 81,
+            'inspector_id' => 7,
+            'status' => 'completed',
+            'assigned_notes' => 'Round 1 instructions',
+            'assigned_by_imaps_user_id' => 4,
+            'assigned_by_name' => 'Jyerine Desunia',
+            'submitted_at' => '2026-09-21 10:00:00',
+            'inspection_result' => 'Requires Reinspection',
+            'findings' => 'Round 1 findings',
+            'observations' => 'Round 1 observations',
+            'discrepancies' => 'Round 1 discrepancy',
+            'recommendations' => 'Round 1 recommendation',
+            'inspector_notes' => 'Round 1 notes',
+            'checklist_data' => [['item' => 'setback', 'passed' => false]],
+            'confirmed_latitude' => 13.845,
+            'confirmed_longitude' => 121.206,
+            'gps_accuracy_m' => 4.5,
+            'gps_confirmed_at' => '2026-09-21 09:00:00',
+        ]);
+        $roundOne->id = 35;
+        $snapshot = $roundOne->getAttributes();
+
+        $roundTwo = $roundOne->newRound([
+            'inspector_id' => 9,
+            'scheduled_date' => '2026-09-25',
+            'deadline_date' => '2026-09-27',
+            'assigned_notes' => 'Round 2 instructions',
+            'assigned_by_imaps_user_id' => 12,
+            'assigned_by_name' => 'Planning Officer B',
+        ]);
+
+        $this->assertNull($roundTwo->getKey());
+        $this->assertNotSame($roundOne->getKey(), $roundTwo->getKey());
+        $this->assertSame(25, $roundTwo->zoning_application_id);
+        $this->assertSame(81, $roundTwo->parcel_id);
+        $this->assertSame('assigned', $roundTwo->status);
+        $this->assertSame(12, $roundTwo->assigned_by_imaps_user_id);
+        $this->assertSame('Planning Officer B', $roundTwo->assigned_by_name);
+        $this->assertSame('Round 2 instructions', $roundTwo->assigned_notes);
+
+        foreach (['submitted_at', 'inspection_result', 'findings', 'observations',
+            'discrepancies', 'recommendations', 'inspector_notes', 'checklist_data',
+            'confirmed_latitude', 'confirmed_longitude', 'gps_accuracy_m',
+            'gps_confirmed_at', 'completed_at'] as $evidenceField) {
+            $this->assertNull($roundTwo->{$evidenceField}, "$evidenceField must start clean");
+        }
+
+        $this->assertSame($snapshot, $roundOne->getAttributes());
+        $this->assertSame('completed', $roundOne->status);
+        $this->assertSame('Requires Reinspection', $roundOne->inspection_result);
+        $this->assertSame(4, $roundOne->assigned_by_imaps_user_id);
+        $this->assertSame('Jyerine Desunia', $roundOne->assigned_by_name);
+    }
+
+    public function test_controller_uses_create_semantics_and_dispatches_new_round(): void
+    {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/app/Http/Controllers/TechnicalReviewController.php');
+        $this->assertNotFalse($source);
+        $this->assertStringContainsString("'Requires Reinspection'", $source);
+        $this->assertStringContainsString("'reviews.*.decision'                 => 'required|string|in:Approved,Needs Site Inspection,Requires Reinspection,Declined'", $source);
+        $this->assertStringContainsString('DB::transaction(function () use ($application, $validated)', $source);
+        $this->assertStringContainsString("empty(\$review['inspector_id']) || empty(\$review['scheduled_date']) || empty(\$review['deadline_date'])", $source);
+        $this->assertStringContainsString("reviews.\$parcelId.assigned_notes", $source);
+        $this->assertStringContainsString('$latestInspection->newRound($assignmentData)', $source);
+        $this->assertStringContainsString('PushInspectionToSupabase::dispatch($inspection);', $source);
+        $this->assertMatchesRegularExpression('/\$inspection = \$latestInspection->newRound\(\$assignmentData\);\s*\$inspection->save\(\);\s*return \$inspection;/s', $source);
+        $this->assertStringNotContainsString('SiteInspection::updateOrCreate(', $source);
+        $this->assertStringContainsString("\$user->role !== 'Planning Officer'", $source);
+        $this->assertStringNotContainsString("'Admin'", $this->method($source, 'currentPlanningOfficerAssignmentActor'));
+    }
+
+    public function test_show_page_submits_complete_unambiguous_reinspection_contract_and_surfaces_validation_errors(): void
+    {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/resources/js/Pages/Applications/Show.jsx');
+        $this->assertNotFalse($source);
+
+        $this->assertStringContainsString('hasCompletedInspection ? "Requires Reinspection" : "Needs Site Inspection"', $source);
+        $this->assertStringContainsString('displayLabel = "Schedule Reinspection"', $source);
+        $this->assertStringNotContainsString('displayLabel = "Re-inspect Parcel"', $source);
+        $this->assertStringContainsString('["Needs Site Inspection", "Requires Reinspection"].includes(review.decision)', $source);
+        $this->assertStringContainsString('review.decision === "Requires Reinspection" && !review.assigned_notes?.trim()', $source);
+        $this->assertStringContainsString('application_id: app.id', $source);
+        $this->assertStringContainsString('reviews: parcelReviews', $source);
+        $this->assertStringContainsString('Object.values(errs || {})', $source);
+        $this->assertStringContainsString('validationMessages.join(" ")', $source);
+        $this->assertStringContainsString('localInspection={activeParcelData.site_inspection}', $source);
+        foreach (['inspector_id', 'scheduled_date', 'deadline_date', 'assigned_notes', 'findings', 'decision_reason'] as $field) {
+            $this->assertStringContainsString($field, $source);
+        }
+    }
+
+    public function test_completed_local_inspection_is_display_fallback_when_remote_fetch_is_unavailable(): void
+    {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/resources/js/Components/ParcelInspectionStatus.jsx');
+        $this->assertNotFalse($source);
+
+        $this->assertStringContainsString('localInspection = null', $source);
+        $this->assertStringContainsString(': localInspection;', $source);
+        $this->assertStringContainsString('setInspection(data)', $source);
+    }
+
+    public function test_push_retry_isolated_by_new_site_inspection_id(): void
+    {
+        $source = file_get_contents(dirname(__DIR__, 2) . '/app/Jobs/PushInspectionToSupabase.php');
+        $this->assertNotFalse($source);
+        $this->assertStringContainsString("'local_inspection_id' => \"eq.{\$this->inspection->id}\"", $source);
+        $this->assertStringContainsString("'local_inspection_id'     => \$this->inspection->id", $source);
+        $this->assertStringContainsString('field_jobs?on_conflict=local_inspection_id', $source);
+        $this->assertStringContainsString("'status'                  => \$existingJob['status'] ?? 'assigned'", $source);
+        foreach (['submitted_at', 'current_step', 'step_timestamps', 'rework_started_at',
+            'findings', 'observations', 'discrepancies', 'recommendations',
+            'inspector_notes', 'checklist_data', 'photo_paths', 'confirmed_latitude'] as $field) {
+            $this->assertStringNotContainsString("'$field' =>", $source);
+        }
+    }
+
+    private function method(string $source, string $name): string
+    {
+        preg_match('/private function ' . preg_quote($name, '/') . '[\\s\\S]*?(?=\\n    private function|\\n})/', $source, $matches);
+        return $matches[0] ?? '';
+    }
+}
