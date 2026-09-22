@@ -120,8 +120,22 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 - Planning Officer provenance is user `4`, `Jyerine Desunia`, on both local and remote Round 2.
 - Round-1 immutability: **PASS**. Round-2 clean state and evidence isolation: **PASS**.
 - No direct PostgreSQL data repair, direct Supabase data mutation, Supabase schema mutation, reverse sync, delivery retry, or Round-2 start was performed during acceptance verification.
-- FieldSync device coexistence and new push-notification receipt: **pending user confirmation**.
+- FieldSync device coexistence and new push-notification receipt were pending at this checkpoint; both are **PASS** in the final acceptance entry below.
 
+
+### 2026-09-23 — Loop 4 final device acceptance evidence
+
+- Application `APP-2026-00026` (`132`), parcel `64`; Laravel runtime database verified as `imaps_db_0921`.
+- Round 1: SiteInspection `36` / field job `76d79ab8-e38e-4682-ada2-a67ac84dde00`. Both remain completed with `Requires Reinspection`, `is_compliant = false`; remote progress is `6`. The previously completed bounded reverse sync is evidenced by the local completed result; no sync command was rerun in this pass.
+- Round 2: SiteInspection `37` / field job `a761b17a-3fad-44ed-b451-7f0af0e41183`, created by the previously verified real Planning Officer workflow as distinct new rows. Exactly one remote row exists for local inspection `37`.
+- Round-2 local/remote evidence remains clean: assigned, remote step `0`, null submission/result/GPS/checklist/findings, zero photo/checklist counts, empty remote step timestamps, null rework start. Instructions are `Loop 4 Round 2 reinspection E2E.`; provenance is user `4`, `Jyerine Desunia`; assigned inspector UUID is `ddcebeac-2217-41c5-a6e2-d7f873db9af2`.
+- Normal FieldSync on wireless RMX3085: **PASS**. Filtering to the application shows Pending `1`, Ongoing `0`, Completed `1`. Round 1 displays Completed / Step 6/6; Round 2 displays Pending / Step 0/6. Round-2 details show 0% progress, no saved step evidence or photos, correct instructions and assigner. Start/Proceed was not pressed.
+- Round-2 push notification: **PASS — directly confirmed by the user in this acceptance session**. No replacement notification was generated.
+- Round-1 immutability: **PASS**. The original baseline is recorded in the prior `LOOP 4 ROUND-1 SESSION-PRESERVING COMPLETION REPORT`, recovered through the report extract supplied for final closure. Fresh read-only Laravel/Supabase comparisons match its identity, lifecycle, result, findings, observations, discrepancies, recommendations, inspector notes, checklist (3/5), GPS (13.817202, 121.232358; 5m), empty photos and provenance, including the accepted null instructions. Local submission/GPS/completion timestamps match the preceding acceptance read; the entire remote rows, including all six Round-1 step timestamps, exactly match the saved preceding acceptance capture. No changed field was found after Round-2 creation.
+- Evidence is saved in the FieldSync workspace under `output/loop4-final/`: `round1-completed`, `round2-pending`, `round2-details`, and `round2-protocol` PNG/XML pairs, plus `remote-after-device-check.json` (current evidence, not a replacement historical baseline).
+- No database/schema mutation, production source change, delivery retry, new round, or Round-2 start occurred. No additional Supabase schema mutation was required.
+- Build classification: **ENVIRONMENTAL BUILD INSTABILITY**, based on the supplied checkpoint record of a later Gradle daemon/JVM crash after successful alternate and normal debug builds. No build or test-suite rerun was performed; the checkpoint changed only the live runner and isolation test, not production FieldSync source.
+- Final closure: **LOOP 4 CLOSED — READY FOR LOOP 5**. Round 2 remains independently assigned and clean; no database/schema mutation, reverse sync, notification rerun or task execution occurred during the final read-only comparison. Structured comparison evidence: FieldSync output/loop4-final/closure-comparison.json.
 
 ## Future-entry template
 
