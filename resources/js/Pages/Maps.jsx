@@ -1,16 +1,15 @@
-import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react";
+import { Component, useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react";
 import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import StatusPanel, { getSLAInfo, getZoningConformity } from "@/Components/MapLayers/StatusPanel";
+import StatusPanel, { getSLAInfo, getZoningConformity, STATUS_MARKER_CONFIG, getStatusMarkerConfig } from "@/Components/MapLayers/StatusPanel";
 import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
 import ZoningPanel from "@/Components/MapLayers/ZoningPanel";
 import MapLegend from "@/Components/MapLayers/MapLegend";
 import DiversityLegend from "@/Components/MapLayers/DiversityLegend";
 import DiversityControls from "@/Components/MapLayers/DiversityControls";
-import { ROSARIO_GROWTH_ESTABLISHMENTS, getEstablishmentsForYear, YEAR_MILESTONES } from "@/data/rosarioEstablishments";
 import { getLens, resolveLensValue, matchesBand, DIVERSITY_LENSES } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
 import { loadBarangayBoundaries, loadMunicipalBoundary, loadLandUsePlan, resolveBarangayName } from "@/utils/mapData";
@@ -77,54 +76,6 @@ const TILE_PROVIDERS = {
     },
 };
 
-// ── Realistic Temporal Data Engine (Rosario, Batangas) ──
-const getTemporalData = (baseData, name, year) => {
-    const urbanCore = ["Poblacion A", "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Poblacion", "San Roque", "Namunga", "Quilib"];
-    const industrialCorridor = ["San Carlos", "Bagong Pook", "San Jose", "Inica", "Cahigam", "Calantas"];
-    const residentialSprawl = ["Itlugan", "Masaya", "Bayawang", "Pinagsibaan", "Antipolo", "Bulihan", "Maligaya"];
-
-    let currentLandUse = baseData?.landUse || baseData?.Primary_Zone || baseData?.primaryZone;
-    if (!currentLandUse) {
-        if (urbanCore.includes(name)) currentLandUse = "Commercial";
-        else if (industrialCorridor.includes(name)) currentLandUse = "Agro-Industrial";
-        else if (residentialSprawl.includes(name)) currentLandUse = "Residential";
-        else currentLandUse = "Agricultural";
-    }
-
-    const data = baseData || {
-        total: Math.floor(Math.random() * 5) + 2,
-        review: 1,
-        released: 2,
-        landUse: currentLandUse,
-        diversity: 0.3,
-    };
-    const yearDiff = year - 2020;
-    let growthRate = 1.2;
-
-    if (urbanCore.includes(name)) {
-        growthRate = 4.5;
-        if (year >= 2022 && currentLandUse === "Residential") currentLandUse = "Commercial";
-    } else if (industrialCorridor.includes(name)) {
-        growthRate = 3.8;
-        if (year >= 2021 && currentLandUse === "Agricultural") currentLandUse = "Agro-Industrial";
-        if (year >= 2024 && currentLandUse === "Agro-Industrial") currentLandUse = "Industrial";
-    } else if (residentialSprawl.includes(name)) {
-        growthRate = 2.8;
-        if (year >= 2023 && currentLandUse === "Agricultural") currentLandUse = "Residential";
-    }
-
-    const newTotal = Math.max(1, Math.floor((data.Total ?? data.total ?? 3) + yearDiff * growthRate));
-
-    return {
-        ...data,
-        total: newTotal,
-        review: Math.floor(newTotal * 0.2),
-        released: Math.floor(newTotal * 0.7),
-        landUse: currentLandUse,
-        diversity: data.diversity,
-    };
-};
-
 // ── Approximate Barangay Centroid Coordinates for Rosario, Batangas ──
 const ROSARIO_BGY_COORDS = {
     "Alupay": [13.8820, 121.2560],
@@ -176,69 +127,8 @@ const ROSARIO_BGY_COORDS = {
     "Tugtugin": [13.8210, 121.2060],
 };
 
-// ── Smart Application Status Pin Configuration ──
-const STATUS_MARKER_CONFIG = {
-    "Received": {
-        label: "Received",
-        color: "#10b981", // Emerald Green
-        border: "#059669",
-        badgeBg: "#ecfdf5",
-        badgeText: "#065f46",
-        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`
-    },
-    "Technical Review": {
-        label: "Technical Review",
-        color: "#f59e0b", // Amber Gold
-        border: "#d97706",
-        badgeBg: "#fffbeb",
-        badgeText: "#92400e",
-        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
-    },
-    "Under Sangguniang Bayan": {
-        label: "Under SB Hearing",
-        color: "#8b5cf6", // Purple
-        border: "#7c3aed",
-        badgeBg: "#f5f3ff",
-        badgeText: "#5b21b6",
-        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="5 6 12 3 19 6"/><line x1="4" y1="10" x2="4" y2="21"/><line x1="20" y1="10" x2="20" y2="21"/><line x1="8" y1="14" x2="8" y2="17"/><line x1="12" y1="14" x2="12" y2="17"/><line x1="16" y1="14" x2="16" y2="17"/></svg>`
-    },
-    "For Release": {
-        label: "For Release",
-        color: "#0ea5e9", // Sky Blue
-        border: "#0284c7",
-        badgeBg: "#f0f9ff",
-        badgeText: "#075985",
-        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
-    },
-    "Released": {
-        label: "Released",
-        color: "#4f46e5", // Royal Indigo
-        border: "#4338ca",
-        badgeBg: "#eef2ff",
-        badgeText: "#3730a3",
-        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`
-    },
-    "Denied": {
-        label: "Denied",
-        color: "#f43f5e", // Rose Red
-        border: "#e11d48",
-        badgeBg: "#fff1f2",
-        badgeText: "#9f1239",
-        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`
-    },
-};
-
-const getStatusMarkerConfig = (status) => {
-    if (!status) return STATUS_MARKER_CONFIG["Received"];
-    const s = String(status).trim();
-    if (STATUS_MARKER_CONFIG[s]) return STATUS_MARKER_CONFIG[s];
-    if (s.toLowerCase().includes("review")) return STATUS_MARKER_CONFIG["Technical Review"];
-    if (s.toLowerCase().includes("sangguniang") || s.toLowerCase().includes("bayan")) return STATUS_MARKER_CONFIG["Under Sangguniang Bayan"];
-    if (s.toLowerCase().includes("for release")) return STATUS_MARKER_CONFIG["For Release"];
-    if (s.toLowerCase().includes("release") || s.toLowerCase().includes("approved")) return STATUS_MARKER_CONFIG["Released"];
-    if (s.toLowerCase().includes("denied") || s.toLowerCase().includes("reject")) return STATUS_MARKER_CONFIG["Denied"];
-    return STATUS_MARKER_CONFIG["Received"];
-};
+// Status pin color/style now lives in one place: STATUS_MARKER_CONFIG,
+// imported above from StatusPanel.jsx (shared with chips, popups, and the legend).
 
 const getAppCoordinates = (app) => {
     const parcel = app?.parcels && app.parcels.length > 0 ? app.parcels[0] : null;
@@ -294,7 +184,7 @@ const createNumberedPinIcon = (number, color, borderColor, L, isHovered = false,
     });
 };
 
-const createApplicationPopupHtml = (app) => {
+const createApplicationPopupHtml = (app, zoneValue) => {
     const config = getStatusMarkerConfig(app?.status);
     const sla = getSLAInfo(app?.created_at, app?.status);
     const refNo = app?.reference_number || `APP-${app?.id || '001'}`;
@@ -303,7 +193,9 @@ const createApplicationPopupHtml = (app) => {
     const barangay = app?.barangay || 'Rosario';
     const landUse = app?.land_use_class || 'General Zone';
     const dateStr = app?.created_at ? new Date(app.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent Filing';
-    const conformity = getZoningConformity(app, landUse);
+    // Compares the applied-for use against the barangay's actual CLUP zone
+    // (a real, independent value) rather than against itself.
+    const conformity = getZoningConformity(landUse, zoneValue);
 
     return `
         <div class="font-sans min-w-[260px] max-w-[295px] p-1">
@@ -380,6 +272,7 @@ const createApplicationPopupHtml = (app) => {
 function LeafletMap({
     bgyStats,
     applications = [],
+    recent = [],
     currentLayer,
     mapStyle,
     onFeatureClick,
@@ -391,7 +284,6 @@ function LeafletMap({
     hoveredAppId = null,
     selectedBgy = null,
     flyToTarget = null,
-    year,
     mapZoom,
     onZoomChange,
     clupOpacity = 0.85,
@@ -404,12 +296,14 @@ function LeafletMap({
     rightPanelOpen = true,
     panelWidth = 380,
     onParcelsVisible = () => {},
+    verifiedParcel = null,
 }) {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
     const tileLayerRef = useRef(null);
     const clupTileLayerRef = useRef(null);
     const geoLayerRef = useRef(null);
+    const verifiedParcelLayerRef = useRef(null);
     const zoningLayerRef = useRef(null);
     const zoningPromiseRef = useRef(null);
     // Declared up here, ahead of every effect: these are read in dependency
@@ -431,7 +325,6 @@ function LeafletMap({
     const layerRef = useRef(currentLayer);
     const opacityRef = useRef(clupOpacity);
     const appFilterRef = useRef(appTypeFilter);
-    const yearRef = useRef(year);
     const diversityLensRef = useRef(diversityLens);
     const diversityBandRef = useRef(diversityBandFilter);
     const rightPanelOpenRef = useRef(rightPanelOpen);
@@ -447,7 +340,6 @@ function LeafletMap({
     useEffect(() => { layerRef.current = currentLayer; }, [currentLayer]);
     useEffect(() => { opacityRef.current = clupOpacity; }, [clupOpacity]);
     useEffect(() => { appFilterRef.current = appTypeFilter; }, [appTypeFilter]);
-    useEffect(() => { yearRef.current = year; }, [year]);
     useEffect(() => { diversityLensRef.current = diversityLens; }, [diversityLens]);
     useEffect(() => { diversityBandRef.current = diversityBandFilter; }, [diversityBandFilter]);
     useEffect(() => { rightPanelOpenRef.current = rightPanelOpen; }, [rightPanelOpen]);
@@ -557,11 +449,10 @@ function LeafletMap({
         });
     };
 
-    const getFeatureStyle = (feature, layer, filter, currentYear) => {
+    const getFeatureStyle = (feature, layer, filter) => {
         const props = feature.properties || {};
         const name = resolveBarangayName(props);
         const bgyData = staticBgyData[name] || { total: 0, landUse: "Residential", diversity: 0.5 };
-        const temporalData = getTemporalData(bgyData, name, currentYear);
 
         const activeTotal = bgyData.total || 0;
         const baseStyle = { color: "#2563eb", weight: 1.2, opacity: 0.9 };
@@ -605,6 +496,7 @@ function LeafletMap({
                     dashArray: null,
                     fill: false,
                     opacity: 1,
+                    className: "",
                 };
             }
 
@@ -621,6 +513,7 @@ function LeafletMap({
                     fillColor: "transparent",
                     fillOpacity: 0,
                     opacity: 0,
+                    className: "imaps-deadspace",
                 };
             }
 
@@ -632,6 +525,7 @@ function LeafletMap({
                     fillColor: "#e2e8f0",
                     fillOpacity: 0.12,
                     opacity: 0.35,
+                    className: "",
                 };
             }
 
@@ -642,6 +536,7 @@ function LeafletMap({
                 fillColor: resolved.color,
                 fillOpacity: 0.68,
                 opacity: 0.9,
+                className: "",
             };
         }
 
@@ -682,7 +577,11 @@ function LeafletMap({
                 activeFeatureRef.current = null;
             }
             if (prevSelectedBgyRef.current && rosarioBoundsRef.current && mapInstanceRef.current) {
-                const sidebarWidth = rightPanelOpenRef.current ? 390 : 0;
+                // Match the real docked-panel width (same prop `focusBarangayOnMap`
+                // uses below) instead of a separate guessed constant, so the
+                // reset-to-municipal view centres against the panel that is
+                // actually on screen rather than one ~10px narrower than it.
+                const sidebarWidth = rightPanelOpenRef.current ? panelWidth : 0;
                 mapInstanceRef.current.flyToBounds(rosarioBoundsRef.current, {
                     paddingTopLeft: [50, 90],
                     paddingBottomRight: [sidebarWidth + 20, 40],
@@ -715,11 +614,18 @@ function LeafletMap({
             activeFeatureRef.current = matchedLayer;
 
             const isStatus = currentLayer === "status";
-            const isTrends = currentLayer === "trends";
             const isDiversity = currentLayer === "diversity";
-            if (isDiversity) {
-                // Outline only — the barangay's CLUP parcels render inside it,
-                // and `fill: false` lets their tooltips receive the mouse.
+            const isZoning = currentLayer === "zoning";
+            if (isDiversity || isZoning) {
+                // Outline only — on the diversity layer the barangay's CLUP
+                // parcels render inside it, and on the CLUP 2030 layer itself
+                // the whole point is the zone-classification colours already
+                // painted there by the separate zoning tile layer. A solid
+                // selection fill (this used to apply the same 60%-opacity blue
+                // wash zoning got here as every other non-diversity layer) would
+                // paint straight over both, hiding the one thing being shown.
+                // `fill: false` rather than `fillOpacity: 0` also keeps the
+                // shape clickable/hoverable instead of swallowing events.
                 matchedLayer.setStyle({
                     weight: 2.4,
                     color: "#0f172a",
@@ -728,11 +634,13 @@ function LeafletMap({
                     dashArray: "",
                 });
             } else {
+                // Status and Trends: a real highlight fill is fine here, neither
+                // layer has finer-grained colour underneath that this would hide.
                 matchedLayer.setStyle({
                     weight: isStatus ? 2.5 : 3.5,
-                    color: isStatus ? "#2563eb" : (isTrends ? "#2563eb" : "#1e3a8a"),
-                    fillColor: isStatus ? "#3b82f6" : (isTrends ? "#3b82f6" : "#2563eb"),
-                    fillOpacity: isStatus ? 0.08 : (isTrends ? 0.12 : 0.6),
+                    color: "#2563eb",
+                    fillColor: "#3b82f6",
+                    fillOpacity: isStatus ? 0.08 : 0.12,
                     dashArray: "",
                 });
             }
@@ -909,6 +817,7 @@ function LeafletMap({
             applicationsLayerRef.current = L.default.layerGroup().addTo(map);
             establishmentsLayerRef.current = L.default.layerGroup().addTo(map);
             diversityLabelsLayerRef.current = L.default.layerGroup().addTo(map);
+            verifiedParcelLayerRef.current = L.default.layerGroup().addTo(map);
 
             // Each layer draws the moment its own data arrives.
             //
@@ -946,7 +855,7 @@ function LeafletMap({
                 if (barangayData && barangayData.features) {
                     geoLayerRef.current = L.default
                         .geoJSON(barangayData, {
-                            style: (feature) => getFeatureStyle(feature, layerRef.current, appTypeFilter, year),
+                            style: (feature) => getFeatureStyle(feature, layerRef.current, appTypeFilter),
                             onEachFeature: (feature, layer_feature) => {
                                 const props = feature.properties || {};
                                 const name = resolveBarangayName(props);
@@ -1143,7 +1052,16 @@ function LeafletMap({
 
         if (geoLayerRef.current) {
             geoLayerRef.current.eachLayer((layer_feature) => {
-                layer_feature.setStyle(getFeatureStyle(layer_feature.feature, currentLayer, appTypeFilter, year));
+                const style = getFeatureStyle(layer_feature.feature, currentLayer, appTypeFilter);
+                layer_feature.setStyle(style);
+                
+                if (layer_feature._path) {
+                    if (style.className === "imaps-deadspace") {
+                        layer_feature._path.classList.add("imaps-deadspace");
+                    } else {
+                        layer_feature._path.classList.remove("imaps-deadspace");
+                    }
+                }
             });
         }
 
@@ -1162,7 +1080,10 @@ function LeafletMap({
         // Attach the parcels only while something shows them. If they are
         // needed before the idle-time prefetch finished, start (or join) the
         // build now; `zoningReady` re-runs this effect when it lands.
-        const needsParcels = isZoningActive || isTrendsActive || (isDiversityActive && Boolean(selectedName));
+        // Trends relies on the pre-rendered CLUP raster below instead of this
+        // vector layer — drawing both at once doubled the render cost for a
+        // layer that visually reads identically to Zoning either way.
+        const needsParcels = isZoningActive || (isDiversityActive && Boolean(selectedName));
         const map = mapInstanceRef.current;
         if (needsParcels && !zoningLayerRef.current) {
             ensureZoningLayer();
@@ -1193,9 +1114,9 @@ function LeafletMap({
 
                 return {
                     color: zone.stroke,
-                    weight: isTrendsActive ? 1 : 1.5,
+                    weight: 1.5,
                     fillColor: zone.fill,
-                    fillOpacity: isTrendsActive ? 0.65 : (isZoningActive ? clupOpacity : 0),
+                    fillOpacity: isZoningActive ? clupOpacity : 0,
                     opacity: isLandUsePlanVisible ? 0.9 : 0
                 };
             });
@@ -1237,7 +1158,7 @@ function LeafletMap({
                 }
             });
         }
-    }, [currentLayer, appTypeFilter, year, clupOpacity, staticBgyData, diversityLens, diversityBandFilter, selectedBgy, zoningReady, barangaysReady]);
+    }, [currentLayer, appTypeFilter, clupOpacity, staticBgyData, diversityLens, diversityBandFilter, selectedBgy, zoningReady, barangaysReady]);
 
     // Centroid score chips for the 2D map, with greedy collision decluttering.
     //
@@ -1404,6 +1325,53 @@ function LeafletMap({
             }
         }
     }, [flyToTarget]);
+
+    // Plot the CLUP zone found by "Verify Parcel" directly on the map: a
+    // pulsing ring colour-coded by the resolved zone category (same palette
+    // as the CLUP 2030 layer), so the check and the map stay visually tied
+    // together instead of the result only living in the side panel.
+    useEffect(() => {
+        if (!verifiedParcelLayerRef.current) return;
+        verifiedParcelLayerRef.current.clearLayers();
+        if (!verifiedParcel) return;
+
+        import("leaflet").then((L) => {
+            if (!verifiedParcelLayerRef.current) return;
+            const Leaflet = L.default || L;
+            const { lat, lng, zoneInfo, conformity, parcel } = verifiedParcel;
+            if (typeof lat !== "number" || typeof lng !== "number" || Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+            const ringColor = zoneInfo?.stroke || "#2563eb";
+            const fillColor = zoneInfo?.fill || "#93c5fd";
+
+            const icon = Leaflet.divIcon({
+                className: "verified-parcel-marker",
+                html: `
+                    <div class="relative" style="transform: translate(-50%, -50%);">
+                        <div class="absolute inset-0 rounded-full animate-ping" style="background-color: ${ringColor}66; width: 34px; height: 34px; margin: -7px 0 0 -7px;"></div>
+                        <div class="rounded-full shadow-lg" style="width: 20px; height: 20px; background-color: ${fillColor}; border: 3px solid ${ringColor};"></div>
+                    </div>
+                `,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10],
+            });
+
+            const marker = Leaflet.marker([lat, lng], { icon, zIndexOffset: 3000 });
+            const zoneLabel = zoneInfo?.code ? `${zoneInfo.categoryLabel || zoneInfo.label} (${zoneInfo.code})` : (zoneInfo?.label || "Undesignated");
+            marker.bindPopup(`
+                <div class="font-sans min-w-[200px] p-1">
+                    <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">CLUP Zone</div>
+                    <div class="text-sm font-black text-slate-900">${zoneLabel}</div>
+                    <div class="mt-1.5 pt-1.5 border-t border-slate-100 text-[11px] font-bold ${conformity?.isConforming ? "text-emerald-700" : "text-amber-700"}">
+                        ${conformity?.title || ""}
+                    </div>
+                    ${parcel?.tct_number ? `<div class="text-[10px] text-slate-500 mt-0.5">TCT ${parcel.tct_number}</div>` : ""}
+                </div>
+            `, { className: "custom-app-popup", closeButton: true, maxWidth: 240 });
+
+            marker.addTo(verifiedParcelLayerRef.current);
+        });
+    }, [verifiedParcel]);
 
     // Live update Application Status Pins & Barangay Workload Clusters: ONLY for Permit & Status layer ("status")
     useEffect(() => {
@@ -1640,7 +1608,8 @@ function LeafletMap({
                                 zIndexOffset: isHovered ? 2000 : 1200,
                             });
 
-                            const popupHtml = createApplicationPopupHtml(app);
+                            const bgyZoneValue = app?.barangay ? staticBgyData?.[app.barangay.trim()]?.Primary_Zone : null;
+                            const popupHtml = createApplicationPopupHtml(app, bgyZoneValue);
                             marker.bindPopup(popupHtml, {
                                 className: "custom-app-popup",
                                 closeButton: true,
@@ -1680,7 +1649,7 @@ function LeafletMap({
         }
     }, [currentLayer, appTypeFilter, statusFilter, searchFilter, applications, staticBgyData, mapZoom, selectedBgy, hoveredAppId]);
 
-    // Live update Urban Growth Establishments & Landmark Pins for the active year
+    // Live update Urban Growth Establishments & Landmark Pins for the active year using real 'recent' permits
     useEffect(() => {
         if (!establishmentsLayerRef.current || !mapInstanceRef.current) return;
         establishmentsLayerRef.current.clearLayers();
@@ -1688,17 +1657,50 @@ function LeafletMap({
 
         if (currentLayer === "trends") {
             import("leaflet").then((L) => {
-                const activeEsts = getEstablishmentsForYear(year);
+                const activeEsts = (recent || []).filter(app => 
+                    app.status === 'Released' || app.status === 'For Release' || 
+                    app.status?.includes('Review') || app.status?.includes('Sangguniang')
+                ).map(app => {
+                    const isCommInd = ['Commercial', 'Industrial', 'Agro-industrial'].includes(app.target_land_use_class);
+                    const badge = isCommInd ? app.target_land_use_class : app.application_type || 'Project';
+                    
+                    let color = '#2563eb';
+                    let bg = '#dbeafe';
+                    if (app.target_land_use_class === 'Commercial') { color = '#f59e0b'; bg = '#fef3c7'; }
+                    else if (app.target_land_use_class === 'Industrial') { color = '#ef4444'; bg = '#fee2e2'; }
+                    else if (app.target_land_use_class === 'Agro-industrial') { color = '#8b5cf6'; bg = '#f3e8ff'; }
+                    else if (app.target_land_use_class === 'Residential') { color = '#10b981'; bg = '#d1fae5'; }
+                    else if (app.target_land_use_class === 'Agricultural') { color = '#84cc16'; bg = '#ecfccb'; }
+
+                    const typeClass = (app.target_land_use_class || '').toLowerCase();
+                    let type = "other";
+                    if (typeClass.includes("commercial")) type = "mall";
+                    if (typeClass.includes("industrial")) type = "infrastructure";
+                    if (typeClass.includes("agro")) type = "agro-industrial";
+                    if (typeClass.includes("residential")) type = "residential";
+                    if (typeClass.includes("institutional")) type = "healthcare";
+
+                    return {
+                        id: app.id,
+                        name: app.applicant_name || app.reference_number,
+                        category: app.target_land_use_class,
+                        type: type,
+                        barangay: app.barangay || 'Poblacion',
+                        year: new Date(app.created_at).getFullYear(),
+                        description: app.purpose || `Approved ${app.target_land_use_class} permit`,
+                        badge: badge,
+                        color: color,
+                        bg: bg,
+                        coords: getAppCoordinates(app),
+                    };
+                });
 
                 activeEsts.forEach((est) => {
-                    const isNewThisYear = est.year === year;
+                    if (!est.coords) return;
 
                     const getIconSvg = (type) => {
                         if (type === "mall" || type === "supermarket") {
                             return `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>`;
-                        }
-                        if (type === "dining") {
-                            return `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>`;
                         }
                         if (type === "residential") {
                             return `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>`;
@@ -1717,12 +1719,6 @@ function LeafletMap({
 
                     const iconHtml = `
                         <div class="relative group cursor-pointer">
-                            ${isNewThisYear ? `
-                                <span class="absolute -top-1.5 -right-1.5 flex h-4 w-4 z-20">
-                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-80"></span>
-                                    <span class="relative inline-flex rounded-full h-4 w-4 bg-amber-500 border border-white text-[8px] text-white font-black items-center justify-center shadow-xs">★</span>
-                                </span>
-                            ` : ''}
                             <div class="w-8 h-8 rounded-xl flex items-center justify-center shadow-lg border-2 border-white transition-all transform hover:scale-125 duration-200" style="background-color: ${est.color};">
                                 ${getIconSvg(est.type)}
                             </div>
@@ -1746,7 +1742,7 @@ function LeafletMap({
                                     ${est.badge}
                                 </span>
                                 <span class="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                    ${isNewThisYear ? `✨ Added in ${est.year}` : `Active since ${est.year}`}
+                                    Active since ${est.year}
                                 </span>
                             </div>
                             <h4 class="text-xs font-black text-slate-900 mt-2 leading-snug">
@@ -1793,12 +1789,62 @@ function LeafletMap({
                 mapInstanceRef.current.removeLayer(establishmentsLayerRef.current);
             }
         }
-    }, [currentLayer, year, staticBgyData]);
+    }, [currentLayer, recent, staticBgyData]);
 
     return <div ref={mapRef} id="map" className="absolute inset-0 z-0" />;
 }
 
-export default function Dashboard({ userName, userRole, total, thisMonth, statusMap, bgyStats, recent, filters, overallDiversity, urbanGrowthData }) {
+class MapsErrorBoundary extends Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null, errorInfo: null };
+    }
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error, errorInfo) {
+        this.setState({ errorInfo });
+        console.error("MapsErrorBoundary caught an error", error, errorInfo);
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div style={{ padding: '2rem', background: '#fee2e2', color: '#991b1b', minHeight: '100vh', fontFamily: 'monospace' }}>
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Dashboard component crashed!</h2>
+                    <br />
+                    <strong style={{ fontSize: '1.2rem' }}>{this.state.error && this.state.error.toString()}</strong>
+                    <br /><br />
+                    <pre style={{ background: 'rgba(255,255,255,0.5)', padding: '1rem', whiteSpace: 'pre-wrap' }}>
+                        {this.state.errorInfo && this.state.errorInfo.componentStack}
+                    </pre>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+// Builds the years an urban-growth timeline can scrub through: the CLUP
+// baseline year through whichever is later, 2026 or the newest real permit
+// on file. The range never shrinks below 2020-2026 (matching the original
+// slider's span), but widens automatically if filings ever reach past it.
+// Years with zero permits simply show zero — nothing here is invented.
+const TIMELINE_BASELINE_YEAR = 2020;
+const TIMELINE_MIN_END_YEAR = 2026;
+function buildTimelineYears(recent) {
+    let maxYear = TIMELINE_MIN_END_YEAR;
+    (recent || []).forEach((app) => {
+        if (!app?.created_at) return;
+        const d = new Date(app.created_at);
+        if (isNaN(d.getTime())) return;
+        if (d.getFullYear() > maxYear) maxYear = d.getFullYear();
+    });
+    const years = [];
+    for (let y = TIMELINE_BASELINE_YEAR; y <= maxYear; y++) years.push(y);
+    return years;
+}
+
+function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgyStats, recent, filters, overallDiversity, urbanGrowthData }) {
     const [activeLayer, setActiveLayer] = useState("status");
     const [mapStyle, setMapStyle] = useState("standard");
     const [stylePopupOpen, setStylePopupOpen] = useState(false);
@@ -1806,8 +1852,6 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [rightPanelOpen, setRightPanelOpen] = useState(false);
     const [clock, setClock] = useState("");
-    const [year, setYear] = useState(2026);
-    const [isPlaying, setIsPlaying] = useState(false);
     const [clupOpacity, setClupOpacity] = useState(0.85);
     const [selectedBgy, setSelectedBgy] = useState(null);
     const [mapZoom, setMapZoom] = useState(13);
@@ -1817,9 +1861,33 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     const [statusFilter, setStatusFilter] = useState("All");
     const [hoveredAppId, setHoveredAppId] = useState(null);
     const [flyToTarget, setFlyToTarget] = useState(null);
-    const [statusSearchQuery, setStatusSearchQuery] = useState("");
+    const [verifiedParcel, setVerifiedParcel] = useState(null);
     const [diversityBandFilter, setDiversityBandFilter] = useState("all");
     const [diversityLens, setDiversityLens] = useState("mix");
+    // Urban Growth time machine — scrubs cumulative real permits across a
+    // 2020-2026+ year range (widening only if filings ever go past 2026).
+    // Years with no filings show zero; nothing is simulated.
+    const timelineYears = useMemo(() => buildTimelineYears(recent), [recent]);
+    const [activeYearIndex, setActiveYearIndex] = useState(() => timelineYears.length - 1);
+    const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
+    // `recent` can be refreshed by Inertia partial reloads (e.g. changing the
+    // application-type filter), which can widen the year range underneath an
+    // in-progress scrub — clamp rather than index past the end.
+    useEffect(() => {
+        setActiveYearIndex((i) => Math.min(i, timelineYears.length - 1));
+    }, [timelineYears]);
+    const activeYear = timelineYears[activeYearIndex] || timelineYears[timelineYears.length - 1];
+    const timelineCutoff = useMemo(() => {
+        if (!activeYear) return null;
+        return new Date(activeYear, 11, 31, 23, 59, 59, 999); // end of that year
+    }, [activeYear]);
+    const timelineRecent = useMemo(() => {
+        if (!timelineCutoff) return recent || [];
+        return (recent || []).filter((app) => {
+            const d = app?.created_at ? new Date(app.created_at) : null;
+            return d && !isNaN(d.getTime()) && d <= timelineCutoff;
+        });
+    }, [recent, timelineCutoff]);
     const [is3DMode, setIs3DMode] = useState(true);
     const show3D = is3DMode && activeLayer === "diversity";
     // Once the 3D view has been created it stays mounted (hidden when not in
@@ -1872,23 +1940,6 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
         : (statusMap?.["Released"] ?? 0);
     const displayThisMonth = isBgyActive ? null : thisMonth;
 
-    const safeTotal = displayTotal || 1;
-    const processingPct = Math.round(((safeTotal - displayReview - displayReleased) / safeTotal) * 100);
-    const reviewPct = Math.round((displayReview / safeTotal) * 100);
-    const releasedPct = Math.round((displayReleased / safeTotal) * 100);
-
-    const handleSelectApp = useCallback((app) => {
-        if (!app) return;
-        setInspectedApp(app);
-        const coords = getAppCoordinates(app);
-        if (app.barangay) {
-            const bgyName = app.barangay.trim();
-            const bgyData = (bgyStats && bgyStats[bgyName]) ? bgyStats[bgyName] : { total: 1 };
-            setSelectedBgy({ name: bgyName, data: bgyData });
-        }
-        setHoveredAppId(app.id);
-        setFlyToTarget({ coords, zoom: 17, appId: app.id, openPopup: true, timestamp: Date.now() });
-    }, [bgyStats]);
 
     const handleLocateApp = useCallback((app) => {
         if (!app) return;
@@ -1910,6 +1961,25 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
             setSelectedBgy({ name: bgyName, data: bgyData });
         }
         setFlyToTarget({ coords: est.coords, zoom: 17, appId: est.id, openPopup: true, timestamp: Date.now() });
+    }, [bgyStats]);
+
+    // Connects the map layer's "Verify Parcel" search to the map itself: the
+    // moment a TCT/Tax Dec check resolves, the camera flies to that parcel and
+    // its CLUP zone is plotted (pulsing ring) at that spot — no separate
+    // "Locate" click needed.
+    const handleVerifyResult = useCallback((result) => {
+        const { parcel, conformity, zoneValue } = result || {};
+        const lat = parseFloat(parcel?.latitude);
+        const lng = parseFloat(parcel?.longitude);
+        if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+        if (parcel.barangay) {
+            const bgyName = parcel.barangay.trim();
+            const bgyData = (bgyStats && bgyStats[bgyName]) ? bgyStats[bgyName] : { total: 1 };
+            setSelectedBgy({ name: bgyName, data: bgyData });
+        }
+        setVerifiedParcel({ lat, lng, zoneInfo: getZoneInfo(zoneValue), conformity, parcel });
+        setFlyToTarget({ coords: [lat, lng], zoom: 18, timestamp: Date.now() });
     }, [bgyStats]);
 
     const displayRecent = useMemo(() => {
@@ -1982,23 +2052,12 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
     }, []);
 
     useEffect(() => {
-        let interval = null;
-        if (isPlaying && activeLayer === "trends") {
-            interval = setInterval(() => {
-                setYear((prev) => (prev >= 2026 ? 2020 : prev + 1));
-            }, 1400);
-        } else if (activeLayer !== "trends") {
-            setIsPlaying(false);
-        }
-        return () => {
-            if (interval) clearInterval(interval);
-        };
-    }, [isPlaying, activeLayer]);
-
-    useEffect(() => {
         if (activeLayer !== "diversity") {
             setDiversityBandFilter("all");
             setDiversityLens("mix");
+        }
+        if (activeLayer !== "trends") {
+            setIsTimelinePlaying(false);
         }
         setSelectedBgy(null);
         setSearchTargetBgy(null);
@@ -2006,6 +2065,14 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
         setParcels2D(false);
         setParcels3D(false);
     }, [activeLayer]);
+
+    useEffect(() => {
+        if (!isTimelinePlaying || activeLayer !== "trends" || timelineYears.length <= 1) return;
+        const id = setInterval(() => {
+            setActiveYearIndex((i) => (i >= timelineYears.length - 1 ? 0 : i + 1));
+        }, 1400);
+        return () => clearInterval(id);
+    }, [isTimelinePlaying, activeLayer, timelineYears.length]);
 
     const handleSelectLocation = (loc) => {
         if (!loc || !loc.label) return;
@@ -2086,8 +2153,8 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
         },
         trends: {
             label: "Urban Growth",
-            title: "Land Use Projections",
-            desc: "Multi-year urban expansion & zoning growth simulation",
+            title: "Development Corridors",
+            desc: "Ranked barangay growth pressure from live zoning permits",
             gradient: "from-emerald-900 to-teal-950",
             icon: (
                 <svg className="w-4 h-4 text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -2120,28 +2187,11 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
         },
     };
 
-    const trendFactor = 1 + (year - 2020) * 0.15;
 
-    const landUseData = useMemo(() => [
-        ["Residential", Math.floor(82 * trendFactor), Math.min(100, Math.floor(40 * trendFactor * 0.8)), "#22c55e", "#dcfce7"],
-        ["Commercial", Math.floor(34 * trendFactor * 1.5), Math.min(100, Math.floor(17 * trendFactor * 1.2)), "#f59e0b", "#fef3c7"],
-        ["Agricultural", Math.floor(44 / trendFactor), Math.floor(22 / trendFactor), "#84cc16", "#ecfccb"],
-        ["Agro-Industrial", Math.floor(14 * trendFactor * 1.8), Math.min(100, Math.floor(7 * trendFactor * 1.5)), "#8b5cf6", "#f3e8ff"],
-        ["Industrial", Math.floor(22 * trendFactor), Math.min(100, Math.floor(11 * trendFactor)), "#ef4444", "#fee2e2"],
-        ["Special projects", Math.floor(7 * trendFactor), Math.min(100, Math.floor(3 * trendFactor)), "#64748b", "#f1f5f9"],
-    ].sort((a, b) => b[1] - a[1]), [trendFactor]);
-
-    const hotspots = useMemo(() => [
-        { rank: 1, name: "San Roque", type: year >= 2023 ? "Commercial" : "Residential", color: year >= 2023 ? "#f59e0b" : "#22c55e", bg: year >= 2023 ? "#fef3c7" : "#dcfce7", count: Math.floor(42 * trendFactor) },
-        { rank: 2, name: "Quilib", type: year >= 2024 ? "Industrial" : "Agro-Industrial", color: year >= 2024 ? "#ef4444" : "#8b5cf6", bg: year >= 2024 ? "#fee2e2" : "#f3e8ff", count: Math.floor(38 * trendFactor) },
-        { rank: 3, name: "San Carlos", type: year >= 2024 ? "Industrial" : "Agro-Industrial", color: year >= 2024 ? "#ef4444" : "#8b5cf6", bg: year >= 2024 ? "#fee2e2" : "#f3e8ff", count: Math.floor(35 * trendFactor) },
-        { rank: 4, name: "Poblacion B", type: "Commercial", color: "#f59e0b", bg: "#fef3c7", count: Math.floor(31 * trendFactor) },
-        { rank: 5, name: "Pinagsibaan", type: year >= 2023 ? "Residential" : "Agricultural", color: year >= 2023 ? "#22c55e" : "#84cc16", bg: year >= 2023 ? "#dcfce7" : "#ecfccb", count: Math.floor(28 * trendFactor) },
-    ], [trendFactor, year]);
 
     return (
         <>
-            <Head title="GIS Spatial Dashboard | iMAPS" />
+            <Head title="Maps" />
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 #dashboard-root, #dashboard-root :not(.font-mono) { font-family: 'Plus Jakarta Sans', sans-serif !important; }
@@ -2201,6 +2251,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                     .leaflet-interactive { transition: none; }
                     .diversity-chip-inner { animation: none; }
                 }
+                .leaflet-interactive.imaps-deadspace { pointer-events: none !important; }
             `}</style>
 
             <div
@@ -2226,7 +2277,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                         sidebarOpen={sidebarOpen}
                         setSidebarOpen={setSidebarOpen}
                         onLogout={handleLogout}
-                        activePage="dashboard"
+                        activePage="maps"
                     />
 
                     {sidebarOpen && (
@@ -2254,15 +2305,15 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                             <LeafletMap
                                 bgyStats={bgyStats}
                                 applications={recent}
+                                recent={timelineRecent}
                                 currentLayer={activeLayer}
                                 mapStyle={mapStyle}
                                 appTypeFilter={appTypeFilter}
                                 statusFilter={statusFilter}
-                                searchFilter={statusSearchQuery}
                                 hoveredAppId={hoveredAppId}
                                 selectedBgy={selectedBgy}
                                 flyToTarget={flyToTarget}
-                                year={year}
+                                verifiedParcel={verifiedParcel}
                                 mapZoom={mapZoom}
                                 clupOpacity={clupOpacity}
                                 resetTrigger={resetTrigger}
@@ -2325,7 +2376,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                 />
                                 <DiversityLegend
                                     lens={diversityLens}
-                                    bandFilter={diversityBandFilter}
+                                    activeBand={diversityBandFilter}
                                     onSelectBand={setDiversityBandFilter}
                                     bgyStats={bgyStats}
                                     overallDiversity={overallDiversity}
@@ -2334,7 +2385,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                 />
                             </>
                         ) : (
-                            <MapLegend activeLayer={activeLayer} year={year} />
+                            <MapLegend activeLayer={activeLayer} urbanGrowthData={urbanGrowthData} />
                         )}
 
                         {/* Top-Left Mode Selector & 2D/3D Diversity Switcher */}
@@ -2346,7 +2397,6 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                         label: "Permits & Status",
                                         shortLabel: "Status",
                                         key: "1",
-                                        badge: total,
                                         icon: (
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -2358,7 +2408,6 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                         label: "Urban Growth",
                                         shortLabel: "Growth",
                                         key: "2",
-                                        badge: year,
                                         icon: (
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -2370,7 +2419,6 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                         label: "Diversity Index",
                                         shortLabel: "Diversity",
                                         key: "3",
-                                        badge: municipalMean.toFixed(2),
                                         icon: (
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
@@ -2383,7 +2431,6 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                         label: "CLUP 2030",
                                         shortLabel: "CLUP",
                                         key: "4",
-                                        badge: "Official",
                                         icon: (
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h16.5M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M19.5 21v-7.5a2.25 2.25 0 00-2.25-2.25H15M19.5 21H6m13.5 0v-7.5a2.25 2.25 0 00-2.25-2.25H15m0 0V16.5" />
@@ -2482,82 +2529,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                             </div>
                         </div>
 
-                        {/* Trends Mode: Time-Machine Player */}
-                        <div
-                            className={`absolute bottom-6 left-1/2 -translate-x-1/2 z-[600] flex flex-col items-center gap-2 transition-all duration-500 ease-out ${
-                                activeLayer === "trends"
-                                    ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
-                                    : "opacity-0 translate-y-8 scale-95 pointer-events-none"
-                            }`}
-                        >
-                            <div className="flex items-center gap-2.5 bg-slate-900/80 backdrop-blur-md px-3.5 py-1 rounded-full text-white shadow-lg border border-white/10">
-                                <span className="flex h-2 w-2 relative">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                                </span>
-                                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-300">
-                                    {year === 2020 ? 'Baseline CLUP Horizon · Year 2020' : year <= 2022 ? `Growth Pole Designation · Year ${year}` : year <= 2025 ? `Corridor Expansion Phase · Year ${year}` : `Active Permitting Horizon · Year ${year}`}
-                                </span>
-                            </div>
 
-                            <div className="flex items-center p-1.5 bg-white/90 backdrop-blur-xl border border-white/80 rounded-2xl shadow-[0_12px_36px_rgba(0,0,0,0.12)]">
-                                <button
-                                    onClick={() => setIsPlaying(!isPlaying)}
-                                    className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all shadow-sm ${
-                                        isPlaying
-                                            ? "bg-amber-500 text-white hover:bg-amber-600 ring-2 ring-amber-400/30"
-                                            : "bg-blue-800 text-white hover:bg-blue-900 ring-2 ring-blue-700/30"
-                                    }`}
-                                    title={isPlaying ? "Pause Simulation" : "Auto-Play Timeline"}
-                                >
-                                    {isPlaying ? (
-                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                                        </svg>
-                                    ) : (
-                                        <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                                            <path d="M8 5v14l11-7z" />
-                                        </svg>
-                                    )}
-                                </button>
-
-                                <div className="w-px h-5 bg-slate-200 mx-2" />
-
-                                <div className="flex items-center gap-1">
-                                    {[2020, 2021, 2022, 2023, 2024, 2025, 2026].map((y) => {
-                                        const isActive = year === y;
-                                        const isPast = y < year;
-                                        return (
-                                            <button
-                                                key={y}
-                                                onClick={() => {
-                                                    setYear(y);
-                                                    setIsPlaying(false);
-                                                }}
-                                                className={`relative px-3 py-1.5 rounded-xl font-mono text-xs font-bold transition-all duration-300 ${
-                                                    isActive
-                                                        ? "bg-blue-800 text-white shadow-md ring-2 ring-blue-600/30 scale-105"
-                                                        : isPast
-                                                        ? "text-slate-700 bg-slate-100 hover:bg-slate-200"
-                                                        : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                                }`}
-                                            >
-                                                {y}
-                                                <div
-                                                    className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full transition-all ${
-                                                        isActive
-                                                            ? "bg-white"
-                                                            : isPast
-                                                            ? "bg-blue-400"
-                                                            : "bg-transparent"
-                                                    }`}
-                                                />
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
 
                         {/* Zoning Mode: Opacity Slider */}
                         <div
@@ -2592,6 +2564,80 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                             >
                                 Reset
                             </button>
+                        </div>
+
+                        {/* Trends Mode: Time Machine — scrubs real permits by filing month */}
+                        <div
+                            className={`absolute bottom-6 left-1/2 -translate-x-1/2 z-[600] flex flex-col items-center gap-2 transition-all duration-500 ease-out ${
+                                activeLayer === "trends"
+                                    ? "opacity-100 translate-y-0 scale-100 pointer-events-auto"
+                                    : "opacity-0 translate-y-8 scale-95 pointer-events-none"
+                            }`}
+                        >
+                            <div className="flex items-center gap-2.5 bg-slate-900/80 backdrop-blur-md px-3.5 py-1 rounded-full text-white shadow-lg border border-white/10">
+                                <span className="flex h-2 w-2 relative">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                                </span>
+                                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-300">
+                                    As of Year {activeYear || "—"} · {timelineRecent.length} permit{timelineRecent.length === 1 ? "" : "s"} filed
+                                </span>
+                            </div>
+
+                            <div className="flex items-center p-1.5 bg-white/90 backdrop-blur-xl border border-white/80 rounded-2xl shadow-[0_12px_36px_rgba(0,0,0,0.12)]">
+                                <button
+                                    onClick={() => setIsTimelinePlaying((p) => !p)}
+                                    disabled={timelineYears.length <= 1}
+                                    className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed ${
+                                        isTimelinePlaying
+                                            ? "bg-amber-500 text-white hover:bg-amber-600 ring-2 ring-amber-400/30"
+                                            : "bg-blue-800 text-white hover:bg-blue-900 ring-2 ring-blue-700/30"
+                                    }`}
+                                    title={isTimelinePlaying ? "Pause Timeline" : "Auto-Play Timeline"}
+                                >
+                                    {isTimelinePlaying ? (
+                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z" />
+                                        </svg>
+                                    )}
+                                </button>
+
+                                <div className="w-px h-5 bg-slate-200 mx-2" />
+
+                                <div className="flex items-center gap-1">
+                                    {timelineYears.map((y, idx) => {
+                                        const isActive = idx === activeYearIndex;
+                                        const isPast = idx < activeYearIndex;
+                                        return (
+                                            <button
+                                                key={y}
+                                                onClick={() => {
+                                                    setActiveYearIndex(idx);
+                                                    setIsTimelinePlaying(false);
+                                                }}
+                                                className={`relative px-3 py-1.5 rounded-xl font-mono text-xs font-bold transition-all duration-300 ${
+                                                    isActive
+                                                        ? "bg-blue-800 text-white shadow-md ring-2 ring-blue-600/30 scale-105"
+                                                        : isPast
+                                                        ? "text-slate-700 bg-slate-100 hover:bg-slate-200"
+                                                        : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                                }`}
+                                            >
+                                                {y}
+                                                <div
+                                                    className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full transition-all ${
+                                                        isActive ? "bg-white" : isPast ? "bg-blue-400" : "bg-transparent"
+                                                    }`}
+                                                />
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         </div>
 
                         {/* Quick GIS Toolbar (Leaflet 2D only). In diversity mode the
@@ -2750,7 +2796,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                             Intelligence Panel
                                         </span>
                                         <span className="text-[9px] font-mono font-bold bg-slate-100 group-hover:bg-blue-50 text-slate-600 group-hover:text-blue-700 px-1.5 py-0.2 rounded">
-                                            {activeLayer === "status" ? `${displayTotal} Apps` : activeLayer === "trends" ? `Year ${year}` : activeLayer === "diversity" ? `${Number(overallDiversity?.score ?? 0).toFixed(2)} Mix` : "CLUP 2030"}
+                                            {activeLayer === "status" ? `${displayTotal} Apps` : activeLayer === "trends" ? `${timelineRecent.length} thru ${activeYear || "—"}` : activeLayer === "diversity" ? `${Number(overallDiversity?.score ?? 0).toFixed(2)} Mix` : "CLUP 2030"}
                                         </span>
                                     </div>
                                     <span className="text-xs font-black text-slate-800 group-hover:text-blue-900 leading-tight">
@@ -2825,7 +2871,7 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                             ) : (
                                 <div
                                     className={`shrink-0 bg-gradient-to-r ${rsConfig[activeLayer].gradient} text-white px-5 py-4 flex items-center justify-between border-b border-white/10`}
-                                >
+                                >                        
                                     <div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-[10px] font-bold uppercase tracking-widest text-blue-200">
@@ -2870,9 +2916,6 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                         thisMonth={displayThisMonth}
                                         review={displayReview}
                                         released={displayReleased}
-                                        processingPct={processingPct}
-                                        reviewPct={reviewPct}
-                                        releasedPct={releasedPct}
                                         recent={recent || []}
                                         selectedBgy={selectedBgy}
                                         onClearBgy={() => setSelectedBgy(null)}
@@ -2881,25 +2924,19 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                                         statusMap={statusMap}
                                         statusFilter={statusFilter}
                                         onStatusFilterChange={handleStatusFilterChange}
-                                        searchQuery={statusSearchQuery}
-                                        onSearchQueryChange={setStatusSearchQuery}
-                                        hoveredAppId={hoveredAppId}
-                                        onHoverApp={setHoveredAppId}
-                                        onSelectApp={handleSelectApp}
                                         onLocateApp={handleLocateApp}
+                                        onVerifyResult={handleVerifyResult}
                                     />
                                 )}
 
                                 {activeLayer === "trends" && (
                                     <TrendsPanel
                                         urbanGrowthData={urbanGrowthData}
-                                        landUseData={landUseData}
-                                        hotspots={hotspots}
                                         selectedBgy={selectedBgy}
                                         onClearBgy={() => setSelectedBgy(null)}
                                         onSelectBgy={(name) => handleSelectLocation({ label: name })}
-                                        onLocateEstablishment={handleLocateEstablishment}
-                                        year={year}
+                                        onLocateApp={handleLocateApp}
+                                        recent={timelineRecent}
                                     />
                                 )}
 
@@ -3099,5 +3136,13 @@ export default function Dashboard({ userName, userRole, total, thisMonth, status
                 );
             })()}
         </>
+    );
+}
+
+export default function Dashboard(props) {
+    return (
+        <MapsErrorBoundary>
+            <DashboardInner {...props} />
+        </MapsErrorBoundary>
     );
 }

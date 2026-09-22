@@ -80,7 +80,7 @@ export default function DiversityPanel({
         return overallDiversity?.distribution || [];
     }, [isBgy, bgyStat, matchedGeoBgy, overallDiversity]);
 
-    // Real area, from DashboardController's `land_area` column (PostGIS's own
+    // Real area, from MapsController's `land_area` column (PostGIS's own
     // boundary layer). This used to be a hardcoded municipal total — 14700,
     // literally in this file — that was 54% below the real ~22,666 ha, plus a
     // bundled static-fixture fallback per barangay that was also wrong (e.g.

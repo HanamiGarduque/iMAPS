@@ -47,6 +47,11 @@ class AuditTrail extends Model
         return $query->where('audit_trail.action', $action);
     }
 
+    public function scopeByUser(Builder $query, $userId): Builder
+    {
+        return $query->where('audit_trail.performed_by', $userId);
+    }
+
     public static function distinctActions(): Collection
     {
         return static::distinct()->orderBy('action')->pluck('action');

@@ -52,6 +52,8 @@ export default function Header({
         switch (firstSegment) {
             case 'dashboard':
                 return 'DASHBOARD';
+            case 'maps':
+                return 'MAPS';
             case 'applications':
             case 'drafts':
                 return 'APPLICATIONS';
@@ -76,6 +78,7 @@ export default function Header({
         if (currentComponent) {
             const comp = currentComponent.toLowerCase();
             if (comp.startsWith('dashboard')) return 'DASHBOARD';
+            if (comp.startsWith('maps')) return 'MAPS';
             if (comp.startsWith('applications') || comp.startsWith('drafts')) return 'APPLICATIONS';
             if (comp.startsWith('analytics')) return 'ANALYTICS';
             if (comp.startsWith('audittrail') || comp.startsWith('audit')) return 'AUDIT TRAIL';

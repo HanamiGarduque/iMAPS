@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { STATUS_MARKER_CONFIG } from '@/Components/MapLayers/StatusPanel';
 
 // Legend for the status, growth and CLUP layers.
 //
@@ -7,7 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 // deliberately no longer carries a second, competing diversity key.
 export default function MapLegend({
     activeLayer,
-    year = 2026,
+    urbanGrowthData = null,
 }) {
     const [isExpanded, setIsExpanded] = useState(true);
     const [isPinned, setIsPinned] = useState(() => {
@@ -38,7 +39,7 @@ export default function MapLegend({
             )
         },
         trends: {
-            title: `Land Use Trends (${year})`,
+            title: `Land Use Trends`,
             subtitle: "Urban Growth & Zones",
             icon: (
                 <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -251,67 +252,36 @@ export default function MapLegend({
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] ring-2 ring-emerald-200 shrink-0" />
-                                            <span className="text-[10.5px] font-semibold text-slate-700 truncate">Received</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] ring-2 ring-amber-200 shrink-0" />
-                                            <span className="text-[10.5px] font-semibold text-slate-700 truncate">Review</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-full bg-[#8b5cf6] ring-2 ring-purple-200 shrink-0" />
-                                            <span className="text-[10.5px] font-semibold text-slate-700 truncate">SB Hearing</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-full bg-[#0ea5e9] ring-2 ring-sky-200 shrink-0" />
-                                            <span className="text-[10.5px] font-semibold text-slate-700 truncate">For Release</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-full bg-[#4f46e5] ring-2 ring-indigo-200 shrink-0" />
-                                            <span className="text-[10.5px] font-semibold text-slate-700 truncate">Released</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-full bg-[#f43f5e] ring-2 ring-rose-200 shrink-0" />
-                                            <span className="text-[10.5px] font-semibold text-slate-700 truncate">Denied</span>
-                                        </div>
+                                        {Object.entries(STATUS_MARKER_CONFIG).map(([key, meta]) => (
+                                            <div key={key} className="flex items-center gap-1.5">
+                                                <span
+                                                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                                                    style={{ backgroundColor: meta.color, boxShadow: `0 0 0 2px ${meta.badgeBg}` }}
+                                                />
+                                                <span className="text-[10.5px] font-semibold text-slate-700 truncate">{meta.shortLabel}</span>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* 2. Trends Layer (Categorical Google Maps POI-Style Swatches) */}
+                        {/* 2. Trends Layer — CLUP mix (real, from backend) + permit pin key */}
                         {activeLayer === 'trends' && (
                             <div className="space-y-2">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                                    Land Use Zones
+                                    CLUP 2030 Land Use Mix
                                 </span>
 
                                 <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#84cc16] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Agricultural (81.7%)</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#22c55e] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Residential (7.3%)</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Commercial (5.2%)</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#64748b] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Special Proj (2.3%)</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Industrial (1.9%)</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#8b5cf6] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Agro-Ind (1.6%)</span>
-                                    </div>
+                                    {(urbanGrowthData?.municipal?.breakdown || []).map(([label, , , pct, color]) => (
+                                        <div key={label} className="flex items-center gap-1.5">
+                                            <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" style={{ backgroundColor: color }} />
+                                            <span className="text-[11px] font-medium text-slate-700 truncate">
+                                                {label} ({pct}%)
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
 
                                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-600">
@@ -326,24 +296,25 @@ export default function MapLegend({
                                 </div>
 
                                 <div className="pt-2 border-t border-slate-100 space-y-1">
-                                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                                        <span>Growth POIs ({year})</span>
-                                        <span className="text-[8.5px] font-mono font-semibold text-rose-600 bg-rose-50 px-1 py-0.2 rounded">
-                                            Google Maps
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-between text-[10px] text-slate-600">
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
+                                        Active Permit Pins
+                                    </span>
+                                    <div className="grid grid-cols-2 gap-x-2 gap-y-1">
                                         <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-md bg-[#f43f5e] shrink-0" />
-                                            <span>Mall / Retail</span>
+                                            <span className="w-2.5 h-2.5 rounded-md bg-[#f59e0b] shrink-0" />
+                                            <span className="text-[10px] text-slate-600">Commercial</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-2.5 h-2.5 rounded-md bg-[#ef4444] shrink-0" />
+                                            <span className="text-[10px] text-slate-600">Industrial</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-2.5 h-2.5 rounded-md bg-[#8b5cf6] shrink-0" />
+                                            <span className="text-[10px] text-slate-600">Agro-Industrial</span>
                                         </div>
                                         <div className="flex items-center gap-1.5">
                                             <span className="w-2.5 h-2.5 rounded-md bg-[#10b981] shrink-0" />
-                                            <span>Subdivision</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-md bg-[#2563eb] shrink-0" />
-                                            <span>Bypass Link</span>
+                                            <span className="text-[10px] text-slate-600">Residential</span>
                                         </div>
                                     </div>
                                 </div>

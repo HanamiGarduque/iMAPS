@@ -192,18 +192,26 @@ class MapController extends Controller
             // 1. ST_MakePoint creates the 2D coordinate from the frontend
             // 2. ST_SetSRID tags it as EPSG:4326 (Lat/Lng)
             // 3. ST_Force2D flattens your MultiPolygonZM to MultiPolygon so it can intersect
+            // land_use_plan.geom is declared SRID 4326 but its actual coordinates
+            // are frequently still raw Philippines Zone III eastings/northings
+            // (values in the 500,000s/1,500,000s) — ST_SRID() alone can't catch
+            // that since the column metadata itself says 4326. Detect it the
+            // same way warmLayerCache() below does: real lon/lat never exceeds
+            // 180/90, so a coordinate past that range is still projected.
             $query = "
-                SELECT lup_2030 
-                FROM land_use_plan 
+                SELECT lup_2030
+                FROM land_use_plan
                 WHERE ST_Intersects(
                     ST_MakeValid(ST_Force2D(
-                        CASE 
+                        CASE
+                            WHEN ST_XMax(geom) > 5000000 THEN ST_Transform(ST_SetSRID(geom, 3857), 4326)
+                            WHEN ST_XMax(geom) > 180 OR ST_YMax(geom) > 90 THEN ST_Transform(ST_SetSRID(geom, 25393), 4326)
                             WHEN ST_SRID(geom) = 0 THEN ST_SetSRID(geom, 4326)
                             WHEN ST_SRID(geom) != 4326 THEN ST_Transform(geom, 4326)
                             ELSE geom
                         END
                     )),
-                    
+
                     ST_SetSRID(ST_MakePoint(?, ?), 4326)
                 )
                 LIMIT 1

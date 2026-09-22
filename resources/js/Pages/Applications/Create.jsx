@@ -300,7 +300,6 @@ const emptyForm = () => ({
     date_of_receipt: new Date().toISOString().split("T")[0], // Default to today
     assessment_fee: "0.00",
     or_number: "",
-    remarks: "",
     
 
     parcels: [
@@ -546,6 +545,19 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const [errors, setErrors] = useState(serverErrors);
     const formRef = useRef(null);
 
+    // Set when arriving from the map's "Start Anyway (Requires Variance Review)"
+    // path so Step 1 can flag that this filing needs SB reclassification/variance.
+    // Reads (without clearing) the same handoff payload the `form` initializer
+    // below consumes and clears from sessionStorage.
+    const [varianceNotice, setVarianceNotice] = useState(() => {
+        try {
+            const raw = sessionStorage.getItem("imaps_verified_parcel_prefill");
+            return raw ? Boolean(JSON.parse(raw).requiresVariance) : false;
+        } catch (e) {
+            return false;
+        }
+    });
+
     // Smart Features State
     const [feeMode, setFeeMode] = useState("auto"); // 'auto' | 'manual'
     const [applicantSuggestion, setApplicantSuggestion] = useState(null);
@@ -586,11 +598,39 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             return {
                 ...baseForm,
                 ...validCloud,
-                parcels: Array.isArray(validCloud.parcels) && validCloud.parcels.length > 0 
-                         ? validCloud.parcels 
+                parcels: Array.isArray(validCloud.parcels) && validCloud.parcels.length > 0
+                         ? validCloud.parcels
                          : baseForm.parcels
             };
         }
+
+        // One-shot handoff from the Permits & Status map layer's "Verify Parcel"
+        // check (TCT/Tax Dec lookup + CLUP conformance) — see StatusPanel.jsx.
+        try {
+            const raw = sessionStorage.getItem("imaps_verified_parcel_prefill");
+            if (raw) {
+                sessionStorage.removeItem("imaps_verified_parcel_prefill");
+                const prefill = JSON.parse(raw);
+                return {
+                    ...baseForm,
+                    target_land_use_class: prefill.target_land_use_class || baseForm.target_land_use_class,
+                    parcels: [
+                        {
+                            ...baseForm.parcels[0],
+                            tct_number: prefill.tct_number || "",
+                            tax_dec_number: prefill.tax_dec_number || "",
+                            barangay: prefill.barangay || "",
+                            owner_name: prefill.owner_name || "",
+                            location_address: prefill.location_address || "",
+                            lot_area_sqm: prefill.lot_area_sqm || "",
+                            property_index_number: prefill.property_index_number || "",
+                            land_use_class: prefill.target_land_use_class || "",
+                        },
+                    ],
+                };
+            }
+        } catch (e) {}
+
         return baseForm;
     });
 
@@ -1913,15 +1953,34 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                 
                                                 {/* ── STEP 1: SCOPE & PURPOSE ── */}
                                                 {currentStep === 1 && (
-                                                    <StepCategory
-                                                        form={form}
-                                                        set={set}
-                                                        handleTypeSelect={handleTypeSelect}
-                                                        errors={errors}
-                                                        APPLICATION_TYPES={APPLICATION_TYPES}
-                                                        AMENDMENT_TYPES={AMENDMENT_TYPES}
-                                                        LAND_USE_CLASSES={LAND_USE_CLASSES}
-                                                    />
+                                                    <>
+                                                        {varianceNotice && (
+                                                            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs text-amber-800">
+                                                                <span className="text-sm">⚠️</span>
+                                                                <div className="flex-1">
+                                                                    <p className="font-bold">Zoning check flagged this parcel for variance review</p>
+                                                                    <p className="text-[11px] text-amber-700 mt-0.5">The requested zoning type did not conform to the barangay's CLUP classification. This filing may require Sangguniang Bayan reclassification or variance approval.</p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setVarianceNotice(false)}
+                                                                    className="text-amber-600 hover:text-amber-900 cursor-pointer shrink-0"
+                                                                    title="Dismiss"
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                        <StepCategory
+                                                            form={form}
+                                                            set={set}
+                                                            handleTypeSelect={handleTypeSelect}
+                                                            errors={errors}
+                                                            APPLICATION_TYPES={APPLICATION_TYPES}
+                                                            AMENDMENT_TYPES={AMENDMENT_TYPES}
+                                                            LAND_USE_CLASSES={LAND_USE_CLASSES}
+                                                        />
+                                                    </>
                                                 )}
 
                                                 {/* ── STEP 2: APPLICANT PROFILE ── */}

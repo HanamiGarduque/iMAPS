@@ -6,7 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http; 
+use Illuminate\Support\Facades\Http;
+use App\Models\AuditTrail;
 use Inertia\Inertia;
 
 class UserManagementController extends Controller
@@ -239,6 +240,27 @@ class UserManagementController extends Controller
         ]);
 
         return response()->json(['success' => true]);
+    }
+
+    public function logs($id)
+    {
+        $user = DB::table('users')->select('id', 'name', 'email', 'role')->where('id', $id)->first();
+
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'User not found.'], 404);
+        }
+
+        $logs = AuditTrail::withRelations()
+            ->byUser($id)
+            ->orderByDesc('audit_trail.performed_at')
+            ->limit(200)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'user' => $user,
+            'logs' => $logs,
+        ]);
     }
 
     public function resetPassword(Request $request)

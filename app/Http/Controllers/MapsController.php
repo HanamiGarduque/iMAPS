@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
-class DashboardController extends Controller
+class MapsController extends Controller
 {
     public function index(Request $request)
     {
@@ -509,8 +509,6 @@ class DashboardController extends Controller
                 'totalZones' => $totalMunZones,
                 'dominantUse' => $municipalBreakdown[0][0] . " (" . $municipalBreakdown[0][3] . "%)",
                 'dominantCategory' => $municipalBreakdown[0][0],
-                'activePhase' => 'CLUP 2030 Horizon',
-                'densityRate' => round(($totalMunArea / 10000) / max(1, count($bgyUrbanData)), 1) . " ha / Bgy",
                 'breakdown' => $municipalBreakdown,
             ],
             'byBarangay' => $byBarangayUrban,
@@ -522,7 +520,7 @@ class DashboardController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
-        return Inertia::render('Dashboard', [
+        return Inertia::render('Maps', [
             'userName'  => Auth::user()->name ?? 'Staff',
             'userRole'  => Auth::user()->role ?? 'User',
             'total'     => $total,

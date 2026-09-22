@@ -6,7 +6,7 @@ import { getLens } from "@/utils/diversityTheme";
 // "Plan Drift" — the lens iMAPS exists for: is what's actually being permitted
 // on the ground pulling away from what CLUP 2030 planned for?
 //
-// Every figure here comes from DashboardController: the live index, the CLUP
+// Every figure here comes from MapsController: the live index, the CLUP
 // target index, their variance, and the spatial-cluster directive with its
 // guideline text.
 export default function DriftTab({

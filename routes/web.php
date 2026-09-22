@@ -3,7 +3,7 @@
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\TechnicalReviewController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\AuditTrailController;
+use App\Http\Controllers\MapsController;
 use App\Http\Controllers\PublicPortalController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
@@ -32,11 +32,19 @@ Route::middleware('auth')->group(function () {
     // Place specific zoning lookup routes before the generic layer wildcard to avoid route collision
     Route::get('/api/map/zoning-lookup', [MapController::class, 'getZoningByCoordinates']);
     Route::get('/api/map/zoning-area-lookup', [MapController::class, 'getZoningByParcelArea']);
-    Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])->name('api.map.layer'); // Generic layer access (whitelisted inside controller) // Dashboard
+    Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])->name('api.map.layer'); // Generic layer access (whitelisted inside controller)
+
+    // Landing page after login: KPI/welcome/analytics overview
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
+
+    // Geospatial map view (zoning overlays, barangay boundaries, land-use diversity)
+    Route::get('/maps', [MapsController::class, 'index'])
+        ->name('maps.index');
     // Search
     Route::get('/api/global-search', [SearchController::class, 'globalSearch'])->middleware('auth');
+    // Parcel verification (TCT / Tax Dec lookup) for the Permits & Status map layer
+    Route::get('/api/parcels/verify', [SearchController::class, 'verifyParcel']);
     // Applications Docket List
     Route::get('/applications', [ApplicationController::class, 'index'])
         ->name('applications.index');
@@ -117,9 +125,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
     Route::post('/api/forecast', [AnalyticsController::class, 'forecast'])->name('analytics.forecast');
 
-    Route::get('/audit-log', [AuditTrailController::class, 'index'])
-        ->name('audit-log.index');
-        Route::get('/settings', [SettingsController::class, 'index'])
+    Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');
         
     Route::post('/settings/upload-shapefile', [SettingsController::class, 'uploadShapefile'])
@@ -129,6 +135,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     
     // User Management
     Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
+    Route::get('/users/{id}/logs', [UserManagementController::class, 'logs'])->name('users.logs');
     Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->name('users.sensitive');
     Route::post('/users/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
     Route::post('/users/{id}/update', [UserManagementController::class, 'updateProfile'])->name('users.update-profile');

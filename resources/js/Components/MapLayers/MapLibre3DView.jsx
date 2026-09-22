@@ -14,11 +14,7 @@ try {
     console.warn("MapLibre setWorkerUrl fallback:", e);
 }
 
-// Official Center & Geographic Bounds for Rosario, Batangas
-const ROSARIO_BOUNDS = [
-    [121.1648, 13.6892],
-    [121.3685, 13.8783],
-];
+// Official Center for Rosario, Batangas — also the fixed idle/deselected framing.
 const ROSARIO_CENTER = [121.258, 13.805];
 const DEFAULT_PITCH = 54;
 const DEFAULT_BEARING = -18;
@@ -166,7 +162,7 @@ const EMPTY_FC = { type: "FeatureCollection", features: [] };
 //
 // The geometry file still ships a baked `diversity`/`height`/`color` from the
 // day it was exported; none of it is read. Everything derives from bgyStats,
-// which DashboardController recomputes on every request — so the prisms and the
+// which MapsController recomputes on every request — so the prisms and the
 // side panel can never disagree about a barangay's score.
 //
 // Every value written into `properties` is a scalar: MapLibre serialises nested
@@ -220,6 +216,7 @@ function toCentroidCollection(fc) {
         })),
     };
 }
+
 
 // Parcels of one barangay, coloured by official flat CLUP category.
 //
@@ -327,14 +324,7 @@ export default function MapLibre3DView({
 
     const heightExpression = useCallback((lensId, flat) => {
         if (flat) return 0;
-        return [
-            "case",
-            // The selected barangay drops to the ground and opens up into its
-            // CLUP parcels, which stand in its place.
-            ["boolean", ["feature-state", "selected"], false],
-            0,
-            ["to-number", ["get", `h_${lensId}`]],
-        ];
+        return ["to-number", ["get", `h_${lensId}`]];
     }, []);
 
     const colorExpression = useCallback((lensId) => [
@@ -346,12 +336,10 @@ export default function MapLibre3DView({
 
     const opacityExpression = useCallback((lensId, band, hasSelection) => {
         if (hasSelection) {
-            // Isolation: the selected prism sits flattened at ground level
-            // (its height already collapses to 0 above) with its parcels
-            // standing through it, and everything else disappears rather than
-            // staying visible underneath — the band filter is moot while one
-            // barangay has the floor.
-            return ["case", ["boolean", ["feature-state", "selected"], false], 0.55, 0];
+            // Isolation: the selected prism remains fully visible while
+            // everything else disappears rather than staying visible underneath 
+            // — the band filter is moot while one barangay has the floor.
+            return ["case", ["boolean", ["feature-state", "selected"], false], 0.98, 0];
         }
         if (!band || band === "all") {
             return [
@@ -391,7 +379,7 @@ export default function MapLibre3DView({
             map.setPaintProperty(
                 LYR_PARCELS,
                 "fill-extrusion-height",
-                isFlatRef.current ? 0 : PARCEL_HEIGHT
+                0
             );
         }
 
@@ -448,16 +436,7 @@ export default function MapLibre3DView({
         if (!src) return;
 
         const fc = buildFeatures(baseGeoRef.current, bgyStats);
-
-        const index = {};
-        fc.features.forEach((f) => {
-            index[f.properties.name.toLowerCase()] = {
-                id: f.id,
-                centroid: [f.properties.cx, f.properties.cy],
-                properties: f.properties,
-            };
-        });
-        featureIndexRef.current = index;
+        featureIndexRef.current = buildFeatureIndex(fc);
 
         src.setData(fc);
         if (labelSrc) labelSrc.setData(toCentroidCollection(fc));
@@ -530,12 +509,18 @@ export default function MapLibre3DView({
 
     // ── Camera ───────────────────────────────────────────────────────────────
 
-    const cameraPadding = useCallback(() => ({
-        top: 80,
-        bottom: 120,
-        left: 70,
-        right: rightPanelOpen ? panelWidth + 50 : 70,
-    }), [rightPanelOpen, panelWidth]);
+    const cameraPadding = useCallback(() => {
+        const map = mapRef.current;
+        const w = map ? map.getCanvas().clientWidth : 1000;
+        const h = map ? map.getCanvas().clientHeight : 800;
+
+        return {
+            top: Math.min(100, h * 0.2),
+            bottom: Math.min(120, h * 0.2),
+            left: Math.min(320, w * 0.35),
+            right: Math.min(rightPanelOpen ? panelWidth + 50 : 70, w * 0.45),
+        };
+    }, [rightPanelOpen, panelWidth]);
 
     const flyToBarangay = useCallback((name) => {
         const map = mapRef.current;
@@ -546,12 +531,16 @@ export default function MapLibre3DView({
         if (flightTargetRef.current === entry.id) return;
         flightTargetRef.current = entry.id;
 
+        let calculatedZoom = 13.5;
+        if (entry.bounds && entry.bounds.optimalZoom) {
+            calculatedZoom = entry.bounds.optimalZoom;
+        }
+
         const target = {
             center: entry.centroid,
-            // Close enough that the barangay's parcels are legible once it
-            // opens up.
-            zoom: Math.max(map.getZoom(), 13.1),
-            pitch: Math.max(map.getPitch(), 45),
+            zoom: calculatedZoom,
+            pitch: 0,
+            bearing: 0,
             padding: cameraPadding(),
         };
 
@@ -569,12 +558,15 @@ export default function MapLibre3DView({
     const frameMunicipality = useCallback((animate = true) => {
         const map = mapRef.current;
         if (!map) return;
-        let target = null;
-        try {
-            const cam = map.cameraForBounds(ROSARIO_BOUNDS, { padding: cameraPadding() });
-            if (cam) target = { center: cam.center, zoom: Math.min(cam.zoom, 11.8), pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING };
-        } catch (e) { /* fall through */ }
-        if (!target) target = { center: ROSARIO_CENTER, zoom: 11.5, pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING };
+        // Always the same fixed idle framing — the exact center/zoom/pitch/
+        // bearing the view opens at on load. This used to be recomputed on
+        // every deselect via cameraForBounds(ROSARIO_BOUNDS, { padding }),
+        // which pulls the zoom in further (more zoomed OUT) whenever the
+        // right panel is open and eating into that padding — so clicking
+        // empty space to deselect would zoom out further than the map's own
+        // resting size. A fixed target makes "deselected" always look like
+        // the initial view, regardless of panel state.
+        const target = { center: ROSARIO_CENTER, zoom: 11.5, pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING };
         target.padding = cameraPadding();
 
         if (!animate || reducedRef.current) {
@@ -589,16 +581,7 @@ export default function MapLibre3DView({
 
     const setupLayers = useCallback((map) => {
         const fc = buildFeatures(baseGeoRef.current, bgyStats);
-
-        const index = {};
-        fc.features.forEach((f) => {
-            index[f.properties.name.toLowerCase()] = {
-                id: f.id,
-                centroid: [f.properties.cx, f.properties.cy],
-                properties: f.properties,
-            };
-        });
-        featureIndexRef.current = index;
+        featureIndexRef.current = buildFeatureIndex(fc);
 
         if (!map.getSource(SRC_PRISMS)) map.addSource(SRC_PRISMS, { type: "geojson", data: fc });
         if (!map.getSource(SRC_LABELS)) map.addSource(SRC_LABELS, { type: "geojson", data: toCentroidCollection(fc) });
@@ -805,6 +788,13 @@ export default function MapLibre3DView({
         const handleMove = (e) => {
             if (!e.features || !e.features.length) return;
             const feat = e.features[0];
+            const name = feat.properties.name;
+
+            if (selectedNameRef.current && selectedNameRef.current.toLowerCase() !== name.toLowerCase()) {
+                handleLeave();
+                return;
+            }
+
             map.getCanvas().style.cursor = "pointer";
 
             hoverPointRef.current = { x: e.point.x, y: e.point.y };
@@ -845,9 +835,16 @@ export default function MapLibre3DView({
 
         const handleClick = (e) => {
             if (!e.features || !e.features.length) return;
+            const name = e.features[0].properties.name;
+            // Any click that lands on a prism selects that barangay directly —
+            // including switching straight from one selected barangay to
+            // another. This used to treat "clicked a different barangay than
+            // the one already selected" as a background click, which deselected
+            // and flew the camera all the way back out to the municipal view
+            // instead of flying to the newly-clicked one.
             // Selection is state; the camera reacts to state in one place. This
             // handler deliberately does not move the camera itself.
-            callbacksRef.current.onFeatureClick?.(e.features[0].properties.name);
+            callbacksRef.current.onFeatureClick?.(name);
         };
 
         const handleBackgroundClick = (e) => {

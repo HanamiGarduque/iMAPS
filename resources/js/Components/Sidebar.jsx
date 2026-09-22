@@ -23,6 +23,17 @@ export default function Sidebar({
             adminOnly: false,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                </svg>
+            ),
+        },
+        {
+            href: '/maps',
+            label: 'Maps',
+            badge: null,
+            adminOnly: false,
+            icon: (
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                     <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
                     <line x1="9" y1="3" x2="9" y2="18" />
                     <line x1="15" y1="6" x2="15" y2="21" />
@@ -63,13 +74,13 @@ export default function Sidebar({
             ),
         },
         {
-            href: '/audit-log',
-            label: 'Audit Trail',
+            href: '/users',
+            label: 'User Management',
             badge: null,
             adminOnly: true,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
                 </svg>
             ),
         },
@@ -85,17 +96,6 @@ export default function Sidebar({
                 </svg>
             ),
         },
-        {
-            href: '/users',
-            label: 'User Management',
-            badge: null,
-            adminOnly: true,
-            icon: (
-                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                </svg>
-            ),
-        },
     ];
 
     const visibleItems = navItems.filter(item => !item.adminOnly || isAdmin);
@@ -104,11 +104,11 @@ export default function Sidebar({
         if (activePage) {
             const normalized = activePage.toLowerCase();
             if (href === '/dashboard' && normalized === 'dashboard') return true;
+            if (href === '/maps' && normalized === 'maps') return true;
             if (href === '/applications' && (normalized === 'applications' || normalized === 'drafts')) return true;
             if (href === '/analytics' && normalized === 'analytics') return true;
-            if (href === '/audit-log' && (normalized === 'audit' || normalized === 'audit-log')) return true;
             if (href === '/settings' && normalized === 'settings') return true;
-            if (href === '/users' && (normalized === 'users' || normalized === 'user-management')) return true;
+            if (href === '/users' && (normalized === 'users' || normalized === 'user-management' || normalized === 'audit' || normalized === 'audit-log')) return true;
             if (href === '/site-inspections' && (normalized === 'site-inspections' || normalized === 'site inspections')) return true;
         }
         if (currentPath === href) return true;
@@ -221,17 +221,6 @@ export default function Sidebar({
                         </Link>
                     );
                 })}
-            </div>
-
-            {/* Micro Footer */}
-            <div className="mt-1 pt-2 border-t border-slate-100 px-2.5 flex items-center justify-between text-[11px]">
-                <div className="flex items-center gap-1.5 font-semibold text-slate-700">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Rosario Municipal GIS</span>
-                </div>
-                <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
-                    v1.0
-                </span>
             </div>
         </div>
     );

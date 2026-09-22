@@ -25,16 +25,46 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
 
     // Modals
     const [statsModalUser, setStatsModalUser] = useState(null);
-    const [editingUser, setEditingUser] = useState(null);
-    const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-    // Password Reset Modal
-    const [passwordResetUser, setPasswordResetUser] = useState(null);
+    // Account Modal (Edit Profile <-> Reset Password, one modal, two views)
+    const [editingUser, setEditingUser] = useState(null);
+    const [accountModalView, setAccountModalView] = useState("profile"); // 'profile' | 'password'
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
     const [newPasswordInput, setNewPasswordInput] = useState("");
     const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
     const [showResetPassword, setShowResetPassword] = useState(false);
     const [passwordResetError, setPasswordResetError] = useState("");
     const [isResettingPassword, setIsResettingPassword] = useState(false);
+
+    const closeAccountModal = () => {
+        setEditingUser(null);
+        setAccountModalView("profile");
+        setNewPasswordInput("");
+        setConfirmPasswordInput("");
+        setPasswordResetError("");
+        setShowResetPassword(false);
+    };
+
+    const openPasswordView = () => {
+        setAccountModalView("password");
+        setNewPasswordInput("");
+        setConfirmPasswordInput("");
+        setPasswordResetError("");
+    };
+
+    const backToProfileView = () => {
+        setAccountModalView("profile");
+        setNewPasswordInput("");
+        setConfirmPasswordInput("");
+        setPasswordResetError("");
+    };
+
+    // View Logs Modal (per-user audit trail)
+    const [logsModalUser, setLogsModalUser] = useState(null);
+    const [userLogs, setUserLogs] = useState([]);
+    const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+    const [logsError, setLogsError] = useState("");
+    const [expandedLogId, setExpandedLogId] = useState(null);
 
     const handleSetViewMode = (mode) => {
         setViewMode(mode);
@@ -77,18 +107,24 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         const handleKeyDown = (e) => {
             if (e.key === "Escape") {
                 if (statsModalUser) setStatsModalUser(null);
-                if (editingUser) setEditingUser(null);
-                if (passwordResetUser) {
-                    setPasswordResetUser(null);
-                    setNewPasswordInput("");
-                    setConfirmPasswordInput("");
-                    setPasswordResetError("");
+                if (editingUser) {
+                    if (accountModalView === "password") {
+                        backToProfileView();
+                    } else {
+                        closeAccountModal();
+                    }
+                }
+                if (logsModalUser) {
+                    setLogsModalUser(null);
+                    setUserLogs([]);
+                    setLogsError("");
+                    setExpandedLogId(null);
                 }
             }
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [statsModalUser, editingUser, passwordResetUser]);
+    }, [statsModalUser, editingUser, accountModalView, logsModalUser]);
 
     const applyFilter = (newFilters) => {
         router.get(
@@ -206,6 +242,48 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         }
     };
 
+    const formatLogTime = (dateString) => {
+        if (!dateString) return "";
+        try {
+            return new Date(dateString).toLocaleTimeString("en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+            });
+        } catch {
+            return "";
+        }
+    };
+
+    const formatActionLabel = (action) => {
+        if (!action) return "Event";
+        return action
+            .replace(/_/g, " ")
+            .toLowerCase()
+            .replace(/\b\w/g, (char) => char.toUpperCase());
+    };
+
+    // Open the per-user log drawer and fetch that user's audit trail
+    const openLogs = async (user) => {
+        setLogsModalUser(user);
+        setUserLogs([]);
+        setLogsError("");
+        setExpandedLogId(null);
+        setIsLoadingLogs(true);
+        try {
+            const response = await axios.get(`/users/${user.id}/logs`, {
+                headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+            });
+            if (response.data.success) {
+                setUserLogs(response.data.logs || []);
+            }
+        } catch (error) {
+            setLogsError(error.response?.data?.message || "Failed to load activity logs for this user.");
+        } finally {
+            setIsLoadingLogs(false);
+        }
+    };
+
     // Role badge configuration matching the exact design
     const getRoleBadge = (role) => {
         switch (role) {
@@ -269,7 +347,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                     showConfirmButton: false,
                     timer: 2000,
                 });
-                setEditingUser(null);
+                closeAccountModal();
                 router.reload({ only: ["users"] });
             }
         } catch (error) {
@@ -291,7 +369,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
     // Submit Force Password Reset
     const submitForcePasswordReset = async (e) => {
         e.preventDefault();
-        if (!passwordResetUser) return;
+        if (!editingUser) return;
 
         if (!newPasswordInput || !confirmPasswordInput) {
             setPasswordResetError("Both password fields are required.");
@@ -316,7 +394,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
             const response = await axios.post(
                 "/users/reset-password",
                 {
-                    target_user_id: passwordResetUser.id,
+                    target_user_id: editingUser.id,
                     new_password: newPasswordInput,
                 },
                 {
@@ -337,9 +415,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                     showConfirmButton: false,
                     timer: 2200,
                 });
-                setPasswordResetUser(null);
-                setNewPasswordInput("");
-                setConfirmPasswordInput("");
+                backToProfileView();
             }
         } catch (error) {
             const msg = error.response?.data?.message || "Password reset failed. Please verify credentials.";
@@ -356,10 +432,10 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 
-                #users-page-root {
+                #users-page-root, .imaps-users-scope {
                     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 }
-                .font-mono {
+                #users-page-root .font-mono, .imaps-users-scope .font-mono {
                     font-family: 'JetBrains Mono', monospace !important;
                 }
 
@@ -402,13 +478,21 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
 
                         {/* ── HEADER SECTION ── */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 shrink-0">
-                            <div>
-                                <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                                    User Management
-                                </h1>
-                                <p className="text-xs text-slate-500 mt-1">
-                                    Manage municipal planning staff, site inspectors, and system administrators.
-                                </p>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                                    </svg>
+                                </div>
+                                <div className="flex items-center gap-2.5 flex-wrap">
+                                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                                        User Management
+                                    </h1>
+                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        {summaryStats.total} {summaryStats.total === 1 ? "Account" : "Accounts"}
+                                    </span>
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-2.5">
@@ -574,6 +658,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                 <th className="py-3 px-4">Role</th>
                                                 <th className="py-3 px-4">Status</th>
                                                 <th className="py-3 px-4">Last Active</th>
+                                                <th className="py-3 px-4 text-center">View Logs</th>
                                                 <th className="py-3 px-5 text-right">Actions</th>
                                             </tr>
                                         </thead>
@@ -650,6 +735,21 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                             </div>
                                                         </td>
 
+                                                        {/* View Logs Column (dedicated, matches reference layout) */}
+                                                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openLogs(u)}
+                                                                title="View Activity Logs"
+                                                                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-200 shadow-2xs transition-colors cursor-pointer"
+                                                            >
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                </svg>
+                                                            </button>
+                                                        </td>
+
                                                         {/* Actions Column */}
                                                         <td className="py-3.5 px-5 text-right whitespace-nowrap">
                                                             <div className="flex items-center justify-end gap-1.5">
@@ -668,28 +768,12 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
 
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => setEditingUser({ ...u })}
-                                                                    title="Edit Profile"
+                                                                    onClick={() => { setEditingUser({ ...u }); setAccountModalView("profile"); }}
+                                                                    title="Edit Account"
                                                                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 border border-slate-200/80 hover:border-slate-300 shadow-2xs transition-colors cursor-pointer"
                                                                 >
                                                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H8.25A2.25 2.25 0 016 18.75V14" />
-                                                                    </svg>
-                                                                </button>
-
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setPasswordResetUser(u);
-                                                                        setNewPasswordInput("");
-                                                                        setConfirmPasswordInput("");
-                                                                        setPasswordResetError("");
-                                                                    }}
-                                                                    title="Reset Password"
-                                                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200/80 hover:border-rose-200 shadow-2xs transition-colors cursor-pointer"
-                                                                >
-                                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
                                                                     </svg>
                                                                 </button>
                                                             </div>
@@ -781,27 +865,23 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                     )}
                                                     <button
                                                         type="button"
-                                                        onClick={() => setEditingUser({ ...u })}
-                                                        title="Edit Profile"
-                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 border border-slate-200/80 hover:border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                                                        onClick={() => openLogs(u)}
+                                                        title="View Activity Logs"
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-200 shadow-2xs transition-colors cursor-pointer"
                                                     >
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H8.25A2.25 2.25 0 016 18.75V14" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                                         </svg>
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        onClick={() => {
-                                                            setPasswordResetUser(u);
-                                                            setNewPasswordInput("");
-                                                            setConfirmPasswordInput("");
-                                                            setPasswordResetError("");
-                                                        }}
-                                                        title="Reset Password"
-                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200/80 hover:border-rose-200 shadow-2xs transition-colors cursor-pointer"
+                                                        onClick={() => { setEditingUser({ ...u }); setAccountModalView("profile"); }}
+                                                        title="Edit Account"
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 border border-slate-200/80 hover:border-slate-300 shadow-2xs transition-colors cursor-pointer"
                                                     >
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H8.25A2.25 2.25 0 016 18.75V14" />
                                                         </svg>
                                                     </button>
                                                 </div>
@@ -844,33 +924,41 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
             </div >
         </div >
 
+        <div className="imaps-users-scope">
         {/* ── MODAL 1: OFFICER & INSPECTOR METRICS ── */}
         {
             statsModalUser && (
                 <div
                     role="dialog"
                     aria-modal="true"
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
+                    className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
                 >
-                    <div className="bg-white rounded-2xl w-full max-w-xl flex flex-col shadow-xl border border-slate-200 overflow-hidden font-sans">
-                        <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
-                            <div className="flex items-center gap-3">
-                                <div
-                                    className={`w-9 h-9 rounded-full flex items-center justify-center font-semibold text-xs border ${getRoleBadge(statsModalUser.role).avatarBg
-                                        }`}
-                                >
-                                    {getInitials(statsModalUser.name)}
+                    <div className="bg-white rounded-2xl w-full max-w-xl flex flex-col shadow-2xl border border-slate-200/80 overflow-hidden">
+                        <div className="flex items-center justify-between gap-3 p-5 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white shrink-0">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="relative shrink-0">
+                                    <div
+                                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs border ${getRoleBadge(statsModalUser.role).avatarBg
+                                            }`}
+                                    >
+                                        {getInitials(statsModalUser.name)}
+                                    </div>
+                                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white bg-blue-600 text-white shadow-sm">
+                                        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                                        </svg>
+                                    </div>
                                 </div>
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <h2 className="text-sm font-bold text-slate-900">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h2 className="text-sm font-bold text-slate-900 tracking-tight truncate">
                                             {statsModalUser.name}
                                         </h2>
-                                        <span className="text-[10px] px-2 py-0.5 rounded border border-slate-200 bg-white font-medium text-slate-600">
-                                            {statsModalUser.role}
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-blue-200 bg-blue-50 font-semibold text-blue-700">
+                                            Metrics
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-400 font-mono mt-0.5">
+                                    <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">
                                         {statsModalUser.email}
                                     </p>
                                 </div>
@@ -879,15 +967,15 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                             <button
                                 type="button"
                                 onClick={() => setStatsModalUser(null)}
-                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+                                className="shrink-0 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors"
                             >
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
                         </div>
 
-                        <div className="p-5 overflow-y-auto max-h-[75vh] space-y-4 text-xs">
+                        <div className="p-5 overflow-y-auto max-h-[70vh] space-y-4 text-xs">
                             {statsModalUser.role === "Planning Officer" && (
                                 <>
                                     <div className="grid grid-cols-3 gap-3">
@@ -983,11 +1071,11 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                             )}
                         </div>
 
-                        <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+                        <div className="p-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end shrink-0">
                             <button
                                 type="button"
                                 onClick={() => setStatsModalUser(null)}
-                                className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold cursor-pointer transition-colors"
+                                className="px-3.5 py-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-xs font-semibold text-slate-600 cursor-pointer transition-colors"
                             >
                                 Close
                             </button>
@@ -997,208 +1085,442 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
             )
         }
 
-        {/* ── MODAL 2: EDIT USER PROFILE ── */}
+        {/* ── MODAL 2: ACCOUNT (Edit Profile, with Reset Password as an in-modal view) ── */}
         {
             editingUser && (
                 <div
                     role="dialog"
                     aria-modal="true"
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
+                    className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
                 >
-                    <div className="bg-white rounded-2xl w-full max-w-md flex flex-col shadow-xl border border-slate-200 overflow-hidden font-sans">
-                        <div className="flex items-center justify-between p-5 border-b border-slate-100">
-                            <div>
-                                <h3 className="text-sm font-bold text-slate-900">Edit Account</h3>
-                                <p className="text-xs text-slate-400 mt-0.5">Modify profile and access status.</p>
+                    <div className="bg-white rounded-2xl w-full max-w-md flex flex-col shadow-2xl border border-slate-200/80 overflow-hidden">
+                        <div className="flex items-center justify-between gap-3 p-5 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white shrink-0">
+                            <div className="flex items-center gap-3 min-w-0">
+                                {accountModalView === "password" && (
+                                    <button
+                                        type="button"
+                                        onClick={backToProfileView}
+                                        title="Back to Account"
+                                        className="shrink-0 text-slate-400 hover:text-slate-700 p-1.5 -ml-1 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+                                        </svg>
+                                    </button>
+                                )}
+                                <div className="relative shrink-0">
+                                    <div
+                                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs border ${getRoleBadge(editingUser.role).avatarBg}`}
+                                    >
+                                        {getInitials(editingUser.name)}
+                                    </div>
+                                    <div
+                                        className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white text-white shadow-sm transition-colors ${accountModalView === "password" ? "bg-rose-600" : "bg-blue-600"
+                                            }`}
+                                    >
+                                        {accountModalView === "password" ? (
+                                            <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                                            </svg>
+                                        ) : (
+                                            <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h3 className="text-sm font-bold text-slate-900 tracking-tight truncate">
+                                            {accountModalView === "password" ? "Reset Password" : "Edit Account"}
+                                        </h3>
+                                        <span
+                                            className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${accountModalView === "password"
+                                                ? "border-rose-200 bg-rose-50 text-rose-700"
+                                                : "border-blue-200 bg-blue-50 text-blue-700"
+                                                }`}
+                                        >
+                                            {accountModalView === "password" ? "Security" : editingUser.role}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">{editingUser.email}</p>
+                                </div>
                             </div>
                             <button
                                 type="button"
-                                onClick={() => setEditingUser(null)}
-                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+                                onClick={closeAccountModal}
+                                className="shrink-0 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors"
                             >
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
                         </div>
 
-                        <form onSubmit={submitEditProfile} className="p-5 space-y-4">
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Full Name</label>
-                                <input
-                                    type="text"
-                                    value={editingUser.name}
-                                    onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                                    required
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Email Address</label>
-                                <input
-                                    type="email"
-                                    value={editingUser.email}
-                                    onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                                    required
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1.5">Account Status</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setEditingUser({ ...editingUser, is_active: true })}
-                                        className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors ${editingUser.is_active
-                                            ? "bg-emerald-50 border-emerald-300 text-emerald-800 font-semibold"
-                                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                                            }`}
-                                    >
-                                        <span className={`w-1.5 h-1.5 rounded-full ${editingUser.is_active ? "bg-emerald-500" : "bg-slate-300"}`}></span>
-                                        Active
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => setEditingUser({ ...editingUser, is_active: false })}
-                                        className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors ${!editingUser.is_active
-                                            ? "bg-rose-50 border-rose-300 text-rose-800 font-semibold"
-                                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                                            }`}
-                                    >
-                                        <span className={`w-1.5 h-1.5 rounded-full ${!editingUser.is_active ? "bg-rose-500" : "bg-slate-300"}`}></span>
-                                        Suspended
-                                    </button>
+                        {accountModalView === "profile" ? (
+                            <form
+                                key="profile-view"
+                                onSubmit={submitEditProfile}
+                                className="p-5 space-y-4 animate-in fade-in slide-in-from-left-2 duration-200"
+                            >
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">Full Name</label>
+                                    <input
+                                        type="text"
+                                        value={editingUser.name}
+                                        onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        required
+                                    />
                                 </div>
-                            </div>
 
-                            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const userToReset = { ...editingUser };
-                                        setEditingUser(null);
-                                        setPasswordResetUser(userToReset);
-                                        setNewPasswordInput("");
-                                        setConfirmPasswordInput("");
-                                        setPasswordResetError("");
-                                    }}
-                                    className="text-xs font-medium text-rose-600 hover:text-rose-700 cursor-pointer hover:underline"
-                                >
-                                    Reset Password
-                                </button>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">Email Address</label>
+                                    <input
+                                        type="email"
+                                        value={editingUser.email}
+                                        onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        required
+                                    />
+                                </div>
 
-                                <div className="flex items-center gap-2">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1.5">Account Status</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingUser({ ...editingUser, is_active: true })}
+                                            className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors ${editingUser.is_active
+                                                ? "bg-emerald-50 border-emerald-300 text-emerald-800 font-semibold"
+                                                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                }`}
+                                        >
+                                            <span className={`w-1.5 h-1.5 rounded-full ${editingUser.is_active ? "bg-emerald-500" : "bg-slate-300"}`}></span>
+                                            Active
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingUser({ ...editingUser, is_active: false })}
+                                            className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors ${!editingUser.is_active
+                                                ? "bg-rose-50 border-rose-300 text-rose-800 font-semibold"
+                                                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                }`}
+                                        >
+                                            <span className={`w-1.5 h-1.5 rounded-full ${!editingUser.is_active ? "bg-rose-500" : "bg-slate-300"}`}></span>
+                                            Suspended
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                                     <button
                                         type="button"
-                                        onClick={() => setEditingUser(null)}
-                                        className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-600 cursor-pointer"
+                                        onClick={openPasswordView}
+                                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 cursor-pointer transition-colors"
                                     >
-                                        Cancel
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                                        </svg>
+                                        Reset Password
+                                    </button>
+
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={closeAccountModal}
+                                            className="px-3.5 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600 cursor-pointer transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={isSavingProfile}
+                                            className="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm disabled:opacity-50 cursor-pointer transition-colors"
+                                        >
+                                            {isSavingProfile ? "Saving…" : "Save Changes"}
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        ) : (
+                            <form
+                                key="password-view"
+                                onSubmit={submitForcePasswordReset}
+                                className="p-5 space-y-3 animate-in fade-in slide-in-from-right-2 duration-200"
+                            >
+                                {passwordResetError && (
+                                    <div className="p-2 rounded-md bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                                        {passwordResetError}
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">New Password</label>
+                                    <input
+                                        type={showResetPassword ? "text" : "password"}
+                                        value={newPasswordInput}
+                                        onChange={(e) => setNewPasswordInput(e.target.value)}
+                                        placeholder="At least 8 characters"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">Confirm Password</label>
+                                    <input
+                                        type={showResetPassword ? "text" : "password"}
+                                        value={confirmPasswordInput}
+                                        onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                                        placeholder="Re-type new password"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-1.5 pt-1">
+                                    <input
+                                        id="show-pass"
+                                        type="checkbox"
+                                        checked={showResetPassword}
+                                        onChange={(e) => setShowResetPassword(e.target.checked)}
+                                        className="rounded border-slate-300 text-blue-600 text-xs"
+                                    />
+                                    <label htmlFor="show-pass" className="text-xs text-slate-500 cursor-pointer">
+                                        Show password
+                                    </label>
+                                </div>
+
+                                <div className="flex items-center justify-end gap-2 pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={backToProfileView}
+                                        className="px-3.5 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600 cursor-pointer transition-colors"
+                                    >
+                                        Back
                                     </button>
                                     <button
                                         type="submit"
-                                        disabled={isSavingProfile}
-                                        className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
+                                        disabled={isResettingPassword}
+                                        className="px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm disabled:opacity-50 cursor-pointer transition-colors"
                                     >
-                                        {isSavingProfile ? "Saving..." : "Save"}
+                                        {isResettingPassword ? "Updating…" : "Confirm Reset"}
                                     </button>
                                 </div>
-                            </div>
-                        </form>
+                            </form>
+                        )}
                     </div>
                 </div>
             )
         }
 
-        {/* ── MODAL 3: RESET PASSWORD ── */}
+        {/* ── MODAL 4: PER-USER ACTIVITY LOGS ── */}
         {
-            passwordResetUser && (
+            logsModalUser && (
                 <div
                     role="dialog"
                     aria-modal="true"
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs"
+                    className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
                 >
-                    <div className="bg-white rounded-2xl w-full max-w-sm flex flex-col shadow-xl border border-slate-200 overflow-hidden font-sans">
-                        <div className="p-5 border-b border-slate-100">
-                            <h3 className="text-sm font-bold text-slate-900">Reset Password</h3>
-                            <p className="text-xs text-slate-500 mt-1">
-                                Set a new password for <b>{passwordResetUser.name}</b>.
-                            </p>
+                    <div className="bg-white rounded-2xl w-full max-w-5xl flex flex-col shadow-2xl border border-slate-200/80 overflow-hidden max-h-[70vh]">
+                        <div className="flex items-center justify-between gap-3 p-5 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white shrink-0">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="relative shrink-0">
+                                    <div
+                                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs border ${getRoleBadge(logsModalUser.role).avatarBg}`}
+                                    >
+                                        {getInitials(logsModalUser.name)}
+                                    </div>
+                                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white bg-indigo-600 text-white shadow-sm">
+                                        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h2 className="text-sm font-bold text-slate-900 tracking-tight truncate">
+                                            {logsModalUser.name}
+                                        </h2>
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-indigo-200 bg-indigo-50 font-semibold text-indigo-700">
+                                            Activity Log
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">
+                                        {logsModalUser.email}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setLogsModalUser(null);
+                                    setUserLogs([]);
+                                    setLogsError("");
+                                    setExpandedLogId(null);
+                                }}
+                                className="shrink-0 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
                         </div>
 
-                        <form onSubmit={submitForcePasswordReset} className="p-5 space-y-3">
-                            {passwordResetError && (
-                                <div className="p-2 rounded-md bg-rose-50 border border-rose-200 text-xs text-rose-700">
-                                    {passwordResetError}
+                        <div className="overflow-x-auto overflow-y-auto flex-1">
+                            {isLoadingLogs ? (
+                                <div className="p-12 text-center">
+                                    <div className="w-8 h-8 rounded-full border-2 border-slate-200 border-t-indigo-500 animate-spin mx-auto mb-3" />
+                                    <p className="text-xs text-slate-400 font-medium">Loading activity logs…</p>
                                 </div>
+                            ) : logsError ? (
+                                <div className="p-12 text-center">
+                                    <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-500 mx-auto flex items-center justify-center mb-3">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-sm font-semibold text-slate-800">Couldn't load logs</h3>
+                                    <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">{logsError}</p>
+                                </div>
+                            ) : userLogs.length === 0 ? (
+                                <div className="p-12 text-center">
+                                    <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-sm font-semibold text-slate-800">No activity recorded</h3>
+                                    <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                                        This user has no audit trail events yet.
+                                    </p>
+                                </div>
+                            ) : (
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200/80">
+                                        <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                            <th className="py-2.5 px-5 w-28">Time</th>
+                                            <th className="py-2.5 px-4">Event</th>
+                                            <th className="py-2.5 px-4">Reference</th>
+                                            <th className="py-2.5 px-4">Description</th>
+                                            <th className="py-2.5 px-4 w-8"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 text-xs">
+                                        {userLogs.map((log) => {
+                                            const isExpanded = expandedLogId === log.id;
+                                            return (
+                                                <React.Fragment key={log.id}>
+                                                    <tr
+                                                        onClick={() => setExpandedLogId((prev) => (prev === log.id ? null : log.id))}
+                                                        className="hover:bg-slate-50/70 transition-colors cursor-pointer select-none"
+                                                    >
+                                                        <td className="py-3 px-5 align-top font-mono whitespace-nowrap">
+                                                            <div className="text-xs font-semibold text-slate-800">
+                                                                {formatLogTime(log.performed_at) || "—"}
+                                                            </div>
+                                                            <div className="text-[10.5px] text-slate-400 font-medium">
+                                                                {formatDateOnly(log.performed_at)}
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-3 px-4 align-top whitespace-nowrap">
+                                                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                                                {formatActionLabel(log.action)}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-3 px-4 align-top whitespace-nowrap">
+                                                            {log.reference_number ? (
+                                                                <Link
+                                                                    href={`/applications?search=${log.reference_number}`}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className="font-mono text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline"
+                                                                >
+                                                                    {log.reference_number}
+                                                                </Link>
+                                                            ) : (
+                                                                <span className="text-slate-300">—</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 px-4 align-top text-slate-600 max-w-sm truncate">
+                                                            {log.note || "Routine compliance event recorded with no additional remarks."}
+                                                        </td>
+                                                        <td className="py-3 px-4 align-top text-right">
+                                                            <svg
+                                                                className={`w-4 h-4 text-slate-400 inline-block transition-transform duration-200 ${isExpanded ? "rotate-180 text-blue-600" : ""}`}
+                                                                fill="none"
+                                                                viewBox="0 0 24 24"
+                                                                stroke="currentColor"
+                                                                strokeWidth="2"
+                                                            >
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                            </svg>
+                                                        </td>
+                                                    </tr>
+
+                                                    {isExpanded && (
+                                                        <tr>
+                                                            <td colSpan={5} className="px-5 pb-4 pt-0 bg-slate-50/90 border-t border-slate-100 text-xs">
+                                                                <div className="p-3 rounded-lg bg-white border border-slate-200/90 shadow-2xs space-y-2 font-mono">
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-[11px]">
+                                                                        <div>
+                                                                            <span className="text-slate-400">Exact Timestamp: </span>
+                                                                            <span className="text-slate-800 font-medium">{log.performed_at || "—"}</span>
+                                                                        </div>
+                                                                        <div>
+                                                                            <span className="text-slate-400">Action Type: </span>
+                                                                            <span className="text-slate-800 font-medium">{log.action}</span>
+                                                                        </div>
+                                                                        {log.applicant_name && (
+                                                                            <div className="sm:col-span-2">
+                                                                                <span className="text-slate-400">Applicant: </span>
+                                                                                <span className="text-slate-800 font-medium">{log.applicant_name}</span>
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="sm:col-span-2">
+                                                                            <span className="text-slate-400">Description: </span>
+                                                                            <span className="text-slate-800 font-sans">
+                                                                                {log.note || "No additional remarks."}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
                             )}
+                        </div>
 
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">New Password</label>
-                                <input
-                                    type={showResetPassword ? "text" : "password"}
-                                    value={newPasswordInput}
-                                    onChange={(e) => setNewPasswordInput(e.target.value)}
-                                    placeholder="At least 8 characters"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                                    required
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-medium text-slate-700 mb-1">Confirm Password</label>
-                                <input
-                                    type={showResetPassword ? "text" : "password"}
-                                    value={confirmPasswordInput}
-                                    onChange={(e) => setConfirmPasswordInput(e.target.value)}
-                                    placeholder="Re-type new password"
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                                    required
-                                />
-                            </div>
-
-                            <div className="flex items-center gap-1.5 pt-1">
-                                <input
-                                    id="show-pass"
-                                    type="checkbox"
-                                    checked={showResetPassword}
-                                    onChange={(e) => setShowResetPassword(e.target.checked)}
-                                    className="rounded border-slate-300 text-blue-600 text-xs"
-                                />
-                                <label htmlFor="show-pass" className="text-xs text-slate-500 cursor-pointer">
-                                    Show password
-                                </label>
-                            </div>
-
-                            <div className="flex items-center justify-end gap-2 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setPasswordResetUser(null);
-                                        setNewPasswordInput("");
-                                        setConfirmPasswordInput("");
-                                        setPasswordResetError("");
-                                    }}
-                                    className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-600 cursor-pointer"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isResettingPassword}
-                                    className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer"
-                                >
-                                    {isResettingPassword ? "Updating..." : "Confirm Reset"}
-                                </button>
-                            </div>
-                        </form>
+                        <div className="p-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between shrink-0">
+                            <span className="text-[11px] font-medium text-slate-400">
+                                {userLogs.length} {userLogs.length === 1 ? "event" : "events"} recorded
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setLogsModalUser(null);
+                                    setUserLogs([]);
+                                    setLogsError("");
+                                    setExpandedLogId(null);
+                                }}
+                                className="px-3.5 py-2 rounded-lg border border-slate-200 hover:bg-slate-100 text-xs font-semibold text-slate-600 cursor-pointer transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 </div>
             )
         }
+        </div>
     </>
 );
 }

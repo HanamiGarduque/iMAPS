@@ -1,44 +1,87 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { router } from '@inertiajs/react';
+import { getZoneInfo } from '@/utils/clupZones';
 
-// ── Refined Executive Status Configuration (Clean Slate with Subtle Semantic Dots) ──
-export const STATUS_CONFIG = {
+// ── Single Source of Truth for Status Color/Style (pins, popups, chips, legend) ──
+// Previously this lived three times (Maps.jsx pins, this file's chips, MapLegend's
+// swatches) with mismatched hex values — e.g. "Received" was emerald on the pin
+// but sky-blue on the chip. Everything now reads from here.
+export const STATUS_MARKER_CONFIG = {
     "Received": {
+        shortLabel: "Received",
         label: "Received",
-        dot: "bg-sky-500",
+        color: "#10b981", // Emerald Green
+        border: "#059669",
+        badgeBg: "#ecfdf5",
+        badgeText: "#065f46",
+        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`
     },
     "Technical Review": {
+        shortLabel: "Review",
         label: "Technical Review",
-        dot: "bg-amber-500",
+        color: "#f59e0b", // Amber Gold
+        border: "#d97706",
+        badgeBg: "#fffbeb",
+        badgeText: "#92400e",
+        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
     },
     "Under Sangguniang Bayan": {
-        label: "SB Hearing",
-        dot: "bg-violet-500",
+        shortLabel: "SB Hearing",
+        label: "Under SB Hearing",
+        color: "#8b5cf6", // Purple
+        border: "#7c3aed",
+        badgeBg: "#f5f3ff",
+        badgeText: "#5b21b6",
+        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="5 6 12 3 19 6"/><line x1="4" y1="10" x2="4" y2="21"/><line x1="20" y1="10" x2="20" y2="21"/><line x1="8" y1="14" x2="8" y2="17"/><line x1="12" y1="14" x2="12" y2="17"/><line x1="16" y1="14" x2="16" y2="17"/></svg>`
     },
     "For Release": {
+        shortLabel: "For Release",
         label: "For Release",
-        dot: "bg-teal-500",
+        color: "#0ea5e9", // Sky Blue
+        border: "#0284c7",
+        badgeBg: "#f0f9ff",
+        badgeText: "#075985",
+        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
     },
     "Released": {
+        shortLabel: "Released",
         label: "Released",
-        dot: "bg-slate-800",
+        color: "#4f46e5", // Royal Indigo
+        border: "#4338ca",
+        badgeBg: "#eef2ff",
+        badgeText: "#3730a3",
+        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`
     },
     "Denied": {
+        shortLabel: "Denied",
         label: "Denied",
-        dot: "bg-rose-500",
+        color: "#f43f5e", // Rose Red
+        border: "#e11d48",
+        badgeBg: "#fff1f2",
+        badgeText: "#9f1239",
+        iconSvg: `<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`
     },
 };
 
-export const getStatusConfig = (status) => {
-    if (!status) return STATUS_CONFIG["Received"];
+export const getStatusMarkerConfig = (status) => {
+    if (!status) return STATUS_MARKER_CONFIG["Received"];
     const s = String(status).trim();
-    if (STATUS_CONFIG[s]) return STATUS_CONFIG[s];
-    if (s.toLowerCase().includes("review")) return STATUS_CONFIG["Technical Review"];
-    if (s.toLowerCase().includes("sangguniang") || s.toLowerCase().includes("bayan")) return STATUS_CONFIG["Under Sangguniang Bayan"];
-    if (s.toLowerCase().includes("for release")) return STATUS_CONFIG["For Release"];
-    if (s.toLowerCase().includes("release") || s.toLowerCase().includes("approved")) return STATUS_CONFIG["Released"];
-    if (s.toLowerCase().includes("denied") || s.toLowerCase().includes("reject")) return STATUS_CONFIG["Denied"];
-    return STATUS_CONFIG["Received"];
+    if (STATUS_MARKER_CONFIG[s]) return STATUS_MARKER_CONFIG[s];
+    if (s.toLowerCase().includes("review")) return STATUS_MARKER_CONFIG["Technical Review"];
+    if (s.toLowerCase().includes("sangguniang") || s.toLowerCase().includes("bayan")) return STATUS_MARKER_CONFIG["Under Sangguniang Bayan"];
+    if (s.toLowerCase().includes("for release")) return STATUS_MARKER_CONFIG["For Release"];
+    if (s.toLowerCase().includes("release") || s.toLowerCase().includes("approved")) return STATUS_MARKER_CONFIG["Released"];
+    if (s.toLowerCase().includes("denied") || s.toLowerCase().includes("reject")) return STATUS_MARKER_CONFIG["Denied"];
+    return STATUS_MARKER_CONFIG["Received"];
 };
+
+// Kept as aliases so nothing importing the old names breaks.
+export const STATUS_CONFIG = STATUS_MARKER_CONFIG;
+export const getStatusConfig = getStatusMarkerConfig;
+
+// The zoning types an applicant can request — shared with the Verify Parcel
+// check here and Step 1 of the application form (Applications/Create.jsx).
+export const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"];
 
 // ── Subtle SLA / Citizen's Charter Ageing Calculator ──
 export const getSLAInfo = (createdAt, status) => {
@@ -98,49 +141,103 @@ export const getSLAInfo = (createdAt, status) => {
 };
 
 // ── CLUP Zoning Conformity & Compliance Analyzer ──
-export const getZoningConformity = (app, bgyZone = "Residential") => {
-    const appType = (app?.application_type || "").toLowerCase();
-    const appName = (app?.applicant_name || "").toLowerCase();
-    const declaredUse = (app?.land_use_class || app?.parcels?.[0]?.land_use || "").toLowerCase();
-    const zone = (bgyZone || "Residential").toLowerCase();
+// Resolves BOTH the requested use and the parcel/barangay's zone value — which
+// may arrive as a plain word ("Residential") or an official CLUP zone code
+// ("PDA-SZ", "C1-Z", "AgIndZ") — down to the same category set from
+// utils/clupZones.js, then compares categories directly. This replaces an
+// earlier version that only special-cased "heavy use" keywords and matched
+// zones by checking whether the zone string literally contained the word
+// "residential" or "agricultural" — a raw CLUP code like "PDA-SZ" (which IS
+// the Agricultural zone) never contains that word, so it silently fell
+// through to "Conforming Use" for almost every zone-coded barangay.
+const ZONE_WORD_TO_CATEGORY = {
+    residential: "residential",
+    commercial: "commercial",
+    industrial: "industrial",
+    "agro-industrial": "agroIndustrial",
+    "agri-industrial": "agroIndustrial",
+    agroindustrial: "agroIndustrial",
+    agriindustrial: "agroIndustrial",
+    agricultural: "agricultural",
+    institutional: "institutional",
+    recreational: "parks",
+    parks: "parks",
+    forest: "forest",
+    tourism: "tourism",
+    water: "water",
+    utilities: "utilities",
+};
 
-    // Check if commercial / industrial / manufacturing in residential or agricultural without variance
-    const isHeavyUse = appName.includes("agro") || appName.includes("industrial") || appName.includes("manufacturing") || appName.includes("concrete") || appName.includes("poultry") || declaredUse.includes("industrial");
-    const isResidential = zone.includes("residential") || zone.includes("r-1") || zone.includes("r-2");
-    const isAgricultural = zone.includes("agricultural");
+const resolveZoneCategory = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return null;
 
-    if (isHeavyUse && (isResidential || isAgricultural)) {
+    const wordCategory = ZONE_WORD_TO_CATEGORY[raw.toLowerCase()];
+    if (wordCategory) {
+        return { category: wordCategory, label: raw, code: null };
+    }
+
+    const info = getZoneInfo(raw);
+    if (info.category && info.code) {
+        return { category: info.category, label: info.categoryLabel, code: info.code };
+    }
+    return null;
+};
+
+export const getZoningConformity = (requestedUse, zoneValue) => {
+    const requested = resolveZoneCategory(requestedUse) || {
+        category: null,
+        label: requestedUse || "General Use",
+        code: null,
+    };
+    const zone = resolveZoneCategory(zoneValue);
+
+    if (!zone) {
         return {
-            status: "variance",
+            status: "undetermined",
             isConforming: false,
-            badgeClass: "text-amber-800 bg-amber-50 border-amber-200/80",
-            dotClass: "bg-amber-500",
-            title: "Variance Review",
-            label: "⚠️ Variance Check",
-            desc: `Commercial/Industrial activity proposed within ${bgyZone || 'Residential'} zone`,
+            badgeClass: "text-slate-700 bg-slate-100 border-slate-300/80",
+            dotClass: "bg-slate-400",
+            title: "Zone Undetermined",
+            label: "❔ Manual Review",
+            desc: `No verified CLUP classification on record${zoneValue ? ` for "${zoneValue}"` : ""} — Technical Review must confirm zoning manually.`,
         };
     }
 
-    if (appType.includes("development") && isAgricultural) {
+    const zoneDisplay = zone.code ? `${zone.label} (${zone.code})` : zone.label;
+
+    if (requested.category && requested.category === zone.category) {
+        return {
+            status: "conforming",
+            isConforming: true,
+            badgeClass: "text-emerald-800 bg-emerald-50 border-emerald-200/80",
+            dotClass: "bg-emerald-500",
+            title: "Conforming Use",
+            label: "✅ Conforming Use",
+            desc: `${requested.label} use is permitted under this parcel's ${zoneDisplay} CLUP classification.`,
+        };
+    }
+
+    if (requested.category === "agroIndustrial" && zone.category === "agricultural") {
         return {
             status: "conversion",
             isConforming: false,
             badgeClass: "text-violet-800 bg-violet-50 border-violet-200/80",
             dotClass: "bg-violet-500",
-            title: "Reclassification",
+            title: "Reclassification Required",
             label: "📋 SB Reclassification",
-            desc: "Development permit within Agricultural zone requires SB reclassification",
+            desc: `Agri-Industrial use within a ${zoneDisplay} zone requires SB reclassification and DAR clearance.`,
         };
     }
 
     return {
-        status: "conforming",
-        isConforming: true,
-        badgeClass: "text-emerald-800 bg-emerald-50 border-emerald-200/80",
-        dotClass: "bg-emerald-500",
-        title: "Conforming Use",
-        label: "✅ Conforming Use",
-        desc: `Permitted under ${bgyZone || 'CLUP'} zoning classification`,
+        status: "variance",
+        isConforming: false,
+        badgeClass: "text-amber-800 bg-amber-50 border-amber-200/80",
+        dotClass: "bg-amber-500",
+        title: "Variance Required",
+        label: "⚠️ Variance Review",
+        desc: `${requested.label} use does not conform to this parcel's ${zoneDisplay} CLUP classification.`,
     };
 };
 
@@ -214,15 +311,87 @@ export default function StatusPanel({
     statusMap = {},
     statusFilter = "All",
     onStatusFilterChange,
-    searchQuery = "",
-    onSearchQueryChange,
-    hoveredAppId = null,
-    onHoverApp,
-    onSelectApp,
     onLocateApp,
+    onVerifyResult,
 }) {
     const isBgy = Boolean(selectedBgy && selectedBgy.name);
     const bgyName = selectedBgy?.name || "";
+
+    // ── Verify Parcel: TCT / Tax Dec lookup + CLUP zoning conformance check ──
+    const [verifyCode, setVerifyCode] = useState("");
+    const [verifyZoning, setVerifyZoning] = useState(LAND_USE_CLASSES[0]);
+    const [isVerifying, setIsVerifying] = useState(false);
+    const [verifyResult, setVerifyResult] = useState(null);
+    const [verifyError, setVerifyError] = useState("");
+
+    const handleVerify = async (e) => {
+        e.preventDefault();
+        const code = verifyCode.trim();
+        if (!code || isVerifying) return;
+
+        setIsVerifying(true);
+        setVerifyError("");
+        setVerifyResult(null);
+
+        try {
+            const res = await fetch(`/api/parcels/verify?code=${encodeURIComponent(code)}`, {
+                headers: { Accept: "application/json" },
+            });
+            const payload = await res.json();
+
+            if (!res.ok || !payload.found) {
+                setVerifyError(payload.message || `No parcel found for "${code}".`);
+                return;
+            }
+
+            const { parcel, application } = payload;
+            // The spatially-verified zone (point-in-polygon against the official
+            // CLUP plan, resolved server-side) is the ground truth when present;
+            // the parcel's own recorded land_use_class is a fallback for parcels
+            // without coordinates on file.
+            const zoneValue = parcel.clup_zone_code || parcel.land_use_class;
+            const conformity = getZoningConformity(verifyZoning, zoneValue);
+            const result = { parcel, application, conformity, zoningType: verifyZoning, zoneValue };
+            setVerifyResult(result);
+            if (onVerifyResult) onVerifyResult(result);
+        } catch (err) {
+            setVerifyError("Verification failed. Please try again.");
+        } finally {
+            setIsVerifying(false);
+        }
+    };
+
+    const handleLocateVerified = () => {
+        if (!verifyResult || !onLocateApp) return;
+        const { parcel, application } = verifyResult;
+        onLocateApp({
+            id: application?.id ?? `parcel-${parcel.id}`,
+            barangay: parcel.barangay,
+            parcels: [{ latitude: parcel.latitude, longitude: parcel.longitude }],
+        });
+    };
+
+    const handleProceedToApplication = () => {
+        if (!verifyResult) return;
+        const { parcel, conformity, zoningType } = verifyResult;
+        try {
+            sessionStorage.setItem(
+                "imaps_verified_parcel_prefill",
+                JSON.stringify({
+                    target_land_use_class: zoningType,
+                    tct_number: parcel.tct_number || "",
+                    tax_dec_number: parcel.tax_dec_number || "",
+                    barangay: parcel.barangay || "",
+                    owner_name: parcel.owner_name || "",
+                    location_address: parcel.location_address || "",
+                    lot_area_sqm: parcel.lot_area_sqm || "",
+                    property_index_number: parcel.property_index_number || "",
+                    requiresVariance: !conformity.isConforming,
+                })
+            );
+        } catch (e) {}
+        router.visit("/applications/encode");
+    };
 
     // Filter applications by selected barangay if applicable
     const baseList = useMemo(() => {
@@ -433,7 +602,163 @@ export default function StatusPanel({
                 )}
             </div>
 
-            {/* 2. Live Spatial Assessment Briefing (Animated Typewriter Effect) */}
+            {/* 2. KPI Tile Row — Total / This Month / In Review / Released */}
+            <div className="grid grid-cols-4 gap-1.5">
+                {[
+                    { label: "Total", value: total, accent: "text-slate-900" },
+                    { label: "This Month", value: thisMonth, accent: "text-blue-700" },
+                    { label: "In Review", value: review, accent: "text-amber-700" },
+                    { label: "Released", value: released, accent: "text-emerald-700" },
+                ].map((kpi) => (
+                    <div
+                        key={kpi.label}
+                        className="bg-white rounded-lg border border-slate-200/90 shadow-2xs px-1.5 py-2 flex flex-col items-center text-center"
+                    >
+                        <span className={`text-sm font-black font-mono leading-none ${kpi.accent}`}>{kpi.value}</span>
+                        <span className="text-[8.5px] font-semibold uppercase tracking-wider text-slate-400 mt-1 leading-none">
+                            {kpi.label}
+                        </span>
+                    </div>
+                ))}
+            </div>
+
+            {/* 3. Verify Parcel — TCT/Tax Dec lookup + CLUP zoning conformance gate */}
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 space-y-2">
+                <div className="flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.3">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-600">Verify Parcel</span>
+                </div>
+
+                <form onSubmit={handleVerify} className="space-y-1.5">
+                    <input
+                        type="text"
+                        value={verifyCode}
+                        onChange={(e) => setVerifyCode(e.target.value)}
+                        placeholder="TCT or Tax Dec. Number"
+                        disabled={isVerifying}
+                        className="w-full bg-slate-50 border border-slate-200/80 rounded-lg px-2.5 py-1.5 text-[11px] font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all disabled:opacity-60"
+                    />
+                    <div className="flex items-center gap-1.5">
+                        <select
+                            value={verifyZoning}
+                            onChange={(e) => setVerifyZoning(e.target.value)}
+                            disabled={isVerifying}
+                            className="flex-1 min-w-0 bg-slate-50 border border-slate-200/80 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all disabled:opacity-60 cursor-pointer"
+                            title="Zoning type being applied for"
+                        >
+                            {LAND_USE_CLASSES.map((cls) => (
+                                <option key={cls} value={cls}>{cls}</option>
+                            ))}
+                        </select>
+                        <button
+                            type="submit"
+                            disabled={isVerifying || !verifyCode.trim()}
+                            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                            {isVerifying && (
+                                <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                                </svg>
+                            )}
+                            <span>{isVerifying ? "Checking…" : "Check & Proceed"}</span>
+                        </button>
+                    </div>
+                </form>
+
+                {verifyError && (
+                    <div className="flex items-start gap-1.5 text-[10.5px] text-rose-700 bg-rose-50 border border-rose-200/80 rounded-lg px-2.5 py-1.5">
+                        <span>⚠️</span>
+                        <span>{verifyError}</span>
+                    </div>
+                )}
+
+                {verifyResult && (() => {
+                    const { parcel, application, conformity } = verifyResult;
+                    const statusMeta = application ? getStatusMarkerConfig(application.status) : null;
+                    return (
+                        <div className={`rounded-lg border p-2.5 space-y-2 ${conformity.badgeClass}`}>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10.5px] font-black flex items-center gap-1.5">
+                                    <span className={`w-2 h-2 rounded-full shrink-0 ${conformity.dotClass}`} />
+                                    <span>{conformity.title}</span>
+                                </span>
+                                <span className="text-[9px] font-mono font-bold opacity-85 uppercase tracking-wider">
+                                    {conformity.isConforming ? "Approved" : "Action Req."}
+                                </span>
+                            </div>
+                            <p className="text-[10.5px] leading-snug opacity-90">{conformity.desc}</p>
+
+                            <div className="pt-1.5 border-t border-current/10 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                                <div>
+                                    <span className="block text-[8.5px] font-bold uppercase opacity-60">Barangay</span>
+                                    <span className="font-bold truncate block">{parcel.barangay || "—"}</span>
+                                </div>
+                                <div>
+                                    <span className="block text-[8.5px] font-bold uppercase opacity-60">Lot Area</span>
+                                    <span className="font-semibold truncate block">{parcel.lot_area_sqm ? `${parcel.lot_area_sqm} sqm` : "—"}</span>
+                                </div>
+                            </div>
+
+                            {statusMeta && (
+                                <div className="pt-1.5 border-t border-current/10 flex items-center justify-between text-[10px]">
+                                    <span
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold"
+                                        style={{ backgroundColor: statusMeta.badgeBg, color: statusMeta.badgeText }}
+                                    >
+                                        ● {statusMeta.label}
+                                    </span>
+                                    <a
+                                        href={`/applications/${application.id}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="font-mono opacity-70 hover:opacity-100 hover:underline"
+                                    >
+                                        {application.reference_number} ↗
+                                    </a>
+                                </div>
+                            )}
+
+                            <div className="pt-1.5 border-t border-current/10 flex items-center gap-1.5">
+                                {conformity.isConforming ? (
+                                    <button
+                                        type="button"
+                                        onClick={handleProceedToApplication}
+                                        className="flex-1 py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[10.5px] font-bold transition-all cursor-pointer"
+                                    >
+                                        Proceed to Application →
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={handleProceedToApplication}
+                                        className="flex-1 py-1.5 px-2 rounded-lg bg-white/70 hover:bg-white text-current border border-current/30 text-[10px] font-semibold transition-all cursor-pointer"
+                                    >
+                                        Start Anyway (Requires Variance Review)
+                                    </button>
+                                )}
+                                {onLocateApp && (
+                                    <button
+                                        type="button"
+                                        onClick={handleLocateVerified}
+                                        title="Locate on map"
+                                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-white/70 hover:bg-white border border-current/30 transition-all cursor-pointer"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.3">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
+            </div>
+
+            {/* 4. Live Spatial Assessment Briefing (Animated Typewriter Effect) */}
             <div 
                 onClick={handleSkipTyping}
                 className="group relative overflow-hidden bg-white rounded-xl p-3.5 border border-slate-200/90 shadow-2xs transition-all hover:border-slate-300 cursor-pointer"
@@ -542,7 +867,7 @@ export default function StatusPanel({
                                     : "bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70"
                             }`}
                         >
-                            <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_MARKER_CONFIG["Received"].color }} />
                             <span>Received</span>
                             <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.1 rounded ${
                                 statusFilter === "Received" ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200/60"
@@ -562,7 +887,7 @@ export default function StatusPanel({
                                     : "bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70"
                             }`}
                         >
-                            <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_MARKER_CONFIG["Released"].color }} />
                             <span>Released</span>
                             <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.1 rounded ${
                                 statusFilter === "Released" ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200/60"
