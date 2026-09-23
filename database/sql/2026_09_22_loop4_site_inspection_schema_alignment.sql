@@ -3,6 +3,7 @@
 -- Target: iMAPS PostgreSQL. First applied to local test DB imaps_db_0921;
 -- retained as the reproducible handoff for authorized Team Leader deployment.
 -- This script is intentionally bounded and does not update historical rows.
+-- name: 2026_09_22_loop4_site_inspection_schema_alignment.sql
 
 BEGIN;
 
