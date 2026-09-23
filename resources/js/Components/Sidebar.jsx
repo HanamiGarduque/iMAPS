@@ -63,8 +63,8 @@ export default function Sidebar({
             ),
         },
         {
-            href: '/analytics',
-            label: 'Analytics',
+            href: '/reports-and-forecasting',
+            label: 'Reports & Forecasting',
             badge: 'BI',
             adminOnly: true,
             icon: (
@@ -106,7 +106,7 @@ export default function Sidebar({
             if (href === '/dashboard' && normalized === 'dashboard') return true;
             if (href === '/maps' && normalized === 'maps') return true;
             if (href === '/applications' && (normalized === 'applications' || normalized === 'drafts')) return true;
-            if (href === '/analytics' && normalized === 'analytics') return true;
+            if (href === '/reports-and-forecasting' && (normalized === 'reports-and-forecasting' || normalized === 'analytics')) return true;
             if (href === '/settings' && normalized === 'settings') return true;
             if (href === '/users' && (normalized === 'users' || normalized === 'user-management' || normalized === 'audit' || normalized === 'audit-log')) return true;
             if (href === '/site-inspections' && (normalized === 'site-inspections' || normalized === 'site inspections')) return true;

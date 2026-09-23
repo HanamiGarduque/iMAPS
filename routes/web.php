@@ -122,8 +122,9 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::get('register-new-account', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('register-new-account', [RegisteredUserController::class, 'store']);
 
-    Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
+    Route::get('/reports-and-forecasting', [AnalyticsController::class, 'index'])->name('analytics.index');
     Route::post('/api/forecast', [AnalyticsController::class, 'forecast'])->name('analytics.forecast');
+    Route::post('/api/analytics/upload-cpi', [AnalyticsController::class, 'uploadCpi'])->name('analytics.upload-cpi');
 
     Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');
