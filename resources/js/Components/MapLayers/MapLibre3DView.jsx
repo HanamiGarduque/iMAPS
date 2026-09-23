@@ -436,7 +436,43 @@ export default function MapLibre3DView({
         if (!src) return;
 
         const fc = buildFeatures(baseGeoRef.current, bgyStats);
-        featureIndexRef.current = buildFeatureIndex(fc);
+
+        const index = {};
+        fc.features.forEach((f) => {
+            let bounds = null;
+            if (f.geometry) {
+                const coords = f.geometry.type === "Polygon" ? f.geometry.coordinates : (f.geometry.type === "MultiPolygon" ? f.geometry.coordinates.flat(1) : []);
+                if (coords.length > 0) {
+                    let totalArea = 0;
+                    coords.forEach(ring => {
+                        let ringArea = 0;
+                        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                            ringArea += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+                        }
+                        totalArea += Math.abs(ringArea / 2);
+                    });
+
+                    const effectiveSize = Math.max(Math.sqrt(totalArea), 0.001);
+
+                    // Base zoom 12.6 fits ~0.05 degrees effective size.
+                    let optimalZoom = 12.6 - Math.log2(effectiveSize / 0.05);
+
+                    // Nudge inwards slightly to fill the screen better.
+                    optimalZoom += 0.8;
+
+                    optimalZoom = Math.max(12.0, Math.min(16.5, optimalZoom));
+                    bounds = { optimalZoom };
+                }
+            }
+
+            index[f.properties.name.toLowerCase()] = {
+                id: f.id,
+                centroid: [f.properties.cx, f.properties.cy],
+                bounds,
+                properties: f.properties,
+            };
+        });
+        featureIndexRef.current = index;
 
         src.setData(fc);
         if (labelSrc) labelSrc.setData(toCentroidCollection(fc));
@@ -581,7 +617,37 @@ export default function MapLibre3DView({
 
     const setupLayers = useCallback((map) => {
         const fc = buildFeatures(baseGeoRef.current, bgyStats);
-        featureIndexRef.current = buildFeatureIndex(fc);
+
+        const index = {};
+        fc.features.forEach((f) => {
+            let bounds = null;
+            if (f.geometry) {
+                const coords = f.geometry.type === "Polygon" ? f.geometry.coordinates : (f.geometry.type === "MultiPolygon" ? f.geometry.coordinates.flat(1) : []);
+                if (coords.length > 0) {
+                    let totalArea = 0;
+                    coords.forEach(ring => {
+                        let ringArea = 0;
+                        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                            ringArea += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+                        }
+                        totalArea += Math.abs(ringArea / 2);
+                    });
+
+                    const effectiveSize = Math.max(Math.sqrt(totalArea), 0.001);
+                    let optimalZoom = 12.6 - Math.log2(effectiveSize / 0.05) + 0.8;
+                    optimalZoom = Math.max(12.0, Math.min(16.5, optimalZoom));
+                    bounds = { optimalZoom };
+                }
+            }
+
+            index[f.properties.name.toLowerCase()] = {
+                id: f.id,
+                centroid: [f.properties.cx, f.properties.cy],
+                bounds,
+                properties: f.properties,
+            };
+        });
+        featureIndexRef.current = index;
 
         if (!map.getSource(SRC_PRISMS)) map.addSource(SRC_PRISMS, { type: "geojson", data: fc });
         if (!map.getSource(SRC_LABELS)) map.addSource(SRC_LABELS, { type: "geojson", data: toCentroidCollection(fc) });
