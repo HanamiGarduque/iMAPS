@@ -85,8 +85,9 @@ class PullCompletedInspections extends Command
                         array_key_exists($key, $job) ? $job[$key] : $existing;
 
                     $localInspection->fill([
-                        'status'              => $remoteOrExisting('status', $localInspection->status),
-                        'submitted_at'        => $remoteOrExisting('submitted_at', $localInspection->submitted_at),
+                        'status'              => 'completed',
+                        'submitted_at'        => $localInspection->submitted_at
+                            ?? $remoteOrExisting('submitted_at', $localInspection->submitted_at),
                         'inspection_result'   => $remoteOrExisting('inspection_result', $localInspection->inspection_result),
                         'is_compliant'        => $remoteOrExisting('is_compliant', $localInspection->is_compliant),
                         'findings'            => $remoteOrExisting('findings', $localInspection->findings),

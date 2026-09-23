@@ -8,6 +8,24 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 
 ## Change entries
 
+### 2026-09-23 — Loop 5 completed lifecycle protection (APPLIED SHARED)
+
+1. **Date/time:** 2026-09-23 12:01:49 +08:00.
+2. **Loop / issue:** Loop 5 — completed lifecycle immutability.
+3. **System:** Supabase PostgreSQL `public.field_jobs`.
+4. **Environment/project/database:** Linked shared FieldSync project `laapipjyprmmaylunxib` (Southeast Asia / Singapore).
+5. **Business reason:** Authenticated inspectors have row-wide UPDATE permission on their assigned jobs, so source-only guards cannot prevent another allowed client path from changing a completed row to `assigned`/`in_progress`, lowering `current_step`, or clearing/replacing `submitted_at`.
+6. **Before state:** Live read-only catalog queries through `supabase db query --linked` found no completed-lifecycle function or equivalent trigger. `field_jobs` had enabled `BEFORE UPDATE` trigger `trg_field_jobs_set_updated_at` → `public.set_updated_at_utc()`, enabled `AFTER INSERT` notification trigger `on_assignment_change`, and inspector UPDATE RLS using/checking `auth.uid() = assigned_inspector_id`. The `service_role` role has `BYPASSRLS` but remains subject to table triggers.
+7. **Exact SQL / operation:** Applied only `supabase/migrations/003_completed_field_job_immutability.sql`. It creates/replaces `public.preserve_completed_field_job_lifecycle()` and creates `trg_preserve_completed_field_job_lifecycle BEFORE UPDATE ON public.field_jobs FOR EACH ROW`. For an already completed row it restores `status = 'completed'`, `current_step = 6`, and `OLD.submitted_at`; on first transition to completed it sets Step 6 and preserves a pre-existing non-null submission time. All other `NEW` columns pass through unchanged.
+8. **Deployment method:** Supabase CLI 2.116.0 Management API query path, using `supabase db query --linked --file <migration>`. This did not use Docker, REST row mutation, or migration push and did not apply unrelated migration files.
+9. **After state / catalog evidence:** Live `pg_trigger` reports exactly one enabled (`tgenabled = 'O'`) `trg_preserve_completed_field_job_lifecycle`, defined as `BEFORE UPDATE ON field_jobs FOR EACH ROW`, attached to `public.preserve_completed_field_job_lifecycle()`. The pre-existing updated-at and assignment notification triggers remain enabled. Live `pg_proc` returns the deployed function body matching migration `003`.
+10. **Verification:** Catalog/schema verification passed. The trigger does not fire on INSERT, so new jobs/reinspection rounds and first assignment are unaffected; it changes only the three lifecycle fields during UPDATE and therefore permits evidence corrections and leaves assignment instructions/provenance unchanged. Focused source tests cover stale replay, cache classification, evidence-only rework, and submit timestamp preservation. Controlled live E2E then used the normal FieldSync Findings rework path on completed Round 1 (`local_inspection_id = 36`, job `76d79ab8-e38e-4682-ada2-a67ac84dde00`): inspector notes persisted with the recognizable Loop 5 correction, and the normal Findings save regenerated the editable observations text from the hydrated form, while `status = 'completed'`, `current_step = 6`, and the original `submitted_at = 2026-09-22 11:38:54.944788+00` remained exact. Identity, assignment provenance/instructions, GPS, checklist, photos, findings, discrepancies, recommendations, result, and compliance remained unchanged. A force-stop/reopen and fresh task fetch still showed Completed / Modified / Step 6/6. The existing Round-2 row (`local_inspection_id = 37`) remained separately assigned at Step 0 with its own instructions, and the application retained exactly two jobs (one row per round).
+11. **Related source:** `supabase_service.dart`, `sync_outbox_service.dart`, `db_helper.dart`, `inspection_provider.dart`, `inspection_progress.dart`, `003_completed_field_job_immutability.sql`, iMAPS `SiteInspection.php`, and `PullCompletedInspections.php`.
+12. **Rollback:** `DROP TRIGGER IF EXISTS trg_preserve_completed_field_job_lifecycle ON public.field_jobs; DROP FUNCTION IF EXISTS public.preserve_completed_field_job_lifecycle();` Review completed-row invariants before rollback.
+13. **Change scope:** One function and one trigger on `public.field_jobs`; no table data update or repair occurred during deployment. The later live acceptance performed only ordinary evidence-row UPDATEs through the production FieldSync path; it was E2E evidence, not another schema migration. No unrelated migration or other table change occurred.
+14. **Deployment status:** **APPLIED SHARED; LIVE E2E PASS.**
+
+
 ### 2026-09-22 13:27:54 +08:00 — Loop 4 local Site Inspection schema alignment
 
 1. **Date/time:** 2026-09-22 13:27:54 +08:00 pre-change capture; execution/post-check in the same session.

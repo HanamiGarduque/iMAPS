@@ -47,6 +47,20 @@ class SiteInspection extends Model
      *
      * @var array<string, string>
      */
+    public function setStatusAttribute(?string $value): void
+    {
+        $existing = $this->attributes['status'] ?? null;
+        $this->attributes['status'] = $existing === 'completed'
+            ? 'completed'
+            : $value;
+    }
+
+    public function setSubmittedAtAttribute(mixed $value): void
+    {
+        $existing = $this->attributes['submitted_at'] ?? null;
+        $this->attributes['submitted_at'] = $existing ?? $value;
+    }
+
     protected $casts = [
         'scheduled_date'      => 'date',
         'deadline_date'       => 'date',
