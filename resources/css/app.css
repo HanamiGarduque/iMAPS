@@ -25,3 +25,6 @@
 }
 
 
+.historical-data { color: gray; }
+.forecast-data { color: #1E90FF; }
+.forecast-highlight { outline: 2px solid #1E90FF; }

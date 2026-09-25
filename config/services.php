@@ -46,5 +46,10 @@ return [
         'base_url' => env('FASTAPI_BASE_URL', 'http://127.0.0.1:8001'),
         'timeout' => (int) env('FASTAPI_TIMEOUT', 30),
     ],
+
+    'forecast' => [
+    'url'     => env('FORECAST_SERVICE_URL', 'http://localhost:8002/api/v1/forecast'),
+    'api_key' => env('FORECAST_SERVICE_API_KEY'),
+],
 ];
 

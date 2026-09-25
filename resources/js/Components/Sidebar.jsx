@@ -64,7 +64,7 @@ export default function Sidebar({
         },
         {
             href: '/reports',
-            label: 'Report Generationn',
+            label: 'Report Generation',
             badge: null,
             adminOnly: true,
             icon: (

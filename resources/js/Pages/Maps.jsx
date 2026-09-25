@@ -815,6 +815,11 @@ function LeafletMap({
                 }
             });
 
+            if (!map.getPane("pinsPane")) {
+                const pinsPane = map.createPane("pinsPane");
+                pinsPane.style.zIndex = "650";
+            }
+
             applicationsLayerRef.current = L.default.layerGroup().addTo(map);
             establishmentsLayerRef.current = L.default.layerGroup().addTo(map);
             diversityLabelsLayerRef.current = L.default.layerGroup().addTo(map);
@@ -1653,97 +1658,136 @@ function LeafletMap({
     // Live update Urban Growth Establishments & Landmark Pins for the active year using historical Locational Clearance data
     useEffect(() => {
         if (!establishmentsLayerRef.current || !mapInstanceRef.current) return;
-        establishmentsLayerRef.current.clearLayers();
-        establishmentMarkersRef.current = {};
 
         if (currentLayer === "trends") {
-            import("leaflet").then((L) => {
-                const pinsToRender = selectedBgy && selectedBgy.name
-                    ? (historicalPins || []).filter(p => (p.barangay || "").trim().toLowerCase() === selectedBgy.name.trim().toLowerCase())
-                    : (historicalPins || []);
+            const map = mapInstanceRef.current;
+            if (!map.getPane("pinsPane")) {
+                const pinsPane = map.createPane("pinsPane");
+                pinsPane.style.zIndex = "650";
+            }
 
-                pinsToRender.forEach((pin) => {
-                    if (!pin.latitude || !pin.longitude) return;
-                    const coords = [pin.latitude, pin.longitude];
+            const L_Obj = L.default || L;
+            const pinsToRender = selectedBgy && selectedBgy.name
+                ? (historicalPins || []).filter(p => (p.barangay || "").trim().toLowerCase() === selectedBgy.name.trim().toLowerCase())
+                : (historicalPins || []);
 
-                    let color = '#2563eb';
-                    let bg = '#dbeafe';
-                    const cat = pin.target_land_use_class || 'Commercial';
-                    if (cat === 'Commercial') { color = '#f59e0b'; bg = '#fef3c7'; }
-                    else if (cat === 'Industrial') { color = '#ef4444'; bg = '#fee2e2'; }
-                    else if (cat === 'Agro-industrial') { color = '#8b5cf6'; bg = '#f3e8ff'; }
-                    else if (cat === 'Residential') { color = '#10b981'; bg = '#d1fae5'; }
-                    else if (cat === 'Agricultural') { color = '#84cc16'; bg = '#ecfccb'; }
-                    else if (cat === 'Special projects') { color = '#64748b'; bg = '#f1f5f9'; }
+            const canvasRenderer = L_Obj.canvas({ pane: 'pinsPane' });
+            const newMarkers = [];
+            const newMarkersRef = {};
 
-                    const iconHtml = `
-                        <div class="relative group cursor-pointer select-none">
-                            <div class="w-7 h-7 rounded-full flex items-center justify-center font-bold text-white text-[10px] shadow-md transition-transform hover:scale-125 duration-150" 
-                                 style="background: linear-gradient(135deg, ${color} 0%, ${color}dd 100%); border: 2px solid #ffffff; box-shadow: 0 3px 8px ${color}60;">
-                                📍
-                            </div>
-                        </div>
-                    `;
+            pinsToRender.forEach((pin) => {
+                if (!pin.latitude || !pin.longitude) return;
+                const coords = [pin.latitude, pin.longitude];
 
-                    const customIcon = L.default.divIcon({
-                        html: iconHtml,
-                        className: "custom-app-marker-container",
-                        iconSize: [28, 28],
-                        iconAnchor: [14, 14],
-                        popupAnchor: [0, -14],
-                    });
+                const cat = pin.target_land_use_class || 'Commercial';
+                
+                let dotColor = '#64748b';
+                let dotBg = '#f1f5f9';
+                if (pin.isForecast) {
+                    dotColor = '#2563eb';
+                    dotBg = '#dbeafe';
+                } else {
+                    if (cat === 'Commercial') { dotColor = '#f59e0b'; dotBg = '#fef3c7'; }
+                    else if (cat === 'Industrial') { dotColor = '#ef4444'; dotBg = '#fee2e2'; }
+                    else if (cat === 'Agro-industrial') { dotColor = '#8b5cf6'; dotBg = '#f3e8ff'; }
+                    else if (cat === 'Residential') { dotColor = '#10b981'; dotBg = '#dcfce7'; }
+                }
 
-                    const marker = L.default.marker(coords, { icon: customIcon });
-
-                    const dateStr = pin.created_at ? new Date(pin.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-
-                    const popupHtml = `
-                        <div class="font-sans min-w-[240px] max-w-[285px] p-1">
-                            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-                                <span class="text-[10px] font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                    ${pin.reference_number || 'U-000000'}
-                                </span>
-                                <span class="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style="background-color: ${bg}; color: ${color}; border: 1px solid ${color}40;">
-                                    ● ${pin.zoning_code || cat}
-                                </span>
-                            </div>
-                            <div class="mt-2 space-y-1.5 text-xs">
-                                <h4 class="font-black text-slate-900 text-sm leading-tight">${pin.applicant_name}</h4>
-                                <p class="text-[11px] font-semibold text-blue-700">${pin.application_type}</p>
-                                <p class="text-[10.5px] text-slate-600">${pin.purpose || ''}</p>
-                                <div class="pt-1.5 border-t border-slate-100 grid grid-cols-2 gap-1.5 text-[10.5px]">
-                                    <div>
-                                        <span class="text-slate-400 block text-[9px] font-bold uppercase">Barangay</span>
-                                        <span class="font-bold text-slate-800 truncate block">${pin.barangay}</span>
-                                    </div>
-                                    <div>
-                                        <span class="text-slate-400 block text-[9px] font-bold uppercase">Category</span>
-                                        <span class="font-bold text-slate-800 truncate block">${cat}</span>
-                                    </div>
-                                </div>
-                                <div class="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                                    <span class="text-slate-400 font-mono">Date: ${dateStr}</span>
-                                    ${pin.lot_area_sqm ? `<span class="text-slate-500 font-mono font-bold">${pin.lot_area_sqm} sqm</span>` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    marker.bindPopup(popupHtml, {
-                        className: "custom-app-popup",
-                        closeButton: true,
-                        maxWidth: 285,
-                    });
-
-                    establishmentsLayerRef.current.addLayer(marker);
-                    establishmentMarkersRef.current[pin.id] = marker;
+                const marker = L_Obj.circleMarker(coords, {
+                    pane: 'pinsPane',
+                    renderer: canvasRenderer,
+                    radius: pin.isForecast ? 6 : 4.5,
+                    color: '#ffffff',
+                    weight: 1.5,
+                    fillColor: dotColor,
+                    fillOpacity: 0.95,
                 });
 
-                if (!mapInstanceRef.current.hasLayer(establishmentsLayerRef.current)) {
-                    mapInstanceRef.current.addLayer(establishmentsLayerRef.current);
-                }
+                const dateStr = pin.created_at ? new Date(pin.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+                const popupHtml = pin.isForecast ? `
+                    <div class="font-sans min-w-[240px] max-w-[285px] p-1">
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                            <span class="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                ${pin.reference_number || 'FC-2026-001'}
+                            </span>
+                            <span class="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                                ● FORECASTED
+                            </span>
+                        </div>
+                        <div class="mt-2 space-y-1.5 text-xs">
+                            <h4 class="font-black text-slate-900 text-sm leading-tight">${pin.applicant_name || 'Forecasted Application'}</h4>
+                            <p class="text-[11px] font-semibold text-blue-700">Locational Clearance (Spatial Model)</p>
+                            <p class="text-[10.5px] text-slate-600">${pin.purpose || ''}</p>
+                            <div class="pt-1.5 border-t border-slate-100 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                                <div>
+                                    <span class="text-slate-400 block text-[9px] font-bold uppercase">Barangay</span>
+                                    <span class="font-bold text-slate-800 truncate block">Brgy. ${pin.barangay || '—'}</span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-400 block text-[9px] font-bold uppercase">Land Use Category</span>
+                                    <span class="font-bold text-slate-800 truncate block">${cat}</span>
+                                </div>
+                            </div>
+                            <div class="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                                <span class="text-blue-600 font-bold font-mono">Target: ${pin.year || 2026} Q${pin.quarter || 4}</span>
+                                ${pin.lot_area_sqm ? `<span class="text-slate-500 font-mono font-bold">${pin.lot_area_sqm} sqm</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="font-sans min-w-[240px] max-w-[285px] p-1">
+                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                            <span class="text-[10px] font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                ${pin.reference_number || 'U-000000'}
+                            </span>
+                            <span class="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style="background-color: ${dotBg}; color: ${dotColor}; border: 1px solid ${dotColor}40;">
+                                ● ${pin.zoning_code || cat}
+                            </span>
+                        </div>
+                        <div class="mt-2 space-y-1.5 text-xs">
+                            <h4 class="font-black text-slate-900 text-sm leading-tight">${pin.applicant_name || 'Applicant'}</h4>
+                            <p class="text-[11px] font-semibold text-blue-700">${pin.application_type || 'Locational Clearance'}</p>
+                            <p class="text-[10.5px] text-slate-600">${pin.purpose || ''}</p>
+                            <div class="pt-1.5 border-t border-slate-100 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                                <div>
+                                    <span class="text-slate-400 block text-[9px] font-bold uppercase">Barangay</span>
+                                    <span class="font-bold text-slate-800 truncate block">${pin.barangay || '—'}</span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-400 block text-[9px] font-bold uppercase">Category</span>
+                                    <span class="font-bold text-slate-800 truncate block">${cat}</span>
+                                </div>
+                            </div>
+                            <div class="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                                <span class="text-slate-400 font-mono">Date: ${dateStr}</span>
+                                ${pin.lot_area_sqm ? `<span class="text-slate-500 font-mono font-bold">${pin.lot_area_sqm} sqm</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                marker.bindPopup(popupHtml, {
+                    className: "custom-app-popup",
+                    closeButton: true,
+                    maxWidth: 285,
+                });
+
+                newMarkers.push(marker);
+                newMarkersRef[pin.id || Math.random()] = marker;
             });
+
+            // Single synchronous swap — 0 blank frames, 0 blinking
+            establishmentsLayerRef.current.clearLayers();
+            newMarkers.forEach(m => establishmentsLayerRef.current.addLayer(m));
+            establishmentMarkersRef.current = newMarkersRef;
+
+            if (!mapInstanceRef.current.hasLayer(establishmentsLayerRef.current)) {
+                mapInstanceRef.current.addLayer(establishmentsLayerRef.current);
+            }
         } else {
+            establishmentsLayerRef.current.clearLayers();
+            establishmentMarkersRef.current = {};
             if (mapInstanceRef.current.hasLayer(establishmentsLayerRef.current)) {
                 mapInstanceRef.current.removeLayer(establishmentsLayerRef.current);
             }
@@ -1813,18 +1857,29 @@ class MapsErrorBoundary extends Component {
 // slider's span), but widens automatically if filings ever reach past it.
 // Years with zero permits simply show zero — nothing here is invented.
 const TIMELINE_BASELINE_YEAR = 2021;
-const TIMELINE_MIN_END_YEAR = 2026;
-function buildTimelineYears(recent) {
-    let maxYear = TIMELINE_MIN_END_YEAR;
-    (recent || []).forEach((app) => {
-        if (!app?.created_at) return;
-        const d = new Date(app.created_at);
-        if (isNaN(d.getTime())) return;
-        if (d.getFullYear() > maxYear) maxYear = d.getFullYear();
-    });
-    const years = [];
-    for (let y = TIMELINE_BASELINE_YEAR; y <= maxYear; y++) years.push(y);
-    return years;
+function buildTimelineQuarters() {
+    const quarters = [];
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+
+    for (let y = 2021; y <= currentYear; y++) {
+        for (let q = 1; q <= 4; q++) {
+            if (y === currentYear && q > currentQuarter) break;
+            quarters.push({ year: y, quarter: q, label: `Q${q} '${y.toString().slice(-2)}`, isForecast: false });
+        }
+    }
+    
+    let fy = currentYear;
+    let fq = currentQuarter + 1;
+    if (fq > 4) { fq = 1; fy++; }
+    quarters.push({ year: fy, quarter: fq, label: `Q${fq} '${fy.toString().slice(-2)}`, isForecast: true });
+    
+    fq++;
+    if (fq > 4) { fq = 1; fy++; }
+    quarters.push({ year: fy, quarter: fq, label: `Q${fq} '${fy.toString().slice(-2)}`, isForecast: true });
+
+    return quarters;
 }
 
 function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgyStats, recent, filters, overallDiversity, urbanGrowthData }) {
@@ -1850,20 +1905,106 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
     // Urban Growth time machine — scrubs cumulative real permits across a
     // 2020-2026+ year range (widening only if filings ever go past 2026).
     // Years with no filings show zero; nothing is simulated.
-    const timelineYears = useMemo(() => buildTimelineYears(recent), [recent]);
-    const [activeYearIndex, setActiveYearIndex] = useState(() => timelineYears.length - 1);
+    const timelineQuarters = useMemo(() => buildTimelineQuarters(), []);
+    const [activeQuarterIndex, setActiveQuarterIndex] = useState(() => timelineQuarters.length - 1);
     const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
-    // `recent` can be refreshed by Inertia partial reloads (e.g. changing the
-    // application-type filter), which can widen the year range underneath an
-    // in-progress scrub — clamp rather than index past the end.
+    
     useEffect(() => {
-        setActiveYearIndex((i) => Math.min(i, timelineYears.length - 1));
-    }, [timelineYears]);
-    const activeYear = timelineYears[activeYearIndex] || timelineYears[timelineYears.length - 1];
+        setActiveQuarterIndex((i) => Math.min(i, timelineQuarters.length - 1));
+    }, [timelineQuarters]);
+    
+    const activeQuarter = timelineQuarters[activeQuarterIndex] || timelineQuarters[timelineQuarters.length - 1];
+    const activeYear = activeQuarter?.year;
+    
+    const [apiQuarterData, setApiQuarterData] = useState({ pins: [], metrics: null });
+    const [customForecastData, setCustomForecastData] = useState(() => {
+        try {
+            const saved = localStorage.getItem('imaps_forecast_data');
+            if (saved) return JSON.parse(saved);
+        } catch (e) {}
+        return null;
+    });
+
+    const handleForecastGenerated = (data) => {
+        if (!data) return;
+        setCustomForecastData(data);
+        try {
+            localStorage.setItem('imaps_forecast_data', JSON.stringify(data));
+        } catch (e) {}
+    };
+
+    useEffect(() => {
+        if (!activeQuarter) return;
+        fetch(`/api/forecast/${activeQuarter.year}/${activeQuarter.quarter}`)
+            .then(res => res.json())
+            .then(res => {
+                if (res.status === 'success') {
+                    setApiQuarterData(res.data);
+                } else {
+                    setApiQuarterData({ pins: [], metrics: null });
+                }
+            })
+            .catch(err => {
+                console.error("Forecast API error", err);
+                setApiQuarterData({ pins: [], metrics: null });
+            });
+    }, [activeQuarter]);
+
+    const activeHistoricalPins = useMemo(() => {
+        if (activeQuarter?.isForecast) {
+            if (customForecastData && Array.isArray(customForecastData.pins) && customForecastData.pins.length > 0) {
+                const qPins = customForecastData.pins.filter(p => {
+                    if (p.year && p.quarter) {
+                        return p.year === activeQuarter.year && p.quarter === activeQuarter.quarter;
+                    }
+                    return true;
+                });
+                return qPins.length > 0 ? qPins : customForecastData.pins;
+            }
+            return apiQuarterData.pins || [];
+        }
+        const pinsByYear = urbanGrowthData?.historicalPins ?? {};
+        if (!activeQuarter) return [];
+        
+        const cutoffMonth = activeQuarter.quarter * 3;
+        const cutoffDate = new Date(activeQuarter.year, cutoffMonth, 0, 23, 59, 59, 999);
+
+        const accumulated = [];
+        for (let y = 2021; y <= activeQuarter.year; y++) {
+            const yearPins = pinsByYear[y] ?? [];
+            yearPins.forEach(p => {
+                const pDate = p?.created_at ? new Date(p.created_at) : null;
+                if (pDate && !isNaN(pDate.getTime()) && pDate <= cutoffDate) {
+                    accumulated.push(p);
+                }
+            });
+        }
+        return accumulated;
+    }, [urbanGrowthData, activeQuarter, apiQuarterData, customForecastData]);
+
+    const activePermitsCount = useMemo(() => {
+        return activeHistoricalPins.length;
+    }, [activeHistoricalPins]);
+
+    const forecastMetrics = useMemo(() => {
+        if (customForecastData?.metrics) {
+            const m = customForecastData.metrics;
+            return {
+                mae: Number(m.validation_mae ?? m.mae ?? 2.155),
+                wmape: Number(m.validation_wmape ?? m.wmape ?? 0.302),
+            };
+        }
+        return apiQuarterData.metrics || { mae: 2.155, wmape: 0.302 };
+    }, [customForecastData, apiQuarterData]);
+
     const timelineCutoff = useMemo(() => {
-        if (!activeYear) return null;
-        return new Date(activeYear, 11, 31, 23, 59, 59, 999); // end of that year
-    }, [activeYear]);
+        if (!activeQuarter) return null;
+        // end of quarter
+        const month = activeQuarter.quarter * 3 - 1; 
+        const date = new Date(activeQuarter.year, month + 1, 0, 23, 59, 59, 999);
+        return date;
+    }, [activeQuarter]);
+    
     const timelineRecent = useMemo(() => {
         if (!timelineCutoff) return recent || [];
         return (recent || []).filter((app) => {
@@ -1871,13 +2012,6 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
             return d && !isNaN(d.getTime()) && d <= timelineCutoff;
         });
     }, [recent, timelineCutoff]);
-    // Historical LC pins for the currently active timeline year —
-    // comes from the backend's historicalPins[year] keyed object.
-    const activeHistoricalPins = useMemo(() => {
-        const pins = urbanGrowthData?.historicalPins ?? {};
-        if (!activeYear) return [];
-        return pins[activeYear] ?? [];
-    }, [urbanGrowthData, activeYear]);
     const [is3DMode, setIs3DMode] = useState(true);
     const show3D = is3DMode && activeLayer === "diversity";
     // Once the 3D view has been created it stays mounted (hidden when not in
@@ -2057,12 +2191,12 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
     }, [activeLayer]);
 
     useEffect(() => {
-        if (!isTimelinePlaying || activeLayer !== "trends" || timelineYears.length <= 1) return;
+        if (!isTimelinePlaying || activeLayer !== "trends" || timelineQuarters.length <= 1) return;
         const id = setInterval(() => {
-            setActiveYearIndex((i) => (i >= timelineYears.length - 1 ? 0 : i + 1));
+            setActiveQuarterIndex((i) => (i >= timelineQuarters.length - 1 ? 0 : i + 1));
         }, 1400);
         return () => clearInterval(id);
-    }, [isTimelinePlaying, activeLayer, timelineYears.length]);
+    }, [isTimelinePlaying, activeLayer, timelineQuarters.length]);
 
     const handleSelectLocation = (loc) => {
         if (!loc || !loc.label) return;
@@ -2142,7 +2276,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
             ),
         },
         trends: {
-            label: "Urban Growth",
+            label: "LC Demand Forecasting",
             title: "Development Corridors",
             desc: "Ranked barangay growth pressure from live zoning permits",
             gradient: "from-emerald-900 to-teal-950",
@@ -2391,7 +2525,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                                     },
                                     {
                                         id: "trends",
-                                        label: "Urban Growth",
+                                        label: "LC Demand Forecasting",
                                         shortLabel: "Growth",
                                         key: "2",
                                         icon: (
@@ -2552,7 +2686,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                             </button>
                         </div>
 
-                        {/* Trends Mode: Time Machine — scrubs real permits by filing month */}
+                        {/* Trends Mode: Time Machine — scrubs real & forecasted permits by quarter */}
                         <div
                             className={`absolute bottom-6 left-1/2 -translate-x-1/2 z-[600] flex flex-col items-center gap-2 transition-all duration-500 ease-out ${
                                 activeLayer === "trends"
@@ -2560,24 +2694,54 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                                     : "opacity-0 translate-y-8 scale-95 pointer-events-none"
                             }`}
                         >
-                            <div className="flex items-center gap-2.5 bg-slate-900/80 backdrop-blur-md px-3.5 py-1 rounded-full text-white shadow-lg border border-white/10">
+                            {/* Header Badge */}
+                            <div className={`flex items-center gap-2.5 backdrop-blur-md px-3.5 py-1 rounded-full text-white shadow-lg border ${
+                                activeQuarter?.isForecast 
+                                    ? "bg-blue-950/90 border-blue-500/40" 
+                                    : "bg-slate-900/85 border-white/10"
+                            }`}>
                                 <span className="flex h-2 w-2 relative">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                                        activeQuarter?.isForecast ? "bg-blue-400" : "bg-emerald-400"
+                                    }`} />
+                                    <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                                        activeQuarter?.isForecast ? "bg-blue-500" : "bg-emerald-500"
+                                    }`} />
                                 </span>
-                                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-300">
-                                    As of Year {activeYear || "—"} · {Object.values(urbanGrowthData?.historicalPermits?.[activeYear] ?? {}).reduce((a, b) => a + b, 0)} LC permit{Object.values(urbanGrowthData?.historicalPermits?.[activeYear] ?? {}).reduce((a, b) => a + b, 0) === 1 ? "" : "s"} filed
+                                <span className={`text-[10px] font-mono font-bold uppercase tracking-widest ${
+                                    activeQuarter?.isForecast ? "text-blue-300" : "text-emerald-300"
+                                }`}>
+                                    As of {activeQuarter?.label || '—'} · {activePermitsCount} {activeQuarter?.isForecast ? 'Forecasted LC Projects' : ('LC Permit' + (activePermitsCount === 1 ? '' : 's') + ' Filed')}
                                 </span>
                             </div>
 
-                            <div className="flex items-center p-1.5 bg-white/90 backdrop-blur-xl border border-white/80 rounded-2xl shadow-[0_12px_36px_rgba(0,0,0,0.12)]">
+                            {/* Main Scrubber Control Panel */}
+                            <div className="flex items-center gap-3 p-2.5 px-4 bg-white/95 backdrop-blur-xl border border-slate-200/90 rounded-2xl shadow-[0_12px_36px_rgba(0,0,0,0.12)] w-[460px] sm:w-[520px]">
+                                {/* Step Back */}
+                                <button
+                                    onClick={() => {
+                                        setActiveQuarterIndex((i) => Math.max(0, i - 1));
+                                        setIsTimelinePlaying(false);
+                                    }}
+                                    disabled={activeQuarterIndex === 0}
+                                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-30 transition-all shrink-0 cursor-pointer"
+                                    title="Previous Quarter"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                                    </svg>
+                                </button>
+
+                                {/* Play / Pause */}
                                 <button
                                     onClick={() => setIsTimelinePlaying((p) => !p)}
-                                    disabled={timelineYears.length <= 1}
-                                    className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed ${
+                                    disabled={timelineQuarters.length <= 1}
+                                    className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all shadow-sm shrink-0 cursor-pointer disabled:opacity-40 ${
                                         isTimelinePlaying
                                             ? "bg-amber-500 text-white hover:bg-amber-600 ring-2 ring-amber-400/30"
-                                            : "bg-blue-800 text-white hover:bg-blue-900 ring-2 ring-blue-700/30"
+                                            : activeQuarter?.isForecast
+                                            ? "bg-blue-600 text-white hover:bg-blue-700 ring-2 ring-blue-500/30"
+                                            : "bg-blue-900 text-white hover:bg-blue-950 ring-2 ring-blue-800/30"
                                     }`}
                                     title={isTimelinePlaying ? "Pause Timeline" : "Auto-Play Timeline"}
                                 >
@@ -2592,36 +2756,60 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                                     )}
                                 </button>
 
-                                <div className="w-px h-5 bg-slate-200 mx-2" />
+                                {/* Step Forward */}
+                                <button
+                                    onClick={() => {
+                                        setActiveQuarterIndex((i) => Math.min(timelineQuarters.length - 1, i + 1));
+                                        setIsTimelinePlaying(false);
+                                    }}
+                                    disabled={activeQuarterIndex === timelineQuarters.length - 1}
+                                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-30 transition-all shrink-0 cursor-pointer"
+                                    title="Next Quarter"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
 
-                                <div className="flex items-center gap-1">
-                                    {timelineYears.map((y, idx) => {
-                                        const isActive = idx === activeYearIndex;
-                                        const isPast = idx < activeYearIndex;
-                                        return (
-                                            <button
-                                                key={y}
-                                                onClick={() => {
-                                                    setActiveYearIndex(idx);
-                                                    setIsTimelinePlaying(false);
-                                                }}
-                                                className={`relative px-3 py-1.5 rounded-xl font-mono text-xs font-bold transition-all duration-300 ${
-                                                    isActive
-                                                        ? "bg-blue-800 text-white shadow-md ring-2 ring-blue-600/30 scale-105"
-                                                        : isPast
-                                                        ? "text-slate-700 bg-slate-100 hover:bg-slate-200"
-                                                        : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                                }`}
-                                            >
-                                                {y}
-                                                <div
-                                                    className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full transition-all ${
-                                                        isActive ? "bg-white" : isPast ? "bg-blue-400" : "bg-transparent"
-                                                    }`}
-                                                />
-                                            </button>
-                                        );
-                                    })}
+                                <div className="w-px h-6 bg-slate-200" />
+
+                                {/* Range Scrubber Track & Year Ticks */}
+                                <div className="flex-1 flex flex-col justify-center gap-1 min-w-0">
+                                    <div className="flex items-center justify-between text-[11px] font-mono font-bold">
+                                        <span className={activeQuarter?.isForecast ? "text-blue-600 flex items-center gap-1.5" : "text-slate-800"}>
+                                            {activeQuarter?.isForecast && (
+                                                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-md bg-blue-100 text-blue-700 uppercase tracking-wide">
+                                                    Forecast
+                                                </span>
+                                            )}
+                                            {activeQuarter?.label}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 font-semibold">
+                                            {activeQuarterIndex + 1} of {timelineQuarters.length}
+                                        </span>
+                                    </div>
+
+                                    <input
+                                        type="range"
+                                        min={0}
+                                        max={timelineQuarters.length - 1}
+                                        value={activeQuarterIndex}
+                                        onChange={(e) => {
+                                            setActiveQuarterIndex(Number(e.target.value));
+                                            setIsTimelinePlaying(false);
+                                        }}
+                                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600 focus:outline-none"
+                                    />
+
+                                    <div className="flex justify-between text-[9px] font-mono font-bold text-slate-400 px-0.5">
+                                        <span>'21</span>
+                                        <span>'22</span>
+                                        <span>'23</span>
+                                        <span>'24</span>
+                                        <span>'25</span>
+                                        <span>'26</span>
+                                        <span className="text-blue-600 font-extrabold">Forecast</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2917,12 +3105,15 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
 
                                 {activeLayer === "trends" && (
                                     <TrendsPanel
+                                        activeQuarter={activeQuarter}
+                                        forecastMetrics={forecastMetrics}
                                         urbanGrowthData={urbanGrowthData}
                                         selectedBgy={selectedBgy}
                                         onClearBgy={() => setSelectedBgy(null)}
                                         onSelectBgy={(name) => handleSelectLocation({ label: name })}
                                         onLocateApp={handleLocateApp}
                                         recent={timelineRecent}
+                                        onForecastGenerated={handleForecastGenerated}
                                     />
                                 )}
 

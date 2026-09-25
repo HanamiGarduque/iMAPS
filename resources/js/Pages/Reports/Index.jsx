@@ -292,7 +292,6 @@ export default function ReportsIndex({ auth = {} }) {
                                         <div>
                                             <div className="flex items-center justify-between mb-3">
                                                 <label className="block text-xs font-bold text-slate-700">Data Columns to Include</label>
-                                                <span className="text-[10px] text-slate-400 font-medium italic">Date tracking variables are auto-included.</span>
                                             </div>
                                             <div className="flex flex-wrap gap-2.5">
                                                 {[

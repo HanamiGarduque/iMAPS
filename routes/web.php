@@ -32,7 +32,9 @@ Route::middleware('auth')->group(function () {
     // Place specific zoning lookup routes before the generic layer wildcard to avoid route collision
     Route::get('/api/map/zoning-lookup', [MapController::class, 'getZoningByCoordinates']);
     Route::get('/api/map/zoning-area-lookup', [MapController::class, 'getZoningByParcelArea']);
-    Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])->name('api.map.layer'); // Generic layer access (whitelisted inside controller)
+    Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])->name('api.map.layer');
+    Route::get('/api/forecast/{year}/{quarter}', [\App\Http\Controllers\ForecastController::class, 'getQuarterData']);
+    Route::post('/api/forecast/generate', [\App\Http\Controllers\ForecastController::class, 'generate']);
     Route::get('/maps/urban-growth-data', [MapController::class, 'getUrbanGrowthData'])->name('maps.urban_growth');
     // Landing page after login: KPI/welcome/analytics overview
     Route::get('/dashboard', [DashboardController::class, 'index'])
