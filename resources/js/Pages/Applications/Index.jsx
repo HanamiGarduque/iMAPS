@@ -1350,7 +1350,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                             {/* ── DATA VIEW (PIPELINE KANBAN / FOLDERS) ── */}
                             {viewMode === "kanban" ? (
                                 /* ── KANBAN PIPELINE BOARD VIEW ── */
-                                <div className="flex-1 overflow-x-auto min-h-0 pb-2">
+                                <div className="flex-1 overflow-x-auto min-h-0 pb-2 custom-scrollbar">
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 min-w-[1000px] h-full">
                                         {[
                                             { title: "Received Queue", statusKey: "Received", badgeColor: "bg-emerald-500" },
@@ -1364,21 +1364,23 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                             });
 
                                             return (
-                                                <div key={col.title} className="bg-slate-50/80 rounded-2xl p-3 border border-slate-200/90 flex flex-col h-full overflow-hidden">
-                                                    <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-200/80">
+                                                <div key={col.title} className="bg-slate-50/50 rounded-xl border border-slate-200/80 flex flex-col h-full overflow-hidden">
+                                                    {/* Column Header */}
+                                                    <div className="flex items-center justify-between p-3 border-b border-slate-200/80 bg-white/50">
                                                         <div className="flex items-center gap-2">
                                                             <span className={`w-2 h-2 rounded-full ${col.badgeColor}`} />
-                                                            <h3 className="text-xs font-bold text-slate-900">{col.title}</h3>
+                                                            <h3 className="text-sm font-semibold text-slate-800">{col.title}</h3>
                                                         </div>
-                                                        <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700">
+                                                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-200/50 text-slate-600">
                                                             {colItems.length}
                                                         </span>
                                                     </div>
 
-                                                    <div className="flex-1 overflow-y-auto space-y-2.5 pr-0.5">
+                                                    {/* Column Body (Cards) */}
+                                                    <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5 custom-scrollbar">
                                                         {colItems.length === 0 ? (
-                                                            <div className="py-8 text-center text-xs text-slate-400 font-medium">
-                                                                No applications in this stage
+                                                            <div className="py-8 text-center">
+                                                                <span className="text-[12px] font-medium text-slate-400">Empty</span>
                                                             </div>
                                                         ) : (
                                                             colItems.map((card) => {
@@ -1389,30 +1391,38 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                     <div
                                                                         key={card.id || refCode}
                                                                         onClick={() => router.visit(`/applications/${card.id || 101}`)}
-                                                                        className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs hover:shadow-sm hover:border-blue-400 hover:ring-2 hover:ring-blue-500/10 transition-all cursor-pointer group"
+                                                                        className="group bg-white rounded-lg border border-slate-200/80 p-3 hover:border-slate-300 hover:shadow-sm transition-all duration-200 cursor-pointer flex flex-col gap-2"
                                                                     >
-                                                                        <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                                                                            <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200/60">
-                                                                                {refCode}
-                                                                            </span>
-                                                                            <span className="text-[10px] text-slate-400 font-mono">
-                                                                                {formatDate(card.created_at)}
-                                                                            </span>
+                                                                        {/* Header: Ref & Date */}
+                                                                        <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium tracking-wide mb-0.5">
+                                                                            <span>{refCode}</span>
+                                                                            <span>{formatDate(card.created_at)}</span>
                                                                         </div>
 
-                                                                        <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-1">
-                                                                            {card.applicant_name}
-                                                                        </h4>
+                                                                        {/* Body: Applicant & Purpose */}
+                                                                        <div>
+                                                                            <h4 className="text-[13px] font-semibold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-1">
+                                                                                {card.applicant_name || "Unknown Applicant"}
+                                                                            </h4>
+                                                                            {card.purpose?.trim() && (
+                                                                                <p className="text-[12px] text-slate-500 mt-1 line-clamp-2 leading-snug">
+                                                                                    {card.purpose}
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
 
-                                                                        <p className="text-[11px] text-slate-400 line-clamp-2 mt-1 font-medium">
-                                                                            {card.purpose}
-                                                                        </p>
-
-                                                                        <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${landUseBadgeStyle}`}>
-                                                                                {card.land_use_class}
-                                                                            </span>
-                                                                            <span className="font-mono font-bold text-slate-800">
+                                                                        {/* Footer: Land Use & Fee */}
+                                                                        <div className="mt-2 pt-2 border-t border-slate-100/80 flex items-center justify-between">
+                                                                            {card.land_use_class?.trim() ? (
+                                                                                <span className={`px-2 py-0.5 rounded text-[10px] ${landUseBadgeStyle} font-medium border-transparent bg-opacity-40`}>
+                                                                                    {card.land_use_class}
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="px-2 py-0.5 rounded text-[10px] text-slate-500 bg-slate-100 font-medium border border-slate-200/50">
+                                                                                    Unclassified
+                                                                                </span>
+                                                                            )}
+                                                                            <span className="text-[12px] font-medium text-slate-700">
                                                                                 {formatFee(card.assessment_fee)}
                                                                             </span>
                                                                         </div>

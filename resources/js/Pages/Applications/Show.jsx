@@ -102,9 +102,7 @@ const inputBaseStyles = (hasError) => `
     ${hasError ? "border-rose-300 bg-rose-50/30 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10" : "border-slate-200 bg-white hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-xs"}
 `;
 
-const Textarea = ({ className = "", hasError = false, ...props }) => (
-    <textarea className={`${inputBaseStyles(hasError)} resize-none ${className}`} {...props} />
-);
+const Textarea = ({ className = "", hasError = false, ...props }) => <textarea className={`${inputBaseStyles(hasError)} resize-none ${className}`} {...props} />;
 
 // ── Assign Inspector Drawer Modal ──
 function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
@@ -351,7 +349,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     const [activeParcelFeature, setActiveParcelFeature] = useState(null);
     const [activeParcelIndex, setActiveParcelIndex] = useState(0);
     const [pinLookupMap, setPinLookupMap] = useState({});
-    const rosarioCenter = [13.8450, 121.2063];
+    const rosarioCenter = [13.845, 121.2063];
 
     useEffect(() => {
         fetch("/geojson/rosario_brgy_map.geojson")
@@ -399,11 +397,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     useEffect(() => {
         const tick = () => {
             const now = new Date();
-            setClock(
-                now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
-                " · " +
-                now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })
-            );
+            setClock(now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) + " · " + now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }));
         };
         tick();
         const id = setInterval(tick, 1000);
@@ -515,8 +509,10 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                 title: "text-lg font-bold text-slate-900",
                 htmlContainer: "text-xs text-slate-500",
                 actions: "flex items-center justify-center gap-3 mt-5",
-                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
-                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
+                confirmButton:
+                    "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
+                cancelButton:
+                    "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
             },
         }).then((result) => {
             if (result.isConfirmed) {
@@ -594,7 +590,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     const activeParcelData = uniqueParcels?.[activeParcelIndex] || uniqueParcels?.[0] || {};
     const siteInspection = activeParcelData?.site_inspection || null;
     const effectiveActiveStatus = liveStatuses[activeParcelData?.id]?.toLowerCase() || siteInspection?.status?.toLowerCase();
-    
+
     const showDecisionButtons = !siteInspection || ["completed", "submitted"].includes(effectiveActiveStatus);
     const hasCompletedInspection = siteInspection && ["completed", "submitted"].includes(effectiveActiveStatus);
 
@@ -625,37 +621,18 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
 
             <div id="dashboard-root" className="bg-slate-100/60 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
                 {/* ── UNIFIED NAVBAR ── */}
-                <Header 
-                    userName={userName} 
-                    userRole={userRole} 
-                    clock={clock} 
-                    onLogout={handleLogout} 
-                    sidebarOpen={sidebarOpen} 
-                    setSidebarOpen={setSidebarOpen} 
-                />
+                <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
                 <div className="flex-1 overflow-hidden relative flex flex-col min-w-0">
-                    <Sidebar 
-                        userName={userName} 
-                        userRole={userRole} 
-                        sidebarOpen={sidebarOpen} 
-                        setSidebarOpen={setSidebarOpen} 
-                        onLogout={handleLogout} 
-                        activePage="applications" 
-                    />
+                    <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="applications" />
 
-                    {sidebarOpen && (
-                        <div
-                            onClick={() => setSidebarOpen(false)}
-                            className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] z-[750] transition-opacity duration-300"
-                        />
-                    )}
+                    {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] z-[750] transition-opacity duration-300" />}
 
                     {/* ── SUB-NAVBAR ── */}
                     <div className="h-12 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between shrink-0 z-10 shadow-xs">
                         <div className="flex items-center gap-3">
-                            <Link 
-                                href="/applications" 
+                            <Link
+                                href="/applications"
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/90 text-slate-700 hover:text-slate-900 text-xs font-semibold border border-slate-200/80 transition-all shadow-2xs active:scale-95 group cursor-pointer"
                                 title="Return to All Records"
                             >
@@ -665,12 +642,8 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                 <span>All Records</span>
                             </Link>
                             <span className="text-slate-300">/</span>
-                            <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">
-                                {app.reference_number || `APP-${app.id}`}
-                            </span>
-                            <span className="hidden sm:inline text-xs text-slate-500 font-medium">
-                                · Brgy. {app.barangay}
-                            </span>
+                            <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">{app.reference_number || `APP-${app.id}`}</span>
+                            <span className="hidden sm:inline text-xs text-slate-500 font-medium">· Brgy. {app.barangay}</span>
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -679,7 +652,11 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all active:scale-98"
                             >
                                 <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                                    />
                                 </svg>
                                 <span>Update Status</span>
                             </button>
@@ -690,7 +667,9 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                     <main className="flex-1 w-full h-full flex flex-col bg-white overflow-hidden relative">
                         {toast && (
                             <div className="absolute top-4 right-4 z-[999] pointer-events-none">
-                                <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm pointer-events-auto transition-all ${toast.type === "success" ? "bg-slate-900 text-white border-slate-800" : "bg-rose-50 border-rose-200 text-rose-800"}`}>
+                                <div
+                                    className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm pointer-events-auto transition-all ${toast.type === "success" ? "bg-slate-900 text-white border-slate-800" : "bg-rose-50 border-rose-200 text-rose-800"}`}
+                                >
                                     <p className="font-semibold text-xs flex-1">{toast.msg}</p>
                                     <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-200">
                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -706,10 +685,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                             <div className="hidden lg:flex flex-col lg:w-1/2 bg-slate-50 border-r border-slate-200 relative">
                                 <div className="absolute inset-0 z-0">
                                     <MapContainer center={rosarioCenter} zoom={12} zoomControl={false} scrollWheelZoom={true}>
-                                        <TileLayer
-                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                        />
+                                        <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                                         {landUseMapData && <GeoJSON data={landUseMapData} style={getLandUseStyle} />}
                                         {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
                                         {parcelMapData && <GeoJSON key={activeParcelFeature?.properties?.property_index_number || "parcels"} data={parcelMapData} style={getParcelStyle} />}
@@ -718,61 +694,60 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                 </div>
 
                                 {/* Floating HUD */}
-                                <div className="absolute top-4 left-4 right-4 z-10 pointer-events-none">
+                                <div className="absolute bottom-6 left-6 z-10 pointer-events-none">
                                     {uniqueParcels?.map(
                                         (parcel, idx) =>
                                             idx === activeParcelIndex &&
                                             parcel.property_index_number && (
-                                                <div key={idx} className="bg-white/95 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-slate-200/80 pointer-events-auto max-w-sm">
-                                                    <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2.5">
-                                                        <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
-                                                            {parcel.parcel_code || `Parcel ${idx + 1}`} Overview
-                                                        </span>
-                                                        <span className="text-xs font-mono font-medium text-slate-600">
-                                                            PIN: {parcel.property_index_number}
-                                                        </span>
+                                                <div key={idx} className="bg-white/90 backdrop-blur-md p-3.5 rounded-xl shadow-sm border border-slate-200/60 pointer-events-auto min-w-[220px]">
+                                                    <div className="flex items-center justify-between gap-4 mb-1.5">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{parcel.parcel_code || `Parcel ${idx + 1}`}</span>
+                                                        <span className="text-[10px] font-mono text-slate-400">{parcel.property_index_number}</span>
                                                     </div>
-
-                                                    <div className="grid grid-cols-2 gap-2 text-xs">
-                                                        <div>
-                                                            <p className="text-[10px] text-slate-400 font-medium">Lot Number</p>
-                                                            <p className="font-semibold text-slate-800">{parcel.lot_number || "—"}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[10px] text-slate-400 font-medium">Declared Area</p>
-                                                            <p className="font-mono font-semibold text-slate-800">
-                                                                {parcel.lot_area_sqm || "0"} sq.m
-                                                            </p>
-                                                        </div>
-                                                        <div className="col-span-2">
-                                                            <p className="text-[10px] text-slate-400 font-medium">Barangay</p>
-                                                            <p className="font-semibold text-slate-800">Brgy. {app.barangay || "—"}</p>
-                                                        </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[13px] font-bold text-slate-800">{parcel.lot_number || "No Lot No."}</span>
+                                                        <span className="text-[11px] font-medium text-slate-500 mt-0.5">
+                                                            {parcel.lot_area_sqm || "0"} sq.m · Brgy. {app.barangay}
+                                                        </span>
                                                     </div>
                                                 </div>
-                                            )
+                                            ),
                                     )}
+                                </div>
+                                {/* Map Legend */}
+                                <div className="absolute top-4 right-4 z-10 pointer-events-auto bg-white/90 backdrop-blur-md p-3.5 rounded-xl shadow-sm border border-slate-200/60 min-w-[140px]">
+                                    <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">Map Legend</h4>
+                                    <div className="flex flex-col gap-2 text-[11px] font-medium text-slate-600">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-3 h-3 rounded-sm border-[2px] border-[#ef4444] bg-[#ef4444]/50 shadow-xs"></div>
+                                            <span>Selected Parcel</span>
+                                        </div>
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-3 h-3 rounded-sm border-[1.5px] border-[#2563eb] bg-[#3b82f6]/20"></div>
+                                            <span>Application Parcels</span>
+                                        </div>
+                                        <div className="flex items-center gap-2.5 mt-1 pt-2 border-t border-slate-100">
+                                            <div className="w-3 h-3 rounded-sm border border-slate-400/60 bg-slate-400/20"></div>
+                                            <span>Zoning / Land Use</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
                             {/* ── RIGHT SIDE: EVALUATION & DETAILS ── */}
                             <div className="flex-1 flex flex-col relative overflow-hidden lg:w-1/2">
                                 {/* Header Info */}
-                                <div className="bg-white px-6 py-4 border-b border-slate-200/80 shrink-0 z-10 flex items-start justify-between">
+                                <div className="bg-white px-8 py-6 border-b border-slate-100 shrink-0 z-10 flex items-start justify-between">
                                     <div>
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">
-                                                {app.reference_number || `APP-${app.id}`}
-                                            </span>
-                                            <span className="text-xs font-medium text-slate-400">Brgy. {app.barangay}</span>
-                                        </div>
-                                        <h2 className="text-xl font-bold text-slate-900 tracking-tight">{app.applicant_name}</h2>
-                                        <p className="text-xs text-slate-500 font-medium mt-0.5">{app.application_type}</p>
+                                        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight leading-none mb-1.5">{app.applicant_name}</h2>
+                                        <p className="text-[13px] text-slate-500 font-medium">{app.application_type}</p>
                                     </div>
-                                    <div className="text-right">
+                                    <div className="flex flex-col items-end gap-3">
                                         <StatusBadge status={app.status} />
-                                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-2">Assessment Fee</p>
-                                        <p className="font-mono text-sm font-bold text-slate-900">{formatFee(app.assessment_fee)}</p>
+                                        <div className="text-right">
+                                            <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">Assessment Fee</p>
+                                            <p className="font-mono text-[15px] font-bold text-slate-800">{formatFee(app.assessment_fee)}</p>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -818,7 +793,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                             inspectionId={activeParcelData.site_inspection?.id}
                                                             onStatusFetched={(status) => handleLiveStatusUpdate(activeParcelData.id, status)}
                                                         />
-                                                        
+
                                                         {showDecisionButtons ? (
                                                             <>
                                                                 <div>
@@ -847,8 +822,8 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                                             ? d === "Approved"
                                                                                                 ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs ring-1 ring-emerald-500"
                                                                                                 : d === "Declined"
-                                                                                                ? "bg-rose-50 border-rose-500 text-rose-700 shadow-xs ring-1 ring-rose-500"
-                                                                                                : "bg-amber-50 border-amber-500 text-amber-700 shadow-xs ring-1 ring-amber-500"
+                                                                                                  ? "bg-rose-50 border-rose-500 text-rose-700 shadow-xs ring-1 ring-rose-500"
+                                                                                                  : "bg-amber-50 border-amber-500 text-amber-700 shadow-xs ring-1 ring-amber-500"
                                                                                             : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                                                                                     }`}
                                                                                 >
@@ -924,7 +899,6 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                             </div>
                                                                         </div>
                                                                     )}
-
                                                                 </div>
                                                             </>
                                                         ) : (
@@ -964,9 +938,9 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                 )}
                                             </div>
                                         ) : (
-                                            <div className="max-w-xl mx-auto space-y-4">
+                                            <div className="max-w-xl mx-auto">
                                                 {/* Status Pipeline Progress Tracker */}
-                                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col md:flex-row items-center gap-5">
+                                                <div className="py-5 border-b border-slate-100 flex flex-col md:flex-row items-center gap-5">
                                                     <div className="w-full flex-1 flex items-center justify-between relative before:absolute before:inset-0 before:top-[12px] before:h-[2px] before:w-full before:bg-slate-100 z-0 px-2">
                                                         {["Received", "Technical Review", "Under SB", "For Release", "Released"].map((step, idx) => {
                                                             const stepKey = step === "Under SB" ? "Under Sangguniang Bayan" : step;
@@ -978,7 +952,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                             return (
                                                                 <div key={step} className="relative z-10 flex flex-col items-center gap-1.5 text-center w-16">
                                                                     <div
-                                                                        className={`flex items-center justify-center w-6 h-6 rounded-full border-[2px] border-white shadow-xs shrink-0 transition-colors duration-300
+                                                                        className={`flex items-center justify-center w-6 h-6 rounded-full border-[2px] border-white shrink-0 transition-colors duration-300
                                                                             ${isCurrent ? "bg-blue-600 ring-2 ring-blue-500/20" : isPassed ? "bg-emerald-500" : "bg-slate-200"}
                                                                         `}
                                                                     >
@@ -1001,26 +975,12 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                             );
                                                         })}
                                                     </div>
-
-                                                    <div className="shrink-0 md:pl-5 md:border-l border-slate-100 flex items-center justify-center w-full md:w-auto pt-3 md:pt-0 border-t md:border-t-0">
-                                                        <button
-                                                            onClick={() => setShowStatusModal(true)}
-                                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all active:scale-98 w-full justify-center"
-                                                        >
-                                                            <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-                                                            </svg>
-                                                            <span>Update Status</span>
-                                                        </button>
-                                                    </div>
                                                 </div>
 
-                                                {/* Application Dossier Card */}
-                                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-                                                    <h4 className="text-xs font-bold text-slate-700 mb-3.5">
-                                                        Dossier Parameters
-                                                    </h4>
-                                                    <div className="grid grid-cols-2 gap-y-3.5 gap-x-5 text-xs">
+                                                {/* Application Dossier */}
+                                                <div className="py-6 border-b border-slate-100">
+                                                    <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Dossier Parameters</h4>
+                                                    <div className="grid grid-cols-2 gap-y-4 gap-x-5 text-sm">
                                                         <div>
                                                             <p className="text-[10px] text-slate-400 font-medium mb-0.5">Form Number</p>
                                                             <p className="font-semibold text-slate-800">{app.form_number || "—"}</p>
@@ -1031,60 +991,54 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                         </div>
                                                         <div>
                                                             <p className="text-[10px] text-slate-400 font-medium mb-0.5">Primary Contact</p>
-                                                            <p className="font-mono font-semibold text-slate-800">{app.contact_number ? `+63 ${app.contact_number}` : "—"}</p>
+                                                            <p className="font-mono font-medium text-slate-800">{app.contact_number ? `+63 ${app.contact_number}` : "—"}</p>
                                                         </div>
                                                         <div>
                                                             <p className="text-[10px] text-slate-400 font-medium mb-0.5">Representative</p>
                                                             <p className="font-semibold text-slate-800">{app.representative_name || "N/A"}</p>
                                                         </div>
-                                                        <div className="col-span-2 pt-2 border-t border-slate-100">
-                                                            <p className="text-[10px] text-slate-400 font-medium mb-1">Operational Purpose</p>
-                                                            <p className="text-xs font-medium text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                                                {app.purpose || "—"}
-                                                            </p>
-                                                        </div>
+                                                        {app.purpose && (
+                                                            <div className="col-span-2 pt-2">
+                                                                <p className="text-[10px] text-slate-400 font-medium mb-1">Operational Purpose</p>
+                                                                <p className="text-[13px] font-medium text-slate-700 leading-relaxed">{app.purpose}</p>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
 
                                                 {/* Involved Parcels List */}
-                                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-                                                    <h4 className="text-xs font-bold text-slate-700 mb-3.5">
-                                                        Attached Spatial Parcels ({uniqueParcels?.length || 0})
-                                                    </h4>
+                                                <div className="py-6">
+                                                    <h4 className="text-xs font-bold text-slate-700 mb-3.5">Attached Spatial Parcels ({uniqueParcels?.length || 0})</h4>
                                                     <div className="space-y-2.5">
                                                         {uniqueParcels?.map((parcel, idx) => (
                                                             <div
                                                                 key={parcel.id}
                                                                 onClick={() => setActiveParcelIndex(idx)}
-                                                                className={`p-3 border rounded-xl cursor-pointer transition-all flex justify-between items-center ${
+                                                                className={`p-4 border rounded-xl cursor-pointer transition-all flex justify-between items-center ${
                                                                     activeParcelIndex === idx
                                                                         ? "bg-blue-50/80 border-blue-300 ring-1 ring-blue-500/20 shadow-xs"
                                                                         : "bg-slate-50/70 border-slate-200 hover:border-slate-300 hover:bg-white"
                                                                 }`}
                                                             >
                                                                 <div>
-                                                                    <p className="text-xs font-bold text-slate-900">
+                                                                    <p className="text-[13px] font-bold text-slate-900 mb-1">
                                                                         Parcel {idx + 1}
-                                                                        <span className="text-slate-500 font-mono text-xs ml-1.5">({parcel.property_index_number || "No PIN"})</span>
+                                                                        <span className="text-slate-500 font-mono text-[11px] font-medium ml-2">({parcel.property_index_number || "No PIN"})</span>
                                                                     </p>
-                                                                    <p className="text-xs text-slate-500 mt-0.5">
-                                                                        {parcel.location_address || "No address"} · Brgy. {parcel.barangay || app.barangay || "—"}
+                                                                    <p className="text-[11px] text-slate-500 font-medium">
+                                                                        {parcel.location_address ? parcel.location_address : `Brgy. ${parcel.barangay || app.barangay || "—"}`}
                                                                     </p>
-                                                                    <p className="text-xs text-slate-500 mt-0.5">
-                                                                        Owner: {parcel.owner_name || app.applicant_name || "—"} · Lot: {parcel.lot_number || "—"} · Area: {parcel.lot_area_sqm || "—"} SQ.M
+                                                                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                                                        Owner: {parcel.owner_name || app.applicant_name || "—"} <span className="mx-1.5 text-slate-300">•</span> {parcel.lot_number || "No Lot"} <span className="mx-1.5 text-slate-300">•</span> {parcel.lot_area_sqm || "—"} SQ.M
                                                                     </p>
-                                                                    <p className="text-xs text-blue-700 mt-0.5 font-medium">
-                                                                        Land Use: {parcel.land_use_class || app.land_use_class || "—"}
-                                                                    </p>
+                                                                    <p className="text-[11px] text-blue-700 mt-1 font-semibold">Land Use: {parcel.land_use_class || app.land_use_class || "—"}</p>
                                                                 </div>
                                                                 <span
-                                                                    className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all ${
-                                                                        activeParcelIndex === idx 
-                                                                            ? "bg-blue-600 text-white border-blue-600 shadow-xs" 
-                                                                            : "bg-white text-slate-600 border-slate-200"
+                                                                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border transition-all uppercase tracking-wider ${
+                                                                        activeParcelIndex === idx ? "bg-blue-600 text-white border-blue-600 shadow-xs" : "bg-white text-slate-500 border-slate-200"
                                                                     }`}
                                                                 >
-                                                                    {activeParcelIndex === idx ? "Viewing on Map" : "View Map"}
+                                                                    {activeParcelIndex === idx ? "Viewing" : "View"}
                                                                 </span>
                                                             </div>
                                                         ))}

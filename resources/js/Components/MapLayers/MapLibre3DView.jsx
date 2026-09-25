@@ -26,7 +26,7 @@ const DEFAULT_BEARING = -18;
 const CANVAS = "#f8f9fa";
 const GROUND = "#eef1f4";
 const INK = "#0f172a";
-const HAIRLINE = "#cbd5e1";
+const HAIRLINE = "#8b0000";
 
 const SRC_PRISMS = "diversity-source";
 const SRC_LABELS = "diversity-centroids";
@@ -457,10 +457,8 @@ export default function MapLibre3DView({
                     // Base zoom 12.6 fits ~0.05 degrees effective size.
                     let optimalZoom = 12.6 - Math.log2(effectiveSize / 0.05);
 
-                    // Nudge inwards slightly to fill the screen better.
-                    optimalZoom += 0.8;
-
-                    optimalZoom = Math.max(12.0, Math.min(16.5, optimalZoom));
+                    // Cap zoom to prevent super-zooming into small barangays
+                    optimalZoom = Math.max(12.0, Math.min(13.2, optimalZoom - 0.3));
                     bounds = { optimalZoom };
                 }
             }
@@ -634,8 +632,9 @@ export default function MapLibre3DView({
                     });
 
                     const effectiveSize = Math.max(Math.sqrt(totalArea), 0.001);
-                    let optimalZoom = 12.6 - Math.log2(effectiveSize / 0.05) + 0.8;
-                    optimalZoom = Math.max(12.0, Math.min(16.5, optimalZoom));
+                    let optimalZoom = 12.6 - Math.log2(effectiveSize / 0.05);
+                    // Cap zoom to prevent super-zooming into small barangays
+                    optimalZoom = Math.max(12.0, Math.min(13.2, optimalZoom - 0.3));
                     bounds = { optimalZoom };
                 }
             }

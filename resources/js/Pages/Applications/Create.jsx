@@ -1284,7 +1284,15 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     const handleContactInput = (e) => {
         let val = e.target.value.replace(/\D/g, "");
-        if (val.startsWith("0")) val = val.slice(1);
+        if (val === "") {
+            setForm((f) => ({ ...f, contact_number: "" }));
+            checkApplicantMatches("", "contact_number");
+            return;
+        }
+        if (val.startsWith("09")) val = val.slice(2);
+        else if (val.startsWith("9")) val = val.slice(1);
+        val = "9" + val;
+        if (val.length > 10) val = val.slice(0, 10);
         setForm((f) => ({ ...f, contact_number: val }));
         checkApplicantMatches(val, "contact_number");
     };
@@ -1776,7 +1784,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                         {/* Foreground: Centered Master Elevated Floating Modal (NON-SCROLLABLE modal wrapper) */}
                         <div className="relative z-10 flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 lg:p-6 overflow-hidden">
-                            <div className="w-full max-w-5xl h-[calc(100vh-8.5rem)] max-h-[580px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col lg:flex-row shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
+                            <div className="w-full max-w-6xl h-[calc(100vh-8.5rem)] max-h-[680px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col lg:flex-row shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
                                 
                                 {currentStep === 3 ? (
                                     /* ── STEP 3: GIS STUDIO (INSIDE FLOATING MODAL) ── */
@@ -2049,7 +2057,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                         <button
                                                             type="button"
                                                             onClick={handleBack}
-                                                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
+                                                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
                                                         >
                                                             <span>Back</span>
                                                         </button>
@@ -2060,16 +2068,16 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                             key="next-btn"
                                                             type="button"
                                                             onClick={handleNext}
-                                                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 cursor-pointer ml-auto"
+                                                            className="inline-flex items-center justify-center min-w-[100px] gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 cursor-pointer ml-auto"
                                                         >
-                                                            <span>{currentStep === 1 ? "Continue to Applicant" : currentStep === 2 ? "Continue to Property Location" : "Proceed to Assessment & Fees"}</span>
+                                                            <span>Next</span>
                                                         </button>
                                                     ) : (
                                                         <button
                                                             key="submit-btn"
                                                             type="submit"
                                                             disabled={submitting}
-                                                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
+                                                            className="inline-flex items-center justify-center min-w-[120px] gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
                                                         >
                                                             {submitting ? (
                                                                 <>

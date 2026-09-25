@@ -456,10 +456,10 @@ function LeafletMap({
         const bgyData = staticBgyData[name] || { total: 0, landUse: "Residential", diversity: 0.5 };
 
         const activeTotal = bgyData.total || 0;
-        const baseStyle = { color: "#2563eb", weight: 1.2, opacity: 0.9 };
+        const baseStyle = { color: "#8b0000", weight: 1.2, opacity: 0.9 };
 
         if (layer === "zoning") {
-            return { color: "#1e3a8a", weight: 1.2, fillColor: "transparent", fillOpacity: 0, opacity: 0.8 };
+            return { color: "#8b0000", weight: 1.2, fillColor: "transparent", fillOpacity: 0, opacity: 0.8 };
         }
 
         if (layer === "diversity") {
@@ -492,7 +492,7 @@ function LeafletMap({
             // parcels it would swallow every hover meant for the zones inside.
             if (isSelected) {
                 return {
-                    color: "#0f172a",
+                    color: "#8b0000",
                     weight: 2.4,
                     dashArray: null,
                     fill: false,
@@ -509,7 +509,7 @@ function LeafletMap({
             // render, the same way the selected barangay's own fill doesn't.
             if (anySelected) {
                 return {
-                    color: "#0f172a",
+                    color: "#8b0000",
                     weight: 0,
                     fillColor: "transparent",
                     fillOpacity: 0,
@@ -548,7 +548,7 @@ function LeafletMap({
         if (layer === "trends") {
             const isSelected = selectedBgy && selectedBgy.name && selectedBgy.name.trim().toLowerCase() === name.toLowerCase();
             return {
-                color: isSelected ? "#2563eb" : "#1e40af",
+                color: isSelected ? "#8b0000" : "#8b0000",
                 weight: isSelected ? 3.5 : 1.8,
                 dashArray: isSelected ? null : "3, 3",
                 fillColor: isSelected ? "#3b82f6" : "transparent",
@@ -629,7 +629,7 @@ function LeafletMap({
                 // shape clickable/hoverable instead of swallowing events.
                 matchedLayer.setStyle({
                     weight: 2.4,
-                    color: "#0f172a",
+                    color: "#8b0000",
                     fill: false,
                     opacity: 1,
                     dashArray: "",
@@ -639,8 +639,8 @@ function LeafletMap({
                 // layer has finer-grained colour underneath that this would hide.
                 matchedLayer.setStyle({
                     weight: isStatus ? 2.5 : 3.5,
-                    color: "#2563eb",
-                    fillColor: "#3b82f6",
+                    color: "#8b0000",
+                    fillColor: "#ef4444",
                     fillOpacity: isStatus ? 0.08 : 0.12,
                     dashArray: "",
                 });
@@ -713,7 +713,7 @@ function LeafletMap({
                         return {
                             color: colorConfig.stroke,
                             weight: isTrendsActive ? 1 : 1.5,
-                            fillColor: colorConfig.fill,
+                            fillColor: colorConfig.pattern ? `url(#${colorConfig.pattern})` : colorConfig.fill,
                             fillOpacity: isTrendsActive ? 0.65 : (isZoningActive ? opacityRef.current : 0),
                             opacity: isLandUsePlanVisible ? 0.9 : 0
                         };
@@ -1154,7 +1154,7 @@ function LeafletMap({
                 const p = lf.feature?.properties || {};
                 const n = resolveBarangayName(p);
                 if (n.toLowerCase() === selectedName) {
-                    lf.setStyle({ fill: false, weight: 2.4, color: "#0f172a", opacity: 1 });
+                    lf.setStyle({ fill: false, weight: 2.4, color: "#8b0000", opacity: 1 });
                     lf.bringToFront();
                 }
             });
@@ -1293,7 +1293,7 @@ function LeafletMap({
 
         const bgyData = staticBgyData[hoveredBgy] || {};
         const resolved = resolveLensValue(diversityLens, bgyData);
-        hoveredLayer.setStyle({ fillColor: resolved.color, fillOpacity: 0.9, weight: 3, color: "#0f172a", opacity: 1 });
+        hoveredLayer.setStyle({ fillColor: resolved.color, fillOpacity: 0.9, weight: 3, color: "#8b0000", opacity: 1 });
         hoveredLayer.bringToFront();
 
         return () => {
@@ -1750,7 +1750,31 @@ function LeafletMap({
         }
     }, [currentLayer, historicalPins, selectedBgy]);
 
-    return <div ref={mapRef} id="map" className="absolute inset-0 z-0" />;
+    return (
+        <>
+            <svg style={{ position: 'absolute', width: 0, height: 0 }}>
+                <defs>
+                    <pattern id="pattern-gray-line-969696" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+                        <rect width="8" height="8" fill="#969696" />
+                        <line x1="0" y1="0" x2="0" y2="8" stroke="#d1d5db" strokeWidth="2" />
+                    </pattern>
+                    <pattern id="pattern-gray-line-ffc92b" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+                        <rect width="8" height="8" fill="#ffc92b" />
+                        <line x1="0" y1="0" x2="0" y2="8" stroke="#969696" strokeWidth="2" />
+                    </pattern>
+                    <pattern id="pattern-gray-line-94d180" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+                        <rect width="8" height="8" fill="#94d180" />
+                        <line x1="0" y1="0" x2="0" y2="8" stroke="#969696" strokeWidth="2" />
+                    </pattern>
+                    <pattern id="pattern-darkgreen-line-5bb93c" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+                        <rect width="8" height="8" fill="#5bb93c" />
+                        <line x1="0" y1="0" x2="0" y2="8" stroke="#1c4714" strokeWidth="2" />
+                    </pattern>
+                </defs>
+            </svg>
+            <div ref={mapRef} id="map" className="absolute inset-0 z-0" />
+        </>
+    );
 }
 
 class MapsErrorBoundary extends Component {
@@ -2335,12 +2359,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
 
                         {activeLayer === "diversity" ? (
                             <>
-                                <DiversityControls
-                                    lens={diversityLens}
-                                    onSelectLens={handleSelectLens}
-                                    is3D={is3DMode}
-                                    onToggle3D={setIs3DMode}
-                                />
+
                                 <DiversityLegend
                                     lens={diversityLens}
                                     activeBand={diversityBandFilter}
