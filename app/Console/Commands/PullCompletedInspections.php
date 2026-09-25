@@ -11,8 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 class PullCompletedInspections extends Command
 {
-    protected $signature = 'sync:pull-inspections
-                            {--local-inspection-id= : Only pull the completed job for this local inspection ID}';
+    protected $signature = 'sync:pull-inspections {--local-inspection-id= : Only pull the completed job for this local inspection ID}';
     protected $description = 'Pulls completed site inspections from Supabase and syncs them locally';
 
     public function handle(SupabaseService $supabase)
