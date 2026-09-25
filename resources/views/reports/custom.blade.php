@@ -11,9 +11,9 @@
         .header-section p { margin: 5px 0; font-size: 11px; color: #555; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
-        th { background-color: #f3f4f6; }
-        .chart-container { text-align: center; margin-top: 20px; }
-        .chart-container img { max-width: 80%; height: auto; }
+        th { background-color: #f3f4f6; text-transform: uppercase; font-size: 10px; }
+        .chart-container { text-align: center; margin-top: 20px; margin-bottom: 30px; }
+        .chart-container img { max-width: 90%; height: auto; border: 1px solid #ddd; padding: 10px; background: #fafafa; }
     </style>
 </head>
 <body>
@@ -36,22 +36,20 @@
                 @foreach($rows as $row)
                     <tr>
                         @foreach($row as $cell)
-                            <td>{{ $cell }}</td>
+                            <td>{{ $cell !== '' && $cell !== null ? $cell : 'N/A' }}</td>
                         @endforeach
                     </tr>
                 @endforeach
             </tbody>
         </table>
     @else
-        <div class="chart-container">
-            @if(isset($chartUrl) && $chartUrl)
-                <img src="{{ $chartUrl }}" alt="Chart">
-            @else
-                <p>No chart data available.</p>
-            @endif
-        </div>
+        @if(isset($chartSrc) && $chartSrc)
+            <div class="chart-container">
+                <img src="{{ $chartSrc }}" alt="Chart">
+            </div>
+        @endif
         
-        <h3 style="margin-top: 30px;">Data Summary</h3>
+        <h3>Data Summary</h3>
         <table>
             <thead>
                 <tr>
@@ -64,7 +62,7 @@
                 @foreach($rows as $row)
                     <tr>
                         @foreach($row as $cell)
-                            <td>{{ $cell }}</td>
+                            <td>{{ $cell !== '' && $cell !== null ? $cell : 'N/A' }}</td>
                         @endforeach
                     </tr>
                 @endforeach

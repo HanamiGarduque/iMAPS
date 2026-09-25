@@ -9,7 +9,7 @@ use App\Http\Controllers\MapController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SearchController;
-use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -122,9 +122,10 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::get('register-new-account', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('register-new-account', [RegisteredUserController::class, 'store']);
 
-    Route::get('/reports-and-forecasting', [AnalyticsController::class, 'index'])->name('analytics.index');
-    Route::post('/api/forecast', [AnalyticsController::class, 'forecast'])->name('analytics.forecast');
-    Route::post('/api/analytics/upload-cpi', [AnalyticsController::class, 'uploadCpi'])->name('analytics.upload-cpi');
+    // ── Standard Reports ──
+    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::post('/api/analytics/report/preview', [ReportController::class, 'previewReport'])->name('reports.preview');
+    Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->name('reports.generate');
 
     Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');

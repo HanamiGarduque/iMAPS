@@ -63,9 +63,9 @@ export default function Sidebar({
             ),
         },
         {
-            href: '/reports-and-forecasting',
-            label: 'Reports & Forecasting',
-            badge: 'BI',
+            href: '/reports',
+            label: 'Report Generationn',
+            badge: null,
             adminOnly: true,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
