@@ -26,7 +26,7 @@ const DEFAULT_BEARING = -18;
 const CANVAS = "#f8f9fa";
 const GROUND = "#eef1f4";
 const INK = "#0f172a";
-const HAIRLINE = "#cbd5e1";
+const HAIRLINE = "#8b0000";
 
 const SRC_PRISMS = "diversity-source";
 const SRC_LABELS = "diversity-centroids";

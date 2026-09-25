@@ -185,12 +185,44 @@ export default function StepPropertyGIS({
     handleSubmit,
 }) {
     const [isMapExpanded, setIsMapExpanded] = useState(false);
+    const [activeTab, setActiveTab] = useState("verification");
     const shouldShowTargetZoning = form.application_stream === "amendment";
+
+    // ── Map Notification State ──
+    const isVerifying = Object.values(pinLoading || {}).some(Boolean);
+    const [mapMessage, setMapMessage] = useState(null);
+    const prevVerifyingRef = React.useRef(false);
+
+    useEffect(() => {
+        if (isVerifying) {
+            setMapMessage({ type: "loading", text: "Verifying PIN in Municipal Database..." });
+            prevVerifyingRef.current = true;
+        } else if (prevVerifyingRef.current) {
+            setMapMessage({ type: "success", text: "Verification Check Complete" });
+            const timer = setTimeout(() => setMapMessage(null), 3500);
+            prevVerifyingRef.current = false;
+            return () => clearTimeout(timer);
+        }
+    }, [isVerifying]);
     const selectedApplicationTypes = (form.application_type || "")
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean);
     const isRezoningApplication = selectedApplicationTypes.includes("Petition for Rezoning");
+    const isAmendmentStream = form.application_stream === "amendment";
+    
+    // Progression Status
+    const isVerificationDone = form.parcels?.length > 0 && form.parcels.every(p => p.is_verified);
+    
+    // Check if any parcel has a mismatch to lock progression globally
+    const isProgressionLocked = (form.parcels || []).some(p => {
+        const cadastral = p.cadastral_zone?.trim().toLowerCase();
+        const clup = p.land_use_class?.trim().toLowerCase();
+        return p.is_verified && cadastral && clup && cadastral !== clup;
+    }) && !isAmendmentStream;
+
+    const isEvaluationDone = isVerificationDone && !isProgressionLocked;
+    const isDetailsDone = !!(form.project_nature && form.project_tenure);
 
     const handleSelectZoningCategory = (catId) => {
         // Update main form land use class
@@ -205,15 +237,6 @@ export default function StepPropertyGIS({
     };
 
     // ── Phase 2: Evaluation Engine (Cadastral vs CLUP Cross-Reference) ──
-    const isAmendmentStream = form.application_stream === "amendment";
-    
-    // Check if any parcel has a mismatch to lock progression globally
-    const isProgressionLocked = (form.parcels || []).some(p => {
-        const cadastral = p.cadastral_zone?.trim().toLowerCase();
-        const clup = p.land_use_class?.trim().toLowerCase();
-        return p.is_verified && cadastral && clup && cadastral !== clup;
-    }) && !isAmendmentStream;
-
     const handleSwitchStream = (newType, parcelIndex) => {
         // Grab ONLY the parcel that triggered the amendment
         const triggeringParcel = form.parcels[parcelIndex];
@@ -243,8 +266,8 @@ export default function StepPropertyGIS({
                 <div className="absolute inset-0 z-0">
                     <MapContainer center={rosarioCenter} zoom={12} zoomControl={false} scrollWheelZoom={true}>
                         <TileLayer
-                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            attribution="&copy; Google Maps"
+                            url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
                             zIndex={1}
                         />
                         
@@ -252,7 +275,7 @@ export default function StepPropertyGIS({
                             url="/tiles/clup_tiles/{z}/{x}/{y}.png"
                             maxZoom={22}
                             maxNativeZoom={19}
-                            opacity={0.85}
+                            opacity={0.4}
                             zIndex={10}
                             errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
                         />
@@ -271,7 +294,9 @@ export default function StepPropertyGIS({
                                             const lot = p.lot_number || p.lot_no;
                                             const area = p.lot_area_sqm || p.area;
                                             const brgy = p.barangay;
-                                            handleSelectMapParcel(pin, lot, area, brgy, feature);
+                                            setTimeout(() => {
+                                                handleSelectMapParcel(pin, lot, area, brgy, feature);
+                                            }, 10);
                                         },
                                     });
                                 }}
@@ -293,7 +318,7 @@ export default function StepPropertyGIS({
                                         <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 mb-1.5 gap-2">
                                             <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md flex items-center gap-1">
                                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                                                {parcel.parcel_code} Cadastral Lot
+                                                {parcel.parcel_code} Assessor Lot
                                             </span>
                                             <span className="text-[10px] font-mono font-bold text-slate-700 truncate">
                                                 PIN: {parcel.property_index_number}
@@ -324,7 +349,7 @@ export default function StepPropertyGIS({
                         <button
                             type="button"
                             onClick={() => setIsMapExpanded((prev) => !prev)}
-                            className="inline-flex items-center gap-1.5 bg-white/95 hover:bg-white text-slate-700 hover:text-blue-700 px-3 py-1.5 rounded-xl shadow-lg border border-slate-200/90 text-xs font-bold transition-all active:scale-95 cursor-pointer backdrop-blur-xs"
+                            className="inline-flex items-center gap-1.5 bg-white/95 hover:bg-white text-slate-700 hover:text-blue-700 px-3 py-1.5 rounded-full shadow-lg border border-slate-200/90 text-xs font-bold transition-all active:scale-95 cursor-pointer backdrop-blur-xs"
                             title={isMapExpanded ? "Restore split view" : "Maximize map for detailed digitizing"}
                         >
                             {isMapExpanded ? (
@@ -351,7 +376,7 @@ export default function StepPropertyGIS({
                         <button
                             type="button"
                             onClick={() => setIsMapExpanded(false)}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xl transition-all active:scale-95 cursor-pointer"
+                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xl transition-all active:scale-95 cursor-pointer"
                         >
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -370,6 +395,22 @@ export default function StepPropertyGIS({
                     </span>
                     <span className="text-[10px] text-slate-400 font-normal hidden sm:inline">(Click boundary on map to select)</span>
                 </div>
+
+                {/* ── MAP NOTIFICATION OVERLAY ── */}
+                {mapMessage && (
+                    <div className="absolute inset-0 z-50 bg-slate-900/10 backdrop-blur-[2px] flex items-center justify-center animate-in fade-in duration-300 pointer-events-none">
+                        <div className="bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-2xl border border-slate-200 flex items-center gap-3 transform transition-all pointer-events-auto">
+                            {mapMessage.type === "loading" ? (
+                                <span className="w-5 h-5 border-2 border-slate-200 border-t-blue-600 rounded-full animate-spin shrink-0" />
+                            ) : (
+                                <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                </div>
+                            )}
+                            <p className="text-sm font-bold text-slate-700">{mapMessage.text}</p>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* ── RIGHT: PROPERTY FORM PANEL ── */}
@@ -383,104 +424,110 @@ export default function StepPropertyGIS({
             >
                 <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
                     <div className="space-y-4">
-                        <div className="flex items-start justify-between">
+                        <div className="flex items-start justify-between pb-3 border-b border-slate-200/80">
                             <div>
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 uppercase tracking-wider">
-                                    Step 3 of 5 · PIN Verification & Zoning
-                                </span>
-                                <h3 className="text-xl font-bold text-slate-900 tracking-tight mt-1.5">Property Location & Land Classification</h3>
-                                <p className="text-xs text-slate-500 mt-0.5">
-                                    Verify the Tax Declaration PIN against municipal land use records, then determine the approved zoning category.
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                        Step 3 of 5 - Property Location
+                                    </span>
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-900 tracking-tight">Property Map & Zoning</h3>
+                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                    Locate the property on the map or enter the PIN to verify location and zoning.
                                 </p>
                             </div>
                             {totalLotArea > 0 && (
-                                <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-2.5 py-1 rounded-xl shadow-2xs shrink-0">
-                                    {totalLotArea.toLocaleString()} sq.m Total
+                                <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200/80 px-2.5 py-1 rounded-md shadow-2xs shrink-0 flex flex-col items-end">
+                                    <span className="text-[9px] uppercase text-slate-400">Total Area</span>
+                                    <span>{totalLotArea.toLocaleString()} m&sup2;</span>
                                 </span>
                             )}
                         </div>
 
-                        {shouldShowTargetZoning && (
-                            <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-2 mb-2">
-                                <div>
-                                    <h4 className="text-xs font-bold uppercase tracking-wider text-blue-800">Legislative Amendment Target</h4>
-                                    <p className="text-[11px] text-blue-600 mb-2">Specify the proposed zoning class for this request.</p>
-                                </div>
-                                <Label required hasError={!!errors.target_land_use_class}>Target Zoning Classification</Label>
-                                <Select 
-                                    value={form.target_land_use_class || ""} 
-                                    onChange={set("target_land_use_class")} 
-                                    hasError={!!errors.target_land_use_class}
-                                    className="bg-white"
+                        {/* Internal Tabs (Slider) */}
+                        <div className="relative mb-5 mt-2">
+                            <div className="flex bg-slate-100/80 p-1.5 rounded-full border border-slate-200/50 shadow-inner relative z-10">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab("verification")}
+                                    className={`flex-1 flex items-center justify-center py-2 px-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                                        activeTab === "verification" 
+                                            ? "bg-white text-blue-700 shadow-sm border border-slate-200/60" 
+                                            : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                                    }`}
                                 >
-                                    <option value="" disabled>Select target zoning...</option>
-                                    {isRezoningApplication ? (
-                                        ZONING_SUB_CLASSES.map((group) => (
-                                            <optgroup key={group.name} label={group.name} className="font-bold text-slate-900 bg-slate-50">
-                                                {group.items.map((item) => (
-                                                    <option key={item.code} value={item.code} className="font-medium text-slate-700 bg-white">
-                                                        {item.label} ({item.code})
-                                                    </option>
-                                                ))}
-                                            </optgroup>
-                                        ))
-                                    ) : (
-                                        LAND_USE_CLASSES.map((c) => (
-                                            <option key={c} value={c} className="font-medium text-slate-700">{c}</option>
-                                        ))
-                                    )}
-                                </Select>
-                                {errors.target_land_use_class && <p className="text-xs font-medium text-rose-500 mt-1">{errors.target_land_use_class}</p>}
+                                    PIN Verification
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab("evaluation")}
+                                    className={`flex-1 flex items-center justify-center py-2 px-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                                        activeTab === "evaluation" 
+                                            ? "bg-white text-emerald-700 shadow-sm border border-slate-200/60" 
+                                            : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                                    }`}
+                                >
+                                    Parcel Evaluation
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab("details")}
+                                    disabled={isProgressionLocked}
+                                    className={`flex-1 flex items-center justify-center py-2 px-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                                        activeTab === "details" 
+                                            ? "bg-white text-slate-700 shadow-sm border border-slate-200/60" 
+                                            : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                                    } ${isProgressionLocked ? "opacity-50 cursor-not-allowed" : ""}`}
+                                >
+                                    Project Details
+                                </button>
                             </div>
-                        )}
+                            
+                            {/* Visual Progression Bar */}
+                            <div className="h-1.5 w-[96%] mx-auto bg-slate-100 rounded-full overflow-hidden mt-3 border border-slate-200/60 shadow-inner">
+                                <div 
+                                    className="h-full bg-blue-500 transition-all duration-700 ease-out"
+                                    style={{ width: isDetailsDone ? '100%' : (isEvaluationDone ? '66%' : (isVerificationDone ? '33%' : '0%')) }}
+                                />
+                            </div>
+                        </div>
 
-                        <div className="lg:hidden">
+                        {activeTab === "verification" && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                                <div className="lg:hidden">
                             <button
                                 type="button"
                                 onClick={() => setIsMapExpanded(true)}
-                                className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold shadow-2xs active:scale-98 cursor-pointer"
+                                className="w-full flex items-center justify-center gap-2 p-2.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold shadow-2xs active:scale-98 cursor-pointer"
                             >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                                 </svg>
                                 <span>Open Interactive GIS Map</span>
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                            <div className="sm:col-span-6">
-                                <Label required hasError={!!errors.barangay}>Barangay</Label>
-                                <Input
-                                    type="text"
-                                    readOnly
-                                    value={form.barangay || ""}
-                                    onChange={set("barangay")}
-                                    hasError={!!errors.barangay}
-                                    placeholder="Barangay will populate from the verified GeoJSON parcel"
-                                    className="bg-slate-100/80 cursor-default"
-                                />
-                                {errors.barangay && <p className="text-xs font-medium text-rose-500 mt-1">{errors.barangay}</p>}
+                        {form.barangay ? (
+                            <div className="flex items-center gap-2 mb-3">
+                                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Property Location:</span>
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
+                                    Brgy. {form.barangay}
+                                </span>
                             </div>
-                        </div>
+                        ) : (
+                            <div className="flex items-center gap-2 mb-3 text-slate-400 text-xs font-medium bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/50 w-max">
+                                <span>Select a lot on the map or verify PIN to auto-detect Barangay.</span>
+                            </div>
+                        )}
 
                         {/* ── SECTION 1: TAX DECLARATION PIN VERIFICATION ── */}
                         <div className="space-y-3 pt-1">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                                        <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                                        1. Tax Declaration PIN Verification
-                                    </h4>
-                                    <p className="text-[11px] text-slate-500">Cross-reference applicant's PIN with the municipality's approved land use database.</p>
-                                </div>
-                            </div>
-
                             {(form.parcels || []).map((parcel, index) => (
-                                <div key={index} className="rounded-2xl bg-slate-50/90 border border-slate-200 p-3.5 space-y-3 relative">
-                                    <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
-                                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700">
-                                            <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                                            {parcel.parcel_code || `Lot ${index + 1}`}
+                                <div key={index} className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 space-y-4 relative">
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                        <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-800 uppercase tracking-widest">
+                                            <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
+                                            {parcel.parcel_code || `Property Lot ${index + 1}`}
                                         </span>
                                         {form.parcels && form.parcels.length > 1 && (
                                             <button 
@@ -505,7 +552,31 @@ export default function StepPropertyGIS({
                                             <Input 
                                                 type="text" 
                                                 value={parcel.property_index_number || ""} 
-                                                onChange={setParcelField(index, "property_index_number")} 
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    if (!val.trim()) {
+                                                        setForm(prev => ({
+                                                            ...prev,
+                                                            parcels: prev.parcels.map((p, i) => i === index ? {
+                                                                ...p,
+                                                                property_index_number: "",
+                                                                is_verified: false,
+                                                                owner_name: "",
+                                                                cadastral_zone: "",
+                                                                land_use_class: "",
+                                                                parcel_code: "",
+                                                                lot_number: "",
+                                                                survey_number: "",
+                                                                arp_number: ""
+                                                            } : p)
+                                                        }));
+                                                        if (typeof handleSelectMapParcel === 'function') {
+                                                            handleSelectMapParcel(null, index);
+                                                        }
+                                                    } else {
+                                                        setParcelField(index, "property_index_number")(e);
+                                                    }
+                                                }}
                                                 placeholder="e.g. 04-01-021-XXX-XX-XXX" 
                                                 className="flex-1 font-mono bg-white uppercase" 
                                                 hasError={!!errors[`parcels.${index}.property_index_number`]} 
@@ -513,24 +584,30 @@ export default function StepPropertyGIS({
                                             <button 
                                                 type="button" 
                                                 onClick={() => handlePinLookup(index)} 
-                                                disabled={pinLoading[index] || !parcel.property_index_number?.trim()} 
-                                                className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all shadow-xs whitespace-nowrap cursor-pointer ${
-                                                    pinLoading[index] || !parcel.property_index_number?.trim() 
-                                                        ? "bg-slate-200 text-slate-400 cursor-not-allowed" 
-                                                        : "bg-blue-600 hover:bg-blue-700 text-white active:scale-98"
+                                                disabled={pinLoading[index] || !parcel.property_index_number?.trim() || parcel.is_verified} 
+                                                className={`inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold transition-all shadow-xs whitespace-nowrap ${
+                                                    parcel.is_verified 
+                                                        ? "bg-slate-200 text-slate-500 cursor-default"
+                                                        : pinLoading[index] || !parcel.property_index_number?.trim() 
+                                                            ? "bg-slate-200 text-slate-400 cursor-not-allowed" 
+                                                            : "bg-slate-800 hover:bg-slate-900 text-white active:scale-98 cursor-pointer"
                                                 }`}
                                             >
                                                 {pinLoading[index] ? (
                                                     <>
-                                                        <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                                        <span className="w-3.5 h-3.5 border-2 border-slate-400/40 border-t-slate-600 rounded-full animate-spin" />
                                                         <span>Verifying...</span>
+                                                    </>
+                                                ) : parcel.is_verified ? (
+                                                    <>
+                                                        <span>Verified</span>
                                                     </>
                                                 ) : (
                                                     <>
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                         </svg>
-                                                        <span>Verify with Land Records</span>
+                                                        <span>Verify</span>
                                                     </>
                                                 )}
                                             </button>
@@ -542,148 +619,205 @@ export default function StepPropertyGIS({
 
                                     {/* Cross-Referenced Database Details */}
                                     {parcel.is_verified || parcel.lot_number ? (
-                                        <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-2.5 space-y-2 animate-in fade-in">
-                                            <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800">
-                                                <span className="flex items-center gap-1">
-                                                    <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                                    </svg>
-                                                    PIN Verified in Official Municipal Database
+                                        <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4">
+                                            <div className="flex items-center justify-between pb-3 border-b border-slate-200/80 mb-3">
+                                                <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold text-emerald-700">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                    Property Found in Records
                                                 </span>
-                                                <span className="text-[10px] font-mono font-medium text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                                                <span className="text-[10px] font-mono font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs">
                                                     {parcel.parcel_code}
                                                 </span>
                                             </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5 text-xs bg-white/90 p-2.5 rounded-lg border border-emerald-100">
-                                                <div><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">ARP Number</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.arp_number || "—"}</p></div>
-                                                <div><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Survey Number</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.survey_number || "—"}</p></div>
-                                                <div><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Registered Lot</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.lot_number || "—"}</p></div>
-                                                <div><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Owner</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.owner_name || "—"}</p></div>
+                                            
+                                            <div className="space-y-4 text-xs">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Registered Owner</span>
+                                                    <span className="font-bold text-slate-800">{parcel.owner_name || "—"}</span>
+                                                </div>
                                                 
-                                                <div className="sm:col-span-2"><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Cadastral Zoning (Assessor)</p><p className="font-semibold text-slate-800 truncate mt-0.5">{parcel.cadastral_zone || "—"}</p></div>
-                                                <div className="sm:col-span-2"><p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">CLUP 2030 Zoning (MPDO)</p><p className="font-bold text-blue-700 mt-0.5 truncate">{parcel.land_use_class || "—"}</p></div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Assessor Record</span>
+                                                        <span className="font-semibold text-slate-800 truncate">{parcel.cadastral_zone || "—"}</span>
+                                                    </div>
+                                                    <div className="flex flex-col gap-1 text-right">
+                                                        <span className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Mapped Land Use</span>
+                                                        <span className="font-bold text-slate-800 truncate">{parcel.land_use_class || "—"}</span>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="flex items-center justify-between pt-3 border-t border-slate-200/80 text-[10px] font-mono">
+                                                    <span className="text-slate-400">ARP: <span className="font-semibold text-slate-700">{parcel.arp_number || "—"}</span></span>
+                                                    <span className="text-slate-400">SURVEY: <span className="font-semibold text-slate-700">{parcel.survey_number || "—"}</span></span>
+                                                    <span className="text-slate-400">LOT: <span className="font-semibold text-slate-700">{parcel.lot_number || "—"}</span></span>
+                                                </div>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="bg-slate-100/70 border border-dashed border-slate-300 rounded-xl p-2.5 text-[11px] text-slate-500 flex items-center gap-2">
-                                            <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                                            </svg>
-                                            <span>Enter the PIN printed on the applicant's Tax Declaration and click <b>Verify with Land Records</b>, or click the parcel on the GIS map.</span>
+                                        <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 text-[11px] text-slate-500 flex items-start gap-2.5">
+                                            <div className="w-6 h-6 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center shrink-0 mt-0.5">
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
+                                            </div>
+                                            <p className="leading-relaxed">Enter the PIN printed on the applicant's Tax Declaration and click <b>Verify</b>, or select a parcel polygon on the GIS map.</p>
                                         </div>
                                     )}
-
-                                    {/* ── PER-PARCEL MISMATCH INTERCEPT BANNER ── */}
-                                    {(() => {
-                                        if (!parcel.is_verified || !parcel.land_use_class || !parcel.cadastral_zone) return null;
-                                        const cadastral = parcel.cadastral_zone.trim().toLowerCase();
-                                        const clup = parcel.land_use_class.trim().toLowerCase();
-                                        
-                                        if (cadastral === clup) return null;
-
-                                        let parcelIntercept = null;
-                                        if (isAmendmentStream) {
-                                            parcelIntercept = {
-                                                color: "blue",
-                                                icon: <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />,
-                                                title: "Legislative Track Activated",
-                                                message: "You have explicitly requested a legislative amendment for this lot. This file will bypass standard clearance checks."
-                                            };
-                                        } else if (cadastral.includes("agri") || cadastral.includes("agricultural") || cadastral.includes("agind")) {
-                                            parcelIntercept = {
-                                                color: "rose",
-                                                icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />,
-                                                title: "System Stop: Cadastral Zoning Discrepancy",
-                                                message: `The Assessor's cadastral record classifies this lot as "${parcel.cadastral_zone}", but the spatial Land Use Plan designates it as "${parcel.land_use_class}".`,
-                                                action: { label: "Switch to Reclassification Stream", type: "Petition for Reclassification" }
-                                            };
-                                        } else {
-                                            parcelIntercept = {
-                                                color: "amber",
-                                                icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />,
-                                                title: "System Intercept: Zoning Map Amendment Required",
-                                                message: `The Assessor's cadastral record classifies this lot as "${parcel.cadastral_zone}", but the spatial Land Use Plan designates it as "${parcel.land_use_class}".`,
-                                                action: { label: "Switch to Rezoning Stream", type: "Petition for Rezoning" }
-                                            };
-                                        }
-
-                                        return (
-                                            <div className={`mt-3 p-3.5 rounded-xl border flex items-start gap-3 animate-in fade-in shadow-xs ${
-                                                parcelIntercept.color === 'blue' ? 'bg-blue-50/80 border-blue-200' :
-                                                parcelIntercept.color === 'rose' ? 'bg-rose-50/80 border-rose-200' :
-                                                'bg-amber-50/80 border-amber-200'
-                                            }`}>
-                                                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                                                    parcelIntercept.color === 'blue' ? 'bg-blue-100 text-blue-700' :
-                                                    parcelIntercept.color === 'rose' ? 'bg-rose-100 text-rose-700' :
-                                                    'bg-amber-100 text-amber-700'
-                                                }`}>
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">{parcelIntercept.icon}</svg>
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <h4 className={`text-xs font-bold ${
-                                                        parcelIntercept.color === 'blue' ? 'text-blue-900' :
-                                                        parcelIntercept.color === 'rose' ? 'text-rose-900' :
-                                                        'text-amber-900'
-                                                    }`}>{parcelIntercept.title}</h4>
-                                                    <p className={`text-[11px] mt-0.5 leading-relaxed ${
-                                                        parcelIntercept.color === 'blue' ? 'text-blue-800' :
-                                                        parcelIntercept.color === 'rose' ? 'text-rose-800' :
-                                                        'text-amber-800'
-                                                    }`}>{parcelIntercept.message}</p>
-                                                    
-                                                    {parcelIntercept.action && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSwitchStream(parcelIntercept.action.type, index)}
-                                                            className={`mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-xs cursor-pointer ${
-                                                                parcelIntercept.color === 'rose' 
-                                                                    ? 'bg-rose-600 hover:bg-rose-700 text-white' 
-                                                                    : 'bg-amber-600 hover:bg-amber-700 text-white'
-                                                            }`}
-                                                        >
-                                                            <span>{parcelIntercept.action.label}</span>
-                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })()}
-
-                                    <ParcelInspectionScheduler
-                                        index={index}
-                                        parcel={parcel}
-                                        setParcelField={setParcelField}
-                                        inspectors={inspectors}
-                                        errors={errors}
-                                    />
                                 </div>
                             ))}
 
                             <button 
                                 type="button" 
                                 onClick={addParcel} 
-                                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/40 text-slate-600 hover:text-blue-700 font-semibold text-xs transition-all cursor-pointer"
+                                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 text-slate-500 hover:text-blue-700 font-bold text-xs transition-all cursor-pointer"
                             >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                                 </svg> 
-                                <span>+ Add Another Property Lot</span>
+                                <span>Add Another Parcel</span>
                             </button>
                         </div>
-
-                        {/* ── SECTION 2: PROJECT AREA & ADDITIONAL LOCATION DETAILS ── */}
-                        <div className="space-y-3 pt-2 border-t border-slate-100">
-                            <div>
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                                    2. Project Area & Location Details
-                                </h4>
-                                <p className="text-[11px] text-slate-500">Specify project area, tenure and other location metadata retrieved from PIN lookup where available.</p>
                             </div>
+                        )}
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {activeTab === "evaluation" && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                                {shouldShowTargetZoning && (
+                                    <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-2xl space-y-3 mb-2 shadow-sm">
+                                        <div className="flex items-center gap-2 border-b border-blue-100 pb-2 mb-1">
+                                            <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                            </div>
+                                            <div>
+                                                <h4 className="text-[11px] font-bold uppercase tracking-wider text-blue-800">Legislative Amendment Target</h4>
+                                                <p className="text-[10px] text-blue-600/80">Select the proposed zoning class for this amendment request.</p>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <Label required hasError={!!errors.target_land_use_class}>Target Zoning Classification</Label>
+                                            <Select 
+                                                value={form.target_land_use_class || ""} 
+                                                onChange={set("target_land_use_class")} 
+                                                hasError={!!errors.target_land_use_class}
+                                                className="bg-white mt-1"
+                                            >
+                                                <option value="" disabled>Select target zoning...</option>
+                                                {isRezoningApplication ? (
+                                                    ZONING_SUB_CLASSES.map((group) => (
+                                                        <optgroup key={group.name} label={group.name} className="font-bold text-slate-900 bg-slate-50">
+                                                            {group.items.map((item) => (
+                                                                <option key={item.code} value={item.code} className="font-medium text-slate-700 bg-white">
+                                                                    {item.label} ({item.code})
+                                                                </option>
+                                                            ))}
+                                                        </optgroup>
+                                                    ))
+                                                ) : (
+                                                    LAND_USE_CLASSES.map((c) => (
+                                                        <option key={c} value={c} className="font-medium text-slate-700">{c}</option>
+                                                    ))
+                                                )}
+                                            </Select>
+                                            {errors.target_land_use_class && <p className="text-xs font-medium text-rose-500 mt-1">{errors.target_land_use_class}</p>}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {(form.parcels || []).map((parcel, index) => (
+                                    <div key={index} className="space-y-4">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">Parcel {index + 1}</span>
+                                            {parcel.property_index_number && <span className="font-mono text-[10px] text-slate-500 font-bold">{parcel.property_index_number}</span>}
+                                        </div>
+                                        
+                                        {/* ── PER-PARCEL MISMATCH INTERCEPT BANNER ── */}
+                                        {(() => {
+                                            if (!parcel.is_verified || !parcel.land_use_class || !parcel.cadastral_zone) return null;
+                                            const cadastral = parcel.cadastral_zone.trim().toLowerCase();
+                                            const clup = parcel.land_use_class.trim().toLowerCase();
+                                            
+                                            if (cadastral === clup) return null;
+
+                                            let parcelIntercept = null;
+                                            if (isAmendmentStream) {
+                                                parcelIntercept = {
+                                                    color: "blue",
+                                                    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />,
+                                                    title: "Legislative Track Activated",
+                                                    message: "A legislative amendment track is activated for this lot. This file will bypass standard clearance checks."
+                                                };
+                                            } else if (cadastral.includes("agri") || cadastral.includes("agricultural") || cadastral.includes("agind")) {
+                                                parcelIntercept = {
+                                                    color: "rose",
+                                                    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />,
+                                                    title: "Zoning Mismatch Detected",
+                                                    message: `The Assessor record classifies this lot as "${parcel.cadastral_zone}", but the spatial Land Use Plan designates it as "${parcel.land_use_class}".`,
+                                                    action: { label: "Switch to Reclassification Stream", type: "Petition for Reclassification" }
+                                                };
+                                            } else {
+                                                parcelIntercept = {
+                                                    color: "amber",
+                                                    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />,
+                                                    title: "System Intercept: Zoning Map Amendment Required",
+                                                    message: `The Assessor record classifies this lot as "${parcel.cadastral_zone}", but the spatial Land Use Plan designates it as "${parcel.land_use_class}".`,
+                                                    action: { label: "Switch to Rezoning Stream", type: "Petition for Rezoning" }
+                                                };
+                                            }
+
+                                            return (
+                                                <div className={`mt-0 p-2.5 rounded-lg border flex items-start gap-2 animate-in fade-in shadow-2xs bg-white ${
+                                                    parcelIntercept.color === 'blue' ? 'border-l-2 border-l-blue-500 border-y-slate-200 border-r-slate-200' :
+                                                    parcelIntercept.color === 'rose' ? 'border-l-2 border-l-rose-500 border-y-slate-200 border-r-slate-200' :
+                                                    'border-l-2 border-l-amber-500 border-y-slate-200 border-r-slate-200'
+                                                }`}>
+                                                    <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                                                        parcelIntercept.color === 'blue' ? 'bg-blue-50 text-blue-600' :
+                                                        parcelIntercept.color === 'rose' ? 'bg-rose-50 text-rose-600' :
+                                                        'bg-amber-50 text-amber-600'
+                                                    }`}>
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">{parcelIntercept.icon}</svg>
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <h4 className="text-[11px] font-bold text-slate-800">{parcelIntercept.title}</h4>
+                                                        <p className="text-[10px] mt-0.5 leading-tight text-slate-500">{parcelIntercept.message}</p>
+                                                        
+                                                        {parcelIntercept.action && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSwitchStream(parcelIntercept.action.type, index)}
+                                                                className={`mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold transition-all shadow-xs cursor-pointer bg-slate-800 hover:bg-slate-900 text-white`}
+                                                            >
+                                                                <span>{parcelIntercept.action.label}</span>
+                                                                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+
+                                        <ParcelInspectionScheduler
+                                            index={index}
+                                            parcel={parcel}
+                                            setParcelField={setParcelField}
+                                            inspectors={inspectors}
+                                            errors={errors}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {activeTab === "details" && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                                <div>
+                                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                                        <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
+                                        Project Area & Layout Specifics
+                                    </h4>
+                                    <p className="text-[10px] text-slate-500 mt-0.5">Specify building coverage, development extent, and right-over-land data.</p>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div>
                                     <Label>Building Area (sq.m)</Label>
                                     <Input
@@ -752,30 +886,49 @@ export default function StepPropertyGIS({
                                     </Select>
                                 </div>
                             </div>
-
                         </div>
+                        )}
                     </div>
 
                     {/* Bottom Navigation */}
                     <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-3">
                         <button
                             type="button"
-                            onClick={handleBack}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
+                            onClick={() => {
+                                if (activeTab === "details") {
+                                    setActiveTab("evaluation");
+                                } else if (activeTab === "evaluation") {
+                                    setActiveTab("verification");
+                                } else {
+                                    handleBack();
+                                }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
                         >
                             <span>Back</span>
                         </button>
-                        <button
+                            <button
                             type="button"
-                            onClick={handleNext}
-                            disabled={isProgressionLocked}
-                            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-xs font-semibold shadow-sm transition-all ml-auto ${
-                                isProgressionLocked 
+                            onClick={() => {
+                                if (activeTab === "verification") {
+                                    setActiveTab("evaluation");
+                                } else if (activeTab === "evaluation") {
+                                    setActiveTab("details");
+                                } else {
+                                    handleNext();
+                                }
+                            }}
+                            disabled={(activeTab === "evaluation" || activeTab === "details") ? isProgressionLocked : false}
+                            className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-white text-xs font-semibold shadow-sm transition-all ml-auto ${
+                                ((activeTab === "evaluation" || activeTab === "details") && isProgressionLocked)
                                     ? "bg-slate-300 cursor-not-allowed opacity-70" 
                                     : "bg-blue-600 hover:bg-blue-700 active:scale-98 cursor-pointer"
                             }`}
                         >
-                            <span>Continue to Review</span>
+                            <span>{activeTab === "verification" ? "Continue to Evaluation" : activeTab === "evaluation" ? "Continue to Details" : "Next"}</span>
+                            {(activeTab === "verification" || activeTab === "evaluation") && (
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                            )}
                         </button>
                     </div>
                 </form>

@@ -8,8 +8,8 @@ const ZONING_CATEGORIES = [
         items: [
             { code: "R1-Z", label: "Residential-1 Zone", color: "#fffc2b", density: "Low Density", buildLimit: "3 Stories (10m)", primaryUses: "Single-detached family dwellings, custom-built homes, and essential neighborhood facilities." },
             { code: "R2-Z", label: "Residential-2 Zone", color: "#fffc2b", density: "Medium Density", buildLimit: "5 Stories (15m)", primaryUses: "Duplexes, townhouses, and low-rise multi-family apartments." },
-            { code: "MR2-SZ", label: "Maximum R-2 Sub-Zone", color: "#ffc92b", density: "Medium-High", buildLimit: "7+ Stories", primaryUses: "Multi-level residential buildings, condominiums, and densely packed rowhouses." },
-            { code: "BR2-SZ", label: "Basic R-2 Sub-Zone", color: "#ffc92b", density: "Basic Medium", buildLimit: "3 Stories (10m)", primaryUses: "Standard socialized housing and government residential projects." },
+            { code: "MR2-SZ", label: "Maximum R-2 Sub-Zone", color: "#ffc92b", pattern: "gray-line", density: "Medium-High", buildLimit: "7+ Stories", primaryUses: "Multi-level residential buildings, condominiums, and densely packed rowhouses." },
+            { code: "BR2-SZ", label: "Basic R-2 Sub-Zone", color: "#ffc92b", pattern: "gray-line", density: "Basic Medium", buildLimit: "3 Stories (10m)", primaryUses: "Standard socialized housing and government residential projects." },
         ]
     },
     {
@@ -41,7 +41,7 @@ const ZONING_CATEGORIES = [
         desc: "Vast tracts of land dedicated to cultivation, crop production, and ensuring food security.",
         items: [
             { code: "PDA-SZ", label: "Production Agricultural Sub-Zone", color: "#94d180", density: "Rural", buildLimit: "Farm structures only", primaryUses: "General crop production, orchards, and farming." },
-            { code: "PTA-SZ-RA", label: "Protection Agricultural Rice Area", color: "#94d180", density: "Protected", buildLimit: "Strictly None", primaryUses: "Irrigated rice lands strictly protected from conversion." },
+            { code: "PTA-SZ-RA", label: "Protection Agricultural Rice Area", color: "#94d180", pattern: "gray-line", density: "Protected", buildLimit: "Strictly None", primaryUses: "Irrigated rice lands strictly protected from conversion." },
             { code: "5491-APDA-SZ", label: "Buffer/Greenbelt Zone", color: "#61631f", density: "Conservation", buildLimit: "None", primaryUses: "Natural buffers separating conflicting land uses or environmental hazards." },
         ]
     },
@@ -53,6 +53,8 @@ const ZONING_CATEGORIES = [
             { code: "GI-Z", label: "General Institutional Zone", color: "#6146db", density: "Public Use", buildLimit: "Varies by use", primaryUses: "Government centers, hospitals, schools, and religious structures." },
             { code: "UTS-Z", label: "Utility, Transportation, and Services", color: "#969696", density: "Infrastructure", buildLimit: "Functional max", primaryUses: "Power substations, water treatment plants, and transport terminals." },
             { code: "CMRF", label: "Central Materials Recovery Facility", color: "#969696", density: "Waste Management", buildLimit: "Functional max", primaryUses: "Municipal solid waste sorting, recycling, and composting." },
+            { code: "ROAD", label: "Road Network", color: "#969696", density: "Infrastructure", buildLimit: "None", primaryUses: "Public roads and highways." },
+            { code: "PROPOSED ROAD", label: "Proposed Bypass Network", color: "#969696", pattern: "gray-line", density: "Infrastructure", buildLimit: "None", primaryUses: "Future road expansions and bypasses." },
         ]
     },
     {
@@ -61,7 +63,7 @@ const ZONING_CATEGORIES = [
         desc: "Ecological zones for environmental preservation, public recreation, and natural resource management.",
         items: [
             { code: "FZ", label: "Forest Zone", color: "#5bb93c", density: "Protected", buildLimit: "Strictly None", primaryUses: "Natural forest preservation and wildlife protection." },
-            { code: "FR-SZ", label: "Forest Reserve Sub-Zone", color: "#5bb93c", density: "Conservation", buildLimit: "Strictly None", primaryUses: "Watershed protection and critical ecological reserves." },
+            { code: "FR-SZ", label: "Forest Reserve Sub-Zone", color: "#5bb93c", pattern: "darkgreen-line", density: "Conservation", buildLimit: "Strictly None", primaryUses: "Watershed protection and critical ecological reserves." },
             { code: "PR-Z", label: "Parks and Recreation Zone", color: "#36ff39", density: "Open Space", buildLimit: "Ancillary only", primaryUses: "Public plazas, sports complexes, and community parks." },
             { code: "WZ", label: "Water Zone", color: "#2dcacd", density: "Aquatic", buildLimit: "None", primaryUses: "Rivers, lakes, and municipal waters protected for ecological balance." },
         ]
@@ -73,10 +75,21 @@ const ZONING_CATEGORIES = [
         items: [
             { code: "T-Z", label: "Tourism Zone", color: "#ffa97a", density: "Commercial-Leisure", buildLimit: "Regulated", primaryUses: "Resorts, hotels, and tourist-oriented commercial establishments." },
             { code: "ECT-Z", label: "Eco-Tourism Zone", color: "#ffa97a", density: "Low-Impact Leisure", buildLimit: "Eco-friendly constraints", primaryUses: "Nature parks, eco-lodges, and sustainable tourism activities." },
-            { code: "THSP-SZ", label: "Tombol Hill Protection Sub-Zone", color: "#5bb93c", density: "Protected Landmark", buildLimit: "Strictly None", primaryUses: "Conservation of Tombol Hill's natural topography and historical significance." },
+            { code: "THSP-SZ", label: "Tombol Hill Protection Sub-Zone", color: "#5bb93c", pattern: "darkgreen-line", density: "Protected Landmark", buildLimit: "Strictly None", primaryUses: "Conservation of Tombol Hill's natural topography and historical significance." },
         ]
     }
 ];
+
+const getBackgroundStyle = (color, patternName) => {
+    if (!patternName) return { background: color };
+    if (patternName === "gray-line") {
+        return { background: `repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(120, 120, 120, 0.6) 3px, rgba(120, 120, 120, 0.6) 4px), ${color}` };
+    }
+    if (patternName === "darkgreen-line") {
+        return { background: `repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(20, 80, 20, 0.7) 3px, rgba(20, 80, 20, 0.7) 4px), ${color}` };
+    }
+    return { background: color };
+};
 
 export default function ZoningPanel() {
     const [zoningSearch, setZoningSearch] = useState("");
@@ -112,7 +125,7 @@ export default function ZoningPanel() {
                 </button>
 
                 <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-full h-1.5" style={{ background: activeZoneDetail.color }} />
+                    <div className="absolute top-0 left-0 w-full h-1.5" style={getBackgroundStyle(activeZoneDetail.color, activeZoneDetail.pattern)} />
                     
                     <div className="flex items-start justify-between mb-4 mt-2">
                         <div>
@@ -235,7 +248,7 @@ export default function ZoningPanel() {
                                     >
                                         <div className="flex flex-col min-w-0 pr-3">
                                             <div className="flex items-center gap-2 mb-0.5">
-                                                <span className="w-2 h-2 rounded-sm shrink-0 shadow-sm border border-black/10" style={{ background: item.color }} />
+                                                <span className="w-2 h-2 rounded-sm shrink-0 shadow-sm border border-black/10" style={getBackgroundStyle(item.color, item.pattern)} />
                                                 <span className="font-bold text-slate-700 group-hover:text-blue-900 truncate transition-colors">{item.label}</span>
                                             </div>
                                             <span className="text-[9px] font-medium text-slate-400 pl-4 truncate group-hover:text-blue-600 transition-colors">

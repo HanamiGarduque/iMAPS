@@ -111,7 +111,31 @@ export default function StepCategory({
                 </div>
             </div>
 
-            {/* 2. Application Category Selection (Multi-select enabled) */}
+            {/* 2. Form Details & Target Zoning */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <Label required hasError={!!errors.form_number}>Application Form Number</Label>
+                    <div className={`flex items-stretch rounded-full border transition-all duration-150 overflow-hidden ${errors.form_number ? 'border-rose-300 ring-2 ring-rose-500/10 bg-rose-50/30' : 'border-slate-200 bg-white hover:border-slate-300 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/10 shadow-2xs'}`}>
+                        <div className="flex items-center justify-center px-3.5 bg-slate-100/70 border-r border-slate-200 text-slate-500 font-semibold text-xs select-none">
+                            U -
+                        </div>
+                        <input 
+                            type="text" 
+                            className="flex-1 w-full px-3.5 py-2.5 text-xs font-mono font-medium text-slate-800 placeholder:text-slate-400 outline-none border-0 focus:ring-0 bg-transparent tracking-wider"
+                            value={form.form_number ? form.form_number.replace(/^U-/, "") : ""} 
+                            onChange={(e) => {
+                                const val = e.target.value.replace(/[^0-9]/g, "");
+                                set("form_number")({ target: { value: val ? `U-${val}` : "" } });
+                            }} 
+                            placeholder="000000" 
+                            maxLength={6}
+                        />
+                    </div>
+                    {errors.form_number && <p className="text-xs font-medium text-rose-500 mt-1">{errors.form_number}</p>}
+                </div>
+            </div>
+
+            {/* 3. Application Category Selection (Multi-select enabled) */}
             <div>
                 <Label required hasError={!!errors.application_type}>Application Category</Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-1.5">
@@ -150,21 +174,6 @@ export default function StepCategory({
                     })}
                 </div>
                 {errors.application_type && <p className="text-xs font-medium text-rose-500 mt-1">{errors.application_type}</p>}
-            </div>
-
-            {/* 3. Form Details & Target Zoning */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                    <Label required hasError={!!errors.form_number}>Application Form Number</Label>
-                    <Input 
-                        type="text" 
-                        value={form.form_number || ""} 
-                        onChange={set("form_number")} 
-                        placeholder="e.g. U-000000" 
-                        hasError={!!errors.form_number} 
-                    />
-                    {errors.form_number && <p className="text-xs font-medium text-rose-500 mt-1">{errors.form_number}</p>}
-                </div>
             </div>
 
             <div>
