@@ -11,6 +11,7 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\AnalyticsController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\TaxMapLookupController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -25,55 +26,76 @@ Route::get('/', function () {
     ]);
 });
 
-// ── Authenticated Routes (All Auth Users) ──
+// ── Internal Authenticated Routes (Loop 6: Admin + Planning Officer only) ──
+// Site Inspectors are FieldSync-only and receive 403 here even with an
+// existing session. Per-role exceptions are declared on individual routes.
 Route::middleware('auth')->group(function () {
 
     // Map Layer API Endpoint
     // Place specific zoning lookup routes before the generic layer wildcard to avoid route collision
-    Route::get('/api/map/zoning-lookup', [MapController::class, 'getZoningByCoordinates']);
-    Route::get('/api/map/zoning-area-lookup', [MapController::class, 'getZoningByParcelArea']);
-    Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])->name('api.map.layer'); // Generic layer access (whitelisted inside controller) // Dashboard
+    Route::get('/api/map/zoning-lookup', [MapController::class, 'getZoningByCoordinates'])
+        ->middleware('role:Admin,Planning Officer');
+    Route::get('/api/map/zoning-area-lookup', [MapController::class, 'getZoningByParcelArea'])
+        ->middleware('role:Admin,Planning Officer');
+    Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])
+        ->name('api.map.layer') // Generic layer access (whitelisted inside controller)
+        ->middleware('role:Admin,Planning Officer');
     Route::get('/dashboard', [DashboardController::class, 'index'])
-        ->name('dashboard');
+        ->name('dashboard')
+        ->middleware('role:Admin,Planning Officer');
     // Search
-    Route::get('/api/global-search', [SearchController::class, 'globalSearch'])->middleware('auth');
+    Route::get('/api/global-search', [SearchController::class, 'globalSearch'])
+        ->middleware(['auth', 'role:Admin,Planning Officer']);
     // Applications Docket List
     Route::get('/applications', [ApplicationController::class, 'index'])
-        ->name('applications.index');
+        ->name('applications.index')
+        ->middleware('role:Admin,Planning Officer');
 
     // Technical Reviews List
     Route::get('/technical-review', [TechnicalReviewController::class, 'index'])
-        ->name('technicalreview.index');
+        ->name('technicalreview.index')
+        ->middleware('role:Admin,Planning Officer');
+
+    // ── Internal tax-map lookup (Loop 6: moved from routes/api.php so the
+    // session guard works; Admin + Planning Officer only. Sole caller is the
+    // application encode form — public portal does not use it.) ──
+    Route::get('/api/tax-map/lookup/{pin}', [TaxMapLookupController::class, 'lookup'])
+        ->middleware('role:Admin,Planning Officer');
 
     // ── Application Creation Form (Must be placed before wildcard {id} route) ──
+    // Loop 6: application encoding is Planning Officer-only (Admin excluded).
     Route::get('/applications/encode', [ApplicationController::class, 'create'])
         ->name('applications.create')
-        ->middleware('role:Planning Officer,Admin');
+        ->middleware('role:Planning Officer');
 
     Route::post('/applications/encode', [ApplicationController::class, 'store'])
         ->name('applications.store')
         ->middleware('role:Planning Officer');
 
-    // ── Drafts / Offline Storage ──
+    // ── Drafts / Offline Storage (Loop 6: Planning Officer-only) ──
     // Placed correctly before the /applications/{id} route to avoid wildcard conflicts
     Route::get('/applications/drafts', [ApplicationController::class, 'draftsIndex'])
         ->name('drafts.index')
         ->middleware('role:Planning Officer'); // Added middleware for consistency
         
     Route::post('/applications/drafts/save', [ApplicationController::class, 'saveDraft'])
-        ->name('drafts.save');
+        ->name('drafts.save')
+        ->middleware('role:Planning Officer');
         
     Route::delete('/applications/drafts/{id}', [ApplicationController::class, 'destroyDraft'])
-        ->name('drafts.destroy');
+        ->name('drafts.destroy')
+        ->middleware('role:Planning Officer');
 
     // ── Single-View & Standard Status Transitions ──
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
-        ->name('applications.show');
+        ->name('applications.show')
+        ->middleware('role:Admin,Planning Officer');
 
     // Handles Approved / Declined standard status changes from the show docket
+    // Loop 6 (Leader correction): status update is Planning Officer-only — NOT Admin.
     Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])
         ->name('applications.updateStatus')
-        ->middleware('role:Planning Officer,Admin');
+        ->middleware('role:Planning Officer');
 
     // ── Technical Review & Field Scheduling Transitions ──
     // Handles changing technical review status (e.g., transition to Site Inspection)
@@ -92,11 +114,12 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:Planning Officer');
 
     Route::get('/api/inspections/{localInspectionId}/supabase-data', [TechnicalReviewController::class, 'getSupabaseInspectionData'])
-        ->name('api.inspections.supabase');
+        ->name('api.inspections.supabase')
+        ->middleware('role:Admin,Planning Officer');
 
 });
 
-// ── Admin-Only Routes ──
+// ── Admin-Only Routes (Loop 6: preserved Admin-only; not broadened to Planning Officer) ──
 Route::middleware(['auth', 'role:Admin'])->group(function () {
 
     // Override Default Registration to be Admin-Only

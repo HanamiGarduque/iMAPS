@@ -10,6 +10,10 @@ export default function Sidebar({
     activePage,
 }) {
     const isAdmin = userRole === 'Admin';
+    // Loop 6: Site Inspectors operate exclusively through FieldSync — they must
+    // never see internal operational navigation (frontend hygiene only; the
+    // server-side role middleware remains the security boundary).
+    const isSiteInspector = userRole === 'Site Inspector';
     const page = usePage();
     const currentPath = page?.url?.split('?')[0].split('#')[0] || (typeof window !== 'undefined' ? window.location.pathname : '');
     const menuRef = useRef(null);
@@ -87,7 +91,11 @@ export default function Sidebar({
         },
     ];
 
-    const visibleItems = navItems.filter(item => !item.adminOnly || isAdmin);
+    // Admin sees oversight navigation; Planning Officer sees operational
+    // navigation without Admin-only modules; Site Inspector sees none.
+    const visibleItems = isSiteInspector
+        ? []
+        : navItems.filter(item => !item.adminOnly || isAdmin);
 
     const isActive = (href) => {
         if (activePage) {
@@ -124,6 +132,8 @@ export default function Sidebar({
                 if (setSidebarOpen) setSidebarOpen(false);
                 return;
             }
+
+            if (visibleItems.length === 0) return;
 
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -171,7 +181,20 @@ export default function Sidebar({
                 </span>
             </div>
 
-            {/* Nav Items List */}
+            {/* Nav Items List / FieldSync guidance for Site Inspectors */}
+            {isSiteInspector ? (
+                <div className="px-2.5 py-3">
+                    <div className="rounded-xl bg-amber-50 border border-amber-200/80 p-3">
+                        <p className="text-xs font-bold text-amber-800 mb-1">
+                            FieldSync Required
+                        </p>
+                        <p className="text-[11px] leading-relaxed text-amber-700">
+                            Site Inspectors use FieldSync for site inspection activities.
+                            Internal iMAPS web navigation is not available for this role.
+                        </p>
+                    </div>
+                </div>
+            ) : (
             <div className="space-y-0.5" role="menu">
                 {visibleItems.map((item, idx) => {
                     const active = isActive(item.href);
@@ -210,6 +233,7 @@ export default function Sidebar({
                     );
                 })}
             </div>
+            )}
 
             {/* Micro Footer */}
             <div className="mt-1 pt-2 border-t border-slate-100 px-2.5 flex items-center justify-between text-[11px]">

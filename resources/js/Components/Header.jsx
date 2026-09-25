@@ -95,7 +95,9 @@ export default function Header({
 
     const navigationBadge = getNavigationBadge();
 
-    const shouldShowSearch = showSearch || Boolean(onSelectLocation);
+    // Loop 6: internal search is an Admin/Planning Officer capability only —
+    // never shown to Site Inspectors (server middleware still enforces it).
+    const shouldShowSearch = (showSearch || Boolean(onSelectLocation)) && userRole !== 'Site Inspector';
     const [searchQuery, setSearchQuery] = useState('');
     const [searchFocused, setSearchFocused] = useState(false);
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -520,6 +522,8 @@ export default function Header({
                             </div>
 
                             <div className="space-y-0.5">
+                                {/* Loop 6: /settings is Admin-only — hide dead 403 links from other roles */}
+                                {userRole === 'Admin' && (
                                 <Link 
                                     href="/settings"
                                     onClick={() => setProfileMenuOpen(false)}
@@ -530,6 +534,7 @@ export default function Header({
                                     </svg>
                                     <span>Account & Settings</span>
                                 </Link>
+                                )}
 
                                 <button
                                     onClick={handleSignOutClick}

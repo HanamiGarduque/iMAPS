@@ -282,13 +282,11 @@ export default function Index({ users, filters, auth }) {
 
         if (isConfirmed && adminPassword) {
             try {
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
                 const response = await axios.post('/users/sensitive-data', {
                     admin_password: adminPassword,
                     target_user_id: userId
                 }, {
                     headers: {
-                        'X-CSRF-TOKEN': csrfToken,
                         'Accept': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
                     }
@@ -335,13 +333,11 @@ export default function Index({ users, filters, auth }) {
 
         if (formValues) {
             try {
-                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
                 const response = await axios.post('/users/reset-password', {
                     target_user_id: userId,
                     new_password: formValues
                 }, {
                     headers: {
-                        'X-CSRF-TOKEN': csrfToken,
                         'Accept': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
                     }
@@ -361,10 +357,8 @@ export default function Index({ users, filters, auth }) {
         e.preventDefault();
         setIsSaving(true);
         try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
             const response = await axios.post(`/users/${editingUser.id}/update`, editingUser, {
                 headers: {
-                    'X-CSRF-TOKEN': csrfToken,
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 }
