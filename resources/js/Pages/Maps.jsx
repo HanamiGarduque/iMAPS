@@ -297,6 +297,7 @@ function LeafletMap({
     panelWidth = 380,
     onParcelsVisible = () => {},
     verifiedParcel = null,
+    historicalPins = [],
 }) {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
@@ -1649,7 +1650,7 @@ function LeafletMap({
         }
     }, [currentLayer, appTypeFilter, statusFilter, searchFilter, applications, staticBgyData, mapZoom, selectedBgy, hoveredAppId]);
 
-    // Live update Urban Growth Establishments & Landmark Pins for the active year using real 'recent' permits
+    // Live update Urban Growth Establishments & Landmark Pins for the active year using historical Locational Clearance data
     useEffect(() => {
         if (!establishmentsLayerRef.current || !mapInstanceRef.current) return;
         establishmentsLayerRef.current.clearLayers();
@@ -1657,70 +1658,29 @@ function LeafletMap({
 
         if (currentLayer === "trends") {
             import("leaflet").then((L) => {
-                const activeEsts = (recent || []).filter(app => 
-                    app.status === 'Released' || app.status === 'For Release' || 
-                    app.status?.includes('Review') || app.status?.includes('Sangguniang')
-                ).map(app => {
-                    const isCommInd = ['Commercial', 'Industrial', 'Agro-industrial'].includes(app.target_land_use_class);
-                    const badge = isCommInd ? app.target_land_use_class : app.application_type || 'Project';
-                    
+                const pinsToRender = selectedBgy && selectedBgy.name
+                    ? (historicalPins || []).filter(p => (p.barangay || "").trim().toLowerCase() === selectedBgy.name.trim().toLowerCase())
+                    : (historicalPins || []);
+
+                pinsToRender.forEach((pin) => {
+                    if (!pin.latitude || !pin.longitude) return;
+                    const coords = [pin.latitude, pin.longitude];
+
                     let color = '#2563eb';
                     let bg = '#dbeafe';
-                    if (app.target_land_use_class === 'Commercial') { color = '#f59e0b'; bg = '#fef3c7'; }
-                    else if (app.target_land_use_class === 'Industrial') { color = '#ef4444'; bg = '#fee2e2'; }
-                    else if (app.target_land_use_class === 'Agro-industrial') { color = '#8b5cf6'; bg = '#f3e8ff'; }
-                    else if (app.target_land_use_class === 'Residential') { color = '#10b981'; bg = '#d1fae5'; }
-                    else if (app.target_land_use_class === 'Agricultural') { color = '#84cc16'; bg = '#ecfccb'; }
-
-                    const typeClass = (app.target_land_use_class || '').toLowerCase();
-                    let type = "other";
-                    if (typeClass.includes("commercial")) type = "mall";
-                    if (typeClass.includes("industrial")) type = "infrastructure";
-                    if (typeClass.includes("agro")) type = "agro-industrial";
-                    if (typeClass.includes("residential")) type = "residential";
-                    if (typeClass.includes("institutional")) type = "healthcare";
-
-                    return {
-                        id: app.id,
-                        name: app.applicant_name || app.reference_number,
-                        category: app.target_land_use_class,
-                        type: type,
-                        barangay: app.barangay || 'Poblacion',
-                        year: new Date(app.created_at).getFullYear(),
-                        description: app.purpose || `Approved ${app.target_land_use_class} permit`,
-                        badge: badge,
-                        color: color,
-                        bg: bg,
-                        coords: getAppCoordinates(app),
-                    };
-                });
-
-                activeEsts.forEach((est) => {
-                    if (!est.coords) return;
-
-                    const getIconSvg = (type) => {
-                        if (type === "mall" || type === "supermarket") {
-                            return `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>`;
-                        }
-                        if (type === "residential") {
-                            return `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>`;
-                        }
-                        if (type === "agro-industrial" || type === "logistics") {
-                            return `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>`;
-                        }
-                        if (type === "healthcare") {
-                            return `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>`;
-                        }
-                        if (type === "infrastructure") {
-                            return `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>`;
-                        }
-                        return `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3" /></svg>`;
-                    };
+                    const cat = pin.target_land_use_class || 'Commercial';
+                    if (cat === 'Commercial') { color = '#f59e0b'; bg = '#fef3c7'; }
+                    else if (cat === 'Industrial') { color = '#ef4444'; bg = '#fee2e2'; }
+                    else if (cat === 'Agro-industrial') { color = '#8b5cf6'; bg = '#f3e8ff'; }
+                    else if (cat === 'Residential') { color = '#10b981'; bg = '#d1fae5'; }
+                    else if (cat === 'Agricultural') { color = '#84cc16'; bg = '#ecfccb'; }
+                    else if (cat === 'Special projects') { color = '#64748b'; bg = '#f1f5f9'; }
 
                     const iconHtml = `
-                        <div class="relative group cursor-pointer">
-                            <div class="w-8 h-8 rounded-xl flex items-center justify-center shadow-lg border-2 border-white transition-all transform hover:scale-125 duration-200" style="background-color: ${est.color};">
-                                ${getIconSvg(est.type)}
+                        <div class="relative group cursor-pointer select-none">
+                            <div class="w-7 h-7 rounded-full flex items-center justify-center font-bold text-white text-[10px] shadow-md transition-transform hover:scale-125 duration-150" 
+                                 style="background: linear-gradient(135deg, ${color} 0%, ${color}dd 100%); border: 2px solid #ffffff; box-shadow: 0 3px 8px ${color}60;">
+                                📍
                             </div>
                         </div>
                     `;
@@ -1728,56 +1688,55 @@ function LeafletMap({
                     const customIcon = L.default.divIcon({
                         html: iconHtml,
                         className: "custom-app-marker-container",
-                        iconSize: [32, 32],
-                        iconAnchor: [16, 16],
-                        popupAnchor: [0, -18],
+                        iconSize: [28, 28],
+                        iconAnchor: [14, 14],
+                        popupAnchor: [0, -14],
                     });
 
-                    const marker = L.default.marker(est.coords, { icon: customIcon });
+                    const marker = L.default.marker(coords, { icon: customIcon });
+
+                    const dateStr = pin.created_at ? new Date(pin.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 
                     const popupHtml = `
-                        <div class="w-64 p-3 font-sans">
-                            <div class="flex items-center justify-between gap-1.5 pb-2 border-b border-slate-100">
-                                <span class="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style="background-color: ${est.bg}; color: ${est.color};">
-                                    ${est.badge}
+                        <div class="font-sans min-w-[240px] max-w-[285px] p-1">
+                            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                                <span class="text-[10px] font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                    ${pin.reference_number || 'U-000000'}
                                 </span>
-                                <span class="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                    Active since ${est.year}
+                                <span class="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style="background-color: ${bg}; color: ${color}; border: 1px solid ${color}40;">
+                                    ● ${pin.zoning_code || cat}
                                 </span>
                             </div>
-                            <h4 class="text-xs font-black text-slate-900 mt-2 leading-snug">
-                                ${est.name}
-                            </h4>
-                            <p class="text-[11px] font-medium text-slate-500 mt-1 leading-relaxed">
-                                ${est.description}
-                            </p>
-                            <div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                                <span class="font-bold text-slate-700">📍 Brgy. ${est.barangay}</span>
-                                <button id="est-popup-btn-${est.id}" class="text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer">
-                                    Inspect Brgy &rarr;
-                                </button>
+                            <div class="mt-2 space-y-1.5 text-xs">
+                                <h4 class="font-black text-slate-900 text-sm leading-tight">${pin.applicant_name}</h4>
+                                <p class="text-[11px] font-semibold text-blue-700">${pin.application_type}</p>
+                                <p class="text-[10.5px] text-slate-600">${pin.purpose || ''}</p>
+                                <div class="pt-1.5 border-t border-slate-100 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                                    <div>
+                                        <span class="text-slate-400 block text-[9px] font-bold uppercase">Barangay</span>
+                                        <span class="font-bold text-slate-800 truncate block">${pin.barangay}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-slate-400 block text-[9px] font-bold uppercase">Category</span>
+                                        <span class="font-bold text-slate-800 truncate block">${cat}</span>
+                                    </div>
+                                </div>
+                                <div class="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                                    <span class="text-slate-400 font-mono">Date: ${dateStr}</span>
+                                    ${pin.lot_area_sqm ? `<span class="text-slate-500 font-mono font-bold">${pin.lot_area_sqm} sqm</span>` : ''}
+                                </div>
                             </div>
                         </div>
                     `;
 
                     marker.bindPopup(popupHtml, {
                         className: "custom-app-popup",
-                        maxWidth: 280,
-                    });
-
-                    marker.on("popupopen", () => {
-                        const btn = document.getElementById(`est-popup-btn-${est.id}`);
-                        if (btn) {
-                            btn.onclick = () => {
-                                if (onFeatureClick) {
-                                    onFeatureClick(est.barangay, staticBgyData[est.barangay] || {});
-                                }
-                            };
-                        }
+                        closeButton: true,
+                        maxWidth: 285,
                     });
 
                     establishmentsLayerRef.current.addLayer(marker);
-                    establishmentMarkersRef.current[est.id] = marker;
+                    establishmentMarkersRef.current[pin.id] = marker;
                 });
 
                 if (!mapInstanceRef.current.hasLayer(establishmentsLayerRef.current)) {
@@ -1789,7 +1748,7 @@ function LeafletMap({
                 mapInstanceRef.current.removeLayer(establishmentsLayerRef.current);
             }
         }
-    }, [currentLayer, recent, staticBgyData]);
+    }, [currentLayer, historicalPins, selectedBgy]);
 
     return <div ref={mapRef} id="map" className="absolute inset-0 z-0" />;
 }
@@ -1829,7 +1788,7 @@ class MapsErrorBoundary extends Component {
 // on file. The range never shrinks below 2020-2026 (matching the original
 // slider's span), but widens automatically if filings ever reach past it.
 // Years with zero permits simply show zero — nothing here is invented.
-const TIMELINE_BASELINE_YEAR = 2020;
+const TIMELINE_BASELINE_YEAR = 2021;
 const TIMELINE_MIN_END_YEAR = 2026;
 function buildTimelineYears(recent) {
     let maxYear = TIMELINE_MIN_END_YEAR;
@@ -1888,6 +1847,13 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
             return d && !isNaN(d.getTime()) && d <= timelineCutoff;
         });
     }, [recent, timelineCutoff]);
+    // Historical LC pins for the currently active timeline year —
+    // comes from the backend's historicalPins[year] keyed object.
+    const activeHistoricalPins = useMemo(() => {
+        const pins = urbanGrowthData?.historicalPins ?? {};
+        if (!activeYear) return [];
+        return pins[activeYear] ?? [];
+    }, [urbanGrowthData, activeYear]);
     const [is3DMode, setIs3DMode] = useState(true);
     const show3D = is3DMode && activeLayer === "diversity";
     // Once the 3D view has been created it stays mounted (hidden when not in
@@ -2327,6 +2293,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                                 panelWidth={DIVERSITY_PANEL_WIDTH}
                                 onZoomChange={setMapZoom}
                                 onInspectApp={setInspectedApp}
+                                historicalPins={activeHistoricalPins}
                                 onFeatureClick={(name, data) => {
                                     setSelectedBgy({ name, data });
                                     if (!rightPanelOpen) setRightPanelOpen(true);
@@ -2580,7 +2547,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                                 </span>
                                 <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-300">
-                                    As of Year {activeYear || "—"} · {timelineRecent.length} permit{timelineRecent.length === 1 ? "" : "s"} filed
+                                    As of Year {activeYear || "—"} · {Object.values(urbanGrowthData?.historicalPermits?.[activeYear] ?? {}).reduce((a, b) => a + b, 0)} LC permit{Object.values(urbanGrowthData?.historicalPermits?.[activeYear] ?? {}).reduce((a, b) => a + b, 0) === 1 ? "" : "s"} filed
                                 </span>
                             </div>
 
@@ -2796,7 +2763,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                                             Intelligence Panel
                                         </span>
                                         <span className="text-[9px] font-mono font-bold bg-slate-100 group-hover:bg-blue-50 text-slate-600 group-hover:text-blue-700 px-1.5 py-0.2 rounded">
-                                            {activeLayer === "status" ? `${displayTotal} Apps` : activeLayer === "trends" ? `${timelineRecent.length} thru ${activeYear || "—"}` : activeLayer === "diversity" ? `${Number(overallDiversity?.score ?? 0).toFixed(2)} Mix` : "CLUP 2030"}
+                                            {activeLayer === "status" ? `${displayTotal} Apps` : activeLayer === "trends" ? `${Object.values(urbanGrowthData?.historicalPermits?.[activeYear] ?? {}).reduce((a, b) => a + b, 0)} LC thru ${activeYear || "—"}` : activeLayer === "diversity" ? `${Number(overallDiversity?.score ?? 0).toFixed(2)} Mix` : "CLUP 2030"}
                                         </span>
                                     </div>
                                     <span className="text-xs font-black text-slate-800 group-hover:text-blue-900 leading-tight">

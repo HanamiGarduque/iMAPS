@@ -54,7 +54,6 @@ class MapsController extends Controller
         }
 
         // ── Real-Time Permit Integration & Dynamic Diversity Index ──
-        // 1. Query baseline CLUP 2030 land-use area per barangay
         $landUseQuery = DB::table('land_use_plan')
             ->select('location', 'lup_2030', DB::raw('SUM(shape_area) as feature_area'))
             ->whereNotNull('location')
@@ -65,21 +64,11 @@ class MapsController extends Controller
         $municipalTotal = 0;
         $municipalZones = [];
 
-        // ── Real Barangay Land Area (from the official boundary layer) ──
-        // The side panel used to show a hardcoded municipal total (14,700 ha)
-        // and fall back to a bundled static-fixture file per barangay for area,
-        // both wrong: the real PostGIS sum is ~22,666 ha, and e.g. Alupay's
-        // fixture said 502 ha against a real 567 ha. `barangay_boundary` already
-        // carries the authoritative `land_area` (square metres) for all 48
-        // barangays; nothing was reading it. Keyed the same way as $bgyStats
-        // below (trimmed location name) so both line up without a rename.
         $bgyLandArea = [];
         $municipalAreaSqm = 0.0;
         foreach (DB::table('barangay_boundary')->select('location', 'land_area')->get() as $row) {
             $loc = trim((string) $row->location);
-            if ($loc === '') {
-                continue;
-            }
+            if ($loc === '') continue;
             $sqm = (float) $row->land_area;
             $bgyLandArea[$loc] = $sqm;
             $municipalAreaSqm += $sqm;
@@ -96,36 +85,7 @@ class MapsController extends Controller
             $municipalZones[$lu->lup_2030] = ($municipalZones[$lu->lup_2030] ?? 0) + $area;
         }
 
-        // 2. Query Approved & Active Permits to dynamically adjust live on-ground land-use mix
-        $permitWeightsQuery = DB::table('zoning_applications')
-            ->select('barangay', 'target_land_use_class', DB::raw('COUNT(*) as permit_cnt'))
-            ->whereNotNull('barangay')
-            ->where('barangay', '!=', '')
-            ->groupBy('barangay', 'target_land_use_class')
-            ->get();
-
-        $permitAreaMap = [
-            'Commercial' => 450,        // Average commercial development footprint (sqm)
-            'Residential' => 320,       // Average residential subdivision parcel (sqm)
-            'Industrial' => 2500,       // Light/Medium industrial compound (sqm)
-            'Agro-industrial' => 3500,  // Poultry/piggery/feedmill footprint (sqm)
-            'Special projects' => 1200, // Institutional / utility site (sqm)
-            'Agricultural' => 5000,     // Farming consolidation (sqm)
-        ];
-
-        // Group live permits by barangay
-        $bgyPermitMix = [];
-        $bgyTotalPermits = [];
-        foreach ($permitWeightsQuery as $pw) {
-            $bName = trim($pw->barangay);
-            $cls = trim($pw->target_land_use_class ?? 'Residential');
-            $cnt = (int)$pw->permit_cnt;
-            $bgyPermitMix[$bName][$cls] = ($bgyPermitMix[$bName][$cls] ?? 0) + $cnt;
-            $bgyTotalPermits[$bName] = ($bgyTotalPermits[$bName] ?? 0) + $cnt;
-        }
-
-        // 3. Compute both Baseline CLUP Diversity and Live Real-Time Diversity per barangay
-        $maxPermits = max(1, count($bgyTotalPermits) > 0 ? max($bgyTotalPermits) : 1);
+        $maxPermits = max(1, count($bgyStats) > 0 ? max(array_column($bgyStats, 'Total')) : 1);
 
         foreach ($bgyDiversity as $b => $data) {
             $baselineN = $data['total'];
@@ -142,24 +102,9 @@ class MapsController extends Controller
             usort($baseDistribution, fn($a, $b) => $b['value'] <=> $a['value']);
             $targetDiversity = round(1 - $baseSumOfSquares, 2);
 
-            // Compute Live Mix with Real-Time Permit Integration
             $liveZones = $data['zones'];
             $liveTotal = $baselineN;
-            $permitsInBgy = $bgyPermitMix[$b] ?? [];
-
-            foreach ($permitsInBgy as $pClass => $pCount) {
-                $mappedZone = match ($pClass) {
-                    'Commercial' => 'C1-Z',
-                    'Residential' => 'R1-Z',
-                    'Industrial' => 'I1-Z',
-                    'Agro-industrial' => 'AgIndZ-PTR',
-                    'Special projects' => 'GI-Z',
-                    default => 'PDA-SZ',
-                };
-                $addedSqm = $pCount * ($permitAreaMap[$pClass] ?? 350);
-                $liveZones[$mappedZone] = ($liveZones[$mappedZone] ?? 0) + $addedSqm;
-                $liveTotal += $addedSqm;
-            }
+            $bgyPCount = $bgyStats[$b]['Total'] ?? 0;
 
             $liveSumOfSquares = 0;
             $liveDistribution = [];
@@ -173,98 +118,8 @@ class MapsController extends Controller
             usort($liveDistribution, fn($a, $b) => $b['value'] <=> $a['value']);
             $liveDiversity = round(1 - $liveSumOfSquares, 2);
 
-            // CLUP Variance Calculation (Reality vs 2030 Plan)
             $variance = round($liveDiversity - $targetDiversity, 3);
-            if ($variance > 0.05) {
-                $varStatus = 'Commercial Sprawl Alert';
-                $varColor = '#f43f5e';
-            } elseif ($variance < -0.05) {
-                $varStatus = 'Development Lagging';
-                $varColor = '#6366f1';
-            } else {
-                $varStatus = 'On-Target Alignment';
-                $varColor = '#10b981';
-            }
-
-            // Spatial Clustering (5 Municipal Typologies)
-            $liveCommPct = 0;
-            $liveResPct = 0;
-            $liveAgriPct = 0;
-            $liveIndPct = 0;
-            foreach ($liveDistribution as $dItem) {
-                $zCode = $dItem['name'];
-                $val = $dItem['value'];
-                if (in_array($zCode, ['C1-Z', 'C2-Z', 'C/MP-Z', 'T-Z', 'ECT-Z'])) $liveCommPct += $val;
-                elseif (in_array($zCode, ['R1-Z', 'R2-Z', 'MR2-SZ', 'BR2-SZ'])) $liveResPct += $val;
-                elseif (in_array($zCode, ['PDA-SZ', 'PTA-SZ-RA', '5491-APDA-SZ', 'FZ', 'FR-SZ', 'THSP-SZ', 'WZ'])) $liveAgriPct += $val;
-                elseif (in_array($zCode, ['I1-Z', 'I2-Z', 'I3-Z', 'AgIndZ', 'AgIndZ-PTR', 'AgIndZ-PGR'])) $liveIndPct += $val;
-            }
-
-            $bgyPCount = $bgyTotalPermits[$b] ?? 0;
-
-            if ($liveDiversity >= 0.70 || $liveCommPct >= 18 || $bgyPCount >= 4) {
-                $cluster = [
-                    'id' => 'urban_core',
-                    'name' => 'Urban Core & Growth Hub',
-                    'color' => '#0284c7', // Sky Blue
-                    'tag' => 'Urban Core',
-                    'description' => 'High-density commercial and residential civic spine characterized by frequent clearance filings.',
-                    'guideline' => 'Enforce off-street parking, drainage connectivity, and commercial setback compliance.'
-                ];
-            } elseif ($liveCommPct >= 8 || ($liveDiversity >= 0.55 && $liveResPct >= 20)) {
-                $cluster = [
-                    'id' => 'agro_comm',
-                    'name' => 'Emerging Agro-Commercial Node',
-                    'color' => '#10b981', // Emerald
-                    'tag' => 'Agro-Commercial',
-                    'description' => 'Transit-oriented retail expansion active along highway corridors bordering agriculture.',
-                    'guideline' => 'Mandate frontage easements and stormwater management to mitigate corridor ribbon sprawl.'
-                ];
-            } elseif ($liveIndPct >= 10 || stripos($b, 'Macalamcam') !== false || stripos($b, 'Timbugan') !== false) {
-                $cluster = [
-                    'id' => 'agro_ind',
-                    'name' => 'Agro-Industrial Expansion Sector',
-                    'color' => '#8b5cf6', // Amethyst Purple
-                    'tag' => 'Agro-Industrial',
-                    'description' => 'Concentration of livestock, poultry, processing, and warehousing clusters with rural buffers.',
-                    'guideline' => 'Require 500m environmental buffer zones and biosecurity waste clearance.'
-                ];
-            } elseif ($liveAgriPct >= 78 || $liveDiversity < 0.25) {
-                $cluster = [
-                    'id' => 'agrarian_monoculture',
-                    'name' => 'Agrarian Monoculture Reserve',
-                    'color' => '#440154', // Viridis Deep Purple
-                    'tag' => 'Agrarian Reserve',
-                    'description' => 'Dedicated agricultural production baseline (PDA-SZ / PTA-SZ-RA) under CLUP protection.',
-                    'guideline' => 'Strict agricultural preservation; conversion prohibited without SB reclassification ordinance.'
-                ];
-            } else {
-                $cluster = [
-                    'id' => 'balanced_rural',
-                    'name' => 'Balanced Agro-Residential Community',
-                    'color' => '#f59e0b', // Amber Gold
-                    'tag' => 'Agro-Residential',
-                    'description' => 'Traditional farming settlements integrated with emerging residential housing and local retail.',
-                    'guideline' => 'Permit local residential extensions while maintaining 5m green buffers to farm parcels.'
-                ];
-            }
-
-            // Application Pressure Forecast (SARIMAX Allocation)
-            $pressureScore = round(min(1.0, max(0.05, ($bgyPCount / $maxPermits) * 0.7 + ($liveCommPct / 25) * 0.3)), 2);
-            $forecast6m = max(1, round($pressureScore * 18));
-            $projDiversity = round(min(0.95, $liveDiversity + ($pressureScore * 0.05)), 2);
-
-            if ($pressureScore >= 0.70) {
-                $pressureLevel = 'High Influx';
-                $pressureColor = '#ef4444';
-            } elseif ($pressureScore >= 0.35) {
-                $pressureLevel = 'Moderate Growth';
-                $pressureColor = '#f59e0b';
-            } else {
-                $pressureLevel = 'Stable Baseline';
-                $pressureColor = '#21918c';
-            }
-
+            
             if (!isset($bgyStats[$b])) {
                 $bgyStats[$b] = [
                     'Total' => $bgyPCount,
@@ -278,22 +133,9 @@ class MapsController extends Controller
             $bgyStats[$b]['liveDiversity'] = $liveDiversity;
             $bgyStats[$b]['clupTargetDiversity'] = $targetDiversity;
             $bgyStats[$b]['variance'] = $variance;
-            $bgyStats[$b]['varianceStatus'] = $varStatus;
-            $bgyStats[$b]['varianceColor'] = $varColor;
-            $bgyStats[$b]['cluster'] = $cluster;
-            $bgyStats[$b]['pressure'] = [
-                'score' => $pressureScore,
-                'forecast6m' => $forecast6m,
-                'level' => $pressureLevel,
-                'color' => $pressureColor,
-                'projectedDiversity6m' => $projDiversity,
-            ];
             $bgyStats[$b]['distribution'] = $liveDistribution;
             $bgyStats[$b]['baselineDistribution'] = $baseDistribution;
             $bgyStats[$b]['permitCount'] = $bgyPCount;
-            // Real area in hectares, from the boundary layer rather than the
-            // land-use-plan parcel sum (which can undercount where parcels
-            // don't fully tile the barangay, e.g. unmapped/road gaps).
             $bgyStats[$b]['areaHa'] = round(($bgyLandArea[$b] ?? 0) / 10000, 1);
         }
 
@@ -317,8 +159,6 @@ class MapsController extends Controller
                 'liveDiversity' => $bStat['liveDiversity'] ?? 0,
                 'clupTarget' => $bStat['clupTargetDiversity'] ?? 0,
                 'variance' => $bStat['variance'] ?? 0,
-                'cluster' => $bStat['cluster'] ?? null,
-                'pressure' => $bStat['pressure'] ?? null,
                 'primaryZone' => $bStat['Primary_Zone'] ?? 'N/A',
                 'distribution' => $bStat['distribution'] ?? []
             ];
@@ -328,11 +168,9 @@ class MapsController extends Controller
         $overallDiversity = [
             'score' => round(1 - $munSumOfSquares, 2),
             'primary' => $munDistribution[0]['name'] ?? 'Multi-Sector',
-            'distribution' => array_slice($munDistribution, 0, 4), // Keep top 4 for donut chart
+            'distribution' => array_slice($munDistribution, 0, 4),
             'topBarangays' => array_slice($rankedBgys, 0, 8),
             'lowBarangays' => array_slice(array_reverse($rankedBgys), 0, 5),
-            // Real municipal total, replacing a hardcoded 14700 that had
-            // drifted ~54% below the actual PostGIS figure.
             'totalAreaHa' => round($municipalAreaSqm / 10000, 1),
         ];
 
@@ -391,12 +229,8 @@ class MapsController extends Controller
                         'totalArea' => 0,
                         'totalZones' => 0,
                         'categories' => [
-                            'Agricultural' => 0,
-                            'Residential' => 0,
-                            'Commercial' => 0,
-                            'Special projects' => 0,
-                            'Industrial' => 0,
-                            'Agro-industrial' => 0,
+                            'Agricultural' => 0, 'Residential' => 0, 'Commercial' => 0,
+                            'Special projects' => 0, 'Industrial' => 0, 'Agro-industrial' => 0,
                         ],
                     ];
                 }
@@ -406,7 +240,6 @@ class MapsController extends Controller
             }
         }
 
-        // Build municipal breakdown array with normalized % strictly summing to 100%
         $municipalBreakdown = [];
         $accumulatedPct = 0;
         $catKeys = array_keys($munCategories);
@@ -422,12 +255,8 @@ class MapsController extends Controller
                 $accumulatedPct += $pct;
             }
             $municipalBreakdown[] = [
-                $catName,
-                $ha,
-                $data['count'],
-                $pct,
-                $categoryColors[$catName]['color'],
-                $categoryColors[$catName]['bg']
+                $catName, $ha, $data['count'], $pct,
+                $categoryColors[$catName]['color'], $categoryColors[$catName]['bg']
             ];
         }
         usort($municipalBreakdown, fn($a, $b) => $b[1] <=> $a[1]);
@@ -453,11 +282,8 @@ class MapsController extends Controller
                     $bAccPct += $cPct;
                 }
                 $bBreakdown[] = [
-                    $bCatName,
-                    $cHa,
-                    $cPct,
-                    $categoryColors[$bCatName]['color'],
-                    $categoryColors[$bCatName]['bg']
+                    $bCatName, $cHa, $cPct,
+                    $categoryColors[$bCatName]['color'], $categoryColors[$bCatName]['bg']
                 ];
             }
             usort($bBreakdown, fn($a, $b) => $b[1] <=> $a[1]);
@@ -472,9 +298,78 @@ class MapsController extends Controller
                 'dominantCategory' => $dominant,
                 'breakdown' => $bBreakdown,
             ];
+        } // end foreach $bgyUrbanData (byBarangay population)
 
-            // Growth Hotspot Score based on real permit filings and commercial/industrial acreage
-            $appCount = (int)($bgyStats[$bName]['Total'] ?? 0);
+        // ── STRICT LOCATIONAL CLEARANCE FILTER & PIN MAPPING (2021 - AUG 2026) ──
+        $historicalRows = DB::table('historical_data')
+            ->select('id', 'form_number', 'name', 'barangay', 'zoning_code', 'lot_area_sqm', 'application_type', 'purpose', 'encoding_date')
+            ->where('application_type', 'Locational Clearance')
+            ->whereNotNull('barangay')
+            ->whereDate('encoding_date', '>=', '2021-01-01')
+            ->whereDate('encoding_date', '<=', '2026-08-31')
+            ->orderBy('encoding_date', 'asc')
+            ->get();
+
+        $bgyCentroids = DB::table('barangay_boundary')
+            ->select('location', DB::raw('ST_Y(ST_Centroid(geom)) as lat'), DB::raw('ST_X(ST_Centroid(geom)) as lng'))
+            ->get()
+            ->keyBy(fn($item) => trim($item->location));
+
+        $historicalBgyCounts = [];
+        $historicalByYearAndBarangay = [];
+        $historicalPins = [];
+
+        foreach ($historicalRows as $hRow) {
+            $year = (int) date('Y', strtotime($hRow->encoding_date));
+            if ($year < 2021 || $year > 2026) continue;
+
+            $bName = trim($hRow->barangay);
+            if ($bName === '') continue;
+
+            if (!isset($historicalBgyCounts[$bName])) {
+                $historicalBgyCounts[$bName] = 0;
+            }
+            $historicalBgyCounts[$bName]++;
+
+            // 1. Populate Time Slider Counts
+            if (!isset($historicalByYearAndBarangay[$year])) {
+                $historicalByYearAndBarangay[$year] = [];
+            }
+            if (!isset($historicalByYearAndBarangay[$year][$bName])) {
+                $historicalByYearAndBarangay[$year][$bName] = 0;
+            }
+            $historicalByYearAndBarangay[$year][$bName]++;
+
+            // 2. Determine Land Use Category from Zoning Code
+            $zCode = trim($hRow->zoning_code ?? '');
+            $cat = $zoneCategoryMap[$zCode] ?? 'Special projects';
+
+            // 3. Populate Map Pins & Popup Info with jitter for visual clarity
+            $centroid = $bgyCentroids[$bName] ?? null;
+            $lat = $centroid ? ($centroid->lat + (($hRow->id % 13) - 6) * 0.0008) : 13.8459;
+            $lng = $centroid ? ($centroid->lng + (($hRow->id % 17) - 8) * 0.0008) : 121.2068;
+
+            if (!isset($historicalPins[$year])) {
+                $historicalPins[$year] = [];
+            }
+            $historicalPins[$year][] = [
+                'id' => $hRow->id,
+                'reference_number' => $hRow->form_number,
+                'applicant_name' => $hRow->name,
+                'barangay' => $bName,
+                'application_type' => $hRow->application_type,
+                'purpose' => $hRow->purpose,
+                'zoning_code' => $zCode,
+                'target_land_use_class' => $cat,
+                'lot_area_sqm' => $hRow->lot_area_sqm,
+                'latitude' => $lat,
+                'longitude' => $lng,
+                'created_at' => $hRow->encoding_date,
+            ];
+        }
+
+        foreach ($bgyUrbanData as $bName => $bData) {
+            $appCount = (int)($historicalBgyCounts[$bName] ?? 0);
             $commHa = $bData['categories']['Commercial'] / 10000;
             $indHa = $bData['categories']['Industrial'] / 10000;
             $agroHa = $bData['categories']['Agro-industrial'] / 10000;
@@ -490,7 +385,7 @@ class MapsController extends Controller
             $growthHotspots[] = [
                 'name' => $bName,
                 'type' => $driver,
-                'count' => $appCount > 0 ? "{$appCount} permits" : "{$bTotalHa} ha",
+                'count' => $appCount > 0 ? "{$appCount} LC permits" : "{$bTotalHa} ha",
                 'color' => $categoryColors[$dominant]['color'] ?? '#2563eb',
                 'bg' => $categoryColors[$dominant]['bg'] ?? '#dbeafe',
                 'score' => $score,
@@ -513,6 +408,8 @@ class MapsController extends Controller
             ],
             'byBarangay' => $byBarangayUrban,
             'hotspots' => array_slice($growthHotspots, 0, 7),
+            'historicalPermits' => $historicalByYearAndBarangay, // Powers the time-slider counts
+            'historicalPins' => $historicalPins, // Powers the map pin markers and popup info cards
         ];
 
         $recent = (clone $query)->with('parcels:id,zoning_application_id,latitude,longitude,lot_number,lot_area_sqm,tax_dec_number')

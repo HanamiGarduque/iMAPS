@@ -11,7 +11,7 @@ const STATUS_CONFIG = {
 };
 
 const STATUSES = ["Auto-saved", "Incomplete"];
-const APP_TYPES = ["Locational Clearance", "Zoning Certification", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)"];
+const APP_TYPES = ["Locational Clearance", "Zoning Certificate", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)"];
 
 const SAMPLE_DRAFTS = [
     {
@@ -45,7 +45,7 @@ const SAMPLE_DRAFTS = [
         id: 204,
         temp_reference_number: "TMP-33D72091C",
         applicant_name: "Engr. Roberto Mendoza",
-        application_type: "Zoning Certification",
+        application_type: "Zoning Certificate",
         barangay: "Itlugan",
         updated_at: "2026-08-28T11:05:00Z",
         status: "Auto-saved",

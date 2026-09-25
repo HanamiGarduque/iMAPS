@@ -34,7 +34,7 @@ const APPLICATION_TYPES = [
         desc: "Standard municipal building & land clearance",
     },
     {
-        id: "Zoning Certification",
+        id: "Zoning Certificate",
         icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
         desc: "Land use classification & zoning compliance",
     },
@@ -88,7 +88,7 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
     let rateDetail = "";
     let calculationSummary = "";
 
-    if (appType === "Zoning Certification" || appType === "Zoning Clearance") {
+    if (appType === "Zoning Certificate" || appType === "Zoning Clearance") {
         // ₱720.00 per hectare (1 ha = 10,000 sq.m)
         const hectares = area / 10000;
         baseFee = Math.max(720, Math.round(hectares * 720 * 100) / 100);

@@ -307,4 +307,5 @@ class MapController extends Controller
             return response()->json(['lup_2030' => null], 500);
         }
     }
+    
 }

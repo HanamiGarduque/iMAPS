@@ -57,7 +57,7 @@ const LAND_USE_BADGES = {
 };
 
 const STATUSES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
-const APP_TYPES = ["Locational Clearance", "Zoning Certification", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)", "Petition for Rezoning", "Petition for Reclassification"];
+const APP_TYPES = ["Locational Clearance", "Zoning Certificate", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)", "Petition for Rezoning", "Petition for Reclassification"];
 const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"];
 const ROSARIO_BARANGAYS = [
     "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
@@ -137,7 +137,7 @@ const SAMPLE_APPLICATIONS = [
         representative_name: "Engr. Maria Santos",
         contact_number: "0920-554-1920",
         email: "msantos@rosarioheights.com",
-        application_type: "Zoning Certification",
+        application_type: "Zoning Certificate",
         purpose: "Medium-density residential subdivision phase 2 development",
         land_use_class: "Residential",
         barangay: "Poblacion C",
@@ -257,7 +257,7 @@ const SAMPLE_APPLICATIONS = [
         representative_name: null,
         contact_number: "0918-229-4410",
         email: "ahernandez.md@gmail.com",
-        application_type: "Zoning Certification",
+        application_type: "Zoning Certificate",
         purpose: "Outpatient surgical, dialysis & diagnostic laboratory facility",
         land_use_class: "Institutional",
         barangay: "Poblacion B",

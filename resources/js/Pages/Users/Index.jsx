@@ -1013,7 +1013,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                 <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.development || 0}</span>
                                             </div>
                                             <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                                                <span className="text-slate-600">Zoning Certification</span>
+                                                <span className="text-slate-600">Zoning Certificate</span>
                                                 <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.zoning || 0}</span>
                                             </div>
                                             <div className="flex justify-between items-center py-1">
