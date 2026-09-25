@@ -2368,12 +2368,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
 
                         {activeLayer === "diversity" ? (
                             <>
-                                <DiversityControls
-                                    lens={diversityLens}
-                                    onSelectLens={handleSelectLens}
-                                    is3D={is3DMode}
-                                    onToggle3D={setIs3DMode}
-                                />
+
                                 <DiversityLegend
                                     lens={diversityLens}
                                     activeBand={diversityBandFilter}

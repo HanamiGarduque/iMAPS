@@ -174,27 +174,7 @@ export default function DiversityPanel({
                 </div>
             </header>
 
-            {/* Tabs = lenses */}
-            <nav className="shrink-0 flex border-b border-slate-200 bg-white">
-                {DIVERSITY_LENSES.map((item) => {
-                    const isActive = lens === item.id;
-                    return (
-                        <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => onSelectLens(item.id)}
-                            className={`flex-1 px-3 py-2.5 text-[11.5px] font-bold transition-colors cursor-pointer border-b-2 -mb-px ${
-                                isActive
-                                    ? "border-slate-900 text-slate-900"
-                                    : "border-transparent text-slate-400 hover:text-slate-700"
-                            }`}
-                            title={item.question}
-                        >
-                            {item.tabLabel}
-                        </button>
-                    );
-                })}
-            </nav>
+
 
             {activeBand && (
                 <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2 border-b border-slate-200 bg-slate-50">
