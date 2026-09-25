@@ -33,7 +33,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/map/zoning-lookup', [MapController::class, 'getZoningByCoordinates']);
     Route::get('/api/map/zoning-area-lookup', [MapController::class, 'getZoningByParcelArea']);
     Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])->name('api.map.layer'); // Generic layer access (whitelisted inside controller)
-
+    Route::get('/maps/urban-growth-data', [MapController::class, 'getUrbanGrowthData'])->name('maps.urban_growth');
     // Landing page after login: KPI/welcome/analytics overview
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');

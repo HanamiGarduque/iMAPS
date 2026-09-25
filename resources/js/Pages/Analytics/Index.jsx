@@ -159,6 +159,125 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
     // ── Chart pagination ──
     const [chartPage, setChartPage] = useState(0);
 
+    
+    // ── Report Form States ──
+    const [reportForm, setReportForm] = useState({
+        start_date: '',
+        end_date: '',
+        application_type: 'All',
+        variables: ['month', 'year', 'application_type', 'name', 'barangay', 'lot_area_sqm', 'purpose', 'assessment_fee'],
+        format: 'pdf',
+        presentation_style: 'table',
+        document_size: 'a4'
+    });
+    const [generatingReport, setGeneratingReport] = useState(false);
+    const [previewModalOpen, setPreviewModalOpen] = useState(false);
+    const [reportTitle, setReportTitle] = useState("");
+    const [loadingPreview, setLoadingPreview] = useState(false);
+    const [previewData, setPreviewData] = useState(null);
+
+    useEffect(() => {
+        let title = "Custom Analytics Report";
+        if (reportForm.application_type !== "All") {
+            title = `${reportForm.application_type} Report`;
+        }
+        if (reportForm.start_date && reportForm.end_date) {
+            title += ` (${reportForm.start_date} to ${reportForm.end_date})`;
+        } else if (reportForm.start_date) {
+            title += ` (From ${reportForm.start_date})`;
+        } else if (reportForm.end_date) {
+            title += ` (Until ${reportForm.end_date})`;
+        }
+        setReportTitle(title);
+    }, [reportForm.application_type, reportForm.start_date, reportForm.end_date]);
+
+    const handleReportFormChange = (e) => {
+        const { name, value } = e.target;
+        setReportForm(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleVariableToggle = (varId) => {
+        setReportForm(prev => {
+            const exists = prev.variables.includes(varId);
+            if (exists) {
+                return { ...prev, variables: prev.variables.filter(v => v !== varId) };
+            } else {
+                return { ...prev, variables: [...prev.variables, varId] };
+            }
+        });
+    };
+
+    const handleOpenPreview = async (e) => {
+        e.preventDefault();
+        if (reportForm.variables.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No variables selected',
+                text: 'Please select at least one variable to include in the report.',
+                confirmButtonColor: '#2563eb'
+            });
+            return;
+        }
+        
+        setLoadingPreview(true);
+        try {
+            const response = await axios.post('/api/analytics/report/preview', reportForm);
+            setPreviewData(response.data);
+            setPreviewModalOpen(true);
+        } catch (error) {
+            console.error("Preview Error:", error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Preview Failed',
+                text: 'Could not fetch data for the preview.',
+                confirmButtonColor: '#e53e3e'
+            });
+        } finally {
+            setLoadingPreview(false);
+        }
+    };
+
+    const confirmAndDownload = async () => {
+        setGeneratingReport(true);
+        try {
+            const payload = {
+                ...reportForm,
+                report_title: reportTitle
+            };
+            const response = await axios.post('/api/analytics/report', payload, {
+                responseType: 'blob'
+            });
+            
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `report_${new Date().getTime()}.${reportForm.format}`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            setPreviewModalOpen(false);
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Report Generated',
+                text: 'Your custom report has been downloaded and logged.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } catch (error) {
+            console.error("Report Generation Error:", error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Generation Failed',
+                text: 'There was an error generating your report. Please try again.',
+                confirmButtonColor: '#e53e3e'
+            });
+        } finally {
+            setGeneratingReport(false);
+        }
+    };
+
     const { props } = usePage();
     const { data, setData, post, processing, errors } = useForm({
         cpi_file: null,
@@ -410,60 +529,364 @@ export default function AnalyticsIndex({ auth = {}, initialForecasts = [], initi
                             </div>
 
 
-                            {/* ── REPORTS TAB ── */}
+                                                        {/* ── REPORTS TAB ── */}
                             {activeTab === "reports" && (
                                 <div className="animate-in fade-in duration-300">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                                        {[
-                                            {
-                                                title: "Monthly Clearances",
-                                                desc: "Summary of locational clearances issued per month, categorized by barangay.",
-                                                icon: (
-                                                    <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                    </svg>
-                                                ),
-                                                bg: "bg-blue-50"
-                                            },
-                                            {
-                                                title: "Zoning Classifications",
-                                                desc: "Distribution of approved applications across different zoning classifications (residential, commercial, etc).",
-                                                icon: (
-                                                    <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
-                                                    </svg>
-                                                ),
-                                                bg: "bg-emerald-50"
-                                            },
-                                            {
-                                                title: "Annual Revenue Estimate",
-                                                desc: "Projected vs actual fees collected from zoning and locational clearance applications.",
-                                                icon: (
-                                                    <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                    </svg>
-                                                ),
-                                                bg: "bg-amber-50"
-                                            }
-                                        ].map((report, i) => (
-                                            <div key={i} className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 flex flex-col h-full hover:shadow-md transition-shadow">
-                                                <div className={`w-10 h-10 rounded-lg ${report.bg} flex items-center justify-center mb-4`}>
-                                                    {report.icon}
+                                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 mb-6">
+                                        <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                            <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            Generate Custom Report
+                                        </h3>
+                                        <p className="text-xs text-slate-500 mb-5">
+                                            Select the data you want to include in your report. The report will be downloaded directly to your device and logged in the audit trail.
+                                        </p>
+                                        
+                                        <form onSubmit={handleOpenPreview} className="space-y-6">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                {/* Date Range */}
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-700 mb-2">Variables Span (Date Range)</label>
+                                                    <div className="flex items-center gap-3">
+                                                        <input 
+                                                            type="date" 
+                                                            name="start_date"
+                                                            value={reportForm.start_date}
+                                                            onChange={handleReportFormChange}
+                                                            className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
+                                                        />
+                                                        <span className="text-slate-400 text-sm">to</span>
+                                                        <input 
+                                                            type="date" 
+                                                            name="end_date"
+                                                            value={reportForm.end_date}
+                                                            onChange={handleReportFormChange}
+                                                            className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
+                                                        />
+                                                    </div>
                                                 </div>
-                                                <h3 className="text-sm font-bold text-slate-900">{report.title}</h3>
-                                                <p className="text-xs text-slate-500 mt-2 flex-1 leading-relaxed">{report.desc}</p>
-                                                <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-                                                    <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">PDF / Excel</span>
-                                                    <button className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1">
-                                                        Generate
-                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                                                        </svg>
-                                                    </button>
+
+                                                {/* Application Type */}
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-700 mb-2">Application Type</label>
+                                                    <select 
+                                                        name="application_type"
+                                                        value={reportForm.application_type}
+                                                        onChange={handleReportFormChange}
+                                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none bg-white"
+                                                    >
+                                                        <option value="All">All Types</option>
+                                                        <option value="Locational Clearance">Locational Clearance</option>
+                                                        <option value="Zoning Certificate">Zoning Certificate</option>
+                                                        <option value="Development Permit">Development Permit</option>
+                                                    </select>
                                                 </div>
                                             </div>
-                                        ))}
+
+                                            {/* Variables to Include */}
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-700 mb-3">Variables to Include</label>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                                    {[
+                                                        { id: 'month', label: 'Month' },
+                                                        { id: 'date', label: 'Date' },
+                                                        { id: 'year', label: 'Year' },
+                                                        { id: 'application_type', label: 'Application Type' },
+                                                        { id: 'name', label: 'Owner Name' },
+                                                        { id: 'barangay', label: 'Barangay' },
+                                                        { id: 'land_use_class', label: 'Land Use Class' },
+                                                        { id: 'lot_area_sqm', label: 'Lot Area (SQM)' },
+                                                        { id: 'purpose', label: 'Purpose' },
+                                                        { id: 'assessment_fee', label: 'Assessment Fee' },
+                                                    ].map((variable) => (
+                                                        <label key={variable.id} className="flex items-center gap-2 cursor-pointer group">
+                                                            <div className="relative flex items-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={reportForm.variables.includes(variable.id)}
+                                                                    onChange={() => handleVariableToggle(variable.id)}
+                                                                    className="peer appearance-none w-4 h-4 border border-slate-300 rounded bg-white checked:bg-blue-600 checked:border-blue-600 focus:ring-2 focus:ring-blue-600/30 transition-colors"
+                                                                />
+                                                                <svg className="absolute w-3 h-3 text-white left-0.5 top-0.5 opacity-0 peer-checked:opacity-100 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                                </svg>
+                                                            </div>
+                                                            <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors select-none">
+                                                                {variable.label}
+                                                            </span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Format & Style Selection */}
+                                            <div className="pt-5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+                                                <div className="flex flex-wrap gap-6">
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-slate-700 mb-2">Export Format</label>
+                                                        <div className="flex gap-2">
+                                                            {['pdf', 'csv', 'xlsx'].map(fmt => (
+                                                                <button
+                                                                    key={fmt}
+                                                                    type="button"
+                                                                    onClick={() => setReportForm(prev => ({ ...prev, format: fmt }))}
+                                                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors border ${
+                                                                        reportForm.format === fmt 
+                                                                            ? 'bg-blue-50 border-blue-600 text-blue-700' 
+                                                                            : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                                                                    }`}
+                                                                >
+                                                                    {fmt}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {reportForm.format === 'pdf' && (
+                                                        <>
+                                                            <div>
+                                                                <label className="block text-xs font-bold text-slate-700 mb-2">Document Size</label>
+                                                                <div className="flex gap-2">
+                                                                    {['a4', 'letter', 'legal'].map(size => (
+                                                                        <button
+                                                                            key={size}
+                                                                            type="button"
+                                                                            onClick={() => setReportForm(prev => ({ ...prev, document_size: size }))}
+                                                                            className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors border ${
+                                                                                reportForm.document_size === size 
+                                                                                    ? 'bg-blue-50 border-blue-600 text-blue-700' 
+                                                                                    : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                                                                            }`}
+                                                                        >
+                                                                            {size}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-xs font-bold text-slate-700 mb-2">Presentation Style</label>
+                                                            <div className="flex gap-2">
+                                                                {['table', 'bar_chart', 'line_chart'].map(style => (
+                                                                    <button
+                                                                        key={style}
+                                                                        type="button"
+                                                                        onClick={() => setReportForm(prev => ({ ...prev, presentation_style: style }))}
+                                                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize tracking-wider transition-colors border ${
+                                                                            reportForm.presentation_style === style 
+                                                                                ? 'bg-blue-50 border-blue-600 text-blue-700' 
+                                                                                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                                                                        }`}
+                                                                    >
+                                                                        {style.replace('_', ' ')}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    type="submit"
+                                                    disabled={loadingPreview}
+                                                    className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-xs transition-colors disabled:opacity-70"
+                                                >
+                                                    {loadingPreview ? (
+                                                        <>
+                                                            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+                                                            Loading...
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                            </svg>
+                                                            Preview Report
+                                                        </>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── REPORT PREVIEW MODAL ── */}
+                            {previewModalOpen && previewData && (
+                                <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+                                    <div className={`bg-white rounded-2xl shadow-xl border border-slate-200 w-full ${reportForm.format === 'pdf' ? 'max-w-4xl' : 'max-w-lg'} overflow-hidden flex flex-col animate-in zoom-in-95 duration-200`}>
+                                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                                            <h3 className="text-base font-bold text-slate-900">Report Preview</h3>
+                                            <button onClick={() => setPreviewModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        
+                                        <div className={`grid grid-cols-1 ${reportForm.format === 'pdf' ? 'md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100' : ''}`}>
+                                            <div className="p-6 overflow-y-auto max-h-[70vh] space-y-5">
+                                                <div>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Generated Title</p>
+                                                    <p className="text-sm font-medium text-slate-900 bg-slate-50 p-2.5 rounded-lg border border-slate-200">{reportTitle}</p>
+                                                </div>
+                                                
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Time Span</p>
+                                                        <p className="text-sm font-medium text-slate-800">
+                                                            {reportForm.start_date || reportForm.end_date 
+                                                                ? `${reportForm.start_date || 'Any'} to ${reportForm.end_date || 'Any'}`
+                                                                : 'All Time'}
+                                                        </p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Format & Style</p>
+                                                        <p className="text-sm font-medium text-slate-800 capitalize">
+                                                            {reportForm.format.toUpperCase()} 
+                                                            {reportForm.format === 'pdf' ? ` - ${reportForm.presentation_style.replace('_', ' ')}` : ''}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Variables Included ({reportForm.variables.length})</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {reportForm.variables.map(v => (
+                                                            <span key={v} className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium border border-blue-100">
+                                                                {v.replace(/_/g, ' ')}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                
+                                                {reportForm.format === 'pdf' && reportForm.presentation_style !== 'table' && (
+                                                    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex gap-3 text-amber-800">
+                                                        <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                        </svg>
+                                                        <p className="text-xs">
+                                                            The chart will group data by the first categorical variable you selected. A data table will also be included below the chart.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* PDF Visual Layout Preview */}
+                                            {reportForm.format === 'pdf' && (
+                                                <div className="p-6 bg-slate-100/50 flex flex-col items-center justify-center overflow-y-auto">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4 text-center w-full">Visual Layout Preview</p>
+                                                    
+                                                    {/* Paper Mockup */}
+                                                    <div className="bg-white shadow-sm border border-slate-200 w-full aspect-[1.414] max-w-[360px] p-5 flex flex-col rounded-sm relative" style={{ minHeight: '250px' }}>
+                                                        {/* Header */}
+                                                        <div className="text-center mb-3 border-b border-slate-100 pb-2">
+                                                            <h1 className="text-[9px] font-bold text-slate-900 uppercase">Municipality of Rosario, Batangas</h1>
+                                                            <h2 className="text-[8px] font-medium text-slate-700 mt-0.5 truncate px-2">{reportTitle}</h2>
+                                                            <p className="text-[5.5px] text-slate-400 mt-1">Generated on: {new Date().toLocaleString()}</p>
+                                                        </div>
+                                                        
+                                                        {/* Content Area */}
+                                                        <div className="flex-1 flex flex-col gap-2 overflow-hidden text-[6px]">
+                                                            {reportForm.presentation_style === 'table' ? (
+                                                                <div className="w-full border border-slate-200 rounded-sm flex flex-col h-full overflow-hidden">
+                                                                    <div className="bg-slate-50 border-b border-slate-200 flex items-center px-1 py-0.5 font-bold shrink-0">
+                                                                        <div className="w-full flex gap-1 whitespace-nowrap overflow-hidden">
+                                                                            {previewData.headers.map((h, i) => (
+                                                                                <div key={i} className="flex-1 truncate text-slate-700">{h}</div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex-1 flex flex-col overflow-hidden">
+                                                                        {previewData.rows.slice(0, 8).map((r, rowIdx) => (
+                                                                            <div key={rowIdx} className="border-b border-slate-50 flex items-center px-1 py-0.5">
+                                                                                <div className="w-full flex gap-1 whitespace-nowrap overflow-hidden">
+                                                                                    {r.map((cell, colIdx) => (
+                                                                                        <div key={colIdx} className="flex-1 truncate text-slate-500">{cell || '-'}</div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="w-full flex-1 border border-slate-200 rounded-sm flex flex-col items-center justify-center p-1 relative overflow-hidden">
+                                                                    {previewData.chartData && (
+                                                                        <img 
+                                                                            src={`https://quickchart.io/chart?w=400&h=200&c=${encodeURIComponent(JSON.stringify({
+                                                                                type: previewData.chartData.type,
+                                                                                data: {
+                                                                                    labels: previewData.chartData.labels.slice(0, 5),
+                                                                                    datasets: [{
+                                                                                        label: previewData.chartData.datasetLabel,
+                                                                                        data: previewData.chartData.data.slice(0, 5),
+                                                                                        backgroundColor: '#3b82f6'
+                                                                                    }]
+                                                                                },
+                                                                                options: { plugins: { legend: { labels: { fontSize: 8 } } }, scales: { xAxes: [{ ticks: { fontSize: 6 } }], yAxes: [{ ticks: { fontSize: 6 } }] } }
+                                                                            }))}`}
+                                                                            className="w-full h-16 object-contain mb-1"
+                                                                            alt="Chart preview"
+                                                                        />
+                                                                    )}
+                                                                    {/* Summary table below chart */}
+                                                                    <div className="w-full mt-auto border-t border-slate-200 pt-1 shrink-0">
+                                                                        <div className="flex flex-col">
+                                                                            <div className="bg-slate-50 flex px-1 py-0.5 font-bold">
+                                                                                {previewData.headers.slice(0, 4).map((h, i) => (
+                                                                                    <div key={i} className="flex-1 truncate text-[5px] text-slate-700">{h}</div>
+                                                                                ))}
+                                                                            </div>
+                                                                            {previewData.rows.slice(0, 2).map((r, rowIdx) => (
+                                                                                <div key={rowIdx} className="flex px-1 py-0.5">
+                                                                                    {r.slice(0, 4).map((cell, colIdx) => (
+                                                                                        <div key={colIdx} className="flex-1 truncate text-[5px] text-slate-500">{cell || '-'}</div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Footer Text */}
+                                                        <div className="mt-auto text-center pt-2 text-[5px] text-slate-300 uppercase tracking-wider font-semibold">
+                                                            Export: {reportForm.document_size} Landscape
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
+                                            <button 
+                                                onClick={() => setPreviewModalOpen(false)}
+                                                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={confirmAndDownload}
+                                                disabled={generatingReport}
+                                                className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-xs transition-colors disabled:opacity-70"
+                                            >
+                                                {generatingReport ? (
+                                                    <>
+                                                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+                                                        Generating...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                                        </svg>
+                                                        Confirm & Download
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             )}

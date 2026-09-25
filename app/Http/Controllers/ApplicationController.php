@@ -163,7 +163,7 @@ class ApplicationController extends Controller
         $applicationTypeValues = array_values(array_filter(array_map('trim', explode(',', $applicationTypeInput)), fn ($item) => $item !== ''));
         $allowedApplicationTypes = [
             'Locational Clearance',
-            'Zoning Certification',
+            'Zoning Certificate',
             'Development Permit',
             'Preliminary Approval and Locational Clearance (PALC)',
             'Petition for Rezoning',
@@ -577,7 +577,7 @@ class ApplicationController extends Controller
                 'representative_name' => 'Engr. Maria Santos',
                 'contact_number' => '0920-554-1920',
                 'email' => 'msantos@rosarioheights.com',
-                'application_type' => 'Zoning Certification',
+                'application_type' => 'Zoning Certificate',
                 'purpose' => 'Medium-density residential subdivision phase 2',
                 'land_use_class' => 'Residential',
                 'barangay' => 'Poblacion C',

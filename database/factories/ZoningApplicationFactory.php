@@ -25,7 +25,7 @@ class ZoningApplicationFactory extends Factory
 
     private const APPLICATION_TYPES = [
         'Locational Clearance',
-        'Zoning Certification',
+        'Zoning Certificate',
         'Development Permit',
     ];
 
@@ -47,7 +47,7 @@ class ZoningApplicationFactory extends Factory
 
         $typeCode = match($applicationType) {
             'Locational Clearance'   => 'LC',
-            'Zoning Certification'   => 'ZC',
+            'Zoning Certificate'   => 'ZC',
             'Development Permit'     => 'DP',
         };
 

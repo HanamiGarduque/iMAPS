@@ -10,3 +10,5 @@ Route::get('/user', function (Request $request) {
 })->middleware('auth:sanctum');
 
 Route::get('/tax-map/lookup/{pin}', [TaxMapLookupController::class, 'lookup']);
+Route::post('/analytics/report/preview', [App\Http\Controllers\AnalyticsController::class, 'previewReport'])->name('analytics.report.preview');
+Route::post('/analytics/report', [App\Http\Controllers\AnalyticsController::class, 'generateReport'])->name('analytics.report');
