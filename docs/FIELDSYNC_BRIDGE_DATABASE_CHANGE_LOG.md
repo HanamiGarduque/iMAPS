@@ -8,6 +8,40 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 
 ## Change entries
 
+### 2026-09-25 — Loop 6 manual live E2E record + two bounded correctness corrections — schema/data migration: NONE
+
+1. **Date/time:** 2026-09-25 (local session; manual acceptance performed 2026-09-24/25).
+2. **Loop / issue:** Loop 6 — Site Inspector iMAPS web access control (status update only), 419/CSRF correction, tax-map query correction; plus the Loop 7 audit start record (no mutation).
+3. **System:** iMAPS application/frontend layer only. No direct PostgreSQL DDL/DML was executed. Supabase was not mutated.
+4. **Environment/project/database:** Local working tree, branch `fix/fieldsync-bridge-stability`, HEAD `8a28c8207717efa64e2ea9c66db531f4610c37d0`; application runtime `http://127.0.0.1:8000` against the existing local PostgreSQL database.
+5. **Business reason:** Record the manual live acceptance outcome and the two bounded correctness corrections without any database change.
+6. **Before state:** (a) 419 symptom — a persistent static CSRF meta/header pattern replayed a pre-transition token across Inertia auth transitions; (b) tax-map — PostgreSQL-invalid `""` empty-string literals inside the PIN-normalization `whereRaw`, so an already-authorized request failed with `SQLSTATE[42601] zero-length delimited identifier`.
+7. **Exact SQL / operation:** **NONE.** No migration, DDL, DML, RLS change, Storage/bucket change, Supabase Auth/Edge Function change, or `field_job_photos`/`field_jobs` row insert/update/delete. Corrections were application-source-only: `resources/js/bootstrap.js`, `resources/views/app.blade.php`, `resources/js/Pages/Users/Index.jsx` (CSRF lifecycle) and `app/Http/Controllers/TaxMapLookupController.php` (bound empty-string parameters replacing `""`).
+8. **After state:** Unchanged. No schema, migration, or business-data change exists from this period.
+9. **Verification query/result:** Not applicable — no SQL was executed by this work. Runtime evidence was page/route behavior during manual acceptance (Admin and Planning Officer matrices, 419-free repeated auth transitions, authenticated tax-map parcel JSON, FieldSync read-only non-impact). The Laravel runtime itself performed read-only application/database queries during acceptance, and successful Admin/Planning Officer logins may have written normal allowed-role authentication metadata (`last_login`, session rows).
+10. **Related source migration/code:** Files in item 7, plus new untracked tests `tests/Unit/Loop6CsrfSessionContractTest.php`, `tests/Feature/Loop6AuthTransitionTest.php`, `tests/Feature/TaxMapLookupTest.php`.
+11. **Rollback SQL/steps:** Not applicable (no database change). Application rollback = revert the four source files.
+12. **Change scope:** Application/frontend source and documentation only; zero database/backend mutation.
+13. **Status:** **IMPLEMENTATION / SCHEMA MUTATION: NONE. BUSINESS-DATA MIGRATION: NONE. SUPABASE MUTATION FROM LOOP 6: NONE. MANUAL E2E: read-only application/database reads occurred; normal successful login metadata may have changed as part of authentication.**
+14. **Notes / risks:** The 419 correction is application/frontend only, zero schema/data migration. The tax-map correction is a controller query correction only, zero schema/data migration. The authenticated manual tax-map lookup was **READ ONLY**. No credential, cookie, PIN-owner PII, raw session identifier, handshake key, or secret is recorded. Loop 6 remains open pending the Team Leader's valid local Site Inspector credential test, Audit Log navigation clarification, a genuinely logged-out guest tax-map observation, and the environment-blocked DB-backed PHPUnit proofs (`pdo_sqlite` absent). **Loop 7 audit start — NO DATABASE/SUPABASE MUTATION.**
+
+### 2026-09-24 — Loop 6 Site Inspector web access control — schema/data migration: NONE
+
+1. **Date/time:** 2026-09-24 (local implementation session).
+2. **Loop / issue:** Loop 6 — Site Inspector iMAPS web access control (route/middleware authorization + approved login gate).
+3. **System:** None (iMAPS application layer only: `RoleMiddleware`, `AuthenticatedSessionController`, `routes/web.php`, `routes/api.php`, `Sidebar.jsx`, `Header.jsx`, tests, docs).
+4. **Environment/project/database:** Local working tree on branch `fix/fieldsync-bridge-stability`; no schema or data migration was executed during the Loop 6 implementation pass.
+5. **Business reason:** Enforce the confirmed rule that iMAPS web is for Admin + Planning Officer only, while Site Inspectors use FieldSync — without any data change.
+6. **Before state:** `routes/api.php` exposed stateless `/api/tax-map/lookup/{pin}` (no session/middleware); several internal web routes had no role middleware; the login path accepted Site Inspector credentials; `RoleMiddleware` had a single-string signature.
+7. **Exact SQL / operation:** NONE. No migrations, no SQL, no Supabase Auth/RLS/Edge Function/notification/OneSignal/reverse-sync edits, no user password/role/`is_active`/handshake changes, no row insert/update/delete anywhere. The login rejection is a pre-login role callback inside `Auth::attemptWhen()`: the framework verifies the credentials first, then the Site Inspector role is rejected before any password rehash, session establishment, or remember-token handling — no `logout()`, no session teardown, and no users-row write occurs for a rejected Site Inspector login; `last_login` is not written for rejected sessions. This behavior is source-verified against the installed framework (`SessionGuard::attemptWhen` ordering; `logout()` would rotate a populated `remember_token`); the DB-backed Feature proofs remain ENVIRONMENT BLOCKED locally (`pdo_sqlite` missing) and are not claimed as runtime-verified.
+8. **After state:** Unchanged — no database/schema/data migration was executed during Loop 6 implementation (the database exists; it was not intentionally mutated during this implementation pass). **Scope note:** this entry covers the implementation pass only. The later manual live E2E period (see the 2026-09-25 entry) performed read-only application/database reads, and normal successful allowed-role logins may have written authentication metadata; it is not covered by this implementation-scoped statement.
+9. **Verification query/result:** Not applicable — no SQL or migration executed. Verified by scoped `git diff`: changes are confined to `app/Http/Middleware/RoleMiddleware.php`, `app/Http/Controllers/Auth/AuthenticatedSessionController.php`, `routes/web.php`, `routes/api.php`, `resources/js/Components/Sidebar.jsx`, `resources/js/Components/Header.jsx`, `tests/Unit/Loop6SiteInspectorAccessContractTest.php`, `tests/Feature/Loop6AccessBoundaryTest.php`, `tests/Feature/Loop6RoleMatrixTest.php`, and this docs file plus `FIELDSYNC_BRIDGE_ARCHITECTURE.md`. The FieldSync repository (`imaps_fieldsync_main`) is untouched.
+10. **Related source migration/code:** None required.
+11. **Rollback SQL/steps:** Revert the application files; no data rollback needed.
+12. **Change scope:** Application code only; zero database/backend mutation.
+13. **Status:** schema/data migration: NONE required; NONE performed during implementation.
+14. **Notes / risks:** Feature tests requiring `RefreshDatabase` cannot execute locally (`pdo_sqlite` missing) — reported as an environment limitation, not as passing; they should be run in CI or an environment with `pdo_sqlite` before deployment sign-off. This includes all 18 tests of the Loop 6 role/login matrix (the rejected-login non-impact proofs: guest session, `last_login`, role, `is_active`, password, `handshake_key`, `remember_token`, invalid-credential path, allowed-role session regeneration, rate-limit/lockout), which are therefore NOT runtime-verified locally.
+
 ### 2026-09-23 — Loop 5 completed lifecycle protection (APPLIED SHARED)
 
 1. **Date/time:** 2026-09-23 12:01:49 +08:00.
@@ -155,6 +189,183 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 - Build classification: **ENVIRONMENTAL BUILD INSTABILITY**, based on the supplied checkpoint record of a later Gradle daemon/JVM crash after successful alternate and normal debug builds. No build or test-suite rerun was performed; the checkpoint changed only the live runner and isolation test, not production FieldSync source.
 - Final closure: **LOOP 4 CLOSED — READY FOR LOOP 5**. Round 2 remains independently assigned and clean; no database/schema mutation, reverse sync, notification rerun or task execution occurred during the final read-only comparison. Structured comparison evidence: FieldSync output/loop4-final/closure-comparison.json.
 
+### 2026-09-25 — Loop 7 photo/storage/authorization audit — database/Supabase mutation: NONE
+
+1. **Date/time:** 2026-09-25 (read-only audit session).
+2. **Loop / issue:** Loop 7 — photo writer, private Storage, metadata RLS, retry/idempotency, delete, and iMAPS reader reconciliation.
+3. **System:** None. No PostgreSQL, Supabase, Auth, RLS, Storage, or application data mutation.
+4. **Environment/project/database:** Read-only source review of the current iMAPS and FieldSync working trees; prior live catalog/photo consistency evidence was reconciled without rerunning mutation.
+5. **Business reason:** Establish the current photo/storage authorization contract before implementation or cleanup decisions.
+6. **Before state:** Current live evidence recorded 87 `field_job_photos` rows, 19 noted rows, 85 raw-path rows, 2 legacy public-URL rows, 19 orphaned Storage objects, private `inspection-photos` bucket, inspector-scoped metadata policies, inspector-scoped Storage SELECT/INSERT/UPDATE policies, and no remote DELETE policies. Current source also contains a newer deterministic writer path and a legacy public-URL writer path.
+7. **Exact SQL / operation:** **NONE.** No SQL, migration, RLS policy, Storage policy, bucket setting, Auth change, Edge Function change, row insert/update/delete, or cleanup operation was executed.
+8. **After state:** Unchanged. No database or Supabase mutation occurred. The documented Loop 7 status remains implementation-not-started.
+9. **Verification query/result:** Read-only reconciliation confirmed the already-recorded live counts and policy findings. Source review confirmed the private-bucket reader mismatch, deterministic retry identity, legacy identity drift, local-photo state transitions, best-effort deletion, and missing live delete policy. No new mutation query was run.
+10. **Related source/code:** `C:\Users\Ralph Lauren\imaps_fieldsync_main\lib\core\services\supabase_service.dart`; `C:\Users\Ralph Lauren\imaps_fieldsync_main\lib\core\services\db_helper.dart`; `C:\Users\Ralph Lauren\imaps_fieldsync_main\lib\core\services\sync_outbox_service.dart`; `C:\Users\Ralph Lauren\imaps_fieldsync_main\lib\modules\inspection\providers\inspection_provider.dart`; `C:\Users\Ralph Lauren\iMAPS\resources\js\Components\ParcelInspectionStatus.jsx`; `C:\Users\Ralph Lauren\iMAPS\resources\js\utils\supabaseApi.js`; `C:\Users\Ralph Lauren\iMAPS\app\Http\Controllers\TechnicalReviewController.php`.
+11. **Rollback SQL/steps:** Not applicable; no mutation was performed.
+12. **Change scope:** Documentation-only audit record. Local implementation, shared Supabase, and iMAPS runtime data remain untouched.
+13. **Status:** **AUDIT COMPLETE — NO DATABASE/SUPABASE MUTATION; LOOP 7 IMPLEMENTATION NOT STARTED.**
+14. **Notes / risks:** The 19 orphan objects and 2 legacy URL rows are recorded for future reconciliation only. Do not delete or rewrite them without an approved retention/cleanup contract. The current private-bucket/iMAPS-reader incompatibility, identity split, and absent DELETE policies remain open decisions. The 2026-09-24 Loop 6 ledger entry already contains one precise scope-qualified `8. After state` line; no duplicate line was present in the current file.
+
+
+### 2026-09-25 — Loop 7 contract decision — application contract only; no database/Supabase mutation
+
+1. **Date/time:** 2026-09-25 (Team Leader approval recorded before Loop 7B implementation).
+2. **Loop / issue:** Loop 7A/7B photo/storage contract lock — private inspection-photo evidence and iMAPS reviewer access.
+3. **System:** Contract/documentation only. No PostgreSQL, Supabase, Auth, RLS, Storage, or application mutation at decision time.
+4. **Environment/project/database:** iMAPS application contract for the current FieldSync/Supabase bridge; no target database selected for mutation.
+5. **Business reason:** Keep inspection evidence private while allowing authorized Admin and Planning Officer review without exposing browser service credentials.
+6. **Before state:** The audit established a private `inspection-photos` bucket, mixed historical photo URL/path values, and a browser-side iMAPS reader that did not generate signed URLs.
+7. **Exact SQL / operation:** **NONE.** This is a Team Leader contract decision only; no SQL, migration, policy, bucket, row, or credential operation was executed.
+8. **After state:** Contract locked: `PRIVATE BUCKET + RAW DURABLE OBJECT PATH + LARAVEL AUTHORIZATION + SHORT-LIVED SIGNED URL + ADMIN / PLANNING OFFICER REVIEW`.
+9. **Verification query/result:** Not applicable — no database operation. The decision is recorded for the upcoming application-layer implementation only.
+10. **Related source/code:** Future Loop 7B scope is limited to the iMAPS Laravel reader/service and its authorized React reader path. FieldSync writer convergence is explicitly deferred.
+11. **Rollback SQL/steps:** Not applicable; no mutation was performed.
+12. **Change scope:** Documentation/contract only. Completed submitted evidence is retained; remote delete, legacy URL migration, orphan cleanup, and FieldSync writer convergence remain deferred.
+13. **Status:** **TEAM LEADER APPROVED — LOOP 7B APPLICATION IMPLEMENTATION AUTHORIZED; LOOP 7 REMAINS OPEN.**
+14. **Notes / risks:** No bucket visibility change, RLS change, Storage policy change, reviewer Supabase identity, row migration, or deletion operation is authorized by this decision.
+### 2026-09-25 — Loop 7B application-layer implementation only
+
+1. **Date/time:** 2026-09-25.
+2. **Loop / issue:** Loop 7B secure iMAPS private-photo reader.
+3. **System:** iMAPS application source only. No PostgreSQL or Supabase mutation.
+4. **Environment/project/database:** `C:\Users\Ralph Lauren\iMAPS`; runtime database and shared Supabase project unchanged.
+5. **Business reason:** Allow authorized Admin and Planning Officer reviewers to view private inspection evidence without exposing Supabase service credentials to the browser.
+6. **Before state:** The active iMAPS reader queried `field_jobs`/`field_job_photos` from the browser and used stored `photo_url` values directly.
+7. **Exact SQL / operation:** **NONE.** No SQL, migration, RLS, Storage policy, bucket, row, or cleanup operation.
+8. **After state:** The existing auth/role-protected inspection endpoint now delegates to the server-side Supabase service, normalizes durable photo paths, rejects cross-job metadata/path substitution, and returns short-lived signed URLs. React consumes only the server-authorized result.
+9. **Verification query/result:** Not applicable; no database operation. Focused PHP tests, PHP syntax checks, Vite build, and `git diff --check` passed. User live E2E remains pending.
+10. **Related source/code:** `app/Http/Controllers/TechnicalReviewController.php`; `app/Services/SupabaseService.php`; `config/services.php`; `resources/js/Components/ParcelInspectionStatus.jsx`; `resources/js/utils/supabaseApi.js`; focused Loop 7 tests.
+11. **Rollback SQL/steps:** Not applicable; no database change. Revert the bounded application diff if required.
+12. **Change scope:** Application-layer implementation only. FieldSync writer convergence, legacy URL migration, orphan cleanup, remote delete, RLS, Storage, Auth, and Edge Functions remain unchanged/deferred.
+13. **Status:** **LOOP 7B IMPLEMENTED — PENDING USER LIVE E2E; LOOP 7 REMAINS OPEN.**
+14. **Notes / risks:** The broader Loop 6 feature role matrix is blocked locally by the known missing `pdo_sqlite` driver; no live credentials or mutations were used.
+
+
+
+### 2026-09-25 — Loop 7B manual E2E photo-display blocker correction — application-layer only
+
+1. **Date/time:** 2026-09-25.
+2. **Loop / issue:** Loop 7B manual photo display/count/refetch blocker discovered against application `54`, local inspection `22`, field job `c47de697-114f-4c7c-b3aa-9b3c1c635b8e`.
+3. **System:** iMAPS application source only. No PostgreSQL or Supabase mutation.
+4. **Environment/project/database:** `C:\Users\Ralph Lauren\iMAPS`; local iMAPS database and shared Supabase project unchanged.
+5. **Business reason:** Ensure the approved private-photo reader returns the canonical metadata collection, generates usable signed URLs, displays a canonical renderable count, and does not continuously refetch the same inspection.
+6. **Before state:** The field-job response omitted the nested photo relation despite four live metadata rows; React displayed stale `field_jobs.photo_count = 1`; parent callback/data dependencies caused unnecessary refetches; a trailing slash in the Supabase base URL caused Storage signing HTTP 400.
+7. **Exact SQL / operation:** **NONE.** No SQL, migration, RLS, Storage policy, bucket, row, count, orphan, or cleanup operation.
+8. **After state:** The server performs an exact `field_job_photos` read by resolved field-job ID, trims the Supabase base URL before signing, returns normalized `photo_path` plus fresh `signed_url`, and the React component derives count from renderable signed photos with an inspection-ID-scoped fetch effect.
+9. **Verification query/result:** Read-only service probe returned 4 metadata rows, 4 normalized paths, 4 signed URLs, and 4 final photo entries; no stored URL or service credential was returned. Focused Loop 7 plus database-free Loop 6 tests passed: 36 tests / 233 assertions. PHP syntax, Vite build, and `git diff --check` passed.
+10. **Related source/code:** `app/Services/SupabaseService.php`; `resources/js/Components/ParcelInspectionStatus.jsx`; focused Loop 7 tests; this canonical ledger.
+11. **Rollback SQL/steps:** Not applicable; no database change. Revert the bounded application diff if required.
+12. **Change scope:** Application-layer correction only. FieldSync, Supabase schema, RLS, Storage, Auth, Edge Functions, row counts, legacy rows, and orphan objects remain unchanged/deferred.
+13. **Status:** **LOOP 7B PHOTO DISPLAY FIX READY FOR USER RETEST; LOOP 7B MANUAL E2E NOT YET RE-CLAIMED PASS; LOOP 7 REMAINS OPEN.**
+14. **Notes / risks:** The user must refresh the authorized browser page and verify actual thumbnails/lightbox, count, and request behavior. No live E2E mutation was performed.
+
 ## Future-entry template
 
 Record all 14 fields used above. Never include secrets.
+
+### 2026-09-25 — Loop 7B final signed-image delivery URL composition correction — application-layer only
+
+1. **Date/time:** 2026-09-25.
+2. **Loop / issue:** Final manual retest showed metadata/count/lightbox wiring passed but signed image bytes were broken.
+3. **System:** iMAPS application source only. No PostgreSQL or Supabase mutation.
+4. **Environment/project/database:** `C:\Users\Ralph Lauren\iMAPS`; local iMAPS database and shared Supabase project unchanged.
+5. **Business reason:** Deliver private Storage bytes through the required `/storage/v1/object/sign/...` route without changing bucket visibility or exposing credentials.
+6. **Before state:** Supabase signing returned relative `/object/sign/...`; Laravel prepended only the project origin, producing an invalid delivery route that returned HTTP 404. Metadata, count, React mapping, and lightbox interaction were already user-confirmed as passing.
+7. **Exact SQL / operation:** **NONE.** No SQL, migration, RLS, Storage policy, bucket, row, count, orphan, upload, or delete operation.
+8. **After state:** Relative `/object/sign/...` responses are converted to `/storage/v1/object/sign/...`; already-prefixed relative responses and absolute signed responses are preserved; query/token text is retained.
+9. **Verification query/result:** Read-only server-side sign-and-GET probe: HTTP 200, Content-Type `image/jpeg`, non-zero bytes YES, 114,840 bytes. Focused Loop 7 plus database-free Loop 6 tests: 39 passed / 240 assertions. PHP syntax, Vite build, and `git diff --check` passed.
+10. **Related source/code:** `app/Services/SupabaseService.php`; `tests/Unit/Loop7SecurePhotoReaderContractTest.php`; canonical architecture and database change ledger.
+11. **Rollback SQL/steps:** Not applicable; no database change. Revert the bounded application diff if required.
+12. **Change scope:** Application-layer URL composition only. FieldSync, Supabase schema, RLS, Storage, Auth, Edge Functions, metadata rows, counts, and historical values remain unchanged/deferred.
+13. **Status:** **LOOP 7B SIGNED IMAGE FIX READY FOR FINAL USER RETEST; LOOP 7B MANUAL PASS NOT YET CLAIMED; LOOP 7 REMAINS OPEN.**
+14. **Notes / risks:** The user must perform the final browser pixel retest using the existing authenticated session. No credentials, signed tokens, or session identifiers were recorded.
+
+### 2026-09-25 — Loop 7B user browser acceptance and post-7B inspection viewer context audit
+
+1. **Date/time:** 2026-09-25.
+2. **Loop / issue:** Loop 7B secure private-photo reader browser acceptance, followed by parcel-PIN and map-focus viewer audit.
+3. **System:** iMAPS application source and documentation only. No PostgreSQL or Supabase mutation.
+4. **Environment/project/database:** `C:\Users\Ralph Lauren\iMAPS`; local iMAPS database and shared Supabase project unchanged.
+5. **Business reason:** Close Loop 7B private-photo browser acceptance and correct the two proven inspection-viewer context gaps without changing photo security or live data.
+6. **Before state:** Loop 7B had server-verified signed image bytes and the user had not yet completed the final browser retest. The viewer displayed `N/A` for the fixture parcel PIN because Laravel did not fetch `supabase_parcels`; the Show map had no confirmed-inspection GPS focus path.
+7. **Exact SQL / operation:** **NONE.** No SQL, migration, RLS, Storage policy, bucket, field job, inspection, parcel, photo, coordinate, or application data mutation.
+8. **After state:** User-confirmed Loop 7B browser acceptance recorded for application `54`, local inspection `22`, field job `c47de697-114f-4c7c-b3aa-9b3c1c635b8e`: four photo entries, four rendered thumbnails, JPEG image requests, rendered lightbox image, HTTP 200 endpoint, normal refresh fetch, Admin path, Guest denial, Site Inspector denial, and no 419 regression. Post-7B viewer source now returns exact matching remote parcel context, prefers the local PIN with a cross-parcel guard, validates confirmed coordinates, renders a confirmed-site marker, and focuses the map safely when geometry is unavailable.
+9. **Verification query/result:** User browser evidence accepted as authoritative. Focused iMAPS/Loop 6 database-free tests: 42 passed / 264 assertions. PHP syntax, Vite build, and `git diff --check` passed. Loop 7B browser acceptance is PASS; post-7B PIN/map retest remains pending.
+10. **Related source/code:** `app/Services/SupabaseService.php`; `resources/js/Components/ParcelInspectionStatus.jsx`; `resources/js/Pages/Applications/Show.jsx`; `tests/Feature/Loop7SecurePhotoReaderTest.php`; `tests/Unit/Loop7SecurePhotoReaderContractTest.php`; canonical architecture and database change ledger.
+11. **Rollback SQL/steps:** Not applicable; no database change. Revert the bounded application diff if required.
+12. **Change scope:** Loop 7B browser record plus bounded post-7B viewer projection/map-focus correction. FieldSync, Supabase schema, RLS, Storage, Auth, Edge Functions, data rows, coordinates, and photo storage remain unchanged.
+13. **Status:** **LOOP 7B SECURE PRIVATE-PHOTO READER BROWSER E2E PASS; POST-7B VIEWER PIN/MAP RETEST PENDING; LOOP 7 REMAINS OPEN.**
+14. **Notes / risks:** Deferred GIS/UI findings remain: `GET /geojson/land_use_plan.geojson` 404 and `Invalid LatLng object: (NaN, NaN)`. No signed URL token, credential, cookie, or session identifier is recorded.
+
+
+### 2026-09-25 — Loop 7C FieldSync photo writer convergence — source only
+
+1. **Date/time:** 2026-09-25.
+2. **Loop / issue:** Loop 7C FieldSync photo writer convergence; eliminate competing new remote photo identities without migrating historical data.
+3. **System:** FieldSync application source only. No PostgreSQL or Supabase mutation.
+4. **Environment/project/database:** `C:\Users\Ralph Lauren\imaps_fieldsync_main`; local PostgreSQL, shared Supabase, Storage, Auth, and RLS unchanged.
+5. **Business reason:** Ensure all new and retried inspection photo writes use one deterministic durable identity and preserve optional evidence metadata.
+6. **Before state:** `InspectionProvider.syncToServer()` was a reachable legacy new-write path using `photo_<local_photos.id>.jpg`, local UUID metadata IDs, public URLs, and omitted notes. The newer deterministic writer used job ID plus local path and UUIDv5 but still wrote public URL values for new metadata rows.
+7. **Exact SQL / operation:** **NONE.** No SQL, migration, RLS policy, Storage policy, bucket, row, object, delete, migration, or data cleanup operation.
+8. **After state:** `SupabaseService.uploadInspectionPhotos()` is the single reachable new remote photo writer. New metadata uses the raw durable `inspections/<field_job_id>/photo_<base64url(local_path)>.jpg` path and UUIDv5 row identity. Existing historical stored values are preserved on resume. The legacy `syncToServer()` path is a compatibility adapter through the same canonical writer and preserves `notes`, latitude, longitude, and capture time.
+9. **Verification query/result:** Focused FieldSync writer/outbox/recovery/local-photo/resolver/presentation tests passed: 120 tests. Scoped analyze reported only four pre-existing style infos, with no errors or warnings. Dart format check and `git diff --check` passed. No live mutation was performed.
+10. **Related source/code:** `lib/core/services/supabase_service.dart`; `lib/modules/inspection/providers/inspection_provider.dart`; `test/loop7_photo_writer_convergence_test.dart`; canonical bridge architecture and this ledger.
+11. **Rollback SQL/steps:** Not applicable; no database change. Revert the bounded source/test diff if required.
+12. **Change scope:** Loop 7C source convergence only. Loop 7D recovery, Loop 7E delete/retention, and Loop 7F legacy/orphan reconciliation remain deferred. Historical rows, public URLs, objects, and orphan candidates remain untouched.
+13. **Status:** **LOOP 7C FIELDSYNC PHOTO WRITER CONVERGENCE PASS — READY FOR LOOP 7D RECOVERY CONTRACT REVIEW; LOOP 7 REMAINS OPEN.**
+14. **Notes / risks:** Identity stability is based on field-job ID plus stable local path, not image-byte hashing. Existing historical URL values are preserved when matching identities resume. No credentials, tokens, signed URLs, cookies, or session identifiers were recorded.
+
+### 2026-09-25 — Loop 7D FieldSync photo recovery / ACK correctness — source only
+
+1. **Date/time:** 2026-09-25.
+2. **Loop / issue:** Loop 7D photo recovery, outbox ACK, resume, and local `is_synced` correctness.
+3. **System:** FieldSync application source and documentation only. No PostgreSQL or Supabase mutation.
+4. **Environment/project/database:** `C:\Users\Ralph Lauren\imaps_fieldsync_main`; local PostgreSQL, shared Supabase, Storage, Auth, RLS, and bucket configuration unchanged.
+5. **Business reason:** Prevent a photo from being acknowledged when only one intermediate write succeeded, while preserving the Loop 7C canonical identity and legacy read compatibility.
+6. **Before state:** The normal writer trusted metadata-row presence without checking the canonical object, silently skipped missing local files, and did not propagate local acknowledgements from outbox photo actions. Recovery conflated unknown download/existence failures with missing evidence.
+7. **Exact SQL / operation:** **NONE.** No SQL, migration, RLS policy, Storage policy, bucket, row, object, delete, retention, migration, or data cleanup operation.
+8. **After state:** Remote photo completeness requires the canonical Storage object plus the canonical UUIDv5 metadata row. A narrow HEAD check distinguishes `exists`, definite `missing`, and `unknown`; unknown remains retryable. Missing objects and missing metadata are repaired with the same canonical identity. Local photo IDs are acknowledged only after the writer/recovery contract completes. `photos_update` and `submit_inspection` share the contract; historical stored URLs are preserved.
+9. **Verification query/result:** Focused FieldSync Loop 7D/7C/outbox/recovery/local-photo/resolver/presentation tests passed: **129 tests**. Fault injection covered Storage success/failure, metadata success/failure, patch failure, ACK loss, missing local file, object exists/missing, existence UNKNOWN, restart recovery, same-identity retry, and submit parity. Scoped analyze reported no errors or warnings; only style infos. Dart format check and `git diff --check` passed. No live mutation was performed.
+10. **Related source/code:** `lib/core/services/supabase_service.dart`; `lib/core/services/db_helper.dart`; `lib/core/services/sync_outbox_service.dart`; `test/r4_photo_loopback_test.dart`; canonical bridge architecture and this ledger.
+11. **Rollback SQL/steps:** Not applicable; no database change. Revert the bounded source/test/documentation diff if required.
+12. **Change scope:** Loop 7D recovery/ACK correctness only. Loop 7E delete/retention and Loop 7F legacy/orphan reconciliation remain deferred. No historical rows, public URLs, objects, orphan candidates, or retention markers were migrated or deleted.
+13. **Status:** **LOOP 7D FIELDSYNC PHOTO RECOVERY / ACK CORRECTNESS PASS — READY FOR USER DEVICE RECOVERY E2E / LOOP 7E CONTRACT REVIEW; LOOP 7 REMAINS OPEN.**
+14. **Notes / risks:** User/device recovery E2E is still required for a physical capture/reconnect/restart scenario. No live Supabase mutation, credentials, tokens, signed URLs, cookies, or session identifiers were recorded.
+
+
+### 2026-09-26 — Loop 7F legacy / orphan reconciliation audit — schema/data migration: NONE
+
+1. **Date/time:** 2026-09-26 (local audit session).
+2. **Loop / issue:** Loop 7F — legacy metadata URL and orphan Storage object reconciliation.
+3. **System:** Shared Supabase project read-only SQL/catalog inspection plus documentation. No iMAPS application-source change and no FieldSync functional source change.
+4. **Environment/project/database:** Shared Supabase project `laapipjyprmmaylunxib`; `public.field_job_photos`, `public.field_jobs`, `storage.objects` for bucket `inspection-photos`; iMAPS branch `fix/fieldsync-bridge-stability`, HEAD `8a28c8207717efa64e2ea9c66db531f4610c37d0`; FieldSync branch `main`, HEAD as recorded in the Loop 7F report.
+5. **Business reason:** Re-check historical photo metadata and Storage object state without assuming the earlier audit counts, and classify findings before any cleanup decision.
+6. **Before state:** Prior audit recorded 2 legacy URL metadata rows and 19 orphan Storage objects; live counts were not assumed.
+7. **Exact SQL / operation:** Read-only `SELECT`/catalog queries only, including counts, path-form classification, existence joins, and aggregate orphan reference checks. **No DDL, DML, DELETE, UPDATE, RLS change, Storage policy change, migration, rename, cleanup SQL, or live mutation.**
+8. **After state:** Unchanged. Live inventory: 87 `field_job_photos` rows; 85 canonical raw path values; 2 legacy Storage URL values; 0 malformed/unclassified values; 106 `inspection-photos` objects; 87 metadata rows with backing objects; 0 metadata rows missing objects; 19 objects with no metadata row; 0 duplicate canonical object paths; 0 duplicate logical metadata identities.
+9. **Verification query/result:** All 87 metadata rows resolved to a derivable canonical object path and every resolved path had a backing Storage object. The 19 orphan objects are unreferenced by metadata and by current `field_jobs.photo_paths`; none resolves to an existing current `field_jobs` row. The 2 legacy rows are completed, submitted, non-rework historical evidence with backing objects and canonical object naming.
+10. **Classification:** The 2 legacy rows are historical evidence and remain readable through the current iMAPS normalizer; no rewrite or ID migration is justified by the audit. The 19 orphans are classified **A — historical legacy orphan** based on date, missing job prefix resolution, and absence of metadata/job-path references; no failed-write cause is proven.
+11. **Related source/code:** `app/Services/SupabaseService.php` reader normalization; FieldSync `lib/core/services/supabase_service.dart` canonical writer/recovery contract; Loop 7C/7D/7E tests; this ledger and the bridge architecture document.
+12. **Rollback SQL/steps:** Not applicable; no database change.
+13. **Change scope:** Documentation only in this entry. No sensitive URL, signed token, credential, cookie, or session identifier recorded.
+14. **Status:** **LOOP 7F READ-ONLY RECONCILIATION PASS — CLEANUP DEFERRED; LOOP 7E REMOTE DELETE POLICY STILL DEFERRED; LOOP 7D DEVICE E2E DEFERRED.**
+15. **Notes / risks:** Do not treat legacy URL format alone as a defect: the current iMAPS secure reader normalizes supported legacy Storage URL forms and validates the field-job prefix. Any future orphan deletion or legacy metadata rewrite requires separate explicit authorization, retention review, and a defined acknowledgement/rollback contract.
+
+
+### 2026-09-26 — Loop 7G final closure / pre-commit review — schema/data migration: NONE
+
+1. **Date/time:** 2026-09-26.
+2. **Loop / issue:** Loop 7G final implementation-boundary review and selective-commit preparation.
+3. **System:** Read-only source/test/documentation review across iMAPS and FieldSync. No application feature work, database, Supabase, Storage, RLS, Auth, or Edge Function mutation.
+4. **Environment/project/database:** iMAPS `fix/fieldsync-bridge-stability` at `8a28c8207717efa64e2ea9c66db531f4610c37d0`; FieldSync `main` at `5119205ead383fa324330129b74a61e6332a42e0`; live Supabase/PostgreSQL unchanged.
+5. **Business reason:** Freeze the completed Loop 7 implementation batch for selective commit while keeping device acceptance and policy follow-ups explicitly deferred.
+6. **Before state:** Loops 7A–7F were individually implemented/verified with Loop 7D device E2E and Loop 7E remote deletion still open; historical 7F records were unchanged.
+7. **Exact SQL / operation:** **NONE.** No DDL, DML, DELETE, UPDATE, RLS/Storage policy, migration, cleanup, bucket change, or live mutation.
+8. **After state:** Documentation only. 7A PASS; 7B PASS; 7C PASS; 7D source/automated PASS with device E2E deferred; 7E local retention safeguards PASS with remote deletion deferred; 7F reconciliation PASS. The Loop 7 implementation batch is frozen for selective commit; deferred items are not marked PASS.
+9. **Verification query/result:** Focused iMAPS Loop 7 suite passed 19 tests / 84 assertions. Prior FieldSync evidence retained: `flutter analyze` No issues found; Loop 7E suite 148 passed; Loop 7F focused suite 35 passed; `git diff --check` passed. Repository SQL still defines no `field_job_photos` DELETE policy and no `inspection-photos` Storage DELETE policy. The APK on disk predates Loop 7E edits and requires a fresh rebuild before device installation.
+10. **Classification:** Implementation freeze safe = YES. Selective commit safe = YES. Full device acceptance = NO, deferred. Remote delete feature = NO, deferred policy. Post-7B PIN/map manual retest remains part of tomorrow's broader browser regression; it is not claimed as a separate manual PASS tonight.
+11. **Related source/code:** iMAPS secure reader/controller/config/React files and Loop 7 tests; FieldSync canonical writer, recovery, outbox, delete/retention, and Loop 7 tests; this ledger and the canonical bridge architecture.
+12. **Rollback SQL/steps:** Not applicable; no database change.
+13. **Change scope:** These two documentation files only during Loop 7G. No stage, commit, push, device operation, or master sync.
+14. **Status:** **LOOP 7 IMPLEMENTATION BATCH FROZEN FOR SELECTIVE COMMIT; LOOP 7D DEVICE E2E AND LOOP 7E REMOTE DELETE POLICY DEFERRED.**
+15. **Notes / risks:** Preserve the 19 historical orphans and 2 historical legacy URL rows unchanged. Rosario municipal-boundary business rule remains a separate production-readiness follow-up. Do not use `git add .`; stage only the reviewed Loop 7 files and the separately recommended workspace-hygiene files.

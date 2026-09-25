@@ -1,5 +1,5 @@
 // resources/js/Components/ParcelInspectionStatus.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { fetchParcelInspection } from "@/utils/supabaseApi";
 
 // ── Badge Configuration ──
@@ -46,27 +46,43 @@ function SectionLabel({ children }) {
     return <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{children}</p>;
 }
 
-export default function ParcelInspectionStatus({ inspectionId, localInspection = null, onStatusFetched }) {
+export default function ParcelInspectionStatus({ inspectionId, localInspection = null, localParcel = null, onStatusFetched, onInspectionDataFetched }) {
     const [inspection, setInspection] = useState(localInspection);
     const [loading, setLoading] = useState(true);
     const [selectedPhoto, setSelectedPhoto] = useState(null);
+    const [loadError, setLoadError] = useState(null);
+    const onStatusFetchedRef = useRef(onStatusFetched);
+    const onInspectionDataFetchedRef = useRef(onInspectionDataFetched);
+    const localInspectionRef = useRef(localInspection);
+
+    onStatusFetchedRef.current = onStatusFetched;
+    onInspectionDataFetchedRef.current = onInspectionDataFetched;
+    localInspectionRef.current = localInspection;
 
     useEffect(() => {
         const getInspection = async () => {
             setLoading(true);
-            const remoteInspection = await fetchParcelInspection(inspectionId);
-            const data = remoteInspection
-                ? { ...localInspection, ...remoteInspection }
-                : localInspection;
-            setInspection(data);
+            setLoadError(null);
 
-            // The local record is authoritative enough to avoid a false "no record"
-            // state when the browser's Supabase request is unavailable or RLS-filtered.
-            if (data && onStatusFetched) {
-                onStatusFetched(data.status);
+            try {
+                const remoteInspection = await fetchParcelInspection(inspectionId);
+                const local = localInspectionRef.current;
+                const data = remoteInspection
+                    ? { ...local, ...remoteInspection }
+                    : local;
+                setInspection(data);
+
+                if (data && onStatusFetchedRef.current) {
+                    onStatusFetchedRef.current(data.status);
+                }
+                if (data && onInspectionDataFetchedRef.current) {
+                    onInspectionDataFetchedRef.current(data);
+                }
+            } catch (error) {
+                setLoadError(error.message || 'Inspection evidence is temporarily unavailable.');
+            } finally {
+                setLoading(false);
             }
-            
-            setLoading(false);
         };
 
         if (inspectionId) {
@@ -74,13 +90,22 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
         } else {
             setLoading(false);
         }
-    }, [inspectionId, localInspection, onStatusFetched]);
+    }, [inspectionId]);
     
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center p-8 bg-slate-50 border border-slate-200 rounded-xl animate-pulse">
                 <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-3"></div>
                 <span className="text-[12px] font-bold uppercase tracking-widest text-slate-400">Syncing Field Data...</span>
+            </div>
+        );
+    }
+
+    if (loadError) {
+        return (
+            <div className="p-6 bg-amber-50 border border-amber-200 rounded-xl">
+                <h4 className="text-[13px] font-bold text-amber-800">Inspection evidence unavailable</h4>
+                <p className="text-[12px] text-amber-700 mt-0.5">{loadError}</p>
             </div>
         );
     }
@@ -118,17 +143,17 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
         { label: "Inspector Notes", value: inspection.inspector_notes },
     ].filter(block => block.value);
 
-    // Normalize photos: Use field_job_photos if available, otherwise map photo_paths into objects
-    const photosToRender = inspection.field_job_photos?.length > 0 
-        ? inspection.field_job_photos 
-        : (inspection.photo_paths || []).map((url, index) => ({
-            id: `fallback-${index}`,
-            photo_url: url,
-            captured_at: inspection.submitted_at // fallback timestamp
-        }));
+    // The Laravel reader returns only authorized, short-lived signed URLs.
+    // Legacy raw photo paths are intentionally not rendered directly.
+    const photosToRender = (inspection.field_job_photos || []).filter((photo) => photo.signed_url);
 
     // Get the accurate photo count
-    const actualPhotoCount = photosToRender.length || inspection.photo_count || 0;
+    const remoteParcelPin = inspection.supabase_parcels?.local_parcel_id === localParcel?.id
+        ? inspection.supabase_parcels?.property_index_number
+        : null;
+    const displayParcelPin = localParcel?.property_index_number || remoteParcelPin || 'N/A';
+
+    const actualPhotoCount = photosToRender.length;
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
@@ -170,7 +195,7 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                     <div>
                         <SectionLabel>Parcel PIN</SectionLabel>
                         <p className="text-[12px] font-mono font-medium text-slate-700 bg-slate-50 inline-block px-1.5 py-0.5 rounded border border-slate-200">
-                            {inspection.supabase_parcels?.property_index_number || 'N/A'}
+                            {displayParcelPin}
                         </p>
                     </div>
                     <div>
@@ -244,7 +269,7 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                                     title="Click to enlarge photo"
                                 >
                                     <img 
-                                        src={photo.photo_url} 
+                                        src={photo.signed_url}
                                         alt={`Field evidence`}
                                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                                         loading="lazy"
@@ -290,6 +315,9 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                                         Captured: {formatDate(selectedPhoto.captured_at)} at {formatTime(selectedPhoto.captured_at)}
                                     </p>
                                 )}
+                                {selectedPhoto.notes && (
+                                    <p className="text-[12px] text-slate-600 mt-2 whitespace-pre-wrap">{selectedPhoto.notes}</p>
+                                )}
                             </div>
                             <button 
                                 onClick={() => setSelectedPhoto(null)} 
@@ -304,7 +332,7 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                         {/* Enlarged Image Area */}
                         <div className="overflow-auto bg-slate-200 p-2 sm:p-4 flex items-center justify-center min-h-[50vh] max-h-[75vh]">
                             <img 
-                                src={selectedPhoto.photo_url} 
+                                src={selectedPhoto.signed_url}
                                 alt="Field evidence enlarged" 
                                 className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-sm" 
                             />

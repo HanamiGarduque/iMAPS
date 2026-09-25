@@ -4,7 +4,7 @@ import { Link, Head, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, GeoJSON, CircleMarker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
@@ -61,8 +61,20 @@ const sanitizeGeoJSON = (geojson) => {
     return { ...geojson, features: validFeatures };
 };
 
+const toValidCoordinate = (value, min, max) => {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= min && number <= max ? number : null;
+};
+
+const toInspectionPoint = (inspection) => {
+    const latitude = toValidCoordinate(inspection?.confirmed_latitude, -90, 90);
+    const longitude = toValidCoordinate(inspection?.confirmed_longitude, -180, 180);
+    return latitude !== null && longitude !== null ? [latitude, longitude] : null;
+};
+
 // ── Custom Map Bounds Controller ──
-function MapController({ brgyData, activeParcelFeature }) {
+function MapController({ brgyData, activeParcelFeature, inspectionPoint }) {
     const map = useMap();
 
     useEffect(() => {
@@ -73,6 +85,8 @@ function MapController({ brgyData, activeParcelFeature }) {
                 if (bounds.isValid()) {
                     map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 18, duration: 1.2 });
                 }
+            } else if (inspectionPoint) {
+                map.flyTo(inspectionPoint, 18, { duration: 1.2 });
             } else if (brgyData) {
                 const layer = L.geoJSON(brgyData);
                 const bounds = layer.getBounds();
@@ -81,7 +95,7 @@ function MapController({ brgyData, activeParcelFeature }) {
                 }
             }
         } catch (error) {}
-    }, [brgyData, activeParcelFeature, map]);
+    }, [brgyData, activeParcelFeature, inspectionPoint, map]);
 
     return null;
 }
@@ -286,12 +300,17 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
 
     const [parcelReviews, setParcelReviews] = useState({});
     const [liveStatuses, setLiveStatuses] = useState({});
+    const [liveInspectionData, setLiveInspectionData] = useState({});
 
     const handleLiveStatusUpdate = (parcelId, status) => {
         setLiveStatuses((prev) => {
             if (prev[parcelId] === status) return prev;
             return { ...prev, [parcelId]: status };
         });
+    };
+
+    const handleLiveInspectionData = (parcelId, data) => {
+        setLiveInspectionData((prev) => ({ ...prev, [parcelId]: data }));
     };
 
     useEffect(() => {
@@ -610,6 +629,8 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
 
     const activeParcelData = uniqueParcels?.[activeParcelIndex] || uniqueParcels?.[0] || {};
     const siteInspection = activeParcelData?.site_inspection || null;
+    const activeInspectionData = liveInspectionData[activeParcelData?.id] || siteInspection;
+    const inspectionPoint = useMemo(() => toInspectionPoint(activeInspectionData), [activeInspectionData]);
     const effectiveActiveStatus = liveStatuses[activeParcelData?.id]?.toLowerCase() || siteInspection?.status?.toLowerCase();
     
     const showDecisionButtons = !siteInspection || ["completed", "submitted"].includes(effectiveActiveStatus);
@@ -730,7 +751,14 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                         {landUseMapData && <GeoJSON data={landUseMapData} style={getLandUseStyle} />}
                                         {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
                                         {parcelMapData && <GeoJSON key={activeParcelFeature?.properties?.property_index_number || "parcels"} data={parcelMapData} style={getParcelStyle} />}
-                                        <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />
+                                        {inspectionPoint && (
+                                            <CircleMarker
+                                                center={inspectionPoint}
+                                                radius={8}
+                                                pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 0.9, weight: 2 }}
+                                            />
+                                        )}
+                                        <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} inspectionPoint={inspectionPoint} />
                                     </MapContainer>
                                 </div>
 
@@ -834,7 +862,9 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                         <ParcelInspectionStatus
                                                             inspectionId={activeParcelData.site_inspection?.id}
                                                             localInspection={activeParcelData.site_inspection}
+                                                            localParcel={activeParcelData}
                                                             onStatusFetched={(status) => handleLiveStatusUpdate(activeParcelData.id, status)}
+                                                            onInspectionDataFetched={(data) => handleLiveInspectionData(activeParcelData.id, data)}
                                                         />
                                                         
                                                         {showDecisionButtons ? (

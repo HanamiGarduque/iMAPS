@@ -1102,13 +1102,78 @@ Mandatory rules:
 - add server-side lifecycle protection;
 - define stale outbox handling.
 
-## LOOP 6 — Site Inspector iMAPS Access
+## LOOP 6 — Site Inspector iMAPS Access — IMPLEMENTED 2026-09-24; AUTH GATE CORRECTED 2026-09-24 (pre-live-E2E); pending Team Leader live access E2E
 
 - enforce the confirmed rule: iMAPS web = Admin + Planning Officer; FieldSync = Site Inspector;
 - audit route, frontend, and backend enforcement;
-- obtain Team Leader approval before Controller changes.
+- Team Leader approval received before Controller changes (approved with corrections: encode GET/POST and `POST /applications/update-status` are `role:Planning Officer` only, Admin excluded).
+- Implementation record (2026-09-24):
+  - `app/Http/Middleware/RoleMiddleware.php` — variadic `string ...$roles`, `Auth::check()` first (guests get normal Laravel login redirect), strict case-sensitive `in_array(..., true)` with no aliases/normalization, authenticated unauthorized → 403.
+  - `app/Http/Controllers/Auth/AuthenticatedSessionController.php` — Site Inspector login gate is a PRE-login role callback inside `Auth::attemptWhen()`: the framework verifies the credentials first (after `hasValidCredentials()`), then the exact check `role === 'Site Inspector'` runs BEFORE any password rehash, session establishment, or remember-token handling; rejection returns the validation error "Site Inspectors use FieldSync for site inspection activities." with no `logout()`, no session teardown, and no users-row write. The earlier credential-success + `logout()`/`session()->invalidate()` teardown was replaced on 2026-09-24 after installed-framework source review established that `Auth::attempt()` rehashes first (`hashing.rehash_on_login` defaults to true) and that `logout()` rotates a populated `remember_token` — both being users-row writes the gate must never trigger. Invalid credentials never execute the callback, so they keep the ordinary invalid-credentials response and never leak the FieldSync guidance. Rate limiting, the 5-attempt lockout, credential validation, allowed-role session regeneration, and the allowed-role `last_login` update are preserved; a rejected SI login writes no password/role/`is_active`/`handshake_key`/`last_login`/`remember_token` change (source-verified against the installed framework; the DB-backed runtime proofs are environment-blocked — see Verification, and are not claimed as runtime-verified).
+  - `routes/web.php` — shared internal routes (`/dashboard`, `/applications`, `/applications/{id}`, `/technical-review`, `/api/global-search`, map ×3, `/api/inspections/{id}/supabase-data`) behind `role:Admin,Planning Officer`; encode GET/POST, drafts ×3, `POST /applications/update-status`, TR mutation POSTs behind `role:Planning Officer`; Admin-only group unchanged; `/api/tax-map/lookup/{pin}` moved from stateless `routes/api.php` into this session-backed auth group behind `role:Admin,Planning Officer` (sole caller is the PO encode form, `Create.jsx`); public tracking (`/`, `/public-portal`) stays public.
+  - `routes/api.php` — only `GET /user` (Sanctum) remains; tax-map route removed.
+  - UI hygiene (not the security boundary): `Sidebar.jsx` hides operational nav from Site Inspector and shows FieldSync guidance; `Header.jsx` hides internal search from Site Inspector and gates the `/settings` profile link to Admin.
+- Verification (after the 2026-09-24 pre-live-E2E auth correction): `tests/Unit/Loop6SiteInspectorAccessContractTest.php` 15 tests / 146 assertions green (includes installed `SessionGuard`/`AuthManager` source proofs of the pre-login rejection ordering and of the `logout()` remember-token rotation risk that forced the correction); `tests/Feature/Loop6AccessBoundaryTest.php` 8 tests / 34 assertions green; full Unit suite (incl. Loop 2/3/4/5 contracts) 75 tests / 423 assertions green; `tests/Feature/Loop6RoleMatrixTest.php` (18 tests: Admin/PO/SI login matrix, rejected-SI non-impact incl. password/`handshake_key`/`remember_token`, invalid-SI-credential path, allowed-role session regeneration, rate-limit/lockout) is structured honestly but ENVIRONMENT BLOCKED locally — all 18 error in `RefreshDatabase` setUp with `could not find driver (Connection: sqlite, Database: :memory:)` because `pdo_sqlite` is not installed (0 assertion failures; pre-existing local limitation, previously 38/47 Feature tests blocked, including all 24 pre-existing DB tests); these DB-backed proofs are NOT runtime-verified here and must run in an environment with `pdo_sqlite`; `npm run build` not re-run because this correction changed no JS.
+- Status: **LOOP 6 IMPLEMENTATION PASS — PENDING LIVE ACCESS E2E.** Not closed; no closure record is written until the Team Leader's live access E2E passes.
+- Loop 6 database/Supabase schema/data migration: NONE executed during implementation. FieldSync/Supabase code: unchanged.
+
+### 2026-09-25 — Loop 6 manual live E2E status + two bounded correctness corrections
+
+**LOOP 6 STATUS: IN PROGRESS — LIVE E2E SUBSTANTIALLY PASSING, FINAL TEAM CONFIRMATION PENDING**
+
+This entry does not close Loop 6 and writes no Loop 6 closure record.
+
+**Verified manual acceptance evidence (team-supplied, 2026-09-24/25):**
+
+1. Planning Officer login/logout cycle works without Ctrl+F5. — LIVE VERIFIED
+2. Admin login/logout cycle works without Ctrl+F5. — LIVE VERIFIED
+3. Repeated auth transitions no longer produce HTTP 419. — LIVE VERIFIED
+4. Admin shared/internal access matrix passed. — LIVE VERIFIED
+5. Planning Officer workflow/read access matrix passed. — LIVE VERIFIED
+6. Admin is denied PO-only Encode/Drafts. — LIVE VERIFIED
+7. Planning Officer is denied Admin-only modules. — LIVE VERIFIED
+8. Public `/public-portal` remains reachable. — LIVE VERIFIED
+9. Guest internal Dashboard/Application routes redirect to login. — LIVE VERIFIED
+10. FieldSync read-only non-impact acceptance passed. — LIVE VERIFIED
+11. Tax-map authorization allowed Admin/PO through to the controller. — LIVE VERIFIED
+12. Tax-map PostgreSQL query defect was corrected. — VERIFIED IMPLEMENTATION
+13. Manual authenticated tax-map retest now returns the expected parcel JSON instead of HTTP 500. — LIVE VERIFIED
+
+**Loop 6 remains open because:**
+
+- one **VALID LOCAL iMAPS Site Inspector credential** must still be tested by the Team Leader; the expected rejection text remains: `Site Inspectors use FieldSync for site inspection activities.`
+- Audit Log navigation behavior for Settings/User Management is awaiting Team clarification.
+- guest tax-map denial remains pending if it has not yet been observed in a genuinely logged-out browser session.
+- DB-backed PHPUnit matrix remains environment-blocked where PHP/pdo_sqlite cannot execute.
+
+**Correction record 1 — stale CSRF token across Inertia auth transitions (419):**
+
+- **Root cause (VERIFIED SOURCE):** a pre-existing static CSRF meta/header pattern. `resources/js/bootstrap.js` read `<meta name="csrf-token">` once at boot and assigned that value to `window.axios.defaults.headers.common['X-CSRF-TOKEN']` **and** `['X-XSRF-TOKEN']`; `resources/js/Pages/Users/Index.jsx` attached a per-page `X-CSRF-TOKEN` header. That persistent value outlived the server session, so a token minted before a login/logout transition was replayed on the next state-changing request and produced HTTP 419.
+- **Correction (VERIFIED IMPLEMENTATION):** the static/persistent manual token pattern was removed. The meta tag was deleted from `resources/views/app.blade.php`, the boot-time axios default headers were deleted from `resources/js/bootstrap.js`, and the manual headers were removed from the three `Users/Index.jsx` POST calls. The application now relies on Laravel/Axios current `XSRF-TOKEN` cookie behavior.
+- **Verification:** manual Admin/PO repeated login/logout confirms the 419 symptom is resolved (evidence 3). `tests/Unit/Loop6CsrfSessionContractTest.php` (2 tests) asserts the frontend XSRF-cookie lifecycle and that auth routes remain POST/web-protected; `tests/Feature/Loop6AuthTransitionTest.php` (2 tests) covers repeated allowed-role login/logout transitions and preserves Site Inspector rejection plus invalid-credential guest behavior.
+- **Ownership:** no Controller role/business ownership change was made by the CSRF fix.
+
+**Correction record 2 — tax-map lookup query defect:**
+
+- **Authorization unchanged:** `/api/tax-map/lookup/{pin}` remains a session-backed GET behind `role:Admin,Planning Officer` in `routes/web.php`. The SQL fix changed no route, role, schema, or data.
+- **Original defect (VERIFIED SOURCE; previously observed as HTTP 500 after authorization):** `TaxMapLookupController::lookup()` normalized the PIN with `UPPER(REPLACE(REPLACE(REPLACE(property_index_number, ?, ""), ?, ""), ?, ""))`. Those double-quoted empty strings are invalid in PostgreSQL (`zero-length delimited identifier`), so an authenticated Admin/PO request that had already passed authorization returned HTTP 500.
+- **Correction (VERIFIED IMPLEMENTATION):** the replacements are now safely bound parameters — `['-', '', ' ', '', '.', '', $normalizedPin]` — making normalization portable and injection-safe.
+- **Verification:** manual authenticated retest now returns the expected parcel JSON instead of HTTP 500 (evidence 13). `tests/Feature/TaxMapLookupTest.php` (5 tests) covers route/method, Admin/PO authorization pass, Site Inspector/guest denial, bound-literal not-found behavior, and special-character binding.
+- **Guest denial** for the tax-map endpoint must be recorded separately when actually observed in a genuinely logged-out browser session; it is not claimed here.
+
+**Database effect classification for this period:** IMPLEMENTATION / SCHEMA MUTATION: NONE. BUSINESS-DATA MIGRATION: NONE. SUPABASE MUTATION: NONE. Manual acceptance performed read-only application/database reads; normal successful Admin/PO logins may have updated allowed-role authentication metadata. Canonical ledger: `FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md`, 2026-09-25 entry.
+
+---
 
 ## LOOP 7 — Photo / Storage / Authorization Contract
+
+**LOOP 7 — AUDIT STARTED (2026-09-25). IMPLEMENTATION NOT AUTHORIZED.**
+
+- Audit-only scope: establish the current FieldSync capture → Storage object → `field_job_photos` metadata → iMAPS reader path; verify live `field_job_photos` schema/RLS, `inspection-photos` bucket privacy and object policies, retry/idempotency, delete behavior, cross-inspector denial, and the private-bucket URL contract.
+- The mandatory pre-Loop-7 Git checkpoint (both repositories) is recorded; everything it listed existed before this audit began.
+- Loop 6 remains open: no Loop 6 closure, no commit, no push.
+- No FieldSync source edit, Supabase migration, RLS/Storage policy change, bucket change, photo-row mutation, live photo upload, iMAPS reader change, or Controller authorization change is authorized during the audit.
+- Loop 7 audit start — NO DATABASE/SUPABASE MUTATION.
 
 - verify/add `field_job_photos.notes`;
 - verify ownership-scoped UPDATE/DELETE RLS;
@@ -1615,4 +1680,561 @@ NEXT LOOP:
 - **Remaining R4 Gaps Closed:** Full submit business-state recovery (findings/checklist state machine), enqueue-vs-ACK ownership, repeated `start()` concurrency beyond reentrant guard, cross-job action sequence history evaluated and proven conflict-safe.
 - **Disposition:** **LOOP 1D-R4 — CLOSED / VERIFIED LOCALLY**. Proceeded to **LOOP 1D FINAL** lifecycle matrix evaluation and subsequent Loop 1 closure.
 
+
+# LOOP 7 PHOTO / STORAGE / AUTHORIZATION AUDIT
+
+**STATUS: LOOP 7 AUDIT COMPLETE — IMPLEMENTATION NOT STARTED**
+
+****Date:** 2026-09-25`r`n**Scope:** Read-only reconciliation of FieldSync photo writes, SQLCipher state, Supabase metadata/Storage policies, iMAPS photo reading, and retry/delete behavior. No PostgreSQL, Supabase, Auth, RLS, Storage, FieldSync, or iMAPS application mutation was performed during this audit.
+
+## Verified live boundary
+
+- **LIVE VERIFIED:** `public.field_job_photos` has RLS enabled. Its live `notes` column exists and is nullable. Live metadata contains 87 rows; 19 contain notes.
+- **LIVE VERIFIED:** `field_job_photos.id` is the primary key and `field_job_id` references `field_jobs` with `ON DELETE CASCADE`.
+- **POLICY-DEFINITION VERIFIED:** inspector SELECT and INSERT policies are scoped to the assigned inspector. The live `r4p1_inspectors_update_assigned_job_photos` policy remains present for assigned-job updates. No `field_job_photos` DELETE policy is live.
+- **LIVE VERIFIED:** the `inspection-photos` bucket is live and private. Storage SELECT/INSERT/UPDATE policies are present, including `r4p1_inspectors_update_assigned_inspection_objects`; no Storage DELETE policy is live.
+- **LIVE VERIFIED:** 85 of 87 metadata rows contain raw `inspections/...` object paths; 2 retain legacy public-bucket URL values. All 85 raw-path rows have backing Storage objects. No duplicate metadata rows exist per raw path.
+- **LIVE VERIFIED:** 19 Storage objects are currently orphaned from metadata. The source audit does not prove the exact historical cause of each orphan.
+- **LIVE VERIFIED:** `profiles.role` currently has 2 inspector accounts and 0 admin accounts. The Storage SELECT policy's `role = 'admin'` branch therefore matches no current live profile.
+- **LIVE VERIFIED:** the current iMAPS reader uses browser-side Supabase/anon access for `field_job_photos`, renders stored `photo_url` values as image sources, and does not generate signed URLs. The live RLS boundary does not authorize that browser identity to read inspector-owned metadata or private Storage bytes.
+
+## Current FieldSync writer boundary
+
+- **VERIFIED SOURCE:** `SupabaseService.uploadInspectionPhotos()` derives the Storage path as `inspections/<jobId>/photo_<base64url(localPath)>.jpg` and derives the metadata ID as UUIDv5 using the fixed namespace plus that Storage path. It uses Storage `upsert: true`, metadata upsert on `id`, and preserves `notes`, coordinates, and `captured_at`.
+- **VERIFIED SOURCE:** the outbox recovery path calls `verifyOutboxRecoveryPhotos()`, compares deterministic metadata/object identity and bytes, reuses an existing object where safe, inserts missing metadata, and guards the later job update. This is same-ID overwrite/retry behavior, not content-addressed storage: the key is derived from the local path, not image bytes.
+- **VERIFIED SOURCE:** the older active `InspectionProvider.syncToServer()` path still uses `photo_<local_photos.id>.jpg`, `getPublicUrl()`, and metadata upsert keyed by the local photo UUID. This is a second identity convention and can produce public-URL metadata rather than the newer raw-path convention.
+- **VERIFIED SOURCE:** `local_photos` persists the local UUID, job UUID, local path, notes, coordinates, capture timestamp, and `is_synced`. It has no remote row ID or separate remote Storage-path column.
+- **VERIFIED SOURCE:** `pending_actions` persists the complete photo map payload and retry state. `photos_update` uses deterministic action ID `photos_update_<jobId>`; final `submit_inspection` currently uses a new UUID per enqueue.
+- **VERIFIED SOURCE:** local `local_photos.is_synced` is set only by the legacy `syncToServer()` path after its Storage upload and metadata upsert succeed. The newer outbox path acknowledges the outbox action after its guarded execution; it does not use `local_photos.is_synced` as its remote acceptance marker.
+- **VERIFIED SOURCE:** a missing local file is skipped in the legacy `syncToServer()` path and marked synced without a remote write. The recovery path instead returns an explicit missing-evidence conflict unless its guarded resume conditions are satisfied.
+- **VERIFIED SOURCE:** `removePhoto()` removes the in-memory item and local `local_photos` row, then makes best-effort Storage and metadata deletion calls. There is no delete outbox action. Offline deletion can therefore leave remote evidence behind.
+- **VERIFIED SOURCE:** `clearSyncedPhotoCache()` deletes only local files and local rows already marked `is_synced = 1`; it does not delete remote metadata or Storage objects. Completed-task retention does not provide a remote photo-retention policy.
+
+## Retry and orphan classification
+
+- **VERIFIED SOURCE:** deterministic identity is **SAME-ID OVERWRITE / TRUE RETRY IDEMPOTENCY for the newer path**, not content-addressed idempotency. The same local path and job ID produce the same object path and UUIDv5 metadata ID; changed bytes at that same path overwrite the same object.
+- **INFERENCE:** the 19 orphan objects are consistent with a partial legacy upload where Storage succeeded but metadata upsert did not, followed by a retry using a different identity convention. The source does not prove that this caused every orphan.
+- **INFERENCE:** legacy public-URL drift, the older `photo_<local-id>.jpg` path, and best-effort delete without a delete outbox can also leave remote objects or metadata without a current local mapping.
+- **TEAM DECISION REQUIRED:** before any cleanup, define whether an object is authoritative only when metadata exists, whether legacy public URLs are migrated to raw paths, and whether orphan cleanup is allowed for completed historical evidence.
+
+## Private-bucket / iMAPS reader decision boundary
+
+- **LIVE VERIFIED + VERIFIED SOURCE:** the bucket is private, while iMAPS currently performs browser-side metadata reads and direct image rendering. This is structurally incompatible with the current private Storage/RLS contract.
+- **RECOMMENDED TECHNICAL DIRECTION:** keep the bucket private; store durable raw object paths; have the authorized iMAPS Laravel server generate short-lived signed URLs for Admin/Planning Officer readers. The React reader should consume the authorized server response rather than query `field_job_photos` with the browser anon identity. This is a technical direction, not a finalized business decision.
+- **TEAM DECISION REQUIRED:** choose between the Laravel signed-URL path (best fit with existing iMAPS session roles), a separately authenticated Supabase reviewer identity, or a public bucket. Public permanent URLs are incompatible with the verified private-bucket privacy posture and are not recommended.
+- **VERIFIED SOURCE:** the likely future iMAPS reader surface is `resources/js/Components/ParcelInspectionStatus.jsx` plus `resources/js/utils/supabaseApi.js`; `resources/js/Pages/Applications/Show.jsx` supplies the local inspection context. A server-side secure implementation would likely require a bounded Laravel endpoint/service around `TechnicalReviewController::getSupabaseInspectionData()` or a new equivalent, with signed URL generation and Admin/Planning Officer authorization. No source change is authorized in this audit.
+
+## Delete and retention decision
+
+- **VERIFIED SOURCE:** the UI permits photo removal before or during the active inspection workflow, including completed-task rework through the shared photo step. The local file itself is not deleted by `removePhoto()`; the local DB row is deleted, and remote deletion is best effort.
+- **POLICY-DEFINITION VERIFIED:** no remote metadata DELETE policy and no Storage DELETE policy are live. Do not add either policy until the Team Leader defines whether completed evidence is immutable, correction-only, or deletable by an authorized role.
+- **TEAM DECISION REQUIRED:** the absence of DELETE policies is currently consistent with a conservative retention posture, but it is not yet a complete functional delete contract. Loop 5 completed-history protection must remain intact.
+
+## Local runtime note
+
+- **LIVE VERIFIED:** `npm run dev` reports Laravel at `http://127.0.0.1:8000` and Vite at `http://localhost:5173`; `APP_URL` is `http://localhost`. Laravel's dev server is bound to `127.0.0.1:8000`. `localhost` also resolves to the same local server in the user's environment, but one browser origin must be used consistently during auth/session E2E to avoid cookie-origin confusion.
+
+## Audit disposition
+
+- **VERIFIED SOURCE / LIVE VERIFIED:** Loop 7 audit evidence is complete. No source, schema, RLS, Storage, Auth, or application implementation was started.
+- **PENDING LIVE E2E:** assigned-inspector upload, cross-inspector denial, private-bucket read behavior, Admin/Planning Officer iMAPS viewing, and any future delete/retention contract.
+- **AUTOMATED TEST GAP:** current tests cover deterministic recovery fixtures, same-path retry behavior, missing local/object cases, metadata mismatch, notes, offline/outbox recovery, and private photo presentation. They do not prove live RLS behavior for two real inspector identities, signed URL generation, orphan reconciliation, or a finalized delete policy.
+
+# LOOP 7 CONTRACT DECISION — TEAM LEADER APPROVED
+
+**Decision date:** 2026-09-25
+**Scope:** Loop 7A/7B contract lock. Loop 7 remains open; this is not a Loop 7 closure.
+
+## Approved direction
+
+**PRIVATE BUCKET + RAW DURABLE OBJECT PATH + LARAVEL AUTHORIZATION + SHORT-LIVED SIGNED URL + ADMIN / PLANNING OFFICER REVIEW**
+
+- `inspection-photos` remains private.
+- The Storage object path is the canonical durable photo identity.
+- Permanent public URLs are not the future canonical contract.
+- No Supabase service-role/secret credential may reach the browser or FieldSync.
+- iMAPS Admin and Planning Officer may view inspection-photo evidence through the existing Laravel session and role model.
+- Laravel retrieves authorized photo metadata and generates short-lived signed URLs.
+- React consumes only the Laravel-authorized result.
+- Site Inspector remains excluded from iMAPS web under Loop 6.
+- Guest/public users receive no inspection-photo metadata or bytes.
+
+## Retention and deferred work
+
+- Completed submitted photo evidence is retained.
+- Pre-submit inspector correction/removal is allowed in principle, subject to a later bounded delete implementation.
+- Remote delete implementation is deferred; no remote DELETE policy is authorized in this phase.
+- The two historical public-URL rows remain untouched.
+- The 19 orphan Storage objects remain untouched.
+- Automatic cleanup and reconciliation are deferred.
+- Legacy URL migration is deferred.
+- FieldSync writer convergence and legacy writer correction are deferred to a later bounded Loop 7 phase.
+
+
+
+# LOOP 7B — IMAPS PRIVATE PHOTO READER IMPLEMENTED
+**PENDING USER LIVE E2E**
+
+## Implementation
+
+- The existing protected route `GET /api/inspections/{localInspectionId}/supabase-data` remains the single reader endpoint.
+- Authorization remains `auth` plus `role:Admin,Planning Officer`; Site Inspector and guest access remain denied.
+- `App\Services\SupabaseService::getInspectionWithSignedPhotos()` performs the server-side field-job/metadata fetch, normalizes current raw paths and historical public/authenticated/signed Storage URLs, rejects host/path/traversal/cross-job values and metadata rows whose `field_job_id` does not match the resolved job, and generates a fresh signed URL per authorized photo.
+- The response separates durable `photo_path` from transient `signed_url`; it does not return `field_job_photos.photo_url` or `field_jobs.photo_paths`.
+- The default signed-URL TTL is 300 seconds through `INSPECTION_PHOTO_SIGNED_URL_TTL`; runtime code bounds it to 60–3600 seconds.
+- `ParcelInspectionStatus` now calls the same-origin Laravel endpoint with `axios` and renders only `signed_url`; it no longer performs an active browser-side `field_jobs`/`field_job_photos` query.
+- Photo notes are returned and displayed in the lightbox when present.
+
+## Validation
+
+- `tests/Unit/Loop7SecurePhotoReaderContractTest.php`: 5 tests passed.
+- `tests/Feature/Loop7SecurePhotoReaderTest.php`: 5 tests passed; 40 total assertions across the focused Loop 7 suite.
+- PHP syntax checks passed for the changed PHP source/tests.
+- `npm run build` passed.
+- `git diff --check` passed.
+- The broader Loop 6 feature role matrix is environment-blocked by the known missing `pdo_sqlite` driver; the database-free Loop 6 access contracts remain green.
+- No Supabase schema, RLS, Storage policy, row, or FieldSync mutation was made.
+- User live browser E2E is still required; no credentialed request was executed by the agent.
+
+**Contract status:** **CONFIRMED / IMPLEMENTATION AUTHORIZED FOR LOOP 7B ONLY.**
+**Implementation status:** **LOOP 7B IMPLEMENTED — PENDING USER LIVE E2E; LOOP 7 REMAINS OPEN.**
+
+# LOOP 7B MANUAL E2E DISCOVERY — PHOTO DISPLAY BLOCKER CORRECTED, RETEST PENDING
+
+**Discovery date:** 2026-09-25
+**Fixture:** Application `54` / reference `LC-2026-00039` / local inspection `22` / field job `c47de697-114f-4c7c-b3aa-9b3c1c635b8e`.
+
+## Manual evidence
+
+- **USER OBSERVED:** `GET /api/inspections/22/supabase-data` returned HTTP 200 for Planning Officer and Admin, but no photo grid/lightbox rendered.
+- **USER OBSERVED:** the page displayed `1 Photos Uploaded` while the fixture had four live metadata rows and four backing private objects.
+- **USER OBSERVED:** multiple identical inspection requests appeared in one page session.
+- Authorization, guest denial, Site Inspector denial, and absence of a 419 regression remained passing.
+
+## Exact root causes
+
+- **LIVE VERIFIED:** the field-job read returned no nested `field_job_photos` relation even though an exact read of `field_job_photos` by `field_job_id` returned four rows. The original service silently produced zero photo entries.
+- **LIVE VERIFIED:** `field_jobs.photo_count` was stale at `1`; the React fallback `photosToRender.length || inspection.photo_count` displayed that stale aggregate when no renderable entries existed.
+- **VERIFIED SOURCE:** `ParcelInspectionStatus` depended on `localInspection` and an inline `onStatusFetched` callback, allowing parent re-renders to refetch the same inspection.
+- **LIVE VERIFIED:** the configured Supabase base URL had a trailing slash. The signing request concatenated it directly, producing a double-slash Storage path and HTTP 400 from Storage. The same object signed successfully after base-URL trimming.
+
+## Bounded correction
+
+- `SupabaseService::getInspectionWithSignedPhotos()` now reads the exact `field_job_photos` rows in a second server-side query scoped by the resolved field-job ID, then normalizes, validates, and signs each row.
+- The signing endpoint now uses `rtrim($this->url, '/')` before composing the Storage URL.
+- `ParcelInspectionStatus` derives its evidence count only from returned renderable `signed_url` entries; stale `field_jobs.photo_count` no longer controls the displayed count.
+- The fetch effect depends only on `inspectionId`; current parent data/callback values are held in refs, preventing parent-render refetch loops.
+- No stored URL, photo row, count, Storage object, RLS policy, or FieldSync behavior was mutated.
+
+## Verification after correction
+
+- **LIVE VERIFIED read-only probe:** 4 metadata rows read, 4 paths normalized, 4 signed URLs generated, 4 final photo entries returned; response contained no `photo_url`, `photo_paths`, or service credential.
+- Focused Loop 7 tests and database-free Loop 6 access tests: **36 passed, 233 assertions**.
+- PHP syntax checks passed.
+- `npm run build` passed.
+- `git diff --check` passed.
+- FieldSync source, Supabase schema/policies, Storage, and live rows were unchanged.
+
+**Status:** **LOOP 7B PHOTO DISPLAY FIX READY FOR USER RETEST — LOOP 7B MANUAL E2E NOT YET RE-CLAIMED PASS; LOOP 7 REMAINS OPEN.**
+
+
+
+# LOOP 7B FINAL SIGNED-URL DELIVERY FIX
+
+**Status:** **SERVER VERIFIED — FINAL USER BROWSER RETEST REQUIRED**
+
+## Manual retest evidence
+
+- **USER OBSERVED:** metadata delivery, four-photo count, React mapping, and lightbox interaction passed for the existing fixture `54` / local inspection `22` / field job `c47de697-114f-4c7c-b3aa-9b3c1c635b8e`.
+- **USER OBSERVED:** four photo cards rendered, but thumbnail pixels and the lightbox image were broken.
+- **USER OBSERVED:** Admin and Planning Officer authorization passed; guest and Site Inspector denial passed; no 419 regression; refetch behavior appeared corrected.
+
+## Exact URL root cause
+
+- **LIVE VERIFIED:** the Laravel signing request is correctly composed as `POST /storage/v1/object/sign/inspection-photos/<object>` with the configured 300-second TTL.
+- **LIVE VERIFIED:** Supabase returns a relative `signedURL` whose path is `/object/sign/inspection-photos/<object>?token=...` (token not recorded).
+- **VERIFIED SOURCE / LIVE VERIFIED:** the previous code prepended only the project origin to that relative value, producing `https://<project>/object/sign/...`; a server-side GET of that URL returned HTTP 404 with an application/json error body.
+- **REQUIRED DELIVERY ROUTE:** the private object delivery URL must contain `/storage/v1/object/sign/...`.
+
+## Bounded fix
+
+- `SupabaseService::createInspectionPhotoSignedUrl()` now:
+  - keeps absolute signed responses unchanged;
+  - converts relative `/object/sign/...` responses to `<project>/storage/v1/object/sign/...`;
+  - preserves relative responses already beginning `/storage/v1/` without duplicating the prefix;
+  - preserves the token/query string;
+  - supports configured Supabase URLs with or without a trailing slash.
+- The signing request remains unchanged and transient.
+- No React change was required; the component already uses `photo.signed_url` and `selectedPhoto.signed_url`.
+- No photo row, count, Storage object, RLS policy, or FieldSync source was changed.
+
+## Server-side byte verification
+
+A read-only server-side sign-and-GET probe against one of the existing four objects returned:
+
+- HTTP status: **200**
+- Content-Type: **image/jpeg**
+- Non-zero bytes: **YES**
+- Bytes received: **114,840**
+- Signed URL/token: not printed or persisted
+
+The returned signed URL path was verified to begin:
+
+```text
+/storage/v1/object/sign/inspection-photos/inspections/<field-job-id>/...
+```
+
+## Automated verification
+
+- Focused Loop 7 + database-free Loop 6 tests: **39 passed, 240 assertions**.
+- PHP syntax checks passed.
+- `npm run build` passed.
+- `git diff --check` passed.
+- No browser pixels were claimed through the current non-browser tool interface.
+
+**Status:** **LOOP 7B SIGNED IMAGE FIX — READY FOR FINAL USER RETEST; LOOP 7B MANUAL PASS NOT YET CLAIMED; LOOP 7 REMAINS OPEN.**
+
+
+
+# LOOP 7B SECURE PRIVATE-PHOTO READER — IMPLEMENTATION + USER BROWSER E2E PASS
+
+**Status:** **LOOP 7B SECURE IMAPS PRIVATE-PHOTO READER IMPLEMENTATION + USER BROWSER E2E = PASS**
+**Scope:** Loop 7B only. Loop 7 remains open; Loop 7C was not started.
+
+## Accepted browser evidence
+
+- **USER CONFIRMED:** fixture `LC-2026-00039` / application `54` / local inspection `22` / field job `c47de697-114f-4c7c-b3aa-9b3c1c635b8e` loaded successfully in iMAPS.
+- **USER CONFIRMED:** `4 Photos Uploaded` displayed.
+- **USER CONFIRMED:** four evidence thumbnails rendered with actual image pixels.
+- **USER CONFIRMED:** thumbnail image requests returned HTTP 200 and transferred non-zero JPEG resources.
+- **USER CONFIRMED:** lightbox opened and enlarged image pixels rendered.
+- **USER CONFIRMED:** `GET /api/inspections/22/supabase-data` returned HTTP 200.
+- **USER CONFIRMED:** one normal inspection request was observed after refresh; the previous continuous/unnecessary refetch behavior was not observed.
+- **USER CONFIRMED:** the Admin browser path also passed.
+- **USER CONFIRMED:** Guest denial remained PASS.
+- **USER CONFIRMED:** Site Inspector endpoint denial remained PASS.
+- **USER CONFIRMED:** no 419 regression occurred.
+
+The final signed-image browser gate passed after the server-side URL composition correction. No signed URL token, credential, cookie, or session identifier is recorded here.
+
+## Protected contract
+
+- Private `inspection-photos` bucket remains unchanged.
+- Laravel remains the trusted metadata reader and signed-URL generator.
+- React consumes only the Laravel-authorized result.
+- Raw durable `photo_path` remains separate from transient `signed_url`.
+- Four canonical photo entries remain intact.
+- No FieldSync, Supabase data, RLS, Storage policy, bucket, or PostgreSQL mutation occurred.
+
+**Loop 7B status:** **VERIFIED / BROWSER E2E PASS.** This does not mark all of Loop 7 closed.
+
+---
+
+# POST-7B INSPECTION VIEWER CONTEXT AUDIT
+
+## Parcel PIN
+
+- **VERIFIED:** local parcel `26` for application `54` has `property_index_number = 041021-008-02-006-0750`.
+- **VERIFIED LIVE:** the remote field job references `supabase_parcel_id = e9f59675-3a9e-4818-80d0-5e6c3fe99e2b`; its `supabase_parcels.local_parcel_id = 26` and `property_index_number = 041021-008-02-006-0750`.
+- **VERIFIED:** local PIN and remote PIN match; no contract drift exists.
+- **VERIFIED SOURCE:** the previous Laravel field-job read did not request `supabase_parcels`, so the existing React `inspection.supabase_parcels?.property_index_number` projection had no source and rendered `N/A`.
+- **CORRECTION:** the Laravel reader now performs an exact `supabase_parcels` read by the resolved `supabase_parcel_id`; the React component prefers the already-loaded local iMAPS parcel PIN and accepts the remote PIN only when remote `local_parcel_id` matches the current local parcel. Missing PINs still render `N/A`.
+
+## Map focus
+
+- **VERIFIED:** the Show page’s existing map path fit `activeParcelFeature` or the barangay GeoJSON only. It had no confirmed-inspection GPS path.
+- **VERIFIED LIVE:** fixture `22` has valid remote confirmed coordinates `13.9567603, 121.163363`; the local `site_inspections` row currently has null local GPS because the inspection is assigned.
+- **VERIFIED:** the local `land_parcels` layer has no matching feature for the local PIN, and local `parcels.boundary` is null. The current broad fallback is therefore expected from the old geometry path.
+- **CORRECTION:** `Show.jsx` now receives authorized inspection data from `ParcelInspectionStatus`, validates finite latitude/longitude ranges, renders a confirmed-site `CircleMarker`, and focuses the map at the existing site zoom `18` when a valid parcel boundary is not available. Existing parcel-boundary fit remains preferred; barangay fit remains the final fallback.
+- **SAFETY:** missing, null, non-finite, or out-of-range coordinates return `null` and are never passed to Leaflet.
+
+## Deferred GIS findings
+
+- `GET /geojson/land_use_plan.geojson` → 404 remains a **DEFERRED GIS/UI BUG**.
+- `Invalid LatLng object: (NaN, NaN)` remains a **DEFERRED GIS/UI BUG** outside the corrected confirmed-coordinate path.
+- Neither issue was used to justify changing land-use GeoJSON or unrelated map data.
+
+**Post-7B viewer status:** **IMPLEMENTED — READY FOR USER PIN/MAP RETEST.**
+
+
+
+
+# LOOP 7C — FIELDSYNC PHOTO WRITER CONVERGENCE
+
+**Status:** IMPLEMENTED AND VERIFIED — LOOP 7C CLOSED; LOOP 7 REMAINS OPEN FOR 7D–7F
+
+## Previous dual-writer problem
+
+FieldSync had two reachable remote photo-write paths:
+
+- the legacy `InspectionProvider.syncToServer()` path used `photo_<local_photos.id>.jpg`, metadata ID equal to the local UUID, `getPublicUrl()` values, and omitted `notes`;
+- the newer deterministic path derived the Storage object from the field-job ID plus stable local path, derived a UUIDv5 metadata ID from that object path, and preserved notes, coordinates, and capture time.
+
+The legacy path was reachable from `saveInspectionProgress()` and `saveAllInspectionState()` when online. It was not dead code.
+
+## Canonical future identity
+
+```text
+local photo source
+  → inspections/<field_job_id>/photo_<base64url(local_path)>.jpg
+  → UUIDv5(fixed namespace, durable object path)
+  → one field_job_photos row
+```
+
+Identity stability comes from the field-job ID and stable local path. The contract is not content-addressed: image bytes are not hashed, and changed bytes at the same local path use the same identity.
+
+New canonical writes store the raw durable object path in `field_job_photos.photo_url` and `field_jobs.photo_paths`. Existing historical public-URL values are preserved when a matching metadata identity is resumed; no historical row is migrated or rewritten in 7C.
+
+## One canonical writer entry point
+
+`SupabaseService.uploadInspectionPhotos()` is the sole new remote photo writer used by:
+
+- `InspectionProvider.saveStepPhotos()`;
+- `InspectionProvider.syncToServer()` through a compatibility adapter;
+- `SyncOutboxService` `photos_update` and `submit_inspection` actions;
+- `ReviewSubmitScreen` final submission.
+
+The canonical service owns Storage identity, metadata ID, notes/coordinates/capture-time projection, and metadata upsert. The legacy provider no longer uploads directly to Storage or writes `field_job_photos` itself.
+
+`verifyOutboxRecoveryPhotos()` remains the Loop 7D recovery path. It uses the same identity helpers, but its broader recovery/ACK semantics were not redesigned in 7C.
+
+## Legacy disposition
+
+- `syncToServer()` remains as a compatibility adapter for historical local `local_photos` rows.
+- Legacy local rows are translated to the canonical payload and routed through `uploadInspectionPhotos()`.
+- Legacy historical URLs remain readable.
+- Delete behavior was not changed.
+- No historical metadata IDs, object names, public URLs, orphan objects, or legacy rows were migrated or deleted.
+
+## Verification
+
+- Deterministic identity tests passed.
+- Legacy adapter metadata tests passed.
+- Provider source contract confirmed no direct `field_job_photos` write and no old `photo_<local-id>` new-write formula.
+- Focused photo, outbox, recovery, local completion, resolver, and presentation tests passed: 120 tests.
+- Scoped Flutter analyze completed with four pre-existing style infos and no errors or warnings.
+- `dart format --output=none --set-exit-if-changed` passed for changed Dart files.
+- `git diff --check` passed.
+
+## Deferred boundaries
+
+- Loop 7D: full recovery correctness, ACK loss, partial Storage/metadata failures, missing local files, and `is_synced`/outbox acceptance convergence.
+- Loop 7E: delete/retention behavior, completed evidence retention, local file cleanup, and any authorized remote delete contract.
+- Loop 7F: migration/reconciliation of two legacy public-URL rows and 19 orphan Storage objects.
+
+No Supabase, PostgreSQL, Storage, schema, RLS, Auth, or live data mutation was performed. Loop 7C does not close Loop 7.
+
+**Loop 7C status:** **PASS — READY FOR LOOP 7D RECOVERY CONTRACT REVIEW.**
+
+
+
+
+# LOOP 7D — PHOTO RECOVERY / ACK CORRECTNESS
+
+**Status:** IMPLEMENTED AND VERIFIED — LOOP 7D CLOSED; LOOP 7 REMAINS OPEN FOR 7E–7F
+
+## Previous recovery weaknesses
+
+- `uploadInspectionPhotos()` trusted an existing `field_job_photos` row as if the Storage object also existed. Metadata-only presence was not remote-complete.
+- A missing local file was silently skipped by the normal writer, allowing a reduced `photo_paths`/`photo_count` result and an outbox ACK without proving the photo was complete.
+- `verifyOutboxRecoveryPhotos()` treated download failure as an absent object and could not distinguish a definite missing object from a network/existence-check failure.
+- `local_photos.is_synced` was updated by the legacy provider adapter, but outbox `photos_update` and `submit_inspection` did not acknowledge their queued local photo IDs.
+- An unknown metadata lookup could be treated as an absent row, risking an unintended rewrite of a historical stored value.
+
+## Locked remote-complete contract
+
+A photo is **REMOTE COMPLETE** only when both are true:
+
+1. The canonical Storage object exists at `inspections/<field_job_id>/photo_<base64url(local_path)>.jpg`.
+2. The canonical `field_job_photos` metadata row exists under UUIDv5 of that object path, for the expected field job.
+
+`PhotoObjectState.exists` is a narrow HEAD check. `PhotoObjectState.missing` is a definite 400/404 absence. Transport/permission/server failures are `PhotoObjectState.unknown` and remain retryable; `unknown` is never converted into success or destructive repair.
+
+A photo is **LOCAL ACKNOWLEDGED** only after remote completeness is established. A missing local source is acknowledged only when the canonical object and metadata are independently verified; otherwise the action remains failed or conflicted.
+
+## Failure-window behavior
+
+- **Storage succeeds, metadata fails:** the canonical object path and UUIDv5 row ID are retained; the action remains failed, the local photo remains unsynced, and retry reuses the same identity. After metadata succeeds, the local row is acknowledged.
+- **Metadata exists, object missing:** the writer uploads the same canonical object path and preserves the existing metadata row/value; it does not create a second identity.
+- **Object exists, metadata missing:** the writer inserts/upserts the same canonical metadata identity, preserving notes, coordinates, and capture time.
+- **Remote success, local ACK lost:** retry verifies object + metadata and acknowledges the queued local photo without uploading a second object or creating a second metadata row.
+- **Local file missing, remote complete:** recovery acknowledges from verified remote completeness.
+- **Local file missing, remote incomplete:** recovery does not acknowledge; the outbox action becomes conflict or remains failed/retryable.
+- **Existence check unknown:** the action remains failed/retryable and does not acknowledge.
+
+## Outbox authority
+
+`pending_actions.status` is the outbox action authority. An outbox action is marked `synced` only after its photo writer/recovery contract completes; the drain loop still owns conflict/failure transitions. `local_photos.is_synced` is a local projection of that proven completion, updated only after the canonical writer or recovery path succeeds. It is not treated as proof of remote completeness by itself.
+
+`photos_update` and `submit_inspection` both use the same canonical photo contract. `submit_inspection` still uploads photos first and finalizes the job projection second; this ordering was not redesigned in 7D.
+
+## Implementation
+
+- `SupabaseService.photoObjectState()` performs the narrow Storage existence check and returns `exists`, `missing`, or `unknown`.
+- `verifyOutboxRecoveryPhotos()` now distinguishes unknown from missing, repairs object/metadata mismatches with the same canonical identity, and preserves historical values.
+- `uploadInspectionPhotos()` now verifies the canonical object before reusing a metadata identity, repairs a missing object when the local file exists, and never silently drops a missing local file.
+- Rehydrated remote-URL photos are verified against their canonical object and metadata identity before being reused.
+- `DBHelper.markPhotosSynced()` acknowledges only local photo IDs proven complete by the writer/recovery path; it does not create or delete rows.
+- `SyncOutboxService` acknowledges queued local photo IDs only after `photos_update` or `submit_inspection` completes its remote write.
+
+## Verification
+
+- Focused Loop 7D/7C/outbox/recovery/local-photo/resolver/presentation tests: **129 passed**.
+- Fault injection covers Storage success, Storage failure, metadata success, metadata failure, patch failure, ACK loss, missing local file, object exists, object missing, existence UNKNOWN, restart, same-identity retry, and submit parity.
+- Scoped Flutter analyze completed with no errors or warnings; remaining output is style infos only.
+- `dart format --output=none --set-exit-if-changed` passed.
+- `git diff --check` passed.
+- No live Supabase, PostgreSQL, Storage, Auth, RLS, or schema mutation was performed.
+
+## Deferred boundaries
+
+- Loop 7E: `removePhoto()`, Storage DELETE, `field_job_photos` DELETE, local-file deletion, completed-evidence retention, and post-submit correction/deletion remain unchanged.
+- Loop 7F: 19 orphan Storage objects, 2 legacy public-URL metadata rows, historical metadata IDs, and historical object names remain untouched.
+- Loop 7 remains open; 7D does not close it.
+
+**Loop 7D status:** **PASS — READY FOR USER DEVICE RECOVERY E2E / LOOP 7E CONTRACT REVIEW.**
+
+
+
+
+---
+
+# LOOP 7F — LEGACY / ORPHAN RECONCILIATION AUDIT
+
+**Status:** READ-ONLY RECONCILIATION COMPLETE — LOOP 7 REMAINS OPEN; READY FOR LOOP 7G CLOSURE REVIEW
+
+**Mode:** Live read-only inventory and classification only. No cleanup, delete, migration, rename, RLS change, Storage policy change, device E2E, APK install, or commit/stage/push occurred.
+
+## Live inventory (verified 2026-09-26)
+
+- **FieldSync Supabase project:** `laapipjyprmmaylunxib` (linked project, `ACTIVE_HEALTHY`; internal project reference only, not a credential).
+- **`field_job_photos` rows:** 87.
+- **Metadata rows using canonical raw Storage object paths:** 85.
+- **Metadata rows using legacy full Storage URL values:** 2.
+- **Metadata rows with an unrecognized/malformed value form:** 0.
+- **Storage objects in `inspection-photos`:** 106.
+- **Metadata paths with a backing Storage object:** 87.
+- **Metadata paths missing a backing Storage object:** 0.
+- **Storage objects with no metadata row:** 19.
+- **Duplicate metadata rows for the same canonical object path:** 0.
+- **Duplicate logical metadata identities detected:** 0.
+
+The earlier audit counts (2 legacy URL rows and 19 orphan objects) are still numerically present, but the live check was rerun rather than assumed. The reconciliation is internally consistent: every metadata row resolves to a canonical object path, every such object exists, and the excess 19 objects are unreferenced by metadata and by current job photo-path arrays.
+
+## Legacy URL row classification
+
+The two legacy rows are historical completed-inspection evidence, not active write-path records.
+
+| Row ID | Field job ID | Value type | Backing object | Job status | Historical/active | Canonical identity derivable | Migration risk |
+|---|---|---|---|---|---|---|---|
+| `516a42d2-bb1a-59ec-903d-5bcf5bdc416d` | `8404b6a1-873b-4a0b-bfaa-e1eba8bbc493` | Legacy Storage URL | Yes | `completed`; `submitted_at` set; no rework | Historical | Yes; object naming is canonical | High if rewritten; not required for current read compatibility |
+| `dd82dedf-d415-5398-8af5-db3c7f8a8c68` | `6eeee8e5-2dd3-43e1-a5df-704c08815338` | Legacy Storage URL | Yes | `completed`; `submitted_at` set; no rework | Historical | Yes; object naming is canonical | High if rewritten; not required for current read compatibility |
+
+- Both rows point to existing objects and remain usable as historical evidence.
+- Their object names use the canonical `inspections/<field_job_id>/photo_<key>.jpg` naming form even though the stored metadata value is a full Storage URL.
+- Full legacy URLs, signed tokens, and credentials are intentionally not recorded here.
+- The rows were **not rewritten**, and no canonical-identity migration was attempted.
+
+## Orphan object classification
+
+The 19 unreferenced Storage objects are all historical dated objects (2026-07-19) under seven job prefixes. No orphan has a matching current `field_jobs` row, and no current job `photo_paths` array references any orphan object.
+
+| Field-job prefix | Count | Object date window | Naming form | Metadata reference | Current job exists | `photo_paths` reference | Classification |
+|---|---:|---|---|---|---|---|---|
+| `375064e2-1ef0-494a-b22a-58fce5b7873a` | 8 | 2026-07-19 | Canonical | No | No | No | A — historical legacy orphan |
+| `56510162-b847-477b-8c05-a19042847553` | 2 | 2026-07-19 | Canonical | No | No | No | A — historical legacy orphan |
+| `9b6d483b-2d54-47a3-a34b-c7ca0d9832f3` | 3 | 2026-07-19 | Canonical | No | No | No | A — historical legacy orphan |
+| `cbfde9f2-d4bf-4175-a5a9-02fc85f75731` | 1 | 2026-07-19 | Canonical | No | No | No | A — historical legacy orphan |
+| `d367b917-1fe0-4dda-a94c-b77a10d7aa10` | 1 | 2026-07-19 | Canonical | No | No | No | A — historical legacy orphan |
+| `f9b37971-7c00-484f-b0f2-b9847fbf996d` | 1 | 2026-07-19 | Canonical | No | No | No | A — historical legacy orphan |
+| `fd3fc7c7-5704-42a5-a905-d88ae832356a` | 3 | 2026-07-19 | Canonical | No | No | No | A — historical legacy orphan |
+
+Classification basis: the objects are unreferenced, belong to job prefixes that no longer resolve, and predate the current live metadata set. The evidence does not prove a specific cause, so no failed-write or interrupted-write cause is asserted. None is classified as a current canonical orphan affecting an active job, and none is classified as “not actually orphan” after recheck.
+
+## Canonical future-writer protection
+
+**VERIFIED IMPLEMENTATION / LIVE-CONSISTENCY CHECK:**
+
+- Current FieldSync writer path: `SupabaseService.photoStoragePath()` produces `inspections/<field_job_id>/photo_<base64url(local_path)>.jpg`.
+- `SupabaseService.photoRowId()` derives the metadata identity with UUIDv5 of that canonical Storage path.
+- New/inserted metadata writes use the canonical raw object path, not a public URL.
+- Loop 7D recovery reuses the same identity for canonical partial states: missing object, missing metadata, ACK loss, and retry do not create a second object path or second metadata identity.
+- Existing historical metadata values are preserved when the deterministic identity already exists; the writer does not introduce new legacy URL metadata values.
+- iMAPS `SupabaseService::normalizeInspectionPhotoPath()` supports the current raw path plus supported historical Storage URL forms, validates the field-job prefix, omits malformed/cross-job values, and returns `photo_path` with a transient `signed_url`. The stored legacy value is not treated as an authorization mechanism and is never written back by the reader.
+
+
+
+## Production impact
+
+1. **Do the 2 legacy rows break the current iMAPS signed-photo reader?** No. Both rows have backing objects, canonical object names, and are normalized by the current reader into a job-scoped path for short-lived signed URL creation.
+2. **Do any orphan objects affect visible evidence?** No current visible evidence is affected. No orphan is referenced by `field_job_photos`, and no current `field_jobs.photo_paths` array references an orphan.
+3. **Are any current canonical metadata rows missing their object?** No. All 87 metadata rows have a backing object; the 85 current canonical rows and 2 legacy-URL rows both resolve.
+4. **Are any current jobs referencing orphan-only evidence?** No. Zero current jobs reference any orphan object.
+5. **Does any finding block normal future photo capture/sync?** No. The canonical writer and Loop 7D recovery contract are unchanged.
+6. **Does any finding block Loop 7 closure?** No reconciliation blocker was found. Loop 7F does not itself close Loop 7; Loop 7G is the closure review gate.
+7. **Which findings are historical cleanup only?** The 19 dated, unreferenced orphan objects and the 2 legacy URL metadata rows. No cleanup is authorized or performed in this loop.
+
+## Cleanup explicitly NOT performed
+
+Loop 7F performed no `DELETE` of Storage objects or metadata rows, no `UPDATE` of `photo_url`/`photo_path`, no rename, no metadata-ID migration, no cleanup SQL creation or application, and no RLS/Storage policy change. Any future cleanup requires a separate, explicitly approved operation after retention/evidence review.
+
+## Deferred boundaries
+
+- **Loop 7E remote delete:** still deferred. No `field_job_photos` DELETE policy, Storage `inspection-photos` DELETE policy, durable delete outbox, retry contract, or remote pair-acknowledgement contract was implemented or applied in Loop 7F. Current conservative local-only delete/retention guards remain unchanged.
+- **Loop 7D device E2E:** still deferred to the next approved physical-device session. Source/automated verification remains the available evidence; no APK install or device operation occurred.
+- **Loop 7G:** closure review only after the Team Leader confirms the historical orphan cleanup decision and the Loop 7E remote-delete contract decision. Do not start Loop 7G cleanup work in this loop.
+
+**LOOP 7F status:** **LEGACY / ORPHAN RECONCILIATION PASS — READ-ONLY; READY FOR LOOP 7G CLOSURE REVIEW.**
+
+
+
+---
+
+# LOOP 7G — FINAL CLOSURE / PRE-COMMIT REVIEW
+
+**Date:** 2026-09-26
+**Status:** **LOOP 7 IMPLEMENTATION BATCH FROZEN FOR SELECTIVE COMMIT — NOT FULL DEVICE/POLICY ACCEPTANCE**
+
+## Phase disposition
+
+- **7A — CONTRACT: PASS.** Private `inspection-photos` bucket, raw durable object-path identity, Laravel/session authorization, transient signed URLs, and Admin/Planning Officer review are the locked contract.
+- **7B — SECURE iMAPS PRIVATE PHOTO READER: PASS.** Laravel generates short-lived signed URLs; React renders only the authorized result; no browser service-role key; Admin and Planning Officer paths passed; guest and Site Inspector denial passed; four photos rendered; lightbox passed; no 419 regression. The post-7B parcel-PIN and confirmed-inspection map-focus corrections are implemented and covered by source-contract tests; their manual retest belongs to tomorrow's broader browser regression and is not claimed as a separate E2E PASS tonight.
+- **7C — FIELDSYNC PHOTO WRITER CONVERGENCE: PASS.** `SupabaseService.uploadInspectionPhotos()` is the one future writer; object identity is `inspections/<field_job_id>/photo_<base64url(local_path)>.jpg`; metadata identity is UUIDv5 of that path; the legacy provider path is a compatibility adapter.
+- **7D — PHOTO RECOVERY / ACK: SOURCE + AUTOMATED PASS.** Remote completeness requires both the Storage object and metadata row; local acknowledgement follows verified completeness; canonical partial states, ACK loss, missing local file, and `unknown` existence handling are covered. **PHYSICAL DEVICE RECOVERY E2E = DEFERRED TO TOMORROW.**
+- **7E — DELETE / RETENTION: SAFE LOCAL DELETE/RETENTION PROTECTION PASS.** Local file-first cleanup, local-row confirmation, and completed/rework/remote-work/acknowledged removal rejection are implemented and tested. **REMOTE DELETE CAPABILITY = DEFERRED / POLICY DECISION REQUIRED.** No remote DELETE policy or delete outbox exists.
+- **7F — LEGACY / ORPHAN RECONCILIATION: PASS.** Live read-only inventory: 87 metadata rows, 87 backed objects, 106 total `inspection-photos` objects, 19 historical unreferenced orphans, 2 historical legacy URL rows, 0 metadata rows missing an object, and 0 duplicate canonical paths. No cleanup, rewrite, rename, or migration was performed.
+
+## Core contract verification
+
+The current implementation preserves all 14 reviewed Loop 7 boundaries: private storage; canonical Storage identity; UUIDv5 metadata identity; one reachable future writer; retry identity stability; object-plus-metadata remote completeness; local ACK only after remote completeness; Laravel/session authorization; transient signed URLs; raw durable stored path; completed/rework protection; preservation of historical evidence; no orphan cleanup; and no invented broad Admin/Planning Officer/Site Inspector delete right.
+
+## Latest verification evidence
+
+- FieldSync `flutter analyze`: **No issues found**.
+- Loop 7E combined focused suite: **148 passed, 0 failed**.
+- Loop 7F focused writer/recovery verification: **35 passed**; analyze clean; `git diff --check` passed.
+- iMAPS focused Loop 7 reader suite re-run during Loop 7G: **19 passed, 84 assertions**.
+- A debug APK build succeeded, but the artifact currently on disk (`2026-09-26 03:41:21`, SHA-256 `86215D83BB5BA1972DDFE57436B32997A3C7E73BD8633C32767FE208B260D08F`) predates the Loop 7E source/test edits. It is **not** a current post-7E device artifact. Rebuild and verify timestamp/hash before tomorrow's install.
+
+## Deferred to tomorrow
+
+1. Loop 7D physical-device recovery E2E: install a freshly rebuilt APK in place, offline capture, process death, reconnect/recovery, and duplicate check.
+2. Full post-commit Loop 1–7 regression audit.
+3. Broader cross-loop build/test/source audit, including the post-7B PIN/map browser retest.
+
+## Deferred policy / future follow-up
+
+4. Loop 7E remote photo deletion: bounded `field_job_photos` DELETE RLS, bounded Storage DELETE policy, durable delete outbox, restart-safe retry, and pair acknowledgement.
+5. 19 historical orphan Storage objects: no cleanup.
+6. 2 historical legacy URL metadata rows: preserve unchanged.
+7. Rosario municipal-boundary business rule: separate production-readiness follow-up.
+
+## Freeze decision
+
+- **IMPLEMENTATION FREEZE SAFE: YES**
+- **SAFE TO COMMIT CURRENT LOOP 7 BATCH: YES**, using selective staging only.
+- **FULL DEVICE ACCEPTANCE COMPLETE: NO — DEFERRED.**
+- **REMOTE DELETE FEATURE COMPLETE: NO — DEFERRED POLICY.**
+
+No live cleanup, remote delete policy, RLS change, APK install, device E2E, master sync, commit, stage, or push occurred during Loop 7G.
 
