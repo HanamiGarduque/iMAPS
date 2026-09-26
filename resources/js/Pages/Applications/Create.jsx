@@ -1802,7 +1802,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                         totalLotArea={totalLotArea}
                                         zoningWarning={zoningWarning}
                                         activeParcelIndex={activeParcelIndex}
+                                        setActiveParcelIndex={setActiveParcelIndex}
                                         activeParcelFeature={activeParcelFeature}
+                                        setActiveParcelFeature={setActiveParcelFeature}
                                         brgyMapData={brgyMapData}
                                         parcelMapData={parcelMapData}
                                         rosarioCenter={rosarioCenter}
@@ -1844,42 +1846,40 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                 {/* Application Summary or Step 4 Review Checklist */}
                                                 {currentStep === 4 ? (
                                                     /* ── STEP 4: REVIEW & SECTION COMPLETION CHECKLIST ── */
-                                                    <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200/90 shadow-xs space-y-2.5">
-                                                        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ready for Review</span>
-                                                            <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md">3/3 Complete</span>
+                                                    <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-col items-center text-center">
+                                                        <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-3 shadow-sm">
+                                                            <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
                                                         </div>
-
-                                                        <div className="space-y-2 text-xs">
-                                                            <div className="flex items-start gap-2 text-slate-700">
-                                                                <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">1</span>
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="font-semibold text-slate-800 text-[11px]">Category & Purpose</p>
-                                                                    <p className="text-[10px] text-slate-500 truncate">{form.application_type || "—"} · {form.land_use_class || "—"}</p>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-start gap-2 text-slate-700">
-                                                                <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">2</span>
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="font-semibold text-slate-800 text-[11px]">Applicant Details</p>
-                                                                    <p className="text-[10px] text-slate-500 truncate">{form.applicant_name || "—"}</p>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-start gap-2 text-slate-700">
-                                                                <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">3</span>
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="font-semibold text-slate-800 text-[11px]">Property Location & Lots</p>
-                                                                    <p className="text-[10px] text-slate-500 truncate">
-                                                                        {form.barangay 
-                                                                            ? `Brgy. ${form.barangay}${validParcelsCount > 0 && totalLotArea > 0 ? ` (${totalLotArea.toLocaleString()} m²)` : ""}` 
-                                                                            : "—"}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
+                                                        <div>
+                                                            <h3 className="text-[13px] font-bold text-slate-800 tracking-tight">Ready for Review</h3>
+                                                            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                                All primary sections are filled. Please verify the recorded information before assessing fees.
+                                                            </p>
                                                         </div>
-
-                                                        <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-500 leading-snug">
-                                                            Review the details on the right. Click <strong className="text-blue-600 font-semibold">Edit</strong> on any section to make changes.
+                                                        <div className="w-full pt-3.5 mt-3.5 border-t border-slate-100 text-left">
+                                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2.5">Required Actions</p>
+                                                            <ul className="text-[11px] text-slate-600 space-y-2 font-medium">
+                                                                <li className="flex items-start gap-2">
+                                                                    <svg className="w-3.5 h-3.5 text-blue-500 mt-px shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+                                                                    </svg>
+                                                                    <span>Verify details in all sections</span>
+                                                                </li>
+                                                                <li className="flex items-start gap-2">
+                                                                    <svg className="w-3.5 h-3.5 text-blue-500 mt-px shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+                                                                    </svg>
+                                                                    <span>Select a mode of release</span>
+                                                                </li>
+                                                                <li className="flex items-start gap-2">
+                                                                    <svg className="w-3.5 h-3.5 text-slate-300 mt-px shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
+                                                                    </svg>
+                                                                    <span className="text-slate-500">Proceed to fee assessment</span>
+                                                                </li>
+                                                            </ul>
                                                         </div>
                                                     </div>
                                                 ) : (

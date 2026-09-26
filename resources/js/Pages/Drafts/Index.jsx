@@ -3,11 +3,16 @@ import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+
+const rosarioCenter = [13.8458, 121.2067];
+const brgyStyle = { color: "#475569", weight: 1, opacity: 0.4, fillColor: "#e2e8f0", fillOpacity: 0.1, dashArray: "4" };
 
 // ── Status badge config for Drafts ──
 const STATUS_CONFIG = {
-    "Auto-saved": { bg: "bg-amber-50 text-amber-700 border-amber-200/70", dot: "bg-amber-500" },
-    "Incomplete": { bg: "bg-rose-50 text-rose-700 border-rose-200/70", dot: "bg-rose-500" },
+    "Auto-saved": { bg: "bg-slate-50 text-slate-600 border-slate-200", dot: "bg-slate-400" },
+    "Incomplete": { bg: "bg-slate-50 text-slate-500 border-slate-200", dot: "bg-slate-300" },
 };
 
 const STATUSES = ["Auto-saved", "Incomplete"];
@@ -221,6 +226,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
     const [clock, setClock] = useState("");
     const [search, setSearch] = useState(filters?.search || "");
     const [selectedCategory, setSelectedCategory] = useState(filters?.application_type || "");
+    const [statusFilter, setStatusFilter] = useState(filters?.status || "");
     const [pageSize, setPageSize] = useState(5);
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -242,6 +248,14 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
         return () => clearInterval(id);
     }, []);
 
+    const [brgyMapData, setBrgyMapData] = useState(null);
+    useEffect(() => {
+        fetch("/api/map/barangay_boundary")
+            .then((res) => res.json())
+            .then((data) => setBrgyMapData(data))
+            .catch(() => {});
+    }, []);
+
     const isUsingPlaceholders = !drafts || !drafts.data || drafts.data.length === 0;
 
     useEffect(() => {
@@ -254,18 +268,18 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
     }, [search]);
 
     const applyFilter = (newFilters) => {
+        if (newFilters.status !== undefined) setStatusFilter(newFilters.status);
         if (!isUsingPlaceholders) {
             router.get("/applications/drafts", { ...filters, ...newFilters, application_type: selectedCategory, page: 1 }, { preserveState: true, replace: true });
         } else {
             setCurrentPage(1);
-            if (newFilters.status !== undefined) filters.status = newFilters.status;
         }
     };
 
     const clearFilters = () => {
         setSearch("");
         setSelectedCategory("");
-        filters.status = "";
+        setStatusFilter("");
         setCurrentPage(1);
         if (!isUsingPlaceholders) {
             router.get("/applications/drafts", {}, { preserveState: true, replace: true });
@@ -320,8 +334,8 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
     const filteredList = useMemo(() => {
         let list = isUsingPlaceholders ? [...SAMPLE_DRAFTS] : [...drafts.data];
 
-        if (filters?.status) {
-            list = list.filter((item) => item.status === filters.status);
+        if (statusFilter) {
+            list = list.filter((item) => item.status === statusFilter);
         }
 
         if (selectedCategory) {
@@ -339,7 +353,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
         }
 
         return list;
-    }, [drafts, isUsingPlaceholders, filters?.status, selectedCategory, search]);
+    }, [drafts, isUsingPlaceholders, statusFilter, selectedCategory, search]);
 
     const totalPages = Math.max(1, Math.ceil(filteredList.length / pageSize));
     const paginatedRecords = useMemo(() => {
@@ -368,6 +382,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                 ::-webkit-scrollbar-track { background: transparent; }
                 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
                 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+                .leaflet-container { width: 100%; height: 100%; z-index: 0; }
             `}</style>
 
             <div id="dashboard-root" className="bg-slate-100/60 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
@@ -380,7 +395,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                     setSidebarOpen={setSidebarOpen} 
                 />
 
-                <div className="flex-1 overflow-hidden relative flex flex-col min-w-0">
+                <div className="flex-1 overflow-hidden relative flex flex-col lg:flex-row min-w-0">
                     <Sidebar 
                         userName={userName} 
                         userRole={userRole} 
@@ -393,232 +408,225 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                     {sidebarOpen && (
                         <div
                             onClick={() => setSidebarOpen(false)}
-                            className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] z-[750] transition-opacity duration-300"
+                            className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] z-[750] transition-opacity duration-300 lg:hidden"
                         />
                     )}
 
-                    <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
-                        <div className="p-4 sm:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1550px] mx-auto w-full gap-4">
-                            
-                            {/* ── HEADER BANNER ── */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                <div>
-                                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mb-0.5">
-                                        <Link href="/applications" className="hover:text-blue-600 transition-colors">Applications</Link>
-                                        <span>/</span>
-                                        <span className="text-slate-600">Drafts Workspace</span>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-                                            Application Drafts
-                                        </h1>
-                                        {isUsingPlaceholders && (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/60">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                                                Preview Data
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
+                    <main className="flex-1 w-full h-full flex flex-col bg-white overflow-hidden relative">
+                {/* ── HEADER (Top Bar) ── */}
+                <div className="bg-slate-100/60 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-[0_4px_20px_-12px_rgba(0,0,0,0.1)] z-20">
+                    <div className="flex items-center gap-4">
+                        <Link href="/applications" className="flex items-center justify-center w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-sm" title="Back to Registry">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </Link>
+                        <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
+                            Application Drafts
+                            {isUsingPlaceholders && (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-200/60 shadow-sm">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                    Preview
+                                </span>
+                            )}
+                        </h2>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {userRole === "Planning Officer" && (
+                            <Link
+                                href="/applications/encode"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 transition-all shadow-sm active:scale-95"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                </svg>
+                                <span>New Draft</span>
+                            </Link>
+                        )}
+                    </div>
+                </div>
 
-                                <div className="flex items-center gap-2.5">
-                                    <Link
-                                        href="/applications"
-                                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 shadow-sm transition-all active:scale-98"
-                                    >
-                                        <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-                                        </svg>
-                                        <span>Back to Registry</span>
-                                    </Link>
+                {/* ── WORKSPACE ── */}
+                <div className="flex-1 w-full h-full flex flex-col bg-slate-50 overflow-hidden relative">
+                    {/* Background: Subtle Blurred Map */}
+                    <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
+                        <div className="absolute inset-0 filter blur-[1.5px] opacity-40 scale-105">
+                            <MapContainer 
+                                center={rosarioCenter} 
+                                zoom={12} 
+                                zoomControl={false} 
+                                scrollWheelZoom={false} 
+                                dragging={false} 
+                                doubleClickZoom={false} 
+                                touchZoom={false}
+                                attributionControl={false}
+                            >
+                                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
+                            </MapContainer>
+                        </div>
+                        <div className="absolute inset-0 bg-gradient-to-b from-slate-100/40 via-slate-50/60 to-slate-100/75" />
+                    </div>
 
-                                    {userRole === "Planning Officer" && (
-                                        <Link
-                                            href="/applications/encode"
-                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm shadow-blue-600/20 transition-all active:scale-98"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                            </svg>
-                                            <span>New Application</span>
-                                        </Link>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* ── FILTER & SEARCH BAR ── */}
-                            <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
-                                {/* Status Pills */}
-                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-                                    {["", ...STATUSES].map((s) => {
-                                        const isSelected = (filters?.status || "") === s;
-                                        return (
-                                            <button
-                                                key={s || "all"}
-                                                onClick={() => applyFilter({ status: s })}
-                                                className={`text-xs font-semibold px-3 py-1.5 rounded-xl transition-all shrink-0 ${
-                                                    isSelected
-                                                        ? "bg-slate-900 text-white shadow-xs"
-                                                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                                                }`}
-                                            >
-                                                {s || "All Drafts"}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                {/* Searchable Dropdown and Search */}
-                                <div className="flex items-center gap-2.5 shrink-0 flex-1 lg:flex-none justify-end">
-                                    <div className="w-48 sm:w-56">
-                                        <SearchableSelect
-                                            value={selectedCategory}
-                                            onChange={(val) => {
-                                                setSelectedCategory(val);
-                                                setCurrentPage(1);
-                                            }}
-                                            options={APP_TYPES}
-                                            allLabel="All Categories"
-                                            searchPlaceholder="Search category..."
-                                        />
-                                    </div>
-
-                                    <div className="relative flex-1 sm:w-64">
-                                        <svg
-                                            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                        >
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                                        </svg>
-                                        <input
-                                            type="text"
-                                            value={search}
-                                            onChange={(e) => setSearch(e.target.value)}
-                                            placeholder="Search draft ID, applicant..."
-                                            className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-9 pr-8 py-1.5 text-xs font-medium text-slate-800 transition-all focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-xs placeholder:text-slate-400"
-                                        />
-                                        {search && (
-                                            <button
-                                                onClick={() => setSearch("")}
-                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    {hasFilters && (
-                                        <button
-                                            onClick={clearFilters}
-                                            className="text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 border border-rose-200/60 px-3 py-1.5 rounded-xl flex items-center gap-1 transition-all"
-                                            title="Clear active filters"
-                                        >
-                                            <span>Reset</span>
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* ── DATA TABLE / EMPTY STATE ── */}
-                            <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden flex flex-col min-h-0">
-                                {paginatedRecords.length === 0 ? (
-                                    <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-                                        <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-200/60 mb-4 shadow-xs">
-                                            <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                            </svg>
+                    {/* Foreground: Centered Master Elevated Floating Modal */}
+                    <div className="relative z-10 flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 lg:p-6 overflow-hidden">
+                        <div className="w-full max-w-6xl h-[calc(100vh-8.5rem)] max-h-[750px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
+                                    
+                                    {/* Filters & Search Toolbar */}
+                                    <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between bg-slate-50/30">
+                                        
+                                        {/* Premium Segmented Control */}
+                                        <div className="inline-flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1 shrink-0 overflow-x-auto no-scrollbar shadow-inner">
+                                            {["", ...STATUSES].map((s) => {
+                                                const isSelected = (statusFilter || "") === s;
+                                                return (
+                                                    <button
+                                                        key={s || "all"}
+                                                        onClick={() => applyFilter({ status: s })}
+                                                        className={`text-[13px] font-semibold px-5 py-2 rounded-lg transition-all whitespace-nowrap ${
+                                                            isSelected
+                                                                ? "bg-white text-blue-700 shadow-sm border border-slate-200/60 ring-1 ring-black/5"
+                                                                : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 border border-transparent"
+                                                        }`}
+                                                    >
+                                                        {s || "All Drafts"}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
-                                        <h3 className="text-base font-bold text-slate-900">No drafts found</h3>
-                                        <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                                            {hasFilters
-                                                ? "No draft records match your active search filters."
-                                                : "There are currently no unfinished drafts in progress."}
-                                        </p>
-                                        <div className="flex items-center gap-3 mt-5">
+
+                                        {/* Right Side: Dropdown & Search */}
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-48 sm:w-56">
+                                                <SearchableSelect
+                                                    value={selectedCategory}
+                                                    onChange={(val) => {
+                                                        setSelectedCategory(val);
+                                                        setCurrentPage(1);
+                                                    }}
+                                                    options={APP_TYPES}
+                                                    allLabel="All Categories"
+                                                    searchPlaceholder="Search category..."
+                                                />
+                                            </div>
+
+                                            <div className="relative w-full sm:w-72">
+                                                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                                                </svg>
+                                                <input
+                                                    type="text"
+                                                    value={search}
+                                                    onChange={(e) => setSearch(e.target.value)}
+                                                    placeholder="Search drafts, applicants..."
+                                                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs font-semibold text-slate-800 transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-sm placeholder:text-slate-400 placeholder:font-medium"
+                                                />
+                                                {search && (
+                                                    <button
+                                                        onClick={() => setSearch("")}
+                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 p-1 rounded-full transition-colors"
+                                                    >
+                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Data Table */}
+                                    {filteredList.length === 0 ? (
+                                        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-slate-50/30">
+                                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center border border-slate-200 mb-4 shadow-sm ring-4 ring-slate-50">
+                                                <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                </svg>
+                                            </div>
+                                            <h3 className="text-sm font-bold text-slate-900">No drafts found</h3>
+                                            <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                                                {hasFilters
+                                                    ? "No records match your search filters."
+                                                    : "You don't have any unfinished drafts at the moment."}
+                                            </p>
                                             {hasFilters && (
                                                 <button
                                                     onClick={clearFilters}
-                                                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all"
+                                                    className="mt-5 px-5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-sm transition-all"
                                                 >
                                                     Clear Filters
                                                 </button>
                                             )}
                                         </div>
-                                    </div>
-                                ) : (
-                                    <div className="flex-1 overflow-auto">
-                                        <table className="w-full text-left border-collapse whitespace-nowrap">
-                                            <thead className="sticky top-0 bg-slate-50/95 backdrop-blur-xs z-10 border-b border-slate-200/80">
-                                                <tr>
-                                                    {["Draft Identifier", "Applicant (Partial)", "Application Type", "Barangay Location", "Last Modified", "Status", "Actions"].map((h, i) => (
-                                                        <th key={i} className="px-5 py-3 text-[11px] font-semibold text-slate-500 tracking-wider">
-                                                            {h}
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100">
-                                                {paginatedRecords.map((draft) => (
-                                                    <tr 
-                                                        key={draft.id} 
-                                                        onClick={(e) => handleResumeDraft(draft.id, e)}
-                                                        className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
-                                                    >
-                                                        <td className="px-5 py-3.5">
-                                                            <span className="font-mono text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-md">
-                                                                {draft.temp_reference_number || `DRAFT-${draft.id}`}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-5 py-3.5">
-                                                            <div className="flex items-center gap-2.5">
-                                                                <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0">
-                                                                    {draft.applicant_name ? draft.applicant_name.charAt(0).toUpperCase() : "D"}
+                                    ) : (
+                                        <div className="flex-1 overflow-auto">
+                                            <table className="w-full text-left border-collapse whitespace-nowrap">
+                                                <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 shadow-[0_1px_0_0_#e2e8f0]">
+                                                    <tr>
+                                                        {["Draft Identifier", "Applicant", "Application Type", "Barangay", "Last Modified", "Status", ""].map((h, i) => (
+                                                            <th key={i} className="px-6 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                                                                {h}
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {filteredList.map((draft) => (
+                                                        <tr 
+                                                            key={draft.id} 
+                                                            onClick={(e) => handleResumeDraft(draft.id, e)}
+                                                            className="border-l-[3px] border-transparent hover:border-blue-500 hover:bg-blue-50/40 transition-all group cursor-pointer"
+                                                        >
+                                                            <td className="px-6 py-4.5">
+                                                                <div className="flex items-center gap-2.5 text-xs font-mono font-bold text-slate-600 group-hover:text-blue-700 transition-colors">
+                                                                    <div className="w-7 h-7 rounded bg-slate-50 flex items-center justify-center border border-slate-200/80 group-hover:bg-white group-hover:border-blue-200 group-hover:shadow-sm transition-all">
+                                                                        <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                                        </svg>
+                                                                    </div>
+                                                                    {draft.temp_reference_number || `DRAFT-${draft.id}`}
                                                                 </div>
-                                                                <div>
-                                                                    <p className="text-xs font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
-                                                                        {draft.applicant_name || "Unspecified Applicant"}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-5 py-3.5">
-                                                            <p className="text-xs font-medium text-slate-800">{draft.application_type || "Unspecified Category"}</p>
-                                                        </td>
-                                                        <td className="px-5 py-3.5">
-                                                            <div className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
-                                                                <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                                                                </svg>
-                                                                <span>{draft.barangay ? `Brgy. ${draft.barangay}` : "—"}</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-5 py-3.5 text-xs text-slate-500 font-mono">
-                                                            {formatDateTime(draft.updated_at)}
-                                                        </td>
-                                                        <td className="px-5 py-3.5">
-                                                            <StatusBadge status={draft.status || "Auto-saved"} />
-                                                        </td>
-                                                        <td className="px-5 py-3.5 text-right">
-                                                            <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                                            </td>
+                                                            <td className="px-6 py-4.5">
+                                                                <p className="text-[13px] font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
+                                                                    {draft.applicant_name || "Unspecified"}
+                                                                </p>
+                                                            </td>
+                                                            <td className="px-6 py-4.5">
+                                                                <span className="text-[13px] font-semibold text-slate-600 group-hover:text-slate-800 transition-colors">
+                                                                    {draft.application_type || "Unspecified Category"}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4.5">
+                                                                <span className="text-[13px] font-medium text-slate-500 group-hover:text-slate-700 transition-colors">{draft.barangay || "—"}</span>
+                                                            </td>
+                                                            <td className="px-6 py-4.5 text-xs font-semibold text-slate-400">
+                                                                {formatDateTime(draft.updated_at)}
+                                                            </td>
+                                                            <td className="px-6 py-4.5">
+                                                                <StatusBadge status={draft.status || "Auto-saved"} />
+                                                            </td>
+                                                            <td className="px-6 py-4.5 text-right">
+                                                                <div className="flex items-center justify-end gap-2 transition-opacity duration-200" onClick={(e) => e.stopPropagation()}>
                                                                 <button 
                                                                     type="button"
+                                                                    title="Resume Draft"
                                                                     onClick={(e) => handleResumeDraft(draft.id, e)}
-                                                                    className="text-xs font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors"
+                                                                    className="flex items-center justify-center w-8 h-8 rounded-lg bg-white border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 shadow-sm transition-all active:scale-95"
                                                                 >
-                                                                    Resume
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                                                                    </svg>
                                                                 </button>
                                                                 <button 
                                                                     type="button"
+                                                                    title="Discard Draft"
                                                                     onClick={(e) => handleDiscardDraft(draft.id, e)}
-                                                                    className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors"
+                                                                    className="flex items-center justify-center w-8 h-8 rounded-lg bg-white border border-slate-200 text-rose-500 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 shadow-sm transition-all active:scale-95"
                                                                 >
-                                                                    Discard
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                                    </svg>
                                                                 </button>
                                                             </div>
                                                         </td>
@@ -628,81 +636,10 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                                         </table>
                                     </div>
                                 )}
-
-                                {/* ── NUMBERED PAGINATION BAR ── */}
-                                <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/70 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3">
-                                    <div className="flex items-center gap-3">
-                                        <p className="text-xs text-slate-500 font-medium">
-                                            Showing <span className="font-semibold text-slate-800">{filteredList.length > 0 ? startIndex : 0}</span> to <span className="font-semibold text-slate-800">{endIndex}</span> of{" "}
-                                            <span className="font-semibold text-slate-800">{filteredList.length}</span> drafts
-                                        </p>
-
-                                        <div className="flex items-center gap-1.5 text-xs text-slate-400 pl-3 border-l border-slate-200">
-                                            <span>Show:</span>
-                                            <select
-                                                value={pageSize}
-                                                onChange={(e) => {
-                                                    setPageSize(Number(e.target.value));
-                                                    setCurrentPage(1);
-                                                }}
-                                                className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-semibold text-slate-700 outline-none cursor-pointer"
-                                            >
-                                                <option value={5}>5</option>
-                                                <option value={10}>10</option>
-                                                <option value={25}>25</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex items-center gap-1.5">
-                                        <button
-                                            type="button"
-                                            disabled={currentPage <= 1}
-                                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all border ${
-                                                currentPage <= 1
-                                                    ? "opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400"
-                                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300"
-                                            }`}
-                                        >
-                                            Previous
-                                        </button>
-
-                                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
-                                            const isActive = currentPage === pageNum;
-                                            return (
-                                                <button
-                                                    key={pageNum}
-                                                    type="button"
-                                                    onClick={() => setCurrentPage(pageNum)}
-                                                    className={`min-w-[32px] h-8 px-2 rounded-lg text-xs font-bold transition-all border ${
-                                                        isActive
-                                                            ? "bg-blue-600 border-blue-600 text-white shadow-xs"
-                                                            : "bg-white border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300"
-                                                    }`}
-                                                >
-                                                    {pageNum}
-                                                </button>
-                                            );
-                                        })}
-
-                                        <button
-                                            type="button"
-                                            disabled={currentPage >= totalPages}
-                                            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                                            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all border ${
-                                                currentPage >= totalPages
-                                                    ? "opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400"
-                                                    : "border-slate-200 bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-300"
-                                            }`}
-                                        >
-                                            Next
-                                        </button>
-                                    </div>
-                                </div>
                             </div>
                         </div>
-                    </main>
+                    </div>
+                </main>
                 </div>
             </div>
         </>

@@ -222,7 +222,7 @@ export default function StepPropertyGIS({
     }) && !isAmendmentStream;
 
     const isEvaluationDone = isVerificationDone && !isProgressionLocked;
-    const isDetailsDone = !!(form.project_nature && form.project_tenure);
+    const isDetailsDone = !!(form.right_over_land && form.project_tenure);
 
     const handleSelectZoningCategory = (catId) => {
         // Update main form land use class
@@ -258,9 +258,11 @@ export default function StepPropertyGIS({
             {/* ── LEFT: INTERACTIVE ROSARIO GIS MAP ── */}
             <div 
                 className={`transition-all duration-300 ease-in-out bg-slate-100 relative overflow-hidden flex flex-col ${
-                    isMapExpanded 
-                        ? "w-full h-full flex-1" 
-                        : "hidden lg:flex lg:w-1/2 w-full h-full border-r border-slate-200"
+                    activeTab === "details" 
+                        ? "hidden" 
+                        : isMapExpanded 
+                            ? "w-full h-full flex-1" 
+                            : "hidden lg:flex lg:w-1/2 w-full h-full border-r border-slate-200"
                 }`}
             >
                 <div className="absolute inset-0 z-0">
@@ -416,10 +418,12 @@ export default function StepPropertyGIS({
             {/* ── RIGHT: PROPERTY FORM PANEL ── */}
             <div 
                 ref={formRef} 
-                className={`${
+                className={`transition-all duration-300 ease-in-out ${
                     isMapExpanded 
                         ? "hidden" 
-                        : "flex-1 lg:w-1/2 w-full flex flex-col p-5 sm:p-7 overflow-y-auto bg-white justify-between"
+                        : activeTab === "details"
+                            ? "flex-1 w-full flex flex-col p-5 sm:p-7 overflow-y-auto bg-white justify-between"
+                            : "flex-1 lg:w-1/2 w-full flex flex-col p-5 sm:p-7 overflow-y-auto bg-white justify-between"
                 }`}
             >
                 <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
@@ -444,51 +448,91 @@ export default function StepPropertyGIS({
                             )}
                         </div>
 
-                        {/* Internal Tabs (Slider) */}
-                        <div className="relative mb-5 mt-2">
-                            <div className="flex bg-slate-100/80 p-1.5 rounded-full border border-slate-200/50 shadow-inner relative z-10">
+                        {/* Progressive Timeline Indicator */}
+                        <div className="relative mb-8 mt-6 max-w-lg mx-auto w-full px-2">
+                            {/* Background Line */}
+                            <div className="absolute top-[13px] left-[10%] right-[10%] h-[2px] bg-slate-100 z-0"></div>
+                            
+                            {/* Active Progress Line */}
+                            <div 
+                                className="absolute top-[13px] left-[10%] h-[2px] bg-blue-600 z-0 transition-all duration-500 ease-out"
+                                style={{ width: activeTab === 'details' ? '80%' : (activeTab === 'evaluation' ? '40%' : '0%') }}
+                            ></div>
+
+                            <div className="flex justify-between items-start relative z-10">
+                                {/* Step 1 */}
                                 <button
                                     type="button"
                                     onClick={() => setActiveTab("verification")}
-                                    className={`flex-1 flex items-center justify-center py-2 px-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                                        activeTab === "verification" 
-                                            ? "bg-white text-blue-700 shadow-sm border border-slate-200/60" 
-                                            : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
-                                    }`}
+                                    className="flex flex-col items-center gap-2 group cursor-pointer focus:outline-none flex-1"
                                 >
-                                    PIN Verification
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-all duration-300 shadow-sm relative z-10 ${
+                                        isVerificationDone
+                                            ? `bg-blue-600 border-blue-600 text-white shadow-blue-200 ${activeTab === 'verification' ? 'ring-4 ring-blue-100' : ''}`
+                                            : activeTab === 'verification' 
+                                                ? 'bg-white border-blue-600 text-blue-600 ring-4 ring-blue-50' 
+                                                : 'bg-white border-slate-200 text-slate-400 group-hover:border-slate-300'
+                                    }`}>
+                                        {isVerificationDone ? (
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                        ) : '1'}
+                                    </div>
+                                    <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors text-center ${
+                                        activeTab === 'verification' || isVerificationDone ? 'text-slate-800' : 'text-slate-400 group-hover:text-slate-600'
+                                    }`}>
+                                        Verification
+                                    </span>
                                 </button>
+
+                                {/* Step 2 */}
                                 <button
                                     type="button"
                                     onClick={() => setActiveTab("evaluation")}
-                                    className={`flex-1 flex items-center justify-center py-2 px-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                                        activeTab === "evaluation" 
-                                            ? "bg-white text-emerald-700 shadow-sm border border-slate-200/60" 
-                                            : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
-                                    }`}
+                                    disabled={!isVerificationDone}
+                                    className="flex flex-col items-center gap-2 group cursor-pointer focus:outline-none flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Parcel Evaluation
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-all duration-300 shadow-sm relative z-10 ${
+                                        isEvaluationDone
+                                            ? `bg-blue-600 border-blue-600 text-white shadow-blue-200 ${activeTab === 'evaluation' ? 'ring-4 ring-blue-100' : ''}`
+                                            : activeTab === 'evaluation' 
+                                                ? 'bg-white border-blue-600 text-blue-600 ring-4 ring-blue-50' 
+                                                : 'bg-white border-slate-200 text-slate-400 group-hover:border-slate-300'
+                                    }`}>
+                                        {isEvaluationDone ? (
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                        ) : '2'}
+                                    </div>
+                                    <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors text-center ${
+                                        activeTab === 'evaluation' || isEvaluationDone ? 'text-slate-800' : 'text-slate-400 group-hover:text-slate-600'
+                                    }`}>
+                                        Evaluation
+                                    </span>
                                 </button>
+
+                                {/* Step 3 */}
                                 <button
                                     type="button"
                                     onClick={() => setActiveTab("details")}
                                     disabled={isProgressionLocked}
-                                    className={`flex-1 flex items-center justify-center py-2 px-3 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                                        activeTab === "details" 
-                                            ? "bg-white text-slate-700 shadow-sm border border-slate-200/60" 
-                                            : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
-                                    } ${isProgressionLocked ? "opacity-50 cursor-not-allowed" : ""}`}
+                                    className="flex flex-col items-center gap-2 group cursor-pointer focus:outline-none flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Project Details
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-all duration-300 shadow-sm relative z-10 ${
+                                        isDetailsDone
+                                            ? `bg-blue-600 border-blue-600 text-white shadow-blue-200 ${activeTab === 'details' ? 'ring-4 ring-blue-100' : ''}`
+                                            : activeTab === 'details' 
+                                                ? 'bg-white border-blue-600 text-blue-600 ring-4 ring-blue-50' 
+                                                : 'bg-white border-slate-200 text-slate-400 group-hover:border-slate-300'
+                                    }`}>
+                                        {isDetailsDone ? (
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                        ) : '3'}
+                                    </div>
+                                    <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors text-center ${
+                                        activeTab === 'details' || isDetailsDone ? 'text-slate-800' : 'text-slate-400 group-hover:text-slate-600'
+                                    }`}>
+                                        Details
+                                    </span>
                                 </button>
-                            </div>
-                            
-                            {/* Visual Progression Bar */}
-                            <div className="h-1.5 w-[96%] mx-auto bg-slate-100 rounded-full overflow-hidden mt-3 border border-slate-200/60 shadow-inner">
-                                <div 
-                                    className="h-full bg-blue-500 transition-all duration-700 ease-out"
-                                    style={{ width: isDetailsDone ? '100%' : (isEvaluationDone ? '66%' : (isVerificationDone ? '33%' : '0%')) }}
-                                />
                             </div>
                         </div>
 
@@ -522,11 +566,30 @@ export default function StepPropertyGIS({
 
                         {/* ── SECTION 1: TAX DECLARATION PIN VERIFICATION ── */}
                         <div className="space-y-3 pt-1">
-                            {(form.parcels || []).map((parcel, index) => (
-                                <div key={index} className="rounded-2xl bg-white border border-slate-200 shadow-sm p-5 space-y-4 relative">
+                            {(form.parcels || []).map((parcel, index) => {
+                                const isActive = activeParcelIndex === index;
+                                return (
+                                <div 
+                                    key={index} 
+                                    onClick={() => {
+                                        if (typeof setActiveParcelIndex === 'function') {
+                                            setActiveParcelIndex(index);
+                                        }
+                                        if (typeof setActiveParcelFeature === 'function' && parcel.property_index_number && parcelMapData?.features) {
+                                            const feature = parcelMapData.features.find(f => 
+                                                f.properties?.property_index_number?.trim() === parcel.property_index_number.trim()
+                                            );
+                                            // Only update if we found it, otherwise set null or leave as is (if we want to clear)
+                                            setActiveParcelFeature(feature || null);
+                                        }
+                                    }}
+                                    className={`rounded-2xl bg-white border shadow-sm p-5 space-y-4 relative transition-all cursor-pointer ${
+                                        isActive ? "border-blue-500 ring-1 ring-blue-500 shadow-blue-100" : "border-slate-200 hover:border-blue-300"
+                                    }`}
+                                >
                                     <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                                        <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-800 uppercase tracking-widest">
-                                            <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
+                                        <span className={`inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest ${isActive ? 'text-blue-700' : 'text-slate-800'}`}>
+                                            <svg className={`w-4 h-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
                                             {parcel.parcel_code || `Property Lot ${index + 1}`}
                                         </span>
                                         {form.parcels && form.parcels.length > 1 && (
@@ -663,7 +726,8 @@ export default function StepPropertyGIS({
                                         </div>
                                     )}
                                 </div>
-                            ))}
+                                );
+                            })}
 
                             <button 
                                 type="button" 
@@ -723,10 +787,26 @@ export default function StepPropertyGIS({
                                 )}
 
                                 {(form.parcels || []).map((parcel, index) => (
-                                    <div key={index} className="space-y-4">
+                                    <div 
+                                        key={index} 
+                                        className={`space-y-4 rounded-xl border p-4 transition-all cursor-pointer ${
+                                            activeParcelIndex === index ? "border-blue-500 ring-1 ring-blue-500 bg-blue-50/20 shadow-sm" : "border-slate-200 hover:border-blue-300 bg-white"
+                                        }`}
+                                        onClick={() => {
+                                            if (typeof setActiveParcelIndex === 'function') {
+                                                setActiveParcelIndex(index);
+                                            }
+                                            if (typeof setActiveParcelFeature === 'function' && parcel.property_index_number && parcelMapData?.features) {
+                                                const feature = parcelMapData.features.find(f => 
+                                                    f.properties?.property_index_number?.trim() === parcel.property_index_number.trim()
+                                                );
+                                                setActiveParcelFeature(feature || null);
+                                            }
+                                        }}
+                                    >
                                         <div className="flex items-center gap-2 mb-2">
-                                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-200">Parcel {index + 1}</span>
-                                            {parcel.property_index_number && <span className="font-mono text-[10px] text-slate-500 font-bold">{parcel.property_index_number}</span>}
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${activeParcelIndex === index ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200'}`}>Parcel {index + 1}</span>
+                                            {parcel.property_index_number && <span className={`font-mono text-[10px] font-bold ${activeParcelIndex === index ? 'text-blue-700' : 'text-slate-500'}`}>{parcel.property_index_number}</span>}
                                         </div>
                                         
                                         {/* ── PER-PARCEL MISMATCH INTERCEPT BANNER ── */}
@@ -764,31 +844,42 @@ export default function StepPropertyGIS({
                                             }
 
                                             return (
-                                                <div className={`mt-0 p-2.5 rounded-lg border flex items-start gap-2 animate-in fade-in shadow-2xs bg-white ${
-                                                    parcelIntercept.color === 'blue' ? 'border-l-2 border-l-blue-500 border-y-slate-200 border-r-slate-200' :
-                                                    parcelIntercept.color === 'rose' ? 'border-l-2 border-l-rose-500 border-y-slate-200 border-r-slate-200' :
-                                                    'border-l-2 border-l-amber-500 border-y-slate-200 border-r-slate-200'
-                                                }`}>
-                                                    <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
-                                                        parcelIntercept.color === 'blue' ? 'bg-blue-50 text-blue-600' :
-                                                        parcelIntercept.color === 'rose' ? 'bg-rose-50 text-rose-600' :
-                                                        'bg-amber-50 text-amber-600'
-                                                    }`}>
-                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">{parcelIntercept.icon}</svg>
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <h4 className="text-[11px] font-bold text-slate-800">{parcelIntercept.title}</h4>
-                                                        <p className="text-[10px] mt-0.5 leading-tight text-slate-500">{parcelIntercept.message}</p>
+                                                <div className="mt-4 bg-white border border-slate-200 shadow-sm rounded-lg overflow-hidden flex flex-col sm:flex-row relative animate-in fade-in">
+                                                    {/* Left status bar */}
+                                                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                                                        parcelIntercept.color === 'blue' ? 'bg-blue-500' :
+                                                        parcelIntercept.color === 'rose' ? 'bg-rose-500' :
+                                                        'bg-amber-500'
+                                                    }`} />
+                                                    
+                                                    <div className="flex-1 p-4 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between pl-5">
+                                                        <div className="flex items-start gap-3">
+                                                            <div className={`mt-0.5 shrink-0 ${
+                                                                parcelIntercept.color === 'blue' ? 'text-blue-500' :
+                                                                parcelIntercept.color === 'rose' ? 'text-rose-500' :
+                                                                'text-amber-500'
+                                                            }`}>
+                                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">{parcelIntercept.icon}</svg>
+                                                            </div>
+                                                            <div>
+                                                                <h4 className="text-[13px] font-semibold text-slate-900">{parcelIntercept.title}</h4>
+                                                                <p className="text-xs text-slate-600 mt-1 leading-relaxed">{parcelIntercept.message}</p>
+                                                            </div>
+                                                        </div>
                                                         
                                                         {parcelIntercept.action && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleSwitchStream(parcelIntercept.action.type, index)}
-                                                                className={`mt-1.5 inline-flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold transition-all shadow-xs cursor-pointer bg-slate-800 hover:bg-slate-900 text-white`}
-                                                            >
-                                                                <span>{parcelIntercept.action.label}</span>
-                                                                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
-                                                            </button>
+                                                            <div className="shrink-0 w-full sm:w-auto mt-2 sm:mt-0 pl-8 sm:pl-0">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSwitchStream(parcelIntercept.action.type, index)}
+                                                                    className="w-full sm:w-auto inline-flex justify-center items-center gap-1.5 rounded-md bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm border border-slate-300 hover:bg-slate-50 transition-all active:bg-slate-100"
+                                                                >
+                                                                    <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                                                    </svg>
+                                                                    {parcelIntercept.action.label}
+                                                                </button>
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -857,14 +948,31 @@ export default function StepPropertyGIS({
                                 </div>
 
                                 <div>
-                                    <Label>Project Cost (₱)</Label>
-                                    <Input
-                                        type="number"
-                                        step="0.01"
-                                        value={form.project_cost || ""}
-                                        onChange={set("project_cost")}
-                                        placeholder="e.g. 1000000.00"
-                                    />
+                                    <Label>Project Cost</Label>
+                                    <div className="relative mt-1 rounded-md shadow-sm">
+                                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                            <span className="text-slate-500 sm:text-sm">₱</span>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={form.project_cost ? form.project_cost.toString().split('.').map((p, i) => i === 0 ? p.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : p).join('.') : ""}
+                                            onChange={(e) => {
+                                                let val = e.target.value.replace(/[^0-9.]/g, '');
+                                                const parts = val.split('.');
+                                                if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+                                                set("project_cost")({ target: { value: val } });
+                                            }}
+                                            placeholder="0"
+                                            className={`block w-full rounded-md border-0 py-2.5 pl-8 text-right text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 transition-all ${
+                                                (!form.project_cost || !form.project_cost.toString().includes('.')) ? 'pr-9' : 'pr-3'
+                                            }`}
+                                        />
+                                        {(!form.project_cost || !form.project_cost.toString().includes('.')) && (
+                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                                                <span className="text-slate-400 sm:text-sm">.00</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div>
