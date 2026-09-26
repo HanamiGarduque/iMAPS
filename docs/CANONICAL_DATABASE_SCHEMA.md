@@ -52,7 +52,8 @@ the consolidated migration or manually insert ledger records on the 0921 path.
 5. Remaining applicable incremental migrations, including
    2026_09_23_145135_create_historical_data_table.php
 6. 2026_09_26_fresh_install_canonical_corrections.sql
-7. Run the verification queries in section 8.
+7. 2026_09_27_000000_add_reviewed_site_inspection_id_to_technical_reviews_table
+8. Run the verification queries in section 8.
 ```
 
 ---
@@ -142,8 +143,33 @@ Local data confirms only canonical values exist: `Admin` 2, `Planning Officer` 2
 |---|---|---|
 | `review_round` | ✅ | Reinspection round counter, default 1 |
 | `decision` | ✅ CHECK | `Approved`, `Needs Site Inspection`, `Requires Reinspection`, `Declined` |
+| `site_inspection_task_id` | ✅ | The **NEW** inspection round created by this review decision, when applicable. Nullable. |
+| `reviewed_site_inspection_id` | ✅ Loop 8, nullable | The **EXISTING** inspection round whose result this review is reviewing. FK → `site_inspections(id)` `ON DELETE SET NULL`, plus a supporting index. |
 
 `Requires Reinspection` is required by the Loop 4 reinspection contract.
+
+### 6.1 Loop 8 — reviewed round vs created round (never synonyms)
+
+- `reviewed_site_inspection_id` answers *"which finished round is being reviewed?"*
+- `site_inspection_task_id` answers *"which new round did this decision create?"*
+
+Contract example: completed inspection `36` is reviewed with a `Requires Reinspection`
+decision → `reviewed_site_inspection_id = 36` and `site_inspection_task_id = 37`.
+Inspection 36 remains `completed`; inspection 37 is the new task.
+
+Rules:
+
+- recorded **prospectively**, before any new round is created;
+- `NULL` for an initial `Needs Site Inspection` decision (no reviewed round exists);
+- **no historical backfill.** Existing rows stay `NULL` until that round is explicitly
+  reviewed again. APP-2026-00026 data was deliberately not modified.
+- The reviewed round is resolved from the same application + parcel pair as the
+  review row. PostgreSQL forbids subqueries in `CHECK` constraints, so that scope
+  rule is enforced in `TechnicalReviewController::resolveReviewedInspectionId()`
+  and pinned by `Loop8PlanningReviewContractTest`.
+- The Laravel migration is `2026_09_27_000000_add_reviewed_site_inspection_id_to_technical_reviews_table.php`
+  (guarded; `down()` is non-destructive and keeps the column).
+- The 0921 database path applies `database/sql/2026_09_27_loop8_planning_review_identity.sql`.
 
 ---
 

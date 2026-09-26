@@ -459,7 +459,7 @@ Never perform: Completed Round 1 → reset to Pending → reuse the same `local_
 
 Current blockers, recorded without fixing them here:
 
-- **VERIFIED IMPLEMENTATION:** the `TechnicalReviewController` batch path uses `updateOrCreate` keyed by application + parcel and can reuse an existing `SiteInspection`.
+- **VERIFIED IMPLEMENTATION (corrected 2026-09-27 — Loop 8 audit):** this statement was **stale**. The current batch path does **not** use `updateOrCreate`. `TechnicalReviewController::submitBatch()` and `updateStatus()` both call `TechnicalReview::create()` once per parcel per review round, and the new round is created by `createInspectionRound()`, which uses `SiteInspection::newRound()` for `Requires Reinspection` (a genuinely new row) and otherwise creates or fills the latest non-completed round. A `Requires Reinspection` decision on a non-completed round is rejected rather than silently reusing it. See Loop 8 record below.
 - **VERIFIED IMPLEMENTATION:** bridge upsert by a reused `local_inspection_id` then reuses the same `field_jobs` row.
 - **VERIFIED IMPLEMENTATION:** FieldSync currently permits completed-task rework.
 - **VERIFIED IMPLEMENTATION:** GPS rework can regress `completed` → `in_progress`.
@@ -802,8 +802,8 @@ This matrix maps every bridge-relevant column across the four systems: local Pos
 | `started_at` | — | ❌ NOT DEFINED | ✅ GPS confirm sets once | ✅ reads | ⚠️ LIVE VERIFY |
 | `rework_started_at` | — | ❌ NOT DEFINED | ✅ lazy write on edit | ✅ reads for badge | ⚠️ LIVE VERIFY |
 | `is_self_scheduled` | — | ❌ NOT DEFINED | — | ✅ reads for filter | ⚠️ LIVE VERIFY |
-| `reviewed_by` | — | ✅ FK nullable | — | — | LEGACY Phase 5 label; any review use requires the optional Loop 8 contract |
-| `reviewed_at` | — | ✅ nullable | — | — | LEGACY Phase 5 label; any review use requires the optional Loop 8 contract |
+| `reviewed_by` | — | ❌ **NOT DEFINED LIVE** — a 2026-09-25 read-only catalog check found no such column; the "FK nullable" claim came from a schema dump only | — | — | **SUPERSEDED BY LOOP 8** — Planning Review identity is transported in the new `field_job_reviews` table, not as `field_jobs` columns. Do not add them to `field_jobs`. |
+| `reviewed_at` | — | ❌ **NOT DEFINED LIVE** — no such column live; "nullable" came from a schema dump only | — | — | **SUPERSEDED BY LOOP 8** — see `field_job_reviews.reviewed_at` |
 
 ---
 
@@ -1181,10 +1181,36 @@ This entry does not close Loop 6 and writes no Loop 6 closure record.
 - verify retry/delete behavior;
 - verify inspector scoping.
 
-## LOOP 8 — Planning Review Metadata — OPTIONAL / AFTER CORE LIFECYCLE
+## LOOP 8 - Planning Review Metadata - IMPLEMENTED 2026-09-27 (implementation pass; not yet committed)
 
 - optionally add a read-only badge under Completed;
 - never affect task status or category.
+
+### LOOP 8 implementation record (2026-09-27) — round-safe read-only contract
+
+**Purpose:** show optional, read-only Planning Review metadata in FieldSync for the **exact inspection round that was reviewed**. It never modifies `field_jobs.status`, `TaskItem.category`, `current_step`, progress, completed state, reinspection state, photo evidence, or sync ACK state. A review requesting reinspection does **not** reopen the reviewed Completed task; the existing reinspection workflow still creates a NEW round.
+
+**iMAPS reviewed-round identity (prospective, never backfilled):**
+
+- `technical_reviews.reviewed_site_inspection_id` — nullable, FK → `site_inspections(id)` `ON DELETE SET NULL`, indexed. It is the **existing** round being reviewed.
+- `technical_reviews.site_inspection_task_id` remains the **new** round created by the decision. **The two are never synonyms.**
+- Captured by `TechnicalReviewController::resolveReviewedInspectionId()` **before** any new round is created, only for result decisions (`Approved` / `Declined` / `Requires Reinspection`), and only when the parcel's latest existing round is `completed`. An initial `Needs Site Inspection` decision records `NULL`.
+- **No historical backfill.** All 78 pre-existing review rows remain `NULL`; APP-2026-00026 data was deliberately not modified.
+
+**Supabase transport — new `public.field_job_reviews` table (APPLIED / LIVE VERIFIED):**
+
+`id`, `field_job_id` (FK → `field_jobs(id)` `ON DELETE CASCADE`), `technical_review_id` (UNIQUE — one source review event = one transport row), `reviewed_site_inspection_id` (traceability), `decision` (CHECK: `Approved` / `Declined` / `Requires Reinspection`), `reviewed_by`, `reviewed_by_name`, `reviewed_at`, `created_at`. RLS **enabled**.
+
+- One SELECT policy for `authenticated`: review metadata is readable **only** when the parent `field_jobs.assigned_inspector_id = auth.uid()`.
+- **No INSERT/UPDATE/DELETE policy for any client role.** The iMAPS server service credential is the only writer; FieldSync review metadata is read-only. No service-role key is exposed to the mobile client.
+
+**iMAPS writer:** `PushPlanningReviewToSupabase` (dispatched **after** the review transaction commits) → `SupabaseService::findFieldJobIdByLocalInspectionId()` resolves the remote job from the reviewed round identity **only** (never by application, parcel, or reference number) → `upsertFieldJobReview()` upserts with `on_conflict=technical_review_id`. An unresolvable round is logged, never redirected to a guessed target.
+
+**FieldSync:** optional `PlanningReviewMetadata` model; fetched through the existing `field_job_reviews` embed on the job queries (keyed by exact `field_job_id`, never joined by application/parcel/reference); cached in the existing `local_jobs` pattern as nullable `planning_review` JSON (db version 12) so previously synced metadata stays readable offline; rendered as a small read-only "Planning Review" card on the Completed task detail, shown **only** when a review row exists. Decision mapping: `Approved` → Approved, `Declined` → Declined, `Requires Reinspection` → Reinspection Requested.
+
+**"Awaiting Review" is deliberately NOT implemented.** Historical reviews have no reliable reviewed-round identity, so a Completed task with no review row simply shows no section; nothing is inferred.
+
+**Verification:** iMAPS `Loop8PlanningReviewContractTest` 15 tests / 44 assertions PASS; related lifecycle contracts 10 tests / 98 assertions PASS; `php -l` clean. FieldSync `loop8_planning_review_test.dart` 14 tests PASS; `flutter analyze` clean; combined Loop 8 + Loop 4 + Loop 5 + category suites 61 tests PASS. Live Supabase: assigned inspector reads 1 review row for own job; unrelated inspector 0 rows; anon 0 rows; inspector INSERT denied (`42501`); inspector UPDATE/DELETE are no-ops (0 rows mutated); `field_jobs` round 36 remains `completed`/step 6 and round 37 remains `in_progress`/step 1 — review isolation and completed immutability confirmed live.
 
 ## LOOP 9 — Delivery Monitoring + Admin Diagnostics
 
