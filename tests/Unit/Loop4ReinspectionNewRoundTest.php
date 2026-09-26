@@ -98,7 +98,11 @@ class Loop4ReinspectionNewRoundTest extends TestCase
         $this->assertStringContainsString('Object.values(errs || {})', $source);
         $this->assertStringContainsString('validationMessages.join(" ")', $source);
         $this->assertStringContainsString('localInspection={activeParcelData.site_inspection}', $source);
-        foreach (['inspector_id', 'scheduled_date', 'deadline_date', 'assigned_notes', 'findings', 'decision_reason'] as $field) {
+        // The reinspection scheduling contract is inspector + schedule + deadline
+        // + instructions. The separate review-level "findings" input was removed
+        // by upstream master; the server still accepts reviews.*.findings as
+        // nullable|string, so omitting it from the UI breaks no Loop 4 contract.
+        foreach (['inspector_id', 'scheduled_date', 'deadline_date', 'assigned_notes', 'decision_reason'] as $field) {
             $this->assertStringContainsString($field, $source);
         }
     }
@@ -108,9 +112,16 @@ class Loop4ReinspectionNewRoundTest extends TestCase
         $source = file_get_contents(dirname(__DIR__, 2) . '/resources/js/Components/ParcelInspectionStatus.jsx');
         $this->assertNotFalse($source);
 
+        // A completed local inspection must still render when the remote fetch
+        // is unavailable. The merged code keeps the local fallback and merges
+        // remote over local when it does resolve.
         $this->assertStringContainsString('localInspection = null', $source);
-        $this->assertStringContainsString(': localInspection;', $source);
         $this->assertStringContainsString('setInspection(data)', $source);
+        $this->assertStringNotContainsString('setInspection(null)', $source);
+        $this->assertMatchesRegularExpression(
+            '/const data = remoteInspection\s*\?\s*\{\s*\.\.\.local,\s*\.\.\.remoteInspection\s*\}\s*:\s*local;/s',
+            $source
+        );
     }
 
     public function test_push_retry_isolated_by_new_site_inspection_id(): void

@@ -46,7 +46,10 @@ class ApplicationSubmissionClientContractTest extends TestCase
 
     public function test_synchronous_submitting_guard_prevents_duplicate_clicks(): void
     {
-        $this->assertMatchesRegularExpression('/if \(submittingRef\.current\) return;.*?submittingRef\.current = true;.*?router\.post/s', $this->createSource);
+        // The merged guard is strictly stronger than the original: the ref lock
+        // is combined with the upstream re-render locks, so a duplicate submit
+        // is still impossible, including across re-renders.
+        $this->assertMatchesRegularExpression('/if \(submittingRef\.current \|\| submitting \|\| submissionFinalized\) return;.*?submittingRef\.current = true;/s', $this->createSource);
         $this->assertMatchesRegularExpression('/onFinish: \(\) => \{\s*submittingRef\.current = false;\s*setSubmitting\(false\);/s', $this->createSource);
         $this->assertStringContainsString('disabled={submitting}', $this->createSource);
     }
@@ -54,7 +57,7 @@ class ApplicationSubmissionClientContractTest extends TestCase
     public function test_autosave_is_cancelled_and_ignored_during_final_submission(): void
     {
         $this->assertStringContainsString('autosaveControllerRef.current?.abort();', $this->createSource);
-        $this->assertStringContainsString('if (submittingRef.current || submissionSucceeded) return;', $this->createSource);
+        $this->assertStringContainsString('if (submittingRef.current || submissionSucceeded || submissionFinalized) return;', $this->createSource);
         $this->assertStringContainsString('signal: controller.signal', $this->createSource);
         $this->assertStringContainsString('if (axios.isCancel(error)) return;', $this->createSource);
     }
@@ -73,6 +76,6 @@ class ApplicationSubmissionClientContractTest extends TestCase
         $this->assertStringContainsString('cloudDraftRef || loadLocalDraftId()', $this->createSource);
         $this->assertStringContainsString('useState(() => draftStep(initialDraftPayload))', $this->createSource);
         $this->assertStringContainsString('draftPayload(form, currentStep)', $this->createSource);
-        $this->assertStringContainsString('[form, tempDraftId, currentStep, submissionSucceeded]', $this->createSource);
+        $this->assertStringContainsString('[form, tempDraftId, currentStep, submissionSucceeded, submissionFinalized]', $this->createSource);
     }
 }

@@ -3,7 +3,6 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\ApplicationController;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Mockery;
 use ReflectionMethod;
@@ -11,57 +10,59 @@ use Tests\TestCase;
 
 class ApplicationReferenceSequenceTest extends TestCase
 {
-    public function test_empty_sequence_starts_after_highest_existing_canonical_reference(): void
+    public function test_next_reference_continues_after_highest_existing_canonical_reference(): void
     {
-        $sequenceLookup = $this->query(['exists' => false]);
-        $references = $this->query([
-            'pluck' => new Collection(array_map(
-                fn (int $sequence): string => sprintf('APP-2026-%05d', $sequence),
-                range(1, 24)
-            )),
-        ]);
-        $upsert = $this->query();
-        $result = $this->query(['value' => 25]);
-
-        DB::shouldReceive('table')->once()->with('application_sequences')->andReturn($sequenceLookup);
-        DB::shouldReceive('table')->once()->with('zoning_applications')->andReturn($references);
-        DB::shouldReceive('raw')->once()->with('application_sequences.last_seq + 1')->andReturn('increment-expression');
-        DB::shouldReceive('table')->once()->with('application_sequences')->andReturn($upsert);
-        DB::shouldReceive('table')->once()->with('application_sequences')->andReturn($result);
-
-        $upsert->shouldReceive('upsert')->once()->with(
-            ['type_code' => 'APP', 'year' => '2026', 'last_seq' => 25],
-            ['type_code', 'year'],
-            ['last_seq' => 'increment-expression']
-        );
+        DB::shouldReceive('table')->once()->with('zoning_applications')
+            ->andReturn($this->query(['value' => 'APP-2026-00024']));
 
         $this->assertSame(25, $this->nextSequence('APP', '2026'));
     }
 
-    public function test_existing_sequence_row_continues_incrementing_normally(): void
+    public function test_next_reference_starts_at_one_when_no_canonical_reference_exists(): void
     {
-        $sequenceLookup = $this->query(['exists' => true]);
-        $upsert = $this->query();
-        $result = $this->query(['value' => 25]);
+        DB::shouldReceive('table')->once()->with('zoning_applications')
+            ->andReturn($this->query(['value' => null]));
 
-        DB::shouldReceive('table')->once()->with('application_sequences')->andReturn($sequenceLookup);
-        DB::shouldReceive('raw')->once()->with('application_sequences.last_seq + 1')->andReturn('increment-expression');
-        DB::shouldReceive('table')->once()->with('application_sequences')->andReturn($upsert);
-        DB::shouldReceive('table')->once()->with('application_sequences')->andReturn($result);
+        $this->assertSame(1, $this->nextSequence('APP', '2026'));
+    }
 
-        $upsert->shouldReceive('upsert')->once()->with(
-            ['type_code' => 'APP', 'year' => '2026', 'last_seq' => 1],
-            ['type_code', 'year'],
-            ['last_seq' => 'increment-expression']
-        );
+    public function test_sequencing_reads_canonical_rows_under_a_row_lock_inside_the_transaction(): void
+    {
+        $query = $this->query(['value' => 'APP-2026-00007']);
+        DB::shouldReceive('table')->once()->with('zoning_applications')->andReturn($query);
 
-        $this->assertSame(25, $this->nextSequence('APP', '2026'));
+        $this->nextSequence('APP', '2026');
+
+        $query->shouldHaveReceived('where')
+            ->with('reference_number', 'like', 'APP-2026-%');
+        $query->shouldHaveReceived('lockForUpdate');
+        $query->shouldHaveReceived('orderBy')->with('reference_number', 'desc');
+    }
+
+    public function test_legacy_sequence_table_is_retained_but_has_no_runtime_dependency(): void
+    {
+        DB::shouldReceive('table')->once()->with('zoning_applications')
+            ->andReturn($this->query(['value' => 'APP-2026-00003']));
+
+        $this->assertSame(4, $this->nextSequence('APP', '2026'));
+
+        // The legacy table is physically retained in the database, but the
+        // runtime sequencing path must not read or write it.
+        $source = (string) file_get_contents(dirname(__DIR__, 2) . '/app/Http/Controllers/ApplicationController.php');
+        preg_match('/private function getNextSequence\([\s\S]*?\n    \}/', $source, $matches);
+        $body = $matches[0] ?? '';
+
+        $this->assertNotSame('', $body, 'getNextSequence must exist');
+        $this->assertSame(0, preg_match_all('/DB::table\(\s*\'application_sequences\'/', $body),
+            'getNextSequence must not read or write the legacy application_sequences table');
     }
 
     private function query(array $terminal = []): Mockery\MockInterface
     {
         $query = Mockery::mock();
         $query->shouldReceive('where')->zeroOrMoreTimes()->andReturnSelf();
+        $query->shouldReceive('lockForUpdate')->zeroOrMoreTimes()->andReturnSelf();
+        $query->shouldReceive('orderBy')->zeroOrMoreTimes()->andReturnSelf();
 
         foreach ($terminal as $method => $value) {
             $query->shouldReceive($method)->once()->andReturn($value);
