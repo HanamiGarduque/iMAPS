@@ -182,6 +182,74 @@ class SupabaseService
     }
 
     /**
+     * Resolve the exact remote field job for a local inspection round.
+     *
+     * Loop 8 uses this as the ONLY way to map a reviewed inspection round to a
+     * remote job. It never guesses by application or parcel, because a
+     * Planning Review must attach to the exact round that was reviewed.
+     */
+    public function findFieldJobIdByLocalInspectionId(int $localInspectionId): ?string
+    {
+        $response = $this->select('field_jobs', 'id', [
+            'local_inspection_id' => "eq.{$localInspectionId}",
+            'limit'               => 1,
+        ]);
+
+        if ($response->failed()) {
+            Log::error('Failed to resolve field job for reviewed inspection round', [
+                'local_inspection_id' => $localInspectionId,
+                'status'              => $response->status(),
+                'body'                => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        $rows = $response->json();
+
+        if (! is_array($rows) || $rows === []) {
+            return null;
+        }
+
+        $fieldJobId = $rows[0]['id'] ?? null;
+
+        return is_string($fieldJobId) && $fieldJobId !== '' ? $fieldJobId : null;
+    }
+
+    /**
+     * Upsert one read-only Planning Review record for a reviewed inspection round.
+     *
+     * Loop 8 contract:
+     *  - `field_job_id` is the exact reviewed round's remote job, never the new
+     *    round created by a reinspection decision;
+     *  - this writes ONLY `field_job_reviews`. It never touches field_jobs
+     *    status, current_step, progress, completed state or photo evidence;
+     *  - the conflict target is the iMAPS source review identity, so re-running
+     *    a review transport converges on one row instead of duplicating.
+     */
+    public function upsertFieldJobReview(array $payload): bool
+    {
+        $response = Http::withHeaders($this->serviceHeaders([
+            'Prefer' => 'resolution=merge-duplicates,return=minimal',
+        ]))
+            ->post("{$this->url}/rest/v1/field_job_reviews?on_conflict=technical_review_id", $payload);
+
+        if ($response->failed()) {
+            Log::error('Failed to upsert planning review metadata', [
+                'technical_review_id'        => $payload['technical_review_id'] ?? null,
+                'reviewed_site_inspection_id' => $payload['reviewed_site_inspection_id'] ?? null,
+                'field_job_id'               => $payload['field_job_id'] ?? null,
+                'status'                     => $response->status(),
+                'body'                       => $response->body(),
+            ]);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Fetch one FieldSync inspection by local inspection id and attach
      * short-lived private Storage URLs to its photo metadata.
      *

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ZoningApplication;
 use App\Models\Parcel;
 use App\Jobs\PushInspectionToSupabase;
+use App\Jobs\PushPlanningReviewToSupabase;
 use App\Models\User;
 use App\Models\TechnicalReview;
 use App\Models\SiteInspection;
@@ -170,6 +171,11 @@ class TechnicalReviewController extends Controller
             $currentRound = TechnicalReview::where('zoning_application_id', $application->id)->max('review_round') ?? 0;
             $nextRound = $currentRound + 1;
 
+            // Loop 8: transport rows are collected inside the transaction and only
+            // dispatched after it commits, so the review row identity is durable
+            // before any remote write is attempted.
+            $pendingReviewTransports = [];
+
             // If a specific parcel_id was sent from the frontend, use it. 
             // Otherwise, apply this decision to ALL parcels in the application.
             $parcelsToProcess = !empty($validated['parcel_id'])
@@ -178,6 +184,15 @@ class TechnicalReviewController extends Controller
 
             foreach ($parcelsToProcess as $parcel) {
                 $siteInspectionId = null;
+
+                // Loop 8: capture the EXISTING round under review BEFORE any new
+                // round is created, so a "Requires Reinspection" decision records
+                // the round it reviewed and not the round it just created.
+                $reviewedSiteInspectionId = $this->resolveReviewedInspectionId(
+                    $application,
+                    $parcel,
+                    $validated['decision'],
+                );
 
                 if (in_array($validated['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)) {
                     $inspection = $this->createInspectionRound(
@@ -191,17 +206,22 @@ class TechnicalReviewController extends Controller
                 }
 
                 // Create the technical review row for the parcel
-                TechnicalReview::create([
-                    'zoning_application_id'   => $application->id,
-                    'parcel_id'               => $parcel->id,
-                    'reviewed_by'             => auth()->id(),
-                    'review_round'            => $nextRound,
-                    'decision'                => $validated['decision'],
-                    'findings'                => $validated['findings'] ?? null,
-                    'decision_reason'         => $validated['decision_reason'] ?? null,
-                    'site_inspection_task_id' => $siteInspectionId,
-                    'reviewed_at'             => now(),
+                $technicalReview = TechnicalReview::create([
+                    'zoning_application_id'      => $application->id,
+                    'parcel_id'                  => $parcel->id,
+                    'reviewed_by'                => auth()->id(),
+                    'review_round'               => $nextRound,
+                    'decision'                   => $validated['decision'],
+                    'findings'                   => $validated['findings'] ?? null,
+                    'decision_reason'            => $validated['decision_reason'] ?? null,
+                    'site_inspection_task_id'    => $siteInspectionId,
+                    'reviewed_site_inspection_id' => $reviewedSiteInspectionId,
+                    'reviewed_at'                => now(),
                 ]);
+
+                if ($reviewedSiteInspectionId !== null) {
+                    $pendingReviewTransports[] = $this->buildReviewTransport($technicalReview);
+                }
             }
 
             // 3. Audit Logs, Trackers, and SMS
@@ -243,6 +263,12 @@ class TechnicalReviewController extends Controller
                 Log::info("PLACEHOLDER SMS - To: {$application->contact_number} | Message: Good day! Your application {$application->reference_number} requires a Site Inspection scheduled on {$validated['scheduled_date']}.");
             }
         });
+
+        // Loop 8: transport Planning Review metadata only after the review rows
+        // are committed. This never reopens or mutates the reviewed task.
+        foreach ($pendingReviewTransports as $transport) {
+            PushPlanningReviewToSupabase::dispatch($transport);
+        }
 
         return redirect('/applications')->with('success', 'Technical review processed successfully.');
     }
@@ -328,15 +354,27 @@ class TechnicalReviewController extends Controller
             $nextRound = $currentRound + 1;
 
             $decisionsSeen = [];
+            $pendingReviewTransports = [];
 
             foreach ($reviews as $parcelId => $review) {
                 $decisionsSeen[] = $review['decision'];
 
                 $siteInspectionId = null;
+                $parcel = $application->parcels->firstWhere('id', (int) $parcelId);
+
+                // Loop 8: capture the EXISTING round under review BEFORE the new
+                // round is created. An initial "Needs Site Inspection" decision
+                // has no prior round, so this stays NULL.
+                $reviewedSiteInspectionId = $this->resolveReviewedInspectionId(
+                    $application,
+                    $parcel,
+                    $review['decision'],
+                );
+
                 if (in_array($review['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)) {
                     $inspection = $this->createInspectionRound(
                         $application,
-                        $application->parcels->firstWhere('id', (int) $parcelId),
+                        $parcel,
                         $review,
                         $assigningOfficer,
                     );
@@ -345,17 +383,22 @@ class TechnicalReviewController extends Controller
                     PushInspectionToSupabase::dispatch($inspection);
                 }
 
-                TechnicalReview::create([
-                    'zoning_application_id'   => $application->id,
-                    'parcel_id'               => $parcelId,
-                    'reviewed_by'             => auth()->id(),
-                    'review_round'            => $nextRound,
-                    'decision'                => $review['decision'],
-                    'findings'                => $review['findings'] ?? null,
-                    'decision_reason'         => $review['decision_reason'] ?? null,
-                    'site_inspection_task_id' => $siteInspectionId,
-                    'reviewed_at'             => now(),
+                $technicalReview = TechnicalReview::create([
+                    'zoning_application_id'      => $application->id,
+                    'parcel_id'                  => $parcelId,
+                    'reviewed_by'                => auth()->id(),
+                    'review_round'               => $nextRound,
+                    'decision'                   => $review['decision'],
+                    'findings'                   => $review['findings'] ?? null,
+                    'decision_reason'            => $review['decision_reason'] ?? null,
+                    'site_inspection_task_id'    => $siteInspectionId,
+                    'reviewed_site_inspection_id' => $reviewedSiteInspectionId,
+                    'reviewed_at'                => now(),
                 ]);
+
+                if ($reviewedSiteInspectionId !== null) {
+                    $pendingReviewTransports[] = $this->buildReviewTransport($technicalReview);
+                }
             }
             
             if (in_array('Declined', $decisionsSeen, true)) {
@@ -391,6 +434,11 @@ class TechnicalReviewController extends Controller
                 );
             }
         }); // <-- Closes DB::transaction
+
+        // Loop 8: dispatch review transports only after the review rows commit.
+        foreach ($pendingReviewTransports as $transport) {
+            PushPlanningReviewToSupabase::dispatch($transport);
+        }
 
         // Updates redirect strictly to /applications
         return redirect('/applications')->with('success', 'Technical review processed for all parcels.');
@@ -502,6 +550,67 @@ class TechnicalReviewController extends Controller
             ...$assignmentData,
             'status'                => 'assigned',
         ]);
+    }
+
+    /**
+     * Loop 8 — resolve the inspection round this review is reviewing.
+     *
+     * Returns the EXISTING round id only when:
+     *  - the decision is an inspection-result review (Approved / Declined /
+     *    Requires Reinspection). "Needs Site Inspection" is the initial
+     *    scheduling decision and never has a reviewed round;
+     *  - the parcel's latest existing round is a COMPLETED round.
+     *
+     * It is resolved from the same application + parcel pair as the review row
+     * and is deliberately captured BEFORE any new round is created, so a
+     * "Requires Reinspection" decision records the round it reviewed (36) and
+     * not the round it just created (37). A NULL result is the honest answer
+     * when no completed round exists — no link is invented, and no historical
+     * row is backfilled.
+     */
+    private function resolveReviewedInspectionId(
+        ZoningApplication $application,
+        ?Parcel $parcel,
+        string $decision,
+    ): ?int {
+        if ($parcel === null) {
+            return null;
+        }
+
+        if (! in_array($decision, PushPlanningReviewToSupabase::TRANSPORTABLE_DECISIONS, true)) {
+            return null;
+        }
+
+        $latestInspection = SiteInspection::query()
+            ->where('zoning_application_id', $application->id)
+            ->where('parcel_id', $parcel->id)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($latestInspection === null || $latestInspection->status !== 'completed') {
+            return null;
+        }
+
+        return (int) $latestInspection->id;
+    }
+
+    /**
+     * Build the read-only Planning Review transport for one persisted review.
+     */
+    private function buildReviewTransport(TechnicalReview $technicalReview): PushPlanningReviewToSupabase
+    {
+        $reviewer = $technicalReview->reviewedBy !== null
+            ? User::whereKey($technicalReview->reviewedBy)->first()
+            : null;
+
+        return new PushPlanningReviewToSupabase(
+            technicalReviewId: (int) $technicalReview->id,
+            reviewedSiteInspectionId: (int) $technicalReview->reviewed_site_inspection_id,
+            decision: (string) $technicalReview->decision,
+            reviewedBy: (int) $technicalReview->reviewed_by,
+            reviewedByName: $reviewer?->name,
+            reviewedAt: $technicalReview->reviewed_at?->toIso8601String(),
+        );
     }
 
     private function currentPlanningOfficerAssignmentActor(): array
