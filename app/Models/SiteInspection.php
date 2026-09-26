@@ -27,7 +27,11 @@ class SiteInspection extends Model
         'assigned_by_name',
         'parcel_id',
         'findings',
-        'recommendation',
+        // Canonical database reconciliation: the singular 'recommendation' and
+        // 'remarks' entries are NOT part of the site_inspections contract.
+        // 'remarks' is zoning-application context; 'recommendation' (singular)
+        // is a dead $fillable entry with no writer. The live result field is
+        // 'recommendations' (plural), which is retained below.
         'is_compliant',
         'submitted_at',
         'inspection_result',
