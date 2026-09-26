@@ -294,12 +294,16 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
 
     public function test_admin_only_routes_remain_admin_only(): void
     {
+        // Upstream replaced /analytics with the Reports module and /audit-log
+        // with the per-user Activity Log endpoint. The Loop 6 rule is unchanged:
+        // these surfaces stay Admin-only and are never broadened to Planning
+        // Officer.
         $adminOnlyRoutes = [
             ['GET', '/register-new-account'],
             ['POST', '/register-new-account'],
-            ['GET', '/analytics'],
-            ['POST', '/analytics/rerun'],
-            ['GET', '/audit-log'],
+            ['GET', '/reports'],
+            ['POST', '/api/analytics/report'],
+            ['GET', '/users/1/logs'],
             ['GET', '/settings'],
             ['POST', '/settings/upload-shapefile'],
             ['GET', '/users'],

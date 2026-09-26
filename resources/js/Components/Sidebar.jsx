@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 
 export default function Sidebar({
@@ -10,7 +10,7 @@ export default function Sidebar({
     activePage,
 }) {
     const isAdmin = userRole === 'Admin';
-    // Loop 6: Site Inspectors operate exclusively through FieldSync — they must
+    // Loop 6: Site Inspectors operate exclusively through FieldSync â€” they must
     // never see internal operational navigation (frontend hygiene only; the
     // server-side role middleware remains the security boundary).
     const isSiteInspector = userRole === 'Site Inspector';
@@ -23,6 +23,17 @@ export default function Sidebar({
         {
             href: '/dashboard',
             label: 'Dashboard',
+            badge: null,
+            adminOnly: false,
+            icon: (
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                </svg>
+            ),
+        },
+        {
+            href: '/maps',
+            label: 'Maps',
             badge: null,
             adminOnly: false,
             icon: (
@@ -45,9 +56,24 @@ export default function Sidebar({
             ),
         },
         {
-            href: '/analytics',
-            label: 'Analytics',
-            badge: 'BI',
+            href: '/site-inspections',
+            label: 'Site Inspections',
+            badge: null,
+            // Loop 6 correction: routes/web.php protects every /site-inspections
+            // route with role:Admin. Upstream left this item adminOnly:false,
+            // which showed Planning Officer a link that returns 403. Align the
+            // nav visibility with the enforced route middleware.
+            adminOnly: true,
+            icon: (
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+            ),
+        },
+        {
+            href: '/reports',
+            label: 'Report Generation',
+            badge: null,
             adminOnly: true,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -56,13 +82,13 @@ export default function Sidebar({
             ),
         },
         {
-            href: '/audit-log',
-            label: 'Audit Trail',
+            href: '/users',
+            label: 'User Management',
             badge: null,
             adminOnly: true,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
                 </svg>
             ),
         },
@@ -78,17 +104,6 @@ export default function Sidebar({
                 </svg>
             ),
         },
-        {
-            href: '/users',
-            label: 'User Management',
-            badge: null,
-            adminOnly: true,
-            icon: (
-                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                </svg>
-            ),
-        },
     ];
 
     // Admin sees oversight navigation; Planning Officer sees operational
@@ -101,11 +116,12 @@ export default function Sidebar({
         if (activePage) {
             const normalized = activePage.toLowerCase();
             if (href === '/dashboard' && normalized === 'dashboard') return true;
+            if (href === '/maps' && normalized === 'maps') return true;
             if (href === '/applications' && (normalized === 'applications' || normalized === 'drafts')) return true;
-            if (href === '/analytics' && normalized === 'analytics') return true;
-            if (href === '/audit-log' && (normalized === 'audit' || normalized === 'audit-log')) return true;
+            if (href === '/reports-and-forecasting' && (normalized === 'reports-and-forecasting' || normalized === 'analytics')) return true;
             if (href === '/settings' && normalized === 'settings') return true;
-            if (href === '/users' && (normalized === 'users' || normalized === 'user-management')) return true;
+            if (href === '/users' && (normalized === 'users' || normalized === 'user-management' || normalized === 'audit' || normalized === 'audit-log')) return true;
+            if (href === '/site-inspections' && (normalized === 'site-inspections' || normalized === 'site inspections')) return true;
         }
         if (currentPath === href) return true;
         if (href !== '/dashboard' && href !== '/' && currentPath.startsWith(href)) return true;

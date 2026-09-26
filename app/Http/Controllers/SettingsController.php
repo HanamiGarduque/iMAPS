@@ -18,17 +18,30 @@ class SettingsController extends Controller
     public function uploadShapefile(Request $request)
     {
         $request->validate([
-            'layer_type' => 'required|string',
+            'layer_type' => 'required|string|in:municipal_boundary,barangay_boundary,land_use_plan,land_parcels',
             'shapefile_zip' => 'required|file|mimes:zip|max:51200', // 50MB max
         ]);
 
         $zipFile = $request->file('shapefile_zip');
         $extractPath = storage_path('app/temp_shapefiles/' . uniqid());
+        File::ensureDirectoryExists($extractPath);
         
         // 1. Extract the ZIP
         $zip = new ZipArchive;
         if ($zip->open($zipFile->path()) === TRUE) {
-            $zip->extractTo($extractPath);
+            for ($index = 0; $index < $zip->numFiles; $index++) {
+                $entryName = $zip->getNameIndex($index);
+                if ($entryName === false || str_contains(str_replace('\\', '/', $entryName), '../') || str_starts_with($entryName, '/')) {
+                    $zip->close();
+                    File::deleteDirectory($extractPath);
+                    return back()->withErrors(['shapefile_zip' => 'The archive contains an unsafe file path.']);
+                }
+            }
+            if (!$zip->extractTo($extractPath)) {
+                $zip->close();
+                File::deleteDirectory($extractPath);
+                return back()->withErrors(['shapefile_zip' => 'Failed to extract the shapefile archive.']);
+            }
             $zip->close();
         } else {
             return back()->withErrors(['shapefile_zip' => 'Failed to open the zip file.']);
@@ -46,9 +59,9 @@ class SettingsController extends Controller
         $baseName = $shpFile->getFilenameWithoutExtension();
         $dir = $shpFile->getPath();
 
-        // 3. Validate the Big Four exist together
+        // 3. Validate the Big Five exist together
         $missing = [];
-        foreach (['shx', 'dbf', 'prj'] as $ext) {
+        foreach (['shx', 'dbf', 'prj', 'cpg'] as $ext) {
             if (!File::exists("$dir/$baseName.$ext")) {
                 $missing[] = ".$ext";
             }
@@ -103,6 +116,13 @@ class SettingsController extends Controller
             return back()->withErrors(['shapefile_zip' => 'Database import failed. Check PostgreSQL permissions.']);
         }
 
+        // The map API serves layers from cache; retire it so the next request
+        // rebuilds from the table that was just replaced — then rebuild it
+        // straight away, after this response is sent, so the next person to open
+        // the dashboard isn't the one who waits ~20s for land_use_plan.
+        MapController::flushLayerCache();
+        dispatch(fn () => MapController::warmLayerCache())->afterResponse();
+
         return back()->with('success', 'Map layer updated successfully!');
     }
     public function uploadRasterTiles(Request $request)
@@ -115,18 +135,45 @@ class SettingsController extends Controller
         
         // Define destination in the public directory (accessible to the browser)
         $publicPath = public_path('tiles/clup_tiles');
-        
-        // Clear out the old map tiles to prevent ghost images
-        if (\Illuminate\Support\Facades\File::exists($publicPath)) {
-            \Illuminate\Support\Facades\File::deleteDirectory($publicPath);
-        }
-        
-        // 1. Extract the ZIP directly into the public folder
+
+        // Validate the archive before replacing the currently active tile set.
         $zip = new ZipArchive;
         if ($zip->open($zipFile->path()) === TRUE) {
-            $zip->extractTo($publicPath);
+            $hasTile = false;
+            for ($index = 0; $index < $zip->numFiles; $index++) {
+                $entryName = $zip->getNameIndex($index);
+                $normalizedName = str_replace('\\', '/', (string) $entryName);
+                if ($entryName === false || str_contains($normalizedName, '../') || str_starts_with($normalizedName, '/')) {
+                    $zip->close();
+                    return back()->withErrors(['tiles_zip' => 'The archive contains an unsafe file path.']);
+                }
+                if (preg_match('/\.(png|jpe?g|webp)$/i', $normalizedName)) {
+                    $hasTile = true;
+                }
+            }
+            if (!$hasTile) {
+                $zip->close();
+                return back()->withErrors(['tiles_zip' => 'The archive does not contain PNG, JPG, or WebP map tiles.']);
+            }
+
+            $stagingPath = storage_path('app/temp_tiles/' . uniqid());
+            File::ensureDirectoryExists($stagingPath);
+            if (!$zip->extractTo($stagingPath)) {
+                $zip->close();
+                File::deleteDirectory($stagingPath);
+                return back()->withErrors(['tiles_zip' => 'Failed to extract the tile archive.']);
+            }
             $zip->close();
-            
+
+            // Clear out the old map tiles only after archive validation and extraction succeed.
+            if (File::exists($publicPath)) {
+                File::deleteDirectory($publicPath);
+            }
+            File::ensureDirectoryExists(dirname($publicPath));
+            if (!File::moveDirectory($stagingPath, $publicPath)) {
+                File::deleteDirectory($stagingPath);
+                return back()->withErrors(['tiles_zip' => 'The validated tile archive could not be activated.']);
+            }
             return back()->with('success', 'CLUP raster map overlay updated successfully!');
         } else {
             return back()->withErrors(['tiles_zip' => 'Failed to open the tile zip archive.']);

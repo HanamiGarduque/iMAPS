@@ -6,7 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http; 
+use Illuminate\Support\Facades\Http;
+use App\Models\AuditTrail;
 use Inertia\Inertia;
 
 class UserManagementController extends Controller
@@ -131,7 +132,7 @@ class UserManagementController extends Controller
                 $types = [
                     'locational' => $userApps->where('application_type', 'Locational Clearance')->count(),
                     'development' => $userApps->where('application_type', 'Development Permit')->count(),
-                    'zoning' => $userApps->where('application_type', 'Zoning Certification')->count(),
+                    'zoning' => $userApps->where('application_type', 'Zoning Certificate')->count(),
                     'special' => $userApps->where('application_type', 'Preliminary Approval and Locational Clearance (PALC)')->count(),
                 ];
 
@@ -171,9 +172,34 @@ class UserManagementController extends Controller
             }
         }
 
+        // 6. Calculate total role counts across all users (respecting search if active)
+        $roleCounts = [
+            'total' => DB::table('users')->when($search, function($q) use ($search) {
+                $q->where(function($sub) use ($search) {
+                    $sub->where('name', 'ilike', "%{$search}%")->orWhere('email', 'ilike', "%{$search}%");
+                });
+            })->count(),
+            'po' => DB::table('users')->where('role', 'Planning Officer')->when($search, function($q) use ($search) {
+                $q->where(function($sub) use ($search) {
+                    $sub->where('name', 'ilike', "%{$search}%")->orWhere('email', 'ilike', "%{$search}%");
+                });
+            })->count(),
+            'inspector' => DB::table('users')->where('role', 'Site Inspector')->when($search, function($q) use ($search) {
+                $q->where(function($sub) use ($search) {
+                    $sub->where('name', 'ilike', "%{$search}%")->orWhere('email', 'ilike', "%{$search}%");
+                });
+            })->count(),
+            'admin' => DB::table('users')->where('role', 'Admin')->when($search, function($q) use ($search) {
+                $q->where(function($sub) use ($search) {
+                    $sub->where('name', 'ilike', "%{$search}%")->orWhere('email', 'ilike', "%{$search}%");
+                });
+            })->count(),
+        ];
+
         return Inertia::render('Users/Index', [
             'users' => $users,
-            'filters' => $request->only(['search', 'role'])
+            'filters' => $request->only(['search', 'role']),
+            'role_counts' => $roleCounts,
         ]);
     }
 
@@ -214,6 +240,27 @@ class UserManagementController extends Controller
         ]);
 
         return response()->json(['success' => true]);
+    }
+
+    public function logs($id)
+    {
+        $user = DB::table('users')->select('id', 'name', 'email', 'role')->where('id', $id)->first();
+
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'User not found.'], 404);
+        }
+
+        $logs = AuditTrail::withRelations()
+            ->byUser($id)
+            ->orderByDesc('audit_trail.performed_at')
+            ->limit(200)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'user' => $user,
+            'logs' => $logs,
+        ]);
     }
 
     public function resetPassword(Request $request)

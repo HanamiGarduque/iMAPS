@@ -12,6 +12,9 @@ export default function StepApplicant({
     setApplicantSuggestion,
     errors = {},
 }) {
+    const [showCorp, setShowCorp] = React.useState(!!form.corporation_name || !!form.corporation_contact || !!form.corporation_address);
+    const [showRep, setShowRep] = React.useState(!!form.representative_name || !!form.representative_contact || !!form.representative_address);
+
     return (
         <div className="space-y-4">
             {/* Applicant Autocomplete Suggestion Banner */}
@@ -99,9 +102,10 @@ export default function StepApplicant({
                     </div>
                 </div>
                 {form.applicant_name && (
-                    <div className="mt-2 text-xs text-slate-600 bg-slate-50/90 border border-slate-200/80 px-3 py-1.5 rounded-xl flex items-center gap-2">
-                        <span className="text-[11px] text-slate-500 font-normal">Full Name:</span>
-                        <span className="text-slate-800 font-medium tracking-normal">{form.applicant_name}</span>
+                    <div className="mt-3 flex items-center gap-2">
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Full Name</span>
+                        <div className="h-px bg-slate-200 flex-1"></div>
+                        <span className="text-sm font-semibold text-slate-700 bg-slate-100 px-3 py-1 rounded-full">{form.applicant_name}</span>
                     </div>
                 )}
             </div>
@@ -111,14 +115,14 @@ export default function StepApplicant({
                 <div>
                     <Label required hasError={!!errors.contact_number}>Contact Phone Number</Label>
                     <div className="relative">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+63</span>
+                        <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+639</span>
                         <Input 
                             type="tel" 
-                            value={form.contact_number || ""} 
+                            value={form.contact_number ? form.contact_number.replace(/^9/, "") : ""} 
                             onChange={handleContactInput} 
-                            maxLength={10} 
-                            placeholder="9XXXXXXXXX" 
-                            className="pl-12 font-mono" 
+                            maxLength={9} 
+                            placeholder="XX XXX XXXX" 
+                            className="pl-[4rem] font-mono" 
                             hasError={!!errors.contact_number} 
                         />
                     </div>
@@ -137,89 +141,140 @@ export default function StepApplicant({
                 </div>
             </div>
 
-            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 mt-3">
-                <Label>Corporation / Company (Optional)</Label>
-                <Input
-                    type="text"
-                    value={form.corporation_name || ""}
-                    onChange={set("corporation_name")}
-                    placeholder="Registered corporation / company name"
-                    className="bg-white mt-1"
-                />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                    <div>
-                        <Label>Corporation Contact (Optional)</Label>
-                        <div className="relative">
-                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+63</span>
-                            <Input
-                                type="tel"
-                                value={form.corporation_contact || ""}
-                                onChange={(e) => {
-                                    let val = e.target.value.replace(/\D/g, "");
-                                    if (val.startsWith("0")) val = val.slice(1);
-                                    set("corporation_contact")({ target: { value: val } });
-                                }}
-                                maxLength={10}
-                                placeholder="9XXXXXXXXX"
-                                className="pl-12 font-mono"
-                                hasError={!!errors.corporation_contact}
-                            />
-                            {errors.corporation_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.corporation_contact}</p>}
-                        </div>
-                    </div>
-                    <div>
-                        <Label>Corporation Address (Optional)</Label>
+            <hr className="border-slate-100 my-5" />
+
+            <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setShowCorp(!showCorp)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${showCorp ? 'bg-blue-600' : 'bg-slate-200'}`}
+                    >
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${showCorp ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                    <span className="text-[13px] font-semibold text-slate-700 select-none cursor-pointer" onClick={() => setShowCorp(!showCorp)}>
+                        Applying on behalf of a Corporation / Company
+                    </span>
+                </div>
+
+                {showCorp && (
+                    <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 animate-in fade-in slide-in-from-top-2">
+                        <Label>Corporation / Company Name</Label>
                         <Input
                             type="text"
-                            value={form.corporation_address || ""}
-                            onChange={set("corporation_address")}
-                            placeholder="Registered office address"
+                            value={form.corporation_name || ""}
+                            onChange={set("corporation_name")}
+                            placeholder="Registered corporation / company name"
+                            className="bg-white mt-1"
                         />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                            <div>
+                                <Label>Corporation Contact</Label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+639</span>
+                                    <Input
+                                        type="tel"
+                                        value={form.corporation_contact ? form.corporation_contact.replace(/^9/, "") : ""}
+                                        onChange={(e) => {
+                                            let val = e.target.value.replace(/\D/g, "");
+                                            if (val === "") {
+                                                set("corporation_contact")({ target: { value: "" } });
+                                                return;
+                                            }
+                                            if (val.startsWith("09")) val = val.slice(2);
+                                            else if (val.startsWith("9")) val = val.slice(1);
+                                            val = "9" + val;
+                                            if (val.length > 10) val = val.slice(0, 10);
+                                            set("corporation_contact")({ target: { value: val } });
+                                        }}
+                                        maxLength={9}
+                                        placeholder="XX XXX XXXX"
+                                        className="pl-[4rem] font-mono bg-white"
+                                        hasError={!!errors.corporation_contact}
+                                    />
+                                    {errors.corporation_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.corporation_contact}</p>}
+                                </div>
+                            </div>
+                            <div>
+                                <Label>Corporation Address</Label>
+                                <Input
+                                    type="text"
+                                    value={form.corporation_address || ""}
+                                    onChange={set("corporation_address")}
+                                    placeholder="Registered office address"
+                                    className="bg-white"
+                                />
+                            </div>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
 
-            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 mt-3">
-                <Label>Authorized Representative (Optional)</Label>
-                <Input 
-                    type="text" 
-                    value={form.representative_name || ""} 
-                    onChange={set("representative_name")} 
-                    placeholder="Full legal name of representative / architect / attorney" 
-                    className="bg-white mt-1" 
-                />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-                    <div>
-                        <Label>Representative Contact (Optional)</Label>
-                        <div className="relative">
-                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+63</span>
-                            <Input
-                                type="tel"
-                                value={form.representative_contact || ""}
-                                onChange={(e) => {
-                                    let val = e.target.value.replace(/\D/g, "");
-                                    if (val.startsWith("0")) val = val.slice(1);
-                                    set("representative_contact")({ target: { value: val } });
-                                }}
-                                maxLength={10}
-                                placeholder="9XXXXXXXXX"
-                                className="pl-12 font-mono"
-                                hasError={!!errors.representative_contact}
-                            />
-                            {errors.representative_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.representative_contact}</p>}
+            <div className="space-y-4 pb-2">
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setShowRep(!showRep)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${showRep ? 'bg-blue-600' : 'bg-slate-200'}`}
+                    >
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${showRep ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                    <span className="text-[13px] font-semibold text-slate-700 select-none cursor-pointer" onClick={() => setShowRep(!showRep)}>
+                        Filing through an Authorized Representative
+                    </span>
+                </div>
+
+                {showRep && (
+                    <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 animate-in fade-in slide-in-from-top-2">
+                        <Label>Authorized Representative Name</Label>
+                        <Input 
+                            type="text" 
+                            value={form.representative_name || ""} 
+                            onChange={set("representative_name")} 
+                            placeholder="Full legal name of representative / architect / attorney" 
+                            className="bg-white mt-1" 
+                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                            <div>
+                                <Label>Representative Contact</Label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+639</span>
+                                    <Input
+                                        type="tel"
+                                        value={form.representative_contact ? form.representative_contact.replace(/^9/, "") : ""}
+                                        onChange={(e) => {
+                                            let val = e.target.value.replace(/\D/g, "");
+                                            if (val === "") {
+                                                set("representative_contact")({ target: { value: "" } });
+                                                return;
+                                            }
+                                            if (val.startsWith("09")) val = val.slice(2);
+                                            else if (val.startsWith("9")) val = val.slice(1);
+                                            val = "9" + val;
+                                            if (val.length > 10) val = val.slice(0, 10);
+                                            set("representative_contact")({ target: { value: val } });
+                                        }}
+                                        maxLength={9}
+                                        placeholder="XX XXX XXXX"
+                                        className="pl-[4rem] font-mono bg-white"
+                                        hasError={!!errors.representative_contact}
+                                    />
+                                    {errors.representative_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.representative_contact}</p>}
+                                </div>
+                            </div>
+                            <div>
+                                <Label>Representative Address</Label>
+                                <Input
+                                    type="text"
+                                    value={form.representative_address || ""}
+                                    onChange={set("representative_address")}
+                                    placeholder="Address of authorized representative"
+                                    className="bg-white"
+                                />
+                            </div>
                         </div>
                     </div>
-                    <div>
-                        <Label>Representative Address (Optional)</Label>
-                        <Input
-                            type="text"
-                            value={form.representative_address || ""}
-                            onChange={set("representative_address")}
-                            placeholder="Address of authorized representative"
-                        />
-                    </div>
-                </div>
-                <p className="text-xs text-slate-400 mt-1">Leave blank if the applicant is filing directly without an authorized representative.</p>
+                )}
             </div>
 
 

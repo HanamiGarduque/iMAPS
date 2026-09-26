@@ -38,11 +38,26 @@ class Loop2AssignmentInstructionsOwnershipTest extends TestCase
         $source = file_get_contents($path);
         $this->assertNotFalse($source, "Could not read $path");
 
-        $this->assertStringContainsString('<Label>Assignment Instructions</Label>', $source);
+        // Semantic contract rather than exact markup. Upstream added
+        // hasError/error-display behavior to these controls and removed the
+        // former findings textarea from this scheduling block, so brittle
+        // string assertions no longer describe the real requirement.
+        // What must remain is the assignment-instructions field itself.
+        $this->assertStringContainsString('Assignment Instructions', $source);
         $this->assertStringContainsString('value={parcel.assigned_notes || ""}', $source);
         $this->assertStringContainsString('onChange={setParcelField(index, "assigned_notes")}', $source);
-        $this->assertStringContainsString('value={parcel.findings || ""}', $source);
-        $this->assertStringContainsString('onChange={setParcelField(index, "findings")}', $source);
+
+        // Validation feedback coexists with the field.
+        $this->assertStringContainsString('parcels.${index}.assigned_notes', $source);
+
+        // Both scheduling decisions must reveal the assignment block, and the
+        // assignment fields stay with the inspector/deadline controls.
+        $this->assertStringContainsString(
+            '["Needs Site Inspection", "Requires Reinspection"].includes(decision)',
+            $source
+        );
+        $this->assertStringContainsString('parcel.inspector_id', $source);
+        $this->assertStringContainsString('parcel.deadline_date', $source);
     }
 
     // ── 2. Payload does NOT write inspector_notes ──────────────────────────────

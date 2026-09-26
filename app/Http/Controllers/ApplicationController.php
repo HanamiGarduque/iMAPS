@@ -163,7 +163,7 @@ class ApplicationController extends Controller
         $applicationTypeValues = array_values(array_filter(array_map('trim', explode(',', $applicationTypeInput)), fn ($item) => $item !== ''));
         $allowedApplicationTypes = [
             'Locational Clearance',
-            'Zoning Certification',
+            'Zoning Certificate',
             'Development Permit',
             'Preliminary Approval and Locational Clearance (PALC)',
             'Petition for Rezoning',
@@ -249,13 +249,12 @@ class ApplicationController extends Controller
         } elseif ($validated['application_stream'] === 'permit') {
             $targetLandUseClass = null;
         }
-
-        $referenceNumber = $this->generateReferenceNumber(
-            now()->toDateString()
-        );
-
         DB::beginTransaction();
         try {
+            $referenceNumber = $this->generateReferenceNumber(
+                now()->toDateString()
+            );
+
             // 1. Create the application with the initial 'Received' status
             $application = ZoningApplication::create([
                 'reference_number'           => $referenceNumber,
@@ -578,7 +577,7 @@ class ApplicationController extends Controller
                 'representative_name' => 'Engr. Maria Santos',
                 'contact_number' => '0920-554-1920',
                 'email' => 'msantos@rosarioheights.com',
-                'application_type' => 'Zoning Certification',
+                'application_type' => 'Zoning Certificate',
                 'purpose' => 'Medium-density residential subdivision phase 2',
                 'land_use_class' => 'Residential',
                 'barangay' => 'Poblacion C',
@@ -879,39 +878,24 @@ class ApplicationController extends Controller
 
     private function getNextSequence(string $typeCode, string $year): int
     {
-        $sequenceExists = DB::table('application_sequences')
-            ->where('type_code', $typeCode)
-            ->where('year', $year)
-            ->exists();
+        // Canonical reference sequencing (upstream strategy, retained after merge):
+        // derive the next number from zoning_applications under a row lock so the
+        // value is monotonic and duplicate-safe inside the caller's transaction.
+        // This retires the runtime dependency on the legacy application_sequences
+        // table. The table itself is retained in the database (LEGACY) and is NOT
+        // dropped; only this code path stops reading/writing it.
+        $latest = DB::table('zoning_applications')
+            ->where('reference_number', 'like', "{$typeCode}-{$year}-%")
+            ->lockForUpdate()
+            ->orderBy('reference_number', 'desc')
+            ->value('reference_number');
 
-        $initialSequence = 1;
-        if (!$sequenceExists) {
-            $prefix = $typeCode . '-' . $year . '-';
-            $initialSequence = DB::table('zoning_applications')
-                ->where('reference_number', 'like', $prefix . '%')
-                ->pluck('reference_number')
-                ->map(function (string $reference) use ($prefix): int {
-                    $suffix = substr($reference, strlen($prefix));
-
-                    return preg_match('/^\d{5}$/', $suffix) === 1 ? (int) $suffix : 0;
-                })
-                ->max() + 1;
+        if ($latest) {
+            $parts = explode('-', $latest);
+            return (int) end($parts) + 1;
         }
 
-        DB::table('application_sequences')->upsert(
-            [
-                'type_code' => $typeCode,
-                'year'      => $year,
-                'last_seq'  => $initialSequence,
-            ],
-            ['type_code', 'year'],
-            ['last_seq' => DB::raw('application_sequences.last_seq + 1')]
-        );
-
-        return (int) DB::table('application_sequences')
-            ->where('type_code', $typeCode)
-            ->where('year', $year)
-            ->value('last_seq');
+        return 1;
     }
 
 

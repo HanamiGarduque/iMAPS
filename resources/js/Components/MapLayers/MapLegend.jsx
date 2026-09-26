@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
+import { STATUS_MARKER_CONFIG } from '@/Components/MapLayers/StatusPanel';
 
-export default function MapLegend({ activeLayer, year = 2026 }) {
+// Legend for the status, growth and CLUP layers.
+//
+// The diversity layer has its own lens-aware legend (DiversityLegend) that
+// renders whichever scale the map is actually painting with; this component
+// deliberately no longer carries a second, competing diversity key.
+export default function MapLegend({
+    activeLayer,
+    urbanGrowthData = null,
+}) {
     const [isExpanded, setIsExpanded] = useState(true);
     const [isPinned, setIsPinned] = useState(() => {
         const saved = localStorage.getItem("imaps_legend_pinned");
@@ -30,7 +39,7 @@ export default function MapLegend({ activeLayer, year = 2026 }) {
             )
         },
         trends: {
-            title: `Land Use Trends (${year})`,
+            title: `Land Use Trends`,
             subtitle: "Urban Growth & Zones",
             icon: (
                 <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -42,7 +51,7 @@ export default function MapLegend({ activeLayer, year = 2026 }) {
             title: "Land Use & Economic Mix",
             subtitle: "Municipal Activity Balance",
             icon: (
-                <svg className="w-3.5 h-3.5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <svg className="w-3.5 h-3.5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
                 </svg>
@@ -105,7 +114,7 @@ export default function MapLegend({ activeLayer, year = 2026 }) {
             {!isExpanded && (
                 <button
                     onClick={handleExpand}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-slate-800 backdrop-blur-xl border border-slate-200/80 shadow-[0_4px_16px_rgba(0,0,0,0.12)] hover:shadow-lg transition-all group hover:scale-[1.02]"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-slate-800 backdrop-blur-xl border border-slate-200/80 shadow-[0_4px_16px_rgba(0,0,0,0.12)] hover:shadow-lg transition-all group hover:scale-[1.02] cursor-pointer"
                     title="Click to view full map legend"
                 >
                     <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
@@ -126,15 +135,15 @@ export default function MapLegend({ activeLayer, year = 2026 }) {
 
             {/* 2. Expanded Google Maps Style Standard Legend Card */}
             {isExpanded && (
-                <div className="w-[260px] bg-white/95 backdrop-blur-2xl rounded-2xl shadow-[0_12px_32px_rgba(0,0,0,0.15)] border border-slate-200/80 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-3 duration-200">
+                <div className="w-[275px] bg-white/95 backdrop-blur-2xl rounded-2xl shadow-[0_12px_32px_rgba(0,0,0,0.15)] border border-slate-200/80 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-3 duration-200">
                     
-                    {/* Top 10-Second Countdown Progress Bar */}
+                    {/* Top 15-Second Countdown Progress Bar */}
                     {!isPinned && (
                         <div className="h-1 w-full bg-slate-100 overflow-hidden relative">
                             <div 
                                 className={`h-full transition-all linear ${isHovered ? 'bg-amber-400' : 'bg-blue-600'}`}
                                 style={{ 
-                                    width: `${(timeLeft / 10) * 100}%`,
+                                    width: `${(timeLeft / 15) * 100}%`,
                                     transitionDuration: isHovered ? '0ms' : '1000ms'
                                 }}
                             />
@@ -168,7 +177,7 @@ export default function MapLegend({ activeLayer, year = 2026 }) {
                         <div className="flex items-center gap-1 shrink-0">
                             <button
                                 onClick={togglePin}
-                                className={`p-1 rounded-md transition-colors ${
+                                className={`p-1 rounded-md transition-colors cursor-pointer ${
                                     isPinned 
                                         ? 'bg-blue-100 text-blue-700' 
                                         : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
@@ -181,7 +190,7 @@ export default function MapLegend({ activeLayer, year = 2026 }) {
                             </button>
                             <button
                                 onClick={() => setIsExpanded(false)}
-                                className="p-1 rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors"
+                                className="p-1 rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors cursor-pointer"
                                 title="Minimize Legend"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -232,72 +241,82 @@ export default function MapLegend({ activeLayer, year = 2026 }) {
                                         <span>Barangay</span>
                                     </div>
                                 </div>
+
+                                {/* Application Status Pin Color Key */}
+                                <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                                        <span>Status Pins</span>
+                                        <span className="text-[8.5px] font-mono font-semibold text-blue-600 bg-blue-50 px-1 py-0.5 rounded">
+                                            Interactive
+                                        </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+                                        {Object.entries(STATUS_MARKER_CONFIG).map(([key, meta]) => (
+                                            <div key={key} className="flex items-center gap-1.5">
+                                                <span
+                                                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                                                    style={{ backgroundColor: meta.color, boxShadow: `0 0 0 2px ${meta.badgeBg}` }}
+                                                />
+                                                <span className="text-[10.5px] font-semibold text-slate-700 truncate">{meta.shortLabel}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         )}
 
-                        {/* 2. Trends Layer (Categorical Google Maps POI-Style Swatches) */}
+                        {/* 2. Trends Layer — CLUP mix (real, from backend) + permit pin key */}
                         {activeLayer === 'trends' && (
                             <div className="space-y-2">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                                    Land Use Zones
+                                    CLUP 2030 Land Use Mix
                                 </span>
 
                                 <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#22c55e] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Residential</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Commercial</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#8b5cf6] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Agro-Ind</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Industrial</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#84cc16] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Agricultural</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded-full bg-[#64748b] shrink-0 shadow-xs" />
-                                        <span className="text-[11px] font-medium text-slate-700 truncate">Special/Util</span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 3. Diversity Layer (Continuous Economic Mix Spectrum Bar) */}
-                        {activeLayer === 'diversity' && (
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold">
-                                    <span>Land Use & Economic Mix</span>
-                                    <span className="font-mono text-emerald-700 font-bold bg-emerald-50 px-1 rounded">0.78 Mix</span>
+                                    {(urbanGrowthData?.municipal?.breakdown || []).map(([label, , , pct, color]) => (
+                                        <div key={label} className="flex items-center gap-1.5">
+                                            <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" style={{ backgroundColor: color }} />
+                                            <span className="text-[11px] font-medium text-slate-700 truncate">
+                                                {label} ({pct}%)
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
 
-                                {/* Continuous Spectrum */}
-                                <div className="h-2.5 w-full rounded-full shadow-inner bg-gradient-to-r from-slate-200 via-purple-300 to-purple-800 relative">
-                                    {/* Active Rosario Marker */}
-                                    <div 
-                                        className="absolute -top-1 w-4 h-4 bg-white border-2 border-purple-700 rounded-full shadow-md -translate-x-1/2" 
-                                        style={{ left: '78%' }}
-                                        title="Rosario: 0.78 (Well-Mixed)"
-                                    />
+                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-600">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="w-3.5 h-0.5 border-t-2 border-blue-800 border-dashed inline-block" />
+                                        <span>Brgy Boundary</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="w-2.5 h-2.5 rounded bg-blue-500/20 border border-blue-600 inline-block" />
+                                        <span>Selected Brgy</span>
+                                    </div>
                                 </div>
 
-                                <div className="flex justify-between text-[8px] uppercase tracking-wider text-slate-400 font-bold px-0.5">
-                                    <span>Single-Use (0.0)</span>
-                                    <span>Balanced (0.5)</span>
-                                    <span className="text-purple-700 font-bold">Well-Mixed (1.0)</span>
-                                </div>
-
-                                <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                                    <span className="text-slate-500">Primary Sector:</span>
-                                    <span className="font-bold text-purple-700">Agro-Industrial (65%)</span>
+                                <div className="pt-2 border-t border-slate-100 space-y-1">
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
+                                        Active Permit Pins
+                                    </span>
+                                    <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-2.5 h-2.5 rounded-md bg-[#f59e0b] shrink-0" />
+                                            <span className="text-[10px] text-slate-600">Commercial</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-2.5 h-2.5 rounded-md bg-[#ef4444] shrink-0" />
+                                            <span className="text-[10px] text-slate-600">Industrial</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-2.5 h-2.5 rounded-md bg-[#8b5cf6] shrink-0" />
+                                            <span className="text-[10px] text-slate-600">Agro-Industrial</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="w-2.5 h-2.5 rounded-md bg-[#10b981] shrink-0" />
+                                            <span className="text-[10px] text-slate-600">Residential</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}

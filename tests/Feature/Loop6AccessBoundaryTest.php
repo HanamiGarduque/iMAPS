@@ -97,10 +97,14 @@ class Loop6AccessBoundaryTest extends TestCase
     {
         $this->establishSiteInspectorSession();
 
+        // Upstream replaced the retired /analytics page with /reports and the
+        // /audit-log page with the per-user Activity Log endpoint. The Loop 6
+        // security rule is unchanged: these Admin-only surfaces must still
+        // return 403 for an existing Site Inspector session.
         foreach ([
             '/register-new-account',
-            '/analytics',
-            '/audit-log',
+            '/reports',
+            '/users/1/logs',
             '/settings',
             '/users',
         ] as $uri) {

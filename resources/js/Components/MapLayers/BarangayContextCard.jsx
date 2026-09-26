@@ -1,6 +1,6 @@
 import React from "react";
 
-export default function BarangayContextCard({ activeLayer, barangayName, data, year, onClose }) {
+export default function BarangayContextCard({ activeLayer, barangayName, data, onClose }) {
     if (!barangayName) return null;
 
     // Fallback data if unmapped
@@ -29,12 +29,8 @@ export default function BarangayContextCard({ activeLayer, barangayName, data, y
                 return (
                     <div className="mt-3 space-y-2">
                         <div className="flex items-center justify-between p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl">
-                            <span className="text-xs font-bold text-indigo-800">Projected Land Use</span>
+                            <span className="text-xs font-bold text-indigo-800">Primary Land Use</span>
                             <span className="text-xs font-black text-indigo-900 bg-indigo-100 px-2 py-0.5 rounded-md">{stats.landUse}</span>
-                        </div>
-                        <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-xl">
-                            <span className="text-xs font-bold text-slate-600">Simulated Year</span>
-                            <span className="text-xs font-mono font-bold text-slate-800">{year}</span>
                         </div>
                     </div>
                 );

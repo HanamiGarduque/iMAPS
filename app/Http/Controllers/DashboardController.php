@@ -2,136 +2,130 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ForecastRun;
+use App\Models\SiteInspection;
+use App\Models\User;
 use App\Models\ZoningApplication;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request)
+    // Landing page after login: welcome message, KPIs, and an analytics preview
+    // that surfaces the descriptive/forecasting work from the two system objectives
+    // (spatio-temporal application trends + the SARIMAX 6-month forecast) without
+    // duplicating the full Analytics or Maps pages.
+    public function index()
     {
-        $appType = $request->input('application_type');
+        $user = Auth::user();
+        $isAdmin = ($user->role ?? null) === 'Admin';
 
-        $query = ZoningApplication::query();
-        if ($appType && $appType !== 'All') {
-            $query->where('application_type', 'like', "%{$appType}%");
-        }
+        $now = now();
+        $startOfMonth = $now->copy()->startOfMonth();
+        $startOfLastMonth = $now->copy()->subMonthNoOverflow()->startOfMonth();
+        $endOfLastMonth = $now->copy()->subMonthNoOverflow()->endOfMonth();
 
-        $total = (clone $query)->count();
-        $thisMonth = (clone $query)->whereYear('created_at', now()->year)
-            ->whereMonth('created_at', now()->month)
-            ->count();
+        $total = ZoningApplication::count();
+        $thisMonthCount = ZoningApplication::where('created_at', '>=', $startOfMonth)->count();
+        $lastMonthCount = ZoningApplication::whereBetween('created_at', [$startOfLastMonth, $endOfLastMonth])->count();
+        $monthOverMonthPct = $lastMonthCount > 0
+            ? round((($thisMonthCount - $lastMonthCount) / $lastMonthCount) * 100)
+            : ($thisMonthCount > 0 ? 100 : 0);
 
-        $statusMap = (clone $query)->select('status', DB::raw('COUNT(*) as cnt'))
+        $statusCounts = ZoningApplication::select('status', DB::raw('COUNT(*) as cnt'))
             ->groupBy('status')
             ->pluck('cnt', 'status');
 
-        $bgyRows = (clone $query)->select('barangay', 'status', 'target_land_use_class', DB::raw('COUNT(*) as cnt'))
+        $pending = (int) (($statusCounts['Received'] ?? 0)
+            + ($statusCounts['Technical Review'] ?? 0)
+            + ($statusCounts['Under Sangguniang Bayan'] ?? 0));
+        $released = (int) (($statusCounts['Released'] ?? 0) + ($statusCounts['For Release'] ?? 0));
+        $denied = (int) ($statusCounts['Denied'] ?? 0);
+
+        // ── Descriptive Analytics: application volume trend, last 6 months ──
+        $trendRows = ZoningApplication::select(
+                DB::raw("to_char(created_at, 'YYYY-MM') as ym"),
+                DB::raw('COUNT(*) as cnt')
+            )
+            ->where('created_at', '>=', $now->copy()->subMonths(5)->startOfMonth())
+            ->groupBy('ym')
+            ->pluck('cnt', 'ym');
+
+        $monthlyTrend = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = $now->copy()->subMonths($i);
+            $key = $month->format('Y-m');
+            $monthlyTrend[] = [
+                'month' => $month->format('M'),
+                'count' => (int) ($trendRows[$key] ?? 0),
+            ];
+        }
+
+        // ── Spatial Clustering: application volume by barangay ──
+        $topBarangays = ZoningApplication::select('barangay', DB::raw('COUNT(*) as cnt'))
             ->whereNotNull('barangay')
             ->where('barangay', '!=', '')
-            ->groupBy('barangay', 'status', 'target_land_use_class')
+            ->groupBy('barangay')
+            ->orderByDesc('cnt')
+            ->limit(5)
+            ->get()
+            ->map(fn ($row) => ['barangay' => $row->barangay, 'count' => (int) $row->cnt]);
+
+        // ── Recent Activity ──
+        $recent = ZoningApplication::select('id', 'reference_number', 'applicant_name', 'application_type', 'status', 'barangay', 'created_at')
+            ->orderByDesc('created_at')
+            ->limit(6)
             ->get();
 
-        $bgyStats = [];
-        foreach ($bgyRows as $row) {
-            $b = trim($row->barangay);
-            if (!isset($bgyStats[$b])) {
-                $bgyStats[$b] = [
-                    'Total' => 0,
-                    'Technical Review' => 0,
-                    'Released' => 0,
-                    'Primary_Zone' => $row->target_land_use_class ?? 'Residential'
+        // ── SARIMAX Forecast Preview (objective 3.2), reusing the latest saved run ──
+        $latestRun = ForecastRun::with('outputs')->latest()->first();
+        $forecastPreview = [];
+        $forecastMetrics = null;
+
+        if ($latestRun) {
+            $forecastMetrics = $latestRun->model_metrics;
+            $history = is_array($latestRun->historical_data) ? array_slice($latestRun->historical_data, -3) : [];
+
+            foreach ($history as $h) {
+                $forecastPreview[] = [
+                    'date' => substr($h['metric_date'], 0, 7),
+                    'historical' => (float) $h['target_value'],
+                    'forecast' => null,
                 ];
             }
-            if (stripos($row->status, 'Review') !== false) {
-                $bgyStats[$b]['Technical Review'] += (int) $row->cnt;
-            } elseif (stripos($row->status, 'Release') !== false) {
-                $bgyStats[$b]['Released'] += (int) $row->cnt;
+
+            foreach ($latestRun->outputs as $f) {
+                $forecastPreview[] = [
+                    'date' => substr($f->forecast_date, 0, 7),
+                    'historical' => null,
+                    'forecast' => (float) $f->mean_value,
+                ];
             }
-            $bgyStats[$b]['Total'] += (int) $row->cnt;
         }
 
-        // Calculate Diversity Index via land_use_plan for both Barangay & Municipal levels
-        $landUseQuery = DB::table('land_use_plan')
-            ->select('location', 'lup_2030', DB::raw('SUM(shape_area) as feature_area'))
-            ->whereNotNull('location')
-            ->groupBy('location', 'lup_2030')
-            ->get();
-
-        $bgyDiversity = [];
-        $municipalTotal = 0;
-        $municipalZones = [];
-
-        foreach ($landUseQuery as $lu) {
-            $b = trim($lu->location);
-            $area = (float) $lu->feature_area;
-            
-            $bgyDiversity[$b]['total'] = ($bgyDiversity[$b]['total'] ?? 0) + $area;
-            $bgyDiversity[$b]['zones'][$lu->lup_2030] = ($bgyDiversity[$b]['zones'][$lu->lup_2030] ?? 0) + $area;
-
-            $municipalTotal += $area;
-            $municipalZones[$lu->lup_2030] = ($municipalZones[$lu->lup_2030] ?? 0) + $area;
-        }
-
-        // Apply Simpson's Diversity Index Formula (Barangay Level) based on area proportions
-        foreach ($bgyDiversity as $b => $data) {
-            $sumOfSquares = 0;
-            $N = $data['total'];
-            $distribution = [];
-            
-            if ($N > 0) {
-                foreach ($data['zones'] as $zone => $area) {
-                    $p = $area / $N;
-                    $sumOfSquares += ($p * $p);
-                    $distribution[] = ['name' => $zone, 'value' => round($p * 100, 1)];
-                }
-            }
-            
-            // Sort highest percentage first
-            usort($distribution, fn($a, $b) => $b['value'] <=> $a['value']);
-            
-            if (!isset($bgyStats[$b])) {
-                $bgyStats[$b] = ['Total' => 0, 'Technical Review' => 0, 'Released' => 0, 'Primary_Zone' => $distribution[0]['name'] ?? 'Residential'];
-            }
-            $bgyStats[$b]['diversity'] = round(1 - $sumOfSquares, 2);
-            $bgyStats[$b]['distribution'] = $distribution;
-        }
-
-        // Apply Simpson's Diversity Index Formula (Municipal Level)
-        $munSumOfSquares = 0;
-        $munDistribution = [];
-        if ($municipalTotal > 0) {
-            foreach ($municipalZones as $zone => $count) {
-                $p = $count / $municipalTotal;
-                $munSumOfSquares += ($p * $p);
-                $munDistribution[] = ['name' => $zone, 'value' => round($p * 100)];
-            }
-            usort($munDistribution, fn($a, $b) => $b['value'] <=> $a['value']);
-        }
-
-        $overallDiversity = [
-            'score' => round(1 - $munSumOfSquares, 2),
-            'primary' => $munDistribution[0]['name'] ?? 'Multi-Sector',
-            'distribution' => array_slice($munDistribution, 0, 4) // Keep top 4 for donut chart
-        ];
-
-        $recent = (clone $query)->select('id', 'reference_number', 'applicant_name', 'application_type', 'status', 'barangay')
-            ->orderByDesc('created_at')
-            ->limit(50)
-            ->get();
+        // ── Operational KPI: field inspections in flight ──
+        $inspectionsInProgress = SiteInspection::whereIn('status', ['assigned', 'pending', 'in-progress'])->count();
 
         return Inertia::render('Dashboard', [
-            'userName'  => Auth::user()->name ?? 'Staff',
-            'userRole'  => Auth::user()->role ?? 'User',
-            'total'     => $total,
-            'thisMonth' => $thisMonth,
-            'statusMap' => $statusMap,
-            'recent'    => $recent,
-            'bgyStats'  => $bgyStats,
-            'overallDiversity' => $overallDiversity,
-            'filters'   => ['application_type' => $appType ?? 'Zoning Certificate'],
+            'userName' => $user->name ?? 'Staff',
+            'userRole' => $user->role ?? 'User',
+            'kpis' => [
+                'total' => $total,
+                'thisMonth' => $thisMonthCount,
+                'monthOverMonthPct' => $monthOverMonthPct,
+                'pending' => $pending,
+                'released' => $released,
+                'denied' => $denied,
+                'inspectionsInProgress' => $inspectionsInProgress,
+                'usersCount' => $isAdmin ? User::count() : null,
+            ],
+            'monthlyTrend' => $monthlyTrend,
+            'topBarangays' => $topBarangays,
+            'recent' => $recent,
+            'forecastPreview' => $forecastPreview,
+            'forecastMetrics' => $forecastMetrics,
+            'hasForecast' => (bool) $latestRun,
         ]);
     }
 }

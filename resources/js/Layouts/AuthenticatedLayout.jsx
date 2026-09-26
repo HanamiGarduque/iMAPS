@@ -33,8 +33,8 @@ export default function AuthenticatedLayout({ header, children }) {
                                 </NavLink>
 
                                 <NavLink
-                                    href="/analytics"
-                                    active={currentPath === '/analytics'}
+                                    href="/reports"
+                                    active={currentPath === '/reports'}
                                 >
                                     Analytics
                                 </NavLink>
@@ -142,7 +142,7 @@ export default function AuthenticatedLayout({ header, children }) {
 
                         <ResponsiveNavLink
                             href="/analytics"
-                            active={currentPath === '/analytics'}
+                            active={currentPath === '/reports-and-forecasting'}
                         >
                             Analytics
                         </ResponsiveNavLink>

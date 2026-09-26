@@ -1,0 +1,2082 @@
+[
+  {
+    "name": "Alupay",
+    "diversity": 0.63,
+    "zone": "PDA-SZ",
+    "area_ha": 502,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 56
+      },
+      {
+        "name": "R1-Z",
+        "value": 22.1
+      },
+      {
+        "name": "C1-Z",
+        "value": 9.7
+      },
+      {
+        "name": "WZ",
+        "value": 3.4
+      },
+      {
+        "name": "C/MP-Z",
+        "value": 2.4
+      },
+      {
+        "name": "ROAD",
+        "value": 1.9
+      },
+      {
+        "name": "GI-Z",
+        "value": 1.7
+      },
+      {
+        "name": "R2-Z",
+        "value": 1.3
+      },
+      {
+        "name": "T-Z",
+        "value": 0.8
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.4
+      },
+      {
+        "name": "PR-Z",
+        "value": 0.1
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 0.1
+      },
+      {
+        "name": "I2-Z",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Antipolo",
+    "diversity": 0.09,
+    "zone": "PDA-SZ",
+    "area_ha": 721,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 95.4
+      },
+      {
+        "name": "WZ",
+        "value": 2.9
+      },
+      {
+        "name": "R1-Z",
+        "value": 0.6
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 0.6
+      },
+      {
+        "name": "ROAD",
+        "value": 0.5
+      },
+      {
+        "name": "GI-Z",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Bagong Pook",
+    "diversity": 0.76,
+    "zone": "PDA-SZ",
+    "area_ha": 543,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 40
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 20.7
+      },
+      {
+        "name": "R1-Z",
+        "value": 14.1
+      },
+      {
+        "name": "C1-Z",
+        "value": 13.3
+      },
+      {
+        "name": "WZ",
+        "value": 2.7
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 2.6
+      },
+      {
+        "name": "AgIndZ",
+        "value": 2.1
+      },
+      {
+        "name": "ROAD",
+        "value": 2.1
+      },
+      {
+        "name": "I2-Z",
+        "value": 0.8
+      },
+      {
+        "name": "FZ",
+        "value": 0.6
+      },
+      {
+        "name": "C/MP-Z",
+        "value": 0.5
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.3
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.2
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0.1
+      },
+      {
+        "name": "UTS-Z",
+        "value": 0.1
+      },
+      {
+        "name": "I1-Z",
+        "value": 0
+      },
+      {
+        "name": "T-Z",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Balibago",
+    "diversity": 0.31,
+    "zone": "PDA-SZ",
+    "area_ha": 237,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 82.4
+      },
+      {
+        "name": "R1-Z",
+        "value": 10.1
+      },
+      {
+        "name": "WZ",
+        "value": 4.9
+      },
+      {
+        "name": "ROAD",
+        "value": 1.2
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 1.2
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      }
+    ]
+  },
+  {
+    "name": "Bayawang",
+    "diversity": 0.56,
+    "zone": "PDA-SZ",
+    "area_ha": 555,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 63
+      },
+      {
+        "name": "FZ",
+        "value": 14.5
+      },
+      {
+        "name": "ECT-Z",
+        "value": 13
+      },
+      {
+        "name": "WZ",
+        "value": 4
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 2.8
+      },
+      {
+        "name": "ROAD",
+        "value": 1
+      },
+      {
+        "name": "R1-Z",
+        "value": 0.7
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 0.5
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.4
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Baybayin",
+    "diversity": 0.8,
+    "zone": "PDA-SZ",
+    "area_ha": 398,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 32.7
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 19.9
+      },
+      {
+        "name": "R1-Z",
+        "value": 16.3
+      },
+      {
+        "name": "I1-Z",
+        "value": 11.5
+      },
+      {
+        "name": "C1-Z",
+        "value": 9.7
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 3.3
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 3.1
+      },
+      {
+        "name": "ROAD",
+        "value": 2.5
+      },
+      {
+        "name": "WZ",
+        "value": 0.6
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.4
+      },
+      {
+        "name": "I2-Z",
+        "value": 0.1
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Bulihan",
+    "diversity": 0.65,
+    "zone": "PDA-SZ",
+    "area_ha": 806,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 49.4
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 32
+      },
+      {
+        "name": "R1-Z",
+        "value": 6
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 2.8
+      },
+      {
+        "name": "C1-Z",
+        "value": 2.5
+      },
+      {
+        "name": "WZ",
+        "value": 2.2
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 2
+      },
+      {
+        "name": "ROAD",
+        "value": 1.5
+      },
+      {
+        "name": "FZ",
+        "value": 1.4
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      }
+    ]
+  },
+  {
+    "name": "Cahigam",
+    "diversity": 0.67,
+    "zone": "PTA-SZ-RA",
+    "area_ha": 371,
+    "dist": [
+      {
+        "name": "PTA-SZ-RA",
+        "value": 40.7
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 39.1
+      },
+      {
+        "name": "R1-Z",
+        "value": 6.3
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 4.5
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 3.2
+      },
+      {
+        "name": "C1-Z",
+        "value": 2.5
+      },
+      {
+        "name": "WZ",
+        "value": 2.1
+      },
+      {
+        "name": "ROAD",
+        "value": 1.6
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Calantas",
+    "diversity": 0.32,
+    "zone": "PDA-SZ",
+    "area_ha": 1180,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 81.4
+      },
+      {
+        "name": "C1-Z",
+        "value": 12.8
+      },
+      {
+        "name": "R1-Z",
+        "value": 2.5
+      },
+      {
+        "name": "WZ",
+        "value": 2.3
+      },
+      {
+        "name": "ROAD",
+        "value": 0.7
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.3
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 0.1
+      },
+      {
+        "name": "FR-SZ",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Colongan",
+    "diversity": 0.75,
+    "zone": "FZ",
+    "area_ha": 449,
+    "dist": [
+      {
+        "name": "FZ",
+        "value": 39.8
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 22.2
+      },
+      {
+        "name": "I1-Z",
+        "value": 15.4
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 13.4
+      },
+      {
+        "name": "WZ",
+        "value": 6.7
+      },
+      {
+        "name": "ROAD",
+        "value": 1.2
+      },
+      {
+        "name": "R1-Z",
+        "value": 0.9
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0.3
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Itlugan",
+    "diversity": 0.77,
+    "zone": "PDA-SZ",
+    "area_ha": 525,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 33.2
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 27.7
+      },
+      {
+        "name": "FZ",
+        "value": 17.4
+      },
+      {
+        "name": "R1-Z",
+        "value": 9.8
+      },
+      {
+        "name": "C1-Z",
+        "value": 5.4
+      },
+      {
+        "name": "WZ",
+        "value": 3.7
+      },
+      {
+        "name": "ROAD",
+        "value": 1.8
+      },
+      {
+        "name": "T-Z",
+        "value": 0.3
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0.2
+      },
+      {
+        "name": "I1-Z",
+        "value": 0.2
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Lumbangan",
+    "diversity": 0.72,
+    "zone": "PDA-SZ",
+    "area_ha": 337,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 40.9
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 29.4
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 13.2
+      },
+      {
+        "name": "R1-Z",
+        "value": 7
+      },
+      {
+        "name": "C1-Z",
+        "value": 4.1
+      },
+      {
+        "name": "ROAD",
+        "value": 2.2
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 1.1
+      },
+      {
+        "name": "T-Z",
+        "value": 1
+      },
+      {
+        "name": "WZ",
+        "value": 0.5
+      },
+      {
+        "name": "FZ",
+        "value": 0.4
+      },
+      {
+        "name": "AgIndZ",
+        "value": 0.2
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Maalas-As",
+    "diversity": 0.81,
+    "zone": "FZ",
+    "area_ha": 231,
+    "dist": [
+      {
+        "name": "FZ",
+        "value": 29.4
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 22.9
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 19.8
+      },
+      {
+        "name": "R1-Z",
+        "value": 10.2
+      },
+      {
+        "name": "WZ",
+        "value": 5.2
+      },
+      {
+        "name": "C1-Z",
+        "value": 3.4
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 2.8
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 2.4
+      },
+      {
+        "name": "I1-Z",
+        "value": 1.7
+      },
+      {
+        "name": "CMRF",
+        "value": 1
+      },
+      {
+        "name": "ROAD",
+        "value": 1
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      },
+      {
+        "name": "T-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Mabato",
+    "diversity": 0.51,
+    "zone": "PDA-SZ",
+    "area_ha": 839,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 68.7
+      },
+      {
+        "name": "I1-Z",
+        "value": 8.9
+      },
+      {
+        "name": "FZ",
+        "value": 7
+      },
+      {
+        "name": "R1-Z",
+        "value": 4.8
+      },
+      {
+        "name": "WZ",
+        "value": 4.4
+      },
+      {
+        "name": "C1-Z",
+        "value": 2.5
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 1.5
+      },
+      {
+        "name": "ROAD",
+        "value": 1.1
+      },
+      {
+        "name": "5491-APDA-SZ",
+        "value": 0.3
+      },
+      {
+        "name": "T-Z",
+        "value": 0.3
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0.3
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 0.2
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Mabunga",
+    "diversity": 0.38,
+    "zone": "PDA-SZ",
+    "area_ha": 439,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 77.7
+      },
+      {
+        "name": "FZ",
+        "value": 11.3
+      },
+      {
+        "name": "R1-Z",
+        "value": 5
+      },
+      {
+        "name": "WZ",
+        "value": 3.2
+      },
+      {
+        "name": "ROAD",
+        "value": 1.3
+      },
+      {
+        "name": "C1-Z",
+        "value": 0.7
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 0.6
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Macalamcam A",
+    "diversity": 0.19,
+    "zone": "PDA-SZ",
+    "area_ha": 292,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 89.6
+      },
+      {
+        "name": "WZ",
+        "value": 3.4
+      },
+      {
+        "name": "R1-Z",
+        "value": 2.3
+      },
+      {
+        "name": "ROAD",
+        "value": 1.5
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 1
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.9
+      },
+      {
+        "name": "T-Z",
+        "value": 0.6
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.4
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0.3
+      }
+    ]
+  },
+  {
+    "name": "Macalamcam B",
+    "diversity": 0.42,
+    "zone": "PDA-SZ",
+    "area_ha": 376,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 75.5
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 8.1
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 6.1
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 4.6
+      },
+      {
+        "name": "WZ",
+        "value": 3.8
+      },
+      {
+        "name": "ROAD",
+        "value": 0.9
+      },
+      {
+        "name": "R1-Z",
+        "value": 0.7
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.3
+      }
+    ]
+  },
+  {
+    "name": "Malaya",
+    "diversity": 0.47,
+    "zone": "FZ",
+    "area_ha": 173,
+    "dist": [
+      {
+        "name": "FZ",
+        "value": 70.8
+      },
+      {
+        "name": "R1-Z",
+        "value": 15.2
+      },
+      {
+        "name": "WZ",
+        "value": 6
+      },
+      {
+        "name": "ROAD",
+        "value": 2.9
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 2.5
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 1.6
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.6
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.4
+      }
+    ]
+  },
+  {
+    "name": "Maligaya",
+    "diversity": 0.7,
+    "zone": "PDA-SZ",
+    "area_ha": 228,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 48.9
+      },
+      {
+        "name": "ECT-Z",
+        "value": 16.6
+      },
+      {
+        "name": "T-Z",
+        "value": 13.6
+      },
+      {
+        "name": "R1-Z",
+        "value": 7.4
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 5.4
+      },
+      {
+        "name": "WZ",
+        "value": 2.4
+      },
+      {
+        "name": "C1-Z",
+        "value": 2.2
+      },
+      {
+        "name": "ROAD",
+        "value": 1.8
+      },
+      {
+        "name": "FZ",
+        "value": 1.4
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      }
+    ]
+  },
+  {
+    "name": "Marilag",
+    "diversity": 0.64,
+    "zone": "PDA-SZ",
+    "area_ha": 302,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 55.4
+      },
+      {
+        "name": "FZ",
+        "value": 18.5
+      },
+      {
+        "name": "R1-Z",
+        "value": 11.2
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 6.5
+      },
+      {
+        "name": "WZ",
+        "value": 4.6
+      },
+      {
+        "name": "ROAD",
+        "value": 1.5
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 1.4
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.7
+      },
+      {
+        "name": "GI-Z",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Masaya",
+    "diversity": 0.83,
+    "zone": "I1-Z",
+    "area_ha": 373,
+    "dist": [
+      {
+        "name": "I1-Z",
+        "value": 33
+      },
+      {
+        "name": "R2-Z",
+        "value": 15.6
+      },
+      {
+        "name": "FZ",
+        "value": 9.2
+      },
+      {
+        "name": "I3-Z",
+        "value": 8.8
+      },
+      {
+        "name": "R1-Z",
+        "value": 6.9
+      },
+      {
+        "name": "C1-Z",
+        "value": 6.8
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 4.9
+      },
+      {
+        "name": "ROAD",
+        "value": 4.5
+      },
+      {
+        "name": "I2-Z",
+        "value": 3.7
+      },
+      {
+        "name": "WZ",
+        "value": 3
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 1.8
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 1.1
+      },
+      {
+        "name": "T-Z",
+        "value": 0.3
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.3
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      }
+    ]
+  },
+  {
+    "name": "Matamis",
+    "diversity": 0.14,
+    "zone": "PDA-SZ",
+    "area_ha": 297,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 92.4
+      },
+      {
+        "name": "FR-SZ",
+        "value": 5.8
+      },
+      {
+        "name": "WZ",
+        "value": 0.8
+      },
+      {
+        "name": "R1-Z",
+        "value": 0.5
+      },
+      {
+        "name": "ROAD",
+        "value": 0.4
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Mavalor",
+    "diversity": 0.68,
+    "zone": "PTA-SZ-RA",
+    "area_ha": 333,
+    "dist": [
+      {
+        "name": "PTA-SZ-RA",
+        "value": 47.3
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 28.6
+      },
+      {
+        "name": "FZ",
+        "value": 7.5
+      },
+      {
+        "name": "R2-Z",
+        "value": 6.1
+      },
+      {
+        "name": "R1-Z",
+        "value": 4.8
+      },
+      {
+        "name": "ROAD",
+        "value": 2.1
+      },
+      {
+        "name": "WZ",
+        "value": 1.8
+      },
+      {
+        "name": "C1-Z",
+        "value": 1.4
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      },
+      {
+        "name": "I2-Z",
+        "value": 0
+      },
+      {
+        "name": "T-Z",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Mayuro",
+    "diversity": 0.66,
+    "zone": "PDA-SZ",
+    "area_ha": 461,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 54.7
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 14.2
+      },
+      {
+        "name": "R1-Z",
+        "value": 9.2
+      },
+      {
+        "name": "I1-Z",
+        "value": 6.6
+      },
+      {
+        "name": "FZ",
+        "value": 5.1
+      },
+      {
+        "name": "C1-Z",
+        "value": 3.8
+      },
+      {
+        "name": "ROAD",
+        "value": 2
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 1.9
+      },
+      {
+        "name": "WZ",
+        "value": 1.2
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 1
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.3
+      }
+    ]
+  },
+  {
+    "name": "Namuco",
+    "diversity": 0.73,
+    "zone": "PDA-SZ",
+    "area_ha": 184,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 47.9
+      },
+      {
+        "name": "R1-Z",
+        "value": 12.5
+      },
+      {
+        "name": "R2-Z",
+        "value": 11.1
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 8.7
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 6.1
+      },
+      {
+        "name": "C1-Z",
+        "value": 5.5
+      },
+      {
+        "name": "ROAD",
+        "value": 3.9
+      },
+      {
+        "name": "WZ",
+        "value": 2.1
+      },
+      {
+        "name": "I1-Z",
+        "value": 0.9
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.5
+      },
+      {
+        "name": "C/MP-Z",
+        "value": 0.4
+      },
+      {
+        "name": "FZ",
+        "value": 0.3
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      },
+      {
+        "name": "T-Z",
+        "value": 0
+      },
+      {
+        "name": "I2-Z",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Namunga",
+    "diversity": 0.81,
+    "zone": "R1-Z",
+    "area_ha": 80,
+    "dist": [
+      {
+        "name": "R1-Z",
+        "value": 33.9
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 17.7
+      },
+      {
+        "name": "R2-Z",
+        "value": 14.5
+      },
+      {
+        "name": "C1-Z",
+        "value": 12.3
+      },
+      {
+        "name": "ROAD",
+        "value": 6
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 4
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 3.2
+      },
+      {
+        "name": "C/MP-Z",
+        "value": 3.2
+      },
+      {
+        "name": "WZ",
+        "value": 2.3
+      },
+      {
+        "name": "GI-Z",
+        "value": 1.7
+      },
+      {
+        "name": "T-Z",
+        "value": 0.5
+      },
+      {
+        "name": "C2-Z",
+        "value": 0.5
+      },
+      {
+        "name": "I2-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Natu",
+    "diversity": 0.56,
+    "zone": "PDA-SZ",
+    "area_ha": 433,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 63.1
+      },
+      {
+        "name": "R1-Z",
+        "value": 18.6
+      },
+      {
+        "name": "C1-Z",
+        "value": 7
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 4.3
+      },
+      {
+        "name": "ROAD",
+        "value": 2.8
+      },
+      {
+        "name": "WZ",
+        "value": 2.3
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 1.1
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0.8
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Nazi",
+    "diversity": 0.5,
+    "zone": "PDA-SZ",
+    "area_ha": 1176,
+    "dist": []
+  },
+  {
+    "name": "Palakpak",
+    "diversity": 0.5,
+    "zone": "PDA-SZ",
+    "area_ha": 242,
+    "dist": []
+  },
+  {
+    "name": "Pinagsibaan",
+    "diversity": 0.75,
+    "zone": "PDA-SZ",
+    "area_ha": 322,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 37.8
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 29.6
+      },
+      {
+        "name": "R1-Z",
+        "value": 9.9
+      },
+      {
+        "name": "C1-Z",
+        "value": 7.5
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 4.5
+      },
+      {
+        "name": "ROAD",
+        "value": 3.6
+      },
+      {
+        "name": "I1-Z",
+        "value": 3.5
+      },
+      {
+        "name": "WZ",
+        "value": 3.1
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.4
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Barangay A (Pob.)",
+    "diversity": 0.5,
+    "zone": "R2-Z",
+    "area_ha": 31,
+    "dist": []
+  },
+  {
+    "name": "Barangay B (Pob.)",
+    "diversity": 0.5,
+    "zone": "R1-Z",
+    "area_ha": 24,
+    "dist": []
+  },
+  {
+    "name": "Barangay C (Pob.)",
+    "diversity": 0.5,
+    "zone": "C2-Z",
+    "area_ha": 17,
+    "dist": []
+  },
+  {
+    "name": "Barangay D (Pob.)",
+    "diversity": 0.5,
+    "zone": "C1-Z",
+    "area_ha": 8,
+    "dist": []
+  },
+  {
+    "name": "Barangay E (Pob.)",
+    "diversity": 0.5,
+    "zone": "R2-Z",
+    "area_ha": 27,
+    "dist": []
+  },
+  {
+    "name": "Putingkahoy",
+    "diversity": 0.67,
+    "zone": "PDA-SZ",
+    "area_ha": 685,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 45.3
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 34.4
+      },
+      {
+        "name": "R1-Z",
+        "value": 7
+      },
+      {
+        "name": "C1-Z",
+        "value": 6
+      },
+      {
+        "name": "WZ",
+        "value": 2
+      },
+      {
+        "name": "FZ",
+        "value": 1.8
+      },
+      {
+        "name": "ROAD",
+        "value": 1.6
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 1.1
+      },
+      {
+        "name": "T-Z",
+        "value": 0.6
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      },
+      {
+        "name": "I2-Z",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Quilib",
+    "diversity": 0.65,
+    "zone": "PDA-SZ",
+    "area_ha": 128,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 53.2
+      },
+      {
+        "name": "R2-Z",
+        "value": 21.3
+      },
+      {
+        "name": "C1-Z",
+        "value": 10.7
+      },
+      {
+        "name": "R1-Z",
+        "value": 9.9
+      },
+      {
+        "name": "ROAD",
+        "value": 1.5
+      },
+      {
+        "name": "WZ",
+        "value": 1.5
+      },
+      {
+        "name": "T-Z",
+        "value": 0.5
+      },
+      {
+        "name": "PR-Z",
+        "value": 0.5
+      },
+      {
+        "name": "I1-Z",
+        "value": 0.4
+      },
+      {
+        "name": "C2-Z",
+        "value": 0.3
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Salao",
+    "diversity": 0.45,
+    "zone": "PDA-SZ",
+    "area_ha": 416,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 71.1
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 21.6
+      },
+      {
+        "name": "WZ",
+        "value": 2.7
+      },
+      {
+        "name": "R1-Z",
+        "value": 2.7
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 1.2
+      },
+      {
+        "name": "ROAD",
+        "value": 0.7
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "San Carlos",
+    "diversity": 0.53,
+    "zone": "PDA-SZ",
+    "area_ha": 711,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 66.6
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 11
+      },
+      {
+        "name": "R1-Z",
+        "value": 8.6
+      },
+      {
+        "name": "C1-Z",
+        "value": 3.8
+      },
+      {
+        "name": "WZ",
+        "value": 3
+      },
+      {
+        "name": "ROAD",
+        "value": 2.8
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 2.1
+      },
+      {
+        "name": "R2-Z",
+        "value": 0.9
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.8
+      },
+      {
+        "name": "I2-Z",
+        "value": 0.4
+      },
+      {
+        "name": "PR-Z",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "San Ignacio",
+    "diversity": 0.71,
+    "zone": "I1-Z",
+    "area_ha": 223,
+    "dist": [
+      {
+        "name": "I1-Z",
+        "value": 48.7
+      },
+      {
+        "name": "FZ",
+        "value": 13.8
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 11.4
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 10.6
+      },
+      {
+        "name": "C1-Z",
+        "value": 4.1
+      },
+      {
+        "name": "WZ",
+        "value": 3.7
+      },
+      {
+        "name": "ROAD",
+        "value": 2.7
+      },
+      {
+        "name": "R1-Z",
+        "value": 2.7
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 1
+      },
+      {
+        "name": "T-Z",
+        "value": 0.4
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.3
+      },
+      {
+        "name": "I2-Z",
+        "value": 0.3
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      }
+    ]
+  },
+  {
+    "name": "San Isidro",
+    "diversity": 0.76,
+    "zone": "PDA-SZ",
+    "area_ha": 1399,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 39.4
+      },
+      {
+        "name": "FZ",
+        "value": 20.5
+      },
+      {
+        "name": "C1-Z",
+        "value": 14.5
+      },
+      {
+        "name": "FR-SZ",
+        "value": 10.8
+      },
+      {
+        "name": "R1-Z",
+        "value": 5.5
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 4.4
+      },
+      {
+        "name": "WZ",
+        "value": 1.5
+      },
+      {
+        "name": "ROAD",
+        "value": 1.5
+      },
+      {
+        "name": "PR-Z",
+        "value": 0.7
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.4
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0.3
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.3
+      },
+      {
+        "name": "CMRF",
+        "value": 0.2
+      }
+    ]
+  },
+  {
+    "name": "San Jose",
+    "diversity": 0.77,
+    "zone": "PDA-SZ",
+    "area_ha": 192,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 36.7
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 25.6
+      },
+      {
+        "name": "R1-Z",
+        "value": 10.5
+      },
+      {
+        "name": "GI-Z",
+        "value": 9.5
+      },
+      {
+        "name": "R2-Z",
+        "value": 5.1
+      },
+      {
+        "name": "C1-Z",
+        "value": 4.8
+      },
+      {
+        "name": "ROAD",
+        "value": 2.6
+      },
+      {
+        "name": "WZ",
+        "value": 2.5
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 2.3
+      },
+      {
+        "name": "FZ",
+        "value": 0.3
+      },
+      {
+        "name": "I2-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "San Roque",
+    "diversity": 0.69,
+    "zone": "PDA-SZ",
+    "area_ha": 161,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 49.3
+      },
+      {
+        "name": "R1-Z",
+        "value": 21.9
+      },
+      {
+        "name": "R2-Z",
+        "value": 12.8
+      },
+      {
+        "name": "C1-Z",
+        "value": 4.1
+      },
+      {
+        "name": "ROAD",
+        "value": 2.6
+      },
+      {
+        "name": "WZ",
+        "value": 2.2
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 2
+      },
+      {
+        "name": "GI-Z",
+        "value": 1.6
+      },
+      {
+        "name": "THSP-SZ",
+        "value": 1.1
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.8
+      },
+      {
+        "name": "C2-Z",
+        "value": 0.7
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0.5
+      },
+      {
+        "name": "I1-Z",
+        "value": 0.2
+      },
+      {
+        "name": "PR-Z",
+        "value": 0.1
+      },
+      {
+        "name": "I2-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Santa Cruz",
+    "diversity": 0.43,
+    "zone": "PDA-SZ",
+    "area_ha": 491,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 75.1
+      },
+      {
+        "name": "T-Z",
+        "value": 5.4
+      },
+      {
+        "name": "FZ",
+        "value": 4.5
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 3.7
+      },
+      {
+        "name": "R1-Z",
+        "value": 3.4
+      },
+      {
+        "name": "WZ",
+        "value": 2.9
+      },
+      {
+        "name": "ROAD",
+        "value": 1.8
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 1.5
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 1.3
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 0.3
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.2
+      },
+      {
+        "name": "I1-Z",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "name": "Timbugan",
+    "diversity": 0.73,
+    "zone": "FZ",
+    "area_ha": 232,
+    "dist": [
+      {
+        "name": "FZ",
+        "value": 37.6
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 26.7
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 21.6
+      },
+      {
+        "name": "WZ",
+        "value": 5.5
+      },
+      {
+        "name": "I1-Z",
+        "value": 4.9
+      },
+      {
+        "name": "R1-Z",
+        "value": 1.9
+      },
+      {
+        "name": "ROAD",
+        "value": 1.1
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.4
+      },
+      {
+        "name": "AgIndZ-PGR",
+        "value": 0.2
+      }
+    ]
+  },
+  {
+    "name": "Tiquiwan",
+    "diversity": 0.68,
+    "zone": "PTA-SZ-RA",
+    "area_ha": 378,
+    "dist": [
+      {
+        "name": "PTA-SZ-RA",
+        "value": 41.7
+      },
+      {
+        "name": "PDA-SZ",
+        "value": 35.9
+      },
+      {
+        "name": "R1-Z",
+        "value": 10.8
+      },
+      {
+        "name": "C1-Z",
+        "value": 4.6
+      },
+      {
+        "name": "PROPOSED ROAD",
+        "value": 2.9
+      },
+      {
+        "name": "ROAD",
+        "value": 1.5
+      },
+      {
+        "name": "WZ",
+        "value": 1.4
+      },
+      {
+        "name": "AgIndZ-PTR",
+        "value": 0.7
+      },
+      {
+        "name": "I1-Z",
+        "value": 0.3
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      },
+      {
+        "name": "I2-Z",
+        "value": 0.1
+      },
+      {
+        "name": "T-Z",
+        "value": 0.1
+      }
+    ]
+  },
+  {
+    "name": "Leviste (Tubahan)",
+    "diversity": 0.5,
+    "zone": "PDA-SZ",
+    "area_ha": 406,
+    "dist": []
+  },
+  {
+    "name": "Tulos",
+    "diversity": 0.09,
+    "zone": "PDA-SZ",
+    "area_ha": 969,
+    "dist": [
+      {
+        "name": "PDA-SZ",
+        "value": 95.4
+      },
+      {
+        "name": "WZ",
+        "value": 2.5
+      },
+      {
+        "name": "ROAD",
+        "value": 1
+      },
+      {
+        "name": "R1-Z",
+        "value": 0.8
+      },
+      {
+        "name": "PTA-SZ-RA",
+        "value": 0.1
+      },
+      {
+        "name": "GI-Z",
+        "value": 0.1
+      },
+      {
+        "name": "C/MP-Z",
+        "value": 0
+      }
+    ]
+  }
+]

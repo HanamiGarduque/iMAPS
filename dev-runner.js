@@ -22,20 +22,34 @@ function getUvicornPath() {
             return binPath;
         }
     }
-    return candidatePaths[0];
+    return null;
 }
 
 const uvicornBin = getUvicornPath();
-const pythonCmd = `"${uvicornBin} main:app --app-dir python-analytics --reload --port 8001"`;
+
+const names = ['VITE', 'LARAVEL', 'QUEUE'];
+const colors = ['cyan', 'magenta', 'yellow'];
+const cmds = [
+    '"npm run dev:vite"',
+    '"npm run dev:laravel"',
+    '"npm run dev:queue"'
+];
+
+if (uvicornBin) {
+    names.push('PYTHON');
+    colors.push('blue');
+    cmds.push(`"${uvicornBin} main:app --app-dir python-analytics --reload --port 8001"`);
+} else {
+    console.warn('\x1b[33m%s\x1b[0m', '[DEV-RUNNER] Note: Python virtual environment with uvicorn not found in python-analytics/venv or .venv.');
+    console.warn('\x1b[33m%s\x1b[0m', '[DEV-RUNNER] Starting Vite, Laravel, and Queue without Python analytics service.');
+    console.warn('\x1b[33m%s\x1b[0m', '[DEV-RUNNER] To enable Python analytics, create python-analytics/venv and install requirements.txt.\n');
+}
 
 const commands = [
     '-k',
-    '-c', 'cyan,magenta,yellow,blue',
-    '-n', 'VITE,LARAVEL,QUEUE,PYTHON',
-    '"npm run dev:vite"',
-    '"npm run dev:laravel"',
-    '"npm run dev:queue"',
-    pythonCmd
+    '-c', colors.join(','),
+    '-n', names.join(','),
+    ...cmds
 ];
 
 const child = spawn('npx concurrently', commands, {

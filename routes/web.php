@@ -3,13 +3,13 @@
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\TechnicalReviewController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\AuditTrailController;
+use App\Http\Controllers\MapsController;
 use App\Http\Controllers\PublicPortalController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SearchController;
-use App\Http\Controllers\AnalyticsController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\TaxMapLookupController;
 use Illuminate\Foundation\Application;
@@ -33,6 +33,7 @@ Route::middleware('auth')->group(function () {
 
     // Map Layer API Endpoint
     // Place specific zoning lookup routes before the generic layer wildcard to avoid route collision
+    // Loop 6: shared internal map/search surfaces stay Admin + Planning Officer.
     Route::get('/api/map/zoning-lookup', [MapController::class, 'getZoningByCoordinates'])
         ->middleware('role:Admin,Planning Officer');
     Route::get('/api/map/zoning-area-lookup', [MapController::class, 'getZoningByParcelArea'])
@@ -40,9 +41,28 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/map/{layer}', [MapController::class, 'getLayer'])
         ->name('api.map.layer') // Generic layer access (whitelisted inside controller)
         ->middleware('role:Admin,Planning Officer');
+
+    // ── Forecasting + geospatial data (upstream) ──
+    Route::get('/api/forecast/{year}/{quarter}', [\App\Http\Controllers\ForecastController::class, 'getQuarterData'])
+        ->middleware('role:Admin,Planning Officer');
+    Route::post('/api/forecast/generate', [\App\Http\Controllers\ForecastController::class, 'generate'])
+        ->middleware('role:Admin,Planning Officer');
+    Route::get('/maps/urban-growth-data', [MapController::class, 'getUrbanGrowthData'])
+        ->name('maps.urban_growth')
+        ->middleware('role:Admin,Planning Officer');
+    Route::get('/api/parcels/verify', [SearchController::class, 'verifyParcel'])
+        ->middleware('role:Admin,Planning Officer');
+
+    // Landing page after login: KPI/welcome/analytics overview
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard')
         ->middleware('role:Admin,Planning Officer');
+
+    // Geospatial map view (zoning overlays, barangay boundaries, land-use diversity)
+    Route::get('/maps', [MapsController::class, 'index'])
+        ->name('maps.index')
+        ->middleware('role:Admin,Planning Officer');
+
     // Search
     Route::get('/api/global-search', [SearchController::class, 'globalSearch'])
         ->middleware(['auth', 'role:Admin,Planning Officer']);
@@ -61,6 +81,17 @@ Route::middleware('auth')->group(function () {
     // application encode form — public portal does not use it.) ──
     Route::get('/api/tax-map/lookup/{pin}', [TaxMapLookupController::class, 'lookup'])
         ->middleware('role:Admin,Planning Officer');
+
+    // Site Inspections List
+    Route::get('/site-inspections', [\App\Http\Controllers\SiteInspectionController::class, 'index'])
+        ->name('site-inspections.index')
+        ->middleware('role:Admin');
+    Route::post('/site-inspections/sync', [\App\Http\Controllers\SiteInspectionController::class, 'forceSync'])
+        ->name('site-inspections.sync')
+        ->middleware('role:Admin');
+    Route::get('/site-inspections/{id}', [\App\Http\Controllers\SiteInspectionController::class, 'show'])
+        ->name('site-inspections.show')
+        ->middleware('role:Admin');
 
     // ── Application Creation Form (Must be placed before wildcard {id} route) ──
     // Loop 6: application encoding is Planning Officer-only (Admin excluded).
@@ -126,12 +157,12 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::get('register-new-account', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('register-new-account', [RegisteredUserController::class, 'store']);
 
-    Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
-    Route::post('/analytics/rerun', [AnalyticsController::class, 'rerun'])->name('analytics.rerun');
+    // ── Standard Reports ──
+    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::post('/api/analytics/report/preview', [ReportController::class, 'previewReport'])->name('reports.preview');
+    Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->name('reports.generate');
 
-    Route::get('/audit-log', [AuditTrailController::class, 'index'])
-        ->name('audit-log.index');
-        Route::get('/settings', [SettingsController::class, 'index'])
+    Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');
         
     Route::post('/settings/upload-shapefile', [SettingsController::class, 'uploadShapefile'])
@@ -141,7 +172,9 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     
     // User Management
     Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
+    Route::get('/users/{id}/logs', [UserManagementController::class, 'logs'])->name('users.logs');
     Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->name('users.sensitive');
+    Route::post('/users/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
     Route::post('/users/{id}/update', [UserManagementController::class, 'updateProfile'])->name('users.update-profile');
 });
 

@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 
-// ── Predictive Highlight Helper ──
+// â”€â”€ Predictive Highlight Helper â”€â”€
 const HighlightMatch = ({ text, query }) => {
     if (!query || !text) return <span>{text}</span>;
     const parts = text.split(new RegExp(`(${query})`, 'gi'));
@@ -52,6 +52,8 @@ export default function Header({
         switch (firstSegment) {
             case 'dashboard':
                 return 'DASHBOARD';
+            case 'maps':
+                return 'MAPS';
             case 'applications':
             case 'drafts':
                 return 'APPLICATIONS';
@@ -76,6 +78,7 @@ export default function Header({
         if (currentComponent) {
             const comp = currentComponent.toLowerCase();
             if (comp.startsWith('dashboard')) return 'DASHBOARD';
+            if (comp.startsWith('maps')) return 'MAPS';
             if (comp.startsWith('applications') || comp.startsWith('drafts')) return 'APPLICATIONS';
             if (comp.startsWith('analytics')) return 'ANALYTICS';
             if (comp.startsWith('audittrail') || comp.startsWith('audit')) return 'AUDIT TRAIL';
@@ -95,7 +98,7 @@ export default function Header({
 
     const navigationBadge = getNavigationBadge();
 
-    // Loop 6: internal search is an Admin/Planning Officer capability only —
+    // Loop 6: internal search is an Admin/Planning Officer capability only â€”
     // never shown to Site Inspectors (server middleware still enforces it).
     const shouldShowSearch = (showSearch || Boolean(onSelectLocation)) && userRole !== 'Site Inspector';
     const [searchQuery, setSearchQuery] = useState('');
@@ -108,7 +111,7 @@ export default function Header({
     const [suggestions, setSuggestions] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
 
-    // ── Predictive Search Effect ──
+    // â”€â”€ Predictive Search Effect â”€â”€
     useEffect(() => {
         if (!searchQuery.trim()) {
             setSuggestions([]);
@@ -244,7 +247,7 @@ export default function Header({
 
     return (
         <header className="h-14 bg-white border-b border-slate-200/90 shadow-[0_1px_4px_rgba(0,0,0,0.03)] flex items-center justify-between px-3.5 sm:px-5 shrink-0 z-[700] relative select-none">
-            {/* ── LEFT SECTION: Interactive Brand Capsule Menu Trigger ── */}
+            {/* â”€â”€ LEFT SECTION: Interactive Brand Capsule Menu Trigger â”€â”€ */}
             <div className="flex items-center h-full">
                 <button
                     id="imaps-brand-trigger"
@@ -322,7 +325,7 @@ export default function Header({
                 </button>
             </div>
 
-            {/* ── CENTER SECTION: Interactive Spatial Command Search Bar ── */}
+            {/* â”€â”€ CENTER SECTION: Interactive Spatial Command Search Bar â”€â”€ */}
             {shouldShowSearch ? (
                 <div className="hidden md:flex items-center flex-1 max-w-xs lg:max-w-md mx-4 relative" ref={searchRef}>
                     <div className="relative w-full group">
@@ -362,7 +365,7 @@ export default function Header({
                         ) : (
                             <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
                                 <span className="text-[10px] font-mono font-semibold text-slate-400 bg-white border border-slate-200/80 rounded px-1.5 py-0.5 shadow-2xs">
-                                    ⌘K
+                                    âŒ˜K
                                 </span>
                             </div>
                         )}
@@ -443,7 +446,7 @@ export default function Header({
                 <div className="flex-1" />
             )}
 
-            {/* ── RIGHT SECTION: PST Clock, Shortcuts, Notifications & Profile ── */}
+            {/* â”€â”€ RIGHT SECTION: PST Clock, Shortcuts, Notifications & Profile â”€â”€ */}
             <div className="flex items-center gap-1.5 sm:gap-2.5">
                 {/* Philippine Standard Time Display */}
                 {clock && (
@@ -522,19 +525,11 @@ export default function Header({
                             </div>
 
                             <div className="space-y-0.5">
-                                {/* Loop 6: /settings is Admin-only — hide dead 403 links from other roles */}
-                                {userRole === 'Admin' && (
-                                <Link 
-                                    href="/settings"
-                                    onClick={() => setProfileMenuOpen(false)}
-                                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                                >
-                                    <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                    </svg>
-                                    <span>Account & Settings</span>
-                                </Link>
-                                )}
+                                {/* Upstream (origin/master) intentionally removed the
+                                    "Account & Settings" link from the profile dropdown.
+                                    Loop 6 keeps that removal: /settings stays backend-protected
+                                    with role:Admin and is reachable through the Admin-only
+                                    Sidebar entry, so no equivalent header guard is needed. */}
 
                                 <button
                                     onClick={handleSignOutClick}
@@ -551,7 +546,7 @@ export default function Header({
                 </div>
             </div>
 
-            {/* ── KEYBOARD SHORTCUTS & HELP MODAL ── */}
+            {/* â”€â”€ KEYBOARD SHORTCUTS & HELP MODAL â”€â”€ */}
             {shortcutsModalOpen && (
                 <div 
                     className="fixed inset-0 z-[9999] bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
@@ -564,7 +559,7 @@ export default function Header({
                         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                             <div className="flex items-center gap-2.5">
                                 <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm border border-blue-200/60">
-                                    ⌨
+                                    âŒ¨
                                 </div>
                                 <div>
                                     <h3 className="text-sm font-bold text-slate-900">Spatial Keyboard Shortcuts</h3>
@@ -585,7 +580,7 @@ export default function Header({
                             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
                                 <span className="text-slate-800 font-semibold">Quick Command Search</span>
                                 <div className="flex gap-1 font-mono font-bold text-[11px]">
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">⌘ / Ctrl</kbd>
+                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">âŒ˜ / Ctrl</kbd>
                                     <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">K</kbd>
                                 </div>
                             </div>

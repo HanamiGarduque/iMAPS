@@ -34,7 +34,7 @@ const APPLICATION_TYPES = [
         desc: "Standard municipal building & land clearance",
     },
     {
-        id: "Zoning Certification",
+        id: "Zoning Certificate",
         icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
         desc: "Land use classification & zoning compliance",
     },
@@ -139,7 +139,7 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
     let rateDetail = "";
     let calculationSummary = "";
 
-    if (appType === "Zoning Certification" || appType === "Zoning Clearance") {
+    if (appType === "Zoning Certificate" || appType === "Zoning Clearance") {
         // ₱720.00 per hectare (1 ha = 10,000 sq.m)
         const hectares = area / 10000;
         baseFee = Math.max(720, Math.round(hectares * 720 * 100) / 100);
@@ -342,6 +342,7 @@ const emptyForm = () => ({
     right_over_land: "",
     project_tenure: "",
     preferred_release_mode: "",
+    remarks: "",
     zoning_certificate_fee: "",
     locational_clearance_fee: "",
     development_permit_fee: "",
@@ -350,7 +351,6 @@ const emptyForm = () => ({
     date_of_receipt: new Date().toISOString().split("T")[0], // Default to today
     assessment_fee: "0.00",
     or_number: "",
-    remarks: "",
     
 
     parcels: [
@@ -597,12 +597,31 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const [clock, setClock] = useState("");
     const [currentStep, setCurrentStep] = useState(() => draftStep(initialDraftPayload));
     const [submitting, setSubmitting] = useState(false);
+    // Loop 4 draft-isolation + duplicate-submit guards (submittingRef /
+    // autosaveControllerRef / submissionSucceeded) coexist with the upstream
+    // submissionFinalized lock. Both are required: the ref guards stop a
+    // re-entrant submit before React state updates, and submissionFinalized
+    // survives re-renders once a submission has been accepted.
     const submittingRef = useRef(false);
     const autosaveControllerRef = useRef(null);
     const [submissionSucceeded, setSubmissionSucceeded] = useState(false);
+    const [submissionFinalized, setSubmissionFinalized] = useState(false);
     const [flash, setFlash] = useState(null);
     const [errors, setErrors] = useState(serverErrors);
     const formRef = useRef(null);
+
+    // Set when arriving from the map's "Start Anyway (Requires Variance Review)"
+    // path so Step 1 can flag that this filing needs SB reclassification/variance.
+    // Reads (without clearing) the same handoff payload the `form` initializer
+    // below consumes and clears from sessionStorage.
+    const [varianceNotice, setVarianceNotice] = useState(() => {
+        try {
+            const raw = sessionStorage.getItem("imaps_verified_parcel_prefill");
+            return raw ? Boolean(JSON.parse(raw).requiresVariance) : false;
+        } catch (e) {
+            return false;
+        }
+    });
 
     // Smart Features State
     const [feeMode, setFeeMode] = useState("auto"); // 'auto' | 'manual'
@@ -630,12 +649,43 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         if (restoredForm) {
             return {
                 ...baseForm,
+                // Loop 4 draft isolation: hydrate from the parsed draft payload.
+                // The upstream `validCloud` variable is not defined on this
+                // branch, so the draft payload is the correct source here.
                 ...restoredForm,
                 parcels: Array.isArray(restoredForm.parcels) && restoredForm.parcels.length > 0
                          ? restoredForm.parcels
                          : baseForm.parcels
             };
         }
+
+        // One-shot handoff from the Permits & Status map layer's "Verify Parcel"
+        // check (TCT/Tax Dec lookup + CLUP conformance) — see StatusPanel.jsx.
+        try {
+            const raw = sessionStorage.getItem("imaps_verified_parcel_prefill");
+            if (raw) {
+                sessionStorage.removeItem("imaps_verified_parcel_prefill");
+                const prefill = JSON.parse(raw);
+                return {
+                    ...baseForm,
+                    target_land_use_class: prefill.target_land_use_class || baseForm.target_land_use_class,
+                    parcels: [
+                        {
+                            ...baseForm.parcels[0],
+                            tct_number: prefill.tct_number || "",
+                            tax_dec_number: prefill.tax_dec_number || "",
+                            barangay: prefill.barangay || "",
+                            owner_name: prefill.owner_name || "",
+                            location_address: prefill.location_address || "",
+                            lot_area_sqm: prefill.lot_area_sqm || "",
+                            property_index_number: prefill.property_index_number || "",
+                            land_use_class: prefill.target_land_use_class || "",
+                        },
+                    ],
+                };
+            }
+        } catch (e) {}
+
         return baseForm;
     });
 
@@ -730,7 +780,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                 e.preventDefault();
                 if (currentStep === 5) {
-                    if (!submitting) handleSubmit(e);
+                    if (!submitting && !submissionFinalized) handleSubmit(e);
                 } else {
                     handleNext();
                 }
@@ -805,7 +855,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     // final submission so an expired/cancelled draft request cannot surface as
     // an application submission failure.
     useEffect(() => {
-        if (submittingRef.current || submissionSucceeded) return;
+        // Both submit locks must be honored before autosave fires.
+        if (submittingRef.current || submissionSucceeded || submissionFinalized) return;
 
         const handler = setTimeout(() => {
             const hasData = form.application_type || form.form_number || form.applicant_name || form.barangay;
@@ -843,10 +894,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         }, 1200);
 
         return () => clearTimeout(handler);
-    }, [form, tempDraftId, currentStep, submissionSucceeded]);
+        // currentStep keeps the persisted wizard step in sync; both submit locks
+        // are dependencies so autosave halts the moment a submit is accepted.
+    }, [form, tempDraftId, currentStep, submissionSucceeded, submissionFinalized]);
 
     const handleManualSave = () => {
-        if (submittingRef.current || submissionSucceeded) return;
+        if (submittingRef.current || submissionSucceeded || submissionFinalized) return;
 
         const payload = draftPayload(form, currentStep);
         setSyncStatus("Saving modifications...");
@@ -921,7 +974,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     coordinates: "",
                     decision: "",
                     decision_reason: "",
-                    findings: "",
                     inspector_id: "",
                     scheduled_date: "",
                     deadline_date: "",
@@ -1310,7 +1362,15 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     const handleContactInput = (e) => {
         let val = e.target.value.replace(/\D/g, "");
-        if (val.startsWith("0")) val = val.slice(1);
+        if (val === "") {
+            setForm((f) => ({ ...f, contact_number: "" }));
+            checkApplicantMatches("", "contact_number");
+            return;
+        }
+        if (val.startsWith("09")) val = val.slice(2);
+        else if (val.startsWith("9")) val = val.slice(1);
+        val = "9" + val;
+        if (val.length > 10) val = val.slice(0, 10);
         setForm((f) => ({ ...f, contact_number: val }));
         checkApplicantMatches(val, "contact_number");
     };
@@ -1449,7 +1509,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     const handleSubmit = (e) => {
         if (e && e.preventDefault) e.preventDefault();
-        if (submittingRef.current) return;
+        // Duplicate-submit prevention: the ref guard blocks re-entry before a
+        // state update lands; submitting/submissionFinalized cover re-renders.
+        if (submittingRef.current || submitting || submissionFinalized) return;
         if (!form.assessment_fee || Number(form.assessment_fee) < 0) {
             setErrors({ assessment_fee: "Assessment fee is required." });
             return setFlash({
@@ -1458,9 +1520,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             });
         }
 
+        // Stop autosave and take BOTH submit locks. submissionFinalized is the
+        // upstream lock that survives re-renders; submittingRef blocks re-entry.
         autosaveControllerRef.current?.abort();
         autosaveControllerRef.current = null;
         submittingRef.current = true;
+        setSubmissionFinalized(true);
         setSubmitting(true);
         setSubmissionSucceeded(false);
         setFlash(null);
@@ -1485,7 +1550,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 setErrors({});
                 setFlash(null);
 
-                // Save applicant to local registry cache
                 saveApplicantToRegistry({
                     first_name: form.first_name,
                     middle_name: form.middle_name,
@@ -1497,7 +1561,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     representative_name: form.representative_name,
                 });
 
-                // Prepare routing slip data
                 setRoutingSlipData({
                     reference_number: ref,
                     date_of_application: new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
@@ -1521,9 +1584,11 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                 clearDraftStateRecord();
                 setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
-                setSyncStatus("Saved locally");
+                setSyncStatus("Submitted");
+                setSubmissionFinalized(true);
             },
             onError: (errs) => {
+                setSubmissionFinalized(false);
                 setErrors(errs);
 
                 let targetStep = 5;
@@ -1533,7 +1598,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     targetStep = 1;
                 } else if (errKeys.some((k) => ["applicant_name", "contact_number", "email", "representative_name"].includes(k))) {
                     targetStep = 2;
-                // Added target_land_use_class to correctly route Step 3 failures
                 } else if (errKeys.some((k) => ["barangay", "target_land_use_class"].includes(k) || k.startsWith("parcels"))) {
                     targetStep = 3;
                 } else if (errKeys.some((k) => ["preferred_release_mode"].includes(k))) {
@@ -1543,7 +1607,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 setCurrentStep(targetStep);
                 if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
 
-                // Dynamically extract the exact backend error message, prioritizing Database exceptions
                 const firstErrorKey = errKeys[0];
                 const actualErrorMessage = errs.db || errs[firstErrorKey] || "Please resolve the highlighted validation issues.";
 
@@ -1851,7 +1914,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                         {/* Foreground: Centered Master Elevated Floating Modal (NON-SCROLLABLE modal wrapper) */}
                         <div className="relative z-10 flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 lg:p-6 overflow-hidden">
-                            <div className="w-full max-w-5xl h-[calc(100vh-8.5rem)] max-h-[580px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col lg:flex-row shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
+                            <div className="w-full max-w-6xl h-[calc(100vh-8.5rem)] max-h-[680px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col lg:flex-row shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
                                 
                                 {currentStep === 3 ? (
                                     /* ── STEP 3: GIS STUDIO (INSIDE FLOATING MODAL) ── */
@@ -1869,7 +1932,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                         totalLotArea={totalLotArea}
                                         zoningWarning={zoningWarning}
                                         activeParcelIndex={activeParcelIndex}
+                                        setActiveParcelIndex={setActiveParcelIndex}
                                         activeParcelFeature={activeParcelFeature}
+                                        setActiveParcelFeature={setActiveParcelFeature}
                                         brgyMapData={brgyMapData}
                                         parcelMapData={parcelMapData}
                                         rosarioCenter={rosarioCenter}
@@ -1911,42 +1976,40 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                 {/* Application Summary or Step 4 Review Checklist */}
                                                 {currentStep === 4 ? (
                                                     /* ── STEP 4: REVIEW & SECTION COMPLETION CHECKLIST ── */
-                                                    <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200/90 shadow-xs space-y-2.5">
-                                                        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ready for Review</span>
-                                                            <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md">3/3 Complete</span>
+                                                    <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-col items-center text-center">
+                                                        <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-3 shadow-sm">
+                                                            <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
                                                         </div>
-
-                                                        <div className="space-y-2 text-xs">
-                                                            <div className="flex items-start gap-2 text-slate-700">
-                                                                <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">1</span>
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="font-semibold text-slate-800 text-[11px]">Category & Purpose</p>
-                                                                    <p className="text-[10px] text-slate-500 truncate">{form.application_type || "—"} · {form.land_use_class || "—"}</p>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-start gap-2 text-slate-700">
-                                                                <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">2</span>
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="font-semibold text-slate-800 text-[11px]">Applicant Details</p>
-                                                                    <p className="text-[10px] text-slate-500 truncate">{form.applicant_name || "—"}</p>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-start gap-2 text-slate-700">
-                                                                <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">3</span>
-                                                                <div className="min-w-0 flex-1">
-                                                                    <p className="font-semibold text-slate-800 text-[11px]">Property Location & Lots</p>
-                                                                    <p className="text-[10px] text-slate-500 truncate">
-                                                                        {form.barangay 
-                                                                            ? `Brgy. ${form.barangay}${validParcelsCount > 0 && totalLotArea > 0 ? ` (${totalLotArea.toLocaleString()} m²)` : ""}` 
-                                                                            : "—"}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
+                                                        <div>
+                                                            <h3 className="text-[13px] font-bold text-slate-800 tracking-tight">Ready for Review</h3>
+                                                            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                                All primary sections are filled. Please verify the recorded information before assessing fees.
+                                                            </p>
                                                         </div>
-
-                                                        <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-500 leading-snug">
-                                                            Review the details on the right. Click <strong className="text-blue-600 font-semibold">Edit</strong> on any section to make changes.
+                                                        <div className="w-full pt-3.5 mt-3.5 border-t border-slate-100 text-left">
+                                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2.5">Required Actions</p>
+                                                            <ul className="text-[11px] text-slate-600 space-y-2 font-medium">
+                                                                <li className="flex items-start gap-2">
+                                                                    <svg className="w-3.5 h-3.5 text-blue-500 mt-px shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+                                                                    </svg>
+                                                                    <span>Verify details in all sections</span>
+                                                                </li>
+                                                                <li className="flex items-start gap-2">
+                                                                    <svg className="w-3.5 h-3.5 text-blue-500 mt-px shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+                                                                    </svg>
+                                                                    <span>Select a mode of release</span>
+                                                                </li>
+                                                                <li className="flex items-start gap-2">
+                                                                    <svg className="w-3.5 h-3.5 text-slate-300 mt-px shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
+                                                                    </svg>
+                                                                    <span className="text-slate-500">Proceed to fee assessment</span>
+                                                                </li>
+                                                            </ul>
                                                         </div>
                                                     </div>
                                                 ) : (
@@ -2028,15 +2091,34 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                 
                                                 {/* ── STEP 1: SCOPE & PURPOSE ── */}
                                                 {currentStep === 1 && (
-                                                    <StepCategory
-                                                        form={form}
-                                                        set={set}
-                                                        handleTypeSelect={handleTypeSelect}
-                                                        errors={errors}
-                                                        APPLICATION_TYPES={APPLICATION_TYPES}
-                                                        AMENDMENT_TYPES={AMENDMENT_TYPES}
-                                                        LAND_USE_CLASSES={LAND_USE_CLASSES}
-                                                    />
+                                                    <>
+                                                        {varianceNotice && (
+                                                            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs text-amber-800">
+                                                                <span className="text-sm">⚠️</span>
+                                                                <div className="flex-1">
+                                                                    <p className="font-bold">Zoning check flagged this parcel for variance review</p>
+                                                                    <p className="text-[11px] text-amber-700 mt-0.5">The requested zoning type did not conform to the barangay's CLUP classification. This filing may require Sangguniang Bayan reclassification or variance approval.</p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setVarianceNotice(false)}
+                                                                    className="text-amber-600 hover:text-amber-900 cursor-pointer shrink-0"
+                                                                    title="Dismiss"
+                                                                >
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                        <StepCategory
+                                                            form={form}
+                                                            set={set}
+                                                            handleTypeSelect={handleTypeSelect}
+                                                            errors={errors}
+                                                            APPLICATION_TYPES={APPLICATION_TYPES}
+                                                            AMENDMENT_TYPES={AMENDMENT_TYPES}
+                                                            LAND_USE_CLASSES={LAND_USE_CLASSES}
+                                                        />
+                                                    </>
                                                 )}
 
                                                 {/* ── STEP 2: APPLICANT PROFILE ── */}
@@ -2105,7 +2187,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                         <button
                                                             type="button"
                                                             onClick={handleBack}
-                                                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
+                                                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
                                                         >
                                                             <span>Back</span>
                                                         </button>
@@ -2113,17 +2195,19 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                                                     {currentStep < 5 ? (
                                                         <button
+                                                            key="next-btn"
                                                             type="button"
                                                             onClick={handleNext}
-                                                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 cursor-pointer ml-auto"
+                                                            className="inline-flex items-center justify-center min-w-[100px] gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 cursor-pointer ml-auto"
                                                         >
-                                                            <span>{currentStep === 1 ? "Continue to Applicant" : currentStep === 2 ? "Continue to Property Location" : "Proceed to Assessment & Fees"}</span>
+                                                            <span>Next</span>
                                                         </button>
                                                     ) : (
                                                         <button
+                                                            key="submit-btn"
                                                             type="submit"
                                                             disabled={submitting}
-                                                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
+                                                            className="inline-flex items-center justify-center min-w-[120px] gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
                                                         >
                                                             {submitting ? (
                                                                 <>
@@ -2131,7 +2215,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                                     <span>Submitting...</span>
                                                                 </>
                                                             ) : (
-                                                                <span>Submit & Route to Technical Review</span>
+                                                                <span>Submit Application</span>
                                                             )}
                                                         </button>
                                                     )}
