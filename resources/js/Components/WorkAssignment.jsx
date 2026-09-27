@@ -574,10 +574,29 @@ function ReassignModal({
                     )}
 
                     {isInitial && (
-                        <Notice tone="info">
-                            This is the first Planning Officer for this application, so no reason is asked for.
-                            A reason is only recorded when ownership moves from one officer to another.
-                        </Notice>
+                        // Purely explanatory. Deliberately styled as a plain line
+                        // of helper text with an information icon, NOT as a card,
+                        // field or disabled input: a user read the earlier
+                        // input-looking panel as a notes box they were meant to
+                        // fill in. Nothing here is editable and nothing is sent.
+                        <p className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-500 bg-transparent">
+                            <svg
+                                className="w-3.5 h-3.5 mt-px shrink-0 text-slate-400"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                            </svg>
+                            <span>
+                                Initial assignment — no transfer reason is required.
+                            </span>
+                        </p>
                     )}
 
                     {error && <Notice tone="warn">{error}</Notice>}

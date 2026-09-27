@@ -4,6 +4,7 @@ import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import DropdownSelect from "@/Components/DropdownSelect";
+import { detailUrlFromFolder } from "@/Components/folderOrigin";
 
 
 const ROSARIO_BARANGAYS = [
@@ -41,7 +42,27 @@ export default function SiteInspectionsIndex() {
         const { auth, pendingInspections = [], completedInspections = [], flash = {} } = usePage().props;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
-    const [selectedFolder, setSelectedFolder] = useState(null);
+    // The open applicant folder is read from the URL, not held only in state, so
+    // a refresh or a pasted link returns the user to the folder they were in.
+    // Without it the back control on a detail page has nothing to restore.
+    const [selectedFolder, setSelectedFolder] = useState(() => {
+        if (typeof window === "undefined") return null;
+        return new URLSearchParams(window.location.search).get("folder") || null;
+    });
+
+    // Keep the open folder in the URL so a refresh or a pasted link returns to the
+    // same applicant folder. `replaceState` is used so opening and closing a
+    // folder does not fill the browser's back stack with folder toggles.
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const params = new URLSearchParams(window.location.search);
+        if (selectedFolder) params.set("folder", selectedFolder);
+        else params.delete("folder");
+        // `from` describes how a DETAIL page was reached; it means nothing here.
+        params.delete("from");
+        const query = params.toString();
+        window.history.replaceState({}, "", query ? `${window.location.pathname}?${query}` : window.location.pathname);
+    }, [selectedFolder]);
 
     // New filtering state
     const [searchInput, setSearchInput] = useState("");
@@ -595,7 +616,14 @@ export default function SiteInspectionsIndex() {
                                                                 key={idx}
                                                                 className="group flex flex-col items-center p-3 rounded-2xl transition-all cursor-pointer hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 border border-transparent hover:border-slate-200/60"
                                                                 onClick={() => {
-                                                                    router.visit(`/site-inspections/${item.id}`);
+                                                                    router.visit(
+                                                                        detailUrlFromFolder(
+                                                                            "/site-inspections",
+                                                                            item.id,
+                                                                            selectedFolder,
+                                                                            typeof window !== "undefined" ? window.location.search : "",
+                                                                        ),
+                                                                    );
                                                                 }}
                                                             >
                                                                 <div className="relative mb-3 transition-transform duration-300 text-slate-300 group-hover:text-blue-500">

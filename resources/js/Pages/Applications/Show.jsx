@@ -9,6 +9,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
 import { PlanningOfficerAssignment, InspectorRoundAssignment } from "@/Components/WorkAssignment";
+import { resolveBackTarget, readRegistryQuery } from "@/Components/folderOrigin";
 
 // ── Status Badge Configuration ──
 const STATUS_CONFIG = {
@@ -648,7 +649,25 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     // browser history, which is fragile and would be wrong after a refresh or a
     // direct link. Normal entry from Applications is unchanged.
     const currentUrl = usePage().url || "";
-    const openedFromTechnicalReview = currentUrl.includes("from=technical-review");
+
+    // Where this record was opened from.
+    //
+    // The origin travels in the query string (?from=technical-review, or
+    // ?from=folder&folder=<applicant>) rather than being inferred from browser
+    // history, because browser history is fragile and wrong after a refresh or a
+    // pasted link. Normal entry from the Applications registry is unchanged, and
+    // an entry with no origin at all falls back to the plain registry root rather
+    // than inventing a folder.
+    const backTarget = resolveBackTarget({
+        search: currentUrl,
+        registryPath: "/applications",
+        rootLabel: "All Applications",
+        origins: { "technical-review": { path: "/technical-review", label: "Technical Review" } },
+        // Restore the registry filters and page the user had applied, minus the
+        // origin markers, which are meaningless on the registry itself.
+        registryQuery: readRegistryQuery(currentUrl),
+    });
+    const openedFromTechnicalReview = backTarget.label === "Technical Review";
 
     const canRecordPlanningDecision = userRole === "Planning Officer";
 
@@ -689,6 +708,12 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                     {/* ── SUB-NAVBAR ── */}
                     <div className="h-12 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between shrink-0 z-10 shadow-xs">
                         <div className="flex items-center gap-3">
+                            {/* One control, three honest outcomes:
+                                  * opened from the Technical Review queue -> back to the queue
+                                  * opened from an applicant folder          -> back to THAT folder
+                                  * opened with no origin                    -> back to the registry root
+                                The label always says where it actually goes, so the
+                                control is never mislabelled. */}
                             {openedFromTechnicalReview ? (
                                 <>
                                     <Link
@@ -706,14 +731,18 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                             ) : (
                                 <>
                                     <Link
-                                        href="/applications"
+                                        href={backTarget.href}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/90 text-slate-700 hover:text-slate-900 text-xs font-semibold border border-slate-200/80 transition-all shadow-2xs active:scale-95 group cursor-pointer"
-                                        title="Return to All Records"
+                                        title={
+                                            backTarget.folder
+                                                ? `Return to the ${backTarget.folder} folder`
+                                                : "Return to All Applications"
+                                        }
                                     >
                                         <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
                                         </svg>
-                                        <span>All Records</span>
+                                        <span className="max-w-[190px] truncate">{backTarget.label}</span>
                                     </Link>
                                     <span className="text-slate-300">/</span>
                                 </>

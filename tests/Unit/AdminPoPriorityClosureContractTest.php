@@ -196,12 +196,21 @@ class AdminPoPriorityClosureContractTest extends TestCase
         // Explicit origin in the query string, not inferred from history.
         $this->assertStringContainsString('?from=technical-review', $queue);
         $this->assertStringContainsString('openedFromTechnicalReview', $show);
-        $this->assertStringContainsString('currentUrl.includes("from=technical-review")', $show);
         $this->assertStringContainsString('href="/technical-review"', $show);
         $this->assertStringContainsString('<span>Technical Review</span>', $show);
 
-        // Normal entry from Applications is unchanged.
-        $this->assertStringContainsString('<span>All Records</span>', $show);
+        // The origin is now read through the shared folder-origin resolver, so a
+        // second ad-hoc origin check cannot creep back in beside it. The
+        // hardcoded substring test that used to guard this is gone precisely
+        // because that mechanism was replaced.
+        $this->assertStringContainsString('resolveBackTarget', $show);
+        $this->assertStringContainsString('technical-review', $show);
+        $this->assertStringNotContainsString('currentUrl.includes("from=technical-review")', $show);
+
+        // Normal entry from Applications is unchanged: with no folder origin the
+        // control is the plain registry root, and it is labelled accordingly.
+        $this->assertStringContainsString('rootLabel: "All Applications"', $show);
+        $this->assertStringContainsString('{backTarget.label}', $show);
     }
 
     public function test_pagination_is_in_normal_flow_after_the_list(): void
@@ -363,7 +372,12 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $this->assertStringContainsString('?from=technical-review', $queue);
         $this->assertStringContainsString('openedFromTechnicalReview', $show);
         $this->assertStringContainsString('href="/technical-review"', $show);
-        $this->assertStringContainsString('<span>All Records</span>', $show);
+
+        // With no folder origin the back control is the registry root, named
+        // honestly rather than claiming to return to "All Records" while
+        // actually restoring a single applicant folder.
+        $this->assertStringContainsString('rootLabel: "All Applications"', $show);
+        $this->assertStringNotContainsString('<span>All Records</span>', $show);
     }
 
     /**

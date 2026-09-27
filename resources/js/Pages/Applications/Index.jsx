@@ -5,6 +5,7 @@ import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import ApplicationsSubNav from "@/Components/ApplicationsSubNav";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { detailUrlFromFolder, folderRegistryUrl } from "@/Components/folderOrigin";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -374,7 +375,15 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [copiedRef, setCopiedRef] = useState(null);
     const [viewMode, setViewMode] = useState("folder"); // 'folder' | 'kanban'
-    const [selectedFolder, setSelectedFolder] = useState(null);
+
+    // The open applicant folder is read from the URL, not held only in state.
+    // A folder that lives in React state disappears on refresh and cannot be
+    // restored from a pasted link, which is exactly the context the back
+    // navigation needs to hand back.
+    const [selectedFolder, setSelectedFolder] = useState(() => {
+        if (typeof window === "undefined") return null;
+        return new URLSearchParams(window.location.search).get("folder") || null;
+    });
     const [isCompact, setIsCompact] = useState(false);
 
     // ── NEW FEATURES STATE ──
@@ -456,10 +465,18 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         if (currentPage > 1) params.set("page", String(currentPage));
         if (pageSize !== 10) params.set("size", String(pageSize));
 
+        // The open folder travels with the registry state, so a refresh or a
+        // pasted link returns the user to the folder they were working in.
+        // `from` is dropped here: it describes how a DETAIL page was reached and
+        // has no meaning on the registry itself.
+        if (selectedFolder) params.set("folder", selectedFolder);
+        else params.delete("folder");
+        params.delete("from");
+
         const queryStr = params.toString();
         const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
         window.history.replaceState({}, "", newUrl);
-    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, currentPage, pageSize]);
+    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, currentPage, pageSize, selectedFolder]);
 
     // Admin/PO audit (P1): this used to fall back to a SAMPLE_APPLICATIONS
     // fixture and render invented applicants, TCT and OR numbers as though they
@@ -1282,7 +1299,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     <div
                                                         key={idx}
                                                         className="group flex flex-col items-center p-3 rounded-2xl transition-all cursor-pointer hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 border border-transparent hover:border-slate-200/60"
-                                                        onClick={() => router.visit(`/applications/${item.id}`)}
+                                                        onClick={() => router.visit(detailUrlFromFolder("/applications", item.id, selectedFolder, typeof window !== "undefined" ? window.location.search : ""))}
                                                     >
                                                         <div className="relative mb-3 transition-transform duration-300 text-slate-300 group-hover:text-blue-500">
                                                             <svg width="72" height="72" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-md text-blue-500 group-hover:drop-shadow-lg transition-all duration-300">
