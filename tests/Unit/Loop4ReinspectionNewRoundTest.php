@@ -77,7 +77,20 @@ class Loop4ReinspectionNewRoundTest extends TestCase
         $this->assertStringContainsString("reviews.\$parcelId.assigned_notes", $source);
         $this->assertStringContainsString('$latestInspection->newRound($assignmentData)', $source);
         $this->assertStringContainsString('PushInspectionToSupabase::dispatch($inspection);', $source);
-        $this->assertMatchesRegularExpression('/\$inspection = \$latestInspection->newRound\(\$assignmentData\);\s*\$inspection->save\(\);\s*return \$inspection;/s', $source);
+
+        // A reinspection must CREATE a new round and then return that new round.
+        // Work reassignment Phase 1 inserted the round's opening assignment-history
+        // entry between the save and the return, so the sequence is no longer
+        // literally adjacent. The property under test is unchanged — a new row is
+        // built and saved, and it is that new row which is returned and pushed —
+        // so the assertion allows the intervening history call rather than
+        // requiring a fixed number of statements.
+        $this->assertMatchesRegularExpression(
+            '/\$inspection = \$latestInspection->newRound\(\$assignmentData\);\s*\$inspection->save\(\);.*?return \$inspection;/s',
+            $source
+        );
+        $this->assertStringContainsString('$this->recordRoundHistoryOpening($inspection, $assigningOfficer);', $source);
+
         $this->assertStringNotContainsString('SiteInspection::updateOrCreate(', $source);
         $this->assertStringContainsString("\$user->role !== 'Planning Officer'", $source);
         $this->assertStringNotContainsString("'Admin'", $this->method($source, 'currentPlanningOfficerAssignmentActor'));
