@@ -701,7 +701,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                 setFocusedRowIndex((prev) => Math.max(prev - 1, 0));
             } else if (e.key === "Enter" && focusedRowIndex >= 0 && paginatedRecords[focusedRowIndex]) {
                 e.preventDefault();
-                router.visit(`/applications/${paginatedRecords[focusedRowIndex].id || 101}`);
+                                                        router.visit(`/applications/${paginatedRecords[focusedRowIndex].id}`);
             } else if (e.key === " " && focusedRowIndex >= 0 && paginatedRecords[focusedRowIndex]) {
                 e.preventDefault();
                 setPeekItem(paginatedRecords[focusedRowIndex]);
@@ -1184,7 +1184,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                 return (
                                                                     <div
                                                                         key={card.id || refCode}
-                                                                        onClick={() => router.visit(`/applications/${card.id || 101}`)}
+                                                                        onClick={() => router.visit(`/applications/${card.id}`)}
                                                                         className="group bg-white rounded-lg border border-slate-200/80 p-3 hover:border-slate-300 hover:shadow-sm transition-all duration-200 cursor-pointer flex flex-col gap-2"
                                                                     >
                                                                         {/* Header: Ref & Date */}
@@ -1254,7 +1254,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                 </button>
                                                 <div>
                                                     <h3 className="text-[15px] font-bold text-slate-900 tracking-tight">{selectedFolder}</h3>
-                                                    <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">{(folderGroups[selectedFolder] || []).length} Document{(folderGroups[selectedFolder] || []).length !== 1 ? 's' : ''}</p>
+                                                    <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">{(folderGroups[selectedFolder] || []).length} Application{(folderGroups[selectedFolder] || []).length !== 1 ? 's' : ''}</p>
                                                 </div>
                                             </div>
                                             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
@@ -1262,7 +1262,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     <div
                                                         key={idx}
                                                         className="group flex flex-col items-center p-3 rounded-2xl transition-all cursor-pointer hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 border border-transparent hover:border-slate-200/60"
-                                                        onClick={() => router.visit(`/applications/${item.id || 101}`)}
+                                                        onClick={() => router.visit(`/applications/${item.id}`)}
                                                     >
                                                         <div className="relative mb-3 transition-transform duration-300 text-slate-300 group-hover:text-blue-500">
                                                             <svg width="72" height="72" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-md text-blue-500 group-hover:drop-shadow-lg transition-all duration-300">

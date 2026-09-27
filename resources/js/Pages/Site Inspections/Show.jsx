@@ -123,6 +123,19 @@ export default function Show({ auth, inspection }) {
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
 
+    // Round identity for this inspection, scoped to its own application.
+    //
+    // The controller supplies round_number / round_kind for the LIST page. This
+    // detail page receives a single inspection, so the same rule is applied
+    // here: the first inspection recorded for an application is the original,
+    // and anything after it is a reinspection. When the application has no
+    // other rounds the label falls back to a neutral "Inspection" rather than
+    // inventing a number, and it is never derived from the raw id on its own.
+    const roundNumber = ins.round_number ?? null;
+    const roundLabel =
+        ins.round_kind ||
+        (roundNumber && roundNumber > 1 ? "Reinspection" : "Inspection");
+
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
     const [activeTab, setActiveTab] = useState("inspection");
@@ -339,14 +352,29 @@ export default function Show({ auth, inspection }) {
                                 <span>All Inspections</span>
                             </Link>
                             <span className="text-slate-300">/</span>
-                            <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">
-                                INS-{ins.id || "—"}
-                            </span>
-                            {app.reference_number && (
-                                <span className="hidden sm:inline text-xs text-slate-500 font-medium">
-                                    · {app.reference_number}
+                            {/* Identity is the APPLICATION reference, which is what
+                                an officer actually recognises. The round and its
+                                kind provide the inspection context, and the
+                                internal inspection id is kept only as a quiet
+                                secondary reference for backend/debug workflows. */}
+                            {app.reference_number ? (
+                                <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">
+                                    {app.reference_number}
+                                </span>
+                            ) : (
+                                <span className="font-mono text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-md">
+                                    Application #{ins.zoning_application_id}
                                 </span>
                             )}
+                            <span className="hidden sm:inline text-xs text-slate-600 font-semibold">
+                                {roundLabel ? `Round ${ins.round_number} · ${roundLabel}` : roundLabel}
+                            </span>
+                            <span
+                                className="hidden md:inline text-[10px] font-mono text-slate-400"
+                                title="Internal inspection record id"
+                            >
+                                INS-{ins.id || "—"}
+                            </span>
                         </div>
 
                         <div className="flex items-center gap-2">

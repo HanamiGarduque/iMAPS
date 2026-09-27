@@ -2351,6 +2351,51 @@ the latest round as the primary card. The earlier completed round is not hidden
 from the data model - only from the current UI - and this is recorded here so
 the gap is explicit rather than implied.
 
+## APPLICATION versus SITE INSPECTION — record identity
+
+These are different records and must never be presented as the same thing.
+
+- **APPLICATION** = one `zoning_applications` record: a zoning application with
+  a reference number such as `APP-2026-00026`.
+- **SITE INSPECTION** = one `site_inspections` row: a single field-inspection
+  ROUND / task belonging to an application (and, where recorded, to one of its
+  parcels).
+- **An application can have multiple inspection rounds.**
+- **A reinspection creates another inspection round. It does NOT create another
+  zoning application.** The application keeps its identity and its completed
+  round; a new round is opened alongside it.
+
+### Why the distinction is easy to get wrong
+
+Both pages group records by applicant, so one applicant folder can hold more
+than one application, and one application can hold several rounds. In the local
+data one application has 7 inspection rounds, and one applicant has 5 separate
+applications. Round identity is therefore **scoped to the application**
+(`site_inspections.zoning_application_id`, ordered by id) and is never derived
+from the applicant, from a global counter, or from the raw inspection id alone.
+
+### Rules for user-facing labels
+
+- Prefer the **application reference number** and the round context over raw
+  database ids. The internal id may remain visible as a quiet secondary
+  reference for backend and debugging workflows, but it must not be the primary
+  human-facing identity.
+- The Applications page counts **applications**; the Site Inspections page counts
+  **inspection records**. Neither calls them generic "documents".
+- An inspection is labelled **Original Inspection** when it is the first round
+  recorded for its application, and **Reinspection** for any later round. When
+  that cannot be established, a neutral **Inspection** is preferred over a wrong
+  label.
+- Status wording must be locally provable. A locally `assigned` inspection is
+  **Assigned**, never "Ongoing" or "In Progress", because an assignment records
+  only that an inspector owns the task and not that field work has started. Only
+  a locally `completed` row is described as **Completed**.
+
+Worked example (local data, read-only, no applicant details recorded here): one
+application `APP-2026-00026` holds two inspection rounds — the first is the
+original inspection and is completed, the second is a reinspection and is still
+assigned. That is **one application and two inspections**, not two applications.
+
 ## Applications is the parent module
 
 `APPLICATIONS` is the parent module. `All Applications`, `Technical Review` and

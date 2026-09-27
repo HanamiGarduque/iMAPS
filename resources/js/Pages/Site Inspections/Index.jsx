@@ -586,7 +586,7 @@ export default function SiteInspectionsIndex() {
                                                         </button>
                                                         <div>
                                                             <h3 className="text-[15px] font-bold text-slate-900 tracking-tight">{selectedFolder}</h3>
-                                                            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">{(folderGroups[selectedFolder] || []).length} Document{(folderGroups[selectedFolder] || []).length !== 1 ? 's' : ''}</p>
+                                                            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">{(folderGroups[selectedFolder] || []).length} Inspection{(folderGroups[selectedFolder] || []).length !== 1 ? 's' : ''}</p>
                                                         </div>
                                                     </div>
                                                     <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
@@ -624,11 +624,30 @@ export default function SiteInspectionsIndex() {
                                                                     )}
                                                                 </div>
                                                                 <span className="text-[12px] font-bold text-slate-700 leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
-                                                                    {item.id}
+                                                                    {item.display_reference || `Application #${item.zoning_application_id}`}
+                                                                </span>
+                                                                {/* Round identity is scoped to the application, not the
+                                                                    applicant and not the raw id, and the status wording
+                                                                    is limited to what the local row can prove. */}
+                                                                <span className="text-[10px] font-semibold text-slate-600 mt-1 leading-tight">
+                                                                    {item.round_number ? `Round ${item.round_number} · ` : ""}{item.round_kind || "Inspection"}
+                                                                </span>
+                                                                <span className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${item.display_status === "Completed" ? "text-emerald-600" : "text-amber-600"}`}>
+                                                                    {item.display_status || "Assigned"}
                                                                 </span>
                                                                 <span className="text-[10px] text-slate-400 font-medium mt-1">
-                                                                    {item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : "—"}
+                                                                    {(() => {
+                                                                        // Locally provable dates only: when the inspection
+                                                                        // came back, otherwise when it was scheduled.
+                                                                        const stamp = item.submitted_at || item.completed_at || item.scheduled_date;
+                                                                        return stamp
+                                                                            ? new Date(stamp).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})
+                                                                            : "—";
+                                                                    })()}
                                                                 </span>
+                                                                {/* The internal record id stays available, but only as a
+                                                                    quiet secondary reference rather than the identity. */}
+                                                                <span className="text-[9px] font-mono text-slate-300 mt-0.5">INS-{item.id}</span>
                                                             </div>
                                                         ))}
                                                     </div>

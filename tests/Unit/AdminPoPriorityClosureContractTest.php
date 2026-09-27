@@ -452,6 +452,108 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $this->assertStringContainsString("redirect()->route('technicalreview.index', \$query)", $controller);
     }
 
+    // ── Application vs Site Inspection record identity ──
+
+    /**
+     * Tests 1 + 2: the two folder pages count different record types, so they
+     * must not both call their contents "Documents".
+     */
+    public function test_each_folder_page_uses_its_own_record_vocabulary(): void
+    {
+        $applications = $this->codeOf('resources/js/Pages/Applications/Index.jsx');
+        $inspections = $this->codeOf('resources/js/Pages/Site Inspections/Index.jsx');
+
+        $this->assertStringContainsString('.length} Application{', $applications);
+        $this->assertStringNotContainsString('.length} Document{', $applications);
+
+        $this->assertStringContainsString('.length} Inspection{', $inspections);
+        $this->assertStringNotContainsString('.length} Document{', $inspections);
+    }
+
+    /**
+     * Tests 3 + 4: the raw site_inspections.id must not be the primary label, and
+     * the application reference must be shown when available.
+     */
+    public function test_inspection_child_shows_reference_not_the_raw_id(): void
+    {
+        $inspections = $this->codeOf('resources/js/Pages/Site Inspections/Index.jsx');
+
+        $this->assertStringContainsString(
+            '{item.display_reference || `Application #${item.zoning_application_id}`}',
+            $inspections,
+            'The primary label must be the application reference.'
+        );
+
+        // The id is still present, but only as a quiet secondary reference.
+        $this->assertStringContainsString('INS-{item.id}', $inspections);
+    }
+
+    /**
+     * Tests 5 + 6: status wording is locally provable only. An `assigned` row is
+     * never presented as field progress.
+     */
+    public function test_inspection_status_wording_is_locally_provable(): void
+    {
+        $controller = $this->codeOf('app/Http/Controllers/SiteInspectionController.php');
+
+        $this->assertStringContainsString("'completed', 'submitted' => 'Completed'", $controller);
+        $this->assertStringContainsString("default => 'Assigned'", $controller);
+
+        $this->assertStringNotContainsString("'Ongoing'", $controller);
+        $this->assertStringNotContainsString("'In Progress'", $controller);
+    }
+
+    /**
+     * Tests 7 + 8: the round number and the original/reinspection classification
+     * must come from the per-application sequence, never from the applicant or
+     * the raw id.
+     */
+    public function test_round_identity_is_scoped_to_the_application(): void
+    {
+        $controller = $this->codeOf('app/Http/Controllers/SiteInspectionController.php');
+
+        $this->assertStringContainsString('roundNumbersByApplication', $controller);
+        $this->assertStringContainsString("->whereIn('zoning_application_id', \$applicationIds)", $controller);
+        $this->assertStringContainsString("->orderBy('zoning_application_id')", $controller);
+        $this->assertStringContainsString("->orderBy('id')", $controller);
+
+        // The first round of its OWN application is the original inspection.
+        $this->assertStringContainsString(
+            "\$round === 1 ? 'Original Inspection' : 'Reinspection'",
+            $controller
+        );
+    }
+
+    /**
+     * The detail page must not lead with the raw inspection id either.
+     */
+    public function test_inspection_detail_leads_with_the_application_reference(): void
+    {
+        $show = $this->codeOf('resources/js/Pages/Site Inspections/Show.jsx');
+
+        $this->assertStringContainsString('{app.reference_number}', $show);
+        $this->assertStringContainsString('Round ${ins.round_number}', $show);
+        $this->assertStringContainsString('INS-{ins.id || "—"}', $show);
+    }
+
+    /**
+     * Regression guard for a real defect found while verifying round numbers.
+     *
+     * The round map was first built with flatMap()/mapWithKeys(). flatMap()
+     * collapses through array_merge, which renumbers integer keys, so the
+     * inspection ids in the map were silently replaced by positional indexes.
+     * Two inspections of the same application then both came out as "Round 1".
+     * The map must be built by an explicit loop.
+     */
+    public function test_round_map_is_not_built_with_key_collapsing_collection_helpers(): void
+    {
+        $controller = $this->codeOf('app/Http/Controllers/SiteInspectionController.php');
+
+        $this->assertStringNotContainsString('mapWithKeys(', $controller);
+        $this->assertStringNotContainsString('->flatMap(', $controller);
+        $this->assertStringContainsString('$rounds[$row->id] = ++$round;', $controller);
+    }
+
     // ── Tests 14 + 15 + 16: report endpoint authorization, verified at runtime ──
 
     // ── Tests 4 + 5: decision controls are PO-only in the UI, PO keeps them ──
