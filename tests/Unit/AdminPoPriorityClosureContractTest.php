@@ -463,8 +463,10 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $applications = $this->codeOf('resources/js/Pages/Applications/Index.jsx');
         $inspections = $this->codeOf('resources/js/Pages/Site Inspections/Index.jsx');
 
-        $this->assertStringContainsString('.length} Application{', $applications);
-        $this->assertStringNotContainsString('.length} Document{', $applications);
+        // The Applications count is now a backend-supplied applicant total, so
+        // the wording is asserted rather than a page-local length expression.
+        $this->assertStringContainsString('Application${total !== 1 ? "s" : ""}', $applications);
+        $this->assertStringNotContainsString('Document{', $applications);
 
         $this->assertStringContainsString('.length} Inspection{', $inspections);
         $this->assertStringNotContainsString('.length} Document{', $inspections);
@@ -554,7 +556,108 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $this->assertStringContainsString('$rounds[$row->id] = ++$round;', $controller);
     }
 
-    // ── Tests 14 + 15 + 16: report endpoint authorization, verified at runtime ──
+    // ── Drafts status filter must not survive "All Drafts" ──
+
+    /**
+     * Regression for a reproducible bug: All Drafts -> Incomplete -> All Drafts
+     * left the list empty while the All Drafts tab looked active.
+     *
+     * Navigation used to be gated on `hasRecords`, so once a status legitimately
+     * returned no rows the next click only updated local state and never
+     * re-queried, leaving `status=Incomplete` in the URL.
+     */
+    public function test_drafts_navigation_never_depends_on_the_result_count(): void
+    {
+        $drafts = $this->codeOf('resources/js/Pages/Drafts/Index.jsx');
+
+        $this->assertStringNotContainsString('if (hasRecords) {', $drafts);
+        $this->assertStringNotContainsString('if (hasRecords && search', $drafts);
+        $this->assertMatchesRegularExpression(
+            '/const applyFilter = \(newFilters\) => \{.*?router\.get\("\/applications\/drafts"/s',
+            $drafts,
+            'applyFilter must always re-query the server.'
+        );
+    }
+
+    /**
+     * The query must be built from intentional filters only, with the status
+     * omitted entirely for "All Drafts" rather than re-sent or sent empty.
+     */
+    public function test_drafts_query_omits_status_for_all_drafts(): void
+    {
+        $drafts = $this->codeOf('resources/js/Pages/Drafts/Index.jsx');
+
+        $this->assertStringContainsString('function buildQuery(overrides = {}) {', $drafts);
+        $this->assertStringContainsString('delete next.status;', $drafts);
+
+        // The stale server filters prop must never be spread into the query.
+        $this->assertStringNotContainsString('{ ...filters,', $drafts);
+        $this->assertStringNotContainsString('{ ...filters, ...newFilters', $drafts);
+
+        $this->assertStringContainsString('setCurrentPage(1);', $drafts);
+    }
+
+    /**
+     * The active tab must follow the server query, not local state, so the
+     * highlight cannot disagree with the URL or the rows on screen.
+     */
+    public function test_drafts_active_tab_follows_the_server_query(): void
+    {
+        $drafts = $this->codeOf('resources/js/Pages/Drafts/Index.jsx');
+
+        $this->assertStringContainsString('const isSelected = (filters?.status || "") === s;', $drafts);
+        $this->assertStringNotContainsString('statusFilter', $drafts);
+    }
+
+    /**
+     * The placeholder fixtures must stay removed.
+     */
+    public function test_drafts_still_has_no_fabricated_rows(): void
+    {
+        $drafts = $this->codeOf('resources/js/Pages/Drafts/Index.jsx');
+
+        $this->assertStringNotContainsString('SAMPLE_DRAFTS', $drafts);
+        $this->assertStringNotContainsString('isUsingPlaceholders', $drafts);
+    }
+
+    /**
+     * The backend must treat an absent status as no filter, so omitting the
+     * parameter for "All Drafts" is genuinely equivalent to no status at all.
+     */
+    public function test_drafts_controller_treats_status_as_optional_filter(): void
+    {
+        $controller = $this->codeOf('app/Http/Controllers/ApplicationController.php');
+
+        $this->assertStringContainsString("if (\$request->filled('status')) {", $controller);
+    }
+
+    // ── Applicant folder counts must be true totals, not page-local ──
+
+    /**
+     * The folder count is only honest if the backend supplies a real
+     * applicant-level count for the current filters. Counting the loaded rows
+     * would present a page-local number as a total.
+     */
+    public function test_applicant_counts_come_from_the_backend(): void
+    {
+        $controller = $this->codeOf('app/Http/Controllers/ApplicationController.php');
+        $page = $this->codeOf('resources/js/Pages/Applications/Index.jsx');
+
+        $this->assertStringContainsString('applicant_counts', $controller);
+        $this->assertStringContainsString('COUNT(*) as folder_total', $controller);
+        $this->assertStringContainsString('groupByRaw($folderKey)', $controller);
+        $this->assertStringContainsString("'applicant_counts' => \$applicantCounts", $controller);
+
+        $this->assertStringContainsString('const applicantTotal = (name) => {', $page);
+        $this->assertStringContainsString('applicantTotal(selectedFolder)', $page);
+        $this->assertStringContainsString('showing ${listed}', $page);
+
+        $this->assertStringNotContainsString(
+            '.length} Application{',
+            $page,
+            'The folder header must not count only the loaded rows.'
+        );
+    }
 
     // ── Tests 4 + 5: decision controls are PO-only in the UI, PO keeps them ──
 

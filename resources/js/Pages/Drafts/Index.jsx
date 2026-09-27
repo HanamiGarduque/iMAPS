@@ -189,7 +189,10 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
     const [clock, setClock] = useState("");
     const [search, setSearch] = useState(filters?.search || "");
     const [selectedCategory, setSelectedCategory] = useState(filters?.application_type || "");
-    const [statusFilter, setStatusFilter] = useState(filters?.status || "");
+    // The status filter is NOT held in local state. It is read from the server
+    // `filters` prop on every render, so the highlighted tab, the URL and the
+    // rows on screen cannot drift apart after a tab change, a refresh, or a
+    // browser Back/Forward.
     const [pageSize, setPageSize] = useState(5);
     const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -228,30 +231,61 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
 
     useEffect(() => {
         const t = setTimeout(() => {
-            if (hasRecords && search !== (filters?.search || "")) {
-                router.get("/applications/drafts", { ...filters, search, application_type: selectedCategory, page: 1 }, { preserveState: true, replace: true });
+            if (search.trim() !== (filters?.search || "")) {
+                router.get("/applications/drafts", buildQuery(), { preserveState: true, preserveScroll: true, replace: true });
             }
         }, 350);
         return () => clearTimeout(t);
     }, [search]);
 
-    const applyFilter = (newFilters) => {
-        if (newFilters.status !== undefined) setStatusFilter(newFilters.status);
-        if (hasRecords) {
-            router.get("/applications/drafts", { ...filters, ...newFilters, application_type: selectedCategory, page: 1 }, { preserveState: true, replace: true });
-        } else {
-            setCurrentPage(1);
+    /**
+     * Build the query from the officer's INTENTIONAL filters only.
+     *
+     * This deliberately does NOT spread the server-provided `filters` prop.
+     * Doing so re-sent whatever status the previous request carried, so a stale
+     * `status=Incomplete` survived the return to "All Drafts". The status is
+     * omitted entirely for "All Drafts" rather than sent empty, and pagination
+     * resets to the first page on every filter change.
+     */
+    function buildQuery(overrides = {}) {
+        const next = { ...overrides };
+
+        if (search.trim()) next.search = search.trim();
+        if (selectedCategory) next.application_type = selectedCategory;
+
+        // "All Drafts" means no status filter at all.
+        if (next.status === undefined || next.status === "" || next.status === null) {
+            delete next.status;
         }
+
+        return next;
+    }
+
+    /**
+     * Navigation must NEVER depend on whether the current result set has rows.
+     *
+     * Gating it on `hasRecords` was the root cause of the reported bug: after
+     * selecting a status with no matching drafts the list was legitimately
+     * empty, so the next click only updated local state and never re-queried.
+     * The tab then looked active while the URL still carried the old status and
+     * the empty result persisted until a manual refresh.
+     */
+    const applyFilter = (newFilters) => {
+        setCurrentPage(1);
+
+        router.get("/applications/drafts", buildQuery(newFilters), {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        });
     };
 
     const clearFilters = () => {
         setSearch("");
         setSelectedCategory("");
-        setStatusFilter("");
         setCurrentPage(1);
-        if (hasRecords) {
-            router.get("/applications/drafts", {}, { preserveState: true, replace: true });
-        }
+
+        router.get("/applications/drafts", {}, { preserveState: true, replace: true });
     };
 
     const formatDateTime = (d) => {
@@ -302,8 +336,11 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
     const filteredList = useMemo(() => {
         let list = [...(drafts?.data || [])];
 
-        if (statusFilter) {
-            list = list.filter((item) => item.status === statusFilter);
+        // Mirrors the server filter, read from the same source as the active
+        // tab, so the client can never hide rows the server actually returned.
+        const activeStatus = filters?.status || "";
+        if (activeStatus) {
+            list = list.filter((item) => item.status === activeStatus);
         }
 
         if (selectedCategory) {
@@ -321,7 +358,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
         }
 
         return list;
-    }, [drafts, hasRecords, statusFilter, selectedCategory, search]);
+    }, [drafts, hasRecords, filters?.status, selectedCategory, search]);
 
     const totalPages = Math.max(1, Math.ceil(filteredList.length / pageSize));
     const paginatedRecords = useMemo(() => {
@@ -440,7 +477,10 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                                         {/* Premium Segmented Control */}
                                         <div className="inline-flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1 shrink-0 overflow-x-auto no-scrollbar shadow-inner">
                                             {["", ...STATUSES].map((s) => {
-                                                const isSelected = (statusFilter || "") === s;
+                                                // The active tab is derived from the SERVER query, not from
+                    // local state, so the highlighted tab can never disagree
+                    // with the URL or with the result actually on screen.
+                    const isSelected = (filters?.status || "") === s;
                                                 return (
                                                     <button
                                                         key={s || "all"}

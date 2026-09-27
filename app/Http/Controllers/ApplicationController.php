@@ -71,28 +71,7 @@ class ApplicationController extends Controller
                 'users.name as encoded_by_name'
             );
 
-        if ($request->filled('barangay'))
-            $query->where('zoning_applications.barangay', $request->barangay);
-
-        if ($request->filled('status'))
-            $query->where('zoning_applications.status', $request->status);
-
-        if ($request->filled('application_type'))
-            $query->where('zoning_applications.application_type', $request->application_type);
-
-        if ($request->filled('date_from'))
-            $query->whereDate('zoning_applications.created_at', '>=', $request->date_from);
-
-        if ($request->filled('date_to'))
-            $query->whereDate('zoning_applications.created_at', '<=', $request->date_to);
-
-        if ($request->filled('search')) {
-            $search = '%' . strtolower($request->search) . '%';
-            $query->where(function ($q) use ($search) {
-                $q->whereRaw('LOWER(zoning_applications.applicant_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(zoning_applications.reference_number) LIKE ?', [$search]);
-            });
-        }
+        $this->applyRegistryFilters($query, $request);
 
         $applications = $query
             ->orderByDesc('zoning_applications.created_at')
@@ -109,6 +88,36 @@ class ApplicationController extends Controller
             ->groupBy('status')
             ->pluck('total', 'status')
             ->toArray();
+
+        // Applicant-level counts for the folder view, using exactly the same
+        // filters as the paginated list above.
+        //
+        // The browser only ever receives one page of applications, so counting
+        // the loaded rows would label a PAGE-LOCAL number as if it were the
+        // applicant's total. This counts the applicant's real matching
+        // applications server-side instead, without loading them all.
+        //
+        // The query is built fresh from the shared filter helper rather than
+        // cloned from the list query: the list query carries eager loads and a
+        // withCount sub-select, and appending a GROUP BY aggregate to it produces
+        // a non-aggregated column that PostgreSQL rejects.
+        //
+        // The grouping key must be exactly what the browser can compute from the
+        // payload it receives. The list select does not include
+        // `corporation_name`, so the folder view groups by `applicant_name`;
+        // grouping by a corporation name here would key the counts by names the
+        // UI never uses, and those applicants would silently fall back to the
+        // page-local number.
+        $folderKey = "COALESCE(NULLIF(BTRIM(applicant_name), ''), 'Unknown Applicant')";
+
+        $applicantCountQuery = $this->applyRegistryFilters(ZoningApplication::query(), $request);
+
+        $applicantCounts = $applicantCountQuery
+            ->selectRaw("{$folderKey} as folder_key, COUNT(*) as folder_total")
+            ->groupByRaw($folderKey)
+            ->pluck('folder_total', 'folder_key')
+            ->map(fn ($value) => (int) $value)
+            ->all();
 
         // Attach the Planning Officer inspection line. Returns null when the
         // application has no inspection at all, and the UI then renders no line
@@ -137,15 +146,51 @@ class ApplicationController extends Controller
         });
 
         return Inertia::render('Applications/Index', [
-            'applications'  => $applications,
-            'filters'       => (object) $request->only(['barangay', 'status', 'application_type', 'date_from', 'date_to', 'search']),
-            'inspectors'    => $inspectors,
-            'status_counts' => $statusCounts,
+            'applications'    => $applications,
+            'filters'         => (object) $request->only(['barangay', 'status', 'application_type', 'date_from', 'date_to', 'search']),
+            'inspectors'      => $inspectors,
+            'status_counts'   => $statusCounts,
+            'applicant_counts' => $applicantCounts,
         ]);
     }
 // ─────────────────────────────────────────────────────────────────────────
     // CREATE — Show encode form
     // ─────────────────────────────────────────────────────────────────────────
+    /**
+     * Apply the Applications registry filters to a query.
+     *
+     * Shared by the paginated list and the applicant-level count query so the
+     * folder counts can never mean something different from the rows being
+     * listed. Search and every filter are treated identically for both.
+     */
+    private function applyRegistryFilters($query, Request $request)
+    {
+        if ($request->filled('barangay'))
+            $query->where('zoning_applications.barangay', $request->barangay);
+
+        if ($request->filled('status'))
+            $query->where('zoning_applications.status', $request->status);
+
+        if ($request->filled('application_type'))
+            $query->where('zoning_applications.application_type', $request->application_type);
+
+        if ($request->filled('date_from'))
+            $query->whereDate('zoning_applications.created_at', '>=', $request->date_from);
+
+        if ($request->filled('date_to'))
+            $query->whereDate('zoning_applications.created_at', '<=', $request->date_to);
+
+        if ($request->filled('search')) {
+            $search = '%' . strtolower($request->search) . '%';
+            $query->where(function ($q) use ($search) {
+                $q->whereRaw('LOWER(zoning_applications.applicant_name) LIKE ?', [$search])
+                    ->orWhereRaw('LOWER(zoning_applications.reference_number) LIKE ?', [$search]);
+            });
+        }
+
+        return $query;
+    }
+
     public function create(Request $request)
     {
         $draftPayload = null;

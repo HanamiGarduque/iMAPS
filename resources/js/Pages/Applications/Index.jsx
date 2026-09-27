@@ -353,7 +353,7 @@ function DropdownSelect({
     );
 }
 
-export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [] }) {
+export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [], applicant_counts = {} }) {
     const [clock, setClock] = useState("");
 
     // URL parameter synchronization
@@ -657,10 +657,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     // Group records by applicant name for the Folder view
     const folderGroups = useMemo(() => {
         const groups = {};
-        // Group ALL filtered records, or just paginated? Usually it's better to group all filtered 
-        // to show accurate folders, but since it's client-side paginated we can group the filteredList
-        // and let them browse. But wait, pagination applies to rows. If we group filteredList, 
-        // we might have many folders.
         filteredList.forEach(app => {
             const name = (app.corporation_name || app.applicant_name)?.trim() || 'Unknown Applicant';
             if (!groups[name]) groups[name] = [];
@@ -668,6 +664,20 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         });
         return groups;
     }, [filteredList]);
+
+    /**
+     * True number of applications this applicant has for the CURRENT filters.
+     *
+     * The browser only holds one page of applications, so counting the loaded
+     * rows would present a page-local number as if it were a total. The
+     * controller supplies the real matching count per applicant, computed with
+     * the same filter semantics. When that count is unavailable we fall back to
+     * the loaded rows rather than inventing a number.
+     */
+    const applicantTotal = (name) => {
+        const server = applicant_counts?.[name];
+        return Number.isFinite(Number(server)) ? Number(server) : (folderGroups[name] || []).length;
+    };
 
     const startIndex = (currentPage - 1) * pageSize + 1;
     const endIndex = Math.min(currentPage * pageSize, filteredList.length);
@@ -1254,7 +1264,17 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                 </button>
                                                 <div>
                                                     <h3 className="text-[15px] font-bold text-slate-900 tracking-tight">{selectedFolder}</h3>
-                                                    <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">{(folderGroups[selectedFolder] || []).length} Application{(folderGroups[selectedFolder] || []).length !== 1 ? 's' : ''}</p>
+                                                    <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">
+                                                        {(() => {
+                                                            const total = applicantTotal(selectedFolder);
+                                                            const listed = (folderGroups[selectedFolder] || []).length;
+                                                            const label = `${total} Application${total !== 1 ? "s" : ""}`;
+                                                            // When the browser only loaded part of this
+                                                            // applicant's records, say so rather than
+                                                            // implying the listed rows are all they have.
+                                                            return total > listed ? `${label} · showing ${listed}` : label;
+                                                        })()}
+                                                    </p>
                                                 </div>
                                             </div>
                                             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
@@ -1314,7 +1334,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                         key={applicant}
                                                         className="group cursor-pointer flex flex-col items-center p-2 rounded-xl hover:bg-blue-50/50 transition-colors"
                                                         onClick={() => setSelectedFolder(applicant)}
-                                                        title={`View ${apps.length} application(s) for ${applicant}`}
+                                                        title={`View ${applicantTotal(applicant)} application(s) for ${applicant}`}
                                                     >
                                                         <div className="relative mb-3 transition-transform duration-200 group-hover:scale-105 group-hover:-translate-y-1">
                                                             {/* Custom SVG folder icon mimicking desktop file explorer folders */}
@@ -1342,9 +1362,11 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                 </defs>
                                                             </svg>
                                                             
-                                                            {/* Count badge styled like notification pills */}
+                                                            {/* Count badge styled like notification pills. Shows the
+                                                                applicant's true matching application count, not the
+                                                                number of rows that happened to load on this page. */}
                                                             <span className="absolute -bottom-1 -right-1 bg-white text-slate-800 text-[10px] font-black px-1.5 py-0.5 min-w-[20px] rounded-full shadow-sm border border-slate-200">
-                                                                {apps.length}
+                                                                {applicantTotal(applicant)}
                                                             </span>
                                                         </div>
                                                         <span className="text-[11px] font-bold text-slate-700 leading-snug line-clamp-2 px-1 group-hover:text-blue-700">
