@@ -8,11 +8,17 @@ use App\Models\User;
 use App\Models\TechnicalReview;
 use App\Services\AuditLogger;
 use App\Models\ApplicationDraft;
+use App\Models\ApplicationPoAssignment;
 use App\Models\SiteInspection;
+use App\Models\SiteInspectionAssignment;
 use App\Jobs\PushInspectionToSupabase; 
 use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
+use App\Services\SupabaseService;
+use App\Services\WorkAssignmentService;
 use App\Support\InspectionSummary;
+use App\Support\InspectorTransferGuard;
+use App\Support\ReassignmentReasons;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -79,7 +85,7 @@ class ApplicationController extends Controller
             ->paginate(25)
             ->withQueryString();
 
-        $inspectors = User::where('role', 'Site Inspector')
+        $inspectors = User::activeSiteInspectors()
             ->select('id', 'name')
             ->orderBy('name', 'asc')
             ->get();
@@ -218,8 +224,9 @@ class ApplicationController extends Controller
             }
         }
 
-        // --- NEW: Fetch Site Inspectors ---
-        $inspectors = User::where('role', 'Site Inspector')
+        // --- Fetch Site Inspectors ---
+        // Active-account + FieldSync-account enforcement via the shared scope.
+        $inspectors = User::activeSiteInspectors()
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
@@ -541,8 +548,7 @@ class ApplicationController extends Controller
             ->where('zoning_applications.id', $id)
             ->first();
 
-        $inspectors = User::where('role', 'Site Inspector')
-            ->whereNotNull('handshake_key') // Ensure only inspectors with handshake_key are fetched
+        $inspectors = User::activeSiteInspectors()
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
@@ -567,12 +573,114 @@ class ApplicationController extends Controller
             ->orderByDesc('audit_trail.performed_at')
             ->get();
 
+        // ── Work assignment data (business continuity) ───────────────────────
+        $assignments = app(WorkAssignmentService::class);
+        $viewerRole = Auth::user()?->role;
+
+        // The CURRENT round on each parcel, i.e. the one the page is about to
+        // show. Ownership is a property of a round, never of the application.
+        $openRounds = $application->parcels
+            ->map(fn ($parcel) => $parcel->siteInspection)
+            ->filter()
+            ->values();
+
+        // ONE batched remote read for every round on this page. The guard needs
+        // the FieldSync state because local status cannot prove a round is
+        // unstarted: a round in progress in the field still reads locally as
+        // "assigned".
+        $remoteStates = $openRounds->isEmpty()
+            ? []
+            : app(SupabaseService::class)->fieldJobTransferStates(
+                $openRounds->map(fn ($inspection) => (int) $inspection->id)->all()
+            );
+
+        // Round number per inspection id, taken from the PARCEL that owns the
+        // round. Reading it off the inspection's own parcel relation would lazy
+        // load one parcel per round and would not carry the withCount attribute.
+        $roundNumberByInspection = $application->parcels
+            ->filter(fn ($parcel) => $parcel->siteInspection)
+            ->mapWithKeys(fn ($parcel) => [
+                (int) $parcel->siteInspection->id => (int) ($parcel->site_inspections_count ?? 1),
+            ]);
+
+        $inspectorRoundState = $openRounds->mapWithKeys(function ($inspection) use ($remoteStates, $roundNumberByInspection) {
+            $remote = $remoteStates[(int) $inspection->id] ?? [];
+
+            $decision = InspectorTransferGuard::evaluate([
+                'local_status'              => $inspection->status,
+                'remote_readable'           => $remote !== [],
+                'remote_status'             => $remote['status'] ?? null,
+                'gps_confirmed_at'          => $remote['gps_confirmed_at'] ?? null,
+                'checklist_completed_count' => $remote['checklist_completed_count'] ?? 0,
+                'photo_count'               => $remote['photo_count'] ?? 0,
+            ]);
+
+            // The round number is the 1-based position of this round within its
+            // own application, which is the same numbering the parcel panel shows.
+            $roundNumber = $roundNumberByInspection[(int) $inspection->id] ?? 1;
+
+            return [(int) $inspection->id => [
+                'inspection_id'   => (int) $inspection->id,
+                'round_number'   => $roundNumber,
+                'inspector_id'   => $inspection->inspector_id,
+                'inspector_name' => $inspection->inspector?->name,
+                'allowed'        => $decision['allowed'],
+                'blocked_reason' => $decision['reason'],
+            ]];
+        });
+
+        $inspectionHistory = $openRounds->isEmpty()
+            ? collect()
+            : SiteInspectionAssignment::with(['fromInspector:id,name', 'toInspector:id,name', 'actor:id,name'])
+                ->whereIn('site_inspection_id', $openRounds->map(fn ($i) => (int) $i->id))
+                ->orderBy('reassigned_at')
+                ->orderBy('id')
+                ->get()
+                ->groupBy('site_inspection_id');
+
+        $poHistory = ApplicationPoAssignment::with([
+                'fromPlanningOfficer:id,name',
+                'toPlanningOfficer:id,name',
+                'actor:id,name',
+            ])
+            ->where('zoning_application_id', $id)
+            ->orderBy('reassigned_at')
+            ->orderBy('id')
+            ->get();
+
         return Inertia::render('Applications/Show', [
             'application'      => $application,
             'parcels'          => $application->parcels,
             'technicalReviews' => $technicalReviews,
             'auditTrail'       => $auditTrail,
             'inspectors'       => $inspectors,
+
+            // ── Work assignment (business continuity) ────────────────────────
+            // Two SEPARATE responsibilities, presented separately:
+            //   * APPLICATION-level: who currently owns this application. Admin
+            //     may initiate a handover. Nobody inherits decision rights.
+            //   * ROUND-level: who currently holds each inspection round. Only a
+            //     Planning Officer may hand a round over, and only while it is
+            //     provably untouched in the field.
+            //
+            // `assignedPlanningOfficer` stays null until ownership has genuinely
+            // been established. The current business flow has no step that
+            // assigns an application to an officer, so historical rows are left
+            // unowned rather than backfilled with a guess.
+            'assignedPlanningOfficer' => $application->assigned_planning_officer_id
+                ? User::find($application->assigned_planning_officer_id)?->only(['id', 'name'])
+                : null,
+            'planningOfficers'        => $assignments->activePlanningOfficers(),
+            'poAssignmentHistory'     => $poHistory,
+            'inspectorRoundState'     => $inspectorRoundState,
+            'inspectionHistory'       => $inspectionHistory,
+            'reassignmentReasons'     => ReassignmentReasons::all(),
+
+            // Authority is stated by the server rather than inferred in the
+            // browser, so the UI can never offer a control the route would refuse.
+            'canReassignPlanningOfficer' => $viewerRole === 'Admin',
+            'canReassignInspector'       => $viewerRole === 'Planning Officer',
+
             'statusOrder'      => self::STATUS_ORDER,
         ]);
     }

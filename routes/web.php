@@ -12,6 +12,7 @@ use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\TaxMapLookupController;
+use App\Http\Controllers\WorkReassignmentController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -146,6 +147,26 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/api/inspections/{localInspectionId}/supabase-data', [TechnicalReviewController::class, 'getSupabaseInspectionData'])
         ->name('api.inspections.supabase')
+        ->middleware('role:Admin,Planning Officer');
+
+    // ── Work Reassignment (business continuity, no account sharing) ──
+    // Two SEPARATE responsibilities that are deliberately not merged:
+    //   * Application ownership is Admin-initiated. Handing an application to
+    //     another active Planning Officer keeps the work moving WITHOUT giving
+    //     Admin any Planning Officer decision authority.
+    //   * Inspection-round ownership is Planning-Officer-initiated. Admin does
+    //     not reassign Site Inspectors in Phase 1.
+    // No route here lets anyone act as, or log in as, another employee.
+    Route::post('/applications/reassign-planning-officer', [WorkReassignmentController::class, 'reassignPlanningOfficer'])
+        ->name('applications.reassign-planning-officer')
+        ->middleware('role:Admin');
+
+    Route::post('/site-inspections/reassign-inspector', [WorkReassignmentController::class, 'reassignInspector'])
+        ->name('site-inspections.reassign-inspector')
+        ->middleware('role:Planning Officer');
+
+    Route::get('/work-reassignment/reasons', [WorkReassignmentController::class, 'reasons'])
+        ->name('work-reassignment.reasons')
         ->middleware('role:Admin,Planning Officer');
 
 });

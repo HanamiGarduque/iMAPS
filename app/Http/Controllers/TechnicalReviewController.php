@@ -12,11 +12,11 @@ use App\Models\SiteInspection;
 use App\Services\AuditLogger;
 use App\Services\ApplicationStatusTracker;
 use App\Services\SupabaseService;
+use App\Services\WorkAssignmentService;
 
 use Illuminate\Support\Facades\Log; // For placeholder SMS logic
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
@@ -126,9 +126,12 @@ class TechnicalReviewController extends Controller
             return $app;
         });
 
-        // Fetch specifically Site Inspectors
-        $inspectors = User::where('role', 'Site Inspector')
-            ->whereNotNull('handshake_key')
+        // Fetch specifically Site Inspectors.
+        // Active-account enforcement: a suspended inspector is never offered, so
+        // the queue cannot hand a task to somebody who cannot log in. The scope
+        // is shared with the validation rule below, so the options and the
+        // acceptance test can never disagree.
+        $inspectors = User::activeSiteInspectors()
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
@@ -155,9 +158,7 @@ class TechnicalReviewController extends Controller
             'inspector_id'       => [
                 'required_if:decision,Needs Site Inspection,Requires Reinspection',
                 'nullable',
-                Rule::exists('users', 'id')->where(fn ($query) => $query
-                    ->where('role', 'Site Inspector')
-                    ->whereNotNull('handshake_key')),
+                User::activeSiteInspectorRule(),
             ],
             'scheduled_date'     => 'required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:today',
             'deadline_date'      => 'required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:scheduled_date',
@@ -165,7 +166,7 @@ class TechnicalReviewController extends Controller
 
             'parcel_id'          => 'required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|exists:parcels,id',
         ], [
-            'inspector_id.exists' => 'The selected inspector must be a Site Inspector with an active FieldSync account.',
+            'inspector_id.exists' => 'The selected inspector must be an active Site Inspector with a FieldSync account.',
         ]);
 
         if (in_array($validated['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)) {
@@ -324,15 +325,13 @@ class TechnicalReviewController extends Controller
             'reviews.*.decision_reason'          => 'nullable|string',
             'reviews.*.inspector_id'             => [
                 'nullable',
-                Rule::exists('users', 'id')->where(fn ($query) => $query
-                    ->where('role', 'Site Inspector')
-                    ->whereNotNull('handshake_key')),
+                User::activeSiteInspectorRule(),
             ],
             'reviews.*.scheduled_date'           => 'nullable|date|after_or_equal:today',
             'reviews.*.deadline_date'            => 'nullable|date|after_or_equal:reviews.*.scheduled_date', 
             'reviews.*.assigned_notes'           => 'nullable|string',
         ], [
-            'reviews.*.inspector_id.exists' => 'The selected inspector must be a Site Inspector with an active FieldSync account.',
+            'reviews.*.inspector_id.exists' => 'The selected inspector must be an active Site Inspector with a FieldSync account.',
         ]);
 
         $application = ZoningApplication::with('parcels:id,zoning_application_id,latitude,longitude')
@@ -487,15 +486,13 @@ class TechnicalReviewController extends Controller
             'parcel_id'             => 'required|exists:parcels,id',
             'inspector_id'          => [
                 'required',
-                Rule::exists('users', 'id')->where(fn ($query) => $query
-                    ->where('role', 'Site Inspector')
-                    ->whereNotNull('handshake_key')),
+                User::activeSiteInspectorRule(),
             ],
             'scheduled_date'        => 'required|date|after_or_equal:today',
             'deadline_date'         => 'required|date|after_or_equal:scheduled_date',
             'assigned_notes'        => 'nullable|string',
         ], [
-            'inspector_id.exists' => 'The selected inspector must be a Site Inspector with an active FieldSync account.',
+            'inspector_id.exists' => 'The selected inspector must be an active Site Inspector with a FieldSync account.',
         ]);
 
         $parcel = Parcel::whereKey($validated['parcel_id'])
@@ -511,6 +508,25 @@ class TechnicalReviewController extends Controller
         $this->validateFieldSyncParcelCoordinates($parcel);
         $assigningOfficer = $this->currentPlanningOfficerAssignmentActor();
 
+        // A round is one field job. Creating a second round for the same
+        // application and parcel while an earlier one is still open would produce
+        // a duplicate field job and a duplicate round number, and the inspector
+        // who was dropped would never find out. An open round is changed through
+        // the guarded Reassign Inspector path instead, which keeps the previous
+        // inspector, records the reason and refuses once the field app has begun.
+        $openRound = SiteInspection::where('zoning_application_id', $validated['zoning_application_id'])
+            ->where('parcel_id', $validated['parcel_id'])
+            ->where('status', '!=', 'completed')
+            ->latest('id')
+            ->lockForUpdate()
+            ->first();
+
+        if ($openRound) {
+            throw ValidationException::withMessages([
+                'inspector_id' => 'This parcel already has an open inspection round. Use Reassign Inspector on that round to hand it to a different Site Inspector.',
+            ]);
+        }
+
         $inspection = SiteInspection::create([
             'zoning_application_id'      => $validated['zoning_application_id'],
             'parcel_id'                  => $validated['parcel_id'],
@@ -522,6 +538,14 @@ class TechnicalReviewController extends Controller
             'assigned_by_name'           => $assigningOfficer['name'],
             'status'                     => 'assigned',
         ]);
+
+        // Start the round's ownership history from its very first entry, so the
+        // story of who held it is complete from the beginning rather than
+        // beginning at the first handover.
+        app(WorkAssignmentService::class)->recordInitialInspectorAssignment(
+            $inspection,
+            $request->user(),
+        );
 
         PushInspectionToSupabase::dispatch($inspection);
 
@@ -560,6 +584,10 @@ class TechnicalReviewController extends Controller
             $inspection = $latestInspection->newRound($assignmentData);
             $inspection->save();
 
+            // A reinspection is a brand new round with its own inspector, so it
+            // starts its own ownership history rather than inheriting Round 1's.
+            $this->recordRoundHistoryOpening($inspection, $assigningOfficer);
+
             return $inspection;
         }
 
@@ -570,18 +598,67 @@ class TechnicalReviewController extends Controller
                 ]);
             }
 
-            $latestInspection->fill([...$assignmentData, 'status' => 'assigned']);
+            // A round that already exists and is not completed must NOT have its
+            // inspector silently rewritten. Changing who holds a round is a
+            // continuity event that has to keep the previous owner, the reason,
+            // the actor and a timestamp, and it has to be refused once the field
+            // app has started working on it. That can only happen on the guarded
+            // path (WorkReassignmentController), which owns the FieldSync safety
+            // check and the history write.
+            //
+            // Previously this branch did:
+            //   $latestInspection->fill([...$assignmentData, 'status' => 'assigned']);
+            // which overwrote inspector_id with no history, forced the lifecycle
+            // back to "assigned" even if work had begun, and kept any
+            // submitted_at / findings already on the row.
+            if ((int) $latestInspection->inspector_id !== (int) $assignmentData['inspector_id']) {
+                throw ValidationException::withMessages([
+                    'inspector_id' => 'This round is already assigned to another Site Inspector. Use Reassign Inspector on the round to hand it over safely.',
+                ]);
+            }
+
+            // Same inspector: this is a reschedule, not a handover. Only the
+            // schedule moves. The lifecycle status is left exactly as it is, and
+            // the assigning officer is left as recorded, because neither a
+            // reschedule nor this method is an assignment event.
+            $latestInspection->fill([
+                'scheduled_date' => $assignmentData['scheduled_date'],
+                'deadline_date'  => $assignmentData['deadline_date'],
+                'assigned_notes' => $assignmentData['assigned_notes'],
+            ]);
             $latestInspection->save();
 
             return $latestInspection;
         }
 
-        return SiteInspection::create([
+        $created = SiteInspection::create([
             'zoning_application_id' => $application->id,
             'parcel_id'             => $parcel->id,
             ...$assignmentData,
             'status'                => 'assigned',
         ]);
+
+        $this->recordRoundHistoryOpening($created, $assigningOfficer);
+
+        return $created;
+    }
+
+    /**
+     * Open a new round's inspector-ownership history with its first entry.
+     *
+     * Every round that gets an inspector now begins with a recorded assignment,
+     * so "who was this round given to, and by whom" is answerable for the whole
+     * life of the round rather than only from its first handover onwards.
+     */
+    private function recordRoundHistoryOpening(SiteInspection $inspection, array $assigningOfficer): void
+    {
+        $actor = User::find($assigningOfficer['id']);
+
+        if (! $actor) {
+            return;
+        }
+
+        app(WorkAssignmentService::class)->recordInitialInspectorAssignment($inspection, $actor);
     }
 
     /**

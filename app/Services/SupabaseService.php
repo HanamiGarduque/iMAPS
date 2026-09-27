@@ -217,6 +217,80 @@ class SupabaseService
     }
 
     /**
+     * Read the REMOTE lifecycle state of one or more field jobs.
+     *
+     * This is the authority for "has this round actually been started in the
+     * field?", because local iMAPS state CANNOT answer it. Local
+     * `site_inspections.status` has no in-progress value, so a round that
+     * FieldSync reports as in progress still reads locally as "assigned".
+     * Reassigning an inspector on that false premise would hand a half-finished
+     * job to somebody else while the previous inspector's phone keeps a working
+     * offline copy.
+     *
+     * Returns a map keyed by local_inspection_id. An id that is absent from the
+     * result was NOT proven unstarted, and every caller must treat absence as a
+     * refusal rather than as permission.
+     *
+     * @param  array<int, int>  $localInspectionIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function fieldJobTransferStates(array $localInspectionIds): array
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_map('intval', $localInspectionIds),
+            static fn (int $id): bool => $id > 0
+        )));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $response = $this->select(
+            'field_jobs',
+            'local_inspection_id,status,gps_confirmed_at,checklist_completed_count,photo_count',
+            [
+                'local_inspection_id' => 'in.(' . implode(',', $ids) . ')',
+                'limit'               => (string) count($ids),
+            ]
+        );
+
+        if ($response->failed()) {
+            Log::error('Failed to read FieldSync job state for reassignment guard', [
+                'local_inspection_ids' => $ids,
+                'status'               => $response->status(),
+                'body'                 => $response->body(),
+            ]);
+
+            return [];
+        }
+
+        $rows = $response->json();
+
+        if (! is_array($rows)) {
+            return [];
+        }
+
+        $states = [];
+
+        foreach ($rows as $row) {
+            $localId = $row['local_inspection_id'] ?? null;
+
+            if ($localId === null) {
+                continue;
+            }
+
+            $states[(int) $localId] = [
+                'status'                   => $row['status'] ?? null,
+                'gps_confirmed_at'         => $row['gps_confirmed_at'] ?? null,
+                'checklist_completed_count' => $row['checklist_completed_count'] ?? 0,
+                'photo_count'              => $row['photo_count'] ?? 0,
+            ];
+        }
+
+        return $states;
+    }
+
+    /**
      * Upsert one read-only Planning Review record for a reviewed inspection round.
      *
      * Loop 8 contract:
