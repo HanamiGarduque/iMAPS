@@ -48,6 +48,10 @@ class ZoningApplication extends Model
         'or_number',
         'remarks',
         'encoded_by',
+        // CURRENT responsible Planning Officer. This is NOT `encoded_by`
+        // (who typed the application up) and NOT `technical_reviews.reviewed_by`
+        // (who decided in a given round). Those keep their own meanings.
+        'assigned_planning_officer_id',
         'zoning_certificate_fee',
         'locational_clearance_fee',
         'development_permit_fee',
@@ -103,6 +107,30 @@ class ZoningApplication extends Model
     public function encodedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'encoded_by');
+    }
+
+    /**
+     * The Planning Officer CURRENTLY responsible for this application.
+     *
+     * Returns null when ownership has never been established. That is the
+     * honest answer: the current business flow has no step that assigns an
+     * application to an officer, so historical rows are left unowned rather
+     * than backfilled with a guess.
+     */
+    public function assignedPlanningOfficer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_planning_officer_id');
+    }
+
+    /**
+     * Append-only ownership history. Oldest first, so a "changed by" line reads
+     * in the order the changes actually happened.
+     */
+    public function poAssignmentHistory(): HasMany
+    {
+        return $this->hasMany(ApplicationPoAssignment::class, 'zoning_application_id')
+            ->orderBy('reassigned_at')
+            ->orderBy('id');
     }
 
     public static function countThisMonth(): int

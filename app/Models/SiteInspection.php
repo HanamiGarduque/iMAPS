@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SiteInspection extends Model
 {
@@ -121,5 +122,18 @@ class SiteInspection extends Model
     public function parcel(): BelongsTo
     {
         return $this->belongsTo(Parcel::class, 'parcel_id');
+    }
+
+    /**
+     * Append-only inspector ownership history for THIS round.
+     *
+     * Scoped to the round, because a reinspection is a separate row and must
+     * never inherit or overwrite the previous round's ownership story.
+     */
+    public function assignmentHistory(): HasMany
+    {
+        return $this->hasMany(SiteInspectionAssignment::class, 'site_inspection_id')
+            ->orderBy('reassigned_at')
+            ->orderBy('id');
     }
 }
