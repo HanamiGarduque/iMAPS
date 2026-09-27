@@ -45,6 +45,12 @@ class WorkReassignmentController extends Controller
 
     /**
      * Hand an application to another Planning Officer. Admin only.
+     *
+     * Serves both directions of the same control:
+     *   - an application with no current owner is ASSIGNED, and no reason is
+     *     asked for, because nothing is being taken away from anybody;
+     *   - an application that already has an owner is REASSIGNED, and a reason
+     *     is required, because that IS a handover.
      */
     public function reassignPlanningOfficer(Request $request)
     {
@@ -53,7 +59,10 @@ class WorkReassignmentController extends Controller
         $validated = $request->validate([
             'zoning_application_id'      => 'required|integer|exists:zoning_applications,id',
             'to_planning_officer_id'     => ['required', 'integer', Rule::exists('users', 'id')],
-            'reason'                     => ['required', 'string', Rule::in(ReassignmentReasons::all())],
+            // Optional here and made mandatory below only when there is an
+            // existing owner to replace. Asking for a reason to give work to
+            // somebody for the first time would force an untrue answer.
+            'reason'                     => ['nullable', 'string', Rule::in(ReassignmentReasons::all())],
             'reason_note'                => [
                 'nullable',
                 'string',
@@ -66,17 +75,27 @@ class WorkReassignmentController extends Controller
 
         $application = ZoningApplication::findOrFail($validated['zoning_application_id']);
 
+        $isReplacingAnOwner = $application->assigned_planning_officer_id !== null;
+
+        if ($isReplacingAnOwner && blank($validated['reason'] ?? null)) {
+            throw ValidationException::withMessages([
+                'reason' => 'Select a reason for transferring this application from its current Planning Officer.',
+            ]);
+        }
+
         $this->assignments->reassignPlanningOfficer(
             $application,
             $request->user(),
             (int) $validated['to_planning_officer_id'],
-            $validated['reason'],
+            $validated['reason'] ?? ReassignmentReasons::ABSENT,
             $validated['reason_note'] ?? null,
         );
 
         return back()->with(
             'success',
-            'Application ownership transferred. The application status and its technical review history were not changed.'
+            $isReplacingAnOwner
+                ? 'Application ownership transferred. The application status and its technical review history were not changed.'
+                : 'Planning Officer assigned to this application. The application status and its technical review history were not changed.'
         );
     }
 
@@ -91,7 +110,11 @@ class WorkReassignmentController extends Controller
             'site_inspection_id' => 'required|integer|exists:site_inspections,id',
             'zoning_application_id' => 'required|integer|exists:zoning_applications,id',
             'to_inspector_id'    => ['required', 'integer', Rule::exists('users', 'id')],
-            'reason'             => ['required', 'string', Rule::in(ReassignmentReasons::all())],
+            // Optional, and made mandatory below only when this round already has
+            // an inspector to take the work from. Same rule as Planning Officer
+            // ownership: a reason describes a handover, so a first assignment
+            // does not get one.
+            'reason'             => ['nullable', 'string', Rule::in(ReassignmentReasons::all())],
             'reason_note'        => [
                 'nullable',
                 'string',
@@ -103,6 +126,14 @@ class WorkReassignmentController extends Controller
         ]);
 
         $inspection = SiteInspection::with('parcel')->findOrFail($validated['site_inspection_id']);
+
+        $isReplacingAnInspector = $inspection->inspector_id !== null;
+
+        if ($isReplacingAnInspector && blank($validated['reason'] ?? null)) {
+            throw ValidationException::withMessages([
+                'reason' => 'Select a reason for transferring this round from its current Site Inspector.',
+            ]);
+        }
 
         // The round must belong to the application the request claims, and to a
         // parcel of that application. Without this a Planning Officer could name
@@ -133,7 +164,7 @@ class WorkReassignmentController extends Controller
             $inspection,
             $request->user(),
             (int) $validated['to_inspector_id'],
-            $validated['reason'],
+            $validated['reason'] ?? ReassignmentReasons::ABSENT,
             $validated['reason_note'] ?? null,
             $remoteState,
         );
@@ -145,7 +176,9 @@ class WorkReassignmentController extends Controller
 
         return back()->with(
             'success',
-            'Site Inspector reassigned. The inspection round, its status and its evidence were not changed.'
+            $isReplacingAnInspector
+                ? 'Site Inspector reassigned. The inspection round, its status and its evidence were not changed.'
+                : 'Site Inspector assigned. The inspection round, its status and its evidence were not changed.'
         );
     }
 

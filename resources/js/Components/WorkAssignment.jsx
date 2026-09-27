@@ -77,8 +77,18 @@ function HistoryLine({ entry }) {
                 </span>
             </div>
             <p className="text-[11px] text-slate-500">
-                Reason: {entry.reason}
-                {entry.reason_note ? ` — ${entry.reason_note}` : ""}
+                {/* An initial assignment correctly has NO reason, so the label
+                    must not be rendered with nothing after it. A dangling
+                    "Reason:" reads as a missing value rather than as the honest
+                    answer it is. */}
+                {entry.reason ? (
+                    <>
+                        Reason: {entry.reason}
+                        {entry.reason_note ? ` — ${entry.reason_note}` : ""}
+                    </>
+                ) : (
+                    "First assignment — no reason is recorded, because nobody is handing work over"
+                )}
                 {entry.actor_name ? ` · Changed by: ${entry.actor_name}` : ""}
             </p>
         </li>
@@ -173,8 +183,11 @@ export function PlanningOfficerAssignment({
             {
                 zoning_application_id: applicationId,
                 to_planning_officer_id: targetId,
-                reason,
-                reason_note: note || null,
+                // A first assignment sends NO reason at all. Sending an empty
+                // string instead of null would be rejected by the closed
+                // vocabulary, and inventing a reason would be a false record.
+                reason: current ? reason : null,
+                reason_note: current && note ? note : null,
             },
             {
                 preserveScroll: true,
@@ -226,7 +239,7 @@ export function PlanningOfficerAssignment({
                                 onClick={() => setOpen(true)}
                                 className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 text-white text-[11px] font-bold hover:bg-blue-700 active:scale-98 transition-all"
                             >
-                                Assign Officer
+                                Assign Planning Officer
                             </button>
                         ))}
                 </div>
@@ -256,9 +269,17 @@ export function PlanningOfficerAssignment({
 
             {open && (
                 <ReassignModal
-                    title="Reassign Application Ownership"
+                    // A first assignment is not a reassignment and is never
+                    // called one. It also asks for no reason: there is nobody to
+                    // take work away from, so a reason would have to be invented.
+                    isInitial={!current}
+                    title={current ? "Reassign Application Ownership" : "Assign Planning Officer"}
                     subtitle="Business continuity"
-                    description="Hand this application to another active Planning Officer. The application status, its technical review history and its encoder are not changed."
+                    description={
+                        current
+                            ? "Hand this application to another active Planning Officer. The application status, its technical review history and its encoder are not changed."
+                            : "Record which Planning Officer currently owns this application. The application status, its technical review history and its encoder are not changed."
+                    }
                     candidates={options}
                     currentLabel={current?.name || "Not yet assigned"}
                     reasons={reasons}
@@ -277,7 +298,7 @@ export function PlanningOfficerAssignment({
                         setError(null);
                     }}
                     onSubmit={submit}
-                    confirmLabel="Confirm Transfer"
+                    confirmLabel={current ? "Confirm Transfer" : "Assign Planning Officer"}
                 />
             )}
         </div>
@@ -311,14 +332,18 @@ export function InspectorRoundAssignment({
         setSaving(true);
         setError(null);
 
+        const isInitial = !state.inspector_id;
+
         router.post(
             "/site-inspections/reassign-inspector",
             {
                 site_inspection_id: state.inspection_id,
                 zoning_application_id: applicationId,
                 to_inspector_id: targetId,
-                reason,
-                reason_note: note || null,
+                // A first assignment sends NO reason: there is no previous
+                // inspector to take work away from.
+                reason: isInitial ? null : reason,
+                reason_note: isInitial || !note ? null : note,
             },
             {
                 preserveScroll: true,
@@ -403,7 +428,12 @@ export function InspectorRoundAssignment({
 
             {open && (
                 <ReassignModal
-                    title={`Reassign Inspector · Round ${state.round_number}`}
+                    title={
+                        state.inspector_id
+                            ? `Reassign Inspector · Round ${state.round_number}`
+                            : `Assign Inspector · Round ${state.round_number}`
+                    }
+                    isInitial={!state.inspector_id}
                     subtitle="Field task handover"
                     description="Hand this inspection round to another active Site Inspector. The round, its status and any evidence already collected are not changed."
                     candidates={options}
@@ -424,7 +454,7 @@ export function InspectorRoundAssignment({
                         setError(null);
                     }}
                     onSubmit={submit}
-                    confirmLabel="Confirm Reassignment"
+                    confirmLabel={state.inspector_id ? "Confirm Reassignment" : "Assign Inspector"}
                 />
             )}
         </div>
@@ -437,6 +467,7 @@ function ReassignModal({
     title,
     subtitle,
     description,
+    isInitial = false,
     candidates,
     currentLabel,
     reasons,
@@ -504,34 +535,50 @@ function ReassignModal({
                         </p>
                     </div>
 
-                    <div>
-                        <Field required>Reason</Field>
-                        <select
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                            className={`${inputBase} cursor-pointer`}
-                        >
-                            <option value="">-- Choose --</option>
-                            {reasons.map((r) => (
-                                <option key={r} value={r}>
-                                    {r}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+                    {/* A reason describes work being taken away from somebody, so
+                        it is only asked for when there IS a current owner. On a
+                        first assignment it would have to be invented. */}
+                    {!isInitial && (
+                        <>
+                            <div>
+                                <Field required>Reason</Field>
+                                <select
+                                    value={reason}
+                                    onChange={(e) => setReason(e.target.value)}
+                                    className={`${inputBase} cursor-pointer`}
+                                >
+                                    <option value="">-- Choose --</option>
+                                    {reasons.map((r) => (
+                                        <option key={r} value={r}>
+                                            {r}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
 
-                    <div>
-                        <Field required={noteRequired}>
-                            {noteRequired ? "Note" : "Note (optional)"}
-                        </Field>
-                        <textarea
-                            rows={2}
-                            value={note}
-                            onChange={(e) => setNote(e.target.value)}
-                            placeholder={noteRequired ? "Briefly explain the reason…" : "Add any extra context…"}
-                            className={`${inputBase} resize-none`}
-                        />
-                    </div>
+                            <div>
+                                <Field required={noteRequired}>
+                                    {noteRequired ? "Note" : "Note (optional)"}
+                                </Field>
+                                <textarea
+                                    rows={2}
+                                    value={note}
+                                    onChange={(e) => setNote(e.target.value)}
+                                    placeholder={
+                                        noteRequired ? "Briefly explain the reason…" : "Add any extra context…"
+                                    }
+                                    className={`${inputBase} resize-none`}
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {isInitial && (
+                        <Notice tone="info">
+                            This is the first Planning Officer for this application, so no reason is asked for.
+                            A reason is only recorded when ownership moves from one officer to another.
+                        </Notice>
+                    )}
 
                     {error && <Notice tone="warn">{error}</Notice>}
                 </div>

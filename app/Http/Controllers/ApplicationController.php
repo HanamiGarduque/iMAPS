@@ -397,6 +397,24 @@ class ApplicationController extends Controller
                 note: sprintf('Application encoded by staff with %d parcel(s).', count($validated['parcels']))
             );
 
+            // Approved initialization rule: an application created by an ACTIVE
+            // Planning Officer starts owned by that officer, recorded as an
+            // explicit INITIAL assignment.
+            //
+            // `encoded_by` above is untouched and keeps its own meaning. The two
+            // may hold the same user id here and still say different things:
+            // encoded_by is who typed the application up and never changes, while
+            // assigned_planning_officer_id is who currently owns the pending
+            // Planning Officer work and does change on handover.
+            //
+            // If the creator is not an eligible Planning Officer, ownership is
+            // deliberately LEFT NULL rather than guessed at, and the application
+            // honestly shows "Not yet assigned" until an Administrator assigns
+            // it. No historical row is touched: this only runs for an application
+            // being created right now.
+            app(WorkAssignmentService::class)
+                ->initializePoOwnershipForNewApplication($application, Auth::user());
+
             $decisionsSeen = [];
 
             // 2. Map parcels and conditionally process evaluations & site inspections

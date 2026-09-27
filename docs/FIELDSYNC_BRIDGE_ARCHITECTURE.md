@@ -2663,19 +2663,97 @@ Every ownership change now goes through `WorkAssignmentService`, which writes
 the history row and the `audit_trail` row **in the same transaction**, so a
 handover can never commit without its accountability record.
 
-### Open item: initial Planning Officer ownership
+### Open item resolved: initial Planning Officer ownership
 
-`zoning_applications.assigned_planning_officer_id` is **nullable and was not
-backfilled**. The current business flow has no step that assigns an application
-to a Planning Officer — encoding, technical review and inspection scheduling are
-all separate actions by possibly different officers — so there is no fact to
-backfill from. Backfilling from `encoded_by` or from the latest reviewer would
-invent an ownership record that no one decided on.
+`zoning_applications.assigned_planning_officer_id` is populated automatically
+when a **new** application is created by an **active** Planning Officer, and
+recorded as an explicit **initial assignment**.
 
-Applications therefore honestly display "Not yet assigned" until an
-Administrator assigns or reassigns an officer. **Deciding an automatic
-initialization rule is an open business question** and is deliberately not
-guessed at.
+**The approved rule:** the officer who creates/encodes an application becomes the
+initial owner of that application's pending Planning Officer work.
+
+Eligibility is `WorkAssignmentService::canReceiveInitialOwnership()`, a pure
+predicate: the creator must have `role = 'Planning Officer'` **and**
+`is_active = true`. An Admin is not eligible even though an Admin performs later
+handovers, and a Site Inspector is never eligible. A suspended officer is not
+eligible, because ownership of work somebody cannot act on is worse than no
+ownership.
+
+If a creation ever happens by somebody who is not an eligible Planning Officer —
+a future or nonstandard path — ownership is deliberately **left NULL** and no
+history row is written. The application then honestly shows "Not yet assigned"
+until an Administrator assigns it. Ownership is never invented.
+
+**`encoded_by` is NOT redefined.** At creation the two columns may hold the same
+user id, and they still mean different things:
+
+| Column | Meaning | Changes on handover? |
+|---|---|---|
+| `encoded_by` | who originally encoded/typed the application up | **No** |
+| `assigned_planning_officer_id` | who currently owns the pending Planning Officer work | **Yes** |
+
+`encoded_by` continues to be written once, at creation, and nothing in the
+assignment service writes it.
+
+### An initial assignment is not a reassignment, and states no reason
+
+The reason vocabulary (Absent, On Leave, Workload Transfer, Unavailable, Other)
+describes **why somebody is giving work away**. It has no meaning the first time
+work is given to somebody, so an initial assignment records **no reason**:
+
+```
+initial       -> reason IS NULL
+reassignment  -> reason MUST be one of the five allowed values
+reason Other  -> reason_note MUST be a non-empty string
+```
+
+This was a real defect, found by auditing the constraints rather than assuming
+them. `reason` had been declared `NOT NULL` with a closed-vocabulary CHECK, which
+meant a first assignment was **forced to state a reason that was not true** — and
+because nothing else was possible, the code had begun defaulting to
+"Workload Transfer". Every brand-new application and every brand-new inspection
+round was therefore being recorded as a workload handover that never happened.
+Both now record `reason = NULL`.
+
+The constraint is written with explicit `IS NULL` / `IS NOT NULL` guards rather
+than relying on the `IN` comparison alone. That matters more than it looks: in
+SQL `NULL IN (...)` evaluates to NULL, not to false, and a CHECK constraint
+**passes** when its expression is null. A rule written only as
+`reassignment AND reason IN (...)` would silently accept a reassignment with no
+reason at all. That was the second real defect, caught by running the constraint
+matrix rather than reading the SQL.
+
+The same rule applies to inspection rounds: a new round's first entry has no
+reason, and only a genuine handover records one.
+
+### The Admin control covers both directions
+
+The single Work Assignment control serves both, and is worded so a first
+assignment is never called a reassignment:
+
+| State | Label | History row | Reason asked? |
+|---|---|---|---|
+| No current owner | **Assign Planning Officer** | `initial`, from NULL, actor = Admin | **No** |
+| Has a current owner | **Reassign** | `reassignment`, from = old, to = new, actor = Admin | **Yes, required** |
+
+The reason field is hidden entirely on a first assignment, and the form sends no
+`reason` parameter at all — sending an empty string would be rejected by the
+closed vocabulary, and sending a real reason would be a false record.
+
+The database enforces the same rule independently: an initial row carrying any
+reason is refused outright, so the invariant holds even if a future writer
+bypasses the form.
+
+### No historical backfill
+
+Existing applications are **not** given an owner by copying `encoded_by`.
+`encoded_by` proves who encoded a record, not who currently owns its unfinished
+work, and those are frequently different people. Copying it would put a false
+accountability record into the ledger for every application ever created.
+
+Applications that predate this rule honestly display **"Not yet assigned"** until
+an Administrator assigns or reassigns an officer. Historical application data is
+not modified merely to populate a pointer.
 
 No Acting Officer feature, and no mid-flight transfer/recovery flow, is
 implemented by this batch.

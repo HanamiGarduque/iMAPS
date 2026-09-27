@@ -101,15 +101,24 @@ class WorkAssignmentService
         return DB::transaction(function () use ($application, $actor, $target, $fromId, $reason, $reasonNote) {
             $now = now();
 
+            // A first assignment has no previous owner, so there is nothing to
+            // take away from anybody and no reason to state. Recording a
+            // reassignment reason here would put a fact in the accountability
+            // record that is not true, so the reason is dropped for an initial
+            // assignment and kept for a reassignment.
+            $isInitial = $fromId === null;
+            $effectiveReason = $isInitial ? null : $reason;
+            $effectiveNote = $isInitial ? null : $reasonNote;
+
             $history = ApplicationPoAssignment::create([
                 'zoning_application_id'    => $application->id,
-                'assignment_type'          => $fromId === null
+                'assignment_type'          => $isInitial
                     ? ApplicationPoAssignment::TYPE_INITIAL
                     : ApplicationPoAssignment::TYPE_REASSIGNMENT,
                 'from_planning_officer_id' => $fromId,
                 'to_planning_officer_id'   => $target->id,
-                'reason'                   => $reason,
-                'reason_note'              => $reasonNote,
+                'reason'                   => $effectiveReason,
+                'reason_note'              => $effectiveNote,
                 'reassigned_by'            => $actor->id,
                 'reassigned_at'            => $now,
             ]);
@@ -121,13 +130,90 @@ class WorkAssignmentService
 
             $this->writeAuditTrail(
                 applicationId: $application->id,
-                action: 'PLANNING_OFFICER_REASSIGNED',
+                action: $isInitial ? 'PLANNING_OFFICER_ASSIGNED' : 'PLANNING_OFFICER_REASSIGNED',
                 actor: $actor,
-                note: $this->describe($fromId, $target->id, $target->name, $reason, $reasonNote),
+                note: $this->describe($fromId, $target->id, $target->name, $effectiveReason, $effectiveNote),
             );
 
             return $history;
         });
+    }
+
+    /**
+     * Give a brand new application its first Planning Officer owner.
+     *
+     * Called from the creation path. The encoder becomes the initial owner
+     * because the officer who brings an application into the system is the
+     * officer holding its first piece of Planning Officer work. This is an
+     * EXPLICIT initial assignment, and it is recorded as one.
+     *
+     * `encoded_by` is NOT redefined and is not reused as a substitute. The two
+     * may hold the same user id at creation and still mean different things:
+     * `encoded_by` is who typed the application up and never changes, while
+     * `assigned_planning_officer_id` is who currently owns the pending work and
+     * does change on handover.
+     *
+     * No historical backfill is implied. This only ever runs for an application
+     * being created now.
+     *
+     * Returns true when ownership was initialised, false when it was
+     * deliberately left unassigned because the creator was not an eligible
+     * Planning Officer. Inventing an owner in that case would put a false
+     * accountability record in the ledger, so the application honestly shows
+     * "Not yet assigned" until an Administrator assigns it.
+     */
+    public function initializePoOwnershipForNewApplication(
+        ZoningApplication $application,
+        ?User $creator,
+    ): bool {
+        if (! $creator || ! self::canReceiveInitialOwnership($creator->role, (bool) $creator->is_active)) {
+            return false;
+        }
+
+        DB::transaction(function () use ($application, $creator) {
+            ApplicationPoAssignment::create([
+                'zoning_application_id'    => $application->id,
+                'assignment_type'          => ApplicationPoAssignment::TYPE_INITIAL,
+                'from_planning_officer_id' => null,
+                'to_planning_officer_id'   => $creator->id,
+                // No reason: nothing is being reassigned away from anyone.
+                'reason'                   => null,
+                'reason_note'              => null,
+                'reassigned_by'            => $creator->id,
+                'reassigned_at'            => now(),
+            ]);
+
+            $application->assigned_planning_officer_id = $creator->id;
+            $application->save();
+
+            $this->writeAuditTrail(
+                applicationId: $application->id,
+                action: 'PLANNING_OFFICER_ASSIGNED',
+                actor: $creator,
+                note: sprintf(
+                    'Initial Planning Officer ownership assigned to %s at application creation by the same officer. encoded_by is unchanged and keeps its own meaning.',
+                    $creator->name
+                ),
+            );
+        });
+
+        return true;
+    }
+
+    /**
+     * Who may be recorded as the FIRST owner of work.
+     *
+     * Exactly an active Planning Officer. An Admin is not eligible even though
+     * an Admin is the one who performs later handovers, and a Site Inspector is
+     * not eligible at all. A suspended Planning Officer is not eligible, because
+     * ownership of work somebody cannot act on is worse than no ownership.
+     *
+     * A pure predicate on purpose, so the eligibility matrix is provable without
+     * a database or an authenticated session.
+     */
+    public static function canReceiveInitialOwnership(string $role, bool $isActive): bool
+    {
+        return $role === 'Planning Officer' && $isActive;
     }
 
     /**
@@ -175,15 +261,22 @@ class WorkAssignmentService
         $history = DB::transaction(function () use ($inspection, $actor, $target, $fromId, $reason, $reasonNote) {
             $now = now();
 
+            // Same rule as Planning Officer ownership: a first assignment of a
+            // round states no reason, because nothing is being taken away from
+            // a previous inspector.
+            $isInitial = $fromId === null;
+            $effectiveReason = $isInitial ? null : $reason;
+            $effectiveNote = $isInitial ? null : $reasonNote;
+
             $row = SiteInspectionAssignment::create([
                 'site_inspection_id' => $inspection->id,
-                'assignment_type'    => $fromId === null
+                'assignment_type'    => $isInitial
                     ? SiteInspectionAssignment::TYPE_INITIAL
                     : SiteInspectionAssignment::TYPE_REASSIGNMENT,
                 'from_inspector_id'  => $fromId,
                 'to_inspector_id'    => $target->id,
-                'reason'             => $reason,
-                'reason_note'        => $reasonNote,
+                'reason'             => $effectiveReason,
+                'reason_note'        => $effectiveNote,
                 'reassigned_by'      => $actor->id,
                 'reassigned_at'      => $now,
             ]);
@@ -199,7 +292,7 @@ class WorkAssignmentService
             // change, so a handover can never commit without its record.
             $this->writeAuditTrail(
                 applicationId: (int) $inspection->zoning_application_id,
-                action: 'SITE_INSPECTOR_REASSIGNED',
+                action: $isInitial ? 'SITE_INSPECTOR_ASSIGNED' : 'SITE_INSPECTOR_REASSIGNED',
                 actor: $actor,
                 note: sprintf(
                     'Inspector for inspection round %d moved from %s to %s (%s). Reason: %s. The round status and any evidence already collected were not changed.',
@@ -207,7 +300,7 @@ class WorkAssignmentService
                     $fromId === null ? 'no assigned inspector' : (string) $fromId,
                     $target->name,
                     (string) $target->id,
-                    $this->reasonWithNote($reason, $reasonNote),
+                    $this->reasonWithNote($effectiveReason, $effectiveNote),
                 ),
             );
 
@@ -224,11 +317,16 @@ class WorkAssignmentService
      * owner, so there is nothing to protect and nothing to check. The history
      * row is still written, so the round's ownership story starts from its first
      * entry rather than from a gap.
+     *
+     * The reason is NULL. This version previously defaulted to
+     * "Workload Transfer", which recorded a false fact on every new round: a
+     * round being opened for the first time is not work being moved away from
+     * anybody. A reassignment reason describes a handover, and there has been no
+     * handover here.
      */
     public function recordInitialInspectorAssignment(
         SiteInspection $inspection,
         User $actor,
-        string $reason = ReassignmentReasons::WORKLOAD_TRANSFER,
     ): void {
         SiteInspectionAssignment::firstOrCreate(
             [
@@ -238,7 +336,7 @@ class WorkAssignmentService
             [
                 'from_inspector_id' => null,
                 'to_inspector_id'   => $inspection->inspector_id,
-                'reason'            => $reason,
+                'reason'            => null,
                 'reason_note'       => null,
                 'reassigned_by'     => $actor->id,
                 'reassigned_at'     => now(),
@@ -340,24 +438,34 @@ class WorkAssignmentService
         ?int $fromId,
         int $toId,
         string $toName,
-        string $reason,
+        ?string $reason,
         ?string $reasonNote,
     ): string {
+        $movement = $fromId === null
+            ? sprintf('initially assigned to %s (%d)', $toName, $toId)
+            : sprintf('moved from officer %d to %s (%d)', $fromId, $toName, $toId);
+
         return sprintf(
-            'Planning Officer ownership moved from %s to %s (%s). Reason: %s. The application status, encoder and technical review history were not changed.',
-            $fromId === null ? 'no assigned officer' : (string) $fromId,
-            $toName,
-            (string) $toId,
+            'Planning Officer ownership %s. Reason: %s. The application status, encoder and technical review history were not changed.',
+            $movement,
             $this->reasonWithNote($reason, $reasonNote),
         );
     }
 
     /**
      * Render the reason for a human-readable audit note, appending the
-     * explanation when one was required and given.
+     * explanation when one was given.
+     *
+     * A NULL reason is the correct, expected value for an initial assignment —
+     * there is nothing to take away from anyone — so it is described plainly
+     * rather than being formatted as an empty or missing value.
      */
-    private function reasonWithNote(string $reason, ?string $reasonNote): string
+    private function reasonWithNote(?string $reason, ?string $reasonNote): string
     {
+        if ($reason === null || $reason === '') {
+            return 'not applicable to a first assignment';
+        }
+
         if (ReassignmentReasons::noteIsRequired($reason) && filled($reasonNote)) {
             return $reason . ' (' . trim((string) $reasonNote) . ')';
         }

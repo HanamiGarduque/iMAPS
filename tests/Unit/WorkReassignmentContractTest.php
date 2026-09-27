@@ -478,15 +478,30 @@ class WorkReassignmentContractTest extends TestCase
         $service = $this->codeOf('app/Services/WorkAssignmentService.php');
 
         $this->assertStringNotContainsString('$application->status', $service);
-        $this->assertStringNotContainsString('encoded_by', $service);
         $this->assertStringNotContainsString('TechnicalReview::', $service);
 
-        // The only application write is the ownership pointer.
+        // Assert that encoded_by is not WRITTEN, not merely unmentioned. The
+        // service names it in an audit note to record that it was left alone,
+        // which is the honest thing to do and must not be mistaken for a write.
+        $this->assertStringNotContainsString('encoded_by=', $service);
+        $this->assertStringNotContainsString("'encoded_by' =>", $service);
+        $this->assertStringNotContainsString('$application->encoded_by', $service);
+
+        // There are two legitimate write paths in the service — an Admin or PO
+        // transfer, and the creation-time initialisation — so a bare save count
+        // would be brittle. What matters is the SHAPE: every application write
+        // must be the ownership pointer and nothing else.
+        $saves = substr_count($service, '$application->save();');
+
         $this->assertSame(
-            1,
-            substr_count($service, '$application->save()'),
-            'The application row must be saved exactly once, for the ownership pointer.'
+            $saves,
+            preg_match_all('/\$application->assigned_planning_officer_id = [^;]+;\s*\$application->save\(\);/', $service),
+            'Every application write must be the ownership pointer immediately before the save.'
         );
+        $this->assertGreaterThan(0, $saves, 'The service must write the ownership pointer at all.');
+
+        $this->assertStringNotContainsString('$application->fill(', $service);
+        $this->assertStringNotContainsString('$application->forceFill(', $service);
     }
 
     /**

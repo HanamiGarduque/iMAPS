@@ -299,11 +299,30 @@ zoning_applications.assigned_planning_officer_id  bigint NULL
     (zoning_applications_assigned_po_foreign)
 ```
 
-The **CURRENT** responsible Planning Officer. Nullable, and **not backfilled**:
-the current business flow has no step that assigns an application to an
-officer, so there is no fact to backfill from and inventing one would put a
-false accountability record in the ledger. Pre-existing rows are honestly
-unowned.
+The **CURRENT** responsible Planning Officer. Populated automatically when a new
+application is created by an **active** Planning Officer, and recorded as an
+explicit **initial assignment**.
+
+Eligibility is a pure predicate,
+`WorkAssignmentService::canReceiveInitialOwnership($role, $isActive)`: the
+creator must be `role = 'Planning Officer'` **and** `is_active = true`. A
+creation by anybody else leaves the column **NULL** and writes no history row —
+ownership is never invented.
+
+| Column | Meaning | Changes on handover? |
+|---|---|---|
+| `encoded_by` | who originally encoded/typed the application up | **No** |
+| `assigned_planning_officer_id` | who currently owns the pending Planning Officer work | **Yes** |
+
+At creation the two may hold the same user id and still mean different things.
+**`encoded_by` is not redefined**, and nothing in the assignment service writes
+it.
+
+**NOT backfilled.** Existing applications are deliberately not given an owner by
+copying `encoded_by`: proving who encoded a record is not proving who currently
+owns its unfinished work. Pre-existing applications honestly show "Not yet
+assigned" until an Administrator assigns one. No historical row was written by
+either migration.
 
 This is a **new, separate fact** and must not be confused with:
 
@@ -325,7 +344,7 @@ The current inspector pointer is unchanged: `site_inspections.inspector_id`.
 | `assignment_type` | `varchar(20)` | `initial` \| `reassignment` |
 | `from_planning_officer_id` | `bigint` NULL | FK `-> users(id) ON DELETE SET NULL` |
 | `to_planning_officer_id` | `bigint` | FK `-> users(id) ON DELETE RESTRICT` |
-| `reason` | `varchar(30)` | `Absent` \| `On Leave` \| `Workload Transfer` \| `Unavailable` \| `Other` |
+| `reason` | `varchar(30)` **NULL** | `Absent` \| `On Leave` \| `Workload Transfer` \| `Unavailable` \| `Other`. **NULL is correct for an `initial` row** — see 11.6 |
 | `reason_note` | `text` NULL | required when `reason = 'Other'` |
 | `reassigned_by` | `bigint` | FK `-> users(id) ON DELETE RESTRICT` |
 | `reassigned_at` | `timestamp` | |
@@ -360,7 +379,50 @@ The current owner is a mutable pointer on the business row; history is
 append-only and never updated. A damaged or deleted history row therefore can
 never change who currently owns work.
 
-### 11.6 Eligibility is enforced in the application layer, not by these tables
+### 11.6 The reason rule (initial vs reassignment)
+
+The reason vocabulary describes **why somebody is giving work away**. It has no
+meaning the first time work is given to somebody, so:
+
+```
+initial       ->  reason IS NULL
+reassignment  ->  reason IS NOT NULL AND reason IN (the five values)
+reason Other  ->  reason_note IS NOT NULL AND btrim(reason_note) <> ''
+```
+
+Applied to **both** history tables by
+`2026_09_27_020000_allow_initial_assignment_without_a_reason.php`, which also
+relaxes `reason` to nullable.
+
+This corrects a real defect. `reason` was originally `NOT NULL` with a
+closed-vocabulary CHECK, so a first assignment was **forced to state a reason
+that was not true** — and since nothing else was possible, the code had begun
+defaulting to "Workload Transfer". Every brand-new application and every
+brand-new inspection round was recorded as a workload handover that never
+happened.
+
+The constraint is written with explicit `IS NULL` / `IS NOT NULL` guards rather
+than relying on `IN` alone. In SQL `NULL IN (...)` evaluates to **NULL, not
+false**, and a CHECK constraint **passes** when its expression is null. A rule
+written only as `reassignment AND reason IN (...)` would therefore silently
+ACCEPT a reassignment with no reason at all. That was a second real defect,
+caught by executing the constraint matrix instead of reading the SQL.
+
+Verified behaviour (each case in its own rolled-back transaction):
+
+| Case | Result |
+|---|---|
+| `initial` + NULL reason | ACCEPTED |
+| `reassignment` + valid reason | ACCEPTED |
+| `reassignment` + NULL reason | REFUSED |
+| `initial` + any reason | REFUSED |
+| `Other` with no note | REFUSED |
+| `Other` with a whitespace-only note | REFUSED |
+| out-of-vocabulary reason | REFUSED |
+| `initial` naming a previous owner | REFUSED |
+| `reassignment` with no previous owner | REFUSED |
+
+### 11.7 Eligibility is enforced in the application layer, not by these tables
 
 Receivers must be **active** (`users.is_active = true`) with the correct role,
 and an inspector must additionally have a non-NULL `handshake_key`. That check
