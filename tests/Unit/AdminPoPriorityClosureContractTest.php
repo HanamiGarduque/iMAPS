@@ -171,13 +171,12 @@ class AdminPoPriorityClosureContractTest extends TestCase
     {
         $page = $this->codeOf('resources/js/Pages/Applications/Index.jsx');
 
-        // All Applications / Technical Review / Drafts, offered as one
-        // Applications-level navigation to the Planning Officer.
-        $this->assertStringContainsString('{ href: "/applications", label: "All Applications" }', $page);
-        $this->assertStringContainsString('{ href: "/technical-review", label: "Technical Review" }', $page);
-        $this->assertStringContainsString('{ href: "/applications/drafts", label: "Drafts" }', $page);
-
-        // The old standalone Drafts toolbar button is replaced, not duplicated.
+        // The three sibling entries are owned by the shared component now, so
+        // this page must consume it rather than keep a private copy. Note the
+        // page legitimately still contains the application STATUS label
+        // "Technical Review"; what must not reappear is a navigation entry.
+        $this->assertStringContainsString('<ApplicationsSubNav active="all" userRole={userRole} />', $page);
+        $this->assertStringNotContainsString('href: "/technical-review"', $page);
         $this->assertStringNotContainsString('href="/applications/drafts"', $page);
     }
 
@@ -243,6 +242,214 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $this->assertStringContainsString('Reassign', $doc);
         $this->assertStringContainsString('APPLICATION-LEVEL ownership', $doc);
         $this->assertStringContainsString('INSPECTION-ROUND ownership', $doc);
+    }
+
+    // ── Applications module consistency: one parent, three sibling sections ──
+
+    /**
+     * Tests 1-3: the header badge represents the MODULE, so all three
+     * subsections must resolve to the same parent badge. The page H1 names the
+     * subsection; the two are deliberately different things.
+     */
+    public function test_all_three_subsections_resolve_to_the_applications_module_badge(): void
+    {
+        $header = $this->codeOf('resources/js/Components/Header.jsx');
+
+        // activePage signal
+        $this->assertStringContainsString(
+            "normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review'",
+            $header,
+            'activePage for any Applications subsection must badge as APPLICATIONS.'
+        );
+
+        // URL first-segment signal
+        $this->assertMatchesRegularExpression(
+            "/case 'applications':\s*\n\s*case 'drafts':\s*\n\s*case 'technical-review':\s*\n\s*return 'APPLICATIONS';/",
+            $header,
+            'The URL segments for all three subsections must resolve to APPLICATIONS.'
+        );
+
+        // Inertia component signal
+        $this->assertStringContainsString(
+            "comp.startsWith('applications') || comp.startsWith('drafts') || comp.startsWith('technicalreview')",
+            $header,
+            'The component signal must badge Technical Review under APPLICATIONS too.'
+        );
+
+        // And Technical Review must no longer badge as its own module anywhere.
+        $this->assertStringNotContainsString("return 'TECHNICAL REVIEW'", $header);
+    }
+
+    /**
+     * Test 4 + 5: one shared component owns the sibling navigation, and every
+     * subsection page renders it with its own active key.
+     */
+    public function test_subsections_share_one_sub_navigation_component(): void
+    {
+        $component = base_path('resources/js/Components/ApplicationsSubNav.jsx');
+        $this->assertFileExists($component, 'A single shared sub-navigation component must exist.');
+
+        $shared = $this->code((string) file_get_contents($component));
+        $this->assertStringContainsString('{ key: "all", label: "All Applications", href: "/applications" }', $shared);
+        $this->assertStringContainsString('{ key: "technical-review", label: "Technical Review", href: "/technical-review" }', $shared);
+        $this->assertStringContainsString('{ key: "drafts", label: "Drafts", href: "/applications/drafts" }', $shared);
+        $this->assertStringContainsString('aria-current={isActive ? "page" : undefined}', $shared);
+
+        // The three pages must consume the shared component, not each own a copy.
+        $pages = [
+            'resources/js/Pages/Applications/Index.jsx' => 'active="all"',
+            'resources/js/Pages/TechnicalReview/Index.jsx' => 'active="technical-review"',
+            'resources/js/Pages/Drafts/Index.jsx' => 'active="drafts"',
+        ];
+
+        foreach ($pages as $file => $active) {
+            $code = $this->codeOf($file);
+            $this->assertStringContainsString('import ApplicationsSubNav from "@/Components/ApplicationsSubNav";', $code, "{$file} must import the shared sub-navigation.");
+            $this->assertStringContainsString('<ApplicationsSubNav ' . $active, $code, "{$file} must render the shared sub-navigation with {$active}.");
+        }
+    }
+
+    /**
+     * Test 6: the sibling entries are Planning Officer workflow. A read-only
+     * role must receive nothing rather than a partial or misleading set.
+     */
+    public function test_sub_navigation_is_planning_officer_only(): void
+    {
+        $shared = $this->code((string) file_get_contents(base_path('resources/js/Components/ApplicationsSubNav.jsx')));
+
+        $this->assertStringContainsString('if (userRole !== "Planning Officer") {', $shared);
+        $this->assertStringContainsString('return null;', $shared);
+
+        foreach ([
+            'resources/js/Pages/Applications/Index.jsx',
+            'resources/js/Pages/TechnicalReview/Index.jsx',
+            'resources/js/Pages/Drafts/Index.jsx',
+        ] as $file) {
+            $this->assertStringContainsString(
+                'userRole={userRole}',
+                $this->codeOf($file),
+                "{$file} must pass the role through to the shared sub-navigation."
+            );
+        }
+    }
+
+    /**
+     * Test 7 + 9: no duplicate navigation. The standalone Drafts back-to-registry
+     * arrow and the Technical Review "All Applications" button are both
+     * superseded by the persistent sub-navigation.
+     */
+    public function test_duplicate_navigation_was_removed(): void
+    {
+        $drafts = $this->codeOf('resources/js/Pages/Drafts/Index.jsx');
+        $this->assertStringNotContainsString('Back to Registry', $drafts, 'The Drafts back-to-registry arrow duplicates the sub-navigation.');
+
+        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
+        $this->assertStringNotContainsString(
+            '<span>All Applications</span>',
+            $queue,
+            'The Technical Review All Applications button duplicates the sub-navigation.'
+        );
+    }
+
+    /**
+     * Test 8: the Technical Review -> Application Detail origin context must
+     * survive this pass.
+     */
+    public function test_review_to_detail_origin_context_is_preserved(): void
+    {
+        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
+        $show = $this->codeOf('resources/js/Pages/Applications/Show.jsx');
+
+        $this->assertStringContainsString('?from=technical-review', $queue);
+        $this->assertStringContainsString('openedFromTechnicalReview', $show);
+        $this->assertStringContainsString('href="/technical-review"', $show);
+        $this->assertStringContainsString('<span>All Records</span>', $show);
+    }
+
+    /**
+     * Additional pagination requirement: the review queue pages 10 rows per
+     * page, server-side, and the page-size contract is a named constant.
+     */
+    public function test_review_queue_uses_ten_rows_per_page_server_side(): void
+    {
+        $controller = $this->codeOf('app/Http/Controllers/TechnicalReviewController.php');
+
+        $this->assertStringContainsString('public const QUEUE_PAGE_SIZE = 10;', $controller);
+        $this->assertStringContainsString('->paginate(self::QUEUE_PAGE_SIZE)', $controller);
+        $this->assertStringContainsString('->withQueryString()', $controller, 'Search and filter parameters must survive page changes.');
+
+        // The previous 25-row page size must be gone from this queue.
+        $this->assertStringNotContainsString('paginate(25)', $controller);
+    }
+
+    public function test_review_queue_pagination_reads_server_ranges_not_a_client_slice(): void
+    {
+        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
+
+        // Ranges come from the server paginator, so the page size is server-owned.
+        $this->assertStringContainsString('Showing {applications.from}–{applications.to} of {applications.total}', $queue);
+        $this->assertStringNotContainsString('.slice(', $queue, 'The queue must not slice a larger client-side list.');
+
+        // Page links come from the server paginator and are followed as-is, so
+        // search and filter parameters persist.
+        $this->assertStringContainsString('applications.links?.map(', $queue);
+        $this->assertStringContainsString('router.get(link.url', $queue);
+    }
+
+    /**
+     * The applications list keeps its own page size; this pass must not have
+     * changed unrelated pagination.
+     */
+    public function test_unrelated_pagination_is_untouched(): void
+    {
+        $this->assertStringContainsString('paginate(25)', $this->codeOf('app/Http/Controllers/ApplicationController.php'));
+    }
+
+    /**
+     * The queue search must not call a builder method that does not exist.
+     *
+     * `orWhereILike()` is not available on the Eloquent builder in this Laravel
+     * version, so the previous implementation threw a 500 and the queue search
+     * never worked. Both arms now use the explicit operator form.
+     */
+    public function test_queue_search_uses_only_available_builder_methods(): void
+    {
+        $controller = $this->codeOf('app/Http/Controllers/TechnicalReviewController.php');
+
+        $this->assertStringNotContainsString('orWhereILike(', $controller);
+        $this->assertStringContainsString(
+            "'zoning_applications.applicant_name', 'ILIKE', \$term",
+            $controller
+        );
+        $this->assertStringContainsString(
+            "'zoning_applications.reference_number', 'ILIKE', \$term",
+            $controller
+        );
+    }
+
+    /**
+     * The debounced search effect must not re-query on mount, because doing so
+     * dropped any ?page= the officer arrived with and silently reset pagination.
+     */
+    public function test_queue_search_effect_does_not_reset_the_page_on_mount(): void
+    {
+        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
+
+        $this->assertStringContainsString('const isFirstSearchRun = useRef(true);', $queue);
+        $this->assertStringContainsString('if (isFirstSearchRun.current) {', $queue);
+        $this->assertStringContainsString('isFirstSearchRun.current = false;', $queue);
+    }
+
+    /**
+     * An out-of-range page must be resolved server-side rather than rendering an
+     * empty queue.
+     */
+    public function test_out_of_range_queue_page_resolves_to_the_last_page(): void
+    {
+        $controller = $this->codeOf('app/Http/Controllers/TechnicalReviewController.php');
+
+        $this->assertStringContainsString('$applications->currentPage() > $applications->lastPage()', $controller);
+        $this->assertStringContainsString("redirect()->route('technicalreview.index', \$query)", $controller);
     }
 
     // ── Tests 14 + 15 + 16: report endpoint authorization, verified at runtime ──

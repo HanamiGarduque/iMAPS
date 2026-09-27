@@ -2351,6 +2351,35 @@ the latest round as the primary card. The earlier completed round is not hidden
 from the data model - only from the current UI - and this is recorded here so
 the gap is explicit rather than implied.
 
+## Applications is the parent module
+
+`APPLICATIONS` is the parent module. `All Applications`, `Technical Review` and
+`Drafts` are **sibling sections inside it**, not three unrelated top-level
+modules:
+
+```
+APPLICATIONS
+  |- All Applications
+  |- Technical Review
+  `- Drafts
+```
+
+- **Technical Review is a work queue, not a separate business module.** It is
+  the review stage of application processing, reached from inside Applications.
+- **Drafts are unfinished application records**, also inside Applications, not a
+  standalone module.
+- The header badge represents the **module** and is therefore always
+  `APPLICATIONS` on all three. The page H1 names the **subsection** (Application
+  Registry / Technical Review / Application Drafts). The two are deliberately
+  different things and must not be conflated.
+- A single shared component (`ApplicationsSubNav`) owns the sibling navigation so
+  the three pages cannot drift apart. It renders on all three so an officer can
+  move between Technical Review and Drafts without returning to All
+  Applications first.
+- The sub-navigation is Planning Officer workflow. A read-only role receives
+  nothing there rather than a partial set, and the backend role middleware
+  remains the security boundary.
+
 ## Technical Review queue
 
 `/technical-review` is a **navigation-only** work queue. It answers "what needs
@@ -2359,6 +2388,13 @@ Application Detail page where the parcel decision and inspector assignment
 already live. The queue deliberately renders **no Planning Officer decision
 control**, so a role that can only read the route cannot acquire decision
 authority by visiting it.
+
+The queue pages **10 applications per page, server-side**
+(`TechnicalReviewController::QUEUE_PAGE_SIZE`). Search and the application-type
+filter are preserved across page changes, and a filter change resolves the
+current page rather than stranding the officer on a page that no longer exists.
+This page size belongs to the review queue only and does not alter pagination on
+any other page.
 
 ## Admin vs Planning Officer role boundaries
 

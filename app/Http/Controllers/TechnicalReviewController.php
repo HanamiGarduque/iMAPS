@@ -22,6 +22,15 @@ use Inertia\Inertia;
 
 class TechnicalReviewController extends Controller
 {
+    /**
+     * Rows per page for the Technical Review work queue.
+     *
+     * Declared as a named constant so the page-size contract for this queue is
+     * explicit and testable rather than a bare literal. It applies to the
+     * review queue ONLY; no other page's pagination is affected.
+     */
+    public const QUEUE_PAGE_SIZE = 10;
+
     public function index(Request $request)
     {
         $query = ZoningApplication::query()
@@ -59,17 +68,40 @@ class TechnicalReviewController extends Controller
         }
 
         if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->whereILike('zoning_applications.applicant_name', '%' . $request->search . '%')
-                    ->orWhereILike('zoning_applications.reference_number', '%' . $request->search . '%');
+            // NOTE: this previously called orWhereILike(), which does not exist
+            // on the Eloquent builder in this Laravel version, so searching the
+            // queue threw a 500 and the filter never applied. The explicit
+            // operator form is used for both arms instead.
+            $term = '%' . $request->input('search') . '%';
+
+            $query->where(function ($q) use ($term) {
+                $q->where('zoning_applications.applicant_name', 'ILIKE', $term)
+                    ->orWhere('zoning_applications.reference_number', 'ILIKE', $term);
             });
         }
 
         $applications = $query
             ->orderByDesc('zoning_applications.created_at')
             ->orderByDesc('zoning_applications.id')
-            ->paginate(25)
+            // Server-side page size for the review work queue: 10 rows per page.
+            // This is a page-size choice for THIS queue only, so an officer can
+            // see the whole queue position at a glance without scrolling a long
+            // list. It is not a global pagination change, and no other page's
+            // page size is affected.
+            ->paginate(self::QUEUE_PAGE_SIZE)
             ->withQueryString();
+
+        // If the officer landed on a page that no longer exists - for example a
+        // bookmarked or shared ?page= that the queue has since shrunk past, or a
+        // page number left over from a wider result set - resolve it to the last
+        // available page instead of showing an empty list. Search and filter
+        // parameters are preserved so the officer keeps their context.
+        if ($applications->total() > 0 && $applications->currentPage() > $applications->lastPage()) {
+            $query = $request->query();
+            $query['page'] = $applications->lastPage();
+
+            return redirect()->route('technicalreview.index', $query);
+        }
 
         $applications->getCollection()->transform(function ($app) {
             $firstParcel = $app->parcels->first();

@@ -3,6 +3,7 @@ import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import ApplicationsSubNav from "@/Components/ApplicationsSubNav";
 import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -383,16 +384,15 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                 {/* ── HEADER (Top Bar) ── */}
                 <div className="bg-slate-100/60 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-[0_4px_20px_-12px_rgba(0,0,0,0.1)] z-20">
                     <div className="flex items-center gap-4">
-                        <Link href="/applications" className="flex items-center justify-center w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-sm" title="Back to Registry">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                            </svg>
-                        </Link>
+                        {/* The circular "Back to Registry" arrow was removed: the
+                            persistent sub-navigation now provides the same
+                            All Applications destination, and keeping both would
+                            duplicate the same choice in two places. */}
                         <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
                             Application Drafts
                         </h2>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                         {userRole === "Planning Officer" && (
                             <Link
                                 href="/applications/encode"
@@ -404,6 +404,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                                 <span>New Draft</span>
                             </Link>
                         )}
+                        <ApplicationsSubNav active="drafts" userRole={userRole} />
                     </div>
                 </div>
 

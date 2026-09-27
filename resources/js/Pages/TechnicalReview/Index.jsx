@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import ApplicationsSubNav from "@/Components/ApplicationsSubNav";
 
 /**
  * Technical Review work queue.
@@ -69,19 +70,31 @@ export default function TechnicalReviewIndex({ applications, filters = {} }) {
         return () => clearInterval(id);
     }, []);
 
-    // Filters are applied server-side because the controller already supports
-    // them; typing is debounced so a queue of 25 rows is not re-queried per key.
+    // Debounced server-side search.
+    //
+    // The first run is deliberately skipped. This effect previously fired on
+    // mount and re-requested the queue with no parameters, which silently
+    // dropped any ?page= the officer arrived with — so Previous/Next and any
+    // direct page link snapped back to page 1. Search and filter changes still
+    // re-query, and they intentionally return to the first page because the
+    // result set has changed and the previous page may no longer exist.
+    const isFirstSearchRun = useRef(true);
     useEffect(() => {
+        if (isFirstSearchRun.current) {
+            isFirstSearchRun.current = false;
+            return undefined;
+        }
+
         const id = setTimeout(() => {
             const params = {};
             if (search.trim()) params.search = search.trim();
             if (filters.application_type) params.application_type = filters.application_type;
 
-            router.get(
-                "/technical-review",
-                Object.keys(params).length ? params : {},
-                { preserveState: true, preserveScroll: true, replace: true }
-            );
+            router.get("/technical-review", params, {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+            });
         }, 350);
         return () => clearTimeout(id);
     }, [search]);
@@ -170,7 +183,12 @@ export default function TechnicalReviewIndex({ applications, filters = {} }) {
                     <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
                         <div className="p-6 sm:p-5 flex-1 flex flex-col h-full overflow-y-auto w-full gap-4">
 
-                            {/* ── Page heading ── */}
+                            {/* ── Page heading ──
+                                The H1 names the SUBSECTION; the header badge above
+                                names the parent module (APPLICATIONS). The persistent
+                                sub-navigation below is what makes the sibling structure
+                                explicit, so this page is never mistaken for a separate
+                                top-level module. */}
                             <div className="px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
                                 <div>
                                     <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
@@ -181,16 +199,11 @@ export default function TechnicalReviewIndex({ applications, filters = {} }) {
                                         the parcel decision and, when needed, assign a site inspector.
                                     </p>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex flex-wrap items-center gap-2 shrink-0">
                                     <span className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 shadow-2xs">
                                         {applications?.total ?? 0} waiting
                                     </span>
-                                    <Link
-                                        href="/applications"
-                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors shadow-2xs"
-                                    >
-                                        All Applications
-                                    </Link>
+                                    <ApplicationsSubNav active="technical-review" userRole={userRole} />
                                 </div>
                             </div>
 

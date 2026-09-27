@@ -3,6 +3,7 @@ import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import ApplicationsSubNav from "@/Components/ApplicationsSubNav";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -893,41 +894,10 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                         <span>Export CSV</span>
                                     </button>
 
-                                    {/* Planning Officer application-processing navigation.
-                                        Technical Review is a stage of APPLICATION processing, not a
-                                        separate business module, so it is reached from here rather
-                                        than from the top-level sidebar. This also keeps the sidebar
-                                        focused on major modules and prevents an Admin from being
-                                        offered a Planning Officer work queue. */}
-                                    {userRole === "Planning Officer" && (
-                                        <div
-                                            role="navigation"
-                                            aria-label="Application processing"
-                                            className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100/70 border border-slate-200/80 shadow-2xs shrink-0"
-                                        >
-                                            <span className="px-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 self-center">
-                                                Applications
-                                            </span>
-                                            {[
-                                                { href: "/applications", label: "All Applications" },
-                                                { href: "/technical-review", label: "Technical Review" },
-                                                { href: "/applications/drafts", label: "Drafts" },
-                                            ].map((entry) => (
-                                                <Link
-                                                    key={entry.href}
-                                                    href={entry.href}
-                                                    aria-current={entry.href === "/applications" ? "page" : undefined}
-                                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                                                        entry.href === "/applications"
-                                                            ? "bg-white text-blue-700 shadow-2xs border border-blue-200/80"
-                                                            : "text-slate-600 hover:text-slate-900 hover:bg-white/70 border border-transparent"
-                                                    }`}
-                                                >
-                                                    {entry.label}
-                                                </Link>
-                                            ))}
-                                        </div>
-                                    )}
+                                    {/* Persistent Applications sub-navigation. Shared with the
+                                        Technical Review and Drafts pages so the three sections can
+                                        never drift apart. Planning Officer workflow only. */}
+                                    <ApplicationsSubNav active="all" userRole={userRole} />
 
                                     {/* New Application */}
                                     {userRole === "Planning Officer" && (

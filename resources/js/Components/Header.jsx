@@ -31,6 +31,12 @@ export default function Header({
     activePage,
 }) {
     // Dynamic navigation badge determination (Zero redundancy, automatically syncs with route)
+    //
+    // The badge represents the MODULE, not the subsection. All Applications,
+    // Technical Review and Drafts are sibling sections of the APPLICATIONS
+    // module, so every one of them resolves to the same parent badge; the page
+    // H1 names the subsection. Technical Review is deliberately NOT badged as
+    // its own top-level module.
     const page = usePage();
     const currentUrl = page?.url || (typeof window !== 'undefined' ? window.location.pathname : '');
     const currentComponent = page?.component || '';
@@ -40,8 +46,8 @@ export default function Header({
             const raw = activePage.trim();
             const normalized = raw.toLowerCase();
             if (normalized === 'audit' || normalized === 'audit-log' || normalized === 'audittrail') return 'AUDIT TRAIL';
-            if (normalized === 'tech-review' || normalized === 'technical-review') return 'TECHNICAL REVIEW';
-            if (normalized === 'drafts') return 'APPLICATIONS';
+            // Applications subsections share the parent module badge.
+            if (normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review') return 'APPLICATIONS';
             return raw.toUpperCase();
         }
 
@@ -56,6 +62,7 @@ export default function Header({
                 return 'MAPS';
             case 'applications':
             case 'drafts':
+            case 'technical-review':
                 return 'APPLICATIONS';
             case 'analytics':
                 return 'ANALYTICS';
@@ -67,8 +74,6 @@ export default function Header({
                 return 'SETTINGS';
             case 'users':
                 return 'USERS';
-            case 'technical-review':
-                return 'TECHNICAL REVIEW';
             case 'public-portal':
                 return 'PUBLIC PORTAL';
             case 'profile':
@@ -79,12 +84,11 @@ export default function Header({
             const comp = currentComponent.toLowerCase();
             if (comp.startsWith('dashboard')) return 'DASHBOARD';
             if (comp.startsWith('maps')) return 'MAPS';
-            if (comp.startsWith('applications') || comp.startsWith('drafts')) return 'APPLICATIONS';
+            if (comp.startsWith('applications') || comp.startsWith('drafts') || comp.startsWith('technicalreview')) return 'APPLICATIONS';
             if (comp.startsWith('analytics')) return 'ANALYTICS';
             if (comp.startsWith('audittrail') || comp.startsWith('audit')) return 'AUDIT TRAIL';
             if (comp.startsWith('settings')) return 'SETTINGS';
             if (comp.startsWith('users')) return 'USERS';
-            if (comp.startsWith('technicalreview')) return 'TECHNICAL REVIEW';
             if (comp.startsWith('publicportal')) return 'PUBLIC PORTAL';
             if (comp.startsWith('profile')) return 'PROFILE';
         }
