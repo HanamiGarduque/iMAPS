@@ -24,16 +24,20 @@ class ImportHistoricalData extends Command
         // Skip the header row
         fgetcsv($file);
 
+        DB::table('historical_data')->truncate();
         $this->info("Importing data by column index...");
 
         $count = 0;
+        $batch = [];
+        $batchSize = 500;
+
         while (($row = fgetcsv($file)) !== false) {
             // Ensure the row has data
             if (empty($row) || count($row) < 9) {
                 continue;
             }
 
-            DB::table('historical_data')->insert([
+            $batch[] = [
                 'encoding_date'    => !empty($row[0]) ? date('Y-m-d', strtotime(trim($row[0]))) : null,
                 'form_number'      => trim($row[1]) ?? null,
                 'name'             => trim($row[2]) ?? null,
@@ -45,8 +49,17 @@ class ImportHistoricalData extends Command
                 'assessment_fee'   => !empty($row[8]) ? (float) str_replace(',', '', $row[8]) : null,
                 'created_at'       => now(),
                 'updated_at'       => now(),
-            ]);
+            ];
             $count++;
+
+            if (count($batch) >= $batchSize) {
+                DB::table('historical_data')->insert($batch);
+                $batch = [];
+            }
+        }
+
+        if (!empty($batch)) {
+            DB::table('historical_data')->insert($batch);
         }
 
         fclose($file);

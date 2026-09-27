@@ -78,53 +78,62 @@ const TILE_PROVIDERS = {
 
 // ── Approximate Barangay Centroid Coordinates for Rosario, Batangas ──
 const ROSARIO_BGY_COORDS = {
-    "Alupay": [13.8820, 121.2560],
-    "Antipolo": [13.8850, 121.2150],
-    "Bagong Pook": [13.8350, 121.2290],
-    "Balibago": [13.8950, 121.2420],
-    "Bayawang": [13.8420, 121.2520],
-    "Baybayin": [13.8640, 121.2370],
-    "Bulihan": [13.8180, 121.2240],
-    "Cahigam": [13.8240, 121.2410],
-    "Calantas": [13.8750, 121.1820],
-    "Colongan": [13.8480, 121.1680],
-    "Itlugan": [13.8410, 121.1850],
-    "Lumbangan": [13.8540, 121.2480],
-    "Maalas-as": [13.8320, 121.1980],
-    "Mabato": [13.8690, 121.2460],
-    "Mabunga": [13.8280, 121.2610],
-    "Macalamcam A": [13.8980, 121.2510],
-    "Macalamcam B": [13.9020, 121.2580],
-    "Malaya": [13.8580, 121.1760],
-    "Maligaya": [13.8460, 121.1790],
-    "Marilag": [13.8680, 121.1730],
-    "Masaya": [13.8510, 121.1820],
-    "Matamis": [13.8150, 121.2720],
-    "Mavalor": [13.8520, 121.2210],
-    "Mayuro": [13.8390, 121.2380],
-    "Namuco": [13.8580, 121.2270],
-    "Namunga": [13.8390, 121.2150],
-    "Natu": [13.8780, 121.2360],
-    "Nazi": [13.8360, 121.2670],
-    "Palakpak": [13.7980, 121.2650],
-    "Pinagsibaan": [13.8820, 121.2310],
-    "Poblacion A": [13.8460, 121.2040],
-    "Poblacion B": [13.8470, 121.2050],
-    "Poblacion C": [13.8485, 121.2065],
-    "Poblacion D": [13.8490, 121.2080],
-    "Poblacion E": [13.8500, 121.2095],
-    "Poblacion": [13.8475, 121.2058],
-    "Putingkahoy": [13.8720, 121.2680],
-    "Quilib": [13.8680, 121.1940],
-    "Salao": [13.8890, 121.2740],
-    "San Carlos": [13.8612, 121.2185],
-    "San Ignacio": [13.8320, 121.2080],
-    "San Isidro": [13.8560, 121.2580],
-    "San Jose": [13.8590, 121.2120],
-    "San Roque": [13.8560, 121.1980],
-    "Santa Cruz": [13.8810, 121.1890],
-    "Timbugan": [13.8310, 121.1920],
-    "Tugtugin": [13.8210, 121.2060],
+    "Alupay": [13.84346, 121.29952],
+    "Antipolo": [13.701158, 121.309776],
+    "Bagong Pook": [13.842048, 121.220057],
+    "Balibago": [13.856026, 121.285638],
+    "Bayawang": [13.78683, 121.274808],
+    "Baybayin": [13.823794, 121.259792],
+    "Bulihan": [13.79896, 121.231218],
+    "Cahigam": [13.804697, 121.24899],
+    "Calantas": [13.738286, 121.309791],
+    "Colongan": [13.79965, 121.178059],
+    "Itlugan": [13.821013, 121.204872],
+    "Lumbangan": [13.81617, 121.265373],
+    "Maalas-As": [13.810805, 121.210822],
+    "Maalas-as": [13.810805, 121.210822],
+    "Mabato": [13.810309, 121.29777],
+    "Mabunga": [13.78219, 121.301525],
+    "Macalamcam A": [13.857334, 121.304114],
+    "Macalamcam B": [13.864017, 121.328145],
+    "Malaya": [13.851361, 121.170562],
+    "Maligaya": [13.816244, 121.274164],
+    "Marilag": [13.852664, 121.175876],
+    "Masaya": [13.833319, 121.188454],
+    "Matamis": [13.719224, 121.32661],
+    "Mavalor": [13.818024, 121.229358],
+    "Mayuro": [13.787706, 121.263903],
+    "Namuco": [13.837477, 121.204089],
+    "Namunga": [13.842826, 121.195858],
+    "Natu": [13.84223, 121.269031],
+    "Nasi": [13.776993, 121.30647],
+    "Palakpak": [13.706859, 121.331414],
+    "Pinagsibaan": [13.846126, 121.318286],
+    "Poblacion": [13.845343, 121.209673],
+    "Poblacion A": [13.845343, 121.209673],
+    "Poblacion B": [13.845555, 121.207314],
+    "Poblacion C": [13.847057, 121.203706],
+    "Poblacion D": [13.843953, 121.203891],
+    "Poblacion E": [13.84138, 121.205727],
+    "Barangay A (Pob.)": [13.845343, 121.209673],
+    "Barangay B (Pob.)": [13.845555, 121.207314],
+    "Barangay C (Pob.)": [13.847057, 121.203706],
+    "Barangay D (Pob.)": [13.843953, 121.203891],
+    "Barangay E (Pob.)": [13.84138, 121.205727],
+    "Putingkahoy": [13.829277, 121.318763],
+    "Quilib": [13.86018, 121.200275],
+    "Salao": [13.862531, 121.351559],
+    "San Carlos": [13.854922, 121.258434],
+    "San Ignacio": [13.831425, 121.181783],
+    "San Isidro": [13.810613, 121.30566],
+    "San Jose": [13.841924, 121.230089],
+    "San Roque": [13.851798, 121.204468],
+    "Santa Cruz": [13.855122, 121.183384],
+    "Timbugan": [13.802944, 121.185884],
+    "Tiquiwan": [13.8311, 121.247385],
+    "Leviste (Tubahan)": [13.77351, 121.278392],
+    "Leviste": [13.77351, 121.278392],
+    "Tulos": [13.717689, 121.289354],
 };
 
 // Status pin color/style now lives in one place: STATUS_MARKER_CONFIG,
@@ -140,7 +149,21 @@ const getAppCoordinates = (app) => {
     }
 
     const bgy = (app?.barangay || "Poblacion").trim();
-    return ROSARIO_BGY_COORDS[bgy] || ROSARIO_BGY_COORDS["Poblacion"] || [13.8475, 121.2058];
+    return ROSARIO_BGY_COORDS[bgy] || ROSARIO_BGY_COORDS["Poblacion"] || [13.845343, 121.209673];
+};
+
+const getBarangayCentroid = (bgyName) => {
+    if (!bgyName) return ROSARIO_BGY_COORDS["Poblacion"];
+    const name = bgyName.trim();
+    if (ROSARIO_BGY_COORDS[name]) return ROSARIO_BGY_COORDS[name];
+
+    const lower = name.toLowerCase();
+    for (const [key, coords] of Object.entries(ROSARIO_BGY_COORDS)) {
+        if (key.toLowerCase() === lower || lower.includes(key.toLowerCase()) || key.toLowerCase().includes(lower)) {
+            return coords;
+        }
+    }
+    return ROSARIO_BGY_COORDS["Poblacion"] || [13.845343, 121.209673];
 };
 
 const createNumberedPinIcon = (number, color, borderColor, L, isHovered = false, tooltipText = "") => {
@@ -268,6 +291,14 @@ const createApplicationPopupHtml = (app, zoneValue) => {
     `;
 };
 
+export const getTrendsDemandColor = (count) => {
+    if (count >= 16) return { color: "#800026", stroke: "#4a0016", label: "Very High Demand", tier: "Critical" };
+    if (count >= 10) return { color: "#f03b20", stroke: "#990000", label: "High Demand", tier: "High" };
+    if (count >= 6)  return { color: "#feb24c", stroke: "#d97706", label: "Moderate Demand", tier: "Moderate" };
+    if (count >= 3)  return { color: "#fed976", stroke: "#b45309", label: "Low Demand", tier: "Low" };
+    return { color: "#ffffcc", stroke: "#ca8a04", label: "Minimal Activity", tier: "Minimal" };
+};
+
 // ── Leaflet Map Component ──
 function LeafletMap({
     bgyStats,
@@ -298,6 +329,7 @@ function LeafletMap({
     onParcelsVisible = () => {},
     verifiedParcel = null,
     historicalPins = [],
+    activeQuarter = null,
 }) {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
@@ -307,6 +339,23 @@ function LeafletMap({
     const verifiedParcelLayerRef = useRef(null);
     const zoningLayerRef = useRef(null);
     const zoningPromiseRef = useRef(null);
+
+    const bgyDemandCounts = useMemo(() => {
+        const counts = {};
+        (historicalPins || []).forEach((pin) => {
+            const b = (pin.barangay || "").trim().toLowerCase();
+            if (b) {
+                counts[b] = (counts[b] || 0) + 1;
+            }
+        });
+        return counts;
+    }, [historicalPins]);
+
+    const bgyDemandCountsRef = useRef(bgyDemandCounts);
+    useEffect(() => { bgyDemandCountsRef.current = bgyDemandCounts; }, [bgyDemandCounts]);
+
+    const activeQuarterRef = useRef(activeQuarter);
+    useEffect(() => { activeQuarterRef.current = activeQuarter; }, [activeQuarter]);
     // Declared up here, ahead of every effect: these are read in dependency
     // arrays, which evaluate during render, so declaring them lower down would
     // throw a temporal-dead-zone ReferenceError on the first render.
@@ -400,54 +449,32 @@ function LeafletMap({
     const focusBarangayOnMap = (targetLayer, name, bgyData) => {
         if (!mapInstanceRef.current || !targetLayer) return;
 
-        const centroid = targetLayer.getBounds().getCenter();
-        const currentZoom = mapInstanceRef.current.getZoom();
-        // Keep municipal perspective of Rosario: if already at comfortable municipal zoom (12.0 - 12.6), preserve it
-        const targetZoom = Math.min(12.5, Math.max(12.0, currentZoom));
-
-        const size = mapInstanceRef.current.getSize();
-        const w = size.x || 1000;
-        const h = size.y || 700;
-
-        // Horizontally: centre in whatever map area the docked panel leaves open.
+        const bounds = targetLayer.getBounds();
         const sidebarWidth = rightPanelOpenRef.current ? panelWidth : 0;
-        const targetScreenX = Math.max(140, (w - sidebarWidth) / 2);
-        // Vertically: centre it. With the popup gone there is nothing that needs
-        // clearance below the header, so the barangay sits in the middle.
-        const targetScreenY = h / 2;
 
-        import("leaflet").then((L) => {
-            const centroidPoint = mapInstanceRef.current.project(centroid, targetZoom);
-            const screenCenter = size.divideBy(2);
-            const targetScreen = L.default.point(targetScreenX, targetScreenY);
-            const offset = screenCenter.subtract(targetScreen);
-            const newCenterPoint = centroidPoint.add(offset);
-            const newCenter = mapInstanceRef.current.unproject(newCenterPoint, targetZoom);
+        if (reducedMotionRef.current) {
+            mapInstanceRef.current.fitBounds(bounds, {
+                paddingTopLeft: [60, 60],
+                paddingBottomRight: [sidebarWidth + 40, 40],
+                maxZoom: 14.5,
+                animate: false,
+            });
+        } else {
+            mapInstanceRef.current.flyToBounds(bounds, {
+                paddingTopLeft: [60, 60],
+                paddingBottomRight: [sidebarWidth + 40, 40],
+                maxZoom: 14.5,
+                duration: 0.9,
+                easeLinearity: 0.15,
+            });
+        }
 
-            const isZoomChanging = Math.abs(currentZoom - targetZoom) > 0.15;
-            if (reducedMotionRef.current) {
-                mapInstanceRef.current.setView(newCenter, targetZoom, { animate: false });
-            } else if (isZoomChanging) {
-                mapInstanceRef.current.flyTo(newCenter, targetZoom, {
-                    duration: 1.1,
-                    easeLinearity: 0.15,
-                });
-            } else {
-                mapInstanceRef.current.panTo(newCenter, {
-                    duration: 0.9,
-                    easeLinearity: 0.15,
-                });
-            }
+        if (popupTimerRef.current) {
+            clearTimeout(popupTimerRef.current);
+            popupTimerRef.current = null;
+        }
 
-            if (popupTimerRef.current) {
-                clearTimeout(popupTimerRef.current);
-                popupTimerRef.current = null;
-            }
-
-            // No popup in diversity mode any more — the docked panel is the
-            // detail surface, so the map just frames the barangay.
-            mapInstanceRef.current.closePopup();
-        });
+        mapInstanceRef.current.closePopup();
     };
 
     const getFeatureStyle = (feature, layer, filter) => {
@@ -546,19 +573,51 @@ function LeafletMap({
         }
 
         if (layer === "trends") {
-            const isSelected = selectedBgy && selectedBgy.name && selectedBgy.name.trim().toLowerCase() === name.toLowerCase();
+            const bKey = name.trim().toLowerCase();
+            const count = bgyDemandCountsRef.current[bKey] || 0;
+            const info = getTrendsDemandColor(count);
+            const selName = (selectedBgyRef.current?.name || selectedBgy?.name || "").trim().toLowerCase();
+            const isSelected = Boolean(selName) && selName === bKey;
+
             return {
-                color: isSelected ? "#8b0000" : "#8b0000",
-                weight: isSelected ? 3.5 : 1.8,
-                dashArray: isSelected ? null : "3, 3",
-                fillColor: isSelected ? "#3b82f6" : "transparent",
-                fillOpacity: isSelected ? 0.12 : 0,
-                opacity: 0.95
+                color: isSelected ? "#8b0000" : info.stroke,
+                weight: isSelected ? 3.2 : 1.2,
+                dashArray: null,
+                fillColor: info.color,
+                fillOpacity: isSelected ? 0.95 : 0.82,
+                opacity: 0.95,
+                className: "",
             };
         }
 
         return { ...baseStyle, fillColor: "transparent", fillOpacity: 0, opacity: 0.8 };
     };
+
+    // Subtle blur effect applied to unselected barangay paths
+    const applyBarangayBlur = useCallback((selectedName) => {
+        if (!geoLayerRef.current) return;
+        const targetName = (selectedName || "").trim().toLowerCase();
+
+        geoLayerRef.current.eachLayer((l) => {
+            if (!l._path) return;
+            l._path.style.transition = "filter 0.35s ease-out, opacity 0.35s ease-out";
+
+            if (!targetName) {
+                l._path.style.filter = "none";
+                l._path.style.opacity = "1";
+            } else {
+                const props = l.feature?.properties || {};
+                const name = (resolveBarangayName(props) || "").trim().toLowerCase();
+                if (name === targetName) {
+                    l._path.style.filter = "none";
+                    l._path.style.opacity = "1";
+                } else {
+                    l._path.style.filter = "blur(1.8px)";
+                    l._path.style.opacity = "0.55";
+                }
+            }
+        });
+    }, []);
 
     // Unified Selected Barangay Polygon & Map Camera Synchronization
     useEffect(() => {
@@ -566,6 +625,7 @@ function LeafletMap({
 
         // When barangay selection is cleared, reset polygon style, close popups, and return to full Rosario overview
         if (!selectedBgy || !selectedBgy.name) {
+            applyBarangayBlur(null);
             if (popupTimerRef.current) {
                 clearTimeout(popupTimerRef.current);
                 popupTimerRef.current = null;
@@ -597,6 +657,7 @@ function LeafletMap({
 
         prevSelectedBgyRef.current = selectedBgy;
         const targetName = selectedBgy.name.trim().toLowerCase();
+        applyBarangayBlur(targetName);
         let matchedLayer = null;
 
         geoLayerRef.current.eachLayer((l) => {
@@ -617,16 +678,19 @@ function LeafletMap({
             const isStatus = currentLayer === "status";
             const isDiversity = currentLayer === "diversity";
             const isZoning = currentLayer === "zoning";
-            if (isDiversity || isZoning) {
-                // Outline only — on the diversity layer the barangay's CLUP
-                // parcels render inside it, and on the CLUP 2030 layer itself
-                // the whole point is the zone-classification colours already
-                // painted there by the separate zoning tile layer. A solid
-                // selection fill (this used to apply the same 60%-opacity blue
-                // wash zoning got here as every other non-diversity layer) would
-                // paint straight over both, hiding the one thing being shown.
-                // `fill: false` rather than `fillOpacity: 0` also keeps the
-                // shape clickable/hoverable instead of swallowing events.
+            const isTrends = currentLayer === "trends";
+
+            if (isTrends) {
+                const count = bgyDemandCountsRef.current[targetName] || 0;
+                const info = getTrendsDemandColor(count);
+                matchedLayer.setStyle({
+                    weight: 3.5,
+                    color: "#8b0000",
+                    fillColor: info.color,
+                    fillOpacity: 0.95,
+                    dashArray: "",
+                });
+            } else if (isDiversity || isZoning) {
                 matchedLayer.setStyle({
                     weight: 2.4,
                     color: "#8b0000",
@@ -635,48 +699,20 @@ function LeafletMap({
                     dashArray: "",
                 });
             } else {
-                // Status and Trends: a real highlight fill is fine here, neither
-                // layer has finer-grained colour underneath that this would hide.
                 matchedLayer.setStyle({
-                    weight: isStatus ? 2.5 : 3.5,
+                    weight: 2.5,
                     color: "#8b0000",
                     fillColor: "#ef4444",
-                    fillOpacity: isStatus ? 0.08 : 0.12,
+                    fillOpacity: 0.08,
                     dashArray: "",
                 });
             }
             matchedLayer.bringToFront();
 
             const bgyData = staticBgyData[selectedBgy.name] || selectedBgy.data || {};
-
-            if (isStatus) {
-                const bgyApps = Array.isArray(applications)
-                    ? applications.filter((app) => (app?.barangay || "").trim().toLowerCase() === targetName)
-                    : [];
-
-                if (bgyApps.length === 1) {
-                    const singleApp = bgyApps[0];
-                    const coords = getAppCoordinates(singleApp);
-                    mapInstanceRef.current.flyTo(coords, 16, { duration: 0.9 });
-                    setTimeout(() => {
-                        if (markersByAppIdRef.current[singleApp.id]) {
-                            markersByAppIdRef.current[singleApp.id].openPopup();
-                        }
-                    }, 950);
-                } else if (bgyApps.length > 1) {
-                    const appCoords = bgyApps.map((a) => getAppCoordinates(a));
-                    import("leaflet").then((L) => {
-                        const bounds = L.default.latLngBounds(appCoords);
-                        mapInstanceRef.current.flyToBounds(bounds, { padding: [60, 60], maxZoom: 15, duration: 0.9 });
-                    });
-                } else {
-                    focusBarangayOnMap(matchedLayer, selectedBgy.name, bgyData);
-                }
-            } else {
-                focusBarangayOnMap(matchedLayer, selectedBgy.name, bgyData);
-            }
+            focusBarangayOnMap(matchedLayer, selectedBgy.name, bgyData);
         }
-    }, [selectedBgy, currentLayer, applications, staticBgyData, barangaysReady]);
+    }, [selectedBgy, currentLayer, applications, staticBgyData, barangaysReady, applyBarangayBlur]);
 
     // The land-use plan is the heaviest thing on this page (513 parcels,
     // ~830 KB compressed) and only the CLUP 2030 and Urban Growth layers, plus a
@@ -745,7 +781,7 @@ function LeafletMap({
                                     { className: "diversity-tooltip font-sans text-xs", sticky: true }
                                 )
                                 .openTooltip(e.latlng);
-                            parcelLayer.setStyle({ weight: 1.6, color: "#0f172a", opacity: 1 });
+                            parcelLayer.setStyle({ weight: 1.6, color: "#8b0000", opacity: 1 });
                         });
 
                         parcelLayer.on("mouseout", () => {
@@ -885,13 +921,29 @@ function LeafletMap({
                                     if (onFeatureClick) onFeatureClick(name, bgyData);
                                 });
 
-                                layer_feature.on("mouseover", () => {
+                                layer_feature.on("mouseover", (e) => {
                                     const isTrends = layerRef.current === "trends";
                                     const isDiversity = layerRef.current === "diversity";
                                     const dominantZoneText = bgyData?.primaryZone || bgyData?.Primary_Zone || bgyData?.landUse || "";
-                                    let tooltipContent = name;
-                                    if (isTrends && dominantZoneText) {
-                                        tooltipContent = `<div class="font-bold text-slate-800">${name}</div><div class="text-[10px] text-blue-600 font-medium">${dominantZoneText} Zone</div>`;
+                                    let tooltipContent = `<div class="font-bold text-slate-900 text-xs">${name}</div>`;
+                                    if (isTrends) {
+                                        const bKey = name.trim().toLowerCase();
+                                        const count = bgyDemandCountsRef.current[bKey] || 0;
+                                        const info = getTrendsDemandColor(count);
+                                        tooltipContent = `
+                                            <div class="font-sans px-1 py-0.5">
+                                                <div class="flex items-center gap-1.5">
+                                                    <span class="w-2.5 h-2.5 rounded-full shadow-xs" style="background-color: ${info.color}; border: 1px solid ${info.stroke}"></span>
+                                                    <span class="font-bold text-slate-900 text-xs">${name}</span>
+                                                    <span class="font-mono text-[10px] font-black px-1.5 py-0.2 rounded text-white" style="background-color: ${info.stroke}">
+                                                        ${count} LC Clearance${count !== 1 ? 's' : ''}
+                                                    </span>
+                                                </div>
+                                                <div class="text-[10px] font-semibold text-slate-500 mt-0.5">
+                                                    ${info.label} (${activeQuarterRef.current?.isForecast ? 'Forecast' : 'Historical'})
+                                                </div>
+                                            </div>
+                                        `;
                                     } else if (isDiversity) {
                                         const activeLens = getLens(diversityLensRef.current);
                                         const resolved = resolveLensValue(diversityLensRef.current, bgyData);
@@ -911,45 +963,59 @@ function LeafletMap({
                                         `;
                                     }
 
-                                    layer_feature
-                                        .bindTooltip(tooltipContent, {
+                                    const tooltipClass = (isDiversity || isTrends)
+                                        ? "diversity-tooltip font-sans text-xs"
+                                        : "font-sans text-xs font-bold bg-white/98 text-slate-900 border border-slate-300/80 shadow-2xl px-3 py-1.5 rounded-xl backdrop-blur-md z-[9999]";
+
+                                    if (layer_feature.getTooltip()) {
+                                        layer_feature.setTooltipContent(tooltipContent);
+                                    } else {
+                                        layer_feature.bindTooltip(tooltipContent, {
                                             permanent: false,
-                                            direction: "center",
-                                            className: isDiversity
-                                                ? "diversity-tooltip font-sans text-xs"
-                                                : "font-sans text-xs font-bold bg-white/95 text-slate-800 border border-slate-200 shadow-xl px-3 py-1.5 rounded-xl backdrop-blur-md",
-                                        })
-                                        .openTooltip();
+                                            sticky: true,
+                                            direction: "auto",
+                                            pane: "tooltipPane",
+                                            className: tooltipClass,
+                                        });
+                                    }
+                                    layer_feature.openTooltip(e ? e.latlng : undefined);
 
                                     if (isDiversity) onHoverBgy(name);
 
                                     if (activeFeatureRef.current !== layer_feature) {
                                         if (isDiversity) {
-                                            // While a barangay is isolated, every other shape stays
-                                            // invisible even on hover — lighting one up would defeat
-                                            // the isolation. It still gets a tooltip and still switches
-                                            // the selection on click, so it's discoverable without
-                                            // being visible.
                                             const isolated = Boolean(selectedBgyRef.current?.name);
                                             if (!isolated) {
-                                                // Lift the fill and thicken the edge. The old version
-                                                // raised fillOpacity on a fill that was transparent,
-                                                // so hovering a barangay did nothing visible at all.
                                                 const resolved = resolveLensValue(diversityLensRef.current, bgyData);
                                                 layer_feature.setStyle({
                                                     fillColor: resolved.color,
                                                     fillOpacity: 0.9,
                                                     weight: 3,
-                                                    color: "#0f172a",
+                                                    color: "#8b0000",
                                                     opacity: 1,
                                                 });
                                                 layer_feature.bringToFront();
                                             }
+                                        } else if (isTrends) {
+                                            const bKey = name.trim().toLowerCase();
+                                            const count = bgyDemandCountsRef.current[bKey] || 0;
+                                            const info = getTrendsDemandColor(count);
+                                            layer_feature.setStyle({
+                                                fillColor: info.color,
+                                                fillOpacity: 0.95,
+                                                weight: 2.8,
+                                                color: "#8b0000",
+                                                opacity: 1,
+                                            });
+                                            layer_feature.bringToFront();
                                         } else {
-                                            const hoverOpacity = isTrends ? 0.08 : 0.45;
-                                            const hoverColor = isTrends ? "#2563eb" : undefined;
-                                            layer_feature.setStyle({ fillOpacity: hoverOpacity, weight: 2.5, ...(hoverColor ? { color: hoverColor } : {}) });
+                                            layer_feature.setStyle({ fillOpacity: 0.45, weight: 2.5 });
                                         }
+                                    }
+
+                                    if (layer_feature._path && activeFeatureRef.current !== layer_feature) {
+                                        layer_feature._path.style.filter = "blur(0.5px)";
+                                        layer_feature._path.style.opacity = "0.9";
                                     }
                                 });
 
@@ -958,6 +1024,17 @@ function LeafletMap({
                                     if (layerRef.current === "diversity") onHoverBgy(null);
                                     if (activeFeatureRef.current !== layer_feature) {
                                         geoLayerRef.current.resetStyle(layer_feature);
+                                    }
+                                    if (layer_feature._path) {
+                                        const selName = (selectedBgyRef.current?.name || "").trim().toLowerCase();
+                                        const fName = (resolveBarangayName(layer_feature.feature?.properties) || "").trim().toLowerCase();
+                                        if (selName && fName !== selName) {
+                                            layer_feature._path.style.filter = "blur(1.8px)";
+                                            layer_feature._path.style.opacity = "0.55";
+                                        } else {
+                                            layer_feature._path.style.filter = "none";
+                                            layer_feature._path.style.opacity = "1";
+                                        }
                                     }
                                 });
                             },
@@ -1128,14 +1205,14 @@ function LeafletMap({
             });
         }
 
-        // The pre-rendered CLUP raster stays off in diversity mode — it is a
-        // picture of the whole plan and cannot be clipped to one barangay.
-        if (isZoningActive || isTrendsActive) {
+        // The pre-rendered CLUP raster stays on ONLY for zoning mode (CLUP 2030).
+        // For LC Demand Forecasting (trends), it stays off so the choropleth heatmap colors are clear and legible.
+        if (isZoningActive) {
             if (clupTileLayerRef.current && mapInstanceRef.current && !mapInstanceRef.current.hasLayer(clupTileLayerRef.current)) {
                 mapInstanceRef.current.addLayer(clupTileLayerRef.current);
             }
             if (clupTileLayerRef.current) {
-                clupTileLayerRef.current.setOpacity(isTrendsActive ? 0.65 : clupOpacity);
+                clupTileLayerRef.current.setOpacity(clupOpacity);
             }
         } else if (clupTileLayerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(clupTileLayerRef.current)) {
             mapInstanceRef.current.removeLayer(clupTileLayerRef.current);
@@ -1147,10 +1224,8 @@ function LeafletMap({
             onParcelsVisible(Boolean(selectedName) && Boolean(zoningLayerRef.current));
         }
 
-        if (isLandUsePlanVisible) {
-            if (zoningLayerRef.current && needsParcels) zoningLayerRef.current.bringToFront();
-            if (geoLayerRef.current) geoLayerRef.current.bringToFront();
-        }
+        if (zoningLayerRef.current && needsParcels) zoningLayerRef.current.bringToFront();
+        if (geoLayerRef.current) geoLayerRef.current.bringToFront();
 
         // Barangay outlines draw above the parcels, but the selected barangay's
         // fill would hide them, so it renders as an outline only.
@@ -1164,7 +1239,7 @@ function LeafletMap({
                 }
             });
         }
-    }, [currentLayer, appTypeFilter, clupOpacity, staticBgyData, diversityLens, diversityBandFilter, selectedBgy, zoningReady, barangaysReady]);
+    }, [currentLayer, appTypeFilter, clupOpacity, staticBgyData, diversityLens, diversityBandFilter, selectedBgy, zoningReady, barangaysReady, bgyDemandCounts]);
 
     // Centroid score chips for the 2D map, with greedy collision decluttering.
     //
@@ -1655,142 +1730,14 @@ function LeafletMap({
         }
     }, [currentLayer, appTypeFilter, statusFilter, searchFilter, applications, staticBgyData, mapZoom, selectedBgy, hoveredAppId]);
 
-    // Live update Urban Growth Establishments & Landmark Pins for the active year using historical Locational Clearance data
+    // Live update Establishments / Pins: LC Demand Forecasting uses a Choropleth map instead of point pins.
     useEffect(() => {
         if (!establishmentsLayerRef.current || !mapInstanceRef.current) return;
 
-        if (currentLayer === "trends") {
-            const map = mapInstanceRef.current;
-            if (!map.getPane("pinsPane")) {
-                const pinsPane = map.createPane("pinsPane");
-                pinsPane.style.zIndex = "650";
-            }
-
-            const L_Obj = L.default || L;
-            const pinsToRender = selectedBgy && selectedBgy.name
-                ? (historicalPins || []).filter(p => (p.barangay || "").trim().toLowerCase() === selectedBgy.name.trim().toLowerCase())
-                : (historicalPins || []);
-
-            const canvasRenderer = L_Obj.canvas({ pane: 'pinsPane' });
-            const newMarkers = [];
-            const newMarkersRef = {};
-
-            pinsToRender.forEach((pin) => {
-                if (!pin.latitude || !pin.longitude) return;
-                const coords = [pin.latitude, pin.longitude];
-
-                const cat = pin.target_land_use_class || 'Commercial';
-                
-                let dotColor = '#64748b';
-                let dotBg = '#f1f5f9';
-                if (pin.isForecast) {
-                    dotColor = '#2563eb';
-                    dotBg = '#dbeafe';
-                } else {
-                    if (cat === 'Commercial') { dotColor = '#f59e0b'; dotBg = '#fef3c7'; }
-                    else if (cat === 'Industrial') { dotColor = '#ef4444'; dotBg = '#fee2e2'; }
-                    else if (cat === 'Agro-industrial') { dotColor = '#8b5cf6'; dotBg = '#f3e8ff'; }
-                    else if (cat === 'Residential') { dotColor = '#10b981'; dotBg = '#dcfce7'; }
-                }
-
-                const marker = L_Obj.circleMarker(coords, {
-                    pane: 'pinsPane',
-                    renderer: canvasRenderer,
-                    radius: pin.isForecast ? 6 : 4.5,
-                    color: '#ffffff',
-                    weight: 1.5,
-                    fillColor: dotColor,
-                    fillOpacity: 0.95,
-                });
-
-                const dateStr = pin.created_at ? new Date(pin.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-
-                const popupHtml = pin.isForecast ? `
-                    <div class="font-sans min-w-[240px] max-w-[285px] p-1">
-                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-                            <span class="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                                ${pin.reference_number || 'FC-2026-001'}
-                            </span>
-                            <span class="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
-                                ● FORECASTED
-                            </span>
-                        </div>
-                        <div class="mt-2 space-y-1.5 text-xs">
-                            <h4 class="font-black text-slate-900 text-sm leading-tight">${pin.applicant_name || 'Forecasted Application'}</h4>
-                            <p class="text-[11px] font-semibold text-blue-700">Locational Clearance (Spatial Model)</p>
-                            <p class="text-[10.5px] text-slate-600">${pin.purpose || ''}</p>
-                            <div class="pt-1.5 border-t border-slate-100 grid grid-cols-2 gap-1.5 text-[10.5px]">
-                                <div>
-                                    <span class="text-slate-400 block text-[9px] font-bold uppercase">Barangay</span>
-                                    <span class="font-bold text-slate-800 truncate block">Brgy. ${pin.barangay || '—'}</span>
-                                </div>
-                                <div>
-                                    <span class="text-slate-400 block text-[9px] font-bold uppercase">Land Use Category</span>
-                                    <span class="font-bold text-slate-800 truncate block">${cat}</span>
-                                </div>
-                            </div>
-                            <div class="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                                <span class="text-blue-600 font-bold font-mono">Target: ${pin.year || 2026} Q${pin.quarter || 4}</span>
-                                ${pin.lot_area_sqm ? `<span class="text-slate-500 font-mono font-bold">${pin.lot_area_sqm} sqm</span>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                ` : `
-                    <div class="font-sans min-w-[240px] max-w-[285px] p-1">
-                        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-                            <span class="text-[10px] font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                ${pin.reference_number || 'U-000000'}
-                            </span>
-                            <span class="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style="background-color: ${dotBg}; color: ${dotColor}; border: 1px solid ${dotColor}40;">
-                                ● ${pin.zoning_code || cat}
-                            </span>
-                        </div>
-                        <div class="mt-2 space-y-1.5 text-xs">
-                            <h4 class="font-black text-slate-900 text-sm leading-tight">${pin.applicant_name || 'Applicant'}</h4>
-                            <p class="text-[11px] font-semibold text-blue-700">${pin.application_type || 'Locational Clearance'}</p>
-                            <p class="text-[10.5px] text-slate-600">${pin.purpose || ''}</p>
-                            <div class="pt-1.5 border-t border-slate-100 grid grid-cols-2 gap-1.5 text-[10.5px]">
-                                <div>
-                                    <span class="text-slate-400 block text-[9px] font-bold uppercase">Barangay</span>
-                                    <span class="font-bold text-slate-800 truncate block">${pin.barangay || '—'}</span>
-                                </div>
-                                <div>
-                                    <span class="text-slate-400 block text-[9px] font-bold uppercase">Category</span>
-                                    <span class="font-bold text-slate-800 truncate block">${cat}</span>
-                                </div>
-                            </div>
-                            <div class="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                                <span class="text-slate-400 font-mono">Date: ${dateStr}</span>
-                                ${pin.lot_area_sqm ? `<span class="text-slate-500 font-mono font-bold">${pin.lot_area_sqm} sqm</span>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
-
-                marker.bindPopup(popupHtml, {
-                    className: "custom-app-popup",
-                    closeButton: true,
-                    maxWidth: 285,
-                });
-
-                newMarkers.push(marker);
-                newMarkersRef[pin.id || Math.random()] = marker;
-            });
-
-            // Single synchronous swap — 0 blank frames, 0 blinking
-            establishmentsLayerRef.current.clearLayers();
-            newMarkers.forEach(m => establishmentsLayerRef.current.addLayer(m));
-            establishmentMarkersRef.current = newMarkersRef;
-
-            if (!mapInstanceRef.current.hasLayer(establishmentsLayerRef.current)) {
-                mapInstanceRef.current.addLayer(establishmentsLayerRef.current);
-            }
-        } else {
-            establishmentsLayerRef.current.clearLayers();
-            establishmentMarkersRef.current = {};
-            if (mapInstanceRef.current.hasLayer(establishmentsLayerRef.current)) {
-                mapInstanceRef.current.removeLayer(establishmentsLayerRef.current);
-            }
+        establishmentsLayerRef.current.clearLayers();
+        establishmentMarkersRef.current = {};
+        if (mapInstanceRef.current.hasLayer(establishmentsLayerRef.current)) {
+            mapInstanceRef.current.removeLayer(establishmentsLayerRef.current);
         }
     }, [currentLayer, historicalPins, selectedBgy]);
 
@@ -1906,7 +1853,11 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
     // 2020-2026+ year range (widening only if filings ever go past 2026).
     // Years with no filings show zero; nothing is simulated.
     const timelineQuarters = useMemo(() => buildTimelineQuarters(), []);
-    const [activeQuarterIndex, setActiveQuarterIndex] = useState(() => timelineQuarters.length - 1);
+    const firstForecastIndex = useMemo(() => {
+        const idx = timelineQuarters.findIndex((q) => q.isForecast);
+        return idx !== -1 ? idx : timelineQuarters.length - 1;
+    }, [timelineQuarters]);
+    const [activeQuarterIndex, setActiveQuarterIndex] = useState(() => firstForecastIndex);
     const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
     
     useEffect(() => {
@@ -1966,20 +1917,20 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
         const pinsByYear = urbanGrowthData?.historicalPins ?? {};
         if (!activeQuarter) return [];
         
-        const cutoffMonth = activeQuarter.quarter * 3;
-        const cutoffDate = new Date(activeQuarter.year, cutoffMonth, 0, 23, 59, 59, 999);
+        const startMonth = (activeQuarter.quarter - 1) * 3;
+        const startDate = new Date(activeQuarter.year, startMonth, 1, 0, 0, 0, 0);
+        const endMonth = activeQuarter.quarter * 3;
+        const endDate = new Date(activeQuarter.year, endMonth, 0, 23, 59, 59, 999);
 
-        const accumulated = [];
-        for (let y = 2021; y <= activeQuarter.year; y++) {
-            const yearPins = pinsByYear[y] ?? [];
-            yearPins.forEach(p => {
-                const pDate = p?.created_at ? new Date(p.created_at) : null;
-                if (pDate && !isNaN(pDate.getTime()) && pDate <= cutoffDate) {
-                    accumulated.push(p);
-                }
-            });
-        }
-        return accumulated;
+        const yearPins = pinsByYear[activeQuarter.year] ?? [];
+        const quarterPins = [];
+        yearPins.forEach(p => {
+            const pDate = p?.created_at ? new Date(p.created_at) : null;
+            if (pDate && !isNaN(pDate.getTime()) && pDate >= startDate && pDate <= endDate) {
+                quarterPins.push(p);
+            }
+        });
+        return quarterPins;
     }, [urbanGrowthData, activeQuarter, apiQuarterData, customForecastData]);
 
     const activePermitsCount = useMemo(() => {
@@ -2452,6 +2403,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                                 onZoomChange={setMapZoom}
                                 onInspectApp={setInspectedApp}
                                 historicalPins={activeHistoricalPins}
+                                activeQuarter={activeQuarter}
                                 onFeatureClick={(name, data) => {
                                     setSelectedBgy({ name, data });
                                     if (!rightPanelOpen) setRightPanelOpen(true);
@@ -3114,6 +3066,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                                         onLocateApp={handleLocateApp}
                                         recent={timelineRecent}
                                         onForecastGenerated={handleForecastGenerated}
+                                        activePins={activeHistoricalPins}
                                     />
                                 )}
 

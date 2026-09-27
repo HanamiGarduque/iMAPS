@@ -110,6 +110,7 @@ export default function Sidebar({
             if (href === '/settings' && normalized === 'settings') return true;
             if (href === '/users' && (normalized === 'users' || normalized === 'user-management' || normalized === 'audit' || normalized === 'audit-log')) return true;
             if (href === '/site-inspections' && (normalized === 'site-inspections' || normalized === 'site inspections')) return true;
+            if (href === '/notifications' && normalized === 'notifications') return true;
         }
         if (currentPath === href) return true;
         if (href !== '/dashboard' && href !== '/' && currentPath.startsWith(href)) return true;

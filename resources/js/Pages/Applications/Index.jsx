@@ -63,7 +63,7 @@ const ROSARIO_BARANGAYS = [
     "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
     "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", 
     "Macalamcam A", "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", 
-    "Mayuro", "Namuco", "Namunga", "Natu", "Nazi", "Palacpac", "Pinagsibaan", "Poblacion A", 
+    "Mayuro", "Namuco", "Namunga", "Natu", "Nasi", "Palacpac", "Pinagsibaan", "Poblacion A", 
     "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", 
     "San Carlos", "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan", 
     "Tiquiwan", "Tulos"

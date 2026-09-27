@@ -12,6 +12,7 @@ use App\Models\SiteInspection;
 use App\Jobs\PushInspectionToSupabase; 
 use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
+use App\Models\AppNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -306,6 +307,14 @@ class ApplicationController extends Controller
                 action: 'APPLICATION_CREATED',
                 performedBy: Auth::id(),
                 note: sprintf('Application encoded by staff with %d parcel(s).', count($validated['parcels']))
+            );
+
+            AppNotification::notifyRoles(
+                ['Admin', 'Planning Officer'],
+                'New Application Encoded',
+                "Application {$referenceNumber} for {$application->applicant_name} ({$application->barangay}) has been encoded.",
+                'application_created',
+                "/applications/{$application->id}"
             );
 
             $decisionsSeen = [];

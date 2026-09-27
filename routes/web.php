@@ -10,6 +10,7 @@ use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -114,6 +115,14 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/api/inspections/{localInspectionId}/supabase-data', [TechnicalReviewController::class, 'getSupabaseInspectionData'])
         ->name('api.inspections.supabase');
+
+    // ── Notifications ──
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/api/notifications', [NotificationController::class, 'getUnread'])->name('api.notifications.unread');
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
+    Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
+    Route::delete('/notifications/clear-all', [NotificationController::class, 'clearAll'])->name('notifications.clear-all');
+    Route::delete('/notifications/{id}', [NotificationController::class, 'destroy'])->name('notifications.destroy');
 
 });
 

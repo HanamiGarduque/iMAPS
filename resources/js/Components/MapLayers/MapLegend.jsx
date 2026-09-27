@@ -269,52 +269,41 @@ export default function MapLegend({
                         {/* 2. Trends Layer — CLUP mix (real, from backend) + permit pin key */}
                         {activeLayer === 'trends' && (
                             <div className="space-y-2">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                                    CLUP 2030 Land Use Mix
-                                </span>
-
-                                <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                                    {(urbanGrowthData?.municipal?.breakdown || []).map(([label, , , pct, color]) => (
-                                        <div key={label} className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs" style={{ backgroundColor: color }} />
-                                            <span className="text-[11px] font-medium text-slate-700 truncate">
-                                                {label} ({pct}%)
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-600">
+                                <div className="flex items-center justify-between text-[10px] text-slate-600">
                                     <div className="flex items-center gap-1.5">
-                                        <span className="w-3.5 h-0.5 border-t-2 border-blue-800 border-dashed inline-block" />
+                                        <span className="w-3.5 h-0.5 border-t-2 border-slate-700 border-dashed inline-block" />
                                         <span>Brgy Boundary</span>
                                     </div>
                                     <div className="flex items-center gap-1.5">
-                                        <span className="w-2.5 h-2.5 rounded bg-blue-500/20 border border-blue-600 inline-block" />
+                                        <span className="w-2.5 h-2.5 rounded bg-slate-900/20 border border-slate-900 inline-block" />
                                         <span>Selected Brgy</span>
                                     </div>
                                 </div>
 
-                                <div className="pt-2 border-t border-slate-100 space-y-1">
+                                <div className="pt-2 border-t border-slate-100 space-y-1.5">
                                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
-                                        Active Permit Pins
+                                        LC Demand Intensity (Clearances)
                                     </span>
-                                    <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                                    <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
                                         <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-md bg-[#f59e0b] shrink-0" />
-                                            <span className="text-[10px] text-slate-600">Commercial</span>
+                                            <span className="w-3 h-3 rounded shrink-0 border border-yellow-500" style={{ backgroundColor: '#ffffcc' }} />
+                                            <span className="text-[10px] text-slate-700 font-semibold">0 – 2 (Minimal)</span>
                                         </div>
                                         <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-md bg-[#ef4444] shrink-0" />
-                                            <span className="text-[10px] text-slate-600">Industrial</span>
+                                            <span className="w-3 h-3 rounded shrink-0 border border-yellow-600" style={{ backgroundColor: '#fed976' }} />
+                                            <span className="text-[10px] text-slate-700 font-semibold">3 – 5 (Low)</span>
                                         </div>
                                         <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-md bg-[#8b5cf6] shrink-0" />
-                                            <span className="text-[10px] text-slate-600">Agro-Industrial</span>
+                                            <span className="w-3 h-3 rounded shrink-0 border border-amber-600" style={{ backgroundColor: '#feb24c' }} />
+                                            <span className="text-[10px] text-slate-700 font-semibold">6 – 9 (Moderate)</span>
                                         </div>
                                         <div className="flex items-center gap-1.5">
-                                            <span className="w-2.5 h-2.5 rounded-md bg-[#10b981] shrink-0" />
-                                            <span className="text-[10px] text-slate-600">Residential</span>
+                                            <span className="w-3 h-3 rounded shrink-0 border border-red-600" style={{ backgroundColor: '#f03b20' }} />
+                                            <span className="text-[10px] text-slate-700 font-semibold">10 – 15 (High)</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 col-span-2">
+                                            <span className="w-3 h-3 rounded shrink-0 border border-red-950" style={{ backgroundColor: '#800026' }} />
+                                            <span className="text-[10px] text-slate-700 font-semibold">16+ (Very High Demand)</span>
                                         </div>
                                     </div>
                                 </div>

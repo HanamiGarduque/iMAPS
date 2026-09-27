@@ -352,12 +352,12 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     const rosarioCenter = [13.845, 121.2063];
 
     useEffect(() => {
-        fetch("/geojson/rosario_brgy_map.geojson")
+        fetch("/api/map/barangay_boundary")
             .then((res) => res.json())
             .then((data) => setBrgyMapData(sanitizeGeoJSON(data)))
             .catch(() => {});
 
-        fetch("/geojson/land_use_plan.geojson")
+        fetch("/api/map/land_use_plan")
             .then((res) => res.json())
             .then((data) => setLandUseMapData(sanitizeGeoJSON(data)))
             .catch(() => {});

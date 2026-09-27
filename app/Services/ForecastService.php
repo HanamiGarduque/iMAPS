@@ -43,24 +43,7 @@ class ForecastService
                 }
             }
         } catch (\Throwable $e) {
-            Log::warning('DB centroid query in ForecastService failed, falling back to GeoJSON file: ' . $e->getMessage());
-        }
-
-        if (empty($centroids)) {
-            $geoJsonPath = public_path('geojson/rosario_barangay_centroids.geojson');
-            if (file_exists($geoJsonPath)) {
-                $json = json_decode(file_get_contents($geoJsonPath), true);
-                foreach ($json['features'] ?? [] as $feat) {
-                    $name = trim($feat['properties']['name'] ?? '');
-                    $coords = $feat['geometry']['coordinates'] ?? null;
-                    if ($name !== '' && is_array($coords) && count($coords) >= 2) {
-                        $centroids[$name] = (object)[
-                            'lat' => (float)$coords[1],
-                            'lng' => (float)$coords[0],
-                        ];
-                    }
-                }
-            }
+            Log::warning('DB centroid query in ForecastService failed: ' . $e->getMessage());
         }
 
         return $centroids;
@@ -183,9 +166,8 @@ class ForecastService
                     $cat = $categories[($pinIdx + $i) % count($categories)];
                     $purpose = $purposes[($pinIdx + $i) % count($purposes)];
 
-                    // EXACT scatter formula copied from MapsController.php
-                    $lat = $centroid ? ($centroid->lat + (($pinIdx % 13) - 6) * 0.0008) : 13.845343;
-                    $lng = $centroid ? ($centroid->lng + (($pinIdx % 17) - 8) * 0.0008) : 121.209673;
+                    $lat = $centroid ? (float)$centroid->lat : 13.845343;
+                    $lng = $centroid ? (float)$centroid->lng : 121.209673;
 
                     $pins[] = [
                         'id' => "fc-{$year}-q{$quarter}-{$pinIdx}",
@@ -251,9 +233,8 @@ class ForecastService
                     $purpose = $purposes[$i % count($purposes)];
                     $pinIdx = $i + 1;
 
-                    // EXACT scatter formula copied from MapsController.php
-                    $lat = $centroid ? ($centroid->lat + (($pinIdx % 13) - 6) * 0.0008) : 13.845343;
-                    $lng = $centroid ? ($centroid->lng + (($pinIdx % 17) - 8) * 0.0008) : 121.209673;
+                    $lat = $centroid ? (float)$centroid->lat : 13.845343;
+                    $lng = $centroid ? (float)$centroid->lng : 121.209673;
 
                     $pins[] = [
                         'id' => "fc-{$year}-q{$quarter}-{$pinIdx}",

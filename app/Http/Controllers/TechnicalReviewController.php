@@ -10,6 +10,7 @@ use App\Models\TechnicalReview;
 use App\Models\SiteInspection;
 use App\Services\AuditLogger;
 use App\Services\ApplicationStatusTracker;
+use App\Models\AppNotification;
 
 use Illuminate\Support\Facades\Log; // For placeholder SMS logic
 use Illuminate\Support\Facades\Http;
@@ -198,6 +199,14 @@ class TechnicalReviewController extends Controller
                     );
                     $siteInspectionId = $inspection->id;
                     PushInspectionToSupabase::dispatch($inspection);
+
+                    AppNotification::notifyUser(
+                        $validated['inspector_id'],
+                        'Site Inspection Assigned',
+                        "You have been assigned to inspect Application {$application->reference_number} scheduled on {$validated['scheduled_date']}.",
+                        'inspection_assigned',
+                        '/site-inspections'
+                    );
                 }
 
                 // Create the technical review row for the parcel
@@ -234,6 +243,14 @@ class TechnicalReviewController extends Controller
                     note: $note
                 );
 
+                AppNotification::notifyRoles(
+                    ['Admin', 'Planning Officer'],
+                    'Technical Review Decision: ' . $validated['decision'],
+                    "Application {$application->reference_number} status updated to \"{$application->status}\".",
+                    'status_updated',
+                    "/applications/{$application->id}"
+                );
+
                 // Placeholder SMS notification
                 Log::info("PLACEHOLDER SMS - To: {$application->contact_number} | Message: Good day! Your application {$application->reference_number} has completed Technical Review and is now '{$application->status}'.");
             } elseif ($validated['decision'] === 'Needs Site Inspection') {
@@ -247,6 +264,14 @@ class TechnicalReviewController extends Controller
                     action: 'TECHNICAL_REVIEW_NEEDS_SITE_INSPECTION',
                     performedBy: auth()->id(),
                     note: $note
+                );
+
+                AppNotification::notifyRoles(
+                    ['Admin', 'Planning Officer'],
+                    'Site Inspection Flagged',
+                    "Application {$application->reference_number} requires Site Inspection on {$validated['scheduled_date']}.",
+                    'inspection_assigned',
+                    "/applications/{$application->id}"
                 );
 
                 // Placeholder SMS notification for Site Inspection

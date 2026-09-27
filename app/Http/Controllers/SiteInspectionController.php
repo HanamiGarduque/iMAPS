@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\SiteInspection;
+use App\Models\AppNotification;
 use Illuminate\Support\Facades\Artisan;
 
 class SiteInspectionController extends Controller
@@ -39,6 +40,15 @@ class SiteInspectionController extends Controller
     {
         try {
             Artisan::call('sync:pull-inspections');
+
+            AppNotification::notifyRoles(
+                ['Admin', 'Planning Officer'],
+                'Field Inspections Synced',
+                'Successfully pulled the latest completed site inspections from FieldSync.',
+                'inspection_completed',
+                '/site-inspections'
+            );
+
             return back()->with('success', 'Successfully pulled the latest completed inspections from Supabase.');
         } catch (\Exception $e) {
             return back()->with('error', 'Failed to sync with Supabase: ' . $e->getMessage());
