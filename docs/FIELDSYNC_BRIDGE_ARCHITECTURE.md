@@ -2458,7 +2458,17 @@ any other page.
 
 ## Business continuity and work reassignment
 
-**DOCUMENTED BUSINESS RULE - NOT YET IMPLEMENTED**
+**PHASE 1 IMPLEMENTED.** The business rule below is now enforced in code, not
+only documented. Plain-language statement of the rule, for staff and for
+inquiry:
+
+> The system does not require account sharing, and nobody ever works under
+> another person's login. If an assigned Planning Officer or Site Inspector is
+> unavailable, an authorized colleague can take over that pending work, and they
+> continue on their own account. The system records who originally held the
+> work, who received it, why it was handed over, who authorized the transfer,
+> and when. Administrators make sure the work keeps moving; they do not take
+> over the officer's technical decisions or the inspector's field work.
 
 - Employees must **never share accounts**. A login is a personal record of who
   acted.
@@ -2510,21 +2520,165 @@ the reassignment, the timestamp, and the application identity. Admin
 facilitates continuity; Admin does **not** inherit Planning Officer decision
 authority, and the reassignment control grants no decision rights.
 
-### Current schema support (assessed, not built)
+### Phase 1 authority split (implemented)
 
-- Supported today: `site_inspections.inspector_id` (reassignable in place),
-  `site_inspections.assigned_by_imaps_user_id` / `assigned_by_name` (who
-  assigned the round), `technical_reviews.reviewed_by` + `reviewed_at` +
-  `review_round` (decision actor and round), and a generic `audit_trail`
-  (`action`, `performed_by`, `note`, `performed_at`).
-- **Missing:** a per-round assignment history. Reassigning overwrites
-  `inspector_id`, so the original assignee is lost; there is no dedicated
-  reason field; and `audit_trail` is keyed to `application_id` rather than to
-  an inspection round.
-- **Likely implementation scope: a small dedicated assignment-history table**
-  (inspection id, from/to inspector, reason, actor, timestamp), with the
-  existing `audit_trail` retained for general activity. No Acting Officer
-  feature is implemented by this batch.
+The two responsibilities are separate, and are enforced separately:
+
+| | Application ownership | Inspection-round ownership |
+|---|---|---|
+| Scope | The whole application | ONE round |
+| Initiated by | **Admin** | **Planning Officer** |
+| Admin may do it | Yes | **No** (Phase 1) |
+| Receiver must be | active `Planning Officer` | active `Site Inspector` with a FieldSync account |
+| Route | `POST /applications/reassign-planning-officer`, `role:Admin` | `POST /site-inspections/reassign-inspector`, `role:Planning Officer` |
+| Does it grant decision rights? | **No** | n/a (field work, not a decision) |
+
+- **Admin reassigns application ownership only.** Handing an application to
+  another Planning Officer keeps the work moving. It does not transfer technical
+  decision authority: the receiving officer makes the decisions, on their own
+  account.
+- **PO reassigns inspector ownership only.** A Planning Officer hands a field
+  round to another Site Inspector. Admin does not do this in Phase 1.
+- **Roles remain separate.** A Planning Officer cannot reassign application
+  ownership, and an Admin cannot reassign an inspector. Neither route is
+  reachable by the other role.
+
+### Where each control lives
+
+```
+Application Detail
+  -> Work Assignment
+     -> Assigned Planning Officer
+        -> Reassign            (Admin only; a PO may view but not self-reassign)
+
+Application Detail
+  -> Parcel N
+     -> Site Inspection / Round N
+        -> Assigned Inspector
+           -> Reassign Inspector   (Planning Officer only, and only while the
+                                     round is provably unstarted in FieldSync)
+```
+
+Current assignment is shown prominently. The history is a short collapsible list
+underneath it, and the same event is also written to the system-wide
+`audit_trail`, so an auditor reading the activity log sees it too.
+
+### Why a started inspection cannot be reassigned
+
+Local iMAPS state **cannot** prove a round is unstarted. Local
+`site_inspections.status` has no in-progress value, so a round that FieldSync
+reports as `in_progress` still reads locally as `assigned`. The guard therefore
+reads the **remote** FieldSync job and fails **closed**: if the remote state
+cannot be read, the answer is no.
+
+A reassignment is allowed only while ALL of these hold:
+
+- remote `field_jobs.status = 'assigned'`
+- `gps_confirmed_at IS NULL`
+- `checklist_completed_count = 0`
+- `photo_count = 0`
+- the local round is not completed
+
+**Mid-flight transfer is blocked in Phase 1.** This is deliberate, and it is an
+offline-safety decision rather than a bookkeeping one. The inspector's phone
+caches its job for offline use and deliberately *keeps* a job that has already
+been started. Handing that job to a colleague therefore does not cleanly hand it
+over: the previous phone keeps a working copy, the new inspector receives a job
+that may still carry the previous inspector's confirmed GPS position and partial
+checklist, and any work the previous inspector has not uploaded becomes stranded
+with no recovery path in iMAPS. Blocking the transfer keeps one person
+responsible for one round. The only supported route onward is the existing
+**Requires Reinspection**, which opens a genuinely new round.
+
+No forced reset exists: nothing in the reassignment path clears remote
+progress, status, checklist or photos to make a handover fit.
+
+### Current assignment vs immutable history
+
+Two separate things, deliberately:
+
+| | Where it lives | Behaviour |
+|---|---|---|
+| **Current** assignment | `zoning_applications.assigned_planning_officer_id`, `site_inspections.inspector_id` | One mutable pointer. Changes when work is handed over. |
+| **History** | `application_po_assignments`, `site_inspection_assignments` | Append-only. Never updated, never deleted. |
+
+The history tables carry the exact target through a real foreign key (never a
+polymorphic type/id pair, which could not be constrained), plus the previous
+owner, the new owner, the reason, the actor, and the timestamp. A reason of
+"Other" requires a written explanation, enforced in the database as well as in
+the form. An "initial" row must have no previous owner; a "reassignment" row
+must have one.
+
+Because history is separate from the pointer, a damaged or deleted history row
+can never change who currently owns a round.
+
+`encoded_by` (who typed the application up) and `technical_reviews.reviewed_by`
+(who decided in a given round) keep their original meanings and are **never**
+reused as ownership. `assigned_by_imaps_user_id` / `assigned_by_name` remain the
+*most recent assigning officer* and continue to be overwritten on handover; the
+durable record of previous owners is the new history table.
+
+### Active-account requirement
+
+Work may only be handed to an **active** account:
+
+- Planning Officer target: `role = 'Planning Officer'` **and** `is_active = true`
+- Site Inspector target: `role = 'Site Inspector'` **and** `is_active = true`
+  **and** `handshake_key IS NOT NULL`
+
+A suspended employee is excluded from every picker and refused by every
+validation rule, so work can never be parked on somebody who cannot log in. The
+handshake key is required for inspectors because it is what resolves a Supabase
+profile to deliver a field job to. The picker and the validation rule are the
+same shared scope, so the options on screen and the check on submit can never
+disagree. This also corrects a message that previously promised an "active"
+account while only checking role and handshake key.
+
+### The silent overwrite that was removed
+
+`TechnicalReviewController::createInspectionRound()` previously did this when a
+parcel already had an open round:
+
+```php
+$latestInspection->fill([...$assignmentData, 'status' => 'assigned']);
+```
+
+That overwrote `inspector_id` with no history, forced the lifecycle back to
+`assigned` even if the round had already been worked, and left any
+`submitted_at` / `findings` on the row. `assignInspector()` would also open a
+second round for the same application and parcel, producing a duplicate field
+job.
+
+Both are now closed:
+
+- a different inspector on an open round is **refused**, and the officer is
+  pointed at the guarded Reassign Inspector action;
+- the same inspector is treated as a **reschedule**, so only the dates and notes
+  move — the lifecycle status and the recorded assigning officer are left alone;
+- a completed round keeps its existing refusal and must go through
+  Requires Reinspection;
+- a duplicate open round can no longer be created for one parcel.
+
+Every ownership change now goes through `WorkAssignmentService`, which writes
+the history row and the `audit_trail` row **in the same transaction**, so a
+handover can never commit without its accountability record.
+
+### Open item: initial Planning Officer ownership
+
+`zoning_applications.assigned_planning_officer_id` is **nullable and was not
+backfilled**. The current business flow has no step that assigns an application
+to a Planning Officer — encoding, technical review and inspection scheduling are
+all separate actions by possibly different officers — so there is no fact to
+backfill from. Backfilling from `encoded_by` or from the latest reviewer would
+invent an ownership record that no one decided on.
+
+Applications therefore honestly display "Not yet assigned" until an
+Administrator assigns or reassigns an officer. **Deciding an automatic
+initialization rule is an open business question** and is deliberately not
+guessed at.
+
+No Acting Officer feature, and no mid-flight transfer/recovery flow, is
+implemented by this batch.
 
 ## Sample/placeholder data policy
 

@@ -284,7 +284,105 @@ SELECT id, form_number, name, barangay, zoning_code, lot_area_sqm,
 - The **final team database snapshot remains deferred until all loops, including
   Loop 8+, are complete**. The local recovery backup is not a final team export.
 
-## 11. Safety record
+## 11. Work reassignment contract (Phase 1) - 2026-09-27
+
+Migration: `database/migrations/2026_09_27_010000_add_work_reassignment_contract.php`.
+Additive and idempotent. Applied to local `imaps_db_0921` with
+`--path=...` only; the repository migration ledger still contains two
+unrelated pre-existing pending entries (see section 12).
+
+### 11.1 Current ownership pointer
+
+```sql
+zoning_applications.assigned_planning_officer_id  bigint NULL
+    -> users(id) ON DELETE SET NULL
+    (zoning_applications_assigned_po_foreign)
+```
+
+The **CURRENT** responsible Planning Officer. Nullable, and **not backfilled**:
+the current business flow has no step that assigns an application to an
+officer, so there is no fact to backfill from and inventing one would put a
+false accountability record in the ledger. Pre-existing rows are honestly
+unowned.
+
+This is a **new, separate fact** and must not be confused with:
+
+| Column | Meaning | Reused as ownership? |
+|---|---|---|
+| `encoded_by` | who typed the application up | **No** |
+| `technical_reviews.reviewed_by` | who decided, in that review round | **No** |
+| `audit_trail.performed_by` | actor of one application-level event | **No** |
+| `site_inspections.assigned_by_imaps_user_id` / `_name` | the **most recent** assigning officer (overwritten on handover) | **No** |
+
+The current inspector pointer is unchanged: `site_inspections.inspector_id`.
+
+### 11.2 `application_po_assignments` - append-only ownership history
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `bigserial` | PK |
+| `zoning_application_id` | `bigint` | FK `-> zoning_applications(id) ON DELETE CASCADE` |
+| `assignment_type` | `varchar(20)` | `initial` \| `reassignment` |
+| `from_planning_officer_id` | `bigint` NULL | FK `-> users(id) ON DELETE SET NULL` |
+| `to_planning_officer_id` | `bigint` | FK `-> users(id) ON DELETE RESTRICT` |
+| `reason` | `varchar(30)` | `Absent` \| `On Leave` \| `Workload Transfer` \| `Unavailable` \| `Other` |
+| `reason_note` | `text` NULL | required when `reason = 'Other'` |
+| `reassigned_by` | `bigint` | FK `-> users(id) ON DELETE RESTRICT` |
+| `reassigned_at` | `timestamp` | |
+
+Index: `app_po_assignments_lookup_idx (zoning_application_id, reassigned_at)`.
+
+Checks: `..._type_check`, `..._reason_check`, `..._other_note_check`
+(`reason <> 'Other' OR (reason_note IS NOT NULL AND btrim(reason_note) <> '')`),
+and `..._from_check` (`initial` requires a NULL previous owner, `reassignment`
+requires a non-NULL one).
+
+### 11.3 `site_inspection_assignments` - append-only round ownership history
+
+Identical shape, scoped to **one round**:
+`site_inspection_id` FK `-> site_inspections(id) ON DELETE CASCADE`, with
+`from_inspector_id` / `to_inspector_id` and the parallel
+`site_insp_assignments_*` constraints, indexed on
+`(site_inspection_id, reassigned_at)`.
+
+A reinspection is a new round, so Round 1 and Round 2 never share an ownership
+story.
+
+### 11.4 Why two tables and not one generic table
+
+A polymorphic `work_assignments(target_type, target_id)` **cannot** carry a
+foreign key, so the exact application / exact round could never be guaranteed.
+The contract requires the exact target, so each history table has a real FK.
+
+### 11.5 Pointer vs history
+
+The current owner is a mutable pointer on the business row; history is
+append-only and never updated. A damaged or deleted history row therefore can
+never change who currently owns work.
+
+### 11.6 Eligibility is enforced in the application layer, not by these tables
+
+Receivers must be **active** (`users.is_active = true`) with the correct role,
+and an inspector must additionally have a non-NULL `handshake_key`. That check
+lives in `User::scopeActivePlanningOfficers()` /
+`scopeActiveSiteInspectors()` and the matching validation rules, so the picker
+and the submit check can never disagree. No column or constraint in this
+migration duplicates it.
+
+## 12. Migration ledger note (pre-existing, not introduced here)
+
+`php artisan migrate` cannot be run globally against `imaps_db_0921`: the
+repository's consolidated `2026_09_19_000000_create_initial_schema` is still
+recorded as **Pending** while the live tables already exist, so a global run
+fails with `relation "users" already exists`. This drift predates the
+reassignment work and is the same condition already recorded in section 1 and in
+the architecture document's audit findings.
+
+The reassignment migration was therefore applied with an explicit `--path`, and
+no ledger row was edited by hand. Reconciling the ledger remains a separate
+decision.
+
+## 13. Safety record
 
 - No `migrate:fresh`, no `migrate:reset`, no `DROP TABLE` on any real database.
 - No production database was queried or modified.
@@ -293,4 +391,8 @@ SELECT id, form_number, name, barangay, zoning_code, lot_area_sqm,
 - `site_inspections.remarks` was not added.
 - `users.supabase_uuid` was not added.
 - Latest master was reconciled in `71c5e06`; this follow-up changes SQL/docs only.
+- The reassignment migration added no `DROP TABLE` and wrote no historical row.
+  `assigned_planning_officer_id` is NULL for every pre-existing application, and
+  both history tables are empty until a handover actually happens.
+- No `migrations` ledger row was edited by hand.
 - Nothing was pushed.
