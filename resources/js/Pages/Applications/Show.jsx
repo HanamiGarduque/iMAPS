@@ -631,6 +631,17 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     const showDecisionButtons = !siteInspection || ["completed", "submitted"].includes(effectiveActiveStatus);
     const hasCompletedInspection = siteInspection && ["completed", "submitted"].includes(effectiveActiveStatus);
 
+    // Admin/PO audit (P2): backend authorization was always correct — the four
+    // decision endpoints are role:Planning Officer — but this page rendered the
+    // Approve / Needs Site Inspection / Decline / Schedule Reinspection controls
+    // and the inspector assignment form to ANY role that could open the route
+    // (Admin can, read-only). An Admin therefore saw Planning Officer controls
+    // and only discovered on submit that they were forbidden.
+    // Presentation-only fix: non Planning Officers keep every readable
+    // inspection/result section but are not shown decision or assignment
+    // controls. No middleware is weakened; RoleMiddleware remains the boundary.
+    const canRecordPlanningDecision = userRole === "Planning Officer";
+
     const isBatchSubmitAllowed = uniqueParcels.every((parcel) => {
         const effectiveStatus = liveStatuses[parcel.id]?.toLowerCase() || parcel.site_inspection?.status?.toLowerCase();
         return !parcel.site_inspection || ["completed", "submitted"].includes(effectiveStatus);
@@ -684,6 +695,11 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                         </div>
 
                         <div className="flex items-center gap-2">
+                            {/* Admin/PO audit: application status transitions are a
+                                Planning Officer decision (update-status is
+                                role:Planning Officer), so the control is not offered
+                                to a read-only role. */}
+                            {canRecordPlanningDecision && (
                             <button
                                 onClick={() => setShowStatusModal(true)}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all active:scale-98"
@@ -697,6 +713,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                 </svg>
                                 <span>Update Status</span>
                             </button>
+                            )}
                         </div>
                     </div>
 
@@ -805,10 +822,19 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                         const isActive = activeParcelIndex === idx;
                                                         const decision = parcelReviews[parcel.id]?.decision;
 
-                                                        const getIndicatorColor = () => {
+                                                    const getIndicatorColor = () => {
                                                             if (decision === "Approved") return "bg-emerald-500";
                                                             if (decision === "Needs Site Inspection") return "bg-amber-500";
                                                             if (decision === "Declined") return "bg-rose-500";
+                                                            // Admin/PO audit: "Requires Reinspection" previously fell
+                                                            // through to the neutral slate default, so a real fourth
+                                                            // decision looked identical to "no decision yet".
+                                                            // Violet is the existing accent already used for the
+                                                            // "Under Sangguniang Bayan" stage elsewhere in this
+                                                            // application, so no new colour token is introduced.
+                                                            // Colour stays secondary: the tab label below always
+                                                            // spells out the decision in text.
+                                                            if (decision === "Requires Reinspection") return "bg-violet-500";
                                                             return "bg-slate-300";
                                                         };
 
@@ -841,7 +867,27 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                             onInspectionDataFetched={(data) => handleLiveInspectionData(activeParcelData.id, data)}
                                                         />
 
-                                                        {showDecisionButtons ? (
+                                                        {/* Admin/PO audit: decision controls are Planning
+                                                            Officer only. A read-only role still sees the full
+                                                            inspection/result card above, and is told plainly
+                                                            that a Planning Officer records the decision. */}
+                                                        {!canRecordPlanningDecision && (
+                                                            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 flex items-start gap-3">
+                                                                <svg className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                </svg>
+                                                                <div>
+                                                                    <p className="text-xs font-bold text-slate-700">Read-only view</p>
+                                                                    <p className="text-[12px] text-slate-500 mt-0.5">
+                                                                        Inspection results are shown above. Recording a parcel
+                                                                        decision or assigning a site inspector is done by a
+                                                                        Planning Officer.
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {canRecordPlanningDecision && showDecisionButtons ? (
                                                             <>
                                                                 <div>
                                                                     <Label>Parcel Evaluation Decision</Label>
@@ -895,7 +941,12 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                         </div>
                                                                     )}
 
-                                                                    {["Needs Site Inspection", "Requires Reinspection"].includes(parcelReviews[activeParcelData.id]?.decision) && (
+                                                                    {/* Admin/PO audit: inspector assignment is a
+                                                                        Planning Officer action (assign-inspector is
+                                                                        role:Planning Officer), so it is hidden from
+                                                                        read-only roles alongside the decision
+                                                                        buttons. */}
+                                                                    {canRecordPlanningDecision && ["Needs Site Inspection", "Requires Reinspection"].includes(parcelReviews[activeParcelData.id]?.decision) && (
                                                                         <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50/40 space-y-3">
                                                                             <h4 className="text-xs font-bold text-amber-800">Schedule Field Task</h4>
                                                                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -966,7 +1017,10 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                     </div>
                                                 )}
 
-                                                {isBatchSubmitAllowed && (
+                                                {/* Admin/PO audit: the batch review submit writes technical
+                                                    review decisions (submit-batch is role:Planning Officer), so
+                                                    it is not offered to a read-only role. */}
+                                                {canRecordPlanningDecision && isBatchSubmitAllowed && (
                                                     <div className="bg-slate-50/80 p-4 border-t border-slate-200 flex justify-end gap-3">
                                                         <button
                                                             type="button"

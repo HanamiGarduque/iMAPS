@@ -108,209 +108,6 @@ const DATE_PRESETS = [
     { label: "Custom Range", value: "custom" },
 ];
 
-// ── 10 Realistic Applications ──
-const SAMPLE_APPLICATIONS = [
-    {
-        id: 101,
-        reference_number: "LC-2026-0814",
-        applicant_name: "Batangas Agro-Industrial Corp.",
-        representative_name: "Atty. Eduardo Castillo",
-        contact_number: "0917-882-9012",
-        email: "operations@batangasagro.ph",
-        application_type: "Locational Clearance",
-        purpose: "Cold storage facility & processing plant with logistics loading bay",
-        land_use_class: "Agro-Industrial",
-        barangay: "San Carlos",
-        lot_number: "Lot 412-A",
-        tct_number: "TCT-058-202400918",
-        lot_area_sqm: "4500.00",
-        created_at: "2026-08-28T09:30:00Z",
-        assessment_fee: "18500.00",
-        or_number: "OR-7890123",
-        remarks: "Environmental clearance certificate submitted. Endorsed for technical evaluation.",
-        status: "Technical Review",
-    },
-    {
-        id: 102,
-        reference_number: "ZC-2026-0932",
-        applicant_name: "Rosario Heights Realty Dev.",
-        representative_name: "Engr. Maria Santos",
-        contact_number: "0920-554-1920",
-        email: "msantos@rosarioheights.com",
-        application_type: "Zoning Certificate",
-        purpose: "Medium-density residential subdivision phase 2 development",
-        land_use_class: "Residential",
-        barangay: "Poblacion C",
-        lot_number: "Lot 108",
-        tct_number: "TCT-058-202300451",
-        lot_area_sqm: "12500.00",
-        created_at: "2026-08-27T14:15:00Z",
-        assessment_fee: "12400.00",
-        or_number: "OR-7890124",
-        remarks: "Endorsed to Sangguniang Bayan committee on housing and land use.",
-        status: "Under Sangguniang Bayan",
-    },
-    {
-        id: 103,
-        reference_number: "DP-2026-0419",
-        applicant_name: "Prime Meridian Commercial Hub",
-        representative_name: "Arch. Dominic Velasquez",
-        contact_number: "0918-332-8811",
-        email: "dvelasquez@primemeridian.ph",
-        application_type: "Development Permit",
-        purpose: "Commercial complex & logistics terminal with parking arcade",
-        land_use_class: "Commercial",
-        barangay: "Namunga",
-        lot_number: "Lot 25-B",
-        tct_number: "TCT-058-202500892",
-        lot_area_sqm: "8200.00",
-        created_at: "2026-08-26T11:00:00Z",
-        assessment_fee: "35000.00",
-        or_number: "OR-7890125",
-        remarks: "Final assessment clearance approved. Application ready for release.",
-        status: "For Release",
-    },
-    {
-        id: 104,
-        reference_number: "LC-2026-0775",
-        applicant_name: "Southpoint Grain Silo Corp.",
-        representative_name: "Jonathan D. Perez",
-        contact_number: "0922-771-4091",
-        email: "jperez@southpointgrain.com",
-        application_type: "Locational Clearance",
-        purpose: "Post-harvest solar grain drying facility and silo depot",
-        land_use_class: "Agricultural",
-        barangay: "Quilib",
-        lot_number: "Lot 701",
-        tct_number: "TCT-058-202200114",
-        lot_area_sqm: "6300.00",
-        created_at: "2026-08-25T16:45:00Z",
-        assessment_fee: "8750.00",
-        or_number: "OR-7890126",
-        remarks: "Official locational clearance certificate issued to applicant.",
-        status: "Released",
-    },
-    {
-        id: 105,
-        reference_number: "SLUP-2026-0120",
-        applicant_name: "Batangas Green Power Systems",
-        representative_name: "Clarissa Ramos",
-        contact_number: "0919-445-6672",
-        email: "cramos@greenpower.ph",
-        application_type: "Preliminary Approval and Locational Clearance (PALC)",
-        purpose: "5MW ground-mounted solar utility substation installation",
-        land_use_class: "Special Use",
-        barangay: "Pinagsibaan",
-        lot_number: "Lot 14-E",
-        tct_number: "TCT-058-202600019",
-        lot_area_sqm: "22000.00",
-        created_at: "2026-08-24T10:20:00Z",
-        assessment_fee: "24600.00",
-        or_number: "OR-7890127",
-        remarks: "Initial application received. Queueing for technical evaluation review.",
-        status: "Received",
-    },
-    {
-        id: 106,
-        reference_number: "LC-2026-0562",
-        applicant_name: "Batangas Poultry & Feed Mills Inc.",
-        representative_name: "Ricardo G. Alcantara",
-        contact_number: "0917-550-9933",
-        email: "ralcantara@batangaspoultry.com",
-        application_type: "Locational Clearance",
-        purpose: "Automated broiler poultry farm & organic fertilizer processing unit",
-        land_use_class: "Agro-Industrial",
-        barangay: "Cahigam",
-        lot_number: "Lot 88",
-        tct_number: "TCT-058-202400331",
-        lot_area_sqm: "9500.00",
-        created_at: "2026-08-23T08:15:00Z",
-        assessment_fee: "15200.00",
-        or_number: "OR-7890128",
-        remarks: "Site inspection scheduled for odor and buffer-zone setback verification.",
-        status: "Technical Review",
-    },
-    {
-        id: 107,
-        reference_number: "DP-2026-0881",
-        applicant_name: "Sunrise Eco-Park & Resort Residences",
-        representative_name: "Arch. Patricia Lim",
-        contact_number: "0921-663-8822",
-        email: "plim@sunriseecopark.ph",
-        application_type: "Development Permit",
-        purpose: "Eco-tourism park with private villa subdivision residential strip",
-        land_use_class: "Special Use",
-        barangay: "Bagong Pook",
-        lot_number: "Lot 301-C",
-        tct_number: "TCT-058-202300891",
-        lot_area_sqm: "35000.00",
-        created_at: "2026-08-22T13:40:00Z",
-        assessment_fee: "42000.00",
-        or_number: "OR-7890129",
-        remarks: "Referred to Sangguniang Bayan committee on environment & tourism.",
-        status: "Under Sangguniang Bayan",
-    },
-    {
-        id: 108,
-        reference_number: "ZC-2026-0411",
-        applicant_name: "Dr. Antonio V. Hernandez Clinic",
-        representative_name: null,
-        contact_number: "0918-229-4410",
-        email: "ahernandez.md@gmail.com",
-        application_type: "Zoning Certificate",
-        purpose: "Outpatient surgical, dialysis & diagnostic laboratory facility",
-        land_use_class: "Institutional",
-        barangay: "Poblacion B",
-        lot_number: "Lot 52",
-        tct_number: "TCT-058-202100412",
-        lot_area_sqm: "1850.00",
-        created_at: "2026-08-21T15:10:00Z",
-        assessment_fee: "9500.00",
-        or_number: "OR-7890130",
-        remarks: "New application filed. Documents undergoing initial completeness check.",
-        status: "Received",
-    },
-    {
-        id: 109,
-        reference_number: "LC-2026-0929",
-        applicant_name: "Grand Rosario Fuel & Convenience Hub",
-        representative_name: "Ferdinand M. Tan",
-        contact_number: "0917-440-1928",
-        email: "ftan@grandfuel.ph",
-        application_type: "Locational Clearance",
-        purpose: "Service gasoline station with retail strip convenience arcade",
-        land_use_class: "Commercial",
-        barangay: "San Roque",
-        lot_number: "Lot 19-A",
-        tct_number: "TCT-058-202500122",
-        lot_area_sqm: "3200.00",
-        created_at: "2026-08-20T11:25:00Z",
-        assessment_fee: "21800.00",
-        or_number: "OR-7890131",
-        remarks: "Zoning requirements met. Certificate pending final release signature.",
-        status: "For Release",
-    },
-    {
-        id: 110,
-        reference_number: "SLUP-2026-0305",
-        applicant_name: "Calantas Telecommunications Tower Site",
-        representative_name: "Atty. Vincent Cruz",
-        contact_number: "0920-881-2299",
-        email: "legal@telecominfra.ph",
-        application_type: "Preliminary Approval and Locational Clearance (PALC)",
-        purpose: "48-meter 5G cellular transceiver tower structure and shelter",
-        land_use_class: "Special Use",
-        barangay: "Calantas",
-        lot_number: "Lot 99",
-        tct_number: "TCT-058-202400551",
-        lot_area_sqm: "800.00",
-        created_at: "2026-08-19T09:50:00Z",
-        assessment_fee: "16000.00",
-        or_number: "OR-7890132",
-        remarks: "Denied due to non-compliance with municipal residential radius clearance buffer.",
-        status: "Denied",
-    },
-];
 
 function StatusBadge({ status }) {
     const s = status || "Received";
@@ -663,7 +460,11 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         window.history.replaceState({}, "", newUrl);
     }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, currentPage, pageSize]);
 
-    const isUsingPlaceholders = !applications || !Array.isArray(applications?.data) || applications.data.length === 0;
+    // Admin/PO audit (P1): this used to fall back to a SAMPLE_APPLICATIONS
+    // fixture and render invented applicants, TCT and OR numbers as though they
+    // were real records. Official records are never fabricated, so an empty
+    // result is now an honest empty state.
+    const hasRecords = Array.isArray(applications?.data) && applications.data.length > 0;
 
     const clearFilters = () => {
         setSearchInput("");
@@ -776,7 +577,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     };
 
     // Dynamic Status Count Helper
-    const fullDataset = isUsingPlaceholders ? SAMPLE_APPLICATIONS : (applications?.data || []);
+    const fullDataset = applications?.data || [];
 
     const getStatusCount = (s) => {
         if (status_counts && Object.keys(status_counts).length > 0) {
@@ -791,7 +592,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
     // Filter & Sort Dataset
     const filteredList = useMemo(() => {
-        let list = isUsingPlaceholders ? [...SAMPLE_APPLICATIONS] : [...(applications?.data || [])];
+        let list = [...(applications?.data || [])];
 
         if (selectedStatus) {
             list = list.filter((item) => item?.status === selectedStatus);
@@ -841,7 +642,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         });
 
         return list;
-    }, [applications, isUsingPlaceholders, selectedStatus, selectedCategory, selectedLandUse, debouncedSearch, selectedBarangay, selectedSort, dateFrom, dateTo]);
+    }, [applications, selectedStatus, selectedCategory, selectedLandUse, debouncedSearch, selectedBarangay, selectedSort, dateFrom, dateTo]);
 
     // Client-side pagination calculation
     const totalPages = Math.max(1, Math.ceil(filteredList.length / pageSize));
@@ -1409,6 +1210,15 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                                     {card.purpose}
                                                                                 </p>
                                                                             )}
+                                                                            {/* Admin/PO audit: same single compact
+                                                                                inspection line as the folder view, so both
+                                                                                views answer the same question. Locally
+                                                                                provable facts only — never "Ongoing". */}
+                                                                            {card.inspection_summary && (
+                                                                                <p className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/70 rounded-md px-1.5 py-0.5 mt-1.5 inline-block self-start leading-tight">
+                                                                                    {card.inspection_summary}
+                                                                                </p>
+                                                                            )}
                                                                         </div>
 
                                                                         {/* Footer: Land Use & Fee */}
@@ -1487,6 +1297,18 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                         <span className="text-[10px] text-slate-400 font-medium mt-1">
                                                             {item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : "—"}
                                                         </span>
+                                                        {/* Admin/PO audit: one compact line answers "is there a site
+                                                            inspection, is it a reinspection, and who is the
+                                                            inspector?" without opening the application. Wording is
+                                                            produced server-side by App\Support\InspectionSummary and
+                                                            only uses locally provable facts, so it never claims
+                                                            field progress (no "Ongoing"). Rendered only when there
+                                                            is something to say. */}
+                                                        {item.inspection_summary && (
+                                                            <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/70 rounded-md px-1.5 py-0.5 mt-1.5 max-w-[190px] leading-tight text-center line-clamp-2">
+                                                                {item.inspection_summary}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
@@ -1543,7 +1365,11 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     <svg className="w-12 h-12 mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                                     </svg>
-                                                    <p className="font-semibold">No applicants found</p>
+                                                    <p className="font-semibold text-slate-600">No applications found.</p>
+                                                    <p className="text-xs text-slate-400 mt-1 text-center max-w-xs">
+                                                        There are no applications to show. Adjust the filters, or encode a new
+                                                        application to get started.
+                                                    </p>
                                                 </div>
                                             )}
                                         </>

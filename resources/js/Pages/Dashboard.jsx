@@ -96,12 +96,16 @@ function StatusDonut({ kpis }) {
                 {/* Center label */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <span className="text-2xl font-extrabold text-slate-900 leading-none">{pct}%</span>
-                    <span className="text-[10px] font-semibold text-slate-400 mt-1">Approved</span>
+                    {/* Admin/PO audit: the centre previously read "Approved" for a
+                        value that also counts "For Release" (approved but not
+                        yet issued). "Released" is the stage the query actually
+                        measures. */}
+                    <span className="text-[10px] font-semibold text-slate-400 mt-1">Released</span>
                 </div>
             </div>
             <div className="flex items-center justify-center gap-4 mt-4 text-[11px] font-semibold">
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-600" /> Released</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-300" /> Pending</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-600" /> For Release / Released</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-300" /> Open Cases</span>
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-200" /> Denied</span>
             </div>
         </div>
@@ -155,11 +159,23 @@ export default function Dashboard({
     const moM = kpis.monthOverMonthPct ?? 0;
     const trendUp = moM >= 0;
 
+    // Admin/PO audit: only the PROVEN label/query mismatches were corrected. The
+    // underlying counts are unchanged, so no KPI logic was redesigned here.
+    //  - "Inspections / Active schedule" counted site_inspections rows in
+    //    assigned|pending|in-progress. iMAPS cannot prove field progress, so
+    //    calling that "Active" overstated it. It is now labelled as what the
+    //    local query actually is: open inspection assignments.
+    //  - "Released" sums Released + For Release, so it was not purely released
+    //    and "Approved & issued" was wrong (For Release is approved but not
+    //    yet issued). The label now states both stages it actually includes.
+    //  - "Pending Review" sums Received + Technical Review + Under Sangguniang
+    //    Bayan, which are three different queues with different owners, so
+    //    "Awaiting action" implied one actionable queue that does not exist.
     const metrics = [
         { label: "Total Applications", value: kpis.total ?? 0, sub: "All-time filings", accent: true },
-        { label: "Pending Review",     value: kpis.pending ?? 0, sub: "Awaiting action" },
-        { label: "Released",           value: kpis.released ?? 0, sub: "Approved & issued" },
-        { label: "Inspections",        value: kpis.inspectionsInProgress ?? 0, sub: "Active schedule" },
+        { label: "Open Cases",          value: kpis.pending ?? 0, sub: "Received, in review, or with the council" },
+        { label: "For Release / Released", value: kpis.released ?? 0, sub: "Approved, awaiting or past release" },
+        { label: "Inspection Assignments", value: kpis.inspectionsInProgress ?? 0, sub: "Assigned or not yet completed" },
     ];
 
     const maxBrgy = Math.max(1, ...topBarangays.map(b => b.count));
@@ -291,7 +307,7 @@ export default function Dashboard({
 
                                 {/* Approval Progress — Donut */}
                                 <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200/80 shadow-sm p-5 flex flex-col">
-                                    <h2 className="text-[14px] font-extrabold text-slate-900 mb-2">Approval Progress</h2>
+                                    <h2 className="text-[14px] font-extrabold text-slate-900 mb-2">Case Disposition</h2>
                                     <StatusDonut kpis={kpis} />
                                 </div>
 

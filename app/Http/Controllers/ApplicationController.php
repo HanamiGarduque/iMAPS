@@ -12,6 +12,7 @@ use App\Models\SiteInspection;
 use App\Jobs\PushInspectionToSupabase; 
 use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
+use App\Support\InspectionSummary;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -41,7 +42,17 @@ class ApplicationController extends Controller
     public function index(Request $request)
     {
         $query = ZoningApplication::query()
-            ->with('parcels') // <-- Eager load parcels here
+            // Admin/PO audit: the list showed no inspection context at all, so a
+            // Planning Officer had to open every application to learn whether it
+            // had a field inspection. Load ONLY what the compact summary needs,
+            // entirely from local relations — no Supabase/FieldSync call, no new
+            // column:
+            //   siteInspection      -> latest round (status only)
+            //   siteInspection.inspector -> human-readable inspector name
+            //   site_inspections_count  -> round count (a 2nd row = reinspection)
+            ->with(['parcels' => function ($q) {
+                $q->with(['siteInspection.inspector'])->withCount('siteInspections');
+            }])
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->withCount('parcels')
             ->select(
@@ -98,6 +109,32 @@ class ApplicationController extends Controller
             ->groupBy('status')
             ->pluck('total', 'status')
             ->toArray();
+
+        // Attach the Planning Officer inspection line. Returns null when the
+        // application has no inspection at all, and the UI then renders no line
+        // rather than a placeholder. Wording is owned by InspectionSummary so
+        // the "never claim field progress from a local assignment" rule is
+        // enforced in one testable place.
+        $applications->getCollection()->transform(function ($application) {
+            $line = null;
+
+            foreach ($application->parcels as $parcel) {
+                $candidate = InspectionSummary::line(
+                    $parcel->siteInspection,
+                    $parcel->siteInspection?->inspector?->name,
+                    (int) ($parcel->site_inspections_count ?? 0),
+                );
+
+                if ($candidate !== null) {
+                    $line = $candidate;
+                    break;
+                }
+            }
+
+            $application->inspection_summary = $line;
+
+            return $application;
+        });
 
         return Inertia::render('Applications/Index', [
             'applications'  => $applications,
@@ -444,7 +481,15 @@ class ApplicationController extends Controller
     {
         $application = ZoningApplication::query()
             ->with(['parcels' => function ($query) {
-                $query->orderBy('parcel_code')->with('siteInspection');
+                // Admin/PO audit: the detail page exposed only a raw
+                // inspector_id, so a Planning Officer could not tell who was
+                // assigned. Eager-load the EXISTING users relation rather than
+                // duplicating the name into another column. withCount supplies
+                // the round count so the current round can be labelled
+                // "Round N" without loading full history.
+                $query->orderBy('parcel_code')
+                    ->with(['siteInspection.inspector'])
+                    ->withCount('siteInspections');
             }]) // <-- Eager load and order parcels
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->select('zoning_applications.*', 'users.name as encoded_by_name')
@@ -457,17 +502,11 @@ class ApplicationController extends Controller
             ->orderBy('name')
             ->get();
 
-        if (!$application) {
-            $sampleData = $this->getSampleApplicationData($id);
-            return Inertia::render('Applications/Show', [
-                'application'      => $sampleData,
-                'parcels'          => collect($sampleData->parcels ?? []),
-                'technicalReviews' => collect($sampleData->technical_reviews ?? []),
-                'auditTrail'       => collect($sampleData->audit_trail ?? []),
-                'inspectors'       => $inspectors,
-                'statusOrder'      => self::STATUS_ORDER,
-            ]);
-        }
+        // Admin/PO audit (P1): this used to fall back to getSampleApplicationData()
+        // and render a FABRICATED application dossier — invented applicant names,
+        // TCT and OR numbers — for any id that did not exist. Official records
+        // must never be invented, so an unknown id is now an ordinary 404.
+        abort_if($application === null, 404);
 
         $technicalReviews = TechnicalReview::query()
             ->leftJoin('users', 'users.id', '=', 'technical_reviews.reviewed_by')
@@ -504,159 +543,6 @@ class ApplicationController extends Controller
         return [
             'id' => $user->id,
             'name' => $user->name,
-        ];
-    }
-
-    private function getSampleApplicationData(int $id): object
-    {
-        $samples = [
-            101 => [
-                'id' => 101,
-                'reference_number' => 'LC-2026-0814',
-                'applicant_name' => 'Batangas Agro-Industrial Corp.',
-                'representative_name' => 'Atty. Eduardo Castillo',
-                'contact_number' => '0917-882-9012',
-                'email' => 'operations@batangasagro.ph',
-                'application_type' => 'Locational Clearance',
-                'purpose' => 'Cold storage facility & processing plant',
-                'land_use_class' => 'Agro-Industrial',
-                'barangay' => 'San Carlos',
-                'lot_number' => 'Lot 412-A',
-                'tct_number' => 'TCT-058-202400918',
-                'lot_area_sqm' => 4500.00,
-                'latitude' => 13.8480,
-                'longitude' => 121.2140,
-                'created_at' => '2026-08-28 09:30:00',
-                'assessment_fee' => '18500.00',
-                'or_number' => 'OR-7890123',
-                'remarks' => 'Environmental clearance certificate submitted. Endorsed for technical evaluation.',
-                'status' => 'Technical Review',
-                'encoded_by_name' => 'Planning Officer',
-                'parcels' => [
-                    [
-                        'id' => 1001,
-                        'zoning_application_id' => 101,
-                        'parcel_code' => 'PIN-04-031-018-004',
-                        'lot_number' => 'Lot 412-A',
-                        'barangay' => 'San Carlos',
-                        'area_sqm' => 4500.00,
-                        'clup_zone' => 'AgIndZ',
-                        'zoning_classification' => 'Agro-Industrial Zone',
-                        'is_compliant' => true,
-                        'compliance_notes' => 'Compliant with CLUP 2030 agro-Industrial zone overlay regulations.',
-                        'technical_review_status' => 'Pending Review',
-                        'site_inspection' => null,
-                    ]
-                ],
-                'technical_reviews' => [
-                    [
-                        'id' => 501,
-                        'zoning_application_id' => 101,
-                        'review_round' => 1,
-                        'reviewed_by_name' => 'Engr. Alex Reyes',
-                        'decision' => 'Needs Site Inspection',
-                        'findings' => 'Structural layout adheres to CLUP setback guidelines. Ground perimeter inspection recommended for Industrial drainage runoff.',
-                        'decision_reason' => null,
-                        'created_at' => '2026-08-28 11:45:00',
-                    ]
-                ],
-                'audit_trail' => [
-                    [
-                        'id' => 901,
-                        'action' => 'APPLICATION_ENCODED',
-                        'performed_by_name' => 'Planning Officer',
-                        'note' => 'Application encoded and assigned reference number LC-2026-0814.',
-                        'performed_at' => '2026-08-28 09:30:00',
-                    ]
-                ]
-            ],
-            102 => [
-                'id' => 102,
-                'reference_number' => 'ZC-2026-0932',
-                'applicant_name' => 'Rosario Heights Realty Dev.',
-                'representative_name' => 'Engr. Maria Santos',
-                'contact_number' => '0920-554-1920',
-                'email' => 'msantos@rosarioheights.com',
-                'application_type' => 'Zoning Certificate',
-                'purpose' => 'Medium-density residential subdivision phase 2',
-                'land_use_class' => 'Residential',
-                'barangay' => 'Poblacion C',
-                'lot_number' => 'Lot 108',
-                'tct_number' => 'TCT-058-202300451',
-                'lot_area_sqm' => 12500.00,
-                'latitude' => 13.8415,
-                'longitude' => 121.2055,
-                'created_at' => '2026-08-27 14:15:00',
-                'assessment_fee' => '12400.00',
-                'or_number' => 'OR-7890124',
-                'remarks' => 'Endorsed to Sangguniang Bayan committee on housing and land use.',
-                'status' => 'Under Sangguniang Bayan',
-                'encoded_by_name' => 'Planning Officer',
-                'parcels' => [
-                    [
-                        'id' => 1002,
-                        'zoning_application_id' => 102,
-                        'parcel_code' => 'PIN-04-031-003-012',
-                        'lot_number' => 'Lot 108',
-                        'barangay' => 'Poblacion C',
-                        'area_sqm' => 12500.00,
-                        'clup_zone' => 'R2-Z',
-                        'zoning_classification' => 'Medium Density Residential',
-                        'is_compliant' => true,
-                        'compliance_notes' => 'Compliant with R2-Z density requirements.',
-                        'technical_review_status' => 'Approved',
-                        'site_inspection' => null,
-                    ]
-                ],
-                'technical_reviews' => [],
-                'audit_trail' => []
-            ],
-        ];
-
-        if (isset($samples[$id])) {
-            return (object)$samples[$id];
-        }
-
-        return (object)[
-            'id' => $id,
-            'reference_number' => 'APP-2026-' . str_pad($id, 4, '0', STR_PAD_LEFT),
-            'applicant_name' => 'Sample Applicant Inc.',
-            'representative_name' => 'Engr. Juan Dela Cruz',
-            'contact_number' => '0917-000-0000',
-            'email' => 'contact@sample.ph',
-            'application_type' => 'Locational Clearance',
-            'purpose' => 'Commercial establishment & storage unit',
-            'land_use_class' => 'Commercial',
-            'barangay' => 'Namunga',
-            'lot_number' => 'Lot ' . $id,
-            'tct_number' => 'TCT-058-2026' . $id,
-            'lot_area_sqm' => 1500.00,
-            'latitude' => 13.8410,
-            'longitude' => 121.2062,
-            'created_at' => now()->toDateTimeString(),
-            'assessment_fee' => '15000.00',
-            'or_number' => 'OR-998877',
-            'remarks' => 'Preview application record.',
-            'status' => 'Technical Review',
-            'encoded_by_name' => 'Planning Officer',
-            'parcels' => [
-                [
-                    'id' => $id * 10,
-                    'zoning_application_id' => $id,
-                    'parcel_code' => 'PIN-04-031-001-' . str_pad($id, 3, '0', STR_PAD_LEFT),
-                    'lot_number' => 'Lot ' . $id,
-                    'barangay' => 'Namunga',
-                    'area_sqm' => 1500.00,
-                    'clup_zone' => 'C1-Z',
-                    'zoning_classification' => 'Commercial 1',
-                    'is_compliant' => true,
-                    'compliance_notes' => 'Zoning assessment verified.',
-                    'technical_review_status' => 'Pending Review',
-                    'site_inspection' => null,
-                ]
-            ],
-            'technical_reviews' => [],
-            'audit_trail' => []
         ];
     }
 

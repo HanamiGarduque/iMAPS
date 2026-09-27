@@ -182,6 +182,23 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
             </div>
 
             <div className="p-5 space-y-6">
+                {/* Admin/PO audit: the detail page previously showed only a raw
+                    inspector_id, so a Planning Officer could not tell who was
+                    assigned. The controller now eager-loads the EXISTING
+                    `siteInspection.inspector` users relation, so the name is
+                    simply displayed here — it is never duplicated into another
+                    database column, and this stays read-only. */}
+                {inspection.inspector?.name && (
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6 -mt-1">
+                        <div>
+                            <SectionLabel>Assigned Inspector</SectionLabel>
+                            <p className="text-[13px] font-bold text-slate-800">
+                                {inspection.inspector.name}
+                            </p>
+                        </div>
+                    </div>
+                )}
+
                 {/* Meta Details Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-6">
                     <div>

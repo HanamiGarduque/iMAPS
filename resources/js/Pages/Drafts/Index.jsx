@@ -18,44 +18,6 @@ const STATUS_CONFIG = {
 const STATUSES = ["Auto-saved", "Incomplete"];
 const APP_TYPES = ["Locational Clearance", "Zoning Certificate", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)"];
 
-const SAMPLE_DRAFTS = [
-    {
-        id: 201,
-        temp_reference_number: "TMP-88A92F10B",
-        applicant_name: "Marasigan Commercial Ventures",
-        application_type: "Locational Clearance",
-        barangay: "Poblacion A",
-        updated_at: "2026-08-30T13:45:00Z",
-        status: "Auto-saved",
-    },
-    {
-        id: 202,
-        temp_reference_number: "TMP-41BC09E83",
-        applicant_name: "Rosario Solar Farm Dev.",
-        application_type: "Preliminary Approval and Locational Clearance (PALC)",
-        barangay: "Bulihan",
-        updated_at: "2026-08-30T10:15:00Z",
-        status: "Incomplete",
-    },
-    {
-        id: 203,
-        temp_reference_number: "TMP-901FE872A",
-        applicant_name: "Green Horizon Agro Estate",
-        application_type: "Development Permit",
-        barangay: "San Jose",
-        updated_at: "2026-08-29T16:20:00Z",
-        status: "Auto-saved",
-    },
-    {
-        id: 204,
-        temp_reference_number: "TMP-33D72091C",
-        applicant_name: "Engr. Roberto Mendoza",
-        application_type: "Zoning Certificate",
-        barangay: "Itlugan",
-        updated_at: "2026-08-28T11:05:00Z",
-        status: "Auto-saved",
-    },
-];
 
 function StatusBadge({ status }) {
     const cfg = STATUS_CONFIG[status] || { bg: "bg-slate-100 text-slate-700 border-slate-200", dot: "bg-slate-400" };
@@ -256,11 +218,16 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
             .catch(() => {});
     }, []);
 
-    const isUsingPlaceholders = !drafts || !drafts.data || drafts.data.length === 0;
+    // Admin/PO audit (P1): this used to fall back to a SAMPLE_DRAFTS fixture and
+    // render four invented companies with working Resume/Discard controls — the
+    // Discard button issued a real DELETE and reported a false success for a row
+    // that never existed. Drafts are the officer's own unsaved work, so an empty
+    // result must read as empty.
+    const hasRecords = Array.isArray(drafts?.data) && drafts.data.length > 0;
 
     useEffect(() => {
         const t = setTimeout(() => {
-            if (!isUsingPlaceholders && search !== (filters?.search || "")) {
+            if (hasRecords && search !== (filters?.search || "")) {
                 router.get("/applications/drafts", { ...filters, search, application_type: selectedCategory, page: 1 }, { preserveState: true, replace: true });
             }
         }, 350);
@@ -269,7 +236,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
 
     const applyFilter = (newFilters) => {
         if (newFilters.status !== undefined) setStatusFilter(newFilters.status);
-        if (!isUsingPlaceholders) {
+        if (hasRecords) {
             router.get("/applications/drafts", { ...filters, ...newFilters, application_type: selectedCategory, page: 1 }, { preserveState: true, replace: true });
         } else {
             setCurrentPage(1);
@@ -281,7 +248,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
         setSelectedCategory("");
         setStatusFilter("");
         setCurrentPage(1);
-        if (!isUsingPlaceholders) {
+        if (hasRecords) {
             router.get("/applications/drafts", {}, { preserveState: true, replace: true });
         }
     };
@@ -332,7 +299,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
     };
 
     const filteredList = useMemo(() => {
-        let list = isUsingPlaceholders ? [...SAMPLE_DRAFTS] : [...drafts.data];
+        let list = [...(drafts?.data || [])];
 
         if (statusFilter) {
             list = list.filter((item) => item.status === statusFilter);
@@ -353,14 +320,14 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
         }
 
         return list;
-    }, [drafts, isUsingPlaceholders, statusFilter, selectedCategory, search]);
+    }, [drafts, hasRecords, statusFilter, selectedCategory, search]);
 
     const totalPages = Math.max(1, Math.ceil(filteredList.length / pageSize));
     const paginatedRecords = useMemo(() => {
-        if (!isUsingPlaceholders) return drafts.data;
+        if (hasRecords) return drafts.data;
         const start = (currentPage - 1) * pageSize;
         return filteredList.slice(start, start + pageSize);
-    }, [filteredList, currentPage, pageSize, isUsingPlaceholders, drafts]);
+    }, [filteredList, currentPage, pageSize, hasRecords, drafts]);
 
     const startIndex = (currentPage - 1) * pageSize + 1;
     const endIndex = Math.min(currentPage * pageSize, filteredList.length);
@@ -423,12 +390,6 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                         </Link>
                         <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
                             Application Drafts
-                            {isUsingPlaceholders && (
-                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-200/60 shadow-sm">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                                    Preview
-                                </span>
-                            )}
                         </h2>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -543,11 +504,13 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                                 </svg>
                                             </div>
-                                            <h3 className="text-sm font-bold text-slate-900">No drafts found</h3>
+                                            <h3 className="text-sm font-bold text-slate-900">
+                                                {hasFilters ? "No drafts found" : "No saved drafts."}
+                                            </h3>
                                             <p className="text-xs text-slate-500 mt-1 max-w-sm">
                                                 {hasFilters
                                                     ? "No records match your search filters."
-                                                    : "You don't have any unfinished drafts at the moment."}
+                                                    : "You don't have any saved drafts at the moment. Drafts are saved automatically while you encode an application."}
                                             </p>
                                             {hasFilters && (
                                                 <button
