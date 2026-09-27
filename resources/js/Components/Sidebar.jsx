@@ -56,23 +56,6 @@ export default function Sidebar({
             ),
         },
         {
-            href: '/technical-review',
-            label: 'Technical Review',
-            badge: null,
-            // Admin/PO audit (P0): /technical-review is registered for
-            // role:Admin,Planning Officer, so the nav item follows the route
-            // rather than hiding a reachable page. The page itself is a
-            // navigation-only queue: it renders no Planning Officer decision
-            // control, so an Admin who can open it still cannot make a
-            // technical decision from it.
-            adminOnly: false,
-            icon: (
-                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-            ),
-        },
-        {
             href: '/site-inspections',
             label: 'Site Inspections',
             badge: null,
@@ -134,8 +117,7 @@ export default function Sidebar({
             const normalized = activePage.toLowerCase();
             if (href === '/dashboard' && normalized === 'dashboard') return true;
             if (href === '/maps' && normalized === 'maps') return true;
-            if (href === '/applications' && (normalized === 'applications' || normalized === 'drafts')) return true;
-            if (href === '/technical-review' && (normalized === 'technical-review' || normalized === 'tech-review')) return true;
+            if (href === '/applications' && (normalized === 'applications' || normalized === 'drafts' || normalized === 'technical-review')) return true;
             if (href === '/reports-and-forecasting' && (normalized === 'reports-and-forecasting' || normalized === 'analytics')) return true;
             if (href === '/settings' && normalized === 'settings') return true;
             if (href === '/users' && (normalized === 'users' || normalized === 'user-management' || normalized === 'audit' || normalized === 'audit-log')) return true;

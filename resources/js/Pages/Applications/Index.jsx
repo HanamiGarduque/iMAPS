@@ -893,17 +893,40 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                         <span>Export CSV</span>
                                     </button>
 
-                                    {/* Drafts */}
+                                    {/* Planning Officer application-processing navigation.
+                                        Technical Review is a stage of APPLICATION processing, not a
+                                        separate business module, so it is reached from here rather
+                                        than from the top-level sidebar. This also keeps the sidebar
+                                        focused on major modules and prevents an Admin from being
+                                        offered a Planning Officer work queue. */}
                                     {userRole === "Planning Officer" && (
-                                        <Link
-                                            href="/applications/drafts"
-                                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 shadow-2xs transition-all active:scale-98"
+                                        <div
+                                            role="navigation"
+                                            aria-label="Application processing"
+                                            className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100/70 border border-slate-200/80 shadow-2xs shrink-0"
                                         >
-                                            <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                            </svg>
-                                            <span>Drafts</span>
-                                        </Link>
+                                            <span className="px-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 self-center">
+                                                Applications
+                                            </span>
+                                            {[
+                                                { href: "/applications", label: "All Applications" },
+                                                { href: "/technical-review", label: "Technical Review" },
+                                                { href: "/applications/drafts", label: "Drafts" },
+                                            ].map((entry) => (
+                                                <Link
+                                                    key={entry.href}
+                                                    href={entry.href}
+                                                    aria-current={entry.href === "/applications" ? "page" : undefined}
+                                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                                                        entry.href === "/applications"
+                                                            ? "bg-white text-blue-700 shadow-2xs border border-blue-200/80"
+                                                            : "text-slate-600 hover:text-slate-900 hover:bg-white/70 border border-transparent"
+                                                    }`}
+                                                >
+                                                    {entry.label}
+                                                </Link>
+                                            ))}
+                                        </div>
                                     )}
 
                                     {/* New Application */}

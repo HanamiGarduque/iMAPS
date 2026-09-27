@@ -152,13 +152,100 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $this->assertStringNotContainsString('Schedule Reinspection', $page);
     }
 
-    public function test_sidebar_exposes_the_technical_review_entry(): void
+    public function test_sidebar_does_not_advertise_technical_review_as_a_module(): void
     {
         $sidebar = $this->codeOf('resources/js/Components/Sidebar.jsx');
 
-        $this->assertStringContainsString("href: '/technical-review'", $sidebar);
-        $this->assertStringContainsString("label: 'Technical Review'", $sidebar);
+        // Technical Review is a Planning Officer application-processing queue,
+        // not a top-level business module, so it must not be a navItems entry.
+        // Removing it entirely is what guarantees an Admin is never offered it.
+        $this->assertStringNotContainsString("href: '/technical-review'", $sidebar);
+        $this->assertStringNotContainsString("label: 'Technical Review'", $sidebar);
+
+        // The Applications entry keeps the Technical Review route highlighted
+        // while the officer is working inside it.
+        $this->assertStringContainsString("normalized === 'technical-review'", $sidebar);
     }
+
+    public function test_planning_officer_applications_exposes_the_processing_entries(): void
+    {
+        $page = $this->codeOf('resources/js/Pages/Applications/Index.jsx');
+
+        // All Applications / Technical Review / Drafts, offered as one
+        // Applications-level navigation to the Planning Officer.
+        $this->assertStringContainsString('{ href: "/applications", label: "All Applications" }', $page);
+        $this->assertStringContainsString('{ href: "/technical-review", label: "Technical Review" }', $page);
+        $this->assertStringContainsString('{ href: "/applications/drafts", label: "Drafts" }', $page);
+
+        // The old standalone Drafts toolbar button is replaced, not duplicated.
+        $this->assertStringNotContainsString('href="/applications/drafts"', $page);
+    }
+
+    public function test_queue_action_wording_is_role_aware(): void
+    {
+        $page = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
+
+        $this->assertStringContainsString('const isPlanningOfficer = userRole === "Planning Officer";', $page);
+        $this->assertStringContainsString('{isPlanningOfficer ? "Review" : "View"}', $page);
+    }
+
+    public function test_queue_carries_its_origin_into_application_detail(): void
+    {
+        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
+        $show = $this->codeOf('resources/js/Pages/Applications/Show.jsx');
+
+        // Explicit origin in the query string, not inferred from history.
+        $this->assertStringContainsString('?from=technical-review', $queue);
+        $this->assertStringContainsString('openedFromTechnicalReview', $show);
+        $this->assertStringContainsString('currentUrl.includes("from=technical-review")', $show);
+        $this->assertStringContainsString('href="/technical-review"', $show);
+        $this->assertStringContainsString('<span>Technical Review</span>', $show);
+
+        // Normal entry from Applications is unchanged.
+        $this->assertStringContainsString('<span>All Records</span>', $show);
+    }
+
+    public function test_pagination_is_in_normal_flow_after_the_list(): void
+    {
+        $page = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
+
+        // The list must not be a shrinkable flex child: that let the card column
+        // overflow its box and paint over the pagination footer.
+        $this->assertStringNotContainsString('px-4 flex-1 min-h-0"', $page);
+        $this->assertStringContainsString('<div className="px-4">', $page);
+
+        // Footer sits after the list, separated by a rule and real spacing, and
+        // wraps instead of squeezing on a narrow viewport.
+        $this->assertStringContainsString('border-t border-slate-200/80 flex flex-wrap items-center justify-between', $page);
+        $this->assertStringContainsString('mt-4 pt-4', $page);
+
+        // The footer itself must not be taken out of flow, and must not use a
+        // negative-offset hack to sit over the list.
+        $this->assertSame(
+            1,
+            preg_match('/<div className="px-4 mt-4 pt-4[^"]*">/', $page, $footerMatch),
+            'The pagination footer must be a normal-flow container.'
+        );
+        $footer = $footerMatch[0];
+        $this->assertStringNotContainsString('absolute', $footer);
+        $this->assertStringNotContainsString('fixed', $footer);
+        $this->assertStringNotContainsString('-translate-y', $footer);
+        $this->assertStringNotContainsString('-mt-', $footer);
+    }
+
+    public function test_reassignment_placement_is_documented(): void
+    {
+        $doc = $this->source('docs/FIELDSYNC_BRIDGE_ARCHITECTURE.md');
+
+        $this->assertStringContainsString('Where the Admin continuity action belongs', $doc);
+        $this->assertStringContainsString('Work Assignment', $doc);
+        $this->assertStringContainsString('Assigned Planning Officer', $doc);
+        $this->assertStringContainsString('Reassign', $doc);
+        $this->assertStringContainsString('APPLICATION-LEVEL ownership', $doc);
+        $this->assertStringContainsString('INSPECTION-ROUND ownership', $doc);
+    }
+
+    // ── Tests 14 + 15 + 16: report endpoint authorization, verified at runtime ──
 
     // ── Tests 4 + 5: decision controls are PO-only in the UI, PO keeps them ──
 

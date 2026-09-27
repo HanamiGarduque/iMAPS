@@ -49,6 +49,8 @@ const formatArea = (value) => {
 
 export default function TechnicalReviewIndex({ applications, filters = {} }) {
     const { auth } = usePage().props;
+    const userRole = auth?.user?.role || "Planning Officer";
+    const isPlanningOfficer = userRole === "Planning Officer";
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
     const [search, setSearch] = useState(filters.search || "");
@@ -233,8 +235,15 @@ export default function TechnicalReviewIndex({ applications, filters = {} }) {
                                 </select>
                             </div>
 
-                            {/* ── Queue ── */}
-                            <div className="px-4 flex-1 min-h-0">
+                            {/* ── Queue ──
+                                Layout note: this list is deliberately NOT a
+                                shrinkable flex child (`flex-1 min-h-0`). Doing
+                                that let the card column overflow its box and
+                                paint over the pagination footer below it. The
+                                list is now normal block flow inside the single
+                                scrolling page column, so the footer always
+                                follows the last card in document order. */}
+                            <div className="px-4">
                                 {rows.length === 0 ? (
                                     <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-10 text-center">
                                         <p className="text-sm font-semibold text-slate-700">No applications found.</p>
@@ -310,11 +319,17 @@ export default function TechnicalReviewIndex({ applications, filters = {} }) {
                                                                 </p>
                                                             </div>
 
+                                                            {/* Wording is role-aware. "Review" is the Planning
+                                                                Officer's action. A read-only role that reaches this
+                                                                page for oversight must not be offered wording that
+                                                                implies it performs the technical review, so it gets a
+                                                                neutral "View". Presentation only: no role gains
+                                                                decision authority from either label. */}
                                                             <Link
-                                                                href={`/applications/${application.id}`}
+                                                                href={`/applications/${application.id}?from=technical-review`}
                                                                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-colors"
                                                             >
-                                                                Review
+                                                                {isPlanningOfficer ? "Review" : "View"}
                                                             </Link>
                                                         </div>
                                                     </div>
@@ -325,13 +340,17 @@ export default function TechnicalReviewIndex({ applications, filters = {} }) {
                                 )}
                             </div>
 
-                            {/* ── Pagination ── */}
+                            {/* ── Pagination ──
+                                Sits in normal flow after the list, separated by a
+                                rule and real spacing. It wraps rather than
+                                squeezing, so a narrow viewport stacks the count
+                                above the controls instead of overlapping rows. */}
                             {applications?.last_page > 1 && (
-                                <div className="px-4 flex items-center justify-between gap-3 shrink-0 pb-2">
+                                <div className="px-4 mt-4 pt-4 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 shrink-0">
                                     <p className="text-[11px] text-slate-500">
                                         Showing {applications.from}–{applications.to} of {applications.total}
                                     </p>
-                                    <div className="flex items-center gap-1.5">
+                                    <nav aria-label="Technical review queue pages" className="flex items-center flex-wrap gap-1.5">
                                         {applications.links?.map((link, i) =>
                                             link.url ? (
                                                 <button
@@ -353,7 +372,7 @@ export default function TechnicalReviewIndex({ applications, filters = {} }) {
                                                 />
                                             )
                                         )}
-                                    </div>
+                                    </nav>
                                 </div>
                             )}
 

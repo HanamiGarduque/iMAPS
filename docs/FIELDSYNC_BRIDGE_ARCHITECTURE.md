@@ -2394,6 +2394,41 @@ authority by visiting it.
   assignee, new assignee, reason, the actor who reassigned, the timestamp, and
   the inspection/application context.**
 
+### Where the Admin continuity action belongs
+
+The Admin-side reassignment action is **application-level ownership**, so it
+belongs on the application record, not in a system-administration module:
+
+```
+Application Detail
+  -> Work Assignment
+     -> Assigned Planning Officer
+        -> Reassign
+```
+
+It is deliberately **NOT** placed in:
+
+- **User Management** - that module owns accounts, roles and access, not who is
+  handling a specific application.
+- **Site Inspections** - that module owns field inspection rounds, and
+  Site Inspector assignment is a different responsibility (see below).
+- **Technical Review decision controls** - a decision control is not a
+  handover mechanism, and putting reassignment there would blur the boundary
+  between Admin facilitation and Planning Officer decision authority.
+
+The reason is that the two assignments are separate responsibilities:
+
+- **Planning Officer assignment is APPLICATION-LEVEL ownership.** Which officer
+  is handling an application is a property of the application.
+- **Site Inspector assignment / reassignment is INSPECTION-ROUND ownership.**
+  Which inspector is assigned a given round is a property of that round.
+
+A future Planning Officer reassignment must preserve: the original/current
+Planning Officer, the new Planning Officer, the reason, the actor performing
+the reassignment, the timestamp, and the application identity. Admin
+facilitates continuity; Admin does **not** inherit Planning Officer decision
+authority, and the reassignment control grants no decision rights.
+
 ### Current schema support (assessed, not built)
 
 - Supported today: `site_inspections.inspector_id` (reassignable in place),

@@ -1,6 +1,6 @@
 // resources/js/Pages/Applications/Show.jsx
 import React, { useState, useEffect, useMemo } from "react";
-import { Link, Head, router } from "@inertiajs/react";
+import { Link, Head, router, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
@@ -640,6 +640,15 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     // Presentation-only fix: non Planning Officers keep every readable
     // inspection/result section but are not shown decision or assignment
     // controls. No middleware is weakened; RoleMiddleware remains the boundary.
+    // Admin/PO audit follow-up: the review queue links here, and arriving from
+    // it used to silently show the "All Records" breadcrumb, so the header looked
+    // like it had jumped to a different module. The origin is carried explicitly
+    // in the query string (?from=technical-review) rather than inferred from
+    // browser history, which is fragile and would be wrong after a refresh or a
+    // direct link. Normal entry from Applications is unchanged.
+    const currentUrl = usePage().url || "";
+    const openedFromTechnicalReview = currentUrl.includes("from=technical-review");
+
     const canRecordPlanningDecision = userRole === "Planning Officer";
 
     const isBatchSubmitAllowed = uniqueParcels.every((parcel) => {
@@ -679,17 +688,35 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                     {/* ── SUB-NAVBAR ── */}
                     <div className="h-12 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between shrink-0 z-10 shadow-xs">
                         <div className="flex items-center gap-3">
-                            <Link
-                                href="/applications"
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/90 text-slate-700 hover:text-slate-900 text-xs font-semibold border border-slate-200/80 transition-all shadow-2xs active:scale-95 group cursor-pointer"
-                                title="Return to All Records"
-                            >
-                                <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                                </svg>
-                                <span>All Records</span>
-                            </Link>
-                            <span className="text-slate-300">/</span>
+                            {openedFromTechnicalReview ? (
+                                <>
+                                    <Link
+                                        href="/technical-review"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50/90 hover:bg-amber-100/90 text-amber-800 hover:text-amber-900 text-xs font-semibold border border-amber-200/80 transition-all shadow-2xs active:scale-95 group cursor-pointer"
+                                        title="Return to the Technical Review queue"
+                                    >
+                                        <svg className="w-3.5 h-3.5 text-amber-500 group-hover:text-amber-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                                        </svg>
+                                        <span>Technical Review</span>
+                                    </Link>
+                                    <span className="text-slate-300">/</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Link
+                                        href="/applications"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/90 text-slate-700 hover:text-slate-900 text-xs font-semibold border border-slate-200/80 transition-all shadow-2xs active:scale-95 group cursor-pointer"
+                                        title="Return to All Records"
+                                    >
+                                        <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                                        </svg>
+                                        <span>All Records</span>
+                                    </Link>
+                                    <span className="text-slate-300">/</span>
+                                </>
+                            )}
                             <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">{app.reference_number || `APP-${app.id}`}</span>
                             <span className="hidden sm:inline text-xs text-slate-500 font-medium">· Brgy. {app.barangay}</span>
                         </div>
