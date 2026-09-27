@@ -2264,3 +2264,156 @@ The current implementation preserves all 14 reviewed Loop 7 boundaries: private 
 
 No live cleanup, remote delete policy, RLS change, APK install, device E2E, master sync, commit, stage, or push occurred during Loop 7G.
 
+
+---
+
+# ADMIN / PLANNING OFFICER PAGE AND INSPECTION VISIBILITY (AUDIT + PRIORITY CLOSURE)
+
+## Why this section exists
+
+The Admin/PO page audit found that a Planning Officer could not answer three
+ordinary questions from the Applications list: *is there a field inspection on
+this application, is it a reinspection, and who is the inspector?* Answering
+required opening every application individually. This section records the
+business rules that now govern that visibility, so the behaviour is not
+regressed by a later "simplification".
+
+## Application workflow status and inspection status are DIFFERENT concepts
+
+- **Application status** (`zoning_applications.status`) is the office workflow:
+  `Received`, `Technical Review`, `Under Sangguniang Bayan`, `For Release`,
+  `Released`, `Denied`. It is owned by the Planning Officer.
+- **Inspection status** (`site_inspections.status`) is the field task:
+  `assigned` (handed to an inspector) and `completed` (returned and synced).
+  It is owned by the Site Inspector through FieldSync.
+- A dashboard or list label must never be derived by mixing the two vocabularies.
+  The pre-closure Dashboard card "Inspections / Active schedule" did exactly
+  that and was corrected to "Inspection Assignments / Assigned or not yet
+  completed".
+
+## Locally provable vs live FieldSync state
+
+The single most important rule in this section:
+
+> **iMAPS can prove that an inspection task was ASSIGNED. It cannot prove that
+> field work has STARTED or how far it has progressed.**
+
+A local `assigned` row means only that a task exists and an inspector owns it.
+The inspector may not have opened it yet, may be offline with a queued task, or
+may be mid-way through it. Therefore:
+
+- **SAFE to show from local data:** assigned, completed, inspector name
+  (`users.name` via the existing `inspector` relation), round count, reference
+  number, parcel context.
+- **NOT SAFE to show from local data, and therefore never shown on the
+  Applications list:** "In Progress", "Ongoing", current step, GPS state,
+  "waiting on GPS", last device activity, offline/queued counts.
+- Live FieldSync progression remains a **separate** concern, read through the
+  existing signed inspection reader on the Application Detail page only.
+
+This is enforced in code, not just convention: `App\Support\InspectionSummary`
+is the single place that produces the wording, and it is covered by tests that
+assert no progress wording can ever be emitted.
+
+## Approved Planning Officer inspection wording
+
+One compact secondary line, omitted entirely when there is no inspection:
+
+| Local state | Line |
+| --- | --- |
+| No inspection row | *(no line rendered)* |
+| 1 round, `assigned` | `Site inspection: Assigned to <Inspector Name>` |
+| 1 round, `completed` | `Site inspection: Completed - <Inspector Name>` |
+| 2+ rounds, latest not completed | `Reinspection (Round N): Assigned to <Inspector Name>` |
+| 2+ rounds, latest completed | `Reinspection (Round N): Completed - <Inspector Name>` |
+
+The inspector name is **read from the existing `users` relation**, never copied
+into a new column. The line is rendered in both Applications views (folder and
+Kanban) and is always visible - never behind a hover or tooltip.
+
+## Multiple `site_inspections` rows are SEPARATE ROUNDS
+
+- One row per round. A second row is a **new reinspection task**; it does not
+  reopen, overwrite, or invalidate the earlier round.
+- `Parcel::siteInspection()` uses `latestOfMany()` and therefore exposes only
+  the newest round. This is a **display choice, not a deletion**: earlier rounds
+  remain real records in the database and are reachable through
+  `Parcel::siteInspections()`.
+- Never infer from `siteInspection()` that a previous round did not happen.
+- The Applications list reports the round **count** so a reinspection is visible
+  without opening the application.
+
+## Deferred: previous-round history UI
+
+Full inspection-round history on the Application Detail page is a **future
+enhancement** and is deliberately not built yet. The current Detail page shows
+the latest round as the primary card. The earlier completed round is not hidden
+from the data model - only from the current UI - and this is recorded here so
+the gap is explicit rather than implied.
+
+## Technical Review queue
+
+`/technical-review` is a **navigation-only** work queue. It answers "what needs
+technical review?" and "which application do I open next?", and links to the
+Application Detail page where the parcel decision and inspector assignment
+already live. The queue deliberately renders **no Planning Officer decision
+control**, so a role that can only read the route cannot acquire decision
+authority by visiting it.
+
+## Admin vs Planning Officer role boundaries
+
+- **Planning Officer owns** application encoding, drafts, technical review
+  decisions, whether a site inspection is needed, inspector assignment,
+  reinspection requests, and all application-status transitions.
+- **Admin owns** system administration, user management, settings, activity
+  logs, reports/analytics, and monitoring. Admin provides **shared read
+  access** where useful (for example opening an application or the read-only
+  Technical Review queue).
+- **Admin does not silently become the technical-review or
+  application-decision actor.** The four decision endpoints are
+  `role:Planning Officer` and are additionally hidden from the UI for
+  read-only roles, so an Admin is not offered a control that would 403.
+- **Site Inspector owns** field inspection work and uses FieldSync only.
+
+## Business continuity and work reassignment
+
+**DOCUMENTED BUSINESS RULE - NOT YET IMPLEMENTED**
+
+- Employees must **never share accounts**. A login is a personal record of who
+  acted.
+- If a Planning Officer or Site Inspector is unavailable, pending work may be
+  **reassigned to another qualified employee**, according to office policy.
+- The **receiving employee works on their own account**. No impersonation, no
+  shared credentials, no "acting as" login substitution.
+- **Admin may facilitate continuity** (identify the gap, initiate or approve a
+  reassignment) if office policy authorizes it.
+- **Admin does NOT automatically inherit Planning Officer decision authority.**
+  Technical and planning decisions remain Planning-Owned even when Admin
+  facilitates the handover. Inspection work remains Site-Inspector-Owned.
+- Any future implementation must preserve, per reassignment: **original
+  assignee, new assignee, reason, the actor who reassigned, the timestamp, and
+  the inspection/application context.**
+
+### Current schema support (assessed, not built)
+
+- Supported today: `site_inspections.inspector_id` (reassignable in place),
+  `site_inspections.assigned_by_imaps_user_id` / `assigned_by_name` (who
+  assigned the round), `technical_reviews.reviewed_by` + `reviewed_at` +
+  `review_round` (decision actor and round), and a generic `audit_trail`
+  (`action`, `performed_by`, `note`, `performed_at`).
+- **Missing:** a per-round assignment history. Reassigning overwrites
+  `inspector_id`, so the original assignee is lost; there is no dedicated
+  reason field; and `audit_trail` is keyed to `application_id` rather than to
+  an inspection round.
+- **Likely implementation scope: a small dedicated assignment-history table**
+  (inspection id, from/to inspector, reason, actor, timestamp), with the
+  existing `audit_trail` retained for general activity. No Acting Officer
+  feature is implemented by this batch.
+
+## Sample/placeholder data policy
+
+Fabricated records must never be rendered as if they were real. The audit found
+three places that did so: the Applications list fallback, the Drafts list
+fallback, and `ApplicationController::show()` returning a sample dossier for an
+unknown id. All three now return honest empty states or an ordinary 404. **No
+new placeholder fixtures may be reintroduced into operational screens.**
