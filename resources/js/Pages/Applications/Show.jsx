@@ -8,6 +8,7 @@ import { MapContainer, TileLayer, GeoJSON, CircleMarker, useMap } from "react-le
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
+import { PlanningOfficerAssignment, InspectorRoundAssignment } from "@/Components/WorkAssignment";
 
 // ── Status Badge Configuration ──
 const STATUS_CONFIG = {
@@ -286,7 +287,7 @@ function UpdateStatusDrawer({ onClose, onSubmit, saving, currentStatus }) {
 }
 
 // ── Main Page Component ──
-export default function Show({ auth, application: initialApp, app: alternateApp, inspectors = [], errors: serverErrors = {} }) {
+export default function Show({ auth, application: initialApp, app: alternateApp, inspectors = [], errors: serverErrors = {}, assignedPlanningOfficer = null, planningOfficers = [], poAssignmentHistory = [], inspectorRoundState = {}, inspectionHistory = {}, reassignmentReasons = [], canReassignPlanningOfficer = false, canReassignInspector = false }) {
     const app = initialApp || alternateApp || {};
 
     const uniqueParcels = useMemo(() => {
@@ -841,6 +842,28 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
 
                                 <div className="flex-1 p-5 sm:p-7 overflow-y-auto relative">
                                     <div className="max-w-xl mx-auto space-y-5">
+                                        {/* ── Work Assignment (application-level ownership) ──
+                                            Placed ABOVE the status branch on purpose. Ownership is a
+                                            property of the application and is independent of which
+                                            stage it is in, so it must be visible during Technical
+                                            Review as well as before and after it. Putting it inside
+                                            either branch would hide it exactly when continuity matters
+                                            most.
+
+                                            Deliberately NOT inside User Management and NOT inside
+                                            Technical Review decision controls: a handover is a
+                                            continuity action, and placing it beside a decision button
+                                            would blur the line between Admin facilitating continuity
+                                            and Admin making Planning Officer decisions. */}
+                                        <PlanningOfficerAssignment
+                                            current={assignedPlanningOfficer}
+                                            candidates={planningOfficers}
+                                            history={poAssignmentHistory}
+                                            reasons={reassignmentReasons}
+                                            canReassign={canReassignPlanningOfficer}
+                                            applicationId={app.id}
+                                        />
+
                                         {app.status === "Technical Review" ? (
                                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                                                 {/* Parcel Tabs */}
@@ -893,6 +916,23 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                             onStatusFetched={(status) => handleLiveStatusUpdate(activeParcelData.id, status)}
                                                             onInspectionDataFetched={(data) => handleLiveInspectionData(activeParcelData.id, data)}
                                                         />
+
+                                                        {/* Inspector ownership is a property of ONE ROUND, not of
+                                                            the application. It therefore lives here, beside the
+                                                            round it belongs to, and only a Planning Officer may
+                                                            hand a round over. The server states the
+                                                            eligibility, so a blocked round is explained rather
+                                                            than silently unavailable. */}
+                                                        {activeParcelData.site_inspection?.id && (
+                                                            <InspectorRoundAssignment
+                                                                state={inspectorRoundState?.[activeParcelData.site_inspection.id]}
+                                                                history={inspectionHistory?.[activeParcelData.site_inspection.id] ?? []}
+                                                                candidates={inspectors}
+                                                                reasons={reassignmentReasons}
+                                                                canReassign={canReassignInspector}
+                                                                applicationId={app.id}
+                                                            />
+                                                        )}
 
                                                         {/* Admin/PO audit: decision controls are Planning
                                                             Officer only. A read-only role still sees the full
