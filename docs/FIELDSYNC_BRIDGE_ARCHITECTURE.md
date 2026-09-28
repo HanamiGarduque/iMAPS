@@ -3604,12 +3604,14 @@ copy rather than a stored value.
 
 ## `can_retry` is server-computed, and false everywhere today
 
-9C-1 **performs** no retry. It reports `can_retry` as an authorization fact so a
-future browser can never offer a control the server would refuse.
+9C-1 **performs** no retry. It reports retry eligibility as a server-computed
+authorization fact so a future browser can never offer a control the server
+would refuse.
 
-It is true only when the viewer is a **Planning Officer**, the viewer's local
-user id **equals** `zoning_applications.assigned_planning_officer_id`, that
-pointer is **not NULL**, and this specific round is a recorded `delivery_failed`.
+**`delivery.can_retry` is the AUTHORITATIVE per-round decision.** It is true
+only when the viewer is a **Planning Officer**, the viewer's local user id
+**equals** `zoning_applications.assigned_planning_officer_id`, that pointer is
+**not NULL**, and this specific round is a recorded `delivery_failed`.
 
 `encoded_by`, `technical_reviews.reviewed_by` and `audit_trail.performed_by` are
 **never** consulted. All 70 applications happen to have `encoded_by` pointing at
@@ -3620,8 +3622,75 @@ Current reality, re-verified read-only: **0 / 70** applications have a recorded
 owner, `application_po_assignments` has **0** rows, and all six `delivery_failed`
 inspections (25–30, on applications 104 and 115–119) have a NULL owner. Their
 state is correctly reported as **Delivery Failed**, and `can_retry` is correctly
-**false**. The neutral reason tells an officer that a Planning Officer has not
-been assigned yet, without naming or implying any other officer can recover it.
+**false**.
+
+### The application-level flag is an ACTOR GATE, not an action flag
+
+`retry_actor_authorized` answers exactly **one** question: does the current
+viewer satisfy the application-level **role and ownership** gate? It says
+nothing about whether a retry can actually happen.
+
+This name is a **correction**. The field originally shipped as
+`is_retry_available`, and an HTTP runtime probe against real PostgreSQL proved
+that name misleading:
+
+> application owned by the viewer, all rounds with **no delivery record**
+> → `is_retry_available = true`, `delivery.can_retry = false`
+
+A Planning Officer reading `is_retry_available` would have been offered a control
+with **nothing behind it**. The flag is now `retry_actor_authorized`, and it is
+asserted never to reappear under the old name.
+
+**A future UI must gate every retry control on the per-round
+`delivery.can_retry`, never on `retry_actor_authorized`.**
+
+`retry_actor_unavailable_reason` is likewise an **application-level actor**
+reason — "a Planning Officer has not been assigned yet" or "only available to
+the Planning Officer currently assigned to this application". Round-level
+explanations ("no delivery record", "pending", "already delivered") are
+**deliberately not mixed in**: a round already explains itself through its
+`state`, `label` and `message`, and merging the two levels would let a UI show a
+round-level excuse for an actor-level refusal, or the reverse.
+
+## Inspector response is explicitly shaped
+
+`inspection.inspector` is an explicit `{id, name}` literal, never a raw `User`
+model dump. Verified against a real row: `{"id":25,"name":"Hanami Garduque"}`.
+No email, no role, no `is_active`, no `handshake_key`, no Supabase profile
+correlation, and no session or account metadata is emitted.
+
+## Runtime verification (HTTP, real PostgreSQL)
+
+`phpunit.xml` pins `DB_CONNECTION=sqlite` while this PHP build has no
+`pdo_sqlite`, so DB-backed PHPUnit Feature tests **cannot execute** and are
+**not** reported as passing. The required runtime evidence was instead obtained
+by exercising the **real route, middleware, controller, query and response
+shaping** against the live development PostgreSQL database, inside a single
+transaction that is **always rolled back**. `phpunit.xml` was not modified:
+PHPUnit's `<env>` entries carry no `force` attribute, so a shell environment
+override takes precedence.
+
+| Probe | Result |
+| --- | --- |
+| Admin read | **200** |
+| Planning Officer read | **200** |
+| Site Inspector | **403** |
+| Guest | **302** → `/login` |
+| NULL round, pre-bridge shape | `no_delivery_record` / "No Delivery Record" / `can_retry` false / `attempt_count` 0 |
+| NULL round, matched-delivered-job shape | byte-identical contract to the pre-bridge shape |
+| `delivery_failed` on real row 25 | correct state, label, `attempt_count` 1, `can_retry` false, stored category echoed with its mapped prose, **row unchanged** |
+| Assigned PO, failed round | `can_retry` **true** |
+| Different PO, same round | `can_retry` false |
+| Admin, same round | `can_retry` false |
+| Owned application, no-record round | `can_retry` false, actor gate true (the case that forced the rename) |
+| Two rounds under one application | **both** returned, `inspection_id` ascending, `round` = `[1, 2]` |
+
+**Query count: 2 per request**, independent of round count — no N+1.
+
+After rollback the live baseline was re-read and is **unchanged**: 35 inspections,
+6 `delivery_failed`, 29 NULL, 6 attempts, 0 `application_po_assignments`,
+0 applications with a recorded owner, 12 `failed_jobs`, 0 fabricated
+`delivered_at`, and 0 probe fixture rows.
 
 ## Attempt count, and what is deliberately NOT exposed
 

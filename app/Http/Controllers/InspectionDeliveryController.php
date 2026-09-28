@@ -79,19 +79,40 @@ class InspectionDeliveryController extends Controller
         $viewerId = $viewer !== null ? (int) $viewer->id : null;
         $viewerRole = $viewer?->role;
 
-        $retryAvailable = $this->isRetryableFor($ownerId, $viewerId, $viewerRole);
+        $retryActorAuthorized = $this->isRetryableFor($ownerId, $viewerId, $viewerRole);
 
         return response()->json([
             'application_id' => (int) $application->id,
 
-            // Provenance, so a future UI can explain itself. Retry availability
-            // is application-level because Planning Officer ownership is an
-            // application-level fact, not a per-round one.
+            // Provenance, so a future UI can explain itself.
             'assigned_planning_officer_id' => $ownerId,
-            'is_retry_available'           => $retryAvailable,
-            'retry_unavailable_reason'     => InspectionDeliveryStatus::retryUnavailableReason($viewerRole, $ownerId, $viewerId),
 
-            'inspections' => $this->shapeRounds($rounds, $retryAvailable),
+            // ACTOR GATE, NOT AN ACTION FLAG.
+            //
+            // `retry_actor_authorized` answers exactly one question: does the
+            // current viewer satisfy the application-level role and ownership
+            // gate? It says NOTHING about whether a retry can actually happen,
+            // and it is deliberately NOT named `is_retry_available` - that name
+            // was proven misleading at runtime. An application owned by the
+            // viewer whose rounds are all delivered, NULL or pending returns
+            // `retry_actor_authorized = true` while NO round is retryable, and
+            // a UI reading `is_retry_available` would have offered a control
+            // with nothing behind it.
+            //
+            // THE AUTHORITATIVE RETRY DECISION IS THE PER-ROUND
+            // `delivery.can_retry`, which is this flag AND a recorded
+            // `delivery_failed` on that specific round. A future UI must gate
+            // every retry control on the per-round value, never on this one.
+            'retry_actor_authorized' => $retryActorAuthorized,
+
+            // Application-level ACTOR reason only: why this viewer is not an
+            // authorized actor. Round-level reasons ("no delivery record",
+            // "pending", "already delivered") are deliberately NOT mixed in
+            // here; a round's own state explains itself through its state,
+            // label and message.
+            'retry_actor_unavailable_reason' => InspectionDeliveryStatus::retryUnavailableReason($viewerRole, $ownerId, $viewerId),
+
+            'inspections' => $this->shapeRounds($rounds, $retryActorAuthorized),
         ]);
     }
 
@@ -101,11 +122,11 @@ class InspectionDeliveryController extends Controller
      * @param  Collection<int, SiteInspection>  $rounds
      * @return list<array<string, mixed>>
      */
-    private function shapeRounds(Collection $rounds, bool $retryAvailable): array
+    private function shapeRounds(Collection $rounds, bool $retryActorAuthorized): array
     {
         $index = 0;
 
-        return $rounds->map(function (SiteInspection $round) use ($retryAvailable, &$index): array {
+        return $rounds->map(function (SiteInspection $round) use ($retryActorAuthorized, &$index): array {
             $index++;
 
             return [
@@ -120,11 +141,16 @@ class InspectionDeliveryController extends Controller
                 'parcel_id'         => $round->parcel_id === null ? null : (int) $round->parcel_id,
                 'inspection_status' => $round->status,
                 'created_at'        => $round->created_at?->toIso8601String(),
+
+                // Explicitly shaped, never a raw User model dump: only the
+                // display identity Application Detail already shows. No email,
+                // no role, no is_active, no handshake_key, no Supabase profile
+                // correlation, no session or account metadata.
                 'inspector'         => $round->inspector === null
                     ? null
                     : ['id' => (int) $round->inspector->getKey(), 'name' => $round->inspector->name],
 
-                'delivery' => $this->shapeDelivery($round, $retryAvailable),
+                'delivery' => $this->shapeDelivery($round, $retryActorAuthorized),
             ];
         })->all();
     }
@@ -134,7 +160,7 @@ class InspectionDeliveryController extends Controller
      *
      * @return array<string, mixed>>
      */
-    private function shapeDelivery(SiteInspection $round, bool $retryAvailable): array
+    private function shapeDelivery(SiteInspection $round, bool $retryActorAuthorized): array
     {
         $state = InspectionDeliveryStatus::state($round->delivery_status);
         $isFailed = $state === InspectionDeliveryStatus::STATE_FAILED;
@@ -163,14 +189,22 @@ class InspectionDeliveryController extends Controller
                 ? InspectionDeliveryStatus::failureMessage($round->last_delivery_failure_category)
                 : null,
 
-            // Server-computed only, and never true unless this round is itself
-            // a recorded failure. This phase performs no retry.
-            'can_retry' => $isFailed && $retryAvailable,
+            // THE AUTHORITATIVE RETRY DECISION. Server-computed, and true only
+            // when the viewer is an authorized actor AND this specific round is
+            // a recorded delivery failure. A future UI must gate every retry
+            // control on THIS value, never on the application-level
+            // `retry_actor_authorized` flag. This phase performs no retry.
+            'can_retry' => $isFailed && $retryActorAuthorized,
         ];
     }
 
     /**
-     * Is this viewer the Planning Officer who currently owns the application?
+     * Is this viewer an authorized RETRY ACTOR for the application?
+     *
+     * This is the application-level gate only. It deliberately does NOT consider
+     * any round's delivery state, because a role and ownership answer is a
+     * different question from "can a retry happen right now". Combining them
+     * here is what made the earlier top-level boolean misleading.
      *
      * Ownership is the SINGLE stored pointer `assigned_planning_officer_id` and
      * nothing else. `encoded_by`, `technical_reviews.reviewed_by` and

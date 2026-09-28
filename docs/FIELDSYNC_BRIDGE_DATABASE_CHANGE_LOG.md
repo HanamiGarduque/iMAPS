@@ -400,6 +400,26 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 14. **Status:** **LOOP 9B COMPLETE — READY TO PUSH.** 9C **NOT** started.
 15. **Notes / risks:** no commit was amended. 9C carries Controller, route and UI implications plus a known `origin/master` overlap at `4ec435f`, and requires its own audit, merge and authorization gate.
 
+### 2026-09-29 - Loop 9C-1 final review correction - NO SCHEMA CHANGE (naming only)
+
+1. **DATE:** 2026-09-29
+2. **TYPE:** APPLICATION CONTRACT CORRECTION — **NOT A SCHEMA CHANGE**
+3. **Reason:** the final semantic review of the 9C-1 reader found a genuinely misleading response field. `c52ad8d` shipped a top-level `is_retry_available`, which reads as "a retry can happen now" but actually only reports the application-level role-and-ownership gate.
+4. **Proven at runtime, not assumed.** An HTTP probe against live PostgreSQL, inside a rolled-back transaction, set an application owner to the requesting Planning Officer and read an application whose round had **no delivery record**. Result: `is_retry_available = true` with `delivery.can_retry = false`. A Planning Officer consuming that name would have been offered a control with nothing behind it.
+5. **Correction applied.** `is_retry_available` → **`retry_actor_authorized`**; `retry_unavailable_reason` → **`retry_actor_unavailable_reason`**. `c52ad8d` was **not** amended; this is a separate bounded commit.
+6. **`delivery.can_retry` is the authoritative per-round decision.** It is `retry_actor_authorized AND that round is a recorded delivery_failed`. A future UI must gate every retry control on the per-round value, never on the actor gate.
+7. **Concept levels are no longer mixed.** `retry_actor_unavailable_reason` carries **actor-level** facts only ("a Planning Officer has not been assigned yet", "only available to the Planning Officer currently assigned to this application"). Round-level explanations stay in the round's own `state`, `label` and `message`. A test asserts the actor reason can never contain round-level wording.
+8. **Both old names are asserted absent** from executable code, and the actor-gate distinction is documented in the controller itself, because 9C-2 is the consumer most likely to get it wrong.
+9. **Inspector response verified safe.** Already an explicit `{id, name}` literal; confirmed against a real row as `{"id":25,"name":"Hanami Garduque"}` with no email, role, `is_active`, `handshake_key`, Supabase profile correlation or session metadata.
+10. **Schema change:** **NONE.** **Runtime DB writes:** **NONE.** `database/sql/` and `database/migrations/` untouched, migration ledger untouched, no `audit_trail` row, no delivery attempt, no summary change.
+11. **Runtime verification added.** DB-backed PHPUnit Feature tests **did not execute** — `phpunit.xml` pins sqlite while this PHP build has no `pdo_sqlite` — and are **not** reported as passing. Instead the **real route, middleware, controller, query and response shaping** were exercised against live PostgreSQL inside an always-rolled-back transaction, with `phpunit.xml` unmodified. 8 probes PASS: Admin 200, Planning Officer 200, Site Inspector 403, Guest 302→/login, both NULL populations byte-identical, real row 25 correct and unmutated, assigned PO `can_retry` true / other PO and Admin false, and both rounds of a two-round application returned in `inspection_id` order. **2 queries per request**, no N+1.
+12. **No-write proof:** baseline re-read after every probe and unchanged — 35 inspections / 6 `delivery_failed` / 29 NULL / 6 attempts / 0 `application_po_assignments` / 0 applications with a recorded owner / 12 `failed_jobs` / 0 fabricated `delivered_at` / 0 probe rows. Ownership assignment for the §G probe was rolled back: applications 3 and 104 are NULL again.
+13. **Master overlap re-checked after fetch.** `origin/master` ADVANCED to `1307db8` ("extended the session lifetime from 30 to 120"), which touches `routes/web.php` by adding a `/ping` route near the top of the file. A three-way `git merge-tree` dry run confirms **`routes/web.php` still auto-merges cleanly**; the route region 9C-1 uses is untouched. The upstream conflict set grew to 4 files (`ApplicationController`, `TechnicalReviewController`, `Header.jsx`, `Sidebar.jsx`) — all pre-existing and none of them touched by 9C-1. **Nothing was merged, rebased or cherry-picked.**
+14. **Supabase:** **UNCHANGED.** **FieldSync:** **UNCHANGED.** **Existing business Controllers:** **UNCHANGED.** **UI:** **UNCHANGED.** **Retry:** **NOT implemented.**
+15. **Tests:** `Loop9c1DeliveryStatusContractTest` 36 / 297, `Loop9c1DeliveryStatusReaderTest` 11 / 35, full Unit suite 427 / 2314. Loop 9A 33/133, 9A-R 16/77, 9B 36/152, 9B schema 20/47, 9B correction 22/72, 9B Scenario E 11/55 — all PASS.
+16. **Status:** **LOOP 9C-1 READY TO PUSH. 9C is NOT complete; retry and UI are not implemented.**
+17. **Next:** 9C-2 — Planning Officer Delivery Status UI.
+
 ### 2026-09-29 - Loop 9C-1 delivery status reader - NO SCHEMA CHANGE (read-only)
 
 1. **DATE:** 2026-09-29

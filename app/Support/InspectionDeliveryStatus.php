@@ -183,7 +183,14 @@ final class InspectionDeliveryStatus
     }
 
     /**
-     * Neutral explanation for why no retry is offered to this viewer.
+     * Neutral explanation for why this viewer is not an authorized RETRY ACTOR.
+     *
+     * This is an APPLICATION-LEVEL ACTOR reason and nothing else. Round-level
+     * reasons ("no delivery record", "pending", "already delivered") are
+     * deliberately not mixed in here: a round's own `state`, `label` and
+     * `message` already explain itself, and merging the two levels is what
+     * would let a future UI show a round-level excuse for an actor-level
+     * refusal, or the reverse.
      *
      * States only locally provable facts. It never implies that some other
      * officer could recover the application, and it never names or infers an

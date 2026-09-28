@@ -354,7 +354,89 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
 
         // can_retry is true only when BOTH the viewer owns the application AND
         // this specific round is a recorded failure.
-        $this->assertStringContainsString("'can_retry' => \$isFailed && \$retryAvailable", $controller);
+        $this->assertStringContainsString("'can_retry' => \$isFailed && \$retryActorAuthorized", $controller);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // §3  THE TOP-LEVEL FLAG MUST NOT BE MISLEADING
+    // ══════════════════════════════════════════════════════════════
+
+    public function test_the_application_level_retry_flag_is_named_as_an_actor_gate(): void
+    {
+        $controller = $this->code($this->controllerSource());
+
+        // Proven misleading at runtime: an application owned by the viewer whose
+        // rounds are all delivered / NULL / pending returned
+        // `is_retry_available = true` while NO round was retryable. The name
+        // promised an action that did not exist.
+        $this->assertStringNotContainsString(
+            'is_retry_available',
+            $controller,
+            'The ambiguous name must not come back.'
+        );
+        $this->assertStringNotContainsString(
+            'retry_unavailable_reason',
+            $controller,
+            'The ambiguous reason name must not come back.'
+        );
+
+        $this->assertStringContainsString("'retry_actor_authorized'", $controller);
+        $this->assertStringContainsString("'retry_actor_unavailable_reason'", $controller);
+    }
+
+    public function test_the_actor_gate_is_explicitly_not_an_action_flag(): void
+    {
+        // These assertions read the RAW source, comments included: the whole
+        // point is that 9C-2, the consumer most likely to get this wrong, can
+        // read the distinction from the code itself.
+        $controller = $this->controllerSource();
+
+        $this->assertStringContainsString('ACTOR GATE, NOT AN ACTION FLAG', $controller);
+        $this->assertStringContainsString('AUTHORITATIVE RETRY DECISION', $controller);
+        $this->assertStringContainsString('never on this one', $controller);
+    }
+
+    public function test_the_round_level_reason_is_not_mixed_into_the_actor_reason(): void
+    {
+        // Prose is asserted on the RAW presenter; the leakage check runs on the
+        // comment-stripped code, so documentation cannot mask a real leak.
+        $this->assertStringContainsString(
+            'APPLICATION-LEVEL ACTOR reason',
+            $this->presenterSource()
+        );
+
+        $presenter = $this->code($this->presenterSource());
+
+        // Isolate ONLY the actor-reason method. A whole-class scan would false-
+        // positive on the legitimate `unknown` prose "Delivery failed for an
+        // unclassified reason.", which is a failure explanation, not an actor
+        // excuse.
+        preg_match(
+            '/public static function retryUnavailableReason.*?\n    \}/s',
+            $this->presenterSource(),
+            $m
+        );
+        $this->assertNotEmpty($m, 'retryUnavailableReason() could not be isolated.');
+
+        $actorReason = $this->code($m[0]);
+
+        // The actor reason is about role and ownership ONLY. It must never carry
+        // a round-level excuse, or a UI would show "already delivered" to
+        // explain why someone who is not the owner cannot act.
+        foreach ([
+            'already delivered', 'no delivery record',
+            'pending delivery', 'delivery failed',
+        ] as $forbidden) {
+            $this->assertStringNotContainsStringIgnoringCase(
+                $forbidden,
+                $actorReason,
+                "The actor reason must not carry the round-level wording '{$forbidden}'."
+            );
+        }
+
+        // And it must actually carry the two actor-level facts it exists for.
+        $this->assertStringContainsString('has not been assigned', $actorReason);
+        $this->assertStringContainsString('currently assigned to this application', $actorReason);
     }
 
     public function test_role_check_is_exact_and_not_prefix_matched(): void

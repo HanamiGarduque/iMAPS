@@ -864,13 +864,50 @@ monitoring.
 row, no delivery attempt, no summary change, no assignment change, and no job
 dispatch. The 9B writer and `InspectionDeliveryRecorder` are untouched.
 
-### 20.5 Verification
+### 20.4a Retry eligibility contract (corrected naming)
 
-`Loop9c1DeliveryStatusContractTest` 33 / 284, `Loop9c1DeliveryStatusReaderTest`
-11 / 35, full Unit suite 424 / 2299, plus 16 rollback-only PostgreSQL probes, all
-PASS and all rolled back. Live baseline unchanged: 35 inspections, 6
-`delivery_failed`, 29 NULL, 6 attempts, 0 correlated, 12 `failed_jobs`, 0
-fabricated `delivered_at`.
+`delivery.can_retry` is the **authoritative per-round** decision: it is true only
+when the viewer is a Planning Officer whose local user id equals a non-NULL
+`assigned_planning_officer_id`, **and** that round is a recorded `delivery_failed`.
+
+The **application-level** field is `retry_actor_authorized`. It answers only the
+role-and-ownership gate and is **not** an action flag. It originally shipped as
+`is_retry_available`, which an HTTP runtime probe proved misleading: an
+application owned by the viewer whose rounds all had no delivery record returned
+`is_retry_available = true` while `delivery.can_retry = false`. A UI reading the
+old name would have offered a control with nothing behind it. `c52ad8d` was
+**not** amended; the rename is a separate bounded commit.
+
+`retry_actor_unavailable_reason` is an application-level **actor** reason only.
+Round-level explanations are deliberately not mixed in; a round explains itself
+through its own `state`, `label` and `message`.
+
+### 20.5 Inspector response
+
+`inspection.inspector` is an explicit `{id, name}` literal, never a raw `User`
+model dump. No email, role, `is_active`, `handshake_key`, Supabase profile
+correlation, or session/account metadata is emitted.
+
+### 20.6 Verification
+
+`Loop9c1DeliveryStatusContractTest` 36 / 297, `Loop9c1DeliveryStatusReaderTest`
+11 / 35, full Unit suite 427 / 2314.
+
+**DB-backed PHPUnit Feature tests did NOT execute**: `phpunit.xml` pins
+`DB_CONNECTION=sqlite` while this PHP build has no `pdo_sqlite`, so they are
+**not** reported as passing. The required runtime evidence was obtained by
+exercising the **real route, middleware, controller, query and response shaping**
+against live PostgreSQL inside an always-rolled-back transaction, with
+`phpunit.xml` unmodified (PHPUnit `<env>` carries no `force`, so a shell override
+wins). 8 runtime probes PASS: Admin 200, Planning Officer 200, Site Inspector
+403, Guest 302, both NULL populations byte-identical, real row 25 correct and
+unmutated, assigned-PO `can_retry` true / other-PO and Admin false, and both
+rounds of a two-round application returned in id order. **2 queries per
+request**, no N+1. Plus 16 rollback-only SQL probes, all PASS.
+
+Live baseline unchanged: 35 inspections, 6 `delivery_failed`, 29 NULL, 6
+attempts, 0 correlated, 12 `failed_jobs`, 0 `application_po_assignments`, 0
+applications with a recorded owner, 0 fabricated `delivered_at`, 0 probe rows.
 
 ### 20.6 Scope
 
