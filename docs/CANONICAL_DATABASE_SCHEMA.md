@@ -787,3 +787,24 @@ approval was needed because no Controller was touched. The failure
 normalization vocabulary (7 categories), the 3 outcomes, the 4 sources and the
 safe messages are unchanged. `failed_jobs` remains unused as business delivery
 state.
+
+### 19.5 Degraded observability when local recording fails (locked contract)
+
+**`MONITORING FAILURE MUST NOT SILENTLY REDEFINE THE BUSINESS ASSIGNMENT.`**
+
+If `InspectionDeliveryRecorder::beginAttempt()` fails before an attempt row
+exists, the outcome is classified as **`DEGRADED OBSERVABILITY`** — **not**
+`DELIVERY FAILURE`, and **not** `FULLY MONITORED SUCCESS`.
+
+This is a **local recording** outcome only. It is not a new
+`inspection_delivery_attempts` row, and it is not a new `delivery_status` value,
+so it adds **no** column, value or CHECK here. In practice the local footprint is
+a single `Log::warning` line carrying only a closed literal and the integer
+`site_inspection_id`; the stored `safe_message` vocabulary is unchanged and can
+never carry a response body, URL, key or header.
+
+The established remote bridge delivery continues, because Loop 9 monitoring is
+additive and must not break the previously working Loops 1–8 assignment path. A
+successful remote delivery whose local recording failed may therefore remain
+**locally untracked** until a later idempotent delivery execution converges it —
+and it must never be described as a clean monitored success.

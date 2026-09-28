@@ -73,14 +73,6 @@ class InspectionDeliveryRecorder
     /**
      * Open a delivery attempt and mark the round as awaiting delivery.
      *
-     * Returns null only when the attempt cannot be allocated after bounded
-     * retries. A null return must never abort the bridge: the remote delivery is
-     * still correct without observability, and losing an attempt record is
-     * strictly better than losing a task.
-     */
-    /**
-     * Open a delivery attempt and mark the round as awaiting delivery.
-     *
      * $queueJobUuid is the REAL Laravel queue payload UUID of the dispatch that
      * is executing right now, obtained from the queue job itself. It is stored
      * verbatim: automatic retries of one dispatch reuse the same UUID and each
@@ -94,7 +86,8 @@ class InspectionDeliveryRecorder
      * Returns null only when the attempt cannot be allocated after bounded
      * retries. A null return must never abort the bridge: the remote delivery is
      * still correct without observability, and losing an attempt record is
-     * strictly better than losing a task.
+     * strictly better than losing a task. See the DEGRADED OBSERVABILITY contract
+     * in docs/FIELDSYNC_BRIDGE_ARCHITECTURE.md.
      */
     public function beginAttempt(
         SiteInspection $inspection,

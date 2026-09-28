@@ -382,6 +382,24 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 21. **Status:** **LOOP 9B CORRELATION CORRECTION PASS — READY FOR FINAL 9B STACK REVIEW.** Stack `8c9cf03` → `7330e41` → correction is **UNPUSHED**; neither earlier commit was amended.
 22. **Notes / risks:** `8c9cf03` and `7330e41` must not be amended. 9C/9D will hit direct overlap with upstream `4ec435f` and still require explicit Controller approval. Live writer E2E remains **DEFERRED** to an authorized fixture.
 
+### 2026-09-28 - Loop 9B final stack review - NO SCHEMA CHANGE (docs-only + comment dedup)
+
+1. **DATE:** 2026-09-28
+2. **TYPE:** DOCUMENTATION / COMMENT-ONLY — **NOT A SCHEMA CHANGE**
+3. **Reason:** the final pre-push stack review found the degraded-observability contract verified in code but not stated with its classification in the canonical docs, and found two stale status lines plus one duplicated code docblock.
+4. **Schema touched:** **NONE.** `database/sql/` and `database/migrations/` unchanged. Live column, type, nullability, default and index unchanged. Live = SQL = migration = docs parity retained. Migration ledger untouched; `php artisan migrate` was **not** run.
+5. **Locked contract added:** **`MONITORING FAILURE MUST NOT SILENTLY REDEFINE THE BUSINESS ASSIGNMENT.`** When `beginAttempt()` fails before an attempt row exists, the classification is **`DEGRADED OBSERVABILITY`** — **not** `DELIVERY FAILURE` and **not** `FULLY MONITORED SUCCESS`. Verified against the actual code: the failure is logged safely as a closed literal plus the integer `site_inspection_id`; no pending / delivered / failed state is fabricated because every recorder call sits behind `if ($attempt !== null)`; it is never reported as a monitored success for the same reason; it never inspects another dispatch's attempts because `failed()` refuses when uncorrelated; and a genuine remote failure is still logged and rethrown. A successful remote delivery with failed local recording may stay locally untracked until a later idempotent delivery execution converges it.
+6. **No new `delivery_status` value.** Degraded observability is not a business state. The 3-value vocabulary is unchanged, and the local footprint is one `Log::warning` line. The stored `safe_message` vocabulary is unchanged and still cannot carry a body, URL, key or header.
+7. **Only one `delivery_failed` writer confirmed:** a grep across all of `app/` returns exactly one occurrence that writes the value, `InspectionDeliveryRecorder::reconcileTerminalFailure()`, reachable only from the job's `failed()` hook. The bridge `catch` never writes it.
+8. **Comment-only production change:** a duplicated `beginAttempt()` docblock in `app/Services/InspectionDeliveryRecorder.php` was collapsed to one, and a pointer to this contract was added to the surviving block. **No executable statement changed.**
+9. **Stale status lines corrected:** the architecture doc previously described the stack as three unpushed commits and 9B as awaiting review. It now records the four-commit stack and names 9C as the next phase, **not** implemented.
+10. **Rows affected:** **0.** Live baseline re-verified read-only before and after: 35 inspections / 6 `delivery_failed` / 0 `pending_delivery` / 0 `delivered` / 29 NULL / 6 attempts / 6 `legacy_reconciliation` / 0 correlated / 12 `failed_jobs` / 0 fabricated `delivered_at`.
+11. **PostgreSQL probes:** the 9 rollback-only correlation probes were re-run during the final stack review. All PASS, all rolled back, baseline unchanged.
+12. **Supabase:** **UNCHANGED.** **FieldSync:** **UNCHANGED.** **Controllers / routes / frontend:** **UNCHANGED.**
+13. **Validation:** full Unit suite 391 tests / 1939 assertions PASS; `php -l` clean on all 9 changed PHP files; `git diff --check` clean; artifact/secret scan clean.
+14. **Status:** **LOOP 9B COMPLETE — READY TO PUSH.** 9C **NOT** started.
+15. **Notes / risks:** no commit was amended. 9C carries Controller, route and UI implications plus a known `origin/master` overlap at `4ec435f`, and requires its own audit, merge and authorization gate.
+
 ## Future-entry template
 
 Record all 14 fields used above. Never include secrets.

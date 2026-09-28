@@ -39,13 +39,13 @@ Every material assertion should use one of these classifications when its status
 
 # CURRENT ACTIVE LOOP
 
-**LOOP 9 — Delivery Monitoring + Admin Diagnostics — 9B CORRECTION IMPLEMENTED, UNPUSHED**
+**LOOP 9 — Delivery Monitoring + Admin Diagnostics — 9B COMPLETE, 9C NOT STARTED**
 
 > **Supersedes the previous `LOOP 3 — Assigning Planning Officer — IN PROGRESS` entry, which correctly described the state at the time it was written. Loop 3 is closed; see Loop status reconciliation below. That historical text is retained further down in this document and is not falsified here.**
 >
-> **Status history:** this entry previously read `AUDIT NEXT`, which correctly described the state when the Loop 9 audit and the D1–D20 contract decision had just been recorded. The audit has since **PASSED** and the contract was decided. Progress: **9A** schema (pushed) → **9A-R** legacy reconciliation (pushed) → **9B** delivery writer instrumentation plus its queue-correlation safety revision and writer correlation correction (**implemented, unpushed**). Delivery state is still **not** user-visible; 9C/9D have not started. Do not skip ahead to Loop 10.
+> **Status history:** this entry previously read `AUDIT NEXT`, which correctly described the state when the Loop 9 audit and the D1–D20 contract decision had just been recorded. The audit has since **PASSED** and the contract was decided. Progress: **9A** schema (pushed) → **9A-R** legacy reconciliation (pushed) → **9B** delivery writer instrumentation + queue-correlation schema revision + writer correlation correction + Scenario E regression (**pushed**). Delivery state is still **not** user-visible; 9C/9D have not started. Do not skip ahead to Loop 10.
 
-Loop 9 is **partially** implemented. Phases 9A, 9A-R and 9B are implemented; 9C, 9D, 9E/9F and 9G have not started.
+Loop 9 is **partially** implemented. Phases 9A, 9A-R and 9B are complete; 9C, 9D, 9E/9F and 9G have not started. **9C is next** and is not implemented.
 
 Loop 9 initial scope is recorded verbatim in **CANONICAL ISSUE ORDER → LOOP 9** below. It is planning scope only for the phases that have not started.
 
@@ -86,7 +86,7 @@ This is the authoritative active-status summary. Where an older entry states a d
 | Loop 6 | **IMPLEMENTED** | Site Inspector iMAPS access control implemented. Remaining credential/environment cases remain **approved deferrals** where already documented. |
 | Loop 7 | **CLOSED within the approved boundary** | Photo / storage / authorization implementation closed. Real on-site 30 m device/photo completion and remote DELETE remain **deferred**. |
 | Loop 8 | **IMPLEMENTED AND PUSHED** | Planning Review Metadata implemented and pushed. The read-only, round-safe metadata contract is closed. |
-| Loop 9 | **9B CORRECTION IMPLEMENTED, UNPUSHED** | Current active loop. Audit PASSED, D1–D20 decided. 9A + 9A-R pushed; 9B writer + queue-correlation schema + writer correlation correction implemented and unpushed. 9C–9G not started. |
+| Loop 9 | **9B COMPLETE; 9C NOT STARTED** | Current active loop. Audit PASSED, D1–D20 decided. 9A + 9A-R + 9B pushed. Next: 9C Planning Officer Delivery Visibility + Technical Retry, which needs its own Controller approval and `origin/master` overlap review. |
 
 Historical sub-loop evidence (Loop 1A/1B/1C/1D/1D-R series, Loop 7B/7C/7D/7F/7G) is **not erased** by this table.
 
@@ -3404,7 +3404,7 @@ was manufactured to make the report green.
 
 ## Current phase
 
-Loop 9A PUSHED · Loop 9A-R PUSHED · **Loop 9B IMPLEMENTED, AWAITING REVIEW** ·
+Loop 9A PUSHED · Loop 9A-R PUSHED · **Loop 9B COMPLETE AND PUSHED** ·
 9C NOT started. 9C and 9D will require a fresh overlap review because upstream
 `4ec435f` already modified `ApplicationController`, `TechnicalReviewController`,
 `SiteInspectionController`, `routes/web.php`, and related UI.
@@ -3491,9 +3491,10 @@ newest delivery execution.
 
 ## State
 
-- Writer commit `8c9cf03` remains **unpushed**; at the time this revision was
-  authored it was **blocked** pending the writer correction that consumes this
-  column. That correction is now applied — see the next section.
+- Writer commit `8c9cf03` was **unpushed and blocked** at the time this revision
+  was authored, pending the writer correction that consumes this column. That
+  correction is now applied and the whole stack is pushed — see the next
+  section. This line is preserved as point-in-time history, not a current claim.
 - This revision changed **no** business row, **no** Controller, **no** route,
   **no** Supabase state, and **no** FieldSync state.
 
@@ -3588,14 +3589,48 @@ locked by contract tests.
 
 ## Recorder-open failure
 
-If `beginAttempt()` throws, the log records that the attempt could not be opened
-and **delivery proceeds**. Losing an attempt record is strictly better than losing
-a FieldSync task. When `failed()` later runs for that dispatch there is no
-correlated attempt, so the recorder logs
-`terminal_no_correlated_attempt` and leaves the summary alone. It does not
-fabricate correlation, does not inspect another dispatch's attempts, and does not
-overwrite a newer summary. Incomplete observability is preferred over false
-business truth.
+### DEGRADED OBSERVABILITY CONTRACT (locked)
+
+> **MONITORING FAILURE MUST NOT SILENTLY REDEFINE THE BUSINESS ASSIGNMENT.**
+
+**Classification: `DEGRADED OBSERVABILITY`.**
+
+It is **NOT** `DELIVERY FAILURE`, and it is **NOT** `FULLY MONITORED SUCCESS`.
+
+**When:** `InspectionDeliveryRecorder::beginAttempt()` fails *before* a
+delivery-attempt row can be created, or cannot be allocated within its bounded
+retries and returns `null`.
+
+**What may happen (accepted for the 9B MVP):** the established remote bridge
+delivery continues. Loop 9 monitoring is additive, and it must not break the
+previously working Loops 1–8 assignment path. Losing an observability record is
+strictly better than losing a FieldSync task.
+
+**What must happen, every time — verified against the actual code:**
+
+| Requirement | Code |
+| --- | --- |
+| the recorder failure **must** be logged safely | `Log::warning('Delivery attempt could not be opened; continuing without it.', ['site_inspection_id' => ...])` — a closed literal plus one integer id. No body, URL, key, header or exception message. |
+| it **must not** fabricate pending / delivered / failed state | every recorder call in `handle()` is behind `if ($attempt !== null)`, so with a `null` attempt **no local delivery row is written at all** |
+| it **must not** be reported as a monitored successful delivery | `markDelivered()` and the `delivered` outcome log are both inside that same guard, so a successful remote delivery with failed local recording is **not** logged as `delivered` |
+| it **must not** inspect another dispatch's attempts | `failed()` → `reconcileTerminalFailure()` finds no attempt for this dispatch's uuid, logs `terminal_no_correlated_attempt`, and returns without writing |
+| it **must not** create false business truth | the correlated-latest and global-latest ownership guards both have to pass before `delivery_failed` is ever written |
+| it **must not** hide a real remote failure | the bridge `catch` always `Log::error(...)`s and then **rethrows**, so a genuine remote failure still fails the job and still reaches `failed()` |
+
+**Accepted consequence:** a successful remote delivery whose local recording
+failed may remain **locally untracked** until a later idempotent delivery
+execution converges it. That round is then correctly described as
+`DEGRADED OBSERVABILITY` — never as a clean monitored success.
+
+**The `delivery_failed` authority is unchanged.** `grep` across all of `app/`
+shows exactly **one** writer of `delivery_status = 'delivery_failed'`:
+`InspectionDeliveryRecorder::reconcileTerminalFailure()`, reachable only from the
+job's `failed()` hook.
+
+**Proof:** `handle()` `try { beginAttempt } catch (Throwable)` → warn and
+continue; `failed()` → refuse when uncorrelated; `Loop9bScenarioERegressionTest`
+asserts a dispatch with no recorded attempt never borrows another dispatch's
+outcome.
 
 ## What did not change
 
@@ -3628,7 +3663,16 @@ local summary can converge to `delivered`.
 - Historical baseline unchanged: 35 `site_inspections` (6 `delivery_failed`,
   29 NULL), 6 `inspection_delivery_attempts`, all 6
   `source = legacy_reconciliation` with `queue_job_uuid = NULL`, 12
-  `failed_jobs`, 0 non-NULL `queue_job_uuid`.
-- Unpushed stack: `8c9cf03` (writer) → `7330e41` (schema) → correction commit.
-  Neither earlier commit was amended.
-- Next: pre-push stack review, then push on explicit authorization.
+  `failed_jobs`, 0 non-NULL `queue_job_uuid`, 0 fabricated `delivered_at`.
+- Stack (4 bounded commits, no amend): `8c9cf03` (writer) → `7330e41`
+  (queue-correlation schema) → `aa7fd87` (writer correlation correction) →
+  `0074f10` (explicit Scenario E regression) → plus a docs-only
+  **DEGRADED OBSERVABILITY** contract commit from the final stack review.
+- Next: **9C — Planning Officer Delivery Visibility + Technical Retry.** It is
+  **NOT implemented**. It carries Controller, route and UI implications plus a
+  known `origin/master` overlap, and therefore needs its own audit, merge and
+  authorization gate.
+
+**Loop 9 is NOT complete.** 9C, 9D, 9E/9F and 9G remain. Delivery state is
+durable and queryable but still **not** user-visible: no Controller, route or UI
+reads it yet.
