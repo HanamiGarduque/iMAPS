@@ -873,11 +873,15 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
 
     public function test_no_backend_or_route_production_file_is_touched(): void
     {
-        $changed = trim((string) shell_exec('git status --porcelain'));
+        // LOOP 9C-3-1 CORRECTION. This test used to read the LIVE WORKING TREE
+        // via `git status --porcelain`, which made it a statement about whatever
+        // phase happened to be in progress rather than about 9C-2. It therefore
+        // broke as soon as a later, correctly scoped phase added a backend
+        // file. The assertion is what the test always meant, now pinned to the
+        // 9C-2 wiring commit it describes.
+        $changed = $this->productionFilesInRange('106fec6', 'af2ef4f');
 
-        foreach (explode("\n", $changed === '' ? [] : $changed) as $line) {
-            $path = trim(substr($line, 3));
-
+        foreach ($changed as $path) {
             foreach ([
                 'app/Http/Controllers/', 'app/Services/', 'app/Models/', 'app/Jobs/',
                 'routes/', 'database/', 'config/', '.env',
@@ -893,33 +897,44 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
 
     public function test_show_jsx_is_the_only_production_file_touched(): void
     {
-        $production = [];
-
-        foreach (explode("\n", (string) shell_exec('git status --porcelain')) as $line) {
-            // Untracked entries are the 32 preserved evidence files; they are not
-            // production edits. Note the porcelain line is `XY<space>path`, so the
-            // path starts at offset 3 and the leading status column must NOT be
-            // trimmed first.
-            if (str_starts_with($line, '??') || trim($line) === '') {
-                continue;
-            }
-
-            $path = trim(substr($line, 3));
-
-            // Tests and canonical documentation are not production code. The
-            // production set is what actually runs in the browser or the worker.
-            if ($path !== '' && ! str_starts_with($path, 'tests/') && ! str_starts_with($path, 'docs/')) {
-                $production[] = $path;
-            }
-        }
-
-        sort($production);
+        // Scoped to the 9C-2 wiring commit, for the reason recorded above.
+        $production = $this->productionFilesInRange('106fec6', 'af2ef4f');
 
         $this->assertSame(
             ['resources/js/Pages/Applications/Show.jsx'],
             $production,
             '9C-2-2 changes exactly one production file.'
         );
+    }
+
+    /**
+     * Production files changed between two commits: tests and canonical
+     * documentation excluded, because neither runs in the browser or the
+     * worker.
+     *
+     * @return list<string>
+     */
+    private function productionFilesInRange(string $from, string $to): array
+    {
+        $output = (string) shell_exec(
+            sprintf('git diff --name-only %s %s', escapeshellarg($from), escapeshellarg($to))
+        );
+
+        $production = [];
+
+        foreach (explode("\n", trim($output)) as $path) {
+            $path = trim($path);
+
+            if ($path === '' || str_starts_with($path, 'tests/') || str_starts_with($path, 'docs/')) {
+                continue;
+            }
+
+            $production[] = $path;
+        }
+
+        sort($production);
+
+        return $production;
     }
 
     public function test_the_panel_component_itself_is_unchanged_since_9c2_1(): void

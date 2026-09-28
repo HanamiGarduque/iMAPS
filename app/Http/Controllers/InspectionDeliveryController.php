@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SiteInspection;
 use App\Models\ZoningApplication;
+use App\Support\InspectionDeliveryRetryEligibility;
 use App\Support\InspectionDeliveryStatus;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -58,8 +59,16 @@ class InspectionDeliveryController extends Controller
         // identity, and ONE aggregate COUNT for the attempt totals. Attempt
         // rows are never loaded, so there is no per-round N+1 and no
         // queue-correlation exposure.
+        //
+        // LOOP 9C-3: the inspector eager load additionally selects `role`,
+        // `is_active` and `handshake_key` so retry eligibility can be decided
+        // from rows that are ALREADY loaded. Those attributes are used only to
+        // compute `can_retry` and are NEVER serialized: `shapeRounds()` still
+        // emits an explicit `['id' => ..., 'name' => ...]` object, so no
+        // handshake key, role, active flag, queue uuid, supersession internal or
+        // remote profile data can reach a browser. The query count is unchanged.
         $rounds = $application->siteInspections()
-            ->with(['inspector' => fn ($query) => $query->select('id', 'name')])
+            ->with(['inspector' => fn ($query) => $query->select('id', 'name', 'role', 'is_active', 'handshake_key')])
             ->withCount('deliveryAttempts')
             // Deterministic and canonical. `site_inspections` stores no round
             // number, so the primary key IS the round chronology - the same one
@@ -81,6 +90,14 @@ class InspectionDeliveryController extends Controller
 
         $retryActorAuthorized = $this->isRetryableFor($ownerId, $viewerId, $viewerRole);
 
+        // LOOP 9C-3: supersession is reduced ONCE, from the rounds already in
+        // memory, into parcel_id => highest round id. This is what keeps the
+        // reader at a constant query count: it is not one supersession query per
+        // round, and it is not a query at all. `InspectionDeliveryRetryService`
+        // builds the same map from ONE grouped query and then asks the SAME
+        // predicate, so "current round" means one thing on both sides.
+        $latestRoundIdsByParcel = InspectionDeliveryRetryEligibility::latestRoundIdsByParcel($rounds);
+
         return response()->json([
             'application_id' => (int) $application->id,
 
@@ -99,10 +116,8 @@ class InspectionDeliveryController extends Controller
             // a UI reading `is_retry_available` would have offered a control
             // with nothing behind it.
             //
-            // THE AUTHORITATIVE RETRY DECISION IS THE PER-ROUND
-            // `delivery.can_retry`, which is this flag AND a recorded
-            // `delivery_failed` on that specific round. A future UI must gate
-            // every retry control on the per-round value, never on this one.
+            // IT IS STILL APPLICATION-LEVEL ONLY. Loop 9C-3 did NOT fold any
+            // round state into it.
             'retry_actor_authorized' => $retryActorAuthorized,
 
             // Application-level ACTOR reason only: why this viewer is not an
@@ -112,7 +127,7 @@ class InspectionDeliveryController extends Controller
             // label and message.
             'retry_actor_unavailable_reason' => InspectionDeliveryStatus::retryUnavailableReason($viewerRole, $ownerId, $viewerId),
 
-            'inspections' => $this->shapeRounds($rounds, $retryActorAuthorized),
+            'inspections' => $this->shapeRounds($rounds, $ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel),
         ]);
     }
 
@@ -120,13 +135,19 @@ class InspectionDeliveryController extends Controller
      * Shape every round into the read contract.
      *
      * @param  Collection<int, SiteInspection>  $rounds
+     * @param  array<int, int>  $latestRoundIdsByParcel
      * @return list<array<string, mixed>>
      */
-    private function shapeRounds(Collection $rounds, bool $retryActorAuthorized): array
-    {
+    private function shapeRounds(
+        Collection $rounds,
+        ?int $ownerId,
+        ?int $viewerId,
+        ?string $viewerRole,
+        array $latestRoundIdsByParcel
+    ): array {
         $index = 0;
 
-        return $rounds->map(function (SiteInspection $round) use ($retryActorAuthorized, &$index): array {
+        return $rounds->map(function (SiteInspection $round) use ($ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, &$index): array {
             $index++;
 
             return [
@@ -150,7 +171,13 @@ class InspectionDeliveryController extends Controller
                     ? null
                     : ['id' => (int) $round->inspector->getKey(), 'name' => $round->inspector->name],
 
-                'delivery' => $this->shapeDelivery($round, $retryActorAuthorized),
+                'delivery' => $this->shapeDelivery(
+                    $round,
+                    $ownerId,
+                    $viewerId,
+                    $viewerRole,
+                    $latestRoundIdsByParcel,
+                ),
             ];
         })->all();
     }
@@ -158,9 +185,16 @@ class InspectionDeliveryController extends Controller
     /**
      * Shape one round's delivery block.
      *
+     * @param  array<int, int>  $latestRoundIdsByParcel
      * @return array<string, mixed>>
      */
-    private function shapeDelivery(SiteInspection $round, bool $retryActorAuthorized): array
+    private function shapeDelivery(
+        SiteInspection $round,
+        ?int $ownerId,
+        ?int $viewerId,
+        ?string $viewerRole,
+        array $latestRoundIdsByParcel
+    ): array
     {
         $state = InspectionDeliveryStatus::state($round->delivery_status);
         $isFailed = $state === InspectionDeliveryStatus::STATE_FAILED;
@@ -189,12 +223,34 @@ class InspectionDeliveryController extends Controller
                 ? InspectionDeliveryStatus::failureMessage($round->last_delivery_failure_category)
                 : null,
 
-            // THE AUTHORITATIVE RETRY DECISION. Server-computed, and true only
-            // when the viewer is an authorized actor AND this specific round is
-            // a recorded delivery failure. A future UI must gate every retry
-            // control on THIS value, never on the application-level
-            // `retry_actor_authorized` flag. This phase performs no retry.
-            'can_retry' => $isFailed && $retryActorAuthorized,
+            // THE AUTHORITATIVE RETRY DECISION. Server-computed, and now the
+            // output of the ONE shared eligibility contract that
+            // `InspectionDeliveryRetryService` will also enforce, so a future
+            // browser can never offer a control the POST would refuse.
+            //
+            // It is false when the viewer is not the assigned Planning Officer,
+            // when the round is not a recorded delivery failure, when a newer
+            // round has superseded this one, or when the assigned Site Inspector
+            // is not currently locally eligible for FieldSync work.
+            // A future UI must gate every retry control on THIS value,
+            // never on the application-level `retry_actor_authorized` flag.
+            // This phase performs no retry.
+            //
+            // The inspector's local eligibility is computed from attributes
+            // already loaded above and is deliberately not exposed: this block
+            // still reports only `id` and `name` for the inspector.
+            'can_retry' => InspectionDeliveryRetryEligibility::canRetry(
+                [
+                    'round_id' => (int) $round->getKey(),
+                    'parcel_id' => $round->parcel_id === null ? null : (int) $round->parcel_id,
+                    'delivery_status' => $round->delivery_status,
+                    'inspector_eligible' => InspectionDeliveryRetryEligibility::inspectorIsLocallyEligible($round->inspector),
+                ],
+                $latestRoundIdsByParcel,
+                $viewerRole,
+                $ownerId,
+                $viewerId,
+            ),
         ];
     }
 

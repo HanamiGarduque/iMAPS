@@ -93,13 +93,21 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
         // Supabase to tell them apart - that is not a delivery state.
         $controller = $this->code($this->controllerSource());
 
-        foreach (['SupabaseService', 'Http::', 'getInspectionWithSignedPhotos', 'handshake'] as $forbidden) {
+        foreach (['SupabaseService', 'Http::', 'getInspectionWithSignedPhotos', 'on_conflict', 'rest/v1'] as $forbidden) {
             $this->assertStringNotContainsString(
                 $forbidden,
                 $controller,
                 "The delivery reader must never call out to a remote service; found '{$forbidden}'."
             );
         }
+
+        // LOOP 9C-3-1 CORRECTION. The blanket `handshake` token is no longer
+        // forbidden here. The reader now SELECTs the local `handshake_key`
+        // column so it can decide `can_retry` without a second query, and that
+        // is a LOCAL eligibility fact, not a remote handshake lookup. What is
+        // still forbidden is the REMOTE resolution, which belongs to the writer.
+        $this->assertStringNotContainsString('rest/v1/profiles', $controller);
+        $this->assertStringNotContainsString('resolveSupabaseUserId', $controller);
 
         // And the shape depends only on the stored status, nothing else.
         $this->assertSame(
@@ -354,7 +362,26 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
 
         // can_retry is true only when BOTH the viewer owns the application AND
         // this specific round is a recorded failure.
-        $this->assertStringContainsString("'can_retry' => \$isFailed && \$retryActorAuthorized", $controller);
+        // LOOP 9C-3-1 CORRECTION. The 9C-1 formula was literally
+        // `$isFailed && $retryActorAuthorized`, which was proven incomplete: it
+        // knew nothing about a superseding round and nothing about the assigned
+        // inspector, so it would have offered a control the 9C-3 POST refuses.
+        // `can_retry` is now the output of the ONE shared eligibility contract,
+        // and the reader must ask that contract rather than re-deriving rules.
+        $this->assertStringContainsString('InspectionDeliveryRetryEligibility::canRetry(', $controller);
+        $this->assertStringContainsString('InspectionDeliveryRetryEligibility::inspectorIsLocallyEligible(', $controller);
+        $this->assertStringContainsString('InspectionDeliveryRetryEligibility::latestRoundIdsByParcel($rounds)', $controller);
+
+        // It must STILL require both the ownership gate and a recorded failure:
+        // the actor gate is passed in, and the state rule lives in the shared
+        // evaluator, so neither can be dropped from the call.
+        $this->assertStringContainsString("'delivery_status' => \$round->delivery_status", $controller);
+        $this->assertStringContainsString('$viewerRole,', $controller);
+        $this->assertStringContainsString('$ownerId,', $controller);
+        $this->assertStringContainsString('$viewerId,', $controller);
+
+        // And the superseded formula must be gone, not merely supplemented.
+        $this->assertStringNotContainsString("'can_retry' => \$isFailed && \$retryActorAuthorized", $controller);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -393,7 +420,19 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
 
         $this->assertStringContainsString('ACTOR GATE, NOT AN ACTION FLAG', $controller);
         $this->assertStringContainsString('AUTHORITATIVE RETRY DECISION', $controller);
-        $this->assertStringContainsString('never on this one', $controller);
+
+        // LOOP 9C-3-1: the guidance a consumer reads now points at the
+        // application-level flag by name, and states explicitly that 9C-3 did
+        // NOT fold round state into it.
+        $this->assertStringContainsString(
+            'must gate every retry control on THIS value',
+            $controller
+        );
+        $this->assertStringContainsString(
+            'never on the application-level `retry_actor_authorized` flag',
+            $controller
+        );
+        $this->assertStringContainsString('STILL APPLICATION-LEVEL ONLY', $controller);
     }
 
     public function test_the_round_level_reason_is_not_mixed_into_the_actor_reason(): void
@@ -474,10 +513,24 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
         // `inspection_status` and `parcel_id` are legitimate READ outputs of the
         // contract. What must never appear is a WRITE: an assignment to any
         // delivery or business-state column, as opposed to reading one.
+        //
+        // LOOP 9C-3-1 CORRECTION. The old forbidden token was the literal
+        // `'delivery_status' =>`, which cannot distinguish a write from a read:
+        // the eligibility contract legitimately READS
+        // `'delivery_status' => $round->delivery_status`. The guarantee is
+        // expressed the way it actually holds - the reader performs no write of
+        // any kind, and never sets a delivery state literal.
         foreach ([
-            "'delivery_status' =>",
+            '->update(',
+            '->save()',
+            '->create(',
+            '->delete()',
+            'forceFill',
+            'DB::table(',
             'delivery_status =',
             "'pending_delivery'",
+            "'delivery_failed'",
+            "'delivered'",
             'inspector_id =',
             '->status =',
         ] as $forbidden) {
@@ -501,13 +554,17 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
             'Ownership must be read null-safely, never written.'
         );
 
-        // The one delivery_status occurrence allowed is the null-safe READ the
-        // state mapping consumes.
+        // LOOP 9C-3-1 CORRECTION. There are now THREE occurrences, and all
+        // three are reads. The count is pinned rather than loosened so a
+        // future WRITE of delivery state still breaks this test:
+        //   1. the null-safe read the state mapping consumes
+        //   2. the eligibility array KEY  ('delivery_status' => ...)
+        //   3. the eligibility array VALUE ($round->delivery_status)
         $this->assertStringContainsString('$round->delivery_status', $controller);
         $this->assertSame(
-            1,
+            3,
             substr_count($controller, 'delivery_status'),
-            'delivery_status must appear exactly once, as a read.'
+            'delivery_status must appear exactly three times, all as reads.'
         );
     }
 
@@ -598,14 +655,28 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
 
         // Queue correlation, raw attempt detail, and remote failures are 9D
         // Admin monitoring material, not 9C-1 Planning Officer material.
+        //
+        // LOOP 9C-3-1 CORRECTION. `handshake_key` moved out of this list. The
+        // reader SELECTS the local column to compute `can_retry`; what must
+        // never happen is it becoming a RESPONSE FIELD, which is asserted
+        // separately below as an array key.
         foreach ([
             'queue_job_uuid', 'attempt_number', 'safe_message',
-            'failed_jobs', 'inspector_notes', 'signed_url', 'handshake_key',
+            'failed_jobs', 'inspector_notes', 'signed_url',
         ] as $forbidden) {
             $this->assertStringNotContainsString(
                 $forbidden,
                 $controller,
                 "'{$forbidden}' must never be exposed by the 9C-1 reader."
+            );
+        }
+
+        // As a response field it is still absolutely forbidden.
+        foreach (['handshake_key', 'role', 'is_active', 'email'] as $notAField) {
+            $this->assertStringNotContainsString(
+                "'" . $notAField . "' =>",
+                $controller,
+                "'{$notAField}' must never be a response field of the 9C-1 reader."
             );
         }
     }
@@ -614,11 +685,23 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
     {
         $controller = $this->code($this->controllerSource());
 
-        $this->assertStringContainsString("select('id', 'name')", $controller);
+        // LOOP 9C-3-1 CORRECTION. The eager load legitimately grew from
+        // `select('id', 'name')` to include the three LOCAL attributes the
+        // shared eligibility contract needs. It is still ONE query, still
+        // bounded, and the response still exposes only id and name.
+        $this->assertStringContainsString(
+            "select('id', 'name', 'role', 'is_active', 'handshake_key')",
+            $controller
+        );
 
-        // Inspector display identity only. No handshake key, no email, no
-        // session data of any kind.
-        $this->assertStringNotContainsString('handshake_key', $controller);
+        // Display identity is still exactly id + name, and the load is still a
+        // single relation with no attempt rows pulled in.
+        $this->assertStringContainsString(
+            "['id' => (int) \$round->inspector->getKey(), 'name' => \$round->inspector->name]",
+            $controller
+        );
+        $this->assertStringNotContainsString('password', $controller);
+        $this->assertStringNotContainsString('remember_token', $controller);
     }
 
     // ══════════════════════════════════════════════════════════════
