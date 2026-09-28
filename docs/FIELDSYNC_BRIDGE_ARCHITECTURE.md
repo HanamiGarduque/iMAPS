@@ -3141,3 +3141,115 @@ Verified unchanged in 9A:
 Delivery state is writer-controlled, never request-driven; adding it to mass
 assignment before a writer exists would create an unguarded path for a request to
 set delivery state.
+
+---
+
+# LOOP 9A-R — LEGACY DELIVERY FAILURE RECONCILIATION (INSPECTIONS 25-30) — EXECUTED 2026-09-28
+
+## What this was
+
+A **data-only reconciliation** against the existing 0921 database. It is **not**
+a migration, **not** a schema change, **not** a resend, and **not** an
+assignment or reassignment.
+
+It converts six already-proven, already-terminal, invisible bridge failures into
+a durable, visible `delivery_failed` business fact. It performs no remote call of
+any kind.
+
+## Business meaning
+
+Between 2026-09-11 00:51 and 19:29, six Site Inspector assignments were encoded
+in iMAPS and were **never delivered to FieldSync**. The assigned inspector's
+local account could not be resolved to a Supabase profile, so every push failed.
+The failures were recorded only in Laravel's generic `failed_jobs` table, which
+no user-facing surface ever reads. The result was an invisible false state: the
+Planning Officer saw a normal `assigned` inspection that in fact had no remote
+task, and the inspector never received the work.
+
+After this reconciliation those six rounds are explicitly, durably, and
+honestly marked as failed deliveries. **No resend occurred**, and the rounds
+still await a deliberate business decision.
+
+| Inspection | Application | Reference | Historical failure (from `failed_jobs.failed_at`) |
+|---|---|---|---|
+| 25 | 104 | ZA-2026-00038 | 2026-09-11 00:51:31 |
+| 26 | 115 | APP-2026-00011 | 2026-09-11 18:24:56 |
+| 27 | 116 | APP-2026-00012 | 2026-09-11 18:29:47 |
+| 28 | 117 | APP-2026-00013 | 2026-09-11 19:17:36 |
+| 29 | 118 | APP-2026-00014 | 2026-09-11 19:25:40 |
+| 30 | 119 | APP-2026-00015 | 2026-09-11 19:29:48 |
+
+## Proven 1:1 lineage (not chronology)
+
+The stored `failed_jobs.payload` serializes the job's model identity, so the
+mapping is read directly out of the queue payload rather than inferred from
+timestamps:
+
+`App\Jobs\PushInspectionToSupabase` -> `inspection` -> `App\Models\SiteInspection{id}`
+
+giving inspection 25 <- `failed_jobs.id` 7, 26 <- 8, 27 <- 9, 28 <- 10,
+29 <- 11, 30 <- 12. Exactly one record per inspection; no target lacks a record;
+no inspection has more than one. All six raise the same terminal failure from
+`PushInspectionToSupabase::resolveSupabaseUserId()` when the local inspector
+account could not be resolved to a Supabase profile via `handshake_key`.
+Normalized category: **`inspector_mapping_unresolved`**.
+
+Each inspection's own `created_at` independently precedes its `failed_at` by
+4-5 seconds, corroborating the causal chain.
+
+**The fact that this mapping succeeds today does not rewrite the historical
+cause.** The recorded cause is the cause at the time of failure.
+
+## History limitation (deliberate)
+
+Each attempt row is **one reconstructed business-level terminal delivery
+event**, because the pre-Loop-9 system had no delivery-attempt
+instrumentation. `attempt_number = 1` therefore does **not** mean Laravel
+internally attempted the job only once, and no internal automatic-retry history
+is inferred or fabricated from `failed_jobs`. `created_at` is deliberately left
+at real insertion time (2026-09-28) and is **not** backdated to September, so the
+reconciliation is never mistaken for instrumentation that existed at the time.
+
+## What was deliberately NOT done
+
+- **No resend / no retry / no dispatch.** The `field_jobs` row for these rounds
+  does not exist remotely and was not created.
+- **No PO ownership assigned or inferred.** All six applications keep
+  `assigned_planning_officer_id = NULL`. `encoded_by` is historical encoder
+  attribution, not ownership, and was not read.
+- **No lifecycle change.** Inspection status stays `assigned`; inspector,
+  application, parcel, schedule, notes, findings, reference number, technical
+  review history, and application status are all untouched.
+- **No `failed_jobs` modification.** All 12 rows retained.
+- **No Supabase, Storage, RLS, Auth, or FieldSync mutation.**
+- **No fabricated history for already-delivered rounds.** Inspections
+  22, 23, 31, 32, 33, 34, 35, 36, 37 remain `delivery_status = NULL`. This is
+  intentional: a null state for a known-delivered historical job is honest, and
+  the future writer contract (9B) establishes delivery state prospectively.
+- **Pre-bridge rows excluded.** Inspections 3-21 and 24 remain `NULL`
+  permanently.
+
+## Live state after reconciliation
+
+`site_inspections`: 35 total — 6 `delivery_failed`, 0 `pending_delivery`,
+0 `delivered`, 29 `NULL`.
+`inspection_delivery_attempts`: 6 rows, all `source = legacy_reconciliation`,
+`outcome = failed`, `failure_category = inspector_mapping_unresolved`,
+`attempt_number = 1`, `delivered_at` NULL on all six summary rows.
+`failed_jobs`: 12 rows, retained.
+Remote: 0 `field_jobs` for local inspections 25-30; Supabase counts byte-identical
+before and after.
+
+## Recovery remains a deliberate two-step business action
+
+Not implemented here, and intentionally so:
+
+1. An **Admin** records initial Planning Officer ownership using the already
+   approved ownership workflow (all six applications currently have no PO
+   pointer, so a PO cannot retry yet).
+2. That assigned Planning Officer decides whether the assignment is still valid
+   and, if so, may later use Technical Retry — a Loop 9C control.
+
+If an assignment is obsolete, it is left as a visible historical failed delivery
+and the business follow-up is recorded separately. No cancellation workflow is
+invented inside Loop 9.

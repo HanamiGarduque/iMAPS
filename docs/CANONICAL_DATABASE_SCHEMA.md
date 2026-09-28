@@ -565,3 +565,51 @@ edited. Fresh database: `2026_09_28_030000_add_inspection_delivery_monitoring.ph
 reproduces the identical contract.
 
 The final database snapshot / export package remains **DEFERRED**.
+
+## 16. Loop 9A-R legacy delivery failure reconciliation - 2026-09-28 (DATA ONLY)
+
+**This is not a schema change.** Sections 1-15 remain authoritative and
+unchanged, including the 0921 forward-update instructions, the
+`application_sequences` legacy/retained decision, the migration-ledger warning,
+and the explicit `--path` requirement.
+
+Artifact: `database/sql/2026_09_28_reconcile_legacy_delivery_failures_25_30.sql`
+— **existing-0921 data patch only.** It is deliberately NOT a migration and
+must never be applied to a fresh database, which has no historical inspections
+25-30.
+
+### 16.1 Live reconciliation state (as of 2026-09-28)
+
+`site_inspections` = 35 rows:
+- `delivery_status = 'delivery_failed'`: **6** (inspections 25, 26, 27, 28, 29, 30)
+- `delivery_status = 'pending_delivery'`: 0
+- `delivery_status = 'delivered'`: 0
+- `delivery_status IS NULL`: **29**
+
+`inspection_delivery_attempts` = **6** rows, each `attempt_number = 1`,
+`source = 'legacy_reconciliation'`, `outcome = 'failed'`,
+`failure_category = 'inspector_mapping_unresolved'`, with `attempted_at` and
+`completed_at` set to the exact historical `failed_jobs.failed_at` of the
+matching failure. `created_at` is the real insertion time and is not backdated.
+
+### 16.2 What is deliberately still NULL
+
+- Inspections **3-21 and 24** (pre-bridge historical records) remain NULL
+  permanently and are excluded from delivery monitoring.
+- Inspections **22, 23, 31, 32, 33, 34, 35, 36, 37** already have remote tasks
+  but remain NULL. Fabricating a `delivered` history for them would be
+  invention; the future writer contract (Loop 9B) establishes delivery state
+  prospectively.
+
+### 16.3 Integrity notes
+
+- `failed_jobs` (12 rows) is retained unchanged. It is generic queue
+  infrastructure and the original technical evidence; `inspection_delivery_attempts`
+  is the canonical **business** delivery history.
+- No Planning Officer ownership was assigned or inferred. All six applications
+  keep `assigned_planning_officer_id = NULL`; `encoded_by` is not ownership.
+- No remote task exists for these six rounds and none was created.
+- `application_status_tracks` for the affected applications was not modified; the
+  delivery state is an inspection-round fact, not an application lifecycle fact.
+
+The final database snapshot / export package remains **DEFERRED**.
