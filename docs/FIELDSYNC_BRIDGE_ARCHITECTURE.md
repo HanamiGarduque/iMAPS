@@ -3152,9 +3152,18 @@ A **data-only reconciliation** against the existing 0921 database. It is **not**
 a migration, **not** a schema change, **not** a resend, and **not** an
 assignment or reassignment.
 
-It converts six already-proven, already-terminal, invisible bridge failures into
-a durable, visible `delivery_failed` business fact. It performs no remote call of
-any kind.
+It converts six already-proven, already-terminal, previously silent bridge
+failures into a durable and queryable `delivery_failed` business fact. It
+performs no remote call of any kind.
+
+> **Visibility boundary — read this before assuming a user can see this.**
+> What is true now: the six failures have durable business delivery state that
+> iMAPS can query, and each has one `legacy_reconciliation` history row.
+> What is **not** true yet: no Planning Officer or Admin screen displays
+> "Delivery Failed" anywhere. There is no Retry Delivery control and no Admin
+> bridge monitoring page. **PO visibility and technical retry arrive in 9C;
+> Admin aggregate monitoring arrives in 9D.** Until those phases land, this
+> reconciliation corrects the *recorded state* only, not the user experience.
 
 ## Business meaning
 
@@ -3250,6 +3259,7 @@ Not implemented here, and intentionally so:
 2. That assigned Planning Officer decides whether the assignment is still valid
    and, if so, may later use Technical Retry — a Loop 9C control.
 
-If an assignment is obsolete, it is left as a visible historical failed delivery
-and the business follow-up is recorded separately. No cancellation workflow is
+If an assignment is obsolete, it is left as a recorded historical failed
+delivery — queryable in the database but not yet displayed in any user interface
+— and the business follow-up is recorded separately. No cancellation workflow is
 invented inside Loop 9.
