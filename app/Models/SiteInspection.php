@@ -76,7 +76,27 @@ class SiteInspection extends Model
         'confirmed_longitude' => 'float',
         'gps_accuracy_m'      => 'float',
         'gps_confirmed_at'    => 'datetime',
+        // Loop 9A delivery summary. Nullable by contract: NULL means the
+        // delivery state was never established, which is the correct value for
+        // every pre-existing row. Never inferred from task `status`.
+        'last_delivery_attempt_at' => 'datetime',
+        'delivered_at'             => 'datetime',
     ];
+
+    /**
+     * Append-only bridge delivery attempt history for this exact round.
+     *
+     * Delivery state is a separate business fact from the FieldSync task
+     * lifecycle in `status` (assigned -> in_progress -> completed). These
+     * attempts record what happened on the bridge only, and may never be used to
+     * derive, infer, or alter task lifecycle.
+     *
+     * Loop 9A is schema foundation only: no writer populates these rows yet.
+     */
+    public function deliveryAttempts(): HasMany
+    {
+        return $this->hasMany(InspectionDeliveryAttempt::class, 'site_inspection_id');
+    }
 
     /**
      * Build a clean inspection round for the same application and parcel.

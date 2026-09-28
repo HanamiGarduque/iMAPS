@@ -3003,3 +3003,141 @@ These remain deferred and must **not** be marked PASS:
 - Mid-flight Site Inspector transfer / recovery.
 - Photo endpoint performance optimization.
 - Final database export / package.
+
+---
+
+# LOOP 9A — DELIVERY STATE SCHEMA FOUNDATION — IMPLEMENTED 2026-09-28
+
+## Scope delivered
+
+Schema and model foundation for Loop 9 delivery monitoring. **Nothing else.**
+
+**Implemented:**
+- `site_inspections` current delivery summary (4 nullable columns)
+- `inspection_delivery_attempts` append-only attempt history
+- `App\Models\InspectionDeliveryAttempt` + `SiteInspection::deliveryAttempts()`
+- Forward SQL for the existing 0921 database, and a fresh-install migration
+- Closed vocabularies enforced by DB CHECK constraints
+
+**NOT implemented yet (later phases):**
+- No writer instrumentation in `PushInspectionToSupabase` (**9B**)
+- No Planning Officer visibility or technical retry (**9C**)
+- No Admin bridge monitoring (**9D**)
+- No diagnostic backend (**9E/9F**)
+- No E2E/closure (**9G**)
+
+**Loop 9 is NOT complete.** Next phase after 9A verification: **9B — Delivery Writer Instrumentation.**
+
+## Canonical delivery contract
+
+Delivery state is a NEW business fact, deliberately separate from the FieldSync
+task lifecycle.
+
+```
+delivery lifecycle:  pending_delivery -> delivered
+                     pending_delivery -> delivery_failed
+                     delivery_failed  -> pending_delivery   (authorized technical retry begins)
+                     pending_delivery -> delivered          (successful retry)
+
+task lifecycle:      assigned -> in_progress -> completed      (UNCHANGED)
+```
+
+There is deliberately **no `retrying` business state**: a retry is an attempt
+row, not a distinct business condition. Delivery state must never reuse
+`assigned` / `in_progress` / `completed`.
+
+## Schema
+
+### `site_inspections` (current summary, all nullable)
+
+| Column | Type | Meaning |
+|---|---|---|
+| `delivery_status` | `varchar(32)` | `pending_delivery` \| `delivered` \| `delivery_failed` \| NULL |
+| `last_delivery_attempt_at` | `timestamp` | most recent attempt |
+| `delivered_at` | `timestamp` | most recent CONFIRMED delivery; retained as history |
+| `last_delivery_failure_category` | `varchar(48)` | normalized category of the most recent failure |
+
+### `inspection_delivery_attempts` (append-only history)
+
+`id`, `site_inspection_id`, `attempt_number`, `source`, `outcome`,
+`failure_category`, `safe_message`, `attempted_at`, `completed_at`, `created_at`
+
+- **FK:** `site_inspection_id -> site_inspections(id) ON DELETE CASCADE`.
+  CASCADE matches the established contract for operational history owned by one
+  round (`site_inspection_assignments`). It deliberately differs from business
+  decision records (`technical_reviews.reviewed_site_inspection_id` = SET NULL),
+  which must survive their referenced round. A real FK is used; no polymorphic
+  `(type, id)` shape, which cannot be constrained.
+- **UNIQUE:** `(site_inspection_id, attempt_number)` — attempt numbering is scoped
+  to the round, never a global counter.
+
+### Closed vocabularies (DB CHECK constraints)
+
+- `source`: `initial_dispatch` \| `automatic_retry` \| `planning_officer_retry` \| `legacy_reconciliation`
+- `outcome`: `pending` \| `delivered` \| `failed`
+- `failure_category`: `inspector_mapping_unresolved` \| `supabase_unreachable` \|
+  `authentication_failure` \| `remote_constraint_failure` \|
+  `remote_validation_failure` \| `configuration_failure` \| `unknown`
+
+**NULL rules, enforced in both directions and written NULL-safely**
+(`IS NULL` / `IS NOT NULL`, because `NULL IN (...)` is NULL and a CHECK passes on NULL):
+`outcome = 'failed'` requires a category; `outcome IN ('pending','delivered')`
+requires the category to be NULL.
+
+### Current-summary rules
+
+- `delivery_status` must be in the vocabulary or NULL.
+- `delivery_status = 'delivered'` requires `delivered_at IS NOT NULL`.
+- The reverse is **deliberately unconstrained**, so a retry returning a row to
+  `pending_delivery` never has to erase a historical `delivered_at`.
+- `attempt_number >= 1`; `outcome != 'pending'` requires `completed_at`.
+
+### Indexes (justified only)
+
+- `site_inspections (delivery_status) WHERE delivery_status IS NOT NULL` — every
+  historical row is NULL, so a partial index stays tiny and matches the 9C and
+  9D predicates exactly.
+- `inspection_delivery_attempts (site_inspection_id, attempted_at)` — loads one
+  round's history newest-first.
+- **Deliberately omitted:** an index on `outcome` (three values, negligible
+  selectivity; current-state aggregates read `site_inspections.delivery_status`).
+
+## No historical backfill — and the exclusions that depend on it
+
+`delivery_status` is NULL for **all 35** pre-existing `site_inspections` rows.
+Fabricated delivery history is impossible from this phase.
+
+- **Inspections 3–21 and 24** are pre-bridge historical records and stay NULL
+  permanently. They are never delivery failures.
+- **Inspections 25–30** are the 6 proven post-bridge delivery failures
+  (applications 104, 115–119, inspector 25, 2026-09-11, exactly matching 6
+  `failed_jobs` rows). They also remain **NULL in 9A**. Their
+  `NULL -> delivery_failed` reconciliation is a **separately authorized execution
+  step** and was **not** performed. No automatic resend.
+
+## Safety
+
+No column stores a raw exception dump, credential, token, header, connection
+string, handshake key, or signed URL. `safe_message` is a short normalized
+user-facing explanation only; raw technical detail stays in server logs.
+
+Laravel `failed_jobs` remains generic queue infrastructure and is **not** used as
+a business delivery record: it has no foreign key to the inspection round and
+would couple delivery state to unrelated queued work.
+
+## Bridge stability (Team Leader condition)
+
+Verified unchanged in 9A:
+
+- `PushInspectionToSupabase` — **diff NONE**
+- All 4 dispatch-site controllers — **diff NONE**
+- `SupabaseService` — **diff NONE**
+- `routes` / `bootstrap` / `config` / `resources/js` — **diff NONE**
+- FieldSync — untouched, `bbabd4d`
+- Matched remote jobs for local inspections 22, 23, 31, 32, 33, 34, 35, 36, 37 —
+  not resent, not modified
+
+`delivery_status` is deliberately **not** in `SiteInspection::$fillable`.
+Delivery state is writer-controlled, never request-driven; adding it to mass
+assignment before a writer exists would create an unguarded path for a request to
+set delivery state.

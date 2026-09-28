@@ -501,3 +501,67 @@ generator was not modified.
 **Final database snapshot / export package remains DEFERRED** until the remaining
 numbered loops and final acceptance are complete. A local recovery backup is not a
 final team export.
+
+## 15. Loop 9A inspection delivery monitoring schema - 2026-09-28 (ADDITIVE)
+
+This section records an **additive schema change**. Sections 1-14 remain
+authoritative and unchanged, including the 0921 forward-update instructions, the
+`application_sequences` legacy/retained decision, the migration-ledger warning,
+and the explicit `--path` requirement.
+
+**The delivery contract is a new business fact and is separate from the FieldSync
+task lifecycle.** `field_jobs.status` / `site_inspections.status` remain
+`assigned` -> `in_progress` -> `completed` and are not modified.
+
+### 15.1 `site_inspections` current delivery summary (all nullable)
+
+```sql
+delivery_status                  character varying(32) NULL
+last_delivery_attempt_at         timestamp NULL
+delivered_at                     timestamp NULL
+last_delivery_failure_category   character varying(48) NULL
+```
+
+`delivery_status` is `pending_delivery` | `delivered` | `delivery_failed`, or
+NULL. NULL means the delivery state was never established.
+
+Checks: `delivery_status` in vocabulary or NULL; `last_delivery_failure_category`
+in vocabulary or NULL; `delivery_status = 'delivered'` implies `delivered_at IS
+NOT NULL`. The reverse implication is **deliberately not** constrained, so a
+retry never has to erase a historical `delivered_at`.
+
+### 15.2 `inspection_delivery_attempts` (append-only)
+
+`id`, `site_inspection_id`, `attempt_number`, `source`, `outcome`,
+`failure_category`, `safe_message`, `attempted_at`, `completed_at`, `created_at`
+
+- FK `site_inspection_id -> site_inspections(id) ON DELETE CASCADE` — matching the
+  existing operational-history contract (`site_inspection_assignments`), and
+  deliberately different from business decision records
+  (`technical_reviews.reviewed_site_inspection_id` = SET NULL).
+- `UNIQUE (site_inspection_id, attempt_number)` — per-round attempt numbering.
+- `source`: `initial_dispatch` | `automatic_retry` | `planning_officer_retry` | `legacy_reconciliation`
+- `outcome`: `pending` | `delivered` | `failed`
+- `failure_category`: `inspector_mapping_unresolved` | `supabase_unreachable` |
+  `authentication_failure` | `remote_constraint_failure` |
+  `remote_validation_failure` | `configuration_failure` | `unknown`
+- NULL rules both directions: `failed` requires a category; `pending`/`delivered`
+  require it to be NULL, written with explicit `IS NULL` / `IS NOT NULL`.
+
+### 15.3 No backfill, and the preserved exclusions
+
+No existing row received a delivery value. Inspections 3–21 and 24 remain NULL
+permanently (pre-bridge historical records). Inspections 25–30 — the 6 proven
+post-bridge delivery failures — also remain NULL; their reconciliation is a
+separately authorized execution step, not schema creation. No speculative
+backfill, and `failed_jobs` is never treated as business delivery state.
+
+### 15.4 Deployment paths
+
+Existing 0921: `database/sql/2026_09_28_add_inspection_delivery_monitoring.sql`,
+additive and idempotent, applied through the explicit reviewed path. **Global
+`php artisan migrate` must still not be run** (section 12) and the ledger was not
+edited. Fresh database: `2026_09_28_030000_add_inspection_delivery_monitoring.php`
+reproduces the identical contract.
+
+The final database snapshot / export package remains **DEFERRED**.
