@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\SiteInspection;
+use App\Services\InspectionDeliveryRecorder;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -10,6 +11,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class PushInspectionToSupabase implements ShouldQueue
 {
@@ -18,45 +20,78 @@ class PushInspectionToSupabase implements ShouldQueue
     public $inspection;
 
     /**
+     * Optional explicit Loop 9 delivery source.
+     *
+     * NULL means "derive from the queue attempt count". 9C will pass
+     * `planning_officer_retry` here rather than introducing a second bridge
+     * writer. `legacy_reconciliation` is never produced here; it belongs to the
+     * recorded 9A-R data patch.
+     */
+    public ?string $deliverySource;
+
+    /**
      * Create a new job instance.
      */
-    public function __construct(SiteInspection $inspection)
+    public function __construct(SiteInspection $inspection, ?string $deliverySource = null)
     {
         $this->inspection = $inspection;
+        $this->deliverySource = $deliverySource;
     }
 
     /**
      * Execute the job.
      */
-    public function handle(): void
+    public function handle(InspectionDeliveryRecorder $recorder): void
     {
-        // 1. Eager load the required relationships
-        $this->inspection->load(['zoningApplication', 'zoningApplication.parcels' => function($query) {
-            $query->where('id', $this->inspection->parcel_id);
-        }]);
-
-        $application = $this->inspection->zoningApplication;
-        $parcel = $application->parcels->first();
-
-        // 2. Setup Supabase API Config
-        // Fallback to env() directly if config() is cached incorrectly
-        $supabaseUrl = config('services.supabase.url') ?? env('SUPABASE_URL');
-        $supabaseKey = config('services.supabase.key') ?? env('SUPABASE_SERVICE_KEY');
-
-        // Fail loudly if keys are missing so the worker logs a helpful error
-        if (empty($supabaseUrl) || empty($supabaseKey)) {
-            throw new \Exception("Supabase credentials are missing. Check your .env file and run 'php artisan config:clear'.");
+        // ---------------------------------------------------------------
+        // Loop 9B: open the delivery attempt BEFORE anything else, so a
+        // configuration failure is recorded through the same lifecycle as a
+        // remote failure. Previously the credential guard threw above the
+        // try block and escaped both logging and any classification.
+        // ---------------------------------------------------------------
+        $attempt = null;
+        try {
+            $attempt = $recorder->beginAttempt($this->inspection, $this->deliverySource, $this->attempts());
+        } catch (Throwable $e) {
+            // Observability must never break delivery. A failed attempt record
+            // is strictly better than a lost FieldSync task.
+            Log::warning('Delivery attempt could not be opened; continuing without it.', [
+                'site_inspection_id' => $this->inspection->getKey(),
+            ]);
         }
 
-        // We use 'Prefer: return=representation, resolution=merge-duplicates' to perform an UPSERT
-        $http = Http::withHeaders([
-            'apikey'        => $supabaseKey,
-            'Authorization' => 'Bearer ' . $supabaseKey,
-            'Content-Type'  => 'application/json',
-            'Prefer'        => 'return=representation, resolution=merge-duplicates',
-        ]);
+        // Typed classification captured from a non-2xx response BEFORE the body
+        // is folded into an exception message. Null means "no typed evidence".
+        $typedCategory = null;
 
         try {
+            // 1. Eager load the required relationships
+            $this->inspection->load(['zoningApplication', 'zoningApplication.parcels' => function($query) {
+                $query->where('id', $this->inspection->parcel_id);
+            }]);
+
+            $application = $this->inspection->zoningApplication;
+            $parcel = $application->parcels->first();
+
+            // 2. Setup Supabase API Config
+            // Fallback to env() directly if config() is cached incorrectly
+            $supabaseUrl = config('services.supabase.url') ?? env('SUPABASE_URL');
+            $supabaseKey = config('services.supabase.key') ?? env('SUPABASE_SERVICE_KEY');
+
+            // Fail loudly if keys are missing so the worker logs a helpful
+            // error. This now sits INSIDE the guarded lifecycle (Loop 9B).
+            if (empty($supabaseUrl) || empty($supabaseKey)) {
+                throw new \Exception("Supabase credentials are missing. Check your .env file and run 'php artisan config:clear'.");
+            }
+
+            // We use 'Prefer: return=representation, resolution=merge-duplicates' to perform an UPSERT
+            $http = Http::withHeaders([
+                'apikey'        => $supabaseKey,
+                'Authorization' => 'Bearer ' . $supabaseKey,
+                'Content-Type'  => 'application/json',
+                'Prefer'        => 'return=representation, resolution=merge-duplicates',
+            ]);
+
             // ==========================================
             // 3. Push to supabase_zoning_applications
             // ==========================================
@@ -73,8 +108,14 @@ class PushInspectionToSupabase implements ShouldQueue
                 'purpose'              => $application->purpose,
                 'barangay'             => $application->barangay,
             ]);
-            
-            if (!$appResponse->successful()) throw new \Exception("App Sync Failed: " . $appResponse->body());
+
+            if (!$appResponse->successful()) {
+                // Typed classification is captured from the response BEFORE the
+                // body is folded into an exception message, so the normalized
+                // category never depends on parsing English text.
+                $typedCategory = $recorder->classifyFromResponse($appResponse);
+                throw new \Exception("App Sync Failed: " . $appResponse->body());
+            }
             $supabaseAppId = $appResponse->json()[0]['id'];
 
             // ==========================================
@@ -113,7 +154,10 @@ class PushInspectionToSupabase implements ShouldQueue
                 'geom'                    => $geom,
             ]);
 
-            if (!$parcelResponse->successful()) throw new \Exception("Parcel Sync Failed: " . $parcelResponse->body());
+            if (!$parcelResponse->successful()) {
+                $typedCategory = $recorder->classifyFromResponse($parcelResponse);
+                throw new \Exception("Parcel Sync Failed: " . $parcelResponse->body());
+            }
             $supabaseParcelId = $parcelResponse->json()[0]['id'];
 
             // ==========================================
@@ -127,6 +171,7 @@ class PushInspectionToSupabase implements ShouldQueue
             ]);
 
             if (!$existingJobResponse->successful()) {
+                $typedCategory = $recorder->classifyFromResponse($existingJobResponse);
                 throw new \Exception("Field Job Lookup Failed: " . $existingJobResponse->body());
             }
 
@@ -150,14 +195,81 @@ class PushInspectionToSupabase implements ShouldQueue
 
             $jobResponse = $http->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=local_inspection_id", $jobPayload);
 
-            if (!$jobResponse->successful()) throw new \Exception("Field Job Sync Failed: " . $jobResponse->body());
+            if (!$jobResponse->successful()) {
+                $typedCategory = $recorder->classifyFromResponse($jobResponse);
+                throw new \Exception("Field Job Sync Failed: " . $jobResponse->body());
+            }
 
             Log::info("Successfully pushed Site Inspection {$this->inspection->id} to Supabase.");
 
-        } catch (\Exception $e) {
+            // ---------------------------------------------------------------
+            // Loop 9B: every required remote upsert succeeded, so the round is
+            // delivered. Idempotent, and it never touches task lifecycle state.
+            // ---------------------------------------------------------------
+            if ($attempt !== null) {
+                $recorder->markDelivered($attempt);
+                $recorder->logOutcome($this->inspection->getKey(), 'delivered', 'none');
+            }
+
+        } catch (Throwable $e) {
+            $failure = $typedCategory !== null
+                ? ['category' => $typedCategory, 'message' => InspectionDeliveryRecorder::MESSAGES[$typedCategory]]
+                : $recorder->normalize($e);
+
+            // Record THIS attempt as failed, but do NOT mark the round
+            // terminally: the queue may still retry, and a retryable failure is
+            // not a terminal delivery failure. `failed()` owns that decision.
+            if ($attempt !== null) {
+                $recorder->markAttemptFailed($attempt, $failure);
+            }
+
+            $recorder->logOutcome(
+                $this->inspection->getKey(),
+                'attempt_failed',
+                $failure['category'],
+                $this->inspection->getKey() . ':' . ($attempt?->attempt_number)
+            );
+
             Log::error("Supabase Sync Error: " . $e->getMessage());
-            throw $e; 
+
+            throw $e;
         }
+    }
+
+    /**
+     * Terminal delivery failure.
+     *
+     * Laravel calls this when the queued job is permanently failed. It is the
+     * AUTHORITY for the terminal `delivery_failed` summary; the handle() catch
+     * deliberately does not set it, so the design stays correct if queue tries
+     * are ever increased.
+     *
+     * This method may run against a RECONSTRUCTED command, so it must not rely
+     * on any property mutated inside handle(). The reconciliation derives its
+     * decision purely from durable database state, and it is idempotent.
+     */
+    public function failed(?Throwable $exception): void
+    {
+        $inspection = SiteInspection::query()->find($this->inspection->getKey());
+
+        if ($inspection === null) {
+            return;
+        }
+
+        $recorder = app(InspectionDeliveryRecorder::class);
+
+        $failure = $exception !== null
+            ? $recorder->normalize($exception)
+            : ['category' => 'unknown', 'message' => InspectionDeliveryRecorder::MESSAGES['unknown']];
+
+        $recorder->reconcileTerminalFailure($inspection, $failure);
+
+        $recorder->logOutcome(
+            $inspection->getKey(),
+            'terminal_failure',
+            $failure['category'],
+            $inspection->getKey()
+        );
     }
 
     /**

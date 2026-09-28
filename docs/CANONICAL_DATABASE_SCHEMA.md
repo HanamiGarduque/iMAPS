@@ -613,3 +613,38 @@ matching failure. `created_at` is the real insertion time and is not backdated.
   delivery state is an inspection-round fact, not an application lifecycle fact.
 
 The final database snapshot / export package remains **DEFERRED**.
+
+## 17. Loop 9B delivery writer runtime behaviour - 2026-09-28 (NO SCHEMA CHANGE)
+
+**9B changed no schema.** Sections 1-16 remain authoritative and unchanged,
+including the 0921 forward-update instructions, the `application_sequences`
+legacy/retained decision, the migration-ledger warning, the explicit `--path`
+requirement, and the 9A-R reconciliation state.
+
+- **Schema change:** NO
+- **Forward SQL:** NONE
+- **Fresh migration:** NONE
+- **Supabase schema:** UNCHANGED
+- **FieldSync DB:** UNCHANGED
+- **Migration ledger:** UNCHANGED
+- **Writer instrumentation:** IMPLEMENTED
+- **Historical rows:** untouched (25-30 remain the reconciled failures; 3-21/24
+  and 22, 23, 31-37 remain NULL)
+
+### 17.1 Runtime meaning added to the existing schema
+
+From 9B onward, every prospective execution of the bridge writer produces local
+rows in the tables 9A already created:
+
+1. a `pending` row in `inspection_delivery_attempts` and
+   `delivery_status = 'pending_delivery'` on the round, before any network call;
+2. on full remote success, `outcome = 'delivered'` and `delivery_status = 'delivered'`;
+3. on a bridge failure, `outcome = 'failed'` with a normalized `failure_category`;
+4. on terminal queue failure, `delivery_status = 'delivery_failed'`.
+
+`delivered_at` records the first successful delivery only and is never cleared.
+
+These are **new prospective facts only**. The 9A-R reconstruction and every
+NULL row described in section 16 are unchanged by 9B.
+
+The final database snapshot / export package remains **DEFERRED**.

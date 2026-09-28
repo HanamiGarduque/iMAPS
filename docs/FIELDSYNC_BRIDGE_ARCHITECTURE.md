@@ -3263,3 +3263,148 @@ If an assignment is obsolete, it is left as a recorded historical failed
 delivery — queryable in the database but not yet displayed in any user interface
 — and the business follow-up is recorded separately. No cancellation workflow is
 invented inside Loop 9.
+
+---
+
+# LOOP 9B — DELIVERY WRITER INSTRUMENTATION — IMPLEMENTED 2026-09-28
+
+**Additive observability only.** The established Loops 1-8 remote bridge
+behaviour is unchanged. 9B adds local delivery-state recording around the
+existing writer; it never changes what the writer sends.
+
+## What was added
+
+- `app/Services/InspectionDeliveryRecorder.php` (new) — local delivery-state
+  recording only. It never calls Supabase, never dispatches, and never writes
+  `status`, an inspector, an application, or Planning Officer ownership.
+- `app/Jobs/PushInspectionToSupabase.php` — opens an attempt before the bridge
+  runs, closes it on success or failure, and adds the terminal `failed()` hook.
+
+**No Controller, route, frontend, FieldSync, Supabase, or database artifact
+changed.** No second remote writer was created. No migration or SQL file was
+added: the 9A schema already satisfies every requirement.
+
+## Preserved remote sequence and contract
+
+The bridge operation order is byte-for-byte unchanged:
+
+1. application mirror upsert — `on_conflict=local_application_id`
+2. parcel geometry resolution (`ST_AsText`, else lat/long POINT, else null)
+3. parcel mirror upsert — `on_conflict=local_parcel_id`
+4. existing `field_jobs` status pre-read by `local_inspection_id`
+5. `field_jobs` upsert — `on_conflict=local_inspection_id`, with
+   `status = $existingJob['status'] ?? 'assigned'`
+6. success
+
+`inspector_notes`, photos, photo metadata, reviews, `current_step`, checklist
+progress, GPS fields, and findings remain **absent** from the outgoing payload.
+No compensating remote `DELETE` was introduced, so a partial mirror failure is
+recovered by an idempotent retry rather than by destructive cleanup.
+
+## Configuration guard corrected
+
+The missing-credential guard previously threw **above** the `try` block, so a
+`configuration_failure` escaped both the job's own logging and any
+classification. It now sits inside the guarded lifecycle and is recorded as
+`configuration_failure` with the safe message "iMAPS bridge configuration is
+incomplete."
+
+## Attempt lifecycle
+
+- `handle()` opens one attempt (`outcome = pending`) and sets the summary to
+  `pending_delivery`, in one short local transaction that holds a `FOR UPDATE`
+  lock on the `site_inspections` row. Attempt numbers are allocated under that
+  lock, with the 9A unique constraint as a backstop and bounded retry.
+- The local transaction commits **before** any network call. No PostgreSQL
+  transaction is ever held open across an HTTP request.
+- On full remote success the attempt closes as `delivered` and the summary
+  becomes `delivered`.
+- On a bridge failure the attempt closes as `failed` with a normalized category
+  and safe message, and the exception is rethrown. **`handle()` never sets the
+  terminal summary**, because the queue may still retry.
+
+## Terminal failure
+
+Laravel 12.58.0 currently runs the worker with `--tries=1`, so the first thrown
+execution is immediately terminal (verified in the framework source:
+`attempts() >= maxTries` calls `failJob()` on the first run, and the release
+branch is then skipped because the job has failed). **9B does not hard-code that
+as an invariant.** The new `failed(Throwable)` hook is the authority for
+`delivery_failed`, so the design stays correct if queue tries are ever raised.
+
+`failed()` may run against a **reconstructed** command, so it never depends on a
+property mutated inside `handle()`. It re-reads the inspection and derives its
+decision purely from durable state, using the latest `attempt_number`:
+
+| Latest attempt | Terminal outcome |
+|---|---|
+| `delivered` | summary stays `delivered` |
+| `pending` | summary stays `pending_delivery` (a newer run is live) |
+| `failed` | summary becomes `delivery_failed` |
+
+An older failure therefore cannot overwrite a newer pending or delivered
+execution, and the operation is idempotent.
+
+## `delivered_at` semantics
+
+`delivered_at` records the **first** successful remote delivery. It is written
+only when currently NULL and is never cleared, so a re-push keeps the original
+value while the attempt history records every subsequent successful delivery.
+
+## Failure normalization
+
+Typed evidence is preferred: HTTP status, PostgREST error `code`, and exception
+class. Message matching is used only where the existing writer already throws a
+bare `\Exception` with no status information (configuration and inspector
+mapping, both of which occur before any HTTP call).
+
+Only normalized prose is ever stored. No response body, exception text, URL,
+key, header, handshake key, or signed URL reaches `safe_message`,
+`inspection_delivery_attempts`, or `site_inspections`. Server logs retain
+technical context and carry only the inspection id, event, normalized category,
+and a reference identifier.
+
+## Attempt source
+
+The job takes an **optional** second constructor argument, so the five existing
+dispatch sites stay byte-identical and backward compatible.
+
+- no explicit source and `attempts() <= 1` -> `initial_dispatch`
+- no explicit source and `attempts() > 1` -> `automatic_retry`
+- explicit source (9C will pass `planning_officer_retry`) -> that value
+
+**`initial_dispatch` means "the first queue execution of that dispatched bridge
+job." It does NOT claim the application or inspection is new** — the
+reassignment controller dispatches this same job for an existing round, and that
+is intentional. `legacy_reconciliation` is never produced by the writer; it
+belongs only to the recorded 9A-R data patch.
+
+## Preserved failure models
+
+- **Remote success, local close failure.** The remote `field_jobs` row may exist
+  while the local summary still reads `pending_delivery`. There is no
+  distributed transaction and none is invented. Recovery is the idempotent
+  writer: a later exact delivery converges the summary, and 9D will be able to
+  surface stale pending rows.
+- **Partial mirror failure.** Successful mirrors are deliberately left in place;
+  the idempotent retry converges on the same conflict keys.
+
+## Verification
+
+- `Loop9bDeliveryWriterContractTest` — 36 tests / 150 assertions
+- Full Unit suite — 338 tests / 1761 assertions
+- 15 rollback-only PostgreSQL probes covering allocation sequence, duplicate
+  rejection, cross-inspection numbering, the parent row lock, delivered/failed
+  close idempotency, and newer-pending / newer-delivered protection
+- Live baseline unchanged: 35 inspections, 6 `delivery_failed`, 29 `NULL`,
+  6 `legacy_reconciliation` attempts, 12 `failed_jobs`
+
+**Live writer E2E: DEFERRED TO AN AUTHORIZED FIXTURE / 9G.** No production data
+was manufactured to make the report green.
+
+## Current phase
+
+Loop 9A PUSHED · Loop 9A-R PUSHED · **Loop 9B IMPLEMENTED, AWAITING REVIEW** ·
+9C NOT started. 9C and 9D will require a fresh overlap review because upstream
+`4ec435f` already modified `ApplicationController`, `TechnicalReviewController`,
+`SiteInspectionController`, `routes/web.php`, and related UI.
