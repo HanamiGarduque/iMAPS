@@ -648,3 +648,64 @@ These are **new prospective facts only**. The 9A-R reconstruction and every
 NULL row described in section 16 are unchanged by 9B.
 
 The final database snapshot / export package remains **DEFERRED**.
+
+## 18. Loop 9B safety revision: queue-dispatch correlation - 2026-09-28 (ADDITIVE)
+
+**One nullable column was added. No business row was changed.** Sections 1-17
+remain authoritative, including the 0921 forward-update instructions, the
+migration-ledger warning, the explicit `--path` requirement, the 9A schema, and
+the 9A-R reconciliation state.
+
+### 18.1 New column
+
+```sql
+inspection_delivery_attempts.queue_job_uuid  uuid NULL
+```
+
+The stable Laravel queue payload UUID of the queued `PushInspectionToSupabase`
+dispatch that produced the attempt.
+
+- one separately dispatched job → one uuid
+- automatic retries of that job → the **same** uuid, new `attempt_number`
+- separately dispatched jobs → different uuids
+- **not unique** — the retries of one dispatch legitimately share it
+- no default
+
+Native `uuid` type is used rather than a length-guessed `varchar`, because
+Laravel generates the value with `Str::uuid()` and every observed value is a
+canonical UUID.
+
+### 18.2 New index
+
+```sql
+CREATE INDEX inspection_delivery_attempts_queue_correlation_index
+    ON inspection_delivery_attempts (site_inspection_id, queue_job_uuid, attempt_number DESC)
+    WHERE queue_job_uuid IS NOT NULL;
+```
+
+Serves the terminal-correlation lookup ("latest attempt for this round AND this
+dispatch"). Partial, so it stays small while every historical row is NULL.
+
+### 18.3 Historical rows
+
+The six `legacy_reconciliation` attempts keep `queue_job_uuid = NULL`. No value
+was backfilled from `failed_jobs`: those rows reconstruct pre-instrumentation
+failures, and deriving a queue linkage now would invent business history.
+
+### 18.4 Why no CHECK
+
+A NULL can only come from legacy reconciliation or from a synchronous execution
+that has no queue job. A synchronous execution can never invoke `failed()`,
+because that hook is only called by the queue handler, so an uncorrelated
+prospective row can never terminalize a summary. A `NOT NULL` constraint would
+add fragility without adding safety.
+
+### 18.5 Deployment paths
+
+Existing 0921: `database/sql/2026_09_28_add_delivery_attempt_queue_correlation.sql`,
+additive and idempotent, applied through the explicit reviewed path. Global
+`php artisan migrate` was **not** run and the ledger was not edited. Fresh
+database: `2026_09_28_040000_add_delivery_attempt_queue_correlation.php` reproduces
+the identical column, type, nullability and index.
+
+The final database snapshot / export package remains **DEFERRED**.

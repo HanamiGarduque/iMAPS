@@ -577,3 +577,26 @@ Record all 14 fields used above. Never include secrets.
 18. **Rollback:** revert the two production files and the test; no data reversal is required because 9B only creates prospective rows, and `down()`-style cleanup is not needed for correctness.
 19. **Status:** **LOOP 9B IMPLEMENTED — awaiting review.** 9C NOT started.
 20. **Notes / risks:** upstream `4ec435f` already modified `ApplicationController`, `TechnicalReviewController`, `SiteInspectionController`, `routes/web.php` and related UI. 9B has zero overlap, but 9C and 9D will require a fresh overlap review and explicit Controller approval.
+
+### 2026-09-28 - Loop 9B safety revision: queue-dispatch correlation - ADDITIVE SCHEMA
+
+1. **DATE:** 2026-09-28
+2. **TYPE:** ADDITIVE LOOP 9B SAFETY SCHEMA REVISION
+3. **Reason:** queue terminal-correlation safety. The 9B review found before push that a terminal queued command could not be correlated with its own durable attempt rows, which is ambiguous under future retries and overlapping dispatches.
+4. **Existing 0921:** **APPLIED** through the established explicit reviewed path. `php artisan migrate` was **NOT** run and the `migrations` ledger was **NOT** edited.
+5. **Forward SQL:** `database/sql/2026_09_28_add_delivery_attempt_queue_correlation.sql`
+6. **Fresh-install migration:** `database/migrations/2026_09_28_040000_add_delivery_attempt_queue_correlation.php`
+7. **Schema added:** exactly one nullable column plus one index.
+   - `inspection_delivery_attempts.queue_job_uuid uuid NULL` — the stable Laravel queue payload UUID of the dispatch that produced the attempt. **Not unique**: retries of one dispatch share it. No default.
+   - `inspection_delivery_attempts_queue_correlation_index` — partial `(site_inspection_id, queue_job_uuid, attempt_number DESC) WHERE queue_job_uuid IS NOT NULL`, serving the correlated terminal lookup.
+   - **No CHECK** was added; see point 9.
+8. **Type evidence:** `uuid`, not `varchar(36)`. Laravel 12.58.0 `Queue::createObjectPayload()` sets `'uuid' => (string) Str::uuid()`; `Job::uuid()` is a concrete accessor inherited by the database driver; `DatabaseJob::release()` re-inserts the same payload so the value is stable across automatic retries. All 12 live `failed_jobs` payload uuids are canonical, single-length, and cast cleanly to the PostgreSQL uuid type.
+9. **No CHECK on prospective sources, deliberately.** A NULL can only come from legacy reconciliation or a synchronous execution with no queue job, and a synchronous execution can never reach `failed()`, so it can never terminalize a summary. A NOT NULL would add fragility for no safety gain and would weaken production correctness to suit a test path.
+10. **Rows affected:** **0 business rows rewritten.** No `UPDATE`, no `DELETE`, no `INSERT`, no `DROP`, no `TRUNCATE`, no uuid backfill, no `delivery_status` change, no attempt-history rewrite.
+11. **Historical attempt rows:** the 6 `legacy_reconciliation` attempts remain `queue_job_uuid = NULL`. No uuid was derived from `failed_jobs`; 9A-R deliberately stored no queue correlation and backfilling now would fabricate business history.
+12. **Before:** 35 inspections / 6 `delivery_failed` / 29 NULL / 6 attempts / 6 `legacy_reconciliation` / 12 `failed_jobs`; column absent.
+13. **After:** 35 inspections / 6 `delivery_failed` / 29 NULL / 6 attempts / 6 `legacy_reconciliation` / 12 `failed_jobs`; column present; 0 correlated, 6 NULL.
+14. **Supabase:** **UNCHANGED**. **FieldSync:** **UNCHANGED**. **Controllers / routes / frontend / bridge writer:** **UNCHANGED** relative to `8c9cf03`.
+15. **Validation:** `Loop9bQueueCorrelationSchemaContractTest` 20 tests / 47 assertions PASS; full Unit suite 358 tests / 1808 assertions PASS; `php -l` clean; `git diff --check` clean. Rollback-only PostgreSQL probes confirm the correlated rule returns `stays pending_delivery` for Scenario E where the globally-latest-only rule wrongly returned `delivery_failed`, and that retries may share one uuid while separate dispatches keep distinct uuids.
+16. **Live = SQL = migration = docs parity:** column type, nullability, absence of default, index name, index columns and partial predicate all verified identical across the live catalog and both artifacts.
+17. **Status:** **SCHEMA PRECONDITION COMPLETE.** The writer correction that consumes this column is a separate task. `8c9cf03` remains unpushed.

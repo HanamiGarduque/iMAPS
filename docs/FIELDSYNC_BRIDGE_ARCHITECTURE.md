@@ -3408,3 +3408,92 @@ Loop 9A PUSHED · Loop 9A-R PUSHED · **Loop 9B IMPLEMENTED, AWAITING REVIEW** �
 9C NOT started. 9C and 9D will require a fresh overlap review because upstream
 `4ec435f` already modified `ApplicationController`, `TechnicalReviewController`,
 `SiteInspectionController`, `routes/web.php`, and related UI.
+
+---
+
+# LOOP 9B SAFETY REVISION — QUEUE-DISPATCH CORRELATION — APPLIED 2026-09-28
+
+## Why this exists
+
+The 9B implementation review ran **before push** and found a real
+future-retry concurrency defect. `failed(Throwable)` had no durable way to tell
+*which* queued dispatch it was being called for. It could only read "the globally
+latest attempt", which is ambiguous the moment a newer dispatch from a different
+job has also failed but is still retryable.
+
+**Scenario E:** Job A's dispatch (attempt 1) fails and becomes terminal. Before
+Job A's `failed()` finalizes, Job B — a separate dispatch — has created attempt 2,
+which has failed once but is still retryable. The globally-latest attempt is
+`failed`, so the old rule terminalizes the summary to `delivery_failed` while Job B
+can still succeed. Proved against real PostgreSQL: the old rule returns
+`becomes delivery_failed`; the correlated rule returns `stays pending_delivery`.
+
+- **Current worker (`--tries=1`): safe today.** Every job creates exactly one
+  attempt and is terminal on its first throw, so each failed attempt *is* its own
+  job's terminal attempt.
+- **Future `--tries > 1`: unsafe without correlation.** The 9B contract required
+  correctness if retries are ever raised, so the defect is fixed now rather than
+  masked by today's configuration.
+
+## Root cause
+
+The terminal queue callback lacked durable queue-dispatch correlation. Laravel
+12.58.0 *does* provide a stable identifier — `Queue::createObjectPayload()` sets
+`'uuid' => (string) Str::uuid()`, `DatabaseJob::release()` re-inserts the same
+payload so the uuid survives automatic retries, and `CallQueuedHandler::failed()`
+calls `setJobInstanceIfNecessary()` which attaches the job so `Job::uuid()` is
+readable in `failed()`. There was simply nowhere durable to record it.
+
+## Schema correction
+
+One nullable column, `inspection_delivery_attempts.queue_job_uuid`, typed as
+native PostgreSQL **`uuid`** — not a length-guessed `varchar(36)`. All twelve live
+`failed_jobs` payload uuids are canonical, single-length, and cast cleanly, and
+`Str::uuid()` guarantees the form.
+
+Semantics:
+
+- one separately dispatched job → one uuid
+- automatic retries of that job → the **same** uuid, with a new `attempt_number`
+- separately dispatched jobs → different uuids
+
+It is deliberately **not unique**, because the retries of one dispatch legitimately
+share it. A partial index `(site_inspection_id, queue_job_uuid, attempt_number DESC)
+WHERE queue_job_uuid IS NOT NULL` serves the correlated lookup and stays tiny
+because every historical row is NULL.
+
+The six `legacy_reconciliation` attempts stay **NULL**. No uuid was derived from
+`failed_jobs`: 9A-R deliberately recorded no queue correlation, and inventing the
+linkage afterwards would fabricate business history.
+
+No CHECK forces a uuid on prospective sources. A NULL can only arise from legacy
+reconciliation or a synchronous execution that has no queue job — and a
+synchronous execution can never reach `failed()`, so it can never terminalize a
+summary. A hard NOT NULL would add fragility for no safety gain.
+
+## The required terminal invariant (recorded, not yet implemented)
+
+**Correlation alone is NOT sufficient.** `failed()` must do all of this:
+
+1. find the latest attempt for `site_inspection_id = I` **and**
+   `queue_job_uuid = Q` — call it `terminal_dispatch_attempt`;
+2. lock the parent `site_inspections` row;
+3. find the **global** latest attempt for inspection `I`;
+4. set the summary to `delivery_failed` only when *all* hold:
+   - `terminal_dispatch_attempt` exists,
+   - its `outcome = failed`,
+   - the global latest attempt belongs to `Q`,
+   - no newer delivery execution has superseded it.
+
+If the global latest belongs to another dispatch, the summary is **not** changed.
+Attempt history stays append-only; the current summary always represents the
+newest delivery execution.
+
+## State
+
+- Writer commit `8c9cf03` remains **unpushed and blocked** pending the writer
+  correction that consumes this column.
+- This revision changed **no** business row, **no** Controller, **no** route,
+  **no** Supabase state, and **no** FieldSync state.
+- Next: **Loop 9B writer correlation correction** — persist the real queue uuid at
+  `beginAttempt`, reuse it on automatic retries, and apply the invariant above.

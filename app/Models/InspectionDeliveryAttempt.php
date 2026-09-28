@@ -71,6 +71,13 @@ class InspectionDeliveryAttempt extends Model
     /** Unclassifiable failure. Never a raw exception message. */
     public const FAILURE_UNKNOWN = 'unknown';
 
+    /**
+     * Mass-assignable columns.
+     *
+     * `queue_job_uuid` is deliberately ABSENT. It is recorder-controlled queue
+     * correlation, never request-driven, so it is written explicitly by the
+     * delivery recorder and must not be reachable from mass assignment.
+     */
     protected $fillable = [
         'site_inspection_id',
         'attempt_number',
@@ -81,6 +88,13 @@ class InspectionDeliveryAttempt extends Model
         'attempted_at',
         'completed_at',
     ];
+
+    /**
+     * Stable Laravel queue payload UUID of the dispatch that produced this
+     * attempt. Retries of one dispatch share it; NULL for legacy reconciliation
+     * or a synchronous execution with no queue job.
+     */
+    public const CORRELATION_COLUMN = 'queue_job_uuid';
 
     protected $casts = [
         'attempt_number' => 'integer',
