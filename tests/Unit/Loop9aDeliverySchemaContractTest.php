@@ -470,13 +470,30 @@ class Loop9aDeliverySchemaContractTest extends TestCase
     // Bridge stability: 9A must not touch delivery execution.
     // ------------------------------------------------------------------
 
-    public function test_bridge_writer_is_untouched_by_9a(): void
+    /**
+     * The 9A invariant is that delivery state stays LOCAL: it must never become
+     * a FieldSync field. Loop 9B later instrumented the writer to record local
+     * attempts, so the writer now legitimately names the model. What must
+     * remain true is that no delivery field is ever written to the remote
+     * payload, and that the remote call sequence is untouched.
+     */
+    public function test_bridge_writer_never_ships_local_delivery_state_to_fieldsync(): void
     {
         $job = (string) file_get_contents(base_path('app/Jobs/PushInspectionToSupabase.php'));
 
-        $this->assertStringNotContainsString('delivery_status', $job);
-        $this->assertStringNotContainsString('deliveryAttempts', $job);
-        $this->assertStringNotContainsString('InspectionDeliveryAttempt', $job);
+        foreach ([
+            'delivery_status',
+            'deliveryAttempts',
+            'delivery_attempt_number',
+            'delivery_failure',
+            'last_delivery',
+        ] as $fieldSyncField) {
+            $this->assertStringNotContainsString(
+                "'{$fieldSyncField}'",
+                $job,
+                "Local delivery state '{$fieldSyncField}' must never be pushed to FieldSync."
+            );
+        }
     }
 
     public function test_no_delivery_controller_or_ui_was_introduced(): void

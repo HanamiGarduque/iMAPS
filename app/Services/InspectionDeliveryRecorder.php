@@ -78,13 +78,36 @@ class InspectionDeliveryRecorder
      * still correct without observability, and losing an attempt record is
      * strictly better than losing a task.
      */
-    public function beginAttempt(SiteInspection $inspection, ?string $explicitSource = null, int $queueAttempts = 1): ?InspectionDeliveryAttempt
-    {
+    /**
+     * Open a delivery attempt and mark the round as awaiting delivery.
+     *
+     * $queueJobUuid is the REAL Laravel queue payload UUID of the dispatch that
+     * is executing right now, obtained from the queue job itself. It is stored
+     * verbatim: automatic retries of one dispatch reuse the same UUID and each
+     * create a new attempt_number, while a separately dispatched job (including
+     * a future Planning Officer technical retry) gets its own.
+     *
+     * A synchronous or direct invocation has no queue job, so the value is
+     * NULL. That is safe: such an execution can never reach the queue's
+     * failed() hook, so it can never terminalize a summary.
+     *
+     * Returns null only when the attempt cannot be allocated after bounded
+     * retries. A null return must never abort the bridge: the remote delivery is
+     * still correct without observability, and losing an attempt record is
+     * strictly better than losing a task.
+     */
+    public function beginAttempt(
+        SiteInspection $inspection,
+        ?string $explicitSource = null,
+        int $queueAttempts = 1,
+        ?string $queueJobUuid = null
+    ): ?InspectionDeliveryAttempt {
         $source = $this->resolveSource($explicitSource, $queueAttempts);
+        $correlation = $this->normalizeCorrelation($queueJobUuid);
 
         for ($try = 1; $try <= self::ALLOCATION_RETRIES; $try++) {
             try {
-                return DB::transaction(function () use ($inspection, $source) {
+                return DB::transaction(function () use ($inspection, $source, $correlation) {
                     // Serialize allocation for this exact round. Concurrent or
                     // duplicated dispatches queue behind this lock.
                     $parent = SiteInspection::query()
@@ -112,6 +135,12 @@ class InspectionDeliveryRecorder
                         'attempted_at' => $attemptedAt,
                         'completed_at' => null,
                     ]);
+
+                    // Recorder-controlled correlation. Written explicitly and
+                    // never mass-assigned, so it cannot come from a request.
+                    $attempt->forceFill([
+                        InspectionDeliveryAttempt::CORRELATION_COLUMN => $correlation,
+                    ])->save();
 
                     // Current summary. delivered_at is deliberately NOT cleared:
                     // it is the first successful delivery and survives a re-push.
@@ -200,22 +229,45 @@ class InspectionDeliveryRecorder
     }
 
     /**
-     * Reconcile the CURRENT summary after Laravel declared the job terminal.
+     * Reconcile the CURRENT summary after Laravel declared a queued job terminal.
+     *
+     * TWO independent conditions are required. Correlation alone is NOT enough.
+     *
+     *  1. CORRELATION - the callback must find its OWN dispatch's latest attempt
+     *     (site_inspection_id + queue_job_uuid), and that attempt must have
+     *     failed. A queued callback with no usable correlation uuid is refused
+     *     outright rather than falling back to the globally latest attempt: that
+     *     fallback is exactly the race this schema revision exists to prevent.
+     *
+     *  2. OWNERSHIP OF CURRENT STATE - that correlated attempt must ALSO be the
+     *     globally latest attempt for the round. If a newer dispatch exists, it
+     *     is the current delivery execution, whether it is pending, delivered,
+     *     or a newer dispatch that is still retryable, and this older terminal
+     *     callback must not overwrite it.
      *
      * The decision is derived only from durable state, never from a property
      * mutated inside handle(), because failed() may run against a reconstructed
-     * command. Latest attempt wins:
-     *
-     *   latest delivered  -> summary stays delivered
-     *   latest pending    -> summary stays pending_delivery (a newer run is live)
-     *   latest failed     -> summary becomes delivery_failed
-     *
-     * An older failure can therefore never overwrite a newer pending or
-     * delivered execution. Idempotent: a second call is a no-op.
+     * command. Idempotent: a second call re-evaluates the same durable facts and
+     * therefore changes nothing.
      */
-    public function reconcileTerminalFailure(SiteInspection $inspection, array $failure): void
+    public function reconcileTerminalFailure(SiteInspection $inspection, ?string $queueJobUuid, array $failure): void
     {
-        DB::transaction(function () use ($inspection, $failure) {
+        $correlation = $this->normalizeCorrelation($queueJobUuid);
+
+        if ($correlation === null) {
+            // A queued terminal callback must always carry its dispatch uuid.
+            // Refusing here is deliberate: never guess from global state.
+            $this->logOutcome(
+                $inspection->getKey(),
+                'terminal_failure_uncorrelated',
+                $failure['category'],
+                null
+            );
+
+            return;
+        }
+
+        DB::transaction(function () use ($inspection, $correlation, $failure) {
             $parent = SiteInspection::query()
                 ->whereKey($inspection->getKey())
                 ->lockForUpdate()
@@ -225,35 +277,69 @@ class InspectionDeliveryRecorder
                 return;
             }
 
-            $latest = InspectionDeliveryAttempt::query()
+            // A. This dispatch's own latest attempt.
+            $correlatedLatest = InspectionDeliveryAttempt::query()
                 ->where('site_inspection_id', $parent->getKey())
+                ->where(InspectionDeliveryAttempt::CORRELATION_COLUMN, $correlation)
                 ->orderByDesc('attempt_number')
                 ->first();
 
-            // No attempt history yet: fall back to recording the terminal state
-            // directly so the failure is never lost.
-            if ($latest === null) {
-                $parent->forceFill([
-                    'delivery_status' => 'delivery_failed',
-                    'last_delivery_attempt_at' => now(),
-                    'last_delivery_failure_category' => $failure['category'],
-                ])->save();
+            // No attempt for this dispatch: nothing of ours to terminalize.
+            if ($correlatedLatest === null) {
+                $this->logOutcome($parent->getKey(), 'terminal_no_correlated_attempt', $failure['category'], $correlation);
 
                 return;
             }
 
-            if ($latest->outcome === InspectionDeliveryAttempt::OUTCOME_DELIVERED
-                || $latest->outcome === InspectionDeliveryAttempt::OUTCOME_PENDING) {
-                // A newer execution succeeded or is still in flight. Respect it.
+            // B. Our own latest attempt must actually have failed.
+            if ($correlatedLatest->outcome !== InspectionDeliveryAttempt::OUTCOME_FAILED) {
+                $this->logOutcome($parent->getKey(), 'terminal_not_a_failed_attempt', $failure['category'], $correlation);
+
+                return;
+            }
+
+            // C. The globally latest attempt for the round.
+            $globalLatest = InspectionDeliveryAttempt::query()
+                ->where('site_inspection_id', $parent->getKey())
+                ->orderByDesc('attempt_number')
+                ->first();
+
+            // D. A newer dispatch owns the current delivery execution. This is
+            //    the guard that makes Scenario E safe: Job B's attempt is newer
+            //    and still retryable, so Job A must not terminalize.
+            if ($globalLatest === null || $globalLatest->getKey() !== $correlatedLatest->getKey()) {
+                $this->logOutcome($parent->getKey(), 'terminal_superseded_by_newer_dispatch', $failure['category'], $correlation);
+
                 return;
             }
 
             $parent->forceFill([
                 'delivery_status' => 'delivery_failed',
-                'last_delivery_attempt_at' => $latest->attempted_at,
-                'last_delivery_failure_category' => $failure['category'],
+                'last_delivery_attempt_at' => $correlatedLatest->attempted_at,
+                // The category is taken from OUR OWN attempt row so the summary
+                // always matches the attempt that produced it.
+                'last_delivery_failure_category' => $correlatedLatest->failure_category ?? $failure['category'],
             ])->save();
         });
+    }
+
+    /**
+     * Accept only a canonical queue uuid. Anything unexpected is treated as
+     * "no correlation" rather than being coerced into the column.
+     */
+    private function normalizeCorrelation(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        if (preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $trimmed) !== 1) {
+            return null;
+        }
+
+        return strtolower($trimmed);
     }
 
     /**

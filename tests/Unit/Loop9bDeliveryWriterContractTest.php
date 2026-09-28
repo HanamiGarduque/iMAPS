@@ -286,15 +286,27 @@ class Loop9bDeliveryWriterContractTest extends TestCase
     public function test_terminal_failure_never_depends_on_a_handle_mutated_property(): void
     {
         $src = $this->recorderSource();
-        $body = (string) preg_replace('/(?s).*public function reconcileTerminalFailure.*?\n    \}/', '', $src);
 
-        // The reconciliation takes only the inspection and the normalized
-        // failure; it must not read a transient in-memory attempt.
+        // Loop 9B correlation correction: the reconciliation additionally takes
+        // the durable queue uuid. It must still never read a transient in-memory
+        // attempt, because failed() may run against a reconstructed command.
         $this->assertStringContainsString(
-            'public function reconcileTerminalFailure(SiteInspection $inspection, array $failure)',
-            $src
+            'public function reconcileTerminalFailure(SiteInspection $inspection, ?string $queueJobUuid, array $failure)',
+            $this->statements($src)
         );
-        $this->assertStringNotContainsString('$this->attempt', $body);
+        // The transient attempt parameter is forbidden on the reconciliation
+        // itself. (markAttemptFailed legitimately takes one: it is called from
+        // inside handle(), where the in-memory attempt genuinely is the one
+        // that just failed.)
+        preg_match(
+            '/public function reconcileTerminalFailure.*?\n    \}\n/s',
+            $src,
+            $m
+        );
+        $this->assertNotEmpty($m, 'reconcileTerminalFailure() could not be isolated.');
+
+        $this->assertStringNotContainsString('$this->attempt', $m[0]);
+        $this->assertStringNotContainsString('InspectionDeliveryAttempt $', $m[0]);
     }
 
     public function test_delivered_at_is_only_written_when_null(): void

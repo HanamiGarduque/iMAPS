@@ -39,15 +39,15 @@ Every material assertion should use one of these classifications when its status
 
 # CURRENT ACTIVE LOOP
 
-**LOOP 9 — Delivery Monitoring + Admin Diagnostics — AUDIT NEXT**
+**LOOP 9 — Delivery Monitoring + Admin Diagnostics — 9B CORRECTION IMPLEMENTED, UNPUSHED**
 
 > **Supersedes the previous `LOOP 3 — Assigning Planning Officer — IN PROGRESS` entry, which correctly described the state at the time it was written. Loop 3 is closed; see Loop status reconciliation below. That historical text is retained further down in this document and is not falsified here.**
+>
+> **Status history:** this entry previously read `AUDIT NEXT`, which correctly described the state when the Loop 9 audit and the D1–D20 contract decision had just been recorded. The audit has since **PASSED** and the contract was decided. Progress: **9A** schema (pushed) → **9A-R** legacy reconciliation (pushed) → **9B** delivery writer instrumentation plus its queue-correlation safety revision and writer correlation correction (**implemented, unpushed**). Delivery state is still **not** user-visible; 9C/9D have not started. Do not skip ahead to Loop 10.
 
-Loop 9 has **NOT** been implemented. Its status is **AUDIT NEXT**.
+Loop 9 is **partially** implemented. Phases 9A, 9A-R and 9B are implemented; 9C, 9D, 9E/9F and 9G have not started.
 
-Implementation may start only after the Loop 9 audit and the explicit Loop 9 contract decision. Do not begin Loop 9 implementation from this checkpoint, and do not skip ahead to Loop 10.
-
-Loop 9 initial scope is recorded verbatim in **CANONICAL ISSUE ORDER → LOOP 9** below. It is planning scope only at this time.
+Loop 9 initial scope is recorded verbatim in **CANONICAL ISSUE ORDER → LOOP 9** below. It is planning scope only for the phases that have not started.
 
 ## Superseded historical entry — LOOP 3 "Assigning Planning Officer — IN PROGRESS"
 
@@ -86,7 +86,7 @@ This is the authoritative active-status summary. Where an older entry states a d
 | Loop 6 | **IMPLEMENTED** | Site Inspector iMAPS access control implemented. Remaining credential/environment cases remain **approved deferrals** where already documented. |
 | Loop 7 | **CLOSED within the approved boundary** | Photo / storage / authorization implementation closed. Real on-site 30 m device/photo completion and remote DELETE remain **deferred**. |
 | Loop 8 | **IMPLEMENTED AND PUSHED** | Planning Review Metadata implemented and pushed. The read-only, round-safe metadata contract is closed. |
-| Loop 9 | **AUDIT NEXT** | Current active loop. Not implemented. |
+| Loop 9 | **9B CORRECTION IMPLEMENTED, UNPUSHED** | Current active loop. Audit PASSED, D1–D20 decided. 9A + 9A-R pushed; 9B writer + queue-correlation schema + writer correlation correction implemented and unpushed. 9C–9G not started. |
 
 Historical sub-loop evidence (Loop 1A/1B/1C/1D/1D-R series, Loop 7B/7C/7D/7F/7G) is **not erased** by this table.
 
@@ -3471,7 +3471,7 @@ reconciliation or a synchronous execution that has no queue job — and a
 synchronous execution can never reach `failed()`, so it can never terminalize a
 summary. A hard NOT NULL would add fragility for no safety gain.
 
-## The required terminal invariant (recorded, not yet implemented)
+## The required terminal invariant
 
 **Correlation alone is NOT sufficient.** `failed()` must do all of this:
 
@@ -3491,9 +3491,144 @@ newest delivery execution.
 
 ## State
 
-- Writer commit `8c9cf03` remains **unpushed and blocked** pending the writer
-  correction that consumes this column.
+- Writer commit `8c9cf03` remains **unpushed**; at the time this revision was
+  authored it was **blocked** pending the writer correction that consumes this
+  column. That correction is now applied — see the next section.
 - This revision changed **no** business row, **no** Controller, **no** route,
   **no** Supabase state, and **no** FieldSync state.
-- Next: **Loop 9B writer correlation correction** — persist the real queue uuid at
-  `beginAttempt`, reuse it on automatic retries, and apply the invariant above.
+
+---
+
+# LOOP 9B WRITER CORRELATION CORRECTION — IMPLEMENTED 2026-09-28
+
+This is the bounded pre-push correction that makes the terminal hook safe under
+future queue retries. **It adds no schema.** Every DB change it needs was already
+recorded in the `queue_job_uuid` revision above; this correction only *consumes*
+that column. `database/sql/` and `database/migrations/` were not touched.
+
+## Where the uuid comes from
+
+`$this->job?->uuid()` — the actual Laravel queue payload uuid of the dispatch
+executing right now. Laravel 12.58.0 provides it concretely on
+`Illuminate\Queue\Jobs\Job::uuid()` (`return $this->payload()['uuid'] ?? null;`),
+inherited by `DatabaseJob`, which is this project's driver. The same accessor is
+read in `failed()`, where
+`CallQueuedHandler::failed()` → `setJobInstanceIfNecessary()` has already attached
+the job to the reconstructed command.
+
+No uuid is ever minted. The writer does **not** call `Str::uuid()` for an
+already-queued execution, and it does not use the inspection id, the attempt id,
+or any other surrogate as correlation.
+
+## What is persisted
+
+`InspectionDeliveryRecorder::beginAttempt()` takes the runtime uuid and writes it
+to `queue_job_uuid` **explicitly via `forceFill()`**, then `save()`s. The column is
+deliberately absent from the model's `$fillable`, so correlation can never arrive
+from a request. The value is normalized: a non-canonical string is treated as *no
+correlation* rather than coerced into a native `uuid` column.
+
+- Automatic retries of one dispatch: **same** `queue_job_uuid`, new
+  `attempt_number`, `source = automatic_retry`.
+- A separately dispatched job: a **new** `queue_job_uuid`.
+- A future 9C Planning Officer technical retry: a new dispatch, therefore a new
+  uuid, `source = planning_officer_retry`. The 9C route is **not** implemented
+  here.
+- A synchronous or direct invocation: `$this->job === null`, so
+  `queue_job_uuid = NULL`. This is safe because such an execution can never reach
+  the queue's `failed()` hook.
+
+Source resolution is unchanged: an explicit source wins; otherwise `attempts <= 1`
+is `initial_dispatch` and `attempts > 1` is `automatic_retry`.
+
+## The implemented terminal algorithm
+
+`reconcileTerminalFailure(SiteInspection $inspection, ?string $queueJobUuid, array $failure)`:
+
+0. If the uuid is NULL the call is **refused before any lookup** and a safe
+   server-side warning is logged. The summary is left unchanged. This is the
+   point of the whole correction: an uncorrelated terminal callback may never
+   guess from global state. There is **no** globally-latest fallback for a queued
+   callback. The refusal deliberately precedes the first query, and a contract
+   test asserts that ordering.
+1. Begin a short transaction and lock the parent `site_inspections` row.
+2. **A. Correlated latest** — the latest attempt for `site_inspection_id = I`
+   **and** `queue_job_uuid = Q`. If none: stop, summary unchanged.
+3. **B. Correlated outcome** — that attempt's `outcome` must be `failed`. If it is
+   `pending` or `delivered`, stop, summary unchanged.
+4. **C. Global latest** — the latest attempt for `I` regardless of uuid.
+5. **D. Ownership of current state** — set `delivery_status = delivery_failed`
+   **only if** the global latest attempt is that same correlated row. Otherwise a
+   newer delivery execution owns current state and nothing is written.
+
+On the terminal write: `last_delivery_attempt_at` and
+`last_delivery_failure_category` are taken from the **correlated attempt row**, so
+the summary can never disagree with the attempt that produced it.
+`delivered_at` is not touched — first success is never cleared or overwritten.
+
+Idempotent by construction: the decision is recomputed from durable facts, with
+no increment, no create, and no delete. A second call reaches the same
+conclusion.
+
+## Scenario outcomes
+
+| Scenario | Shape | Result |
+| --- | --- | --- |
+| A | one dispatch, one failed attempt | `delivery_failed` |
+| B / D | older terminal, newer dispatch `pending` | stays `pending_delivery` |
+| C | older terminal, newer dispatch `delivered` | stays `delivered`, `delivered_at` preserved |
+| E | older terminal, newer *separate* dispatch failed but retryable | stays `pending_delivery` |
+| F | the globally latest attempt **is** the terminal dispatch | `delivery_failed` |
+| same dispatch, both attempts failed | correlated latest = attempt 2 = global latest | `delivery_failed` |
+| same dispatch, retry succeeds | global latest `delivered` | stays `delivered` |
+
+Scenario E is the defect the revision exists for. It is proved by rollback-only
+PostgreSQL probes against the real corrected algorithm, and is additionally
+locked by contract tests.
+
+## Recorder-open failure
+
+If `beginAttempt()` throws, the log records that the attempt could not be opened
+and **delivery proceeds**. Losing an attempt record is strictly better than losing
+a FieldSync task. When `failed()` later runs for that dispatch there is no
+correlated attempt, so the recorder logs
+`terminal_no_correlated_attempt` and leaves the summary alone. It does not
+fabricate correlation, does not inspect another dispatch's attempts, and does not
+overwrite a newer summary. Incomplete observability is preferred over false
+business truth.
+
+## What did not change
+
+- Remote bridge order — application mirror → parcel mirror (with `ST_AsText`
+  geometry) → existing `field_jobs` status read → `field_jobs` payload →
+  `field_jobs` upsert → success.
+- Conflict keys `local_application_id`, `local_parcel_id`, `local_inspection_id`.
+- Remote lifecycle preservation: FieldSync-owned `status` is read and preserved.
+- No payload writes `inspector_notes`, `current_step`, checklist data, GPS
+  progress, photo paths, photo metadata, or reviews.
+- No queue retry policy is pinned (`$tries`, `$backoff`, `$timeout`,
+  `retryUntil` are all still absent).
+- `handle()` still records its own attempt failure and rethrows; it still never
+  writes `delivery_failed`. Terminal state remains `failed()`'s responsibility.
+- All 7 normalized failure categories, the 3 outcomes, the 4 sources, and the
+  safe messages are unchanged.
+- `failed_jobs` is still never used as business delivery state.
+- No Controller, route, frontend, Supabase, or FieldSync change.
+
+## Distributed-failure behaviour, restated
+
+A remote upsert can succeed while the local attempt cannot be marked delivered.
+No distributed atomicity is claimed and there is no compensating DELETE. A later
+exact retry re-uses the same remote `local_inspection_id` with a safe upsert, so
+the remote lifecycle is preserved, the retry opens a new attempt row, and the
+local summary can converge to `delivered`.
+
+## State
+
+- Historical baseline unchanged: 35 `site_inspections` (6 `delivery_failed`,
+  29 NULL), 6 `inspection_delivery_attempts`, all 6
+  `source = legacy_reconciliation` with `queue_job_uuid = NULL`, 12
+  `failed_jobs`, 0 non-NULL `queue_job_uuid`.
+- Unpushed stack: `8c9cf03` (writer) → `7330e41` (schema) → correction commit.
+  Neither earlier commit was amended.
+- Next: pre-push stack review, then push on explicit authorization.

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\InspectionDeliveryAttempt;
 use App\Models\SiteInspection;
 use App\Services\InspectionDeliveryRecorder;
 use Illuminate\Bus\Queueable;
@@ -51,7 +52,21 @@ class PushInspectionToSupabase implements ShouldQueue
         // ---------------------------------------------------------------
         $attempt = null;
         try {
-            $attempt = $recorder->beginAttempt($this->inspection, $this->deliverySource, $this->attempts());
+            // The REAL queue payload uuid of the dispatch executing right now.
+            // Automatic retries of this same queued command reuse it, each with a
+            // new attempt_number. A separately dispatched job (including a
+            // future Planning Officer technical retry) has its own. A synchronous
+            // or direct invocation has no queue job, so this is null and the
+            // attempt is simply uncorrelated - which is safe, because such an
+            // execution can never reach the queue's failed() hook.
+            $queueJobUuid = $this->job?->uuid();
+
+            $attempt = $recorder->beginAttempt(
+                $this->inspection,
+                $this->deliverySource,
+                $this->attempts(),
+                $queueJobUuid,
+            );
         } catch (Throwable $e) {
             // Observability must never break delivery. A failed attempt record
             // is strictly better than a lost FieldSync task.
@@ -260,15 +275,27 @@ class PushInspectionToSupabase implements ShouldQueue
 
         $failure = $exception !== null
             ? $recorder->normalize($exception)
-            : ['category' => 'unknown', 'message' => InspectionDeliveryRecorder::MESSAGES['unknown']];
+            : ['category' => InspectionDeliveryAttempt::FAILURE_UNKNOWN, 'message' => InspectionDeliveryRecorder::MESSAGES[InspectionDeliveryAttempt::FAILURE_UNKNOWN]];
 
-        $recorder->reconcileTerminalFailure($inspection, $failure);
+        // The queue job is attached to the reconstructed command by
+        // CallQueuedHandler::setJobInstanceIfNecessary(), so the dispatch uuid
+        // is still readable here. If it is somehow unavailable, the recorder
+        // refuses to terminalize rather than guessing from global state.
+        $queueJobUuid = $this->job?->uuid();
+
+        if ($queueJobUuid === null) {
+            Log::warning('Terminal delivery failure could not be correlated to a queue dispatch; summary left unchanged.', [
+                'site_inspection_id' => $inspection->getKey(),
+            ]);
+        }
+
+        $recorder->reconcileTerminalFailure($inspection, $queueJobUuid, $failure);
 
         $recorder->logOutcome(
             $inspection->getKey(),
             'terminal_failure',
             $failure['category'],
-            $inspection->getKey()
+            $queueJobUuid,
         );
     }
 

@@ -357,6 +357,31 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 13. **Status:** **LOOP 7B PHOTO DISPLAY FIX READY FOR USER RETEST; LOOP 7B MANUAL E2E NOT YET RE-CLAIMED PASS; LOOP 7 REMAINS OPEN.**
 14. **Notes / risks:** The user must refresh the authorized browser page and verify actual thumbnails/lightbox, count, and request behavior. No live E2E mutation was performed.
 
+### 2026-09-28 - Loop 9B writer correlation correction - NO SCHEMA CHANGE (runtime only)
+
+1. **DATE:** 2026-09-28
+2. **TYPE:** APPLICATION / RUNTIME CORRECTION — **NOT A SCHEMA CHANGE**
+3. **Reason:** the 9B writer could not safely terminalize a queued failure. `failed()` had no durable link to its own dispatch, so under a future `--tries > 1` with overlapping dispatches it could terminalize a *newer, still-retryable* failure belonging to a different job (Scenario E).
+4. **This is NOT a new schema change.** The `queue_job_uuid` column and its partial index were already added and recorded in the entry above (0921 forward SQL plus the `040000` fresh-install migration). This correction only **consumes** that column. No new DB object was required; if one had been required, work would have stopped instead.
+5. **Schema touched in this correction:** **NONE.** `database/sql/` and `database/migrations/` unchanged. Live column remains `uuid NULL`, no default, index `inspection_delivery_attempts_queue_correlation_index` unchanged. Live = SQL = migration = docs parity retained.
+6. **UUID source:** `$this->job?->uuid()` — the actual Laravel 12.58.0 queue payload uuid (`Illuminate\Queue\Jobs\Job::uuid()`, inherited by `DatabaseJob`). No `Str::uuid()` for an already-queued execution; no inspection-id or attempt-id surrogate.
+7. **Persisting:** `InspectionDeliveryRecorder::beginAttempt()` now takes the runtime uuid and writes it with an explicit `forceFill()` + `save()`. The column is deliberately **not** in the model's `$fillable`, so it can never be mass-assigned from a request. Non-canonical values are treated as *no correlation*, not coerced.
+8. **Dispatch-level semantics:** automatic retries of one dispatch share the **same** `queue_job_uuid` with a new `attempt_number` and `source = automatic_retry`; a separately dispatched job (including a future 9C PO retry) gets a **new** uuid. A synchronous/direct execution has no queue job, so its value is `NULL` — safe, because such an execution can never reach `failed()`.
+9. **Terminal invariant, now implemented:** `reconcileTerminalFailure()` requires **both** (a) the callback's own correlated latest attempt to exist and have `outcome = failed`, **and** (b) that same attempt to be the **globally latest** attempt for the inspection. Correlation alone is NOT sufficient.
+10. **No unsafe fallback:** a queued terminal callback with a NULL uuid is **refused before any lookup**, logs a safe server-side warning, and leaves the summary unchanged. There is no globally-latest fallback for queued processing. The 6 NULL-correlated legacy rows therefore need no future queue processing; they are already terminal historical facts.
+11. **Overwrite protection:** an older terminal callback cannot overwrite a newer delivery execution that is `pending`, `delivered`, or a newer separate dispatch whose failure is still retryable. `delivered_at` is never cleared or overwritten; `last_delivery_failure_category` is taken from the correlated attempt row so the summary always matches its own attempt. Idempotent — no increment, create, or delete.
+12. **Recorder-open failure:** if `beginAttempt()` throws, delivery still proceeds and a warning is logged; `failed()` then finds no correlated attempt and changes nothing. No correlation is fabricated and no other dispatch's attempt is inspected. Incomplete observability is preferred over false business truth.
+13. **Rows affected:** **0.** No `UPDATE`, `INSERT`, `DELETE`, `ALTER`, or migration ledger write. The 6 `legacy_reconciliation` attempts remain `queue_job_uuid = NULL`; 0 rows are non-NULL.
+14. **Before:** 35 inspections / 6 `delivery_failed` / 29 NULL / 6 attempts / 6 `legacy_reconciliation` / 0 correlated / 12 `failed_jobs`.
+15. **After:** identical — 35 inspections / 6 `delivery_failed` / 29 NULL / 6 attempts / 6 `legacy_reconciliation` / 0 correlated / 12 `failed_jobs`.
+16. **Remote bridge unchanged:** sequence is still application mirror → parcel mirror (with `ST_AsText` geometry) → existing `field_jobs` status read → `field_jobs` payload → `field_jobs` upsert. Conflict keys `local_application_id`, `local_parcel_id`, `local_inspection_id` unchanged. Remote lifecycle preservation (FieldSync-owned `status`) intact. No payload writes `inspector_notes`, `current_step`, checklist, GPS, photos, or reviews. No `$tries`/`$backoff`/`$timeout`/`retryUntil` introduced.
+17. **Supabase:** **UNCHANGED.** **FieldSync:** **UNCHANGED.** **Controllers / routes / frontend:** **UNCHANGED.** 9C PO retry route deliberately **not** implemented.
+18. **Vocabulary:** unchanged — 7 normalized failure categories, 3 outcomes, 4 sources, same safe messages. `failed_jobs` still never used as business delivery state.
+19. **Validation:** 9 rollback-only PostgreSQL probes implementing the corrected algorithm verbatim — single terminal failure, newer independent pending, newer independent delivered, newer-retryable-failed race (Scenario E), globally-latest terminal, same-dispatch successive failures, same-dispatch retry success, idempotency, NULL-correlation refusal. All PASS, all rolled back. `Loop9bWriterCorrelationCorrectionTest` 22 tests / 72 assertions PASS; full Unit suite 380 tests / 1884 assertions PASS; `php -l` and `git diff --check` clean.
+20. **Rollback:** revert the two production files and the three test files. No data reversal is needed because this correction writes nothing outside future delivery attempts.
+21. **Status:** **LOOP 9B CORRELATION CORRECTION PASS — READY FOR FINAL 9B STACK REVIEW.** Stack `8c9cf03` → `7330e41` → correction is **UNPUSHED**; neither earlier commit was amended.
+22. **Notes / risks:** `8c9cf03` and `7330e41` must not be amended. 9C/9D will hit direct overlap with upstream `4ec435f` and still require explicit Controller approval. Live writer E2E remains **DEFERRED** to an authorized fixture.
+
 ## Future-entry template
 
 Record all 14 fields used above. Never include secrets.
