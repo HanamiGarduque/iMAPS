@@ -917,3 +917,62 @@ by `origin/master`, and a three-way `merge-tree` dry run confirms
 `routes/web.php` still auto-merges cleanly. Nothing was merged.
 
 **Next: 9C-2 — Planning Officer delivery status UI.** Not started.
+
+## 21. Loop 9C-2 delivery status UI - 2026-09-29 (UI / READ-ONLY, NO SCHEMA CHANGE)
+
+**No column, table, index, CHECK, value, forward SQL or migration was added,
+altered or dropped.** Section 20 remains authoritative for the 9C-1 reader
+contract, and Sections 1-19 remain authoritative throughout.
+
+**9C-2 is a UI / read-only change. It is not a database change.**
+
+### 21.1 Database impact
+
+| Item | Result |
+| --- | --- |
+| Schema change | NONE |
+| Forward SQL | NONE - no artifact created, because there is no change to record |
+| Migration | NONE |
+| Existing 0921 mutation | NONE |
+| Supabase DB | NONE |
+| FieldSync DB | NONE |
+| Migration ledger | UNCHANGED |
+| Runtime DB write | NONE - no `INSERT`/`UPDATE`/`DELETE`/DDL, no `audit_trail` row |
+| Controller / route / service / model / job | NONE |
+
+Browser verification was entirely read-only. The live baseline was re-read
+afterwards and is identical: 35 inspections, 6 `delivery_failed`, 29 NULL, 6
+attempts, 0 correlated, 12 `failed_jobs`, 0 fabricated `delivered_at`, 152
+`audit_trail` rows.
+
+### 21.2 What the UI reads
+
+Only the pre-existing 9A columns, through the 9C-1 reader, and only these fields:
+`delivery_status` (as the server's `state` / `label` / `message`), the two
+delivery timestamps, an aggregate `attempt_count`, and the server-mapped
+`failure_message`. `failure_category`, `queue_job_uuid`, `attempt_number`,
+`safe_message` and `failed_jobs` are never rendered.
+
+### 21.3 Presentation contract
+
+| Delivery state | Label |
+| --- | --- |
+| `no_delivery_record` | No Delivery Record |
+| `pending_delivery` | Pending Delivery |
+| `delivered` | Delivered to FieldSync |
+| `delivery_failed` | Delivery Failed |
+
+`Inspection Round N` is **presentation chronology only**; `inspection_id` is the
+stable persisted identity. The database has no round column, and no
+`round_kind` is sent or derived.
+
+### 21.4 Verification status, stated honestly
+
+Delivery Failed, No Delivery Record, and multi-round rendering are
+**BROWSER VERIFIED** in a real signed-in session. `pending_delivery` and
+`delivered` are **0** in the live baseline, so they are **CONTRACT + BUILD
+VERIFIED ONLY** - no protected row was mutated and no attempt fabricated to
+manufacture them.
+
+**Next: 9C-3 - Planning Officer Technical Retry Service + POST Action.** Not
+started. 9C is NOT complete.

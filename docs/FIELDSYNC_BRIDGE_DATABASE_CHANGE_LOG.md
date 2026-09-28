@@ -446,6 +446,37 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 22. **Status:** **LOOP 9C-1 IMPLEMENTED — READY FOR REVIEW. NOT PUSHED.**
 23. **Notes / risks:** 9C is **NOT complete**. Retry is **NOT** implemented. No UI exists yet. DB-backed Feature tests remain unrunnable locally (`phpunit.xml` pins sqlite while PHP has no `pdo_sqlite`), so state shaping is proven by the pure presenter unit contract plus rollback-only PostgreSQL probes. **Next: 9C-2 — Planning Officer delivery status UI.**
 
+### 2026-09-29 - Loop 9C-2 delivery status UI - UI / READ-ONLY CHANGE (NO DB CHANGE)
+
+1. **DATE:** 2026-09-29
+2. **TYPE:** **UI / READ-ONLY CHANGE.** Not a database change.
+3. **Authorization:** **Team Leader APPROVED** Loop 9C UI implementation.
+4. **Reason:** the 9C-1 reader made Loop 9 delivery state durable and queryable, but no Planning Officer or Admin could see it. 9C-2 renders it on Application Detail.
+5. **Database schema:** **NO CHANGE.**
+6. **Forward SQL:** **NONE.** No SQL artifact was created for this phase, because there is no database change to record.
+7. **Migration:** **NONE.**
+8. **Existing 0921 mutation:** **NONE.** The 9C-1 `queue_job_uuid` column, index and the 9A schema were not touched.
+9. **Supabase DB:** **NONE.**
+10. **FieldSync DB:** **NONE.**
+11. **Migration ledger:** **UNCHANGED.** `php artisan migrate` was not run.
+12. **DB runtime write:** **NONE.** No `INSERT`, `UPDATE`, `DELETE` or DDL, and no `audit_trail` row. The browser verification was entirely read-only: the live baseline was re-read afterwards and is identical, including all 152 `audit_trail` rows.
+13. **Scope:** ONE new read-only component `InspectionDeliveryStatusPanel.jsx`, ONE page wired in `Applications/Show.jsx` (+38/-0, purely additive), ONE contract test, and the three canonical docs. No Controller, route, service, model, job or database file changed.
+14. **Visibility:** Admin **and** Planning Officer, read-only, on Application Detail, one panel per page, one row per inspection round, all rounds sourced from the 9C-1 reader.
+15. **Delivery states shown:** `no_delivery_record` -> "No Delivery Record"; `pending_delivery` -> "Pending Delivery"; `delivered` -> "Delivered to FieldSync"; `delivery_failed` -> "Delivery Failed".
+16. **Delivery state is NOT:** the inspection outcome, the application decision, or the FieldSync task lifecycle. `assigned` / `in_progress` / `completed` are never used as delivery labels.
+17. **Round labelling:** `Inspection Round N` from the server's `round`, which is **presentation chronology only**. `inspection_id` is the stable persisted identity. "Original Inspection" / "Reinspection" are not rendered: the server sends no `round_kind`, and inferring it in the browser would be a client-side business inference.
+18. **Failure text:** server-authored safe prose from `delivery.failure_message`. The raw `failure_category` token is never rendered; that belongs to 9D Admin monitoring.
+19. **Attempt count:** worded as delivery bridge attempts, shown only when non-zero.
+20. **NULL semantics unchanged in the UI:** "No Delivery Record" is neutral and is never presented as not-delivered, missing, pending or failed. The reader error is worded as a failure to LOAD and explicitly disclaims any delivery problem, so a failed request can never be misread as a failed delivery.
+21. **Retry:** **NOT IMPLEMENTED IN 9C-2.** No retry button, no retry service, no retry POST route, no retry field referenced. The rendered panel contains no button and no link at all.
+22. **Browser verification (real headless Chrome, real login, live PostgreSQL):** Delivery Failed **BROWSER VERIFIED**; No Delivery Record **BROWSER VERIFIED**; multi-round **BROWSER VERIFIED** (two rows, id-ascending, not collapsed to `latestOfMany()`); second page branch **BROWSER VERIFIED**; placement, accessibility (`role="status"`, `aria-live="polite"`, `aria-hidden` dot, zero icon-only states), responsiveness (no horizontal overflow at 420 px or desktop), single `GET` per page with no non-GET request, no browser Supabase/realtime, and a **browser-forced** reader-error state were all verified on rendered DOM.
+23. **Honest gap:** `pending_delivery` and `delivered` are **0** across the whole live baseline, so those two states are **CONTRACT + BUILD VERIFIED ONLY**. No protected row was mutated and no delivery attempt was fabricated to manufacture them. They await an authorized writer/retry fixture or 9G E2E.
+24. **Defect found by browser verification and corrected:** the first wiring mounted the panel above the page's status ternary as well as inside the else branch, so every non-Technical-Review application rendered two panels and issued two delivery requests. Source contract tests had passed; only real rendering exposed it. Each mount was moved into its own mutually exclusive arm and a contract test now asserts mutual exclusivity.
+25. **Pre-existing unrelated issue, not fixed here:** one console 404 for `/geojson/land_use_plan.geojson`. That is the upstream map-source change in `Applications/Show.jsx`, deliberately left alone so 9C-2 stays delivery-panel only.
+26. **Validation:** `Loop9c2DeliveryPanelContractTest` 48 / 531; 9C-1 contract 36 / 367; 9C-1 reader 11 / 35; 9A 33 / 133; 9A-R 16 / 77; 9B 36 / 152; 9B schema 20 / 47; 9B correction 22 / 72; 9B Scenario E 11 / 55; full Unit suite 475 / 2839. `npm run build` PASS. `php -l` clean. `git diff --check` clean. No `package.json` or lockfile change and no dependency installed.
+27. **Master overlap:** `origin/master` did not advance (`1307db8`). A three-way `merge-tree` dry run confirms `Applications/Show.jsx` still auto-merges cleanly. The 4 pre-existing upstream conflicts (`ApplicationController`, `TechnicalReviewController`, `Header.jsx`, `Sidebar.jsx`) are untouched. Nothing was merged, rebased or cherry-picked.
+28. **Status:** **LOOP 9C-2 IMPLEMENTED AND BROWSER VERIFIED.** 9C is **NOT** complete.
+29. **Remaining:** 9C-3 retry service + server-side POST action; 9C-4 retry UI; 9C-5 full regression and E2E closure. 9C-3 introduces business mutation and audit logging and requires its own bounded audit and implementation review.
 ## Future-entry template
 
 Record all 14 fields used above. Never include secrets.

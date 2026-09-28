@@ -39,7 +39,7 @@ Every material assertion should use one of these classifications when its status
 
 # CURRENT ACTIVE LOOP
 
-**LOOP 9 — Delivery Monitoring + Admin Diagnostics — 9C-1 READER DONE, 9C-2 NEXT**
+**LOOP 9 — Delivery Monitoring + Admin Diagnostics — 9C-2 UI VERIFIED, 9C-3 NEXT**
 
 > **Supersedes the previous `LOOP 3 — Assigning Planning Officer — IN PROGRESS` entry, which correctly described the state at the time it was written. Loop 3 is closed; see Loop status reconciliation below. That historical text is retained further down in this document and is not falsified here.**
 >
@@ -86,7 +86,7 @@ This is the authoritative active-status summary. Where an older entry states a d
 | Loop 6 | **IMPLEMENTED** | Site Inspector iMAPS access control implemented. Remaining credential/environment cases remain **approved deferrals** where already documented. |
 | Loop 7 | **CLOSED within the approved boundary** | Photo / storage / authorization implementation closed. Real on-site 30 m device/photo completion and remote DELETE remain **deferred**. |
 | Loop 8 | **IMPLEMENTED AND PUSHED** | Planning Review Metadata implemented and pushed. The read-only, round-safe metadata contract is closed. |
-| Loop 9 | **9C-1 READER DONE; 9C-2 NEXT** | Current active loop. Audit PASSED, contract decided, 9C Team Leader APPROVED. 9A + 9A-R + 9B pushed; 9C-1 reader implemented and unpushed. Retry and UI not started. |
+| Loop 9 | **9C-2 UI VERIFIED; 9C-3 NEXT** | Current active loop. 9A + 9A-R + 9B + 9C-1 + 9C-2 pushed. Delivery status is now user-visible, read-only, per inspection round, for Admin and Planning Officer. Retry is not implemented. |
 
 Historical sub-loop evidence (Loop 1A/1B/1C/1D/1D-R series, Loop 7B/7C/7D/7F/7G) is **not erased** by this table.
 
@@ -3735,7 +3735,7 @@ conflicts (`ApplicationController`, `TechnicalReviewController`,
 
 - Tests: `Loop9c1DeliveryStatusContractTest` 33 / 284, `Loop9c1DeliveryStatusReaderTest` 11 / 35, full Unit suite 424 / 2299.
 - 16 rollback-only PostgreSQL probes, all PASS, all rolled back. Live baseline unchanged: 35 inspections, 6 `delivery_failed`, 29 NULL, 6 attempts, 0 correlated, 12 `failed_jobs`, 0 fabricated `delivered_at`, 0 probe leftovers.
-- **Next: 9C-2 — Planning Officer delivery status UI.** Not started.
+- Superseded by the LOOP 9C-2 section below, which records the browser-verified UI.
 
 ---
 
@@ -3915,3 +3915,119 @@ local summary can converge to `delivered`.
 **Loop 9 is NOT complete.** 9C, 9D, 9E/9F and 9G remain. Delivery state is
 durable and queryable but still **not** user-visible: no Controller, route or UI
 reads it yet.
+
+---
+
+# LOOP 9C-2 - DELIVERY STATUS UI - IMPLEMENTED AND BROWSER VERIFIED 2026-09-29
+
+**Team Leader approved** Loop 9C UI implementation. Delivery status is now
+**user-visible**, read-only, and rendered **per inspection round** on Application
+Detail for Admin and Planning Officer alike.
+
+**9C is NOT complete. Retry is NOT implemented. No retry button exists.**
+
+## What is user-visible now
+
+One **FieldSync Delivery** panel per Application Detail, mounted in each of the
+page's two mutually exclusive branches, rendering one row per inspection round
+from the 9C-1 reader.
+
+| Delivery state | Label shown |
+| --- | --- |
+| `no_delivery_record` | **No Delivery Record** |
+| `pending_delivery` | **Pending Delivery** |
+| `delivered` | **Delivered to FieldSync** |
+| `delivery_failed` | **Delivery Failed** |
+
+## The three distinctions the UI must never blur
+
+- **Delivery state is NOT the inspection outcome.** The section subtitle states
+  this in the page itself, and the badge uses a rounded-square shape so a
+  delivery badge is not mistaken for an application status pill.
+- **Delivery state is NOT the application decision** - nothing about Received,
+  Technical Review, Released or Denied.
+- **Delivery state is NOT FieldSync task lifecycle.** `assigned` /
+  `in_progress` / `completed` are never used as delivery labels, and delivery
+  state never implies field progression.
+
+## Round labelling
+
+`Inspection Round N`, from the server's `round` value. It is **presentation
+chronology only**. `inspection_id` is the stable persisted identity.
+"Original Inspection" and "Reinspection" are **not** rendered: the server sends
+no `round_kind`, and deriving it in the browser would be a client-side business
+inference.
+
+## Server-authored wording
+
+Every user-facing string comes from `delivery.label`, `delivery.message` and
+`delivery.failure_message`. The component contains **no** business-label map, so
+a future server vocabulary change reaches the UI with no client edit. The raw
+`failure_category` token is **never** shown; that is 9D Admin monitoring's job.
+
+`attempt_count` is worded as "1 delivery attempt" / "2 delivery attempts" and is
+shown only when non-zero, so it can never be read as a count of FieldSync task
+starts.
+
+## Browser verification - what was ACTUALLY observed
+
+Real headless Chrome against the running application, signed in as a real
+Planning Officer, against the live PostgreSQL backend. Read-only throughout.
+
+| Check | Result |
+| --- | --- |
+| Planning Officer login | signed in, landed on the dashboard |
+| **Delivery Failed** (application 104, inspection 25) | **BROWSER VERIFIED** - rose badge, "Delivery Failed", server prose "The assigned inspector is not linked to a FieldSync account.", "Last delivery attempt: Sep 11, 2026 12:51 AM", "1 delivery attempt", inspector name |
+| **No Delivery Record** (application 132, inspections 36 and 37) | **BROWSER VERIFIED** - neutral slate badge, server message "No Loop 9 delivery record exists for this inspection round." No attempt count, no timestamps, no retry |
+| **Multi-round** (application 132) | **BROWSER VERIFIED** - one panel, **two** rows, "Inspection Round 1" and "Inspection Round 2", id-ascending, **not** collapsed to `latestOfMany()` |
+| **Second page branch** (application 1, Received) | **BROWSER VERIFIED** - panel present with the neutral empty state |
+| **Placement** | Verified in both branches: application-level, not inside a parcel card, not once per parcel, not inside a PO action gate |
+| **Reader error** | **BROWSER VERIFIED** by blocking only the delivery-status request: shows "Delivery status could not be loaded." and explicitly disclaims a delivery problem. It does **not** show "Delivery Failed" |
+| **Accessibility** | **BROWSER VERIFIED** on rendered DOM: `role="status"`, `aria-live="polite"`, decorative dot `aria-hidden="true"`, textual label present, **0** icon-only state spans |
+| **Responsive** | **BROWSER VERIFIED** - no horizontal overflow at 420 px or at desktop width; panel fluid |
+| **Network** | Exactly **one** `GET /applications/{id}/delivery-status` per page load; **no** non-GET request; **no** browser Supabase or realtime call; no polling |
+| **Retry control** | **NONE** - the rendered panel contains no button and no link |
+| **Console** | No uncaught exception. One pre-existing 404 for `/geojson/land_use_plan.geojson` - the upstream map-source change, unrelated to 9C and deliberately left alone |
+
+### A real defect browser verification caught
+
+The first wiring mounted the panel **above** the page's status ternary as well as
+inside the else branch. Because a panel above the ternary already covers both
+branches, every **non**-Technical-Review application rendered **two** panels and
+issued **two** delivery requests. Structural source tests had passed; only real
+rendering exposed it.
+
+The fix places each mount inside its own mutually exclusive arm. Re-verified in
+the browser: application 1 went from 2 panels / 2 requests to **1 / 1**, and the
+Technical Review applications were unaffected. A contract test now asserts
+mutual exclusivity so the regression cannot return.
+
+### States that could NOT be browser-verified
+
+`pending_delivery` and `delivered` are both **0** across the entire live
+baseline, so no honest browser proof exists without mutating protected rows or
+fabricating delivery attempts. Neither was done.
+
+- **Pending Delivery - CONTRACT + BUILD VERIFIED ONLY**
+- **Delivered to FieldSync - CONTRACT + BUILD VERIFIED ONLY**
+
+Both will receive real lifecycle verification during an authorized writer/retry
+fixture or 9G E2E.
+
+## Boundaries respected
+
+No retry service, retry route, retry button, POST request, business mutation,
+audit write, Controller change, route change, database schema change, forward
+SQL, migration, Supabase change or FieldSync change. The 9B writer and recorder
+are untouched. The upstream map-source change in `Applications/Show.jsx` is
+untouched, enforced by contract test.
+
+Verification: `Loop9c2DeliveryPanelContractTest` 48 / 531, full Unit suite
+475 / 2839, `npm run build` PASS. Live baseline after browser verification is
+**unchanged**: 35 inspections, 6 `delivery_failed`, 29 NULL, 6 attempts, 0
+correlated, 12 `failed_jobs`, 0 fabricated `delivered_at`, 152 `audit_trail`
+rows - zero writes from the browser.
+
+**Next: 9C-3 - Planning Officer Technical Retry Service + POST Action.** Not
+started. It introduces business mutation and audit logging, so it requires its
+own bounded audit and implementation review.
