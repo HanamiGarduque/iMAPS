@@ -538,18 +538,308 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
     }
 
     // ══════════════════════════════════════════════════════════════
-    // §33 / §34  PHASE BOUNDARY
+    // §12  WIRING CONTRACT (Loop 9C-2-2)
+    //
+    // Assertions are structural, anchored on JSX sentinels rather than line
+    // numbers, so a future edit elsewhere in a 1,258-line page cannot make them
+    // pass or fail spuriously.
     // ══════════════════════════════════════════════════════════════
 
-    public function test_applications_show_jsx_is_byte_identical_to_the_baseline(): void
+    private function showSource(): string
     {
-        // 9C-2-1 proves the component in isolation. Wiring is 9C-2-2.
-        $diff = (string) shell_exec(
-            'git diff e71bd02 -- resources/js/Pages/Applications/Show.jsx'
+        $path = base_path('resources/js/Pages/Applications/Show.jsx');
+        $this->assertFileExists($path);
+
+        return (string) file_get_contents($path);
+    }
+
+    private function showLines(): array
+    {
+        return explode("\n", str_replace("\r\n", "\n", $this->showSource()));
+    }
+
+    /** Every line index that mounts the panel. */
+    private function mountIndexes(): array
+    {
+        $indexes = [];
+
+        foreach ($this->showLines() as $i => $line) {
+            if (str_contains($line, '<InspectionDeliveryStatusPanel')) {
+                $indexes[] = $i;
+            }
+        }
+
+        return $indexes;
+    }
+
+    /** The N lines immediately above a mount, for context assertions. */
+    private function contextAbove(int $index, int $lines = 6): string
+    {
+        $all = $this->showLines();
+        $slice = array_slice($all, max(0, $index - $lines), $lines);
+
+        return implode("\n", $slice);
+    }
+
+    /** Index of the first line containing a sentinel, or -1. */
+    private function indexOf(string $sentinel): int
+    {
+        foreach ($this->showLines() as $i => $line) {
+            if (str_contains($line, $sentinel)) {
+                return $i;
+            }
+        }
+
+        return -1;
+    }
+
+    public function test_the_panel_is_imported_exactly_once(): void
+    {
+        $this->assertSame(
+            1,
+            substr_count(
+                $this->showSource(),
+                'import InspectionDeliveryStatusPanel from "@/Components/InspectionDeliveryStatusPanel";'
+            ),
+            'Exactly one import, in the existing style.'
+        );
+    }
+
+    public function test_the_panel_is_mounted_exactly_twice_with_the_canonical_application_id(): void
+    {
+        $mounts = $this->mountIndexes();
+
+        $this->assertCount(2, $mounts, 'One mount per Application Detail branch: exactly two.');
+
+        foreach ($mounts as $i) {
+            $this->assertStringContainsString(
+                'applicationId={app.id}',
+                $this->showLines()[$i],
+                'The mount must pass the Application model id already supplied to the page.'
+            );
+        }
+    }
+
+    public function test_the_id_is_not_derived_from_anything_else(): void
+    {
+        foreach ($this->mountIndexes() as $i) {
+            $line = $this->showLines()[$i];
+
+            foreach ([
+                'reference_number', 'parcel', 'site_inspection', 'inspection',
+                'URLSearchParams', 'window.location', 'activeParcel',
+            ] as $forbidden) {
+                $this->assertStringNotContainsString(
+                    $forbidden,
+                    $line,
+                    "The mount must not derive its id from '{$forbidden}'."
+                );
+            }
+        }
+    }
+
+    public function test_the_first_mount_sits_between_planning_officer_assignment_and_the_parcel_tabs(): void
+    {
+        $mounts = $this->mountIndexes();
+        $po = $this->indexOf('canReassign={canReassignPlanningOfficer}');
+        $trBranch = $this->indexOf('{app.status === "Technical Review" ? (');
+        $tabs = $this->indexOf('{/* Parcel Tabs */}');
+
+        $this->assertGreaterThan($po, $mounts[0], 'After the application-level ownership card.');
+        $this->assertLessThan($trBranch, $mounts[0], 'Before the parcel-tab branch.');
+        $this->assertLessThan($tabs, $mounts[0], 'Before the parcel tabs.');
+    }
+
+    public function test_the_second_mount_sits_in_the_other_application_detail_branch(): void
+    {
+        $mounts = $this->mountIndexes();
+        $elseBranch = $this->indexOf('{/* Application Dossier */}');
+
+        $this->assertGreaterThan(
+            $elseBranch - 12,
+            $mounts[1],
+            'The second mount belongs to the non-Technical-Review branch.'
+        );
+        $this->assertLessThan(
+            $elseBranch,
+            $mounts[1],
+            'The second mount sits just before the dossier section, mirroring the first branch.'
+        );
+    }
+
+    public function test_neither_mount_is_inside_the_latest_only_parcel_inspection_block(): void
+    {
+        $parcelBlockStart = $this->indexOf('{activeParcelData && (');
+        // The ternary's ELSE branch container. Everything from the parcel guard
+        // up to this line is the latest-only per-parcel surface; everything
+        // after it belongs to the OTHER Application Detail branch.
+        $elseBranchStart = $this->indexOf('<div className="max-w-xl mx-auto">');
+
+        $this->assertGreaterThan(-1, $parcelBlockStart, 'The latest-only parcel block must exist to avoid.');
+        $this->assertGreaterThan(-1, $elseBranchStart);
+        // The else-branch container comes AFTER the parcel block it replaces.
+        $this->assertGreaterThan($parcelBlockStart, $elseBranchStart);
+
+        $mounts = $this->mountIndexes();
+
+        // Mount 1 sits BEFORE the parcel block, at application level.
+        $this->assertLessThan(
+            $parcelBlockStart,
+            $mounts[0],
+            'The first mount must be above the per-parcel, latest-only inspection surface.'
         );
 
-        $this->assertSame('', trim($diff), 'Applications/Show.jsx must not be touched in 9C-2-1.');
+        // Mount 2 sits INSIDE the other branch, after the parcel block ends.
+        $this->assertGreaterThan(
+            $elseBranchStart,
+            $mounts[1],
+            'The second mount must belong to the other Application Detail branch, not the parcel block.'
+        );
+
+        // Belt and braces: nothing may be mounted between the two sentinels.
+        $insideParcelBlock = 0;
+        foreach ($mounts as $i) {
+            if ($i > $parcelBlockStart && $i < $elseBranchStart) {
+                $insideParcelBlock++;
+            }
+        }
+
+        $this->assertSame(
+            0,
+            $insideParcelBlock,
+            'The panel must never be mounted under the latest-only parcel inspection surface.'
+        );
     }
+
+    public function test_neither_mount_sits_behind_a_planning_officer_action_gate(): void
+    {
+        foreach ($this->mountIndexes() as $i) {
+            $context = $this->contextAbove($i);
+
+            // These are JSX render GATES - a conditional that would hide the
+            // panel from a role. `canReassign={...}` is deliberately NOT in this
+            // list: it is a prop handed to the ownership card above, not a gate
+            // wrapping the panel.
+            foreach ([
+                '{canRecordPlanningDecision',
+                '{isBatchSubmitAllowed',
+                '{canReassignInspector &&',
+            ] as $gate) {
+                $this->assertStringNotContainsString(
+                    $gate,
+                    $context,
+                    "The panel must be visible to every role that can open Application Detail; found the '{$gate}' gate above a mount."
+                );
+            }
+        }
+    }
+
+    public function test_the_panel_is_not_mounted_once_per_parcel(): void
+    {
+        $source = $this->showSource();
+
+        // Two application-level mounts, both keyed on app.id, and neither inside
+        // a parcel iteration.
+        $this->assertSame(2, substr_count($source, '<InspectionDeliveryStatusPanel applicationId={app.id} />'));
+        $this->assertSame(0, substr_count($source, 'applicationId={parcel'));
+        $this->assertSame(0, substr_count($source, 'applicationId={activeParcel'));
+    }
+
+    public function test_show_jsx_adds_no_retry_ui_or_action(): void
+    {
+        $code = (string) preg_replace('/\/\*.*?\*\//s', '', $this->showSource());
+        $code = (string) preg_replace('/^\s*\/\/.*$/m', '', $code);
+
+        foreach ([
+            'Retry Delivery', 'retry-delivery', 'planning_officer_retry',
+            'can_retry', 'retry_actor_authorized', 'retry_actor_unavailable_reason',
+        ] as $forbidden) {
+            $this->assertStringNotContainsString(
+                $forbidden,
+                $code,
+                "9C-2-2 must not add '{$forbidden}'. Delivery visibility stays read-only."
+            );
+        }
+    }
+
+    public function test_show_jsx_derives_no_delivery_meaning_of_its_own(): void
+    {
+        $code = (string) preg_replace('/\/\*.*?\*\//s', '', $this->showSource());
+        $code = (string) preg_replace('/^\s*\/\/.*$/m', '', $code);
+
+        // The page only mounts the panel. The 9C-1 reader and the panel own the
+        // delivery presentation contract, so the page must not re-read a
+        // delivery token, let alone map one to meaning.
+        foreach ([
+            'delivery.state', 'delivery_status', 'last_delivery_attempt_at',
+            'delivered_at', 'last_delivery_failure_category', 'failure_category',
+            'deliveryAttempts', 'queue_job_uuid',
+        ] as $forbidden) {
+            $this->assertStringNotContainsString(
+                $forbidden,
+                $code,
+                "Show.jsx must not interpret '{$forbidden}'."
+            );
+        }
+    }
+
+    public function test_show_jsx_does_not_call_the_delivery_endpoint_itself(): void
+    {
+        $code = (string) preg_replace('/\/\*.*?\*\//s', '', $this->showSource());
+
+        $this->assertStringNotContainsString(
+            'delivery-status',
+            $code,
+            'The panel owns the fetch. The page must not duplicate the request or its mapping.'
+        );
+        $this->assertStringNotContainsString(
+            'no_delivery_record',
+            $code,
+            'State presentation belongs to the panel and the server, not the page.'
+        );
+    }
+
+    public function test_the_wiring_diff_is_purely_additive(): void
+    {
+        $diff = (string) shell_exec('git diff 106fec6 -- resources/js/Pages/Applications/Show.jsx');
+
+        $removed = 0;
+        foreach (explode("\n", $diff) as $line) {
+            if (str_starts_with($line, '-') && ! str_starts_with($line, '---')) {
+                $removed++;
+            }
+        }
+
+        $this->assertSame(
+            0,
+            $removed,
+            '9C-2-2 must only ADD the wiring: no reformatting, no whitespace sweep, no deletions.'
+        );
+    }
+
+    public function test_the_upstream_map_change_is_untouched(): void
+    {
+        $diff = (string) shell_exec('git diff 106fec6 -- resources/js/Pages/Applications/Show.jsx');
+
+        // origin/master changes the map data sources in this file. 9C-2-2 must
+        // not copy, fix, reconcile or pre-empt any of that.
+        foreach ([
+            'rosario_brgy_map.geojson',
+            'land_use_plan.geojson',
+            '/api/map/barangay_boundary',
+            '/api/map/land_use_plan',
+        ] as $upstream) {
+            $this->assertStringNotContainsString(
+                $upstream,
+                $diff,
+                "9C-2-2 must not touch the upstream map change ('{$upstream}')."
+            );
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // §34  BACKEND BOUNDARY
+    // ══════════════════════════════════════════════════════════════
 
     public function test_no_backend_or_route_production_file_is_touched(): void
     {
@@ -560,29 +850,56 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
 
             foreach ([
                 'app/Http/Controllers/', 'app/Services/', 'app/Models/', 'app/Jobs/',
-                'routes/', 'database/', 'resources/js/Pages/',
+                'routes/', 'database/', 'config/', '.env',
             ] as $forbidden) {
                 $this->assertStringStartsNotWith(
                     $forbidden,
                     $path,
-                    "9C-2-1 must not modify '{$path}'."
+                    "9C-2-2 must not modify '{$path}'."
                 );
             }
         }
     }
 
-    public function test_the_component_is_not_yet_mounted_anywhere(): void
+    public function test_show_jsx_is_the_only_production_file_touched(): void
     {
-        // Nothing may import the panel until 9C-2-2 wires it, and canonical docs
-        // must not claim UI visibility before then.
-        $hits = (string) shell_exec(
-            'git grep -l "InspectionDeliveryStatusPanel" -- resources/js/Pages 2>&1'
+        $production = [];
+
+        foreach (explode("\n", (string) shell_exec('git status --porcelain')) as $line) {
+            // Untracked entries are the 32 preserved evidence files; they are not
+            // production edits. Note the porcelain line is `XY<space>path`, so the
+            // path starts at offset 3 and the leading status column must NOT be
+            // trimmed first.
+            if (str_starts_with($line, '??') || trim($line) === '') {
+                continue;
+            }
+
+            $path = trim(substr($line, 3));
+
+            if ($path !== '' && ! str_starts_with($path, 'tests/')) {
+                $production[] = $path;
+            }
+        }
+
+        sort($production);
+
+        $this->assertSame(
+            ['resources/js/Pages/Applications/Show.jsx'],
+            $production,
+            '9C-2-2 changes exactly one production file.'
+        );
+    }
+
+    public function test_the_panel_component_itself_is_unchanged_since_9c2_1(): void
+    {
+        $diff = (string) shell_exec(
+            'git diff 106fec6 -- resources/js/Components/InspectionDeliveryStatusPanel.jsx'
         );
 
         $this->assertSame(
             '',
-            trim($hits),
-            'The panel must stay unmounted in 9C-2-1.'
+            trim($diff),
+            'Wiring exposed no component defect, so the 9C-2-1 component must be untouched.'
         );
     }
 }

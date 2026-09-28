@@ -9,6 +9,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
 import { PlanningOfficerAssignment, InspectorRoundAssignment } from "@/Components/WorkAssignment";
+import InspectionDeliveryStatusPanel from "@/Components/InspectionDeliveryStatusPanel";
 import { resolveBackTarget, readRegistryQuery } from "@/Components/folderOrigin";
 
 // ── Status Badge Configuration ──
@@ -893,6 +894,24 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                             applicationId={app.id}
                                         />
 
+                                        {/* Loop 9C-2: FieldSync delivery state, one entry per
+                                            INSPECTION ROUND. This is deliberately an
+                                            application-level panel, not a parcel one. The
+                                            ParcelInspectionStatus and InspectorRoundAssignment
+                                            surfaces below are fed by `parcel.site_inspection`,
+                                            which is a latestOfMany() relation and therefore only
+                                            ever describes the NEWEST round. A delivery panel
+                                            placed there could not show an original inspection and
+                                            its reinspection as separate rounds, and would imply a
+                                            per-parcel meaning the data does not have.
+                                            The panel reads the Loop 9C-1 reader, which returns
+                                            EVERY round, and is not gated on
+                                            canRecordPlanningDecision because delivery status is
+                                            shared read-only visibility for Admin and Planning
+                                            Officer alike. It is read-only: no control is offered
+                                            and no delivery state is ever written from here. */}
+                                        <InspectionDeliveryStatusPanel applicationId={app.id} />
+
                                         {app.status === "Technical Review" ? (
                                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                                                 {/* Parcel Tabs */}
@@ -1173,6 +1192,17 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                         })}
                                                     </div>
                                                 </div>
+
+                                                {/* Loop 9C-2, second Application Detail branch. The panel
+                                                    is application-level for the same reason as the
+                                                    Technical Review branch above: it enumerates every
+                                                    inspection round from the 9C-1 reader, so it must
+                                                    not be nested under a parcel's latest-only
+                                                    inspection surface. Mounted at the same relative
+                                                    point - after the application-level summary, before
+                                                    the detail sections - so both branches give
+                                                    delivery status identical prominence. */}
+                                                <InspectionDeliveryStatusPanel applicationId={app.id} />
 
                                                 {/* Application Dossier */}
                                                 <div className="py-6 border-b border-slate-100">
