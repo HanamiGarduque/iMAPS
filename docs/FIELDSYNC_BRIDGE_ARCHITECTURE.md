@@ -39,6 +39,20 @@ Every material assertion should use one of these classifications when its status
 
 # CURRENT ACTIVE LOOP
 
+**LOOP 9 — Delivery Monitoring + Admin Diagnostics — AUDIT NEXT**
+
+> **Supersedes the previous `LOOP 3 — Assigning Planning Officer — IN PROGRESS` entry, which correctly described the state at the time it was written. Loop 3 is closed; see Loop status reconciliation below. That historical text is retained further down in this document and is not falsified here.**
+
+Loop 9 has **NOT** been implemented. Its status is **AUDIT NEXT**.
+
+Implementation may start only after the Loop 9 audit and the explicit Loop 9 contract decision. Do not begin Loop 9 implementation from this checkpoint, and do not skip ahead to Loop 10.
+
+Loop 9 initial scope is recorded verbatim in **CANONICAL ISSUE ORDER → LOOP 9** below. It is planning scope only at this time.
+
+## Superseded historical entry — LOOP 3 "Assigning Planning Officer — IN PROGRESS"
+
+> Preserved verbatim as point-in-time history. This entry was the **CURRENT ACTIVE LOOP** section before the 2026-09-28 documentation checkpoint. It is retained so the Loop 3 closure evidence is not lost. **Loop 3 is now CLOSED.**
+
 **LOOP 3 — Assigning Planning Officer — IN PROGRESS**
 
 Current evidence shows the source-side provenance contract is implemented in the local model, migration, and job payload. The Controller capture and live Supabase schema application remain Team Leader-owned and pending explicit controller-side implementation, so this loop remains in progress rather than closed.
@@ -49,9 +63,32 @@ Current evidence shows the source-side provenance contract is implemented in the
 - FieldSync offline cache now persists `assignment_instructions`, `assigned_by_imaps_user_id`, and `assigned_by_name` and restores them on cache reopen.
 - The current source contract keeps `assignment_instructions` and `inspector_notes` independent and preserves Loop 1 status behavior.
 
-**Outstanding / deferred:**
-- Team Leader-owned controller capture of the authenticated Planning Officer before dispatch remains pending.
-- Live Supabase remote columns for `public.field_jobs.assigned_by_imaps_user_id` and `assigned_by_name` still require manual live verification or explicit user confirmation before claiming production verification.
+**Outstanding / deferred (as recorded at that time):**
+- Team Leader-owned controller capture of the authenticated Planning Officer before dispatch was pending.
+- Live Supabase remote columns for `public.field_jobs.assigned_by_imaps_user_id` and `assigned_by_name` still required manual live verification or explicit user confirmation before claiming production verification.
+
+> **Closure note (2026-09-28):** both items above were subsequently resolved — controller-side capture of the authenticated Planning Officer is implemented and the remote columns are live-verified. Loop 3 is **CLOSED**. See the Loop 3 contract tests and the Work Reassignment Phase 1 record below.
+
+---
+
+# LOOP STATUS RECONCILIATION (2026-09-28, post-cleanup checkpoint)
+
+This is the authoritative active-status summary. Where an older entry states a different status, that entry is a point-in-time record and is preserved; this section states the current truth.
+
+| Loop | Current status | Note |
+|---|---|---|
+| Loop 0 | **PARTIALLY CLOSED** (as originally recorded) | Historical / production-readiness identity items are retained exactly as documented. **Do not reopen closed known-inspector identity work without new direct evidence.** |
+| Loop 1 | **CLOSED** | Canonical lifecycle implemented and verified within the accepted boundaries. |
+| Loop 2 | **CLOSED** | Assignment instructions ownership closed. |
+| Loop 3 | **CLOSED** | Assigning Planning Officer provenance closed. The former `IN PROGRESS` entry above is historical. |
+| Loop 4 | **CLOSED** | Reinspection / new-round contract closed. |
+| Loop 5 | **CLOSED** | Completed lifecycle protection closed. |
+| Loop 6 | **IMPLEMENTED** | Site Inspector iMAPS access control implemented. Remaining credential/environment cases remain **approved deferrals** where already documented. |
+| Loop 7 | **CLOSED within the approved boundary** | Photo / storage / authorization implementation closed. Real on-site 30 m device/photo completion and remote DELETE remain **deferred**. |
+| Loop 8 | **IMPLEMENTED AND PUSHED** | Planning Review Metadata implemented and pushed. The read-only, round-safe metadata contract is closed. |
+| Loop 9 | **AUDIT NEXT** | Current active loop. Not implemented. |
+
+Historical sub-loop evidence (Loop 1A/1B/1C/1D/1D-R series, Loop 7B/7C/7D/7F/7G) is **not erased** by this table.
 
 ---
 
@@ -121,8 +158,10 @@ Current evidence shows the source-side provenance contract is implemented in the
 
 **Real retry E2E on production data:** DEFERRED TO LOOP 10
 
-**NEXT ACTIVE LOOP: LOOP 3 — ASSIGNING PLANNING OFFICER**
-(Do not start Loop 3 until explicitly instructed.)
+**NEXT ACTIVE LOOP: LOOP 9 — DELIVERY MONITORING + ADMIN DIAGNOSTICS — AUDIT NEXT**
+(Do not start Loop 9 implementation until the Loop 9 audit and contract decision are complete.)
+
+> **Status history:** this line previously read `NEXT ACTIVE LOOP: LOOP 3 — ASSIGNING PLANNING OFFICER (Do not start Loop 3 until explicitly instructed.)`. That was accurate when written. Loop 3 is now **closed**; see **LOOP STATUS RECONCILIATION** and the **CURRENT ACTIVE LOOP** section at the top of this document. The Loop 3 historical record is preserved below.
 
 **Previous Loop Closure:**
 **LOOP 1 — Canonical Task Status — CLOSED / VERIFIED LOCALLY**
@@ -1181,7 +1220,9 @@ This entry does not close Loop 6 and writes no Loop 6 closure record.
 - verify retry/delete behavior;
 - verify inspector scoping.
 
-## LOOP 8 - Planning Review Metadata - IMPLEMENTED 2026-09-27 (implementation pass; not yet committed)
+## LOOP 8 - Planning Review Metadata - IMPLEMENTED AND PUSHED (2026-09-27 implementation; delivery confirmed 2026-09-28)
+
+> **Status history:** the heading originally read `IMPLEMENTED 2026-09-27 (implementation pass; not yet committed)`. That was accurate when written. Loop 8 has since been committed and pushed to `origin/fix/fieldsync-bridge-stability`. The read-only, round-safe metadata contract is **CLOSED**.
 
 - optionally add a read-only badge under Completed;
 - never affect task status or category.
@@ -1212,12 +1253,39 @@ This entry does not close Loop 6 and writes no Loop 6 closure record.
 
 **Verification:** iMAPS `Loop8PlanningReviewContractTest` 15 tests / 44 assertions PASS; related lifecycle contracts 10 tests / 98 assertions PASS; `php -l` clean. FieldSync `loop8_planning_review_test.dart` 14 tests PASS; `flutter analyze` clean; combined Loop 8 + Loop 4 + Loop 5 + category suites 61 tests PASS. Live Supabase: assigned inspector reads 1 review row for own job; unrelated inspector 0 rows; anon 0 rows; inspector INSERT denied (`42501`); inspector UPDATE/DELETE are no-ops (0 rows mutated); `field_jobs` round 36 remains `completed`/step 6 and round 37 remains `in_progress`/step 1 — review isolation and completed immutability confirmed live.
 
-## LOOP 9 — Delivery Monitoring + Admin Diagnostics
+## LOOP 9 — Delivery Monitoring + Admin Diagnostics — **AUDIT NEXT**
 
-- add Pending Delivery, Delivered to FieldSync, and Delivery Failed;
-- provide Planning Officer actionable visibility;
-- provide Admin aggregate oversight;
-- implement the `diagnostic_reports`/Admin support path and required access contract.
+**STATUS: AUDIT NEXT. Loop 9 has NOT been implemented.**
+
+Implementation may begin only after the Loop 9 audit and the explicit Loop 9 contract decision. Do not implement any part of the scope below during the documentation checkpoint, and do not skip ahead to Loop 10.
+
+### Initial scope (canonical, recorded 2026-09-28)
+
+**A. Bridge delivery lifecycle**
+
+`Pending Delivery` / `Delivered to FieldSync` / `Delivery Failed`
+
+This delivery state is **separate from** `field_jobs.status` (`assigned` / `in_progress` / `completed`). It must not be conflated with task lifecycle state.
+
+**B. Planning Officer visibility**
+
+Planning Officer needs actionable assignment-delivery information for their own work.
+
+**C. Admin visibility**
+
+Admin needs aggregate/system-support visibility for repeated delivery problems.
+
+**D. Diagnostic support path**
+
+`FieldSync Site Inspector` → `diagnostic_reports` → Admin/support triage.
+
+**E. Authority boundary**
+
+Admin support/diagnostic oversight must **NOT** become:
+
+- inspection assignment authority
+- technical-review decision authority
+- field-work authority
 
 ## LOOP 10 — Full E2E Acceptance
 
@@ -1232,6 +1300,12 @@ This entry does not close Loop 6 and writes no Loop 6 closure record.
 - authorization negative tests;
 - retention/history;
 - evidence capture.
+
+### Canonical remaining order (recorded 2026-09-28)
+
+`Loop 9` → `Loop 10 Full E2E Acceptance` → final cleanup/retention decisions still outstanding → final DB export/package → final team handoff.
+
+The 2026-09-28 synthetic/test-data cleanup is **not** Loop 9 and must not be renamed as such. Loop 10 does not start until Loop 9 is audited, contracted, and closed. The final database export/package remains deferred until the remaining numbered loops and final acceptance are complete.
 
 # LOOP 1B STATUS COMPATIBILITY DECISION
 
@@ -2765,3 +2839,167 @@ three places that did so: the Applications list fallback, the Drafts list
 fallback, and `ApplicationController::show()` returning a sample dossier for an
 unknown id. All three now return honest empty states or an ordinary 404. **No
 new placeholder fixtures may be reintroduced into operational screens.**
+
+---
+
+# POST-CLEANUP DOCUMENTATION CHECKPOINT (2026-09-28)
+
+This section closes Final Readiness, Work Reassignment Phase 1, the Final UX follow-up, and the
+Final Synthetic / Test-Data Cleanup, and activates **Loop 9 — AUDIT NEXT**.
+
+Nothing above this line is rewritten. Earlier entries that recorded `NOT PUSHED`, `IN PROGRESS`,
+or "not yet committed" were accurate at the time and remain as point-in-time history; the
+records below establish the final state.
+
+## Work Reassignment Phase 1 — final delivery
+
+- **Branch:** `fix/fieldsync-bridge-stability`
+- **Final reassignment closure commit:** `73e55f0`
+- **Pushed:** YES
+
+Verified contract:
+
+- Active Planning Officer creator receives initial application ownership.
+- `encoded_by` remains historical encoder attribution and is never treated as current ownership.
+- Historical applications are **not** backfilled.
+- Admin may initial-assign and reassign Planning Officer ownership.
+- Planning Officer may reassign **only untouched** Site Inspector rounds.
+- Mid-flight Site Inspector transfer is blocked by design (fail-closed on remote FieldSync state).
+- Assignment history row and audit row are transactionally coupled with the ownership change.
+- Suspended users are excluded from assignable/reassignable sets.
+- Initial assignment has `reason` NULL; reassignment requires a reason.
+- `Other` requires a note.
+- No account sharing.
+- No Admin technical-review decision authority.
+- No FieldSync client change.
+- No Supabase schema change.
+
+## Final UX / correctness follow-up — final delivery
+
+- **`526b64f`** — inspection photo thumbnail reads the authorized `signed_url`; new authorized
+  lightbox with re-fetch, Escape/backdrop/close, prev/next, and unavailable state.
+- **`1c1fa50`** — applicant-folder context navigation; assignment modal clarity.
+- Branch remote/local final at that checkpoint: `1c1fa50`. **Pushed: YES.**
+
+Verified outcomes:
+
+- Admin photo viewer: **PASS**
+- PO evidence viewer through Application Detail: **PASS**
+- Standalone Site Inspections detail remains **Admin-only intentionally**
+- Applications folder → detail → same folder: **PASS**
+- Site Inspections folder → detail → same folder: **PASS**
+- First-assignment helper no longer resembles an input
+- Assignment business contract: **unchanged**
+
+Photo endpoint latency remains **P2 PERFORMANCE BACKLOG** and is **not** blocking.
+
+## Final Readiness Audit record
+
+- **P0:** 0
+- **P1:** 0
+- **Release / readiness gate: PASS**
+
+Non-blocking findings retained:
+
+- **P2** — photo endpoint latency; reference-number presentation split (legacy
+  `DP-/LC-/ZA-/ZC-` versus new `APP-2026-*`); previously classified GIS / history UI items.
+- **P3** — the documented backlog classifications (Analytics page, Audit Log scope, Settings
+  polish, Reports, dead branches, unused props, Encode wizard sample registry, tracking/QR
+  behaviour).
+
+**Master divergence conclusion:** `origin/master` is already an ancestor of
+`fix/fieldsync-bridge-stability`; the apparent 34-commit gap was only a stale **local** `master`
+pointer. The feature branch carries 35 commits beyond `origin/master` and **0** upstream commits
+are missing. **No merge or rebase is required for this reason. Do not modify `master`.**
+
+## Final Synthetic / Test-Data Cleanup record (2026-09-28)
+
+**AUTHORIZATION:** Option A — reuse of deleted synthetic APP numbers accepted.
+
+**BACKUP:** a full local `pg_dump` (custom format) of the application database was created
+successfully **before** any mutation and stored **outside the repository** as a local recovery
+artifact. Complete pre-delete row contents for every deleted remote row were also exported to a
+local directory outside Git. No credentials or sensitive paths are recorded canonically.
+
+### iMAPS cleanup (BEFORE → AFTER)
+
+| Table | Before | After | Deleted |
+|---|---|---|---|
+| zoning_applications | 72 | 70 | 2 |
+| application_drafts | 75 | 9 | 66 |
+| site_inspections | 35 | 35 | 0 |
+| technical_reviews | 78 | 76 | 2 |
+| audit_trail | 156 | 152 | 4 |
+| parcels | 58 | 56 | 2 |
+| application_status_tracks | 144 | 140 | 4 |
+| application_po_assignments | 0 | 0 | 0 |
+| site_inspection_assignments | 0 | 0 | 0 |
+
+**Deleted synthetic applications:** `133 / APP-2026-00027`, `134 / APP-2026-00028`.
+
+**Protected and verified intact afterwards:** `131 / APP-2026-00025`, `132 / APP-2026-00026`,
+`site_inspection 36` (still `completed`), `site_inspection 37` (still `assigned`),
+`technical_review 75`, `technical_review 76`, and all **44** legacy
+`DP-` / `LC-` / `ZA-` / `ZC-` applications.
+
+Nine unresolved drafts were deliberately **retained**, not deleted.
+
+### Supabase cleanup (BEFORE → AFTER)
+
+| Table | Before | After | Deleted |
+|---|---|---|---|
+| field_jobs | 84 | 9 | 75 (orphan synthetic jobs) |
+| field_job_photos | 88 | 5 | 83 |
+| field_job_reviews | 1 | 0 | 1 (Loop 8 validation artifact) |
+| supabase_zoning_applications | 88 | 15 | 73 (orphan-only synthetic mirrors) |
+| supabase_parcels | 88 | 15 | 73 (orphan-only synthetic mirrors) |
+| profiles | 2 | 2 | 0 |
+
+- **No Auth accounts deleted. No profile deleted. No RLS change.**
+- The **Hubbie** profile was **retained** because it still owns retained jobs, including the
+  protected inspection rounds 36 and 37.
+- Remote jobs for local inspections 22, 23, 35, 36, 37 remain (5 rows).
+
+### Storage retention state
+
+- Storage objects **before:** 107
+- Storage objects **after:** 107
+- **Deleted: 0**
+
+Current classification — these are **distinct** and must not be silently merged:
+
+| Count | Classification | Disposition |
+|---|---|---|
+| **83** | Unreferenced **after synthetic metadata cleanup** — synthetic cleanup follow-up candidate | **NOT deleted** |
+| **19** | Historical **Loop 7F** orphan objects | **deferred — NOT deleted** |
+| **5** | Referenced by retained metadata | **KEEP** |
+
+Both the 83 and the 19 are unreferenced now, but their **provenance differs**. Any future
+Storage deletion requires a **separate retention/cleanup authorization**.
+
+## Reference-number decision (explicit user decision)
+
+`APP-2026-00027` and `APP-2026-00028` were synthetic-only and have been removed.
+
+- Current retained APP maximum: **`APP-2026-00026`**
+- The existing generator derives the next number from retained application data, so the next
+  legitimate application **may reuse `APP-2026-00027`**.
+- This reuse was explicitly **ACCEPTED**.
+- **No retained application was renumbered.**
+- `application_sequences` was **NOT** repaired or incremented.
+- **No artificial reservation** for 27/28 was created.
+- The generator (`getNextSequence()`) was **NOT** modified.
+
+## Known approved deferrals — NOT failures
+
+These remain deferred and must **not** be marked PASS:
+
+- Physical 30 m Loop 7D live GPS / photo completion.
+- Site Inspector iMAPS credential acceptance where no valid credential is available.
+- Track A cadastral / CLUP fixture.
+- Remote photo DELETE.
+- The **19** historical Loop 7F Storage orphans.
+- The **83** newly unreferenced synthetic Storage objects, pending a separate retention decision.
+- Mid-flight Site Inspector transfer / recovery.
+- Photo endpoint performance optimization.
+- Final database export / package.

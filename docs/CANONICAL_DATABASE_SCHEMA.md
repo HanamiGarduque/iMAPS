@@ -458,3 +458,46 @@ decision.
   both history tables are empty until a handover actually happens.
 - No `migrations` ledger row was edited by hand.
 - Nothing was pushed.
+
+## 14. Final synthetic / test-data cleanup note - 2026-09-28 (NOT a schema change)
+
+This section records a **data row cleanup only**. The canonical schema contract in
+sections 1-13 is **unchanged**. No table definition, column, type, constraint, index,
+policy, or default was added, altered, or dropped as a result of this cleanup. No
+migration was created or applied. The `migrations` ledger was not edited.
+
+Preserved and still authoritative from earlier sections:
+
+- Section 2 execution order and the 0921 forward-update instructions.
+- Section 7 `application_sequences` - **LEGACY, RETAINED** (still not dropped, and
+  deliberately **not** repaired or incremented by the cleanup).
+- Section 9 rollback / backup guidance.
+- Section 11 the Work reassignment contract (Phase 1), including the initial-versus-
+  reassignment constraints and the ownership pointer.
+- Section 12 the migration-ledger warning and the explicit `--path` requirement.
+  `php artisan migrate` still cannot be run globally against `imaps_db_0921`; that
+  drift is unchanged and reconciling the ledger remains a separate decision.
+
+**Pre-cleanup recovery backup:** a full `pg_dump` (custom format) of `imaps_db_0921`
+was created before any mutation and stored outside the repository as a local recovery
+artifact, together with complete pre-delete row exports for every deleted remote row.
+
+**Rows removed** (provenance-proven synthetic/test data only): synthetic applications
+`APP-2026-00027` and `APP-2026-00028` and their dependent child rows, 66 proven-E2E
+`application_drafts`, 75 orphan Supabase `field_jobs` with 83 `field_job_photos`, 1
+Loop 8 `field_job_reviews` validation artifact, and 73 + 73 orphan-only synthetic
+application/parcel mirrors.
+
+**Rows deliberately retained:** applications `APP-2026-00025` and `APP-2026-00026`;
+`site_inspections` 36 (`completed`) and 37 (`assigned`); `technical_reviews` 75 and 76;
+all 44 legacy `DP-` / `LC-` / `ZA-` / `ZC-` applications; 9 unresolved drafts; both
+Supabase profiles; and all 107 Storage objects.
+
+**Reference numbers:** `APP-2026-00027` / `APP-2026-00028` are absent and the retained
+APP maximum is now `APP-2026-00026`. Reuse of `APP-2026-00027` by a future genuine
+application was explicitly accepted; no retained application was renumbered and the
+generator was not modified.
+
+**Final database snapshot / export package remains DEFERRED** until the remaining
+numbered loops and final acceptance are complete. A local recovery backup is not a
+final team export.
