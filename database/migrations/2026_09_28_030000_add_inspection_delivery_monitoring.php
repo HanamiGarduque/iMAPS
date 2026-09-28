@@ -110,6 +110,18 @@ return new class extends Migration
             });
         }
 
+        // Partial index matching the forward SQL exactly. Every historical row
+        // is delivery_status NULL, so an unfiltered index would be almost
+        // entirely empty; the partial form stays tiny and matches the Loop 9C
+        // and 9D predicates precisely.
+        if (! $this->indexExists('site_inspections', 'site_inspections_delivery_status_index')) {
+            DB::statement(
+                'CREATE INDEX IF NOT EXISTS site_inspections_delivery_status_index'
+                . ' ON site_inspections (delivery_status)'
+                . ' WHERE delivery_status IS NOT NULL'
+            );
+        }
+
         $this->addCheckConstraints();
     }
 
@@ -255,5 +267,13 @@ return new class extends Migration
     private function q(string $identifier): string
     {
         return '"' . str_replace('"', '""', $identifier) . '"';
+    }
+
+    private function indexExists(string $table, string $index): bool
+    {
+        return DB::selectOne(
+            'SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = ?',
+            [$table, $index]
+        ) !== null;
     }
 };

@@ -372,10 +372,50 @@ class Loop9aDeliverySchemaContractTest extends TestCase
             'inspection_delivery_attempts',
             'inspection_delivery_attempts_inspection_attempt_unique',
             'inspection_delivery_attempts_inspection_attempted_index',
+            // The partial summary index must exist on a fresh install too: the
+            // forward SQL and the live 0921 database both carry it, and the
+            // Loop 9D aggregate depends on it.
+            'site_inspections_delivery_status_index',
+            'WHERE delivery_status IS NOT NULL',
             'cascadeOnDelete',
         ] as $token) {
             $this->assertStringContainsString($token, $migration);
         }
+    }
+
+    public function test_every_check_constraint_exists_in_all_three_records(): void
+    {
+        // A count alone is not proof of parity, so the exact named set is
+        // compared. This is the rule that the 9A report miscounted.
+        $expected = [
+            'site_inspections_delivery_status_check',
+            'site_inspections_delivery_failure_category_check',
+            'site_inspections_delivered_at_present_check',
+            'inspection_delivery_attempts_source_check',
+            'inspection_delivery_attempts_outcome_check',
+            'inspection_delivery_attempts_failure_category_check',
+            'inspection_delivery_attempts_attempt_number_check',
+            'inspection_delivery_attempts_completed_at_check',
+        ];
+
+        $sql = $this->flat($this->sql());
+        $migration = $this->migration();
+
+        // 3 summary + 5 attempt CHECKs = 8 Loop 9A CHECK constraints.
+        $this->assertCount(8, $expected);
+
+        foreach ($expected as $name) {
+            $this->assertStringContainsString($name, $sql, "Forward SQL is missing {$name}.");
+            $this->assertStringContainsString($name, $migration, "Fresh migration is missing {$name}.");
+        }
+    }
+
+    public function test_fresh_install_creates_both_indexes_not_just_the_attempt_one(): void
+    {
+        $migration = $this->migration();
+
+        $this->assertStringContainsString('inspection_delivery_attempts_inspection_attempted_index', $migration);
+        $this->assertStringContainsString('site_inspections_delivery_status_index', $migration);
     }
 
     // ------------------------------------------------------------------
