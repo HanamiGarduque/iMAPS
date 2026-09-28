@@ -147,8 +147,8 @@ Route::middleware('auth')->group(function () {
 
     // ── Loop 9C-1: read-only Loop 9 delivery state per inspection round ─────
     // READ-ONLY. It reports `can_retry` as a server-computed authorization
-    // fact, but no retry route exists yet: 9C-1 adds no action, no dispatch
-    // and no UI.
+    // fact. 9C-1 itself added no action, no dispatch and no UI; the retry
+    // ROUTE that consumes that fact arrived later, in Loop 9C-2, directly below.
     //
     // The middleware is deliberately IDENTICAL to `applications.show` above,
     // because that route is the existing application-read boundary and it
@@ -165,6 +165,35 @@ Route::middleware('auth')->group(function () {
     Route::get('/applications/{id}/delivery-status', [\App\Http\Controllers\InspectionDeliveryController::class, 'status'])
         ->name('applications.delivery-status')
         ->middleware('role:Admin,Planning Officer');
+
+    // -- Loop 9C-2: the Planning Officer delivery retry POST ----------------
+    // THE FIRST USER-TRIGGERED LOOP 9 MUTATION. It re-queues the one existing
+    // bridge writer for one existing inspection round. It is not a new
+    // inspection, not a reinspection, not a reassignment and not a status
+    // transition, and there is still no UI that calls it: 9C-4 owns the button.
+    //
+    // `role:Planning Officer` is the FIRST boundary, and it is deliberately
+    // narrower than the read route above. Admin is refused because Admin is
+    // not an authorized retry actor, and Site Inspector is refused because
+    // Site Inspectors are FieldSync-only. The retry service re-checks role AND
+    // application ownership under a row lock, so this is defence in depth
+    // rather than the only check.
+    //
+    // POST ONLY, inside the `auth` web group, so CSRF verification stays
+    // active. There is deliberately no GET equivalent: a delivery retry is a
+    // mutation and must never be reachable by a link, a prefetch or a crawler.
+    //
+    // NO REQUEST BODY. The target is the route parameter and the actor is the
+    // authenticated session. The server derives ownership, delivery state,
+    // inspector eligibility and round currency; a client cannot assert any of
+    // them.
+    //
+    // IDEMPOTENCY. There is no client request id. The service's row lock plus
+    // its state transition are the guard, so a double submit yields one
+    // accepted retry and one 409, never two successes.
+    Route::post('/site-inspections/{inspection}/retry-delivery', [\App\Http\Controllers\InspectionDeliveryController::class, 'retry'])
+        ->name('site-inspections.retry-delivery')
+        ->middleware('role:Planning Officer');
 
     Route::get('/api/inspections/{localInspectionId}/supabase-data', [TechnicalReviewController::class, 'getSupabaseInspectionData'])
         ->name('api.inspections.supabase')

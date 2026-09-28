@@ -568,17 +568,59 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
         );
     }
 
-    public function test_no_retry_route_or_controller_method_exists_yet(): void
+    /**
+     * LOOP 9C-2 CORRECTION.
+     *
+     * This test asserted that no retry action existed yet, which was the true
+     * 9C-1 contract. Loop 9C-2 then added exactly that action, so the
+     * assertion became false the moment the next phase landed.
+     *
+     * The RETAINED contract is the one that still matters and is still
+     * enforced: the READER does not retry. A read endpoint that mutated
+     * delivery state, dispatched the writer or wrote an audit row would be a
+     * second business path, and no later phase may quietly give it one.
+     *
+     * The retry action itself, its route and its authorization boundary are
+     * covered by `Loop9c2RetryActionContractTest`.
+     */
+    public function test_the_reader_itself_never_retries(): void
     {
-        $this->assertFalse(
-            method_exists(InspectionDeliveryController::class, 'retry'),
-            '9C-1 must NOT implement retry. 9C-3 owns that action.'
-        );
+        // Comments are stripped: the reader's prose legitimately NAMES the
+        // retry service while explaining that the two share one eligibility
+        // contract. What must be absent is the reader CALLING it.
+        $status = $this->code($this->methodSource(InspectionDeliveryController::class, 'status'));
 
+        // The read path dispatches nothing, writes nothing and creates nothing.
+        $this->assertStringNotContainsString('PushInspectionToSupabase', $status);
+        $this->assertStringNotContainsString('InspectionDeliveryRetryService', $status);
+        $this->assertStringNotContainsString('queueRetry', $status);
+        $this->assertStringNotContainsString('DB::table(', $status);
+        $this->assertStringNotContainsString('forceFill', $status);
+        $this->assertStringNotContainsString('->update(', $status);
+        $this->assertStringNotContainsString('->save(', $status);
+        $this->assertStringNotContainsString('abort(', $status);
+        $this->assertStringNotContainsString('back()', $status);
+
+        // And the reader still exposes no retry route of its own.
         $this->assertFalse(
             method_exists(InspectionDeliveryController::class, 'retryDelivery'),
-            '9C-1 must NOT implement retry. 9C-3 owns that action.'
+            'The action is named retry(), not retryDelivery().'
         );
+    }
+
+    /**
+     * The source of ONE method, by reflection line range.
+     */
+    private function methodSource(string $class, string $method): string
+    {
+        $reflection = new \ReflectionMethod($class, $method);
+        $lines = file((string) $reflection->getFileName(), FILE_IGNORE_NEW_LINES) ?: [];
+
+        return implode("\n", array_slice(
+            $lines,
+            $reflection->getStartLine() - 1,
+            $reflection->getEndLine() - $reflection->getStartLine() + 1
+        ));
     }
 
     // ══════════════════════════════════════════════════════════════

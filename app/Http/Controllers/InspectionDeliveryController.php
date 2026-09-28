@@ -4,10 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\SiteInspection;
 use App\Models\ZoningApplication;
+use App\Services\InspectionDeliveryRetryService;
 use App\Support\InspectionDeliveryRetryEligibility;
+use App\Support\InspectionDeliveryRetryResult;
 use App\Support\InspectionDeliveryStatus;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Loop 9C-1 - Planning Officer / Admin delivery-state READER.
@@ -281,5 +287,129 @@ class InspectionDeliveryController extends Controller
         }
 
         return $ownerId === $viewerId;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // LOOP 9C-2  THE RETRY POST
+    // ══════════════════════════════════════════════════════════════
+
+    /**
+     * Queue a Planning Officer technical delivery retry for one round.
+     *
+     * THE HTTP LAYER IS THIN ON PURPOSE. This action does four things and
+     * nothing else:
+     *
+     *   1. takes the authenticated local user as the actor,
+     *   2. takes the target round's identity from the route,
+     *   3. hands both to `InspectionDeliveryRetryService`,
+     *   4. translates a known domain outcome into a response.
+     *
+     * It does NOT decide anything. There is no `if delivery_status === ...`,
+     * no ownership comparison, no supersession arithmetic, no inspector check
+     * and no handshake-key test anywhere in this method, because every one of
+     * those rules lives in `InspectionDeliveryRetryService` and
+     * `InspectionDeliveryRetryEligibility`. Duplicating a rule here is how a
+     * read side and a write side drift apart, and then the browser offers a
+     * control the server refuses.
+     *
+     * The actor is NEVER taken from the request. There is no request body at
+     * all: the target is the route parameter and the actor is the session, so
+     * a client cannot assert an owner, a delivery state, an inspector, a
+     * source or an application.
+     *
+     * `QUEUED` IS THE ONLY TRUTH THIS RESPONSE CAN STATE. The success flash
+     * says the retry has been queued, because that is exactly what committed:
+     * a pending delivery state, an audit row and a database queue job. FieldSync
+     * has not been contacted, and whether the delivery will ever succeed is not
+     * known here. The 9B worker owns that.
+     *
+     * A DOMAIN REFUSAL IS NOT AN ERROR. Wrong actor, wrong state, superseded
+     * round, ineligible inspector and not-found are all decisions the service
+     * made on purpose, and each maps to its own status so a client can tell
+     * "you may not" from "not now" from "never again". An INFRASTRUCTURE
+     * failure is different: the service lets it throw, the transaction has
+     * already unwound all three writes, and it becomes a 503 with no internal
+     * detail in the response.
+     */
+    public function retry(Request $request, int $inspection): RedirectResponse
+    {
+        $actor = $request->user();
+
+        // The `auth` + `role:Planning Officer` middleware already guarantees a
+        // Planning Officer here. This guard exists so a future refactor that
+        // loosens the route cannot turn a missing actor into a type error
+        // inside the service.
+        if ($actor === null) {
+            abort(403, 'Delivery retry requires an authenticated Planning Officer.');
+        }
+
+        try {
+            $result = app(InspectionDeliveryRetryService::class)
+                ->queueRetry($inspection, $actor);
+        } catch (Throwable $exception) {
+            // The service's transaction has already rolled back the pending
+            // state, the audit row and the queue insert by the time anything
+            // reaches this catch. Log the cause server-side; return nothing
+            // about it. The response deliberately carries no exception message,
+            // SQLSTATE, table name, connection detail or stack trace.
+            Log::error('[DeliveryRetry] Retry transaction failed and was rolled back.', [
+                'site_inspection_id' => $inspection,
+                'actor_id'           => $actor->getKey(),
+                'exception_class'    => $exception::class,
+                'exception_message'  => $exception->getMessage(),
+            ]);
+
+            abort(503, 'Delivery retry could not be queued.');
+        }
+
+        if ($result->isQueued()) {
+            return back()->with('success', 'Delivery retry has been queued.');
+        }
+
+        return $this->translateRefusal($result);
+    }
+
+    /**
+     * Translate one known domain refusal into its HTTP status and message.
+     *
+     * The message is the AUTHORED PROSE from the 9C-3-1 result object, never
+     * the internal outcome token, so no blocker enum reaches a browser and no
+     * field name, id or SQL predicate is disclosed.
+     *
+     * The split is deliberate:
+     *
+     *   403  the caller may not act on this application at all
+     *   404  the target does not exist
+     *   409  the request was well formed but conflicts with the round's
+     *        current state, which is exactly what 409 means
+     *
+     * @return never
+     */
+    private function translateRefusal(InspectionDeliveryRetryResult $result)
+    {
+        abort(
+            match ($result->outcome) {
+                InspectionDeliveryRetryResult::INSPECTION_NOT_FOUND,
+                InspectionDeliveryRetryResult::APPLICATION_NOT_FOUND => 404,
+
+                // Wrong officer, or an application with no recorded owner.
+                InspectionDeliveryRetryResult::NOT_AUTHORIZED => 403,
+
+                // Not a recorded failure, a superseded round, a round whose
+                // parcel cannot confirm its position, a round whose application
+                // moved out from under it, or an inspector who cannot currently
+                // receive field work.
+                InspectionDeliveryRetryResult::WRONG_DELIVERY_STATE,
+                InspectionDeliveryRetryResult::SUPERSEDED_ROUND,
+                InspectionDeliveryRetryResult::PARCEL_UNKNOWN,
+                InspectionDeliveryRetryResult::APPLICATION_MISMATCH,
+                InspectionDeliveryRetryResult::INSPECTOR_INVALID => 409,
+
+                // Unreachable: a non-queued result always carries a refusal
+                // outcome. Fail closed rather than fall through to a success.
+                default => 409,
+            },
+            $result->message()
+        );
     }
 }
