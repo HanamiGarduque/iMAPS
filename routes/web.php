@@ -16,6 +16,11 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+// ── Session Keep-Alive Ping ──
+Route::get('/ping', function () {
+    return response()->json(['status' => 'ok', 'timestamp' => now()->toIso8601String()]);
+})->name('ping');
+
 // ── Public Landing Page ──
 Route::get('/', function () {
     return Inertia::render('Welcome', [

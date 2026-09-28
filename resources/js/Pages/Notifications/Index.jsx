@@ -145,6 +145,27 @@ export default function Index({
         );
     };
 
+    // Handle clicking a notification card (opens notification, marks as read)
+    const handleNotificationClick = (item) => {
+        if (!item.is_read) {
+            router.post(`/notifications/${item.id}/read`, {}, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    if (item.action_url) {
+                        router.visit(item.action_url);
+                    }
+                },
+                onError: () => {
+                    if (item.action_url) {
+                        router.visit(item.action_url);
+                    }
+                },
+            });
+        } else if (item.action_url) {
+            router.visit(item.action_url);
+        }
+    };
+
     // Mark single as read
     const handleMarkAsRead = (id) => {
         router.post(`/notifications/${id}/read`, {}, { preserveScroll: true });
@@ -413,10 +434,19 @@ export default function Index({
                                             return (
                                                 <div
                                                     key={item.id}
-                                                    className={`group rounded-xl border p-4 transition-all flex items-start justify-between gap-4 ${
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    onClick={() => handleNotificationClick(item)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                            e.preventDefault();
+                                                            handleNotificationClick(item);
+                                                        }
+                                                    }}
+                                                    className={`group rounded-xl border p-4 transition-all flex items-start justify-between gap-4 cursor-pointer text-left w-full hover:shadow-md hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 active:scale-[0.995] ${
                                                         isUnread
-                                                            ? "border-blue-200 bg-blue-50/30"
-                                                            : "border-slate-200/80 bg-white hover:border-slate-300"
+                                                            ? "border-blue-200 bg-blue-50/30 hover:bg-blue-50/60"
+                                                            : "border-slate-200/80 bg-white hover:bg-slate-50/80 hover:border-slate-300"
                                                     }`}
                                                 >
                                                     <div className="flex items-start gap-3.5 min-w-0 flex-1">
@@ -444,44 +474,6 @@ export default function Index({
                                                                 {item.message}
                                                             </p>
                                                         </div>
-                                                    </div>
-
-                                                    <div className="flex items-center gap-2 shrink-0 self-center">
-                                                        {item.action_url && (
-                                                            <Link
-                                                                href={item.action_url}
-                                                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200/60 px-3 py-1.5 rounded-lg transition-all"
-                                                            >
-                                                                <span>View</span>
-                                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                                                                </svg>
-                                                            </Link>
-                                                        )}
-
-                                                        {isUnread && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleMarkAsRead(item.id)}
-                                                                title="Mark as read"
-                                                                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                                                            >
-                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                                                </svg>
-                                                            </button>
-                                                        )}
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleDeleteSingle(item.id)}
-                                                            title="Delete notification"
-                                                            className="w-7 h-7 flex items-center justify-center text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                            </svg>
-                                                        </button>
                                                     </div>
                                                 </div>
                                             );

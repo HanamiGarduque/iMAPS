@@ -565,7 +565,20 @@ export default function Header({
                                             key={item.id}
                                             onClick={() => {
                                                 setNotifMenuOpen(false);
-                                                if (item.action_url) router.visit(item.action_url);
+                                                if (!item.is_read) {
+                                                    router.post(`/notifications/${item.id}/read`, {}, {
+                                                        preserveScroll: true,
+                                                        onSuccess: () => {
+                                                            fetchNotifications();
+                                                            if (item.action_url) router.visit(item.action_url);
+                                                        },
+                                                        onError: () => {
+                                                            if (item.action_url) router.visit(item.action_url);
+                                                        },
+                                                    });
+                                                } else if (item.action_url) {
+                                                    router.visit(item.action_url);
+                                                }
                                             }}
                                             className={`p-2.5 rounded-xl transition-all cursor-pointer flex items-start gap-2.5 hover:bg-slate-50 ${
                                                 !item.is_read ? 'bg-blue-50/40' : ''
