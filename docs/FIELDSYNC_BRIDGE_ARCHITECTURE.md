@@ -39,13 +39,13 @@ Every material assertion should use one of these classifications when its status
 
 # CURRENT ACTIVE LOOP
 
-**LOOP 9 — Delivery Monitoring + Admin Diagnostics — 9B COMPLETE, 9C NOT STARTED**
+**LOOP 9 — Delivery Monitoring + Admin Diagnostics — 9C-1 READER DONE, 9C-2 NEXT**
 
 > **Supersedes the previous `LOOP 3 — Assigning Planning Officer — IN PROGRESS` entry, which correctly described the state at the time it was written. Loop 3 is closed; see Loop status reconciliation below. That historical text is retained further down in this document and is not falsified here.**
 >
-> **Status history:** this entry previously read `AUDIT NEXT`, which correctly described the state when the Loop 9 audit and the D1–D20 contract decision had just been recorded. The audit has since **PASSED** and the contract was decided. Progress: **9A** schema (pushed) → **9A-R** legacy reconciliation (pushed) → **9B** delivery writer instrumentation + queue-correlation schema revision + writer correlation correction + Scenario E regression (**pushed**). Delivery state is still **not** user-visible; 9C/9D have not started. Do not skip ahead to Loop 10.
+> **Status history:** this entry previously read `AUDIT NEXT`, which correctly described the state when the Loop 9 audit and the D1–D20 contract decision had just been recorded. The audit has since **PASSED**, the contract was decided, and Loop 9C was **Team Leader APPROVED** on the audited narrow scope. Progress: **9A** schema (pushed) → **9A-R** legacy reconciliation (pushed) → **9B** writer + queue-correlation schema + writer correlation correction + Scenario E regression (**pushed**) → **9C-1** server-side delivery status reader (**implemented, unpushed**). Retry is **not** implemented and no UI exists yet. Do not skip ahead to Loop 10.
 
-Loop 9 is **partially** implemented. Phases 9A, 9A-R and 9B are complete; 9C, 9D, 9E/9F and 9G have not started. **9C is next** and is not implemented.
+Loop 9 is **partially** implemented. Phases 9A, 9A-R, 9B and 9C-1 are complete; 9C-2 onward, 9D, 9E/9F and 9G have not started. **9C-2 is next** and is not implemented.
 
 Loop 9 initial scope is recorded verbatim in **CANONICAL ISSUE ORDER → LOOP 9** below. It is planning scope only for the phases that have not started.
 
@@ -86,7 +86,7 @@ This is the authoritative active-status summary. Where an older entry states a d
 | Loop 6 | **IMPLEMENTED** | Site Inspector iMAPS access control implemented. Remaining credential/environment cases remain **approved deferrals** where already documented. |
 | Loop 7 | **CLOSED within the approved boundary** | Photo / storage / authorization implementation closed. Real on-site 30 m device/photo completion and remote DELETE remain **deferred**. |
 | Loop 8 | **IMPLEMENTED AND PUSHED** | Planning Review Metadata implemented and pushed. The read-only, round-safe metadata contract is closed. |
-| Loop 9 | **9B COMPLETE; 9C NOT STARTED** | Current active loop. Audit PASSED, D1–D20 decided. 9A + 9A-R + 9B pushed. Next: 9C Planning Officer Delivery Visibility + Technical Retry, which needs its own Controller approval and `origin/master` overlap review. |
+| Loop 9 | **9C-1 READER DONE; 9C-2 NEXT** | Current active loop. Audit PASSED, contract decided, 9C Team Leader APPROVED. 9A + 9A-R + 9B pushed; 9C-1 reader implemented and unpushed. Retry and UI not started. |
 
 Historical sub-loop evidence (Loop 1A/1B/1C/1D/1D-R series, Loop 7B/7C/7D/7F/7G) is **not erased** by this table.
 
@@ -3497,6 +3497,176 @@ newest delivery execution.
   section. This line is preserved as point-in-time history, not a current claim.
 - This revision changed **no** business row, **no** Controller, **no** route,
   **no** Supabase state, and **no** FieldSync state.
+
+---
+
+# LOOP 9C-1 — DELIVERY STATUS READER CONTRACT — IMPLEMENTED 2026-09-29
+
+**Team Leader APPROVED** proceeding with Loop 9C using the audited narrow scope.
+This phase delivers the **server-side READ contract only**.
+
+**9C is NOT complete. Retry is NOT implemented. No UI exists yet.**
+
+## What 9C-1 is
+
+`app/Http/Controllers/InspectionDeliveryController::status()` behind
+`GET /applications/{id}/delivery-status`
+(`role:Admin,Planning Officer`), with all user-facing prose produced by the pure
+presenter `app/Support/InspectionDeliveryStatus`.
+
+It is **deliberately inert**: no dispatch, no `delivery_status` write, no
+application status change, no inspection status change, no assignment change, no
+`audit_trail` row, no delivery attempt row, and no Supabase or FieldSync call.
+
+## Access boundary — identical to Application Detail, on purpose
+
+`ApplicationController::show()` performs **no** per-application authorization of
+its own. Verified: zero `authorize`, zero `Gate::`, zero `can(`, zero `abort(403`
+inside that method. Its entire boundary is the route middleware.
+
+The reader therefore applies the **same** boundary, and is asserted to be
+byte-identical to it. Being *stricter* would be actively harmful, not cautious:
+all 70 live applications have `assigned_planning_officer_id = NULL`, so an
+ownership filter on the READ would return 404 to every caller and hide delivery
+state from Admin and Planning Officer alike. Delivery state is not ownership.
+
+A 404 therefore means only "no such application" — never "you may not see this".
+
+## Every round, and why `latestOfMany()` is avoided
+
+`site_inspections` stores **no round number**, so the primary key **is** the
+round chronology — the same one the existing `Parcel::siteInspection()`
+(`latestOfMany()`) already relies on. The reader loads
+`$application->siteInspections()` (the `hasMany`) ordered by `id`, and derives a
+1-based display `round` from that order, while `inspection_id` remains the only
+stable identity.
+
+Proved by rollback-only PostgreSQL probes: a two-round application returns
+**both** rows with independent states, while the `latestOfMany()` shape returns
+**one**. A single application-level badge would have hidden a distinct state.
+
+## NULL is "No Delivery Record", and nothing more
+
+`delivery_status IS NULL` maps to `no_delivery_record` / **"No Delivery Record"**
+— an API-facing token that is deliberately **not** a database value.
+
+Two different historical populations share NULL and must not be confused with
+each other or with a problem:
+
+1. pre-bridge rounds, which predate Loop 9 monitoring entirely; and
+2. genuinely **delivered** FieldSync jobs that intentionally carry no fabricated
+   local delivery history.
+
+A reader shown a successful job under wording like "Not delivered" or "Failed"
+would be actively misinformed, so the NULL branch states only the **absence of a
+record**. It never says pending, waiting, missing, or failed, and it is
+enforced by test. The reader does **not** consult Supabase to tell those
+populations apart, and must not be extended to: that distinction is not a
+delivery state.
+
+## The three real states
+
+| Stored | API state | Label |
+| --- | --- | --- |
+| `pending_delivery` | `pending_delivery` | Pending Delivery |
+| `delivered` | `delivered` | Delivered to FieldSync |
+| `delivery_failed` | `delivery_failed` | Delivery Failed |
+| `NULL` | `no_delivery_record` | No Delivery Record |
+
+No fourth state exists. An unrecognized stored value — including one a future
+migration might introduce — **degrades to the neutral no-record presentation**
+rather than being guessed at, because guessing is the one way this reader could
+invent a delivery failure that never happened.
+
+`assigned` / `in_progress` / `completed` are FieldSync **task lifecycle** values
+and are never used as a delivery label. Local delivery state never implies
+remote field progression.
+
+## Safe server-side failure mapping
+
+All seven canonical categories are mapped to authored prose server-side, so the
+client never interprets a raw token:
+
+| Category | Message |
+| --- | --- |
+| `inspector_mapping_unresolved` | The assigned inspector is not linked to a FieldSync account. |
+| `supabase_unreachable` | FieldSync could not be reached. |
+| `authentication_failure` | FieldSync rejected the iMAPS bridge credentials. |
+| `remote_constraint_failure` | FieldSync found a conflict with existing data. |
+| `remote_validation_failure` | FieldSync rejected the delivery data. |
+| `configuration_failure` | The iMAPS bridge configuration is incomplete. |
+| `unknown` | Delivery failed for an unclassified reason. |
+
+An unexpected stored category normalizes to `unknown`. No exception message,
+PostgREST body, URL, credential, handshake key, SQL text, filesystem path or
+signed URL can reach a browser, because **every** user-facing string is authored
+copy rather than a stored value.
+
+## `can_retry` is server-computed, and false everywhere today
+
+9C-1 **performs** no retry. It reports `can_retry` as an authorization fact so a
+future browser can never offer a control the server would refuse.
+
+It is true only when the viewer is a **Planning Officer**, the viewer's local
+user id **equals** `zoning_applications.assigned_planning_officer_id`, that
+pointer is **not NULL**, and this specific round is a recorded `delivery_failed`.
+
+`encoded_by`, `technical_reviews.reviewed_by` and `audit_trail.performed_by` are
+**never** consulted. All 70 applications happen to have `encoded_by` pointing at
+a Planning Officer who does *not* own them, so inferring ownership from it would
+hand retry authority to the wrong person on every application.
+
+Current reality, re-verified read-only: **0 / 70** applications have a recorded
+owner, `application_po_assignments` has **0** rows, and all six `delivery_failed`
+inspections (25–30, on applications 104 and 115–119) have a NULL owner. Their
+state is correctly reported as **Delivery Failed**, and `can_retry` is correctly
+**false**. The neutral reason tells an officer that a Planning Officer has not
+been assigned yet, without naming or implying any other officer can recover it.
+
+## Attempt count, and what is deliberately NOT exposed
+
+`withCount('deliveryAttempts')` gives one aggregate `attempt_count` per round
+with **no** per-round N+1 and **no** attempt rows loaded. Verified: 25–30 report
+1 each; every NULL-delivery row reports 0.
+
+Never exposed by 9C-1: `queue_job_uuid`, `attempt_number`, `safe_message`,
+`failed_jobs`, inspector notes, or signed URLs. Full operational history belongs
+to **9D Admin monitoring**.
+
+## Query shape
+
+Three queries total, independent of round count: the application row, the
+ordered rounds with `inspector` eager-loaded (`id`, `name` only), and the
+aggregate attempt count. No N+1.
+
+## Timestamp convention
+
+`last_delivery_attempt_at` and `delivered_at` use the existing
+`toIso8601String()` convention already used by `TechnicalReviewController`.
+NULL is returned as NULL; no timestamp is ever fabricated and no timezone offset
+is hand-written.
+
+## Boundaries respected
+
+No existing business Controller was edited — `ApplicationController`,
+`TechnicalReviewController`, `WorkReassignmentController` and
+`SiteInspectionController` are all untouched. The 9B writer and
+`InspectionDeliveryRecorder` are untouched. `Applications/Show.jsx` is untouched.
+**No database schema change, no forward SQL, no migration, no runtime DB write,
+no `audit_trail` write, no Supabase change, no FieldSync change.**
+
+Route placement is in a base region untouched by `origin/master`, and uses the
+inline FQCN form already present in `routes/web.php` so no import is added to the
+block upstream also edits. A three-way `git merge-tree` dry run confirms
+`routes/web.php` still **auto-merges cleanly**; the three pre-existing upstream
+conflicts (`ApplicationController`, `TechnicalReviewController`,
+`Header.jsx`) are in files 9C-1 never touches. Nothing was merged.
+
+## State
+
+- Tests: `Loop9c1DeliveryStatusContractTest` 33 / 284, `Loop9c1DeliveryStatusReaderTest` 11 / 35, full Unit suite 424 / 2299.
+- 16 rollback-only PostgreSQL probes, all PASS, all rolled back. Live baseline unchanged: 35 inspections, 6 `delivery_failed`, 29 NULL, 6 attempts, 0 correlated, 12 `failed_jobs`, 0 fabricated `delivered_at`, 0 probe leftovers.
+- **Next: 9C-2 — Planning Officer delivery status UI.** Not started.
 
 ---
 

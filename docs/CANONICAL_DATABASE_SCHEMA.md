@@ -808,3 +808,75 @@ additive and must not break the previously working Loops 1–8 assignment path. 
 successful remote delivery whose local recording failed may therefore remain
 **locally untracked** until a later idempotent delivery execution converges it —
 and it must never be described as a clean monitored success.
+
+## 20. Loop 9C-1 delivery status reader contract - 2026-09-29 (NO SCHEMA CHANGE)
+
+**Team Leader approved** Loop 9C using the audited narrow scope. 9C-1 delivers the
+**server-side READ contract only**.
+
+**No column, table, index, CHECK, value or migration was added.** This section
+documents which *existing* 9A/9B columns the reader reads and the exact
+presentation contract applied to them. Sections 1-19 remain authoritative,
+including the 9A schema, the 9A-R reconciliation state, the `queue_job_uuid`
+revision, and the migration-ledger warning.
+
+**9C is NOT complete. Retry is NOT implemented. No UI exists yet.**
+
+### 20.1 Columns read (all pre-existing, all 9A)
+
+| Column | Used for |
+| --- | --- |
+| `site_inspections.delivery_status` | the delivery state; `NULL` = no canonical record |
+| `site_inspections.last_delivery_attempt_at` | `last_attempt_at` |
+| `site_inspections.delivered_at` | `delivered_at` |
+| `site_inspections.last_delivery_failure_category` | safe failure category + prose |
+| `zoning_applications.assigned_planning_officer_id` | `can_retry` authority only |
+| `COUNT(inspection_delivery_attempts)` via `withCount` | `attempt_count` only |
+
+### 20.2 Presentation contract
+
+| Stored `delivery_status` | API state | Label |
+| --- | --- | --- |
+| `pending_delivery` | `pending_delivery` | Pending Delivery |
+| `delivered` | `delivered` | Delivered to FieldSync |
+| `delivery_failed` | `delivery_failed` | Delivery Failed |
+| `NULL` | `no_delivery_record` (**not a DB value**) | No Delivery Record |
+
+An unrecognized stored value degrades to `no_delivery_record` rather than being
+guessed. `no_delivery_record` states only the **absence of a record**; it is
+never rendered as pending, waiting, missing, or failed, because the NULL
+population includes both pre-bridge rounds and genuinely **delivered** FieldSync
+jobs that intentionally carry no fabricated local history.
+
+`assigned` / `in_progress` / `completed` remain FieldSync task lifecycle values
+and are never used as a delivery label.
+
+### 20.3 Not exposed by 9C-1
+
+`inspection_delivery_attempts.queue_job_uuid`, `attempt_number`, `safe_message`,
+`source`, `failed_jobs`, and any inspector-owned or evidence column. Only an
+aggregate `attempt_count` is returned. Full operational history is 9D Admin
+monitoring.
+
+### 20.4 Runtime writes
+
+**None.** 9C-1 performs no `INSERT`, `UPDATE`, `DELETE` or DDL. No `audit_trail`
+row, no delivery attempt, no summary change, no assignment change, and no job
+dispatch. The 9B writer and `InspectionDeliveryRecorder` are untouched.
+
+### 20.5 Verification
+
+`Loop9c1DeliveryStatusContractTest` 33 / 284, `Loop9c1DeliveryStatusReaderTest`
+11 / 35, full Unit suite 424 / 2299, plus 16 rollback-only PostgreSQL probes, all
+PASS and all rolled back. Live baseline unchanged: 35 inspections, 6
+`delivery_failed`, 29 NULL, 6 attempts, 0 correlated, 12 `failed_jobs`, 0
+fabricated `delivered_at`.
+
+### 20.6 Scope
+
+No Supabase change. No FieldSync change. No existing business Controller edit.
+`Applications/Show.jsx` untouched. The 9C-1 route sits in a base region untouched
+by `origin/master`, and a three-way `merge-tree` dry run confirms
+`routes/web.php` still auto-merges cleanly. Nothing was merged.
+
+**Next: 9C-2 — Planning Officer delivery status UI.** Not started.

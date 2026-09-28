@@ -145,6 +145,27 @@ Route::middleware('auth')->group(function () {
         ->name('technical-review.assign-inspector')
         ->middleware('role:Planning Officer');
 
+    // ── Loop 9C-1: read-only Loop 9 delivery state per inspection round ─────
+    // READ-ONLY. It reports `can_retry` as a server-computed authorization
+    // fact, but no retry route exists yet: 9C-1 adds no action, no dispatch
+    // and no UI.
+    //
+    // The middleware is deliberately IDENTICAL to `applications.show` above,
+    // because that route is the existing application-read boundary and it
+    // performs no per-application authorization of its own. Matching it exactly
+    // is what keeps this reader from being stricter (which would hide state
+    // from every caller, since no application has a recorded Planning Officer
+    // owner yet) or broader.
+    //
+    // PLACEMENT. This block sits in a region untouched by origin/master, and it
+    // uses the inline FQCN form already used elsewhere in this file so no import
+    // is added to the block origin/master also edits. Do not move it next to
+    // `api.inspections.supabase` below: that statement is already changed on
+    // this branch and is the exact line origin/master inserts against.
+    Route::get('/applications/{id}/delivery-status', [\App\Http\Controllers\InspectionDeliveryController::class, 'status'])
+        ->name('applications.delivery-status')
+        ->middleware('role:Admin,Planning Officer');
+
     Route::get('/api/inspections/{localInspectionId}/supabase-data', [TechnicalReviewController::class, 'getSupabaseInspectionData'])
         ->name('api.inspections.supabase')
         ->middleware('role:Admin,Planning Officer');

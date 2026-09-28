@@ -400,6 +400,32 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 14. **Status:** **LOOP 9B COMPLETE — READY TO PUSH.** 9C **NOT** started.
 15. **Notes / risks:** no commit was amended. 9C carries Controller, route and UI implications plus a known `origin/master` overlap at `4ec435f`, and requires its own audit, merge and authorization gate.
 
+### 2026-09-29 - Loop 9C-1 delivery status reader - NO SCHEMA CHANGE (read-only)
+
+1. **DATE:** 2026-09-29
+2. **TYPE:** APPLICATION / READ-ONLY — **NOT A SCHEMA CHANGE**
+3. **Authorization:** **Team Leader APPROVED** proceeding with Loop 9C using the audited narrow scope.
+4. **Reason:** a Planning Officer had no way to see whether an inspection round reached FieldSync. 9B made the state durable and queryable; 9C-1 exposes it under the existing application-read boundary.
+5. **This is NOT a new schema change.** No column, table, index, CHECK, value, forward SQL or migration was added. `database/sql/` and `database/migrations/` untouched. Migration ledger untouched; `php artisan migrate` was not run.
+6. **Runtime DB writes:** **NONE.** No `INSERT`, `UPDATE`, `DELETE` or DDL. No `audit_trail` row, no delivery attempt, no delivery summary change, no assignment change, and no job dispatch. The 9B writer and `InspectionDeliveryRecorder` are untouched.
+7. **Columns read (pre-existing, 9A):** `site_inspections.delivery_status`, `last_delivery_attempt_at`, `delivered_at`, `last_delivery_failure_category`; `zoning_applications.assigned_planning_officer_id` for `can_retry` authority only; an aggregate `COUNT` of `inspection_delivery_attempts` per round.
+8. **Presentation contract:** `pending_delivery` → "Pending Delivery"; `delivered` → "Delivered to FieldSync"; `delivery_failed` → "Delivery Failed"; `NULL` → `no_delivery_record` / **"No Delivery Record"**, an API token that is deliberately **not** a database value.
+9. **NULL semantics locked.** NULL states only the **absence of a canonical Loop 9 record**. It is never rendered as pending, waiting, missing, or failed, because the NULL population contains both pre-bridge rounds and genuinely **delivered** FieldSync jobs with no fabricated local history. The reader does not call Supabase to distinguish them, and that distinction is not a delivery state.
+10. **Defensive mapping:** an unrecognized stored `delivery_status` degrades to `no_delivery_record` rather than being guessed, and an unrecognized stored failure category normalizes to `unknown`. Guessing a state is the one way this reader could invent a failure that never happened.
+11. **All 7 failure categories mapped server-side** to authored prose, so no exception message, PostgREST body, URL, credential, handshake key, SQL text, filesystem path or signed URL can reach a browser.
+12. **Not exposed:** `queue_job_uuid`, `attempt_number`, `safe_message`, `source`, `failed_jobs`, inspector notes, signed URLs. Only an aggregate `attempt_count` is returned; full operational history is 9D Admin monitoring.
+13. **Every round returned.** `$application->siteInspections()` (the `hasMany`) ordered by `id`; the singular `Parcel::siteInspection()` `latestOfMany()` relation is deliberately avoided because it collapses an original inspection and its reinspection into one badge. `site_inspections` stores no round number, so the primary key IS the round chronology — the same one `latestOfMany()` already relies on.
+14. **Access boundary identical to `applications.show`.** Verified that `ApplicationController::show()` performs no per-application authorization at all: zero `authorize`, zero `Gate::`, zero `can(`, zero `abort(403`. The reader is asserted byte-identical in middleware. Being stricter would hide state from every caller, since **0 of 70** applications has a recorded Planning Officer owner.
+15. **`can_retry` is server-computed and false everywhere today.** True only for a Planning Officer whose local user id equals a non-NULL `assigned_planning_officer_id`, on a round whose state is `delivery_failed`. `encoded_by`, `technical_reviews.reviewed_by` and `audit_trail.performed_by` are never consulted — all 70 applications have `encoded_by` pointing at a Planning Officer who does not own them.
+16. **Query shape:** three queries regardless of round count — application row, ordered rounds with `inspector` eager-loaded (`id`, `name` only), and one aggregate attempt count. No per-round N+1.
+17. **Timestamps:** existing `toIso8601String()` convention; NULL returned as NULL; nothing fabricated, no hand-written offset.
+18. **Supabase:** **UNCHANGED.** **FieldSync:** **UNCHANGED.** **Existing business Controllers:** **UNCHANGED** (`ApplicationController`, `TechnicalReviewController`, `WorkReassignmentController`, `SiteInspectionController`). **UI:** **UNCHANGED** (`Applications/Show.jsx` untouched). **No retry action, route, service or button exists.**
+19. **Validation:** `Loop9c1DeliveryStatusContractTest` 33 / 284; `Loop9c1DeliveryStatusReaderTest` 11 / 35; full Unit suite 424 / 2299; `php -l` clean; `git diff --check` clean. 16 rollback-only PostgreSQL probes, all PASS, all rolled back, 0 probe leftovers.
+20. **Live baseline before and after:** 35 inspections / 6 `delivery_failed` / 29 NULL / 6 attempts (all `legacy_reconciliation`, all `queue_job_uuid` NULL) / 0 correlated / 12 `failed_jobs` / 0 fabricated `delivered_at` / 70 applications / 0 applications with a recorded PO owner — **unchanged**.
+21. **Master overlap:** the new route is placed in a base region untouched by `origin/master` and uses the inline FQCN form already present in `routes/web.php`, so no import is added to the block upstream also edits. A three-way `git merge-tree` dry run confirms `routes/web.php` still auto-merges cleanly; the three pre-existing upstream conflicts are in files 9C-1 never touches. **Nothing was merged, rebased or cherry-picked.**
+22. **Status:** **LOOP 9C-1 IMPLEMENTED — READY FOR REVIEW. NOT PUSHED.**
+23. **Notes / risks:** 9C is **NOT complete**. Retry is **NOT** implemented. No UI exists yet. DB-backed Feature tests remain unrunnable locally (`phpunit.xml` pins sqlite while PHP has no `pdo_sqlite`), so state shaping is proven by the pure presenter unit contract plus rollback-only PostgreSQL probes. **Next: 9C-2 — Planning Officer delivery status UI.**
+
 ## Future-entry template
 
 Record all 14 fields used above. Never include secrets.
