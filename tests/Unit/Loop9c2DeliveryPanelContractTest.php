@@ -609,7 +609,10 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
     {
         $mounts = $this->mountIndexes();
 
-        $this->assertCount(2, $mounts, 'One mount per Application Detail branch: exactly two.');
+        // Two SITES, one per mutually exclusive branch. Only ONE can render on a
+        // given page, which the browser verification confirmed after the panel
+        // duplication regression was corrected.
+        $this->assertCount(2, $mounts, 'One mount site per Application Detail branch.');
 
         foreach ($mounts as $i) {
             $this->assertStringContainsString(
@@ -638,16 +641,43 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
         }
     }
 
-    public function test_the_first_mount_sits_between_planning_officer_assignment_and_the_parcel_tabs(): void
+    public function test_the_two_mounts_are_mutually_exclusive_branches(): void
+    {
+        // THE REGRESSION BROWSER VERIFICATION CAUGHT.
+        //
+        // Mounting the panel once ABOVE the status ternary and once inside the
+        // else branch renders it TWICE on every non-Technical-Review
+        // application, because a panel above the ternary already covers both
+        // branches. Observed in a real browser: two "FieldSync Delivery"
+        // sections and two delivery-status GETs on one page.
+        //
+        // So exactly one mount must live inside each mutually exclusive arm.
+        $mounts = $this->mountIndexes();
+        $trBranch = $this->indexOf('{app.status === "Technical Review" ? (');
+        $elseContainer = $this->indexOf('<div className="max-w-xl mx-auto">');
+        $tabs = $this->indexOf('{/* Parcel Tabs */}');
+
+        // Mount 1: after the ternary opens, and before the parcel tabs.
+        $this->assertGreaterThan($trBranch, $mounts[0], 'Mount 1 must live inside the Technical Review branch.');
+        $this->assertLessThan($tabs, $mounts[0], 'Mount 1 must sit above the parcel tabs.');
+
+        // Mount 2: inside the other branch, past the parcel block.
+        $this->assertGreaterThan($elseContainer, $mounts[1], 'Mount 2 must live inside the other branch.');
+
+        // Neither mount may precede the ternary, or it would escape its branch.
+        $this->assertGreaterThan(
+            $trBranch,
+            $mounts[0],
+            'A mount above the ternary would render in both branches and duplicate the panel.'
+        );
+    }
+
+    public function test_the_first_mount_sits_after_the_application_ownership_card(): void
     {
         $mounts = $this->mountIndexes();
         $po = $this->indexOf('canReassign={canReassignPlanningOfficer}');
-        $trBranch = $this->indexOf('{app.status === "Technical Review" ? (');
-        $tabs = $this->indexOf('{/* Parcel Tabs */}');
 
         $this->assertGreaterThan($po, $mounts[0], 'After the application-level ownership card.');
-        $this->assertLessThan($trBranch, $mounts[0], 'Before the parcel-tab branch.');
-        $this->assertLessThan($tabs, $mounts[0], 'Before the parcel tabs.');
     }
 
     public function test_the_second_mount_sits_in_the_other_application_detail_branch(): void
@@ -876,7 +906,9 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
 
             $path = trim(substr($line, 3));
 
-            if ($path !== '' && ! str_starts_with($path, 'tests/')) {
+            // Tests and canonical documentation are not production code. The
+            // production set is what actually runs in the browser or the worker.
+            if ($path !== '' && ! str_starts_with($path, 'tests/') && ! str_starts_with($path, 'docs/')) {
                 $production[] = $path;
             }
         }

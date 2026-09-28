@@ -894,26 +894,34 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                             applicationId={app.id}
                                         />
 
-                                        {/* Loop 9C-2: FieldSync delivery state, one entry per
-                                            INSPECTION ROUND. This is deliberately an
-                                            application-level panel, not a parcel one. The
-                                            ParcelInspectionStatus and InspectorRoundAssignment
-                                            surfaces below are fed by `parcel.site_inspection`,
-                                            which is a latestOfMany() relation and therefore only
-                                            ever describes the NEWEST round. A delivery panel
-                                            placed there could not show an original inspection and
-                                            its reinspection as separate rounds, and would imply a
-                                            per-parcel meaning the data does not have.
-                                            The panel reads the Loop 9C-1 reader, which returns
-                                            EVERY round, and is not gated on
-                                            canRecordPlanningDecision because delivery status is
-                                            shared read-only visibility for Admin and Planning
-                                            Officer alike. It is read-only: no control is offered
-                                            and no delivery state is ever written from here. */}
-                                        <InspectionDeliveryStatusPanel applicationId={app.id} />
-
                                         {app.status === "Technical Review" ? (
                                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                                                {/* Loop 9C-2, Technical Review branch. The panel is
+                                                    application-level, not parcel-level, and it
+                                                    lives INSIDE this branch so it is mutually
+                                                    exclusive with the mount in the other branch
+                                                    below. Mounting it above this ternary
+                                                    instead would render it TWICE on every
+                                                    non-Technical-Review application, because a
+                                                    panel placed there already covers both
+                                                    branches. That duplication was found by
+                                                    browser verification and corrected here.
+                                                    It must not be nested under
+                                                    ParcelInspectionStatus or
+                                                    InspectorRoundAssignment either: those are fed
+                                                    by `parcel.site_inspection`, a
+                                                    latestOfMany() relation that can only ever
+                                                    describe the NEWEST round, so a delivery panel
+                                                    there could not show an original inspection
+                                                    and its reinspection as separate rounds. The
+                                                    9C-1 reader returns EVERY round.
+                                                    Not gated on canRecordPlanningDecision:
+                                                    delivery status is shared read-only visibility
+                                                    for Admin and Planning Officer alike. */}
+                                                <div className="p-5">
+                                                    <InspectionDeliveryStatusPanel applicationId={app.id} />
+                                                </div>
+
                                                 {/* Parcel Tabs */}
                                                 <div className="bg-slate-50/80 border-b border-slate-200/80 px-3 pt-2 flex gap-1.5 overflow-x-auto">
                                                     {uniqueParcels?.map((parcel, idx) => {
