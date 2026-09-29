@@ -214,9 +214,54 @@ export default function Show({
     const [statusDialog, setStatusDialog] = useState(null); // preset status or null
     const [siteMapOpen, setSiteMapOpen] = useState(false);
     const [parcelMapData, setParcelMapData] = useState(null);
-    const [brgyMapData, setBrgyMapData] = useState(null);
-    const [liveStatuses, setLiveStatuses] = useState({});
-    const [refs, setRefs] = useState({ sb_ordinance_number: app.sb_ordinance_number || "", dar_clearance_ref: app.dar_clearance_ref || "" });
+    const [landUseMapData, setLandUseMapData] = useState(null);
+    const [activeParcelFeature, setActiveParcelFeature] = useState(null);
+    const [activeParcelIndex, setActiveParcelIndex] = useState(0);
+    const [pinLookupMap, setPinLookupMap] = useState({});
+    const rosarioCenter = [13.845, 121.2063];
+
+    useEffect(() => {
+        fetch("/geojson/rosario_brgy_map.geojson")
+            .then((res) => res.json())
+            .then((data) => setBrgyMapData(sanitizeGeoJSON(data)))
+            .catch(() => {});
+
+        fetch("/geojson/land_use_plan.geojson")
+            .then((res) => res.json())
+            .then((data) => setLandUseMapData(sanitizeGeoJSON(data)))
+            .catch(() => {});
+
+        fetch("/api/map/land_parcels")
+            .then((res) => {
+                if (!res.ok) throw new Error("Unable to load land parcel layer");
+                return res.json();
+            })
+            .then((data) => {
+                const sanitized = sanitizeGeoJSON(data);
+                setParcelMapData(sanitized);
+
+                const lookupMap = {};
+                (sanitized?.features || []).forEach((feature) => {
+                    const pin = feature?.properties?.property_index_number?.trim();
+                    if (!pin) return;
+                    lookupMap[pin] = feature;
+                });
+                setPinLookupMap(lookupMap);
+            })
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        if (uniqueParcels && uniqueParcels.length > 0) {
+            const currentParcel = uniqueParcels[activeParcelIndex] || uniqueParcels[0];
+            const targetPin = currentParcel?.property_index_number?.trim();
+            if (targetPin && pinLookupMap[targetPin]) {
+                setActiveParcelFeature(pinLookupMap[targetPin]);
+            } else {
+                setActiveParcelFeature(null);
+            }
+        }
+    }, [pinLookupMap, activeParcelIndex, app, uniqueParcels]);
 
     useEffect(() => {
         const tick = () => {

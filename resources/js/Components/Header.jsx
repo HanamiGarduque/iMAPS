@@ -103,11 +103,41 @@ export default function Header({
     const [searchFocused, setSearchFocused] = useState(false);
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
     const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
+    const [notifMenuOpen, setNotifMenuOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [recentNotifs, setRecentNotifs] = useState([]);
+
     const profileRef = useRef(null);
     const searchRef = useRef(null);
+    const notifRef = useRef(null);
 
     const [suggestions, setSuggestions] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
+
+    // Fetch Notifications for Header
+    const fetchNotifications = () => {
+        fetch('/api/notifications')
+            .then((res) => res.ok ? res.json() : { unread_count: 0, recent: [] })
+            .then((data) => {
+                setUnreadCount(data.unread_count || 0);
+                setRecentNotifs(data.recent || []);
+            })
+            .catch((err) => console.error("Error fetching notifications:", err));
+    };
+
+    useEffect(() => {
+        fetchNotifications();
+        const timer = setInterval(fetchNotifications, 30000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const handleMarkAllReadHeader = (e) => {
+        if (e) e.stopPropagation();
+        router.post('/notifications/mark-all-read', {}, {
+            preserveScroll: true,
+            onSuccess: () => fetchNotifications(),
+        });
+    };
 
     // ── Predictive Search Effect ──
     useEffect(() => {
@@ -157,6 +187,9 @@ export default function Header({
             if (searchRef.current && !searchRef.current.contains(e.target)) {
                 setSearchFocused(false);
             }
+            if (notifRef.current && !notifRef.current.contains(e.target)) {
+                setNotifMenuOpen(false);
+            }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -173,6 +206,12 @@ export default function Header({
                     e.preventDefault();
                     e.stopPropagation();
                     setShortcutsModalOpen(false);
+                    return;
+                }
+                if (notifMenuOpen) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setNotifMenuOpen(false);
                     return;
                 }
                 if (profileMenuOpen) {
@@ -471,17 +510,117 @@ export default function Header({
                     </svg>
                 </button>
 
-                {/* Notification Bell with Badge */}
-                <button 
-                    type="button"
-                    className="relative w-8 h-8 flex items-center justify-center text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors focus:outline-none"
-                    title="System Notifications"
-                >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-                    </svg>
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-600 rounded-full ring-2 ring-white" />
-                </button>
+                {/* Notification Bell Dropdown Container */}
+                <div className="relative" ref={notifRef}>
+                    <button 
+                        type="button"
+                        onClick={() => setNotifMenuOpen(!notifMenuOpen)}
+                        className={`relative w-8 h-8 flex items-center justify-center rounded-xl transition-colors focus:outline-none ${
+                            notifMenuOpen ? 'bg-slate-100 text-blue-700 ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                        }`}
+                        title="System Notifications"
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                        </svg>
+                        {unreadCount > 0 && (
+                            <span className="absolute top-1 right-1 flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600" />
+                            </span>
+                        )}
+                    </button>
+
+                    {/* Notifications Dropdown Panel */}
+                    {notifMenuOpen && (
+                        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2 z-[999] animate-in fade-in slide-in-from-top-2 duration-150">
+                            <div className="px-3 py-2 flex items-center justify-between border-b border-slate-100">
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-xs font-bold text-slate-900">Notifications</h3>
+                                    {unreadCount > 0 && (
+                                        <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2 py-0.2 rounded-full">
+                                            {unreadCount} new
+                                        </span>
+                                    )}
+                                </div>
+                                {unreadCount > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={handleMarkAllReadHeader}
+                                        className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                                    >
+                                        Mark all read
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 my-1">
+                                {recentNotifs.length === 0 ? (
+                                    <div className="p-6 text-center text-xs text-slate-400">
+                                        No recent notifications
+                                    </div>
+                                ) : (
+                                    recentNotifs.map((item) => (
+                                        <div
+                                            key={item.id}
+                                            onClick={() => {
+                                                setNotifMenuOpen(false);
+                                                if (!item.is_read) {
+                                                    router.post(`/notifications/${item.id}/read`, {}, {
+                                                        preserveScroll: true,
+                                                        onSuccess: () => {
+                                                            fetchNotifications();
+                                                            if (item.action_url) router.visit(item.action_url);
+                                                        },
+                                                        onError: () => {
+                                                            if (item.action_url) router.visit(item.action_url);
+                                                        },
+                                                    });
+                                                } else if (item.action_url) {
+                                                    router.visit(item.action_url);
+                                                }
+                                            }}
+                                            className={`p-2.5 rounded-xl transition-all cursor-pointer flex items-start gap-2.5 hover:bg-slate-50 ${
+                                                !item.is_read ? 'bg-blue-50/40' : ''
+                                            }`}
+                                        >
+                                            <div className="mt-0.5">
+                                                {!item.is_read ? (
+                                                    <span className="w-2 h-2 rounded-full bg-blue-600 block shrink-0" />
+                                                ) : (
+                                                    <span className="w-2 h-2 rounded-full bg-slate-300 block shrink-0" />
+                                                )}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center justify-between gap-1">
+                                                    <p className={`text-xs font-bold truncate ${!item.is_read ? 'text-slate-900' : 'text-slate-700'}`}>
+                                                        {item.title}
+                                                    </p>
+                                                    <span className="text-[10px] text-slate-400 font-medium shrink-0">
+                                                        {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[11.5px] text-slate-500 truncate mt-0.5">
+                                                    {item.message}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-100 text-center">
+                                <Link
+                                    href="/notifications"
+                                    onClick={() => setNotifMenuOpen(false)}
+                                    className="block w-full py-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-xl transition-colors"
+                                >
+                                    View All Notifications →
+                                </Link>
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 <div className="h-5 w-px bg-slate-200/80 hidden sm:block" />
 

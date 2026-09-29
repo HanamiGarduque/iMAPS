@@ -408,7 +408,7 @@ export default function Dashboard({
                                         </div>
 
                                         <div className="mt-auto pt-4 border-t border-white/10 flex items-center justify-between text-[11px]">
-                                            <span className="text-slate-500 font-semibold">Powered by SARIMAX AI</span>
+                                            <span className="text-slate-500 font-semibold">Powered by Forecast AI</span>
                                             <Link href="/analytics" className="text-blue-400 font-bold hover:text-blue-300 transition-colors">Analytics &rarr;</Link>
                                         </div>
                                     </div>

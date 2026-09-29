@@ -14,7 +14,7 @@ class DashboardController extends Controller
 {
     // Landing page after login: welcome message, KPIs, and an analytics preview
     // that surfaces the descriptive/forecasting work from the two system objectives
-    // (spatio-temporal application trends + the SARIMAX 6-month forecast) without
+    // (spatio-temporal application trends + the 6-month forecast) without
     // duplicating the full Analytics or Maps pages.
     public function index()
     {
@@ -78,7 +78,7 @@ class DashboardController extends Controller
             ->limit(6)
             ->get();
 
-        // ── SARIMAX Forecast Preview (objective 3.2), reusing the latest saved run ──
+        // ── Forecast Preview (objective 3.2), reusing the latest saved run ──
         $latestRun = ForecastRun::with('outputs')->latest()->first();
         $forecastPreview = [];
         $forecastMetrics = null;

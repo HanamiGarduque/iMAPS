@@ -800,14 +800,9 @@ export default function MapLibre3DView({
 
         loadBarangayBoundaries()
             .then((raw) => {
-                if (raw && raw.features && raw.features.length) return raw;
-                // Fall back to the bundled export if PostGIS is unreachable, so
-                // the view still renders rather than showing an error card.
-                console.warn("Falling back to bundled barangay geometry");
-                return fetch("/geojson/rosario_3d_diversity_extrusions.geojson").then((r) => r.json());
-            })
-            .then((raw) => {
-                if (!raw || !raw.features) throw new Error("No barangay geometry");
+                if (!raw || !raw.features || !raw.features.length) {
+                    throw new Error("Unable to load barangay boundary geometry from Map API");
+                }
                 baseGeoRef.current = ensureRFC7946Winding(raw);
 
                 let fired = false;

@@ -1,59 +1,180 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
-
 <p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
+  <h1 align="center">iMAPS — Intelligent Geospatial Analytics & Land-Use Monitoring System</h1>
+  <p align="center">
+    <strong>Municipal Government of Rosario, Batangas</strong>
+  </p>
+  <p align="center">
+    An enterprise spatial decision-support system for real-time land-use tracking, zoning permit administration, automated technical reviews, field inspection synchronization, and predictive urban growth analytics.
+  </p>
 </p>
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## 🌟 Key Features
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- **🗺️ Geospatial & Map Analytics (`/maps`)**
+  - **Interactive GIS Viewport**: Built with MapLibre GL 3D & Leaflet for rendering barangay boundaries, zoning classification overlays, and land parcel boundaries.
+  - **Land-Use Diversity & Plan Drift**: Shannon Diversity Index calculation and plan drift detection comparing permitted usage against municipal Comprehensive Land Use Plans (CLUP).
+  - **Urban Growth Forecasting**: Integration with predictive forecasting services to project quarter-by-quarter land-use transitions and urban expansion.
+  - **Tax Dec & Parcel Lookup**: Live verification of Tax Declaration numbers (Tax Dec / TCT) against spatial parcel boundaries.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **📋 Zoning Application Docket (`/applications`)**
+  - **End-to-End Workflow**: Complete lifecycle tracking: Application Encoding → Parcel Verification → Technical Review → Field Inspection Scheduling → Final Decision (Approval/Disapproval).
+  - **Offline & Draft Storage**: Local storage backup and draft manager enabling Planning Officers to prepare application details offline.
+  - **Public Reference Tracking**: Automatic generation of public tracking reference links for applicants.
 
-## Learning Laravel
+- **🔍 Technical Review & Field Inspections (`/site-inspections`)**
+  - **Inspector Allocation & Scheduling**: Assign field inspectors to specific pending applications with geographic provenance.
+  - **Supabase Cloud Sync**: Bidirectional sync between local Laravel backend and mobile inspector applications (`PushInspectionToSupabase`, `PullCompletedInspections`).
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+- **📊 Analytics & Reporting (`/reports`)**
+  - **Export Formats**: PDF export via `laravel-dompdf` and Excel export via `simplexlsxgen`.
+  - **Interactive Visualizations**: Data charts built with Chart.js and Recharts for trend analysis.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- **🔐 Security, Audit Trail & Role-Based Access (`/users`)**
+  - **Granular RBAC**: Role middleware distinguishing `Admin` and `Planning Officer` capabilities.
+  - **Comprehensive Audit Logging**: Event logging (`AuditTrail`) tracking sensitive data access, password resets, status transitions, and system activities.
 
-## Laravel Sponsors
+- **🌐 Citizen Public Portal (`/public-portal`)**
+  - Public-facing lookup for verifying zoning permit status and reference tracking.
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+---
 
-### Premium Partners
+## 🏗️ Technology Stack
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+| Layer | Technology / Library |
+| --- | --- |
+| **Backend Framework** | [Laravel 12](https://laravel.com) (PHP 8.2+) |
+| **Frontend Architecture** | [Inertia.js v3.1](https://inertiajs.com) with [React 18](https://react.dev) |
+| **Styling & UI** | [Tailwind CSS v3](https://tailwindcss.com), Headless UI |
+| **Build Tooling** | [Vite 7](https://vitejs.dev), `@vitejs/plugin-react` |
+| **GIS & Mapping** | [MapLibre GL v6](https://maplibre.org), [Leaflet v1.9](https://leafletjs.com), `react-leaflet` |
+| **Data Visualization** | [Chart.js v4](https://www.chartjs.org), [Recharts v3](https://recharts.org) |
+| **Cloud & Mobile Sync** | [Supabase JS Client](https://supabase.com) (`@supabase/supabase-js`) |
+| **Export Engines** | `barryvdh/laravel-dompdf`, `shuchkin/simplexlsxgen` |
 
-## Contributing
+---
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## 🚀 Getting Started
 
-## Code of Conduct
+### Prerequisites
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+- **PHP** >= 8.2 (with `pdo`, `sqlite`/`mysqli`, `mbstring`, `openssl` extensions)
+- **Composer** >= 2.0
+- **Node.js** >= 18.x & **npm**
+- **SQLite** or **MySQL / PostgreSQL** database engine
 
-## Security Vulnerabilities
+### 💻 Installation & Setup
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd iMAPS
+   ```
 
-## License
+2. **Install dependencies:**
+   ```bash
+   composer install
+   npm install
+   ```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+3. **Configure Environment:**
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+   > Update `.env` with your database credentials, Supabase API credentials (for mobile field sync), and FastAPI endpoints (for ML growth forecasting).
+
+4. **Database Setup & Seed Data:**
+   ```bash
+   touch database/database.sqlite
+   php artisan migrate --seed
+   ```
+
+5. **Run Development Stack:**
+   Launch the unified development script (runs PHP server, Vite dev server, queue worker, and log watcher simultaneously):
+   ```bash
+   npm run dev
+   ```
+
+   *Alternatively, start services individually:*
+   ```bash
+   # Terminal 1: Application Server
+   php artisan serve
+
+   # Terminal 2: Asset Compiler
+   npm run dev:vite
+
+   # Terminal 3: Queue Listener
+   php artisan queue:work
+   ```
+
+6. **Access Application:**
+   Open [http://localhost:8000](http://localhost:8000) in your web browser.
+
+---
+
+## 🔑 Default Credentials (Seeded)
+
+| Role | Email | Password | Access Rights |
+| --- | --- | --- | --- |
+| **Admin** | `admin@imaps.com` | `password123` | Full access, settings, shapefile management, user management & audit logs |
+| **Planning Officer** | `planner@imaps.com` | `password123` | Application encoding, technical reviews, inspection scheduling & drafts |
+
+---
+
+## ⚙️ Custom Commands & Testing
+
+- **Sync Completed Mobile Field Inspections:**
+  ```bash
+  php artisan inspections:pull-completed
+  ```
+- **Import Historical Data:**
+  ```bash
+  php artisan data:import-historical
+  ```
+- **Execute Test Suite:**
+  ```bash
+  composer run test
+  # or
+  php artisan test
+  ```
+
+---
+
+## 📂 Project Structure
+
+```
+iMAPS/
+├── app/
+│   ├── Console/Commands/       # Custom Artisan commands (Supabase sync, data import)
+│   ├── Http/
+│   │   ├── Controllers/        # Controllers (Maps, Analytics, Applications, Inspections)
+│   │   └── Middleware/         # Inertia request handler & Role middleware
+│   ├── Jobs/                   # Queued jobs (PushInspectionToSupabase)
+│   ├── Models/                 # Eloquent models (ZoningApplication, Parcel, SiteInspection, AuditTrail)
+│   └── Services/               # Audit logger & status tracker services
+├── config/                     # Application configurations
+├── database/
+│   ├── factories/              # Model factories
+│   ├── migrations/             # Schema migrations
+│   └── seeders/                # User & Zoning Application seeders
+├── resources/
+│   └── js/
+│       ├── Components/         # React UI components & GIS map panels
+│       ├── Layouts/            # App layout shells (Authenticated, Guest)
+│       └── Pages/              # Inertia views (Dashboard, Maps, Applications, Reports, Users)
+├── routes/
+│   ├── web.php                 # Web and API endpoint routes
+│   └── auth.php                # Authentication routes
+└── scripts/                    # Development helper scripts
+```
+
+---
+
+## 📜 Compliance & License
+
+Developed for the **Municipal Government of Rosario, Batangas**.  
+All system operations comply with the **Data Privacy Act of 2012 (RA 10173)**, Cybercrime Prevention Act, and municipal zoning ordinances.
+
+Licensed under the [MIT License](LICENSE).

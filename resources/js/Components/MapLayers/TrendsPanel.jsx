@@ -11,6 +11,7 @@ export default function TrendsPanel({
     onLocateApp,
     recent = [],
     onForecastGenerated = null,
+    activePins = [],
 }) {
     const isBgy = Boolean(selectedBgy && selectedBgy.name);
     const bgyName = selectedBgy?.name || '';
@@ -37,6 +38,121 @@ export default function TrendsPanel({
     const displayHotspots = useMemo(() => {
         return urbanGrowthData?.hotspots || [];
     }, [urbanGrowthData]);
+
+    // Forecasted Demand per Barangay (Ranked) when in a forecast quarter
+    const forecastedHotspots = useMemo(() => {
+        if (!activeQuarter?.isForecast) return [];
+
+        let pinsToUse = [];
+        if (activePins && Array.isArray(activePins) && activePins.length > 0) {
+            pinsToUse = activePins;
+        } else if (intakeResult?.pins && Array.isArray(intakeResult.pins)) {
+            pinsToUse = intakeResult.pins.filter(p => {
+                if (p.year && p.quarter) {
+                    return p.year === activeQuarter.year && p.quarter === activeQuarter.quarter;
+                }
+                return true;
+            });
+        }
+
+        const countsMap = {};
+        const categoryMap = {};
+
+        pinsToUse.forEach(pin => {
+            const bName = (pin.barangay || 'Poblacion').trim();
+            countsMap[bName] = (countsMap[bName] || 0) + 1;
+            if (pin.target_land_use_class || pin.zoning_code) {
+                categoryMap[bName] = pin.target_land_use_class || pin.zoning_code;
+            }
+        });
+
+        const bgyNames = Object.keys(countsMap);
+        if (bgyNames.length === 0 && displayHotspots.length > 0) {
+            return displayHotspots.map((h, idx) => ({
+                rank: idx + 1,
+                name: h.name,
+                type: 'Forecasted Demand',
+                count: `${Math.max(1, Math.round((h.rank === 1 ? 12 : h.rank === 2 ? 9 : 15 - h.rank * 2)))} Predicted LC`,
+                color: h.color || '#2563eb',
+                bg: h.bg || '#dbeafe',
+                val: Math.max(1, 15 - h.rank * 2)
+            }));
+        }
+
+        const categoryColors = {
+            'Commercial': { color: '#2563eb', bg: '#dbeafe', label: 'Commercial Demand' },
+            'Industrial': { color: '#d97706', bg: '#fef3c7', label: 'Industrial Growth' },
+            'Agro-industrial': { color: '#059669', bg: '#d1fae5', label: 'Agro-Ind Demand' },
+            'Residential': { color: '#7c3aed', bg: '#ede9fe', label: 'Residential Expansion' },
+        };
+
+        const sorted = Object.entries(countsMap)
+            .map(([name, count]) => {
+                const cat = categoryMap[name] || 'Commercial';
+                const style = categoryColors[cat] || { color: '#2563eb', bg: '#dbeafe', label: `${cat} Forecast` };
+                return {
+                    name,
+                    count: `${count} Predicted LC`,
+                    val: count,
+                    type: style.label,
+                    color: style.color,
+                    bg: style.bg
+                };
+            })
+            .sort((a, b) => b.val - a.val);
+
+        return sorted.map((item, idx) => ({
+            ...item,
+            rank: idx + 1
+        }));
+    }, [activeQuarter, activePins, intakeResult, displayHotspots]);
+
+    // Pagination state for Forecasted Demand ranking
+    const [forecastPage, setForecastPage] = useState(1);
+    const ITEMS_PER_PAGE = 5;
+
+    useEffect(() => {
+        setForecastPage(1);
+    }, [activeQuarter]);
+
+    const totalForecastPages = Math.ceil(forecastedHotspots.length / ITEMS_PER_PAGE) || 1;
+    const paginatedForecastedHotspots = useMemo(() => {
+        const start = (forecastPage - 1) * ITEMS_PER_PAGE;
+        return forecastedHotspots.slice(start, start + ITEMS_PER_PAGE);
+    }, [forecastedHotspots, forecastPage]);
+
+    // Historical applications fetched from DB (historical_data table) for the selected barangay
+    const bgyHistoricalRecords = useMemo(() => {
+        if (!isBgy || !bgyName) return [];
+        const targetName = bgyName.trim().toLowerCase();
+        const pinsByYear = urbanGrowthData?.historicalPins || {};
+        const records = [];
+
+        Object.keys(pinsByYear).forEach((year) => {
+            const yearPins = pinsByYear[year] || [];
+            yearPins.forEach((pin) => {
+                if ((pin.barangay || '').trim().toLowerCase() === targetName) {
+                    records.push(pin);
+                }
+            });
+        });
+
+        return records.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    }, [urbanGrowthData, isBgy, bgyName]);
+
+    // Pagination state for LC Applications (selected barangay)
+    const [bgyAppsPage, setBgyAppsPage] = useState(1);
+    const BGY_APPS_PER_PAGE = 3;
+
+    useEffect(() => {
+        setBgyAppsPage(1);
+    }, [selectedBgy, activeQuarter]);
+
+    const totalBgyAppsPages = Math.ceil(bgyHistoricalRecords.length / BGY_APPS_PER_PAGE) || 1;
+    const paginatedBgyHistoricalRecords = useMemo(() => {
+        const start = (bgyAppsPage - 1) * BGY_APPS_PER_PAGE;
+        return bgyHistoricalRecords.slice(start, start + BGY_APPS_PER_PAGE);
+    }, [bgyHistoricalRecords, bgyAppsPage]);
 
     // Format metrics, defaulting to baseline metrics (MAE: 2.16, WMAPE: 30.2%)
     const maeDisplay = useMemo(() => {
@@ -110,6 +226,277 @@ export default function TrendsPanel({
 
     return (
         <div className="flex flex-col gap-3 p-3 select-none">
+            {isBgy && (
+                <>
+                    <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs flex items-center justify-between">
+                        <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 block">
+                                Barangay Focus Mode
+                            </span>
+                            <h3 className="text-sm font-black text-slate-900 mt-0.5">
+                                Brgy. {bgyName}
+                            </h3>
+                        </div>
+                        {onClearBgy && (
+                            <button
+                                type="button"
+                                onClick={onClearBgy}
+                                className="text-[10.5px] font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1 rounded-lg transition-colors cursor-pointer border border-slate-200/80 shrink-0"
+                                title="Return to Municipal Overview"
+                            >
+                                ✕ All Barangays
+                            </button>
+                        )}
+                    </div>
+
+                    {/* LC Applications for Selected Barangay */}
+                    {!activeQuarter?.isForecast && (
+                        <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2">
+                            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-blue-600" />
+                                    <h4 className="text-xs font-bold text-slate-800">
+                                        LC Applications
+                                    </h4>
+                                </div>
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                    {bgyHistoricalRecords.length} Record{bgyHistoricalRecords.length !== 1 ? 's' : ''}
+                                </span>
+                            </div>
+
+                            {paginatedBgyHistoricalRecords.length > 0 ? (
+                                <div className="space-y-2">
+                                    {paginatedBgyHistoricalRecords.map((item, idx) => {
+                                        const dateStr = item.created_at
+                                            ? new Date(item.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+                                            : "—";
+
+                                        return (
+                                            <div
+                                                key={item.id || `${item.reference_number}-${idx}`}
+                                                className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 hover:border-blue-200 transition-all space-y-1.5"
+                                            >
+                                                <div className="flex items-center justify-between text-[10px]">
+                                                    <span className="font-mono font-bold text-blue-700 bg-blue-100/70 px-1.5 py-0.5 rounded border border-blue-200/50">
+                                                        {item.reference_number || 'FC-2026'}
+                                                    </span>
+                                                    <span className="font-mono text-slate-400 text-[9.5px]">
+                                                        {dateStr}
+                                                    </span>
+                                                </div>
+
+                                                <div>
+                                                    <h5 className="text-[11.5px] font-bold text-slate-900 leading-tight">
+                                                        {item.applicant_name || 'Locational Clearance Applicant'}
+                                                    </h5>
+                                                    {item.purpose && (
+                                                        <p className="text-[10.5px] text-slate-600 mt-0.5 line-clamp-2 leading-relaxed">
+                                                            {item.purpose}
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 text-[10px]">
+                                                    <span className="font-semibold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                                                        🏷️ {item.target_land_use_class || item.zoning_code || 'Locational Clearance'}
+                                                    </span>
+                                                    {item.lot_area_sqm && (
+                                                        <span className="font-mono font-bold text-slate-500">
+                                                            📐 {item.lot_area_sqm} sqm
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="text-center py-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                                    <p className="text-xs font-semibold text-slate-500">No clearance records on file</p>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">No clearance applications found for Brgy. {bgyName}</p>
+                                </div>
+                            )}
+
+                            {/* Pagination Controls */}
+                            {totalBgyAppsPages > 1 && (
+                                <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[10.5px]">
+                                    <button
+                                        type="button"
+                                        onClick={() => setBgyAppsPage(p => Math.max(p - 1, 1))}
+                                        disabled={bgyAppsPage === 1}
+                                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold cursor-pointer transition-colors flex items-center gap-1"
+                                    >
+                                        <span>◀</span> Previous
+                                    </button>
+                                    <span className="text-[10px] font-mono text-slate-500 font-bold">
+                                        {bgyAppsPage} / {totalBgyAppsPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setBgyAppsPage(p => Math.min(p + 1, totalBgyAppsPages))}
+                                        disabled={bgyAppsPage === totalBgyAppsPages}
+                                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold cursor-pointer transition-colors flex items-center gap-1"
+                                    >
+                                        Next <span>▶</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </>
+            )}
+
+            {activeQuarter?.isForecast ? (
+                /* Forecasted Demand per Barangay (Ranked) */
+                <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                            <h4 className="text-xs font-bold text-slate-800">
+                                Forecasted Demand (Ranked)
+                            </h4>
+                        </div>
+                        <span className="text-[9.5px] font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
+                            {activeQuarter?.label || 'Forecast'}
+                        </span>
+                    </div>
+
+                    <div className="space-y-1">
+                        {paginatedForecastedHotspots.map((h) => {
+                            const isSelected = isBgy && bgyName.toLowerCase() === (h.name || '').toLowerCase();
+                            return (
+                                <div
+                                    key={h.rank || h.name}
+                                    onClick={() => onSelectBgy && onSelectBgy(h.name)}
+                                    className={`flex items-center gap-2 p-1.5 px-2 rounded-xl border transition-all cursor-pointer group ${
+                                        isSelected
+                                            ? "bg-blue-50 border-blue-300 shadow-2xs"
+                                            : "hover:bg-slate-50 border-slate-100 hover:border-blue-200"
+                                    }`}
+                                    title={`Click to center map on Brgy. ${h.name}`}
+                                >
+                                    <span
+                                        className={`text-[9px] font-black font-mono w-4 h-4 rounded-md flex items-center justify-center shrink-0 ${
+                                            h.rank === 1
+                                                ? "bg-blue-600 text-white"
+                                                : h.rank === 2
+                                                ? "bg-blue-100 text-blue-800"
+                                                : h.rank === 3
+                                                ? "bg-blue-50 text-blue-700"
+                                                : "bg-slate-100 text-slate-500"
+                                        }`}
+                                    >
+                                        {h.rank}
+                                    </span>
+
+                                    <span className="text-[11.5px] font-bold text-slate-800 flex-1 truncate group-hover:text-blue-700">
+                                        {h.name}
+                                    </span>
+
+                                    <span
+                                        className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                                        style={{ color: h.color, background: h.bg }}
+                                    >
+                                        {h.type}
+                                    </span>
+
+                                    <span className="text-[10px] text-blue-700 font-bold truncate max-w-[110px]" title={h.count}>
+                                        {h.count}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Pagination Controls */}
+                    {totalForecastPages > 1 && (
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[10.5px]">
+                            <button
+                                type="button"
+                                onClick={() => setForecastPage(p => Math.max(p - 1, 1))}
+                                disabled={forecastPage === 1}
+                                className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold cursor-pointer transition-colors flex items-center gap-1"
+                            >
+                                <span>◀</span> Previous
+                            </button>
+                            <span className="text-[10px] font-mono text-slate-500 font-bold">
+                                {forecastPage} / {totalForecastPages}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setForecastPage(p => Math.min(p + 1, totalForecastPages))}
+                                disabled={forecastPage === totalForecastPages}
+                                className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold cursor-pointer transition-colors flex items-center gap-1"
+                            >
+                                Next <span>▶</span>
+                            </button>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                /* Development Corridors Ranked (From Backend) */
+                <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-amber-500" />
+                            <h4 className="text-xs font-bold text-slate-800">
+                                Development Corridors (Ranked)
+                            </h4>
+                        </div>
+                        <span className="text-[9px] font-mono text-slate-400">
+                            Click to Focus
+                        </span>
+                    </div>
+
+                    <div className="space-y-1">
+                        {displayHotspots.map((h) => {
+                            const isSelected = isBgy && bgyName.toLowerCase() === (h.name || '').toLowerCase();
+                            return (
+                                <div
+                                    key={h.rank || h.name}
+                                    onClick={() => onSelectBgy && onSelectBgy(h.name)}
+                                    className={`flex items-center gap-2 p-1.5 px-2 rounded-xl border transition-all cursor-pointer group ${
+                                        isSelected
+                                            ? "bg-blue-50 border-blue-300 shadow-2xs"
+                                            : "hover:bg-slate-50 border-slate-100 hover:border-blue-200"
+                                    }`}
+                                    title={`Click to center map on Brgy. ${h.name}`}
+                                >
+                                    <span
+                                        className={`text-[9px] font-black font-mono w-4 h-4 rounded-md flex items-center justify-center shrink-0 ${
+                                            h.rank === 1
+                                                ? "bg-amber-100 text-amber-800"
+                                                : h.rank === 2
+                                                ? "bg-slate-200 text-slate-700"
+                                                : h.rank === 3
+                                                ? "bg-amber-50 text-amber-700"
+                                                : "bg-slate-100 text-slate-500"
+                                        }`}
+                                    >
+                                        {h.rank}
+                                    </span>
+
+                                    <span className="text-[11.5px] font-bold text-slate-800 flex-1 truncate group-hover:text-blue-700">
+                                        {h.name}
+                                    </span>
+
+                                    <span
+                                        className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                                        style={{ color: h.color, background: h.bg }}
+                                    >
+                                        {h.type}
+                                    </span>
+
+                                    <span className="text-[10px] text-slate-500 font-medium truncate max-w-[110px]" title={h.count}>
+                                        {h.count}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             {/* Forecasting Metrics Card */}
             <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2">
                 <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
@@ -133,91 +520,6 @@ export default function TrendsPanel({
                         <span className="text-[9.5px] text-slate-400 font-medium block">Spatial Model</span>
                         <span className="text-[10px] text-slate-600 font-bold">Rosario, Batangas</span>
                     </div>
-                </div>
-            </div>
-
-            {isBgy && (
-                <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs flex items-center justify-between">
-                    <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 block">
-                            Barangay Focus Mode
-                        </span>
-                        <h3 className="text-sm font-black text-slate-900 mt-0.5">
-                            Brgy. {bgyName}
-                        </h3>
-                    </div>
-                    {onClearBgy && (
-                        <button
-                            type="button"
-                            onClick={onClearBgy}
-                            className="text-[10.5px] font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1 rounded-lg transition-colors cursor-pointer border border-slate-200/80 shrink-0"
-                            title="Return to Municipal Overview"
-                        >
-                            ✕ All Barangays
-                        </button>
-                    )}
-                </div>
-            )}
-
-            {/* Development Corridors Ranked (From Backend) */}
-            <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2">
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-amber-500" />
-                        <h4 className="text-xs font-bold text-slate-800">
-                            Development Corridors (Ranked)
-                        </h4>
-                    </div>
-                    <span className="text-[9px] font-mono text-slate-400">
-                        Click to Focus
-                    </span>
-                </div>
-
-                <div className="space-y-1">
-                    {displayHotspots.map((h) => {
-                        const isSelected = isBgy && bgyName.toLowerCase() === (h.name || '').toLowerCase();
-                        return (
-                            <div
-                                key={h.rank || h.name}
-                                onClick={() => onSelectBgy && onSelectBgy(h.name)}
-                                className={`flex items-center gap-2 p-1.5 px-2 rounded-xl border transition-all cursor-pointer group ${
-                                    isSelected
-                                        ? "bg-blue-50 border-blue-300 shadow-2xs"
-                                        : "hover:bg-slate-50 border-slate-100 hover:border-blue-200"
-                                }`}
-                                title={`Click to center map on Brgy. ${h.name}`}
-                            >
-                                <span
-                                    className={`text-[9px] font-black font-mono w-4 h-4 rounded-md flex items-center justify-center shrink-0 ${
-                                        h.rank === 1
-                                            ? "bg-amber-100 text-amber-800"
-                                            : h.rank === 2
-                                            ? "bg-slate-200 text-slate-700"
-                                            : h.rank === 3
-                                            ? "bg-amber-50 text-amber-700"
-                                            : "bg-slate-100 text-slate-500"
-                                    }`}
-                                >
-                                    {h.rank}
-                                </span>
-
-                                <span className="text-[11.5px] font-bold text-slate-800 flex-1 truncate group-hover:text-blue-700">
-                                    {h.name}
-                                </span>
-
-                                <span
-                                    className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                                    style={{ color: h.color, background: h.bg }}
-                                >
-                                    {h.type}
-                                </span>
-
-                                <span className="text-[10px] text-slate-500 font-medium truncate max-w-[110px]" title={h.count}>
-                                    {h.count}
-                                </span>
-                            </div>
-                        );
-                    })}
                 </div>
             </div>
 

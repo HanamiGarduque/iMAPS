@@ -90,6 +90,14 @@ class RegisteredUserController extends Controller
             'handshake_key' => $handshakeKey,
         ]);
 
+        \App\Models\AppNotification::notifyRoles(
+            ['Admin'],
+            'New User Registered',
+            "New account created for {$user->name} ({$user->email}) with role {$user->role}.",
+            'user_registered',
+            '/users'
+        );
+
         event(new Registered($user));
 
         return back()->with('success', 'User account successfully provisioned!');
