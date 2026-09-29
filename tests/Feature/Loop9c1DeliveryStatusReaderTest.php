@@ -106,23 +106,115 @@ class Loop9c1DeliveryStatusReaderTest extends TestCase
 
     public function test_reader_exposes_no_mutation_route(): void
     {
-        $deliveryRoutes = collect(Route::getRoutes()->getRoutes())
-            ->filter(fn ($r) => str_contains($r->uri(), 'delivery'));
+        // REPLACED 2026-09-30 (Gap Issue D).
+        //
+        // The previous version of this test asserted two things that were true
+        // only while 9C-1 was the entire delivery surface:
+        //
+        //   1. every route whose URI contains "delivery" is GET/HEAD only, and
+        //   2. no route containing "retry-delivery" exists.
+        //
+        // Both became obsolete when 9C-2/9C-3 legitimately added
+        // POST /site-inspections/{inspection}/retry-delivery. Asserting that a
+        // mutation route must NOT exist is no longer a 9C-1 property; it is an
+        // assertion that the next loop was not delivered.
+        //
+        // The SURVIVING 9C-1 contract is narrower and stronger:
+        //
+        //   A. the READER is a read surface - GET/HEAD only, and it stays that
+        //      way regardless of what else exists;
+        //   B. any mutation endpoint is POST-only, so no read verb can ever
+        //      reach a mutation;
+        //   C. the reader action itself is inert - it contains no write, no
+        //      dispatch and no retry-service call.
+        //
+        // This test deliberately no longer claims that mutation routes do not
+        // exist. It asserts the reader is read-only, which is what 9C-1 owns.
 
-        foreach ($deliveryRoutes as $route) {
+        $routes = collect(Route::getRoutes()->getRoutes());
+
+        // A. The reader is a read surface.
+        $reader = $routes->first(
+            fn ($candidate) => $candidate->uri() === 'applications/{id}/delivery-status',
+        );
+
+        $this->assertNotNull($reader, 'The delivery-status read route must exist.');
+        $this->assertSame(
+            ['GET', 'HEAD'],
+            $reader->methods(),
+            'The 9C-1 reader must stay read-only: GET and HEAD only, whatever else exists.',
+        );
+
+        // B. A mutation endpoint, if present, is POST only. This is deliberately
+        // conditional: 9C-1 does not require the retry route to exist, but if it
+        // does exist it must never be reachable by a read verb.
+        $retry = $routes->first(
+            fn ($candidate) => str_contains($candidate->uri(), 'retry-delivery'),
+        );
+
+        if ($retry !== null) {
             $this->assertSame(
-                ['GET', 'HEAD'],
-                $route->methods(),
-                "9C-1 must expose read-only delivery routes only; found {$route->uri()}."
+                ['POST'],
+                $retry->methods(),
+                'A delivery mutation endpoint must be POST only, so no GET or HEAD can reach it.',
+            );
+            $this->assertNotContains(
+                'GET',
+                $retry->methods(),
+                'A delivery mutation endpoint must never answer a read verb.',
+            );
+            $this->assertNotContains(
+                'HEAD',
+                $retry->methods(),
+                'A delivery mutation endpoint must never answer a read verb.',
             );
         }
 
-        // No retry route exists yet. 9C-3 owns that.
-        $this->assertTrue(
-            collect(Route::getRoutes()->getRoutes())
-                ->every(fn ($r) => ! str_contains($r->uri(), 'retry-delivery')),
-            '9C-1 must NOT add a retry route.'
+        // C. The reader action is inert. Asserted against the shipped source
+        // rather than the database, so it needs no fixtures, cannot touch the
+        // development baseline, and stays valid on a completely empty database.
+        $controller = (string) file_get_contents(
+            dirname(__DIR__, 2).'/app/Http/Controllers/InspectionDeliveryController.php'
         );
+
+        $this->assertNotFalse(
+            strpos($controller, 'public function status('),
+            'The reader action must still exist.',
+        );
+
+        // Isolate the status() body, up to the next method declaration, and strip
+        // comments. Without stripping, the class-level docblock and the retry()
+        // docblock both name InspectionDeliveryRetryService and
+        // PushInspectionToSupabase in PROSE, which would read as a violation.
+        $start = (int) strpos($controller, 'public function status(');
+        $this->assertNotFalse($start, 'The reader action must still exist.');
+
+        $tail = substr($controller, $start);
+        $end = preg_match('/\n\s*public function /', $tail, $m, PREG_OFFSET_CAPTURE);
+        $readerBody = ($end === 1 && $m[0][1] > 0)
+            ? substr($tail, 0, $m[0][1])
+            : $tail;
+
+        $readerCode = preg_replace('#/\*.*?\*/#s', '', $readerBody) ?? $readerBody;
+        $readerCode = preg_replace('#^\s*(//|\*).*$#m', '', $readerCode) ?? $readerCode;
+
+        foreach ([
+            'InspectionDeliveryRetryService',
+            'PushInspectionToSupabase',
+            'dispatch(',
+            'DB::insert',
+            '->insert(',
+            '->update(',
+            '->save(',
+            '->create(',
+            '->delete(',
+        ] as $forbidden) {
+            $this->assertStringNotContainsString(
+                $forbidden,
+                $readerCode,
+                "The 9C-1 reader must stay inert; it must not contain '{$forbidden}'.",
+            );
+        }
     }
 
     public function test_reader_route_does_not_shadow_the_application_detail_route(): void
