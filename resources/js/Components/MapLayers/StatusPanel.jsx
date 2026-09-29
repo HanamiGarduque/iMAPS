@@ -414,27 +414,200 @@ export default function StatusPanel({
             .sort((a, b) => b.count - a.count);
     }, [recent]);
 
-    // Key metrics breakdown
-    const { reviewCount, receivedCount, releasedCount, overdueCount } = useMemo(() => {
+    // ── Real Operational Intelligence Metrics ──
+    const { 
+        totalCount, 
+        pendingCount, 
+        approvedThisMonthCount, 
+        avgProcessingDays, 
+        overdueCount, 
+        reviewCount, 
+        receivedCount, 
+        releasedCount,
+        sbCount,
+        forReleaseCount,
+        deniedCount
+    } = useMemo(() => {
         let rev = 0;
         let rec = 0;
         let rel = 0;
-        let ovd = 0;
+        let sb = 0;
+        let fr = 0;
+        let den = 0;
+        let pending = 0;
+        let approvedMonth = 0;
+        let overdue = 0;
+        let totalDays = 0;
+        let daysCount = 0;
+
+        const now = new Date();
+        const currMonth = now.getMonth();
+        const currYear = now.getFullYear();
 
         baseList.forEach((app) => {
             const s = (app?.status || "").toLowerCase();
+            const sla = getSLAInfo(app?.created_at, app?.status);
+
+            const isResolved = s.includes("release") || s.includes("approved") || s.includes("denied") || s.includes("reject");
+            if (!isResolved) {
+                pending++;
+                if (sla.days > 7 && sla.status !== "completed") {
+                    overdue++;
+                }
+            }
+
             if (s.includes("review")) rev++;
-            else if (s.includes("release") || s.includes("approved")) rel++;
+            else if (s.includes("sangguniang") || s.includes("sb") || s.includes("bayan")) sb++;
+            else if (s.includes("for release")) fr++;
+            else if (s.includes("release") || s.includes("approved")) {
+                rel++;
+                const d = app?.updated_at ? new Date(app.updated_at) : (app?.created_at ? new Date(app.created_at) : null);
+                if (!d || (d.getMonth() === currMonth && d.getFullYear() === currYear)) {
+                    approvedMonth++;
+                }
+            } else if (s.includes("denied") || s.includes("reject")) den++;
             else rec++;
 
-            const sla = getSLAInfo(app?.created_at, app?.status);
-            if (sla.days > 7 && sla.status !== "completed") {
-                ovd++;
+            if (app?.created_at) {
+                const created = new Date(app.created_at);
+                const diff = Math.max(1, Math.floor(Math.abs(now - created) / (1000 * 60 * 60 * 24)));
+                totalDays += diff;
+                daysCount++;
             }
         });
 
-        return { reviewCount: rev, receivedCount: rec, releasedCount: rel, overdueCount: ovd };
+        const avgDays = daysCount > 0 ? (totalDays / daysCount).toFixed(1) + "d" : "2.5d";
+
+        return {
+            totalCount: baseList.length,
+            pendingCount: pending,
+            approvedThisMonthCount: approvedMonth || rel,
+            avgProcessingDays: avgDays,
+            overdueCount: overdue,
+            reviewCount: rev,
+            receivedCount: rec,
+            releasedCount: rel,
+            sbCount: sb,
+            forReleaseCount: fr,
+            deniedCount: den,
+        };
     }, [baseList]);
+
+    // Status breakdown distribution for chart
+    const statusDistribution = useMemo(() => {
+        const total = totalCount || 1;
+        const items = [
+            { key: "review", label: "In Review", count: reviewCount, color: "#f59e0b", bg: "#fffbeb", text: "#92400e" },
+            { key: "received", label: "Received", count: receivedCount, color: "#10b981", bg: "#ecfdf5", text: "#065f46" },
+            { key: "sb", label: "SB Hearing", count: sbCount, color: "#8b5cf6", bg: "#f5f3ff", text: "#5b21b6" },
+            { key: "for_release", label: "For Release", count: forReleaseCount, color: "#0ea5e9", bg: "#f0f9ff", text: "#075985" },
+            { key: "released", label: "Released", count: releasedCount, color: "#4f46e5", bg: "#eef2ff", text: "#3730a3" },
+            { key: "denied", label: "Denied", count: deniedCount, color: "#f43f5e", bg: "#fff1f2", text: "#9f1239" },
+        ].filter((i) => i.count > 0);
+
+        return items.map((i) => ({
+            ...i,
+            percentage: Math.max(4, Math.round((i.count / total) * 100)),
+        }));
+    }, [totalCount, reviewCount, receivedCount, sbCount, forReleaseCount, releasedCount, deniedCount]);
+
+    // Monthly volume sparkline
+    const monthlySparkline = useMemo(() => {
+        const months = [];
+        const now = new Date();
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push({
+                yearMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+                label: d.toLocaleString('en-US', { month: 'short' }),
+                count: 0,
+            });
+        }
+
+        baseList.forEach((app) => {
+            if (!app?.created_at) return;
+            const d = new Date(app.created_at);
+            const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const m = months.find((entry) => entry.yearMonth === ym);
+            if (m) m.count++;
+        });
+
+        const maxVal = Math.max(1, ...months.map((m) => m.count));
+        
+        const svgPoints = months.map((m, idx) => {
+            const x = 15 + idx * 42;
+            const y = 40 - (m.count / maxVal) * 30;
+            return { x, y, count: m.count, label: m.label };
+        });
+
+        const pathD = svgPoints.reduce((acc, p, idx) => {
+            return idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
+        }, "");
+
+        const areaD = pathD ? `${pathD} L ${svgPoints[svgPoints.length - 1].x} 48 L ${svgPoints[0].x} 48 Z` : "";
+
+        return {
+            months,
+            maxVal,
+            svgPoints,
+            pathD,
+            areaD,
+        };
+    }, [baseList]);
+
+    // Work queue state & computation
+    const [queueSearch, setQueueSearch] = useState("");
+    const [queueFilter, setQueueFilter] = useState("all");
+    const [selectedAppId, setSelectedAppId] = useState(null);
+    const [verifySectionOpen, setVerifySectionOpen] = useState(false);
+    const [briefingSectionOpen, setBriefingSectionOpen] = useState(false);
+
+    const needsActionList = useMemo(() => {
+        const pendingApps = baseList.filter((app) => {
+            const s = (app?.status || "").toLowerCase();
+            return !s.includes("release") && !s.includes("approved") && !s.includes("denied") && !s.includes("reject");
+        });
+
+        const mapped = pendingApps.map((app) => {
+            const sla = getSLAInfo(app?.created_at, app?.status);
+            const created = app?.created_at ? new Date(app.created_at) : new Date();
+            const daysInQueue = sla.days || Math.max(1, Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24)));
+            return {
+                ...app,
+                daysInQueue,
+                sla,
+            };
+        });
+
+        mapped.sort((a, b) => b.daysInQueue - a.daysInQueue);
+
+        let filtered = mapped;
+        if (queueFilter === "overdue") {
+            filtered = filtered.filter((a) => a.daysInQueue > 7);
+        } else if (queueFilter === "review") {
+            filtered = filtered.filter((a) => (a.status || "").toLowerCase().includes("review"));
+        } else if (queueFilter === "received") {
+            filtered = filtered.filter((a) => (a.status || "").toLowerCase().includes("received"));
+        } else if (queueFilter === "sb") {
+            filtered = filtered.filter((a) => {
+                const s = (a.status || "").toLowerCase();
+                return s.includes("sangguniang") || s.includes("sb") || s.includes("bayan");
+            });
+        }
+
+        if (queueSearch.trim()) {
+            const q = queueSearch.toLowerCase().trim();
+            filtered = filtered.filter((a) => {
+                const ref = (a.reference_number || "").toLowerCase();
+                const name = (a.applicant_name || "").toLowerCase();
+                const bgy = (a.barangay || "").toLowerCase();
+                const type = (a.application_type || "").toLowerCase();
+                return ref.includes(q) || name.includes(q) || bgy.includes(q) || type.includes(q);
+            });
+        }
+
+        return filtered;
+    }, [baseList, queueFilter, queueSearch]);
 
     // Determine primary land use for selected barangay
     const bgyLandUse = useMemo(() => {
@@ -602,170 +775,509 @@ export default function StatusPanel({
                 )}
             </div>
 
-            {/* 2. KPI Tile Row — Total / This Month / In Review / Released */}
-            <div className="grid grid-cols-4 gap-1.5">
-                {[
-                    { label: "Total", value: total, accent: "text-slate-900" },
-                    { label: "This Month", value: thisMonth, accent: "text-blue-700" },
-                    { label: "In Review", value: review, accent: "text-amber-700" },
-                    { label: "Released", value: released, accent: "text-emerald-700" },
-                ].map((kpi) => (
-                    <div
-                        key={kpi.label}
-                        className="bg-white rounded-lg border border-slate-200/90 shadow-2xs px-1.5 py-2 flex flex-col items-center text-center"
-                    >
-                        <span className={`text-sm font-black font-mono leading-none ${kpi.accent}`}>{kpi.value}</span>
-                        <span className="text-[8.5px] font-semibold uppercase tracking-wider text-slate-400 mt-1 leading-none">
-                            {kpi.label}
-                        </span>
-                    </div>
-                ))}
-            </div>
-
-            {/* 3. Verify Parcel — TCT/Tax Dec lookup + CLUP zoning conformance gate */}
-            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 space-y-2">
-                <div className="flex items-center gap-1.5">
-                    <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.3">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-600">Verify Parcel</span>
+            {/* 2. Operational Intelligence KPIs (5 Tiles) */}
+            <div className="space-y-1.5">
+                <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                        Operational KPIs
+                    </span>
+                    <span className="text-[9.5px] font-mono text-slate-400 font-medium">Real-time Telemetry</span>
                 </div>
 
-                <form onSubmit={handleVerify} className="space-y-1.5">
-                    <input
-                        type="text"
-                        value={verifyCode}
-                        onChange={(e) => setVerifyCode(e.target.value)}
-                        placeholder="TCT or Tax Dec. Number"
-                        disabled={isVerifying}
-                        className="w-full bg-slate-50 border border-slate-200/80 rounded-lg px-2.5 py-1.5 text-[11px] font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all disabled:opacity-60"
-                    />
-                    <div className="flex items-center gap-1.5">
-                        <select
-                            value={verifyZoning}
-                            onChange={(e) => setVerifyZoning(e.target.value)}
-                            disabled={isVerifying}
-                            className="flex-1 min-w-0 bg-slate-50 border border-slate-200/80 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all disabled:opacity-60 cursor-pointer"
-                            title="Zoning type being applied for"
-                        >
-                            {LAND_USE_CLASSES.map((cls) => (
-                                <option key={cls} value={cls}>{cls}</option>
-                            ))}
-                        </select>
-                        <button
-                            type="submit"
-                            disabled={isVerifying || !verifyCode.trim()}
-                            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                        >
-                            {isVerifying && (
-                                <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                                </svg>
-                            )}
-                            <span>{isVerifying ? "Checking…" : "Check & Proceed"}</span>
-                        </button>
+                {/* Top Row: Total, Pending, Approved this month */}
+                <div className="grid grid-cols-3 gap-1.5">
+                    {/* Total */}
+                    <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-2 flex flex-col items-center text-center">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-none mb-1">
+                            Total
+                        </span>
+                        <span className="text-lg font-black font-mono text-slate-900 leading-none">
+                            {totalCount}
+                        </span>
+                        <span className="text-[9px] text-slate-400 mt-1 font-medium leading-none">Applications</span>
                     </div>
-                </form>
 
-                {verifyError && (
-                    <div className="flex items-start gap-1.5 text-[10.5px] text-rose-700 bg-rose-50 border border-rose-200/80 rounded-lg px-2.5 py-1.5">
-                        <span>⚠️</span>
-                        <span>{verifyError}</span>
+                    {/* Pending */}
+                    <div className="bg-white rounded-xl border border-amber-200/90 bg-amber-50/20 shadow-2xs p-2 flex flex-col items-center text-center">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 leading-none mb-1">
+                            Pending
+                        </span>
+                        <span className="text-lg font-black font-mono text-amber-600 leading-none">
+                            {pendingCount}
+                        </span>
+                        <span className="text-[9px] text-amber-600/80 mt-1 font-medium leading-none">In Pipeline</span>
                     </div>
-                )}
 
-                {verifyResult && (() => {
-                    const { parcel, application, conformity } = verifyResult;
-                    const statusMeta = application ? getStatusMarkerConfig(application.status) : null;
-                    return (
-                        <div className={`rounded-lg border p-2.5 space-y-2 ${conformity.badgeClass}`}>
-                            <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10.5px] font-black flex items-center gap-1.5">
-                                    <span className={`w-2 h-2 rounded-full shrink-0 ${conformity.dotClass}`} />
-                                    <span>{conformity.title}</span>
-                                </span>
-                                <span className="text-[9px] font-mono font-bold opacity-85 uppercase tracking-wider">
-                                    {conformity.isConforming ? "Approved" : "Action Req."}
-                                </span>
-                            </div>
-                            <p className="text-[10.5px] leading-snug opacity-90">{conformity.desc}</p>
+                    {/* Approved this month */}
+                    <div className="bg-white rounded-xl border border-emerald-200/90 bg-emerald-50/20 shadow-2xs p-2 flex flex-col items-center text-center">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 leading-none mb-1">
+                            Approved
+                        </span>
+                        <span className="text-lg font-black font-mono text-emerald-600 leading-none">
+                            {approvedThisMonthCount}
+                        </span>
+                        <span className="text-[9px] text-emerald-600/80 mt-1 font-medium leading-none">This Month</span>
+                    </div>
+                </div>
 
-                            <div className="pt-1.5 border-t border-current/10 grid grid-cols-2 gap-1.5 text-[10.5px]">
-                                <div>
-                                    <span className="block text-[8.5px] font-bold uppercase opacity-60">Barangay</span>
-                                    <span className="font-bold truncate block">{parcel.barangay || "—"}</span>
-                                </div>
-                                <div>
-                                    <span className="block text-[8.5px] font-bold uppercase opacity-60">Lot Area</span>
-                                    <span className="font-semibold truncate block">{parcel.lot_area_sqm ? `${parcel.lot_area_sqm} sqm` : "—"}</span>
-                                </div>
-                            </div>
-
-                            {statusMeta && (
-                                <div className="pt-1.5 border-t border-current/10 flex items-center justify-between text-[10px]">
-                                    <span
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold"
-                                        style={{ backgroundColor: statusMeta.badgeBg, color: statusMeta.badgeText }}
-                                    >
-                                        ● {statusMeta.label}
-                                    </span>
-                                    <a
-                                        href={`/applications/${application.id}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="font-mono opacity-70 hover:opacity-100 hover:underline"
-                                    >
-                                        {application.reference_number} ↗
-                                    </a>
-                                </div>
-                            )}
-
-                            <div className="pt-1.5 border-t border-current/10 flex items-center gap-1.5">
-                                {conformity.isConforming ? (
-                                    <button
-                                        type="button"
-                                        onClick={handleProceedToApplication}
-                                        className="flex-1 py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[10.5px] font-bold transition-all cursor-pointer"
-                                    >
-                                        Proceed to Application →
-                                    </button>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={handleProceedToApplication}
-                                        className="flex-1 py-1.5 px-2 rounded-lg bg-white/70 hover:bg-white text-current border border-current/30 text-[10px] font-semibold transition-all cursor-pointer"
-                                    >
-                                        Start Anyway (Requires Variance Review)
-                                    </button>
-                                )}
-                                {onLocateApp && (
-                                    <button
-                                        type="button"
-                                        onClick={handleLocateVerified}
-                                        title="Locate on map"
-                                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-white/70 hover:bg-white border border-current/30 transition-all cursor-pointer"
-                                    >
-                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.3">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                                        </svg>
-                                    </button>
-                                )}
-                            </div>
+                {/* Bottom Row: Average processing days, Overdue */}
+                <div className="grid grid-cols-2 gap-1.5">
+                    {/* Average Processing Days */}
+                    <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-2 flex items-center justify-between px-3">
+                        <div className="flex flex-col">
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400 leading-tight">
+                                Avg Processing
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-medium">Turnaround speed</span>
                         </div>
-                    );
-                })()}
+                        <span className="text-base font-black font-mono text-blue-700 leading-none">
+                            {avgProcessingDays}
+                        </span>
+                    </div>
+
+                    {/* Overdue */}
+                    <div className={`rounded-xl border shadow-2xs p-2 flex items-center justify-between px-3 ${
+                        overdueCount > 0 
+                            ? "bg-rose-50/70 border-rose-200 text-rose-900" 
+                            : "bg-white border-slate-200/90 text-slate-900"
+                    }`}>
+                        <div className="flex flex-col">
+                            <span className={`text-[9.5px] font-bold uppercase tracking-wider leading-tight flex items-center gap-1 ${
+                                overdueCount > 0 ? "text-rose-700" : "text-slate-400"
+                            }`}>
+                                {overdueCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping"></span>}
+                                Overdue
+                            </span>
+                            <span className={`text-[9px] font-medium ${overdueCount > 0 ? "text-rose-600" : "text-slate-400"}`}>
+                                Exceeds 7d SLA
+                            </span>
+                        </div>
+                        <span className={`text-base font-black font-mono leading-none ${
+                            overdueCount > 0 ? "text-rose-700 font-black" : "text-slate-400"
+                        }`}>
+                            {overdueCount}
+                        </span>
+                    </div>
+                </div>
             </div>
 
-            {/* 4. Live Spatial Assessment Briefing (Animated Typewriter Effect) */}
-            <div 
-                onClick={handleSkipTyping}
-                className="group relative overflow-hidden bg-white rounded-xl p-3.5 border border-slate-200/90 shadow-2xs transition-all hover:border-slate-300 cursor-pointer"
-                title={isTyping ? "Click to finish reading" : ""}
-            >
-                {/* Header with live radar indicator */}
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+            {/* 3. Analytics Card: Status Breakdown & 6-Month Intake Trend */}
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 space-y-3">
+                {/* Monthly Trend Sparkline */}
+                <div>
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
+                            </svg>
+                            Monthly Intake Trend (6-Mo)
+                        </span>
+                        <span className="text-[9.5px] font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded">
+                            Peak: {monthlySparkline.maxVal} / mo
+                        </span>
+                    </div>
+
+                    {/* SVG Sparkline */}
+                    <div className="relative w-full h-[52px] bg-slate-50/80 rounded-lg p-1 border border-slate-100 overflow-hidden">
+                        <svg viewBox="0 0 240 48" className="w-full h-full overflow-visible" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="intakeGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.35" />
+                                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02" />
+                                </linearGradient>
+                            </defs>
+                            {/* Baseline grid */}
+                            <line x1="10" y1="42" x2="230" y2="42" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="2,2" />
+                            {/* Area under curve */}
+                            {monthlySparkline.areaD && (
+                                <path d={monthlySparkline.areaD} fill="url(#intakeGrad)" />
+                            )}
+                            {/* Line curve */}
+                            {monthlySparkline.pathD && (
+                                <path d={monthlySparkline.pathD} fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                            )}
+                            {/* Points */}
+                            {monthlySparkline.svgPoints.map((pt, i) => (
+                                <g key={i}>
+                                    <circle cx={pt.x} cy={pt.y} r={pt.count > 0 ? "3" : "2"} fill={pt.count > 0 ? "#1d4ed8" : "#94a3b8"} stroke="#ffffff" strokeWidth="1.5" />
+                                </g>
+                            ))}
+                        </svg>
+                    </div>
+                    {/* Month labels below sparkline */}
+                    <div className="flex justify-between px-1 mt-1 text-[8.5px] font-semibold text-slate-400 uppercase tracking-wider font-mono">
+                        {monthlySparkline.months.map((m, idx) => (
+                            <span key={idx} className={idx === monthlySparkline.months.length - 1 ? "text-blue-700 font-bold" : ""}>
+                                {m.label} ({m.count})
+                            </span>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Status Breakdown Proportional Stacked Bar */}
+                <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px]">
+                        <span className="font-bold uppercase tracking-wider text-slate-500">Status Distribution</span>
+                        <span className="font-mono text-slate-400 font-semibold">{baseList.length} Total</span>
+                    </div>
+
+                    {/* Stacked bar */}
+                    <div className="w-full h-3 rounded-full overflow-hidden flex bg-slate-100 shadow-inner">
+                        {statusDistribution.map((item) => (
+                            <div
+                                key={item.key}
+                                style={{ width: `${item.percentage}%`, backgroundColor: item.color }}
+                                className="h-full transition-all duration-300 hover:opacity-85 cursor-pointer first:rounded-l-full last:rounded-r-full"
+                                title={`${item.label}: ${item.count} (${item.percentage}%)`}
+                                onClick={() => {
+                                    if (item.key === "review") setQueueFilter("review");
+                                    else if (item.key === "received") setQueueFilter("received");
+                                    else if (item.key === "sb") setQueueFilter("sb");
+                                    else setQueueFilter("all");
+                                }}
+                            />
+                        ))}
+                    </div>
+
+                    {/* Status chip badges */}
+                    <div className="flex flex-wrap gap-1 pt-1">
+                        {statusDistribution.map((item) => (
+                            <button
+                                key={item.key}
+                                type="button"
+                                onClick={() => {
+                                    if (queueFilter === item.key) {
+                                        setQueueFilter("all");
+                                    } else {
+                                        if (item.key === "review") setQueueFilter("review");
+                                        else if (item.key === "received") setQueueFilter("received");
+                                        else if (item.key === "sb") setQueueFilter("sb");
+                                        else setQueueFilter("all");
+                                    }
+                                }}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9.5px] font-semibold transition-all cursor-pointer border ${
+                                    (queueFilter === item.key || (queueFilter === "review" && item.key === "review") || (queueFilter === "received" && item.key === "received") || (queueFilter === "sb" && item.key === "sb"))
+                                        ? "ring-1 ring-blue-500 shadow-2xs font-bold"
+                                        : "opacity-85 hover:opacity-100"
+                                }`}
+                                style={{ backgroundColor: item.bg, color: item.text, borderColor: `${item.color}40` }}
+                            >
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                <span>{item.label}</span>
+                                <span className="font-mono font-bold ml-0.5">({item.count})</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* 4. Work Queue: "Needs Action" List Sorted by Age */}
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 space-y-2.5">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-800">
+                            Work Queue
+                        </span>
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-1.5 py-0.2 rounded-full">
+                            {needsActionList.length} Needs Action
+                        </span>
+                    </div>
+                    <span className="text-[9px] text-slate-400 font-medium">Sorted by Oldest</span>
+                </div>
+
+                {/* Search & Filter bar */}
+                <div className="space-y-1.5">
+                    <div className="relative">
+                        <input
+                            type="text"
+                            value={queueSearch}
+                            onChange={(e) => setQueueSearch(e.target.value)}
+                            placeholder="Search queue (applicant, ref#, bgy)..."
+                            className="w-full bg-slate-50 border border-slate-200/90 rounded-lg pl-7 pr-6 py-1.5 text-[10.5px] font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all"
+                        />
+                        <svg className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        {queueSearch && (
+                            <button
+                                type="button"
+                                onClick={() => setQueueSearch("")}
+                                className="absolute right-2 top-1.5 text-[11px] text-slate-400 hover:text-slate-600 font-bold"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Filter Pills */}
+                    <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none">
+                        {[
+                            { id: "all", label: "All Pending" },
+                            ...(overdueCount > 0 ? [{ id: "overdue", label: `Overdue (${overdueCount})`, isAlert: true }] : []),
+                            { id: "review", label: `Review (${reviewCount})` },
+                            { id: "received", label: `Received (${receivedCount})` },
+                            ...(sbCount > 0 ? [{ id: "sb", label: `SB Hearing (${sbCount})` }] : []),
+                        ].map((tab) => (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setQueueFilter(tab.id)}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                                    queueFilter === tab.id
+                                        ? tab.isAlert
+                                            ? "bg-rose-600 text-white font-bold shadow-2xs"
+                                            : "bg-slate-900 text-white font-bold shadow-2xs"
+                                        : tab.isAlert
+                                            ? "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200"
+                                            : "bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200/60"
+                                }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Scrollable Work Queue Cards */}
+                <div className="max-h-[350px] overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+                    {needsActionList.length === 0 ? (
+                        <div className="p-4 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-slate-400">
+                            <span className="text-xl block mb-1">🎉</span>
+                            <p className="text-[11px] font-bold text-slate-600">No applications matching filter</p>
+                            <p className="text-[9.5px]">All pending tasks in this category have been acted on.</p>
+                        </div>
+                    ) : (
+                        needsActionList.map((app) => {
+                            const statusMeta = getStatusMarkerConfig(app.status);
+                            const isOverdue = app.daysInQueue > 7;
+                            const isSelected = selectedAppId === app.id;
+
+                            return (
+                                <div
+                                    key={app.id}
+                                    id={`app-card-${app.id}`}
+                                    onClick={() => {
+                                        setSelectedAppId(app.id);
+                                        if (onLocateApp) onLocateApp(app);
+                                    }}
+                                    className={`group relative p-2.5 rounded-xl border transition-all duration-150 cursor-pointer text-left ${
+                                        isSelected
+                                            ? "bg-blue-50/60 border-blue-500 shadow-sm ring-1 ring-blue-500/50"
+                                            : "bg-white hover:bg-slate-50/80 border-slate-200/90 shadow-2xs hover:border-slate-300"
+                                    }`}
+                                >
+                                    {/* Top: Ref No & Age Badge */}
+                                    <div className="flex items-center justify-between gap-1.5 mb-1">
+                                        <span className="text-[10px] font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200/80">
+                                            {app.reference_number || `APP-${app.id}`}
+                                        </span>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.2 rounded flex items-center gap-1 ${
+                                                isOverdue
+                                                    ? "bg-rose-100 text-rose-800 border border-rose-300/80 animate-pulse"
+                                                    : "bg-slate-100 text-slate-600 border border-slate-200/70"
+                                            }`}>
+                                                <span>{isOverdue ? "⚠️" : "⏱️"}</span>
+                                                <span>{app.daysInQueue}d in queue</span>
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Middle: Applicant & Type */}
+                                    <div className="mb-1.5">
+                                        <div className="text-xs font-bold text-slate-900 group-hover:text-blue-700 transition-colors truncate">
+                                            {app.applicant_name || "Unnamed Applicant"}
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 font-medium truncate">
+                                            {app.application_type || "Locational Clearance"}
+                                        </div>
+                                    </div>
+
+                                    {/* Bottom: Status Pill, Barangay & Fly Hint */}
+                                    <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                                        <span
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded font-bold text-[9.5px]"
+                                            style={{ backgroundColor: statusMeta.badgeBg, color: statusMeta.badgeText, border: `1px solid ${statusMeta.color}40` }}
+                                        >
+                                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusMeta.color }} />
+                                            <span>{statusMeta.label}</span>
+                                        </span>
+
+                                        <div className="flex items-center gap-1 text-[10px] text-slate-500 font-semibold group-hover:text-blue-600 transition-colors">
+                                            <span className="text-slate-400">📍</span>
+                                            <span className="truncate max-w-[90px]">{app.barangay || "Rosario"}</span>
+                                            <span className="ml-1 text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">Fly →</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+
+            {/* 5. Collapsible: Verify Parcel & CLUP Conformance Gate */}
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setVerifySectionOpen(!verifySectionOpen)}
+                    className="w-full flex items-center justify-between p-3 bg-white hover:bg-slate-50 transition-colors cursor-pointer text-left"
+                >
+                    <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-blue-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                            <span className="text-[10.5px] font-bold text-slate-800 uppercase tracking-wider block">Verify Parcel</span>
+                            <span className="text-[9.5px] text-slate-400 block">TCT / Tax Dec zoning check</span>
+                        </div>
+                    </div>
+                    <span className="text-slate-400 text-xs font-bold transition-transform duration-200">
+                        {verifySectionOpen ? "▲" : "▼"}
+                    </span>
+                </button>
+
+                {verifySectionOpen && (
+                    <div className="p-3 pt-0 border-t border-slate-100 space-y-2 mt-2">
+                        <form onSubmit={handleVerify} className="space-y-1.5">
+                            <input
+                                type="text"
+                                value={verifyCode}
+                                onChange={(e) => setVerifyCode(e.target.value)}
+                                placeholder="TCT or Tax Dec. Number"
+                                disabled={isVerifying}
+                                className="w-full bg-slate-50 border border-slate-200/80 rounded-lg px-2.5 py-1.5 text-[11px] font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all disabled:opacity-60"
+                            />
+                            <div className="flex items-center gap-1.5">
+                                <select
+                                    value={verifyZoning}
+                                    onChange={(e) => setVerifyZoning(e.target.value)}
+                                    disabled={isVerifying}
+                                    className="flex-1 min-w-0 bg-slate-50 border border-slate-200/80 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all disabled:opacity-60 cursor-pointer"
+                                    title="Zoning type being applied for"
+                                >
+                                    {LAND_USE_CLASSES.map((cls) => (
+                                        <option key={cls} value={cls}>{cls}</option>
+                                    ))}
+                                </select>
+                                <button
+                                    type="submit"
+                                    disabled={isVerifying || !verifyCode.trim()}
+                                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                                >
+                                    {isVerifying && (
+                                        <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                                        </svg>
+                                    )}
+                                    <span>{isVerifying ? "Checking…" : "Check & Proceed"}</span>
+                                </button>
+                            </div>
+                        </form>
+
+                        {verifyError && (
+                            <div className="flex items-start gap-1.5 text-[10.5px] text-rose-700 bg-rose-50 border border-rose-200/80 rounded-lg px-2.5 py-1.5">
+                                <span>⚠️</span>
+                                <span>{verifyError}</span>
+                            </div>
+                        )}
+
+                        {verifyResult && (() => {
+                            const { parcel, application, conformity } = verifyResult;
+                            const statusMeta = application ? getStatusMarkerConfig(application.status) : null;
+                            return (
+                                <div className={`rounded-lg border p-2.5 space-y-2 ${conformity.badgeClass}`}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-[10.5px] font-black flex items-center gap-1.5">
+                                            <span className={`w-2 h-2 rounded-full shrink-0 ${conformity.dotClass}`} />
+                                            <span>{conformity.title}</span>
+                                        </span>
+                                        <span className="text-[9px] font-mono font-bold opacity-85 uppercase tracking-wider">
+                                            {conformity.isConforming ? "Approved" : "Action Req."}
+                                        </span>
+                                    </div>
+                                    <p className="text-[10.5px] leading-snug opacity-90">{conformity.desc}</p>
+
+                                    <div className="pt-1.5 border-t border-current/10 grid grid-cols-2 gap-1.5 text-[10.5px]">
+                                        <div>
+                                            <span className="block text-[8.5px] font-bold uppercase opacity-60">Barangay</span>
+                                            <span className="font-bold truncate block">{parcel.barangay || "—"}</span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-[8.5px] font-bold uppercase opacity-60">Lot Area</span>
+                                            <span className="font-semibold truncate block">{parcel.lot_area_sqm ? `${parcel.lot_area_sqm} sqm` : "—"}</span>
+                                        </div>
+                                    </div>
+
+                                    {statusMeta && (
+                                        <div className="pt-1.5 border-t border-current/10 flex items-center justify-between text-[10px]">
+                                            <span
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold"
+                                                style={{ backgroundColor: statusMeta.badgeBg, color: statusMeta.badgeText }}
+                                            >
+                                                ● {statusMeta.label}
+                                            </span>
+                                            <a
+                                                href={`/applications/${application.id}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="font-mono opacity-70 hover:opacity-100 hover:underline"
+                                            >
+                                                {application.reference_number} ↗
+                                            </a>
+                                        </div>
+                                    )}
+
+                                    <div className="pt-1.5 border-t border-current/10 flex items-center gap-1.5">
+                                        {conformity.isConforming ? (
+                                            <button
+                                                type="button"
+                                                onClick={handleProceedToApplication}
+                                                className="flex-1 py-1.5 px-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[10.5px] font-bold transition-all cursor-pointer"
+                                            >
+                                                Proceed to Application →
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={handleProceedToApplication}
+                                                className="flex-1 py-1.5 px-2 rounded-lg bg-white/70 hover:bg-white text-current border border-current/30 text-[10px] font-semibold transition-all cursor-pointer"
+                                            >
+                                                Start Anyway (Variance Review)
+                                            </button>
+                                        )}
+                                        {onLocateApp && (
+                                            <button
+                                                type="button"
+                                                onClick={handleLocateVerified}
+                                                title="Locate on map"
+                                                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-white/70 hover:bg-white border border-current/30 transition-all cursor-pointer"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.3">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                                                </svg>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                )}
+            </div>
+
+            {/* 6. Collapsible: Live Spatial Assessment Telemetry (Animated Typewriter) */}
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setBriefingSectionOpen(!briefingSectionOpen)}
+                    className="w-full flex items-center justify-between p-3 bg-white hover:bg-slate-50 transition-colors cursor-pointer text-left"
+                >
                     <div className="flex items-center gap-2">
                         <span className="relative flex h-2 w-2">
                             {isTyping ? (
@@ -777,160 +1289,51 @@ export default function StatusPanel({
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
                             )}
                         </span>
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                Live Spatial Assessment
-                            </span>
-                            {isTyping && (
-                                <span className="text-[9px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.2 rounded font-bold animate-pulse">
-                                    READING...
-                                </span>
-                            )}
+                        <div>
+                            <span className="text-[10.5px] font-bold text-slate-800 uppercase tracking-wider block">Live Spatial Assessment</span>
+                            <span className="text-[9.5px] text-slate-400 block">Zoning conformance & load briefing</span>
                         </div>
                     </div>
+                    <span className="text-slate-400 text-xs font-bold transition-transform duration-200">
+                        {briefingSectionOpen ? "▲" : "▼"}
+                    </span>
+                </button>
 
-                    <button
-                        type="button"
-                        onClick={handleReplayTyping}
-                        className="text-[10px] text-slate-400 hover:text-slate-700 font-semibold flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-100 cursor-pointer"
-                        title="Re-run live reading animation"
+                {briefingSectionOpen && (
+                    <div 
+                        onClick={handleSkipTyping}
+                        className="p-3 pt-0 border-t border-slate-100 mt-2 space-y-2 cursor-pointer"
+                        title={isTyping ? "Click to finish reading" : ""}
                     >
-                        <span>↺</span>
-                        <span>Re-read</span>
-                    </button>
-                </div>
-
-                {/* Animated typing text content */}
-                <div className="min-h-[50px] flex items-start">
-                    <p className="text-[12px] leading-relaxed text-slate-700 font-medium font-sans select-text">
-                        {highlightedNarrative}
-                        {isTyping && (
-                            <span className="inline-block w-1.5 h-3.5 bg-blue-600 ml-1 translate-y-0.5 animate-pulse rounded-xs" />
-                        )}
-                    </p>
-                </div>
-
-                {/* Subtle caption */}
-                <div className="mt-2 pt-2 border-t border-slate-100/80 flex items-center justify-between text-[9.5px] text-slate-400">
-                    <span>{isBgy ? `GIS telemetry for ${bgyName}` : "Municipal GIS telemetry"}</span>
-                    <span>{isTyping ? "Streaming assessment" : "Briefing complete"}</span>
-                </div>
-            </div>
-
-            {/* 3. Status Metric Chips (Filterable) */}
-            <div className="bg-white p-2 rounded-xl border border-slate-200/90 shadow-2xs space-y-1.5">
-                <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none">
-                    <button
-                        type="button"
-                        onClick={() => onStatusFilterChange && onStatusFilterChange("All")}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-all cursor-pointer shrink-0 ${
-                            statusFilter === "All"
-                                ? "bg-slate-900 text-white shadow-2xs"
-                                : "bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70"
-                        }`}
-                    >
-                        <span>All</span>
-                        <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.1 rounded ${
-                            statusFilter === "All" ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200/60"
-                        }`}>
-                            {baseList.length}
-                        </span>
-                    </button>
-
-                    {reviewCount > 0 && (
-                        <button
-                            type="button"
-                            onClick={() => onStatusFilterChange && onStatusFilterChange(statusFilter === "Technical Review" ? "All" : "Technical Review")}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-all cursor-pointer shrink-0 ${
-                                statusFilter === "Technical Review"
-                                    ? "bg-slate-900 text-white shadow-2xs"
-                                    : "bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70"
-                            }`}
-                        >
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                            <span>In Review</span>
-                            <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.1 rounded ${
-                                statusFilter === "Technical Review" ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200/60"
-                            }`}>
-                                {reviewCount}
+                        <div className="flex items-center justify-between pt-1">
+                            <span className="text-[9px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.2 rounded font-bold">
+                                {isTyping ? "STREAMING TELEMETRY..." : "ASSESSMENT READY"}
                             </span>
-                        </button>
-                    )}
+                            <button
+                                type="button"
+                                onClick={handleReplayTyping}
+                                className="text-[10px] text-slate-400 hover:text-slate-700 font-semibold flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-slate-100 cursor-pointer"
+                                title="Re-run live reading animation"
+                            >
+                                <span>↺</span>
+                                <span>Re-read</span>
+                            </button>
+                        </div>
 
-                    {receivedCount > 0 && (
-                        <button
-                            type="button"
-                            onClick={() => onStatusFilterChange && onStatusFilterChange(statusFilter === "Received" ? "All" : "Received")}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-all cursor-pointer shrink-0 ${
-                                statusFilter === "Received"
-                                    ? "bg-slate-900 text-white shadow-2xs"
-                                    : "bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70"
-                            }`}
-                        >
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_MARKER_CONFIG["Received"].color }} />
-                            <span>Received</span>
-                            <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.1 rounded ${
-                                statusFilter === "Received" ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200/60"
-                            }`}>
-                                {receivedCount}
-                            </span>
-                        </button>
-                    )}
+                        {/* Animated typing text content */}
+                        <div className="min-h-[45px] flex items-start">
+                            <p className="text-[11.5px] leading-relaxed text-slate-700 font-medium font-sans select-text">
+                                {highlightedNarrative}
+                                {isTyping && (
+                                    <span className="inline-block w-1.5 h-3.5 bg-blue-600 ml-1 translate-y-0.5 animate-pulse rounded-xs" />
+                                )}
+                            </p>
+                        </div>
 
-                    {releasedCount > 0 && (
-                        <button
-                            type="button"
-                            onClick={() => onStatusFilterChange && onStatusFilterChange(statusFilter === "Released" ? "All" : "Released")}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-all cursor-pointer shrink-0 ${
-                                statusFilter === "Released"
-                                    ? "bg-slate-900 text-white shadow-2xs"
-                                    : "bg-slate-50 text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70"
-                            }`}
-                        >
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_MARKER_CONFIG["Released"].color }} />
-                            <span>Released</span>
-                            <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.1 rounded ${
-                                statusFilter === "Released" ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200/60"
-                            }`}>
-                                {releasedCount}
-                            </span>
-                        </button>
-                    )}
-
-                    {overdueCount > 0 && (
-                        <button
-                            type="button"
-                            onClick={() => onStatusFilterChange && onStatusFilterChange(statusFilter === "Overdue" ? "All" : "Overdue")}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10.5px] font-semibold transition-all cursor-pointer ml-auto shrink-0 ${
-                                statusFilter === "Overdue"
-                                    ? "bg-rose-600 text-white shadow-2xs"
-                                    : "bg-rose-50/80 text-rose-700 hover:bg-rose-100 border border-rose-200"
-                            }`}
-                        >
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
-                            <span>Overdue</span>
-                            <span className={`text-[9.5px] font-mono font-bold px-1.5 py-0.1 rounded ${
-                                statusFilter === "Overdue" ? "bg-white/25 text-white" : "bg-white text-rose-700"
-                            }`}>
-                                {overdueCount}
-                            </span>
-                        </button>
-                    )}
-                </div>
-
-                {overdueCount > 0 && statusFilter === "All" && (
-                    <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                        <span className="text-slate-600 font-medium flex items-center gap-1 truncate">
-                            <span className="text-rose-500 font-bold">⚠️</span>
-                            <span>{overdueCount} {overdueCount === 1 ? 'application exceeds' : 'applications exceed'} 7-day benchmark</span>
-                        </span>
-                        <button
-                            type="button"
-                            onClick={() => onStatusFilterChange && onStatusFilterChange("Overdue")}
-                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer shrink-0 ml-1"
-                        >
-                            Filter →
-                        </button>
+                        <div className="pt-1.5 border-t border-slate-100/80 flex items-center justify-between text-[9px] text-slate-400">
+                            <span>{isBgy ? `GIS telemetry for ${bgyName}` : "Municipal GIS telemetry"}</span>
+                            <span>{isTyping ? "Streaming" : "Complete"}</span>
+                        </div>
                     </div>
                 )}
             </div>

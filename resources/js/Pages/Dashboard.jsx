@@ -166,6 +166,24 @@ const getBarangayCentroid = (bgyName) => {
     return ROSARIO_BGY_COORDS["Poblacion"] || [13.845343, 121.209673];
 };
 
+const createGmapsBlinkingDotIcon = (L, isHovered = false, tooltipText = "") => {
+    const Leaflet = L?.default || L;
+
+    return Leaflet.divIcon({
+        className: 'custom-gmaps-blinking-marker',
+        html: `
+            <div class="gmaps-marker-box ${isHovered ? 'is-hovered' : ''}">
+                <div class="gmaps-aura-halo"></div>
+                <div class="gmaps-core-dot"></div>
+                ${tooltipText ? `<div class="gmaps-marker-tooltip">${tooltipText}</div>` : ''}
+            </div>
+        `,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -14],
+    });
+};
+
 const createNumberedPinIcon = (number, color, borderColor, L, isHovered = false, tooltipText = "") => {
     const Leaflet = L?.default || L;
 
@@ -569,7 +587,16 @@ function LeafletMap({
         }
 
         if (layer === "status") {
-            return { ...baseStyle, fillColor: statusColor(activeTotal), fillOpacity: activeTotal > 0 ? 0.35 : 0.15 };
+            return {
+                stroke: false,
+                fill: false,
+                color: "transparent",
+                fillColor: "transparent",
+                weight: 0,
+                opacity: 0,
+                fillOpacity: 0,
+                className: "imaps-deadspace",
+            };
         }
 
         if (layer === "trends") {
@@ -596,6 +623,7 @@ function LeafletMap({
     // Subtle blur effect applied to unselected barangay paths
     const applyBarangayBlur = useCallback((selectedName) => {
         if (!geoLayerRef.current) return;
+        if (layerRef.current === "status") return;
         const targetName = (selectedName || "").trim().toLowerCase();
 
         geoLayerRef.current.eachLayer((l) => {
@@ -680,7 +708,17 @@ function LeafletMap({
             const isZoning = currentLayer === "zoning";
             const isTrends = currentLayer === "trends";
 
-            if (isTrends) {
+            if (isStatus) {
+                matchedLayer.setStyle({
+                    stroke: false,
+                    fill: false,
+                    color: "transparent",
+                    fillColor: "transparent",
+                    opacity: 0,
+                    fillOpacity: 0,
+                    weight: 0,
+                });
+            } else if (isTrends) {
                 const count = bgyDemandCountsRef.current[targetName] || 0;
                 const info = getTrendsDemandColor(count);
                 matchedLayer.setStyle({
@@ -875,17 +913,7 @@ function LeafletMap({
             loadMunicipalBoundary().then((rosarioData) => {
                 if (mapInstanceRef.current !== map) return; // unmounted meanwhile
                 if (rosarioData && rosarioData.features) {
-                    const rosarioGeo = L.default.geoJSON(rosarioData, {
-                        style: {
-                            color: "#1e3a8a",
-                            weight: 3,
-                            fillColor: "transparent",
-                            opacity: 0.85,
-                            dashArray: "4, 4"
-                        },
-                        interactive: false
-                    }).addTo(map);
-
+                    const rosarioGeo = L.default.geoJSON(rosarioData);
                     const rosarioBounds = rosarioGeo.getBounds();
                     rosarioBoundsRef.current = rosarioBounds;
                     map.setMaxBounds(rosarioBounds.pad(0.75));
@@ -917,11 +945,13 @@ function LeafletMap({
                                 };
 
                                 layer_feature.on("click", (e) => {
+                                    if (layerRef.current === "status") return;
                                     L.default.DomEvent.stopPropagation(e);
                                     if (onFeatureClick) onFeatureClick(name, bgyData);
                                 });
 
                                 layer_feature.on("mouseover", (e) => {
+                                    if (layerRef.current === "status") return;
                                     const isTrends = layerRef.current === "trends";
                                     const isDiversity = layerRef.current === "diversity";
                                     const dominantZoneText = bgyData?.primaryZone || bgyData?.Primary_Zone || bgyData?.landUse || "";
@@ -1020,6 +1050,7 @@ function LeafletMap({
                                 });
 
                                 layer_feature.on("mouseout", () => {
+                                    if (layerRef.current === "status") return;
                                     layer_feature.closeTooltip();
                                     if (layerRef.current === "diversity") onHoverBgy(null);
                                     if (activeFeatureRef.current !== layer_feature) {
@@ -1507,217 +1538,77 @@ function LeafletMap({
                     return true;
                 });
 
-                // 2. Determine whether to show Municipal Workload Badges or Individual Pins
-                const isClusterMode = mapZoom <= 13 && !selectedBgy;
+                // Render applications as Google Maps-style blinking blue circle markers
+                // Using Radial Spiderfy Distribution so co-located applications have distinct non-overlapping positions
+                const appsToRender = selectedBgy && selectedBgy.name
+                    ? filtered.filter((app) => (app?.barangay || "").trim().toLowerCase() === selectedBgy.name.trim().toLowerCase())
+                    : filtered;
 
-                if (isClusterMode) {
-                    // Group filtered applications by barangay
-                    const bgyCounts = {};
-                    filtered.forEach((app) => {
-                        const bgy = (app?.barangay || "Poblacion").trim();
-                        if (!bgyCounts[bgy]) {
-                            bgyCounts[bgy] = { name: bgy, count: 0, review: 0, received: 0, released: 0, overdue: 0, warning: 0 };
-                        }
-                        bgyCounts[bgy].count += 1;
-                        const s = (app?.status || "").toLowerCase();
-                        if (s.includes("review")) bgyCounts[bgy].review += 1;
-                        else if (s.includes("release") || s.includes("approved")) bgyCounts[bgy].released += 1;
-                        else bgyCounts[bgy].received += 1;
+                const coordGroups = {};
+                appsToRender.forEach((app) => {
+                    const baseCoord = getAppCoordinates(app);
+                    const key = `${baseCoord[0].toFixed(4)},${baseCoord[1].toFixed(4)}`;
+                    if (!coordGroups[key]) {
+                        coordGroups[key] = { center: baseCoord, apps: [] };
+                    }
+                    coordGroups[key].apps.push(app);
+                });
 
-                        const isResolved = s.includes("release") || s.includes("approved");
-                        if (!isResolved) {
-                            const sla = getSLAInfo(app?.created_at, app?.status);
-                            if (sla.days > 14) {
-                                bgyCounts[bgy].overdue += 1;
-                            } else if (sla.days > 5) {
-                                bgyCounts[bgy].warning += 1;
-                            }
-                        }
-                    });
-
-                    // Spatial proximity clustering: merge barangays within 0.010 degrees (~1.1 km)
-                    // This cleans up and merges Poblacion sub-barangays (Poblacion, Poblacion A-E) so badges never overlap!
-                    const clusters = [];
-                    const CLUSTER_PROXIMITY = 0.010;
-
-                    Object.values(bgyCounts).forEach((bgyItem) => {
-                        const coord = ROSARIO_BGY_COORDS[bgyItem.name] || ROSARIO_BGY_COORDS["Poblacion"] || [13.8475, 121.2058];
-                        
-                        let foundCluster = null;
-                        for (const cl of clusters) {
-                            const dLat = cl.center[0] - coord[0];
-                            const dLng = cl.center[1] - coord[1];
-                            const dist = Math.sqrt(dLat * dLat + dLng * dLng);
-                            if (dist < CLUSTER_PROXIMITY) {
-                                foundCluster = cl;
-                                break;
-                            }
-                        }
-
-                        if (foundCluster) {
-                            foundCluster.barangays.push(bgyItem.name);
-                            foundCluster.count += bgyItem.count;
-                            foundCluster.review += bgyItem.review;
-                            foundCluster.received += bgyItem.received;
-                            foundCluster.released += bgyItem.released;
-                            foundCluster.overdue += bgyItem.overdue;
-                            foundCluster.warning += bgyItem.warning;
-                            foundCluster.totalWeight += bgyItem.count;
-                            foundCluster.center = [
-                                (foundCluster.center[0] * (foundCluster.totalWeight - bgyItem.count) + coord[0] * bgyItem.count) / foundCluster.totalWeight,
-                                (foundCluster.center[1] * (foundCluster.totalWeight - bgyItem.count) + coord[1] * bgyItem.count) / foundCluster.totalWeight,
+                Object.values(coordGroups).forEach((group) => {
+                    const count = group.apps.length;
+                    group.apps.forEach((app, idx) => {
+                        let coords = group.center;
+                        if (count > 1) {
+                            const angle = (idx * 2 * Math.PI) / count;
+                            const radius = 0.00085; // ~90 meters on ground
+                            coords = [
+                                group.center[0] + radius * Math.sin(angle),
+                                group.center[1] + radius * Math.cos(angle)
                             ];
-                        } else {
-                            clusters.push({
-                                center: [...coord],
-                                totalWeight: bgyItem.count,
-                                barangays: [bgyItem.name],
-                                count: bgyItem.count,
-                                review: bgyItem.review,
-                                received: bgyItem.received,
-                                released: bgyItem.released,
-                                overdue: bgyItem.overdue,
-                                warning: bgyItem.warning,
-                            });
-                        }
-                    });
-
-                    // Render non-overlapping numbered pin markers (NO horizontal pills)
-                    clusters.forEach((cl) => {
-                        let displayName = cl.barangays[0];
-                        if (cl.barangays.length > 1) {
-                            const hasPoblacion = cl.barangays.some((b) => b.toLowerCase().includes("poblacion"));
-                            if (hasPoblacion) {
-                                displayName = "Poblacion";
-                            } else {
-                                displayName = `${cl.barangays[0]} +${cl.barangays.length - 1}`;
-                            }
                         }
 
-                        let pinColor = "#2563eb";
-                        let pinBorder = "#1d4ed8";
+                        const isHovered = hoveredAppId === app.id;
+                        const tooltipText = `${app?.reference_number || `APP-${app.id}`} · ${app?.applicant_name || 'Applicant'} (${app?.status || 'Active'})`;
 
-                        if (cl.review > 0 && cl.received === 0 && cl.released === 0) {
-                            pinColor = "#f59e0b";
-                            pinBorder = "#d97706";
-                        } else if (cl.received > 0 && cl.review === 0 && cl.released === 0) {
-                            pinColor = "#10b981";
-                            pinBorder = "#059669";
-                        }
-
-                        const icon = createNumberedPinIcon(
-                            cl.count,
-                            pinColor,
-                            pinBorder,
+                        const markerIcon = createGmapsBlinkingDotIcon(
                             L,
-                            false,
-                            `${displayName} · ${cl.count} application${cl.count !== 1 ? 's' : ''}`
+                            isHovered,
+                            tooltipText
                         );
 
-                        const marker = L.default.marker(cl.center, {
-                            icon,
-                            zIndexOffset: 1100,
+                        const marker = L.default.marker(coords, {
+                            icon: markerIcon,
+                            zIndexOffset: isHovered ? 2000 : 1200,
+                        });
+
+                        const bgyZoneValue = app?.barangay ? staticBgyData?.[app.barangay.trim()]?.Primary_Zone : null;
+                        const popupHtml = createApplicationPopupHtml(app, bgyZoneValue);
+                        marker.bindPopup(popupHtml, {
+                            className: "custom-app-popup",
+                            closeButton: true,
+                            maxWidth: 295,
                         });
 
                         marker.on("click", (e) => {
                             L.default.DomEvent.stopPropagation(e);
-                            if (mapInstanceRef.current) {
-                                mapInstanceRef.current.flyTo(cl.center, 15, { duration: 0.9 });
-                            }
-                            if (cl.barangays.length === 1 && onFeatureClick) {
-                                const bgyName = cl.barangays[0];
-                                const bgyData = staticBgyData[bgyName] || { total: cl.count };
+                            if (app?.barangay && onFeatureClick) {
+                                const bgyName = app.barangay.trim();
+                                const bgyData = staticBgyData[bgyName] || { total: 1 };
                                 onFeatureClick(bgyName, bgyData);
+                            }
+                            if (onInspectApp) {
+                                onInspectApp(app);
+                            }
+                            const cardEl = document.getElementById(`app-card-${app.id}`);
+                            if (cardEl) {
+                                cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                             }
                         });
 
                         applicationsLayerRef.current.addLayer(marker);
+                        markersByAppIdRef.current[app.id] = marker;
                     });
-                } else {
-                    // Individual Pins Mode with Radial Spiderfy Distribution for co-located points
-                    const appsToRender = selectedBgy && selectedBgy.name
-                        ? filtered.filter((app) => (app?.barangay || "").trim().toLowerCase() === selectedBgy.name.trim().toLowerCase())
-                        : filtered;
-
-                    const appIndexMap = new Map();
-                    appsToRender.forEach((app, idx) => {
-                        appIndexMap.set(app.id, idx + 1);
-                    });
-
-                    const coordGroups = {};
-                    appsToRender.forEach((app) => {
-                        const baseCoord = getAppCoordinates(app);
-                        const key = `${baseCoord[0].toFixed(4)},${baseCoord[1].toFixed(4)}`;
-                        if (!coordGroups[key]) {
-                            coordGroups[key] = { center: baseCoord, apps: [] };
-                        }
-                        coordGroups[key].apps.push(app);
-                    });
-
-                    Object.values(coordGroups).forEach((group) => {
-                        const count = group.apps.length;
-                        group.apps.forEach((app, idx) => {
-                            let coords = group.center;
-                            if (count > 1) {
-                                const angle = (idx * 2 * Math.PI) / count;
-                                const radius = 0.00085; // ~90 meters on ground
-                                coords = [
-                                    group.center[0] + radius * Math.sin(angle),
-                                    group.center[1] + radius * Math.cos(angle)
-                                ];
-                            }
-
-                            const isHovered = hoveredAppId === app.id;
-                            const config = getStatusMarkerConfig(app?.status);
-                            const pinColor = config.color;
-                            const pinBorder = config.border;
-
-                            const pinNumber = appIndexMap.get(app.id) || (idx + 1);
-                            const tooltipText = `${app?.reference_number || `APP-${app.id}`} · ${app?.applicant_name || 'Applicant'}`;
-
-                            const markerIcon = createNumberedPinIcon(
-                                pinNumber,
-                                pinColor,
-                                pinBorder,
-                                L,
-                                isHovered,
-                                tooltipText
-                            );
-
-                            const marker = L.default.marker(coords, {
-                                icon: markerIcon,
-                                zIndexOffset: isHovered ? 2000 : 1200,
-                            });
-
-                            const bgyZoneValue = app?.barangay ? staticBgyData?.[app.barangay.trim()]?.Primary_Zone : null;
-                            const popupHtml = createApplicationPopupHtml(app, bgyZoneValue);
-                            marker.bindPopup(popupHtml, {
-                                className: "custom-app-popup",
-                                closeButton: true,
-                                maxWidth: 295,
-                            });
-
-                            marker.on("click", (e) => {
-                                L.default.DomEvent.stopPropagation(e);
-                                if (app?.barangay && onFeatureClick) {
-                                    const bgyName = app.barangay.trim();
-                                    const bgyData = staticBgyData[bgyName] || { total: 1 };
-                                    onFeatureClick(bgyName, bgyData);
-                                }
-                                if (onInspectApp) {
-                                    onInspectApp(app);
-                                }
-                                const cardEl = document.getElementById(`app-card-${app.id}`);
-                                if (cardEl) {
-                                    cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                                }
-                            });
-
-                            applicationsLayerRef.current.addLayer(marker);
-                            markersByAppIdRef.current[app.id] = marker;
-                        });
-                    });
-                }
+                });
 
                 if (!mapInstanceRef.current.hasLayer(applicationsLayerRef.current)) {
                     mapInstanceRef.current.addLayer(applicationsLayerRef.current);
@@ -1835,7 +1726,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
     const [stylePopupOpen, setStylePopupOpen] = useState(false);
     const [appTypeFilter, setAppTypeFilter] = useState(filters?.application_type || "Zoning Certificate");
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [rightPanelOpen, setRightPanelOpen] = useState(false);
+    const [rightPanelOpen, setRightPanelOpen] = useState(true);
     const [clock, setClock] = useState("");
     const [clupOpacity, setClupOpacity] = useState(0.85);
     const [selectedBgy, setSelectedBgy] = useState(null);
@@ -2019,14 +1910,9 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
     const handleLocateApp = useCallback((app) => {
         if (!app) return;
         const coords = getAppCoordinates(app);
-        if (app.barangay) {
-            const bgyName = app.barangay.trim();
-            const bgyData = (bgyStats && bgyStats[bgyName]) ? bgyStats[bgyName] : { total: 1 };
-            setSelectedBgy({ name: bgyName, data: bgyData });
-        }
         setHoveredAppId(app.id);
         setFlyToTarget({ coords, zoom: 17, appId: app.id, openPopup: true, timestamp: Date.now() });
-    }, [bgyStats]);
+    }, []);
 
     const handleLocateEstablishment = useCallback((est) => {
         if (!est || !est.coords) return;
@@ -2301,6 +2187,82 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                 .custom-app-popup .leaflet-popup-tip { background: rgba(255, 255, 255, 0.98); }
                 .custom-app-popup .leaflet-popup-close-button { color: #94a3b8 !important; margin-top: 8px !important; margin-right: 8px !important; font-size: 16px !important; }
                 .custom-app-marker-container { background: transparent !important; border: none !important; }
+                .custom-gmaps-blinking-marker { background: transparent !important; border: none !important; }
+                .gmaps-marker-box {
+                    position: relative;
+                    width: 28px;
+                    height: 28px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    user-select: none;
+                }
+                .gmaps-aura-halo {
+                    position: absolute;
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 50%;
+                    background-color: rgba(66, 133, 244, 0.14);
+                    border: 1px solid rgba(66, 133, 244, 0.25);
+                    pointer-events: none;
+                    animation: gmaps-subtle-pulse 3.6s ease-in-out infinite;
+                }
+                .gmaps-core-dot {
+                    position: relative;
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                    background-color: #1a73e8;
+                    border: 2px solid #ffffff;
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+                    transition: transform 160ms ease, box-shadow 160ms ease;
+                    z-index: 2;
+                }
+                .gmaps-marker-box.is-hovered .gmaps-core-dot,
+                .gmaps-marker-box:hover .gmaps-core-dot {
+                    transform: scale(1.25);
+                    box-shadow: 0 2px 6px rgba(26, 115, 232, 0.5);
+                }
+                .gmaps-marker-box.is-hovered .gmaps-aura-halo,
+                .gmaps-marker-box:hover .gmaps-aura-halo {
+                    background-color: rgba(66, 133, 244, 0.22);
+                    border-color: rgba(66, 133, 244, 0.45);
+                    transform: scale(1.15);
+                }
+                .gmaps-marker-tooltip {
+                    position: absolute;
+                    bottom: 100%;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    margin-bottom: 5px;
+                    padding: 2.5px 7px;
+                    border-radius: 6px;
+                    background-color: rgba(15, 23, 42, 0.95);
+                    color: #ffffff;
+                    font-size: 10px;
+                    font-weight: 600;
+                    white-space: nowrap;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+                    opacity: 0;
+                    pointer-events: none;
+                    transition: opacity 150ms ease;
+                    z-index: 9999;
+                }
+                .gmaps-marker-box:hover .gmaps-marker-tooltip,
+                .gmaps-marker-box.is-hovered .gmaps-marker-tooltip {
+                    opacity: 1;
+                }
+                @keyframes gmaps-subtle-pulse {
+                    0%, 100% {
+                        transform: scale(0.96);
+                        opacity: 0.6;
+                    }
+                    50% {
+                        transform: scale(1.08);
+                        opacity: 0.95;
+                    }
+                }
 
                 /* Leaflet redraws SVG paths by setting attributes, so filter and
                    hover changes snapped instantly. Transitioning the presentation
@@ -2944,7 +2906,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
                                     ? `right-0 top-0 bottom-0 w-full sm:w-[380px] max-w-full bg-white border-l border-slate-200 shadow-[-1px_0_0_0_rgba(15,23,42,0.04)] ${
                                           rightPanelOpen ? "translate-x-0" : "translate-x-full pointer-events-none"
                                       }`
-                                    : `right-4 top-4 bottom-4 w-full sm:w-[320px] lg:w-[350px] xl:w-[375px] max-w-[calc(100vw-2rem)] bg-white/98 backdrop-blur-2xl shadow-2xl border border-slate-200/90 rounded-3xl ${
+                                    : `right-4 top-4 bottom-4 w-full sm:w-[360px] lg:w-[395px] xl:w-[420px] max-w-[calc(100vw-2rem)] bg-white/98 backdrop-blur-2xl shadow-2xl border border-slate-200/90 rounded-3xl ${
                                           rightPanelOpen ? "translate-x-0" : "translate-x-[calc(100%+1.5rem)] pointer-events-none"
                                       }`
                             }`}

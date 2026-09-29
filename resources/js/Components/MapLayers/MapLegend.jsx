@@ -30,12 +30,12 @@ export default function MapLegend({
     // Layer metadata & titles
     const layerMeta = {
         status: {
-            title: "Application Density",
-            subtitle: "Clearance Volume",
+            title: "Active Applications",
+            subtitle: "Permit Docket & Status",
             icon: (
-                <svg className="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
+                <div className="relative flex items-center justify-center w-3.5 h-3.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#1a73e8] border border-white shadow-xs" />
+                </div>
             )
         },
         trends: {
@@ -203,64 +203,25 @@ export default function MapLegend({
                     {/* Standard Google Maps Styled Legend Content */}
                     <div className="p-3 space-y-2.5 text-xs text-slate-700">
                         
-                        {/* 1. Status Layer (Google Maps Traffic-Style Gradient Ramp) */}
+                        {/* 1. Status Layer: GMaps Location Dot */}
                         {activeLayer === 'status' && (
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold">
-                                    <span>Density Scale</span>
-                                    <span className="font-mono text-[9px] text-slate-400">Applications</span>
-                                </div>
-
-                                {/* Continuous Density Gradient Bar */}
-                                <div className="h-2.5 w-full rounded-full shadow-inner bg-gradient-to-r from-[#dbeafe] via-[#3b82f6] to-[#1e3a8a] relative" />
-
-                                {/* Step Labels */}
-                                <div className="flex justify-between text-[9px] font-mono text-slate-500 font-bold px-0.5">
-                                    <span>&lt; 4</span>
-                                    <span>4-11</span>
-                                    <span>12-17</span>
-                                    <span>18-24</span>
-                                    <span className="text-blue-950 font-black">25+</span>
-                                </div>
-
-                                {/* Status Descriptions */}
-                                <div className="flex justify-between text-[8px] uppercase tracking-wider text-slate-400 font-bold px-0.5">
-                                    <span>Minimal</span>
-                                    <span>Moderate</span>
-                                    <span className="text-blue-900 font-bold">Peak</span>
-                                </div>
-
-                                {/* Boundary Line Standard Symbols */}
-                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-600">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-4 h-0.5 border-t-2 border-blue-900 border-dashed inline-block" />
-                                        <span>Rosario Border</span>
+                            <div className="space-y-2.5">
+                                {/* Google Maps Location Dot Swatch */}
+                                <div className="p-2.5 rounded-xl bg-blue-50/70 border border-blue-100 flex items-center gap-3">
+                                    <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
+                                        <div className="absolute w-5 h-5 rounded-full bg-blue-400/20 border border-blue-400/30" />
+                                        <div className="relative w-2.5 h-2.5 rounded-full bg-[#1a73e8] border-2 border-white shadow-xs" />
                                     </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="w-4 h-0.5 bg-blue-600 inline-block" />
-                                        <span>Barangay</span>
-                                    </div>
-                                </div>
-
-                                {/* Application Status Pin Color Key */}
-                                <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                                        <span>Status Pins</span>
-                                        <span className="text-[8.5px] font-mono font-semibold text-blue-600 bg-blue-50 px-1 py-0.5 rounded">
-                                            Interactive
-                                        </span>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                                        {Object.entries(STATUS_MARKER_CONFIG).map(([key, meta]) => (
-                                            <div key={key} className="flex items-center gap-1.5">
-                                                <span
-                                                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                                                    style={{ backgroundColor: meta.color, boxShadow: `0 0 0 2px ${meta.badgeBg}` }}
-                                                />
-                                                <span className="text-[10.5px] font-semibold text-slate-700 truncate">{meta.shortLabel}</span>
-                                            </div>
-                                        ))}
+                                    <div className="min-w-0">
+                                        <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                                            <span>Active Applications</span>
+                                            <span className="text-[8px] font-mono font-semibold text-blue-700 bg-blue-100 px-1 py-0.2 rounded">
+                                                GMaps Style
+                                            </span>
+                                        </div>
+                                        <div className="text-[9.5px] text-slate-500 leading-tight mt-0.5">
+                                            Blue circle pinpoints each filing. Click marker to view application details.
+                                        </div>
                                     </div>
                                 </div>
                             </div>
