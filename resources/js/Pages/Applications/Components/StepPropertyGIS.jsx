@@ -1,164 +1,180 @@
 // resources/js/Pages/Applications/Components/StepPropertyGIS.jsx
-import React, { useState, useEffect } from "react";
-import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
-import ParcelInspectionScheduler from "./ParcelInspectionScheduler";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { MapContainer, TileLayer, GeoJSON, Polyline, Polygon, CircleMarker, Tooltip, useMap, useMapEvents } from "react-leaflet";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Label, Input, Select } from "./FormControls";
+import { Input } from "./FormControls";
+import Swal from "sweetalert2";
+import { getZoneInfo, ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
+import { resolveBarangayName } from "@/utils/mapData";
+import {
+    MAP_MAX_ZOOM,
+    BASEMAPS,
+    CLUP_TILES,
+    BLANK_TILE,
+    formatDistance,
+    formatArea,
+    zoneCodeOf,
+    geodesicArea,
+    featureContains,
+    labelPoint,
+    insidePoint,
+    areaCheck,
+    formatAreaDiff,
+} from "@/utils/mapGeometry";
+import { PARCEL_FIELD_ALIASES, BARANGAY_LINE,PARCEL_MIN_ZOOM, ZONE_LINE_MIN_ZOOM, UNLABELLED_ZONES, NO_LABELS, CHECK_COLORS, buildMapTip, ScaleBar, MapLabels, getZoningCheck, MeasureLayer, IdentifyClick, MapResizeTrigger, MapStatusBar, ToolButton, LayerRow, AreaComparison, Attr } from "@/Components/MapKit";
 
-// ── Approved Municipal Zoning Categories ──
-const ZONING_SUB_CLASSES = [
-    {
-        name: "Residential",
-        items: [
-            { code: "R1-Z", label: "Residential-1 Zone" },
-            { code: "R2-Z", label: "Residential-2 Zone" },
-            { code: "MR2-SZ", label: "Maximum R-2 Sub-Zone" },
-            { code: "BR2-SZ", label: "Basic R-2 Sub-Zone" },
-        ],
-    },
-    {
-        name: "Commercial",
-        items: [
-            { code: "C1-Z", label: "Commercial-1 Zone" },
-            { code: "C2-Z", label: "Commercial-2 Zone" },
-            { code: "C/MP-Z", label: "Cemetery/ Memorial Park Zone" },
-        ],
-    },
-    {
-        name: "Industrial",
-        items: [
-            { code: "I1-Z", label: "Industrial-1 Zone" },
-            { code: "I2-Z", label: "Industrial-2 Zone" },
-            { code: "I3-Z", label: "Industrial-3 Zone" },
-        ],
-    },
-    {
-        name: "Agri-Industrial",
-        items: [
-            { code: "AgIndZ", label: "Agri-Industrial Zone" },
-            { code: "AgIndZ-PTR", label: "Agri-Industrial Zone Poultry" },
-            { code: "AgIndZ-PGR", label: "Agri-Industrial Zone Piggery" },
-        ],
-    },
-    {
-        name: "Institutional",
-        items: [
-            { code: "GI-Z", label: "General Institutional Zone" },
-            { code: "UTS-Z", label: "Utility, Transportation, and Services" },
-            { code: "CMRF", label: "Central Materials Recovery Facility" },
-        ],
-    },
-    {
-        name: "Recreational",
-        items: [
-            { code: "PR-Z", label: "Parks and Recreation Zone" },
-            { code: "T-Z", label: "Tourism Zone" },
-            { code: "ECT-Z", label: "Eco-Tourism Zone" },
-        ],
-    },
-];
 
-const ZONING_CATEGORIES = [
-    {
-        id: "Residential",
-        label: "Residential",
-        code: "R-1 / R-2 / R-3",
-        badge: "bg-blue-50 text-blue-700 border-blue-200",
-        activeBorder: "border-blue-600 bg-blue-50/50 ring-2 ring-blue-500/20",
-        icon: (
-            <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-            </svg>
-        ),
-        desc: "Housing, residential subdivisions, estates & living zones.",
-    },
-    {
-        id: "Commercial",
-        label: "Commercial",
-        code: "C-1 / C-2 / C-3",
-        badge: "bg-amber-50 text-amber-700 border-amber-200",
-        activeBorder: "border-amber-600 bg-amber-50/50 ring-2 ring-amber-500/20",
-        icon: (
-            <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.25A2.25 2.25 0 010 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0118 7.5v11.25A2.25 2.25 0 0115.75 21H13.5zM3.75 9h10.5m-10.5 4.5h10.5" />
-            </svg>
-        ),
-        desc: "Retail, trade, financial institutions, markets & commercial centers.",
-    },
-    {
-        id: "Industrial",
-        label: "Industrial",
-        code: "I-1 / I-2 / Agro-Ind",
-        badge: "bg-purple-50 text-purple-700 border-purple-200",
-        activeBorder: "border-purple-600 bg-purple-50/50 ring-2 ring-purple-500/20",
-        icon: (
-            <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
-            </svg>
-        ),
-        desc: "Manufacturing, warehousing, fabrication & processing plants.",
-    },
-    {
-        id: "Agri-Industrial",
-        label: "Agri-Industrial",
-        code: "Agri-Ind",
-        badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
-        activeBorder: "border-emerald-600 bg-emerald-50/50 ring-2 ring-emerald-500/20",
-        icon: (
-            <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
-            </svg>
-        ),
-        desc: "Farming, cultivation, agro-production & rural green buffer zones.",
-    },
-    {
-        id: "Institutional",
-        label: "Institutional",
-        code: "Institutional",
-        badge: "bg-sky-50 text-sky-700 border-sky-200",
-        activeBorder: "border-sky-600 bg-sky-50/50 ring-2 ring-sky-500/20",
-        icon: (
-            <svg className="w-5 h-5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
-            </svg>
-        ),
-        desc: "Government, civic, educational, health and public service facilities.",
-    },
-    {
-        id: "Recreational",
-        label: "Recreational",
-        code: "Parks / Leisure",
-        badge: "bg-lime-50 text-lime-700 border-lime-200",
-        activeBorder: "border-lime-600 bg-lime-50/50 ring-2 ring-lime-500/20",
-        icon: (
-            <svg className="w-5 h-5 text-lime-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zm0-13.5v9m-4.5-4.5h9" />
-            </svg>
-        ),
-        desc: "Parks, sports, open-space and community leisure facilities.",
-    },
-];
+// QGIS-style locator bar: search lots by PIN / lot no. / owner, or jump to a barangay. Ctrl+K focuses it.
+function Locator({ parcelIndex, brgyIndex, attachedCodes, onPickParcel, onPickBarangay, onLookupPin }) {
+    const [q, setQ] = useState("");
+    const [open, setOpen] = useState(false);
+    const [hi, setHi] = useState(0);
+    const inputRef = useRef(null);
+    const boxRef = useRef(null);
 
-// Resize map observer helper
-function MapResizeTrigger({ isExpanded }) {
-    const map = useMap();
     useEffect(() => {
-        map.invalidateSize();
-        const t1 = setTimeout(() => map.invalidateSize(), 50);
-        const t2 = setTimeout(() => map.invalidateSize(), 200);
-        const t3 = setTimeout(() => map.invalidateSize(), 400);
-        return () => {
-            clearTimeout(t1);
-            clearTimeout(t2);
-            clearTimeout(t3);
+        const onKey = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+                e.preventDefault();
+                inputRef.current?.focus();
+                setOpen(true);
+            }
         };
-    }, [isExpanded, map]);
-    return null;
+        const onDown = (e) => boxRef.current && !boxRef.current.contains(e.target) && setOpen(false);
+        window.addEventListener("keydown", onKey);
+        document.addEventListener("mousedown", onDown);
+        return () => {
+            window.removeEventListener("keydown", onKey);
+            document.removeEventListener("mousedown", onDown);
+        };
+    }, []);
+
+    const results = useMemo(() => {
+        const query = q.trim().toLowerCase();
+        if (query.length < 2) return [];
+        const items = [];
+        for (const p of parcelIndex) {
+            if (!p.hay.includes(query)) continue;
+            items.push({ type: "parcel", key: `p-${p.pin}`, title: p.pin, sub: [p.lot, p.owner, p.brgy].filter(Boolean).join(" · "), item: p });
+            if (items.length >= 6) break;
+        }
+        brgyIndex
+            .filter((b) => b.hay.includes(query))
+            .slice(0, 3)
+            .forEach((b) => items.push({ type: "brgy", key: `b-${b.key}`, title: `Brgy. ${b.name}`, sub: "Zoom to barangay", item: b }));
+        const exact = parcelIndex.some((p) => p.pin.toLowerCase() === query);
+        if (/\d/.test(query) && query.length >= 6 && !exact) {
+            items.push({ type: "lookup", key: "lookup", title: `Look up PIN “${q.trim()}”`, sub: "Not on the map — search Assessor records" });
+        }
+        return items;
+    }, [q, parcelIndex, brgyIndex]);
+
+    useEffect(() => setHi(0), [q]);
+
+    const choose = (r) => {
+        if (!r) return;
+        if (r.type === "parcel") onPickParcel(r.item.feature);
+        else if (r.type === "brgy") onPickBarangay(r.item.feature);
+        else onLookupPin(q.trim());
+        setOpen(false);
+        if (r.type !== "lookup") setQ(r.type === "parcel" ? r.title : "");
+    };
+
+    const showList = open && q.trim().length >= 2;
+
+    return (
+        <div ref={boxRef} className="relative w-72 max-w-[40vw]">
+            <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
+            <input
+                ref={inputRef}
+                type="search"
+                value={q}
+                onChange={(e) => {
+                    setQ(e.target.value);
+                    setOpen(true);
+                }}
+                onFocus={() => setOpen(true)}
+                onKeyDown={(e) => {
+                    if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setHi((h) => Math.min(h + 1, results.length - 1));
+                    } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setHi((h) => Math.max(h - 1, 0));
+                    } else if (e.key === "Enter") {
+                        e.preventDefault();
+                        choose(results[hi]);
+                    } else if (e.key === "Escape") {
+                        setOpen(false);
+                    }
+                }}
+                data-no-advance="true"
+                role="combobox"
+                aria-expanded={showList}
+                aria-controls="map-locator-results"
+                aria-activedescendant={showList && results[hi] ? `locator-${results[hi].key}` : undefined}
+                aria-label="Search PIN, lot number, owner or barangay"
+                placeholder="Search PIN, lot, owner, barangay…  Ctrl+K"
+                className="w-full h-7 pl-7 pr-2 rounded-md border border-slate-300 bg-white text-[11px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+            />
+            {showList && (
+                <ul id="map-locator-results" role="listbox" className="absolute left-0 right-0 top-full mt-1 z-50 max-h-80 overflow-y-auto bg-white border border-slate-300 rounded-md shadow-lg py-1">
+                    {results.length === 0 ? (
+                        <li className="px-3 py-2 text-[11px] text-slate-400">No matching lot or barangay</li>
+                    ) : (
+                        results.map((r, i) => (
+                            <li
+                                key={r.key}
+                                id={`locator-${r.key}`}
+                                role="option"
+                                aria-selected={i === hi}
+                                onMouseEnter={() => setHi(i)}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    choose(r);
+                                }}
+                                className={`px-3 py-1.5 cursor-pointer ${i === hi ? "bg-slate-100" : ""}`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 w-10 shrink-0">
+                                        {r.type === "parcel" ? "Lot" : r.type === "brgy" ? "Brgy" : "Lookup"}
+                                    </span>
+                                    <span className={`text-[11px] font-semibold text-slate-800 truncate ${r.type === "parcel" ? "font-mono" : ""}`}>{r.title}</span>
+                                    {r.type === "parcel" && attachedCodes[r.item.pin] && (
+                                        <span className="ml-auto text-[10px] text-slate-500 shrink-0">✓ {attachedCodes[r.item.pin]}</span>
+                                    )}
+                                </div>
+                                <p className="pl-12 text-[10px] text-slate-500 truncate">{r.sub}</p>
+                            </li>
+                        ))
+                    )}
+                </ul>
+            )}
+        </div>
+    );
 }
+
+// Fields filled by a PIN lookup; cleared whenever the PIN changes so stale data never stays "verified".
+const LOOKUP_RESET = {
+    is_verified: false,
+    owner_name: "",
+    cadastral_zone: "",
+    land_use_class: "",
+    lot_number: "",
+    survey_number: "",
+    arp_number: "",
+    tct_number: "",
+    tax_dec_number: "",
+    lot_area_sqm: "",
+    barangay: "",
+    coordinates: "",
+};
 
 export default function StepPropertyGIS({
     form,
-    set,
     setForm,
     setParcelField,
     addParcel,
@@ -167,879 +183,1233 @@ export default function StepPropertyGIS({
     pinLoading = {},
     errors = {},
     totalLotArea = 0,
-    zoningWarning = null,
     activeParcelIndex = 0,
+    setActiveParcelIndex = () => {},
     activeParcelFeature = null,
+    setActiveParcelFeature = () => {},
     brgyMapData = null,
     parcelMapData = null,
     rosarioCenter = [13.8475, 121.2058],
-    brgyStyle,
     getParcelStyle,
     handleSelectMapParcel,
     MapController,
-    inspectors = [],
-    LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"],
-    handleBack,
     handleNext,
     formRef,
-    handleSubmit,
+    onPrintSiteMap,
 }) {
+    const [map, setMap] = useState(null);
+    const [tool, setTool] = useState("identify");
+    const isMeasuring = tool === "measure" || tool === "measureArea";
     const [isMapExpanded, setIsMapExpanded] = useState(false);
-    const [activeTab, setActiveTab] = useState("verification");
-    const shouldShowTargetZoning = form.application_stream === "amendment";
+    const [layersOpen, setLayersOpen] = useState(true);
+    const [basemap, setBasemap] = useState("satellite");
+    const [showClup, setShowClup] = useState(true);
+    const [clupOpacity, setClupOpacity] = useState(0.4);
+    const [showBarangays, setShowBarangays] = useState(true);
+    const [showParcels, setShowParcels] = useState(true);
+    const [showZoneLines, setShowZoneLines] = useState(true);
+    const [zoneData, setZoneData] = useState(null); // { key, name, data } for the barangay in focus
+    const zoneCache = useRef(new Map());
+    // Once unlocked the parcel panel stays for the session: by the first verified lot, by manual encoding
+    // (PIN missing from the tax map), or for restored drafts that already carry a PIN.
+    const [panelUnlocked, setPanelUnlocked] = useState(() => (form.parcels || []).some((p) => p.property_index_number?.trim()));
+    const [pendingEncode, setPendingEncode] = useState(null);
+    const [lastLookupIndex, setLastLookupIndex] = useState(null);
+    const [guideDismissed, setGuideDismissed] = useState(false);
+    const [dockTab, setDockTab] = useState("layers");
+    const [identify, setIdentify] = useState(null);
+    const [measure, setMeasure] = useState(null);
+    const [zoom, setZoom] = useState(12);
+    const identifyHitRef = useRef(null);
+    const identifyMarkerRef = useRef(null);
+    const identifySeq = useRef(0);
+    const parcelLayerRef = useRef(null);
+    const parcelStyleRef = useRef(getParcelStyle);
+    parcelStyleRef.current = getParcelStyle;
+    // Stable identity: react-leaflet re-applies setStyle to every polygon whenever the style prop changes
+    const stableParcelStyle = useCallback((feature) => parcelStyleRef.current(feature), []);
 
-    // ── Map Notification State ──
+    // Label anchors computed once per dataset
+    const parcelLabels = useMemo(
+        () =>
+            (parcelMapData?.features || [])
+                .map((f) => {
+                    const pin = f.properties?.property_index_number?.trim();
+                    const latlng = pin && labelPoint(f.geometry);
+                    return latlng ? { key: pin, text: pin, latlng } : null;
+                })
+                .filter(Boolean),
+        [parcelMapData]
+    );
+    const brgyLabels = useMemo(
+        () =>
+            (brgyMapData?.features || [])
+                .map((f, i) => {
+                    const name = resolveBarangayName(f.properties);
+                    const latlng = name && labelPoint(f.geometry);
+                    return latlng ? { key: `${name}-${i}`, text: name, latlng } : null;
+                })
+                .filter(Boolean),
+        [brgyMapData]
+    );
+
+    // Search indexes for the locator
+    const parcelIndex = useMemo(
+        () =>
+            (parcelMapData?.features || [])
+                .map((f) => {
+                    const p = f.properties || {};
+                    const pin = p.property_index_number?.trim();
+                    if (!pin) return null;
+                    const lot = p.lot_number || "";
+                    const owner = p.owner_name || "";
+                    const brgy = p.barangay || "";
+                    return { pin, lot, owner, brgy, feature: f, hay: `${pin} ${lot} ${owner} ${brgy}`.toLowerCase() };
+                })
+                .filter(Boolean),
+        [parcelMapData]
+    );
+    const brgyIndex = useMemo(
+        () =>
+            (brgyMapData?.features || [])
+                .map((f, i) => {
+                    const name = resolveBarangayName(f.properties);
+                    return name ? { key: `${name}-${i}`, name, feature: f, hay: name.toLowerCase() } : null;
+                })
+                .filter(Boolean),
+        [brgyMapData]
+    );
+
+    // One shared map tip (QGIS "Map Tips") instead of a tooltip bound to every polygon
+    const mapTipRef = useRef(null);
+    if (!mapTipRef.current) mapTipRef.current = L.tooltip({ direction: "top", offset: [0, -10], opacity: 0.95 });
+
+    const parcels = form.parcels || [];
+    const selectedIndex = Math.min(activeParcelIndex ?? 0, Math.max(parcels.length - 1, 0));
+    const selectedParcel = parcels[selectedIndex];
     const isVerifying = Object.values(pinLoading || {}).some(Boolean);
-    const [mapMessage, setMapMessage] = useState(null);
-    const prevVerifyingRef = React.useRef(false);
 
-    useEffect(() => {
-        if (isVerifying) {
-            setMapMessage({ type: "loading", text: "Verifying PIN in Municipal Database..." });
-            prevVerifyingRef.current = true;
-        } else if (prevVerifyingRef.current) {
-            setMapMessage({ type: "success", text: "Verification Check Complete" });
-            const timer = setTimeout(() => setMapMessage(null), 3500);
-            prevVerifyingRef.current = false;
-            return () => clearTimeout(timer);
-        }
-    }, [isVerifying]);
-    const selectedApplicationTypes = (form.application_type || "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-    const isRezoningApplication = selectedApplicationTypes.includes("Petition for Rezoning");
     const isAmendmentStream = form.application_stream === "amendment";
-    
-    // Progression Status
-    const isVerificationDone = form.parcels?.length > 0 && form.parcels.every(p => p.is_verified);
-    
-    // Check if any parcel has a mismatch to lock progression globally
-    const isProgressionLocked = (form.parcels || []).some(p => {
+
+    // Any parcel with a verified Assessor-vs-CLUP mismatch blocks progression outside the amendment stream
+    const isProgressionLocked = parcels.some((p) => {
         const cadastral = p.cadastral_zone?.trim().toLowerCase();
         const clup = p.land_use_class?.trim().toLowerCase();
         return p.is_verified && cadastral && clup && cadastral !== clup;
     }) && !isAmendmentStream;
 
-    const isEvaluationDone = isVerificationDone && !isProgressionLocked;
-    const isDetailsDone = !!(form.right_over_land && form.project_tenure);
+    const verifiedCount = parcels.filter((p) => p.is_verified).length;
 
-    const handleSelectZoningCategory = (catId) => {
-        // Update main form land use class
-        const e = { target: { value: catId } };
-        set("land_use_class")(e);
+    // The parcel panel stays hidden until a lot is verified (or manual encoding is chosen); until then the map is full screen
+    const showPanel = verifiedCount > 0 || panelUnlocked;
+    const mapFull = !showPanel || isMapExpanded;
 
-        // Also update parcels if active
-        if (form.parcels && form.parcels.length > 0) {
-            const targetIdx = activeParcelIndex !== null ? activeParcelIndex : 0;
-            setParcelField(targetIdx, "land_use_class")({ target: { value: catId } });
+    // Next parcel to encode: the first unverified one, otherwise a new parcel
+    const nextTargetIndex = parcels.findIndex((p) => !p.is_verified);
+    const nextTargetCode =
+        nextTargetIndex === -1
+            ? `P-${String(parcels.length + 1).padStart(2, "0")}`
+            : parcels[nextTargetIndex].parcel_code || `P-${String(nextTargetIndex + 1).padStart(2, "0")}`;
+    const attachedCodes = useMemo(() => {
+        const codes = {};
+        parcels.forEach((p, i) => {
+            const pin = p.property_index_number?.trim();
+            if (pin && p.is_verified) codes[pin] = p.parcel_code || `P-${String(i + 1).padStart(2, "0")}`;
+        });
+        return codes;
+    }, [parcels]);
+    const lookupError = lastLookupIndex != null ? errors[`parcels.${lastLookupIndex}.property_index_number`] : null;
+    // Pressing Next/Enter before any lot is verified: the panel is hidden, so explain on the map
+    const stepBlocked = !showPanel && Object.keys(errors).some((k) => k === "barangay" || k.startsWith("parcels"));
+
+    // Map layer click handlers are bound once per GeoJSON mount, so read live values through a ref
+    const latest = useRef({});
+    latest.current = { parcels, tool, map };
+
+    useEffect(() => {
+        if (verifiedCount > 0) setPanelUnlocked(true);
+    }, [verifiedCount]);
+
+    useEffect(() => {
+        if (lastLookupIndex != null && parcels[lastLookupIndex]?.is_verified) setLastLookupIndex(null);
+    }, [parcels, lastLookupIndex]);
+
+    // Encoding runs once the target parcel exists and is selected in Create.jsx's state,
+    // because handleSelectMapParcel / handlePinLookup read that state from their own closures.
+    useEffect(() => {
+        if (!pendingEncode) return;
+        const target = parcels[pendingEncode.index];
+        if (!target) return;
+        if (pendingEncode.type === "pin") {
+            if (target.property_index_number !== pendingEncode.pin) return;
+            setPendingEncode(null);
+            handlePinLookup(pendingEncode.index);
+        } else {
+            if (activeParcelIndex !== pendingEncode.index) return;
+            setPendingEncode(null);
+            const p = pendingEncode.feature.properties || {};
+            handleSelectMapParcel(p.property_index_number?.trim(), p.lot_number || p.lot_no, p.lot_area_sqm || p.area, p.barangay, pendingEncode.feature);
+        }
+    }, [pendingEncode, parcels, activeParcelIndex]);
+
+    const startEncode = (payload) => {
+        let index = nextTargetIndex;
+        if (index === -1) {
+            addParcel();
+            index = parcels.length;
+        }
+        setActiveParcelIndex(index);
+        if (payload.type === "pin") setParcelField(index, "property_index_number")({ target: { value: payload.pin } });
+        setLastLookupIndex(index);
+        setPendingEncode({ ...payload, index });
+    };
+
+    useEffect(() => {
+        if (map) map.getContainer().style.cursor = tool === "pan" ? "" : "crosshair";
+    }, [map, tool]);
+
+    // Restyle the existing parcel layer on selection instead of rebuilding every polygon
+    const activePin = activeParcelFeature?.properties?.property_index_number;
+    const showParcelLayer = showParcels && zoom >= PARCEL_MIN_ZOOM;
+    useEffect(() => {
+        const layer = parcelLayerRef.current;
+        if (!layer) return;
+        mapTipRef.current.close();
+        layer.setStyle(parcelStyleRef.current);
+        layer.eachLayer((l) => {
+            if (activePin && l.feature?.properties?.property_index_number === activePin) l.bringToFront();
+        });
+        // Canvas hands a click to the last-drawn shape, so keep the Identify marker above re-added / raised lots
+        identifyMarkerRef.current?.bringToFront();
+    }, [activePin, showParcelLayer, parcelMapData]);
+
+    // Zoom drives which layers are worth drawing; only updated when a zoom finishes
+    useEffect(() => {
+        if (!map) return;
+        const onZoom = () => setZoom(map.getZoom());
+        onZoom();
+        map.on("zoomend", onZoom);
+        return () => map.off("zoomend", onZoom);
+    }, [map]);
+
+    // Parcels in this application, drawn at every zoom with their zoning-check colour
+    const featureByPin = useMemo(() => new Map(parcelIndex.map((p) => [p.pin, p.feature])), [parcelIndex]);
+    const attached = useMemo(
+        () =>
+            parcels
+                .map((p, i) => {
+                    const pin = p.property_index_number?.trim();
+                    const feature = p.is_verified && pin ? featureByPin.get(pin) : null;
+                    if (!feature) return null;
+                    const check = getZoningCheck(p, isAmendmentStream);
+                    return { index: i, pin, code: p.parcel_code || `P-${String(i + 1).padStart(2, "0")}`, feature, check };
+                })
+                .filter(Boolean),
+        [parcels, featureByPin, isAmendmentStream]
+    );
+    const attachedData = useMemo(
+        () => ({
+            type: "FeatureCollection",
+            features: attached.map((a) => ({ ...a.feature, properties: { ...a.feature.properties, __check: a.check.key } })),
+        }),
+        [attached]
+    );
+    const attachedKey = attached.map((a) => `${a.pin}:${a.check.key}`).join("|");
+    const attachedBadges = useMemo(
+        () =>
+            attached
+                .map((a) => {
+                    const latlng = labelPoint(a.feature.geometry);
+                    return latlng ? { key: a.pin, text: `${a.code} · ${a.check.label}`, latlng, color: CHECK_COLORS[a.check.key] } : null;
+                })
+                .filter(Boolean),
+        [attached]
+    );
+
+    // Keep CLUP tile requests inside the municipality instead of 404-ing on every tile beyond it
+    const municipalBounds = useMemo(() => {
+        if (!brgyMapData) return null;
+        const b = L.geoJSON(brgyMapData).getBounds();
+        return b.isValid() ? b.pad(0.05) : null;
+    }, [brgyMapData]);
+
+    // QGIS Identify: parcel attributes (if a lot was hit) plus the CLUP zone under the clicked point
+    const handleIdentify = (latlng, feature) => {
+        const seq = ++identifySeq.current;
+        setIdentify({ latlng, feature, zone: undefined });
+        setDockTab("identify");
+        setLayersOpen(true);
+        if (feature) zoomToLot(feature);
+        fetch(`/api/map/zoning-lookup?lat=${latlng.lat}&lng=${latlng.lng}`, { headers: { Accept: "application/json" } })
+            .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+            .then((data) => seq === identifySeq.current && setIdentify((prev) => ({ ...prev, zone: data?.lup_2030 ?? null })))
+            .catch(() => seq === identifySeq.current && setIdentify((prev) => ({ ...prev, zone: null, zoneFailed: true })));
+
+        // Same area-overlap lookup the encoder uses, so the preview matches the check the parcel will get
+        const pin = feature?.properties?.property_index_number?.trim();
+        if (!pin) return;
+        fetch(`/api/map/zoning-area-lookup?pin=${encodeURIComponent(pin)}`, { headers: { Accept: "application/json" } })
+            .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+            .then((data) => seq === identifySeq.current && setIdentify((prev) => ({ ...prev, areaZone: data?.lup_2030 ?? null })))
+            .catch(() => seq === identifySeq.current && setIdentify((prev) => ({ ...prev, areaZone: null })));
+    };
+
+    // Mirrors Create.jsx handleSelectMapParcel: CLUP falls back to the Assessor class, then "Unmapped in CLUP"
+    // Barangay containing the identified point (shown in Identify Results; the red marker zooms to it)
+    const identifyBrgy = useMemo(
+        () => (identify ? brgyIndex.find((b) => featureContains(b.feature, identify.latlng)) || null : null),
+        [identify?.latlng, brgyIndex]
+    );
+
+    // Exact zone boundaries for the barangay being worked in: the identified point's, else the selected lot's
+    const focusBarangay = identifyBrgy?.name || selectedParcel?.barangay?.trim() || form.barangay?.trim() || "";
+    useEffect(() => {
+        if (!showZoneLines || !focusBarangay) return;
+        const key = focusBarangay.toLowerCase();
+        if (zoneCache.current.has(key)) {
+            setZoneData({ key, name: focusBarangay, data: zoneCache.current.get(key) });
+            return;
+        }
+        let cancelled = false;
+        fetch(`/api/map/land_use_plan?barangay=${encodeURIComponent(focusBarangay)}`, { headers: { Accept: "application/json" } })
+            .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+            .then((data) => {
+                zoneCache.current.set(key, data);
+                if (!cancelled) setZoneData({ key, name: focusBarangay, data });
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, [focusBarangay, showZoneLines]);
+
+    const zoneLabels = useMemo(
+        () =>
+            (zoneData?.data?.features || [])
+                .map((f, i) => {
+                    const code = zoneCodeOf(f.properties);
+                    const latlng = code && !UNLABELLED_ZONES.has(code) ? insidePoint(f) : null;
+                    return latlng ? { key: `${zoneData.key}-${i}`, text: code, latlng } : null;
+                })
+                .filter(Boolean),
+        [zoneData]
+    );
+
+    const identifyPreview = (() => {
+        if (!identify?.feature || identify.areaZone === undefined) return null;
+        const assessor = identify.feature.properties?.land_use_class || "";
+        const clup = identify.areaZone || assessor || "Unmapped in CLUP";
+        return { assessor, clup, check: getZoningCheck({ is_verified: true, cadastral_zone: assessor, land_use_class: clup }, isAmendmentStream) };
+    })();
+
+    // When validation adds errors (not when the user clears them), bring the first failing parcel into view
+    const prevErrorCount = useRef(0);
+    useEffect(() => {
+        const keys = Object.keys(errors).filter((k) => k.startsWith("parcels") || k === "barangay");
+        const grew = keys.length > prevErrorCount.current;
+        prevErrorCount.current = keys.length;
+        if (!grew) return;
+        setGuideDismissed(false);
+        const firstParcelError = keys.find((k) => k.startsWith("parcels."));
+        if (firstParcelError) {
+            const idx = Number(firstParcelError.split(".")[1]);
+            if (!Number.isNaN(idx)) setActiveParcelIndex(idx);
+        }
+    }, [errors]);
+
+    const findFeatureByPin = (pin) =>
+        pin && parcelMapData?.features
+            ? parcelMapData.features.find((f) => f.properties?.property_index_number?.trim() === pin.trim()) || null
+            : null;
+
+    const fitGeoJSON = (data, padding = 30, maxZoom = 18) => {
+        if (!map || !data) return;
+        const bounds = L.geoJSON(data).getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds, { padding: [padding, padding], maxZoom });
+    };
+
+    // Zoom to a lot without zooming out when the officer is already closer in
+    const zoomToLot = (feature) => fitGeoJSON(feature, 80, Math.max(map?.getZoom() ?? 18, 18));
+
+    const selectParcel = (index) => {
+        setActiveParcelIndex(index);
+        setActiveParcelFeature(findFeatureByPin(parcels[index]?.property_index_number));
+    };
+
+    const handleRemoveParcel = (index) => {
+        removeParcel(index);
+        // Create.jsx clears the selection only when the removed parcel was selected; keep later selections aligned
+        if (activeParcelIndex != null && index < activeParcelIndex) setActiveParcelIndex(activeParcelIndex - 1);
+    };
+
+    const handleAddParcel = () => {
+        addParcel();
+        setActiveParcelIndex(parcels.length);
+        setActiveParcelFeature(null);
+    };
+
+    const handlePinChange = (index, value) => {
+        if (!value.trim() || parcels[index]?.is_verified) {
+            setForm((prev) => ({
+                ...prev,
+                parcels: prev.parcels.map((p, i) => (i === index ? { ...p, ...LOOKUP_RESET, property_index_number: value } : p)),
+            }));
+            if (selectedIndex === index) setActiveParcelFeature(null);
+        } else {
+            setParcelField(index, "property_index_number")({ target: { value } });
         }
     };
 
-    // ── Phase 2: Evaluation Engine (Cadastral vs CLUP Cross-Reference) ──
-    const handleSwitchStream = (newType, parcelIndex) => {
-        // Grab ONLY the parcel that triggered the amendment
-        const triggeringParcel = form.parcels[parcelIndex];
-        
-        // Reset the parcel code to P-01 since it will be the only one left
-        triggeringParcel.parcel_code = "P-01";
+    // Identify only inspects (encoding is an explicit "Use as P-0x" action); a lot already in the application gets selected
+    const handleMapFeatureClick = (feature) => {
+        const { parcels: current, tool: activeTool } = latest.current;
+        if (activeTool !== "identify") return;
+        const pin = (feature?.properties?.property_index_number || "").trim();
+        const existing = pin ? current.findIndex((row) => row.property_index_number?.trim() === pin) : -1;
+        if (existing !== -1) {
+            setActiveParcelIndex(existing);
+            setActiveParcelFeature(feature);
+        }
+    };
 
+    // QGIS "flash feature": blink the located geometry a few times
+    const flashFeature = (feature) => {
+        if (!map || !feature) return;
+        const flash = L.geoJSON(feature, { interactive: false, style: { color: "#dc2626", weight: 4, fillColor: "#dc2626", fillOpacity: 0.15 } }).addTo(map);
+        let ticks = 0;
+        const timer = setInterval(() => {
+            ticks += 1;
+            flash.setStyle({ opacity: ticks % 2 ? 0 : 1, fillOpacity: ticks % 2 ? 0 : 0.15 });
+            if (ticks >= 6) {
+                clearInterval(timer);
+                flash.remove();
+            }
+        }, 220);
+    };
+
+    const locateParcel = (feature) => {
+        flashFeature(feature);
+        const point = labelPoint(feature.geometry);
+        if (point) handleIdentify(point, feature);
+    };
+
+    const locateBarangay = (feature) => {
+        fitGeoJSON(feature, 20);
+        flashFeature(feature);
+    };
+
+    const handleSwitchStream = async (newType, parcelIndex) => {
+        // Amendment files carry only the triggering parcel, renumbered as P-01 — confirm before dropping the rest
+        const dropped = parcels.filter((_, i) => i !== parcelIndex).map((p, i) => p.parcel_code || `P-${String(i + 1).padStart(2, "0")}`);
+        const list = document.createElement("div");
+        const intro = document.createElement("p");
+        intro.textContent = `This application will become a ${newType}, covering only ${parcels[parcelIndex]?.parcel_code || "this lot"}.`;
+        list.append(intro);
+        if (dropped.length) {
+            const warn = document.createElement("p");
+            warn.style.marginTop = "0.5rem";
+            warn.textContent = `${dropped.join(", ")} will be removed from this application. File them separately if they still need a clearance.`;
+            list.append(warn);
+        }
+        const { isConfirmed } = await Swal.fire({
+            title: `Switch to ${newType}?`,
+            html: list,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Switch",
+            cancelButtonText: "Cancel",
+            focusCancel: true,
+        });
+        if (!isConfirmed) return;
+
+        const triggeringParcel = { ...form.parcels[parcelIndex], parcel_code: "P-01" };
         setForm((prev) => ({
             ...prev,
             application_stream: "amendment",
             application_type: newType,
-            // Override the array to retain ONLY the problematic parcel
-            parcels: [triggeringParcel], 
+            parcels: [triggeringParcel],
         }));
+        setActiveParcelIndex(0);
     };
+
+    const statusMessage = tool === "measure" ? (
+        measure && measure.count > 1
+            ? `Measure: total ${formatDistance(measure.total)} · last segment ${formatDistance(measure.last)} · right-click or Esc to clear`
+            : "Measure line: click to add points"
+    ) : tool === "measureArea" ? (
+        measure && measure.count > 2
+            ? `Area ${formatArea(measure.area)} · perimeter ${formatDistance(measure.total)} · right-click or Esc to clear`
+            : "Measure area: click at least 3 corners"
+    ) :!parcelMapData ? (
+        <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin" />
+            Loading land parcels…
+        </span>
+    ) : isVerifying || pendingEncode ? (
+        <span className="inline-flex items-center gap-1.5">
+            <span className="w-3 h-3 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin" />
+            Checking PIN against municipal records…
+        </span>
+    ) : tool === "identify" && showParcels && zoom < PARCEL_MIN_ZOOM ? (
+        "Zoom in to see individual lots, or search a PIN (Ctrl+K)"
+    ) : tool === "identify" ? (
+        `Identify: click a lot, or search a PIN (Ctrl+K) · ${verifiedCount} of ${parcels.length} parcel${parcels.length === 1 ? "" : "s"} verified`
+    ) : selectedParcel?.is_verified ? (
+        `Selected ${selectedParcel.parcel_code} · ${selectedParcel.property_index_number}`
+    ) : (
+        "Pan: drag to move the map"
+    );
 
     return (
         <div className="relative w-full h-full flex-1 flex flex-col lg:flex-row overflow-hidden">
-            {/* ── LEFT: INTERACTIVE ROSARIO GIS MAP ── */}
-            <div 
-                className={`transition-all duration-300 ease-in-out bg-slate-100 relative overflow-hidden flex flex-col ${
-                    activeTab === "details" 
-                        ? "hidden" 
-                        : isMapExpanded 
-                            ? "w-full h-full flex-1" 
-                            : "hidden lg:flex lg:w-1/2 w-full h-full border-r border-slate-200"
+            {/* ── LEFT: GIS MAP (QGIS-style canvas) ── */}
+            <div
+                className={`bg-slate-200 relative overflow-hidden flex flex-col ${
+                    mapFull ? "w-full h-full flex-1" : "hidden lg:flex lg:w-[58%] w-full h-full border-r border-slate-300"
                 }`}
             >
-                <div className="absolute inset-0 z-0">
-                    <MapContainer center={rosarioCenter} zoom={12} zoomControl={false} scrollWheelZoom={true}>
-                        <TileLayer
-                            attribution="&copy; Google Maps"
-                            url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-                            zIndex={1}
-                        />
-                        
-                        <TileLayer
-                            url="/tiles/clup_tiles/{z}/{x}/{y}.png"
-                            maxZoom={22}
-                            maxNativeZoom={19}
-                            opacity={0.4}
-                            zIndex={10}
-                            errorTileUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
-                        />
+                {/* Map toolbar */}
+                <div className="h-9 shrink-0 px-1.5 bg-slate-50 border-b border-slate-300 flex items-center gap-0.5 z-20" role="toolbar" aria-label="Map tools">
+                    <ToolButton label="Toggle Layers panel" active={layersOpen} onClick={() => setLayersOpen((o) => !o)}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" />
+                    </ToolButton>
+                    <span className="w-px h-5 bg-slate-300 mx-1" />
+                    <ToolButton label="Pan map" active={tool === "pan"} onClick={() => setTool("pan")}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.05 4.575a1.575 1.575 0 10-3.15 0v3m3.15-3v-1.5a1.575 1.575 0 013.15 0v1.5m-3.15 0l.075 5.925m3.075.75V4.575m0 0a1.575 1.575 0 013.15 0V15M6.9 7.575a1.575 1.575 0 10-3.15 0v8.175a6.75 6.75 0 006.75 6.75h2.018a5.25 5.25 0 003.712-1.538l1.732-1.732a5.25 5.25 0 001.538-3.712l.003-2.024a.668.668 0 01.198-.471 1.575 1.575 0 10-2.228-2.228 3.818 3.818 0 00-1.12 2.687M6.9 7.575V12m6.27 4.318A4.49 4.49 0 0116.35 15m.002 0h-.002" />
+                    </ToolButton>
+                    <ToolButton label="Identify features" active={tool === "identify"} onClick={() => setTool("identify")}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                    </ToolButton>
+                    <ToolButton label="Measure line" active={tool === "measure"} onClick={() => setTool("measure")}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 16.5l12.75-12.75 3.75 3.75L7.5 20.25 3.75 16.5zM7.5 12.75l1.5 1.5M10.5 9.75l1.5 1.5M13.5 6.75l1.5 1.5" />
+                    </ToolButton>
+                    <ToolButton label="Measure area" active={tool === "measureArea"} onClick={() => setTool("measureArea")}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 7.5l6-3.75 9 4.5-1.5 9.75-10.5 1.5L4.5 7.5z" />
+                        <circle cx="4.5" cy="7.5" r="1.2" fill="currentColor" />
+                        <circle cx="10.5" cy="3.75" r="1.2" fill="currentColor" />
+                        <circle cx="19.5" cy="8.25" r="1.2" fill="currentColor" />
+                        <circle cx="18" cy="18" r="1.2" fill="currentColor" />
+                        <circle cx="7.5" cy="19.5" r="1.2" fill="currentColor" />
+                    </ToolButton>
+                    <span className="w-px h-5 bg-slate-300 mx-1" />
+                    <ToolButton label="Zoom in" onClick={() => map?.zoomIn()}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM10.5 7.5v6m3-3h-6" />
+                    </ToolButton>
+                    <ToolButton label="Zoom out" onClick={() => map?.zoomOut()}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM13.5 10.5h-6" />
+                    </ToolButton>
+                    <ToolButton label="Zoom full (municipality)" onClick={() => (brgyMapData ? fitGeoJSON(brgyMapData) : map?.setView(rosarioCenter, 12))}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                    </ToolButton>
+                    <ToolButton label="Zoom to selected lot" disabled={!activeParcelFeature} onClick={() => fitGeoJSON(activeParcelFeature, 60)}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5m0 9V18A2.25 2.25 0 0118 20.25h-1.5m-9 0H6A2.25 2.25 0 013.75 18v-1.5M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </ToolButton>
+                    <span className="w-px h-5 bg-slate-300 mx-1" />
+                    <ToolButton label={attached.length ? "Print site & zoning map" : "Print site map (attach a lot first)"} disabled={!attached.length || !onPrintSiteMap} onClick={onPrintSiteMap}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 9V3h10v6M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 14h10v7H7z" />
+                    </ToolButton>
 
-                        {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
-                        {parcelMapData && (
-                            <GeoJSON 
-                                key={activeParcelFeature?.properties?.property_index_number || "parcels"} 
-                                data={parcelMapData} 
-                                style={getParcelStyle}
-                                onEachFeature={(feature, layer) => {
-                                    layer.on({
-                                        click: () => {
-                                            const p = feature?.properties || {};
-                                            const pin = p.property_index_number || p.pin || p.PIN;
-                                            const lot = p.lot_number || p.lot_no;
-                                            const area = p.lot_area_sqm || p.area;
-                                            const brgy = p.barangay;
-                                            setTimeout(() => {
-                                                handleSelectMapParcel(pin, lot, area, brgy, feature);
-                                            }, 10);
-                                        },
-                                    });
-                                }}
-                            />
-                        )}
-                        {MapController && <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />}
-                        <MapResizeTrigger isExpanded={isMapExpanded} />
-                    </MapContainer> 
-                </div>
+                    <span className="w-px h-5 bg-slate-300 mx-1" />
+                    <Locator
+                        parcelIndex={parcelIndex}
+                        brgyIndex={brgyIndex}
+                        attachedCodes={attachedCodes}
+                        onPickParcel={locateParcel}
+                        onPickBarangay={locateBarangay}
+                        onLookupPin={(pin) => startEncode({ type: "pin", pin })}
+                    />
 
-                {/* Top Controls: Expand / Maximize Map Toggle & Cadastral Verification HUD */}
-                <div className="absolute top-3 left-3 right-3 z-10 flex items-start justify-between gap-2 pointer-events-none">
-                    <div className="pointer-events-auto">
-                        {(form.parcels || []).map(
-                            (parcel, idx) =>
-                                idx === activeParcelIndex &&
-                                parcel.property_index_number && (
-                                    <div key={idx} className="bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-xl border border-slate-200/90 max-w-xs sm:max-w-sm animate-in fade-in zoom-in-95">
-                                        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 mb-1.5 gap-2">
-                                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md flex items-center gap-1">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                                                {parcel.parcel_code} Assessor Lot
-                                            </span>
-                                            <span className="text-[10px] font-mono font-bold text-slate-700 truncate">
-                                                PIN: {parcel.property_index_number}
-                                            </span>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                                            <div>
-                                                <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">ARP / Tax Dec.</p>
-                                                <p className="font-semibold text-slate-800 truncate">{parcel.arp_number || parcel.tax_dec_number || parcel.lot_number || "ARP Verified"}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Survey Number</p>
-                                                <p className="font-semibold text-slate-800 truncate">{parcel.survey_number || "—"}</p>
-                                            </div>
-                                            <div className="col-span-2 flex items-center justify-between pt-1 border-t border-slate-100">
-                                                <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">Land Use Classification:</span>
-                                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                                                    {parcel.cadastral_zone }
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )
-                        )}
-                    </div>
-
-                    <div className="pointer-events-auto flex items-center gap-1.5">
-                        <button
-                            type="button"
-                            onClick={() => setIsMapExpanded((prev) => !prev)}
-                            className="inline-flex items-center gap-1.5 bg-white/95 hover:bg-white text-slate-700 hover:text-blue-700 px-3 py-1.5 rounded-full shadow-lg border border-slate-200/90 text-xs font-bold transition-all active:scale-95 cursor-pointer backdrop-blur-xs"
-                            title={isMapExpanded ? "Restore split view" : "Maximize map for detailed digitizing"}
-                        >
-                            {isMapExpanded ? (
-                                <>
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
-                                    </svg>
-                                    <span>Split View</span>
-                                </>
-                            ) : (
-                                <>
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
-                                    </svg>
-                                    <span>Maximize Map</span>
-                                </>
-                            )}
-                        </button>
-                    </div>
-                </div>
-
-                {isMapExpanded && (
-                    <div className="absolute bottom-4 right-4 z-10 animate-in fade-in slide-in-from-bottom-2">
-                        <button
-                            type="button"
-                            onClick={() => setIsMapExpanded(false)}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xl transition-all active:scale-95 cursor-pointer"
-                        >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <span>Return to Property Form</span>
-                        </button>
-                    </div>
-                )}
-
-                <div className="absolute bottom-3 left-3 z-10 bg-white/95 backdrop-blur-xs px-3 py-1.5 rounded-xl shadow-md border border-slate-200/80 text-[11px] font-medium text-slate-600 flex items-center gap-3">
-                    <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-blue-500/40 border border-blue-600" /> Barangay
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-sm bg-red-500/50 border border-red-600" /> Selected Lot
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-normal hidden sm:inline">(Click boundary on map to select)</span>
-                </div>
-
-                {/* ── MAP NOTIFICATION OVERLAY ── */}
-                {mapMessage && (
-                    <div className="absolute inset-0 z-50 bg-slate-900/10 backdrop-blur-[2px] flex items-center justify-center animate-in fade-in duration-300 pointer-events-none">
-                        <div className="bg-white/95 backdrop-blur-md px-5 py-3 rounded-full shadow-2xl border border-slate-200 flex items-center gap-3 transform transition-all pointer-events-auto">
-                            {mapMessage.type === "loading" ? (
-                                <span className="w-5 h-5 border-2 border-slate-200 border-t-blue-600 rounded-full animate-spin shrink-0" />
-                            ) : (
-                                <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                                </div>
-                            )}
-                            <p className="text-sm font-bold text-slate-700">{mapMessage.text}</p>
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* ── RIGHT: PROPERTY FORM PANEL ── */}
-            <div 
-                ref={formRef} 
-                className={`transition-all duration-300 ease-in-out ${
-                    isMapExpanded 
-                        ? "hidden" 
-                        : activeTab === "details"
-                            ? "flex-1 w-full flex flex-col p-5 sm:p-7 overflow-y-auto bg-white justify-between"
-                            : "flex-1 lg:w-1/2 w-full flex flex-col p-5 sm:p-7 overflow-y-auto bg-white justify-between"
-                }`}
-            >
-                <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
-                    <div className="space-y-4">
-                        <div className="flex items-start justify-between pb-3 border-b border-slate-200/80">
-                            <div>
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                                        Step 3 of 5 - Property Location
-                                    </span>
-                                </div>
-                                <h3 className="text-lg font-bold text-slate-900 tracking-tight">Property Map & Zoning</h3>
-                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                    Locate the property on the map or enter the PIN to verify location and zoning.
-                                </p>
-                            </div>
-                            {totalLotArea > 0 && (
-                                <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200/80 px-2.5 py-1 rounded-md shadow-2xs shrink-0 flex flex-col items-end">
-                                    <span className="text-[9px] uppercase text-slate-400">Total Area</span>
-                                    <span>{totalLotArea.toLocaleString()} m&sup2;</span>
-                                </span>
-                            )}
-                        </div>
-
-                        {/* Progressive Timeline Indicator */}
-                        <div className="relative mb-8 mt-6 max-w-lg mx-auto w-full px-2">
-                            {/* Background Line */}
-                            <div className="absolute top-[13px] left-[10%] right-[10%] h-[2px] bg-slate-100 z-0"></div>
-                            
-                            {/* Active Progress Line */}
-                            <div 
-                                className="absolute top-[13px] left-[10%] h-[2px] bg-blue-600 z-0 transition-all duration-500 ease-out"
-                                style={{ width: activeTab === 'details' ? '80%' : (activeTab === 'evaluation' ? '40%' : '0%') }}
-                            ></div>
-
-                            <div className="flex justify-between items-start relative z-10">
-                                {/* Step 1 */}
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveTab("verification")}
-                                    className="flex flex-col items-center gap-2 group cursor-pointer focus:outline-none flex-1"
-                                >
-                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-all duration-300 shadow-sm relative z-10 ${
-                                        isVerificationDone
-                                            ? `bg-blue-600 border-blue-600 text-white shadow-blue-200 ${activeTab === 'verification' ? 'ring-4 ring-blue-100' : ''}`
-                                            : activeTab === 'verification' 
-                                                ? 'bg-white border-blue-600 text-blue-600 ring-4 ring-blue-50' 
-                                                : 'bg-white border-slate-200 text-slate-400 group-hover:border-slate-300'
-                                    }`}>
-                                        {isVerificationDone ? (
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                                        ) : '1'}
-                                    </div>
-                                    <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors text-center ${
-                                        activeTab === 'verification' || isVerificationDone ? 'text-slate-800' : 'text-slate-400 group-hover:text-slate-600'
-                                    }`}>
-                                        Verification
-                                    </span>
-                                </button>
-
-                                {/* Step 2 */}
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveTab("evaluation")}
-                                    disabled={!isVerificationDone}
-                                    className="flex flex-col items-center gap-2 group cursor-pointer focus:outline-none flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-all duration-300 shadow-sm relative z-10 ${
-                                        isEvaluationDone
-                                            ? `bg-blue-600 border-blue-600 text-white shadow-blue-200 ${activeTab === 'evaluation' ? 'ring-4 ring-blue-100' : ''}`
-                                            : activeTab === 'evaluation' 
-                                                ? 'bg-white border-blue-600 text-blue-600 ring-4 ring-blue-50' 
-                                                : 'bg-white border-slate-200 text-slate-400 group-hover:border-slate-300'
-                                    }`}>
-                                        {isEvaluationDone ? (
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                                        ) : '2'}
-                                    </div>
-                                    <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors text-center ${
-                                        activeTab === 'evaluation' || isEvaluationDone ? 'text-slate-800' : 'text-slate-400 group-hover:text-slate-600'
-                                    }`}>
-                                        Evaluation
-                                    </span>
-                                </button>
-
-                                {/* Step 3 */}
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveTab("details")}
-                                    disabled={isProgressionLocked}
-                                    className="flex flex-col items-center gap-2 group cursor-pointer focus:outline-none flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-all duration-300 shadow-sm relative z-10 ${
-                                        isDetailsDone
-                                            ? `bg-blue-600 border-blue-600 text-white shadow-blue-200 ${activeTab === 'details' ? 'ring-4 ring-blue-100' : ''}`
-                                            : activeTab === 'details' 
-                                                ? 'bg-white border-blue-600 text-blue-600 ring-4 ring-blue-50' 
-                                                : 'bg-white border-slate-200 text-slate-400 group-hover:border-slate-300'
-                                    }`}>
-                                        {isDetailsDone ? (
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                                        ) : '3'}
-                                    </div>
-                                    <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors text-center ${
-                                        activeTab === 'details' || isDetailsDone ? 'text-slate-800' : 'text-slate-400 group-hover:text-slate-600'
-                                    }`}>
-                                        Details
-                                    </span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {activeTab === "verification" && (
-                            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                                <div className="lg:hidden">
+                    <div className="ml-auto flex items-center gap-1">
+                        {showPanel ? (
                             <button
                                 type="button"
-                                onClick={() => setIsMapExpanded(true)}
-                                className="w-full flex items-center justify-center gap-2 p-2.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold shadow-2xs active:scale-98 cursor-pointer"
+                                onClick={() => setIsMapExpanded((prev) => !prev)}
+                                className="h-7 px-2.5 rounded-md text-[11px] font-semibold text-slate-600 hover:bg-slate-200/70 transition-colors cursor-pointer"
                             >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                                </svg>
-                                <span>Open Interactive GIS Map</span>
+                                {isMapExpanded ? "Show parcels" : "Maximize"}
                             </button>
-                        </div>
-
-                        {form.barangay ? (
-                            <div className="flex items-center gap-2 mb-3">
-                                <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Property Location:</span>
-                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
-                                    Brgy. {form.barangay}
-                                </span>
-                            </div>
                         ) : (
-                            <div className="flex items-center gap-2 mb-3 text-slate-400 text-xs font-medium bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/50 w-max">
-                                <span>Select a lot on the map or verify PIN to auto-detect Barangay.</span>
-                            </div>
+                            <span className="hidden xl:inline text-[11px] text-slate-500 mr-1">Step 1 of 5 · Property Map & Zoning</span>
                         )}
+                    </div>
+                </div>
 
-                        {/* ── SECTION 1: TAX DECLARATION PIN VERIFICATION ── */}
-                        <div className="space-y-3 pt-1">
-                            {(form.parcels || []).map((parcel, index) => {
-                                const isActive = activeParcelIndex === index;
-                                return (
-                                <div 
-                                    key={index} 
-                                    onClick={() => {
-                                        if (typeof setActiveParcelIndex === 'function') {
-                                            setActiveParcelIndex(index);
-                                        }
-                                        if (typeof setActiveParcelFeature === 'function' && parcel.property_index_number && parcelMapData?.features) {
-                                            const feature = parcelMapData.features.find(f => 
-                                                f.properties?.property_index_number?.trim() === parcel.property_index_number.trim()
-                                            );
-                                            // Only update if we found it, otherwise set null or leave as is (if we want to clear)
-                                            setActiveParcelFeature(feature || null);
-                                        }
+                <div className="relative flex-1 min-h-0">
+                    {/* Leaflet's bottom controls (scale bar) sit above the status bar */}
+                    <div className="absolute inset-0 z-0 [&_.leaflet-bottom]:bottom-7">
+                        {/* preferCanvas: one canvas for all parcels instead of an SVG node per polygon */}
+                        <MapContainer
+                            ref={setMap}
+                            center={rosarioCenter}
+                            zoom={12}
+                            maxZoom={MAP_MAX_ZOOM}
+                            preferCanvas={true}
+                            zoomControl={false}
+                            attributionControl={false}
+                            scrollWheelZoom={true}
+                        >
+                            <TileLayer
+                                key={basemap}
+                                url={BASEMAPS[basemap].url}
+                                subdomains="0123"
+                                maxZoom={MAP_MAX_ZOOM}
+                                maxNativeZoom={BASEMAPS[basemap].maxNativeZoom}
+                                keepBuffer={4}
+                                updateWhenZooming={false}
+                                zIndex={1}
+                            />
+
+                            {showClup && (
+                                <TileLayer
+                                    key={municipalBounds ? "clup-bounded" : "clup"}
+                                    bounds={municipalBounds || undefined}
+                                    url={CLUP_TILES.url}
+                                    maxZoom={MAP_MAX_ZOOM}
+                                    maxNativeZoom={CLUP_TILES.maxNativeZoom}
+                                    opacity={clupOpacity}
+                                    keepBuffer={4}
+                                    updateWhenZooming={false}
+                                    zIndex={10}
+                                    errorTileUrl={BLANK_TILE}
+                                />
+                            )}
+
+                            {showZoneLines && zoneData && zoom >= ZONE_LINE_MIN_ZOOM && (
+                                <>
+                                    <GeoJSON key={`${zoneData.key}-casing`} data={zoneData.data} interactive={false} style={{ color: "#0f172a", weight: 4, opacity: 0.45, fill: false }} />
+                                    <GeoJSON
+                                        key={`${zoneData.key}-line`}
+                                        data={zoneData.data}
+                                        interactive={false}
+                                        style={(f) => ({ color: getZoneInfo(zoneCodeOf(f.properties)).stroke, weight: 2, opacity: 1, fill: false })}
+                                    />
+                                </>
+                            )}
+
+                            {showBarangays && brgyMapData && (
+                                <GeoJSON data={brgyMapData} style={BARANGAY_LINE} smoothFactor={BARANGAY_LINE.smoothFactor} interactive={false} />
+                            )}
+                            {showParcelLayer && parcelMapData && (
+                                <GeoJSON
+                                    ref={parcelLayerRef}
+                                    data={parcelMapData}
+                                    style={stableParcelStyle}
+                                    onEachFeature={(feature, layer) => {
+                                        layer.on({
+                                            click: () => {
+                                                identifyHitRef.current = feature;
+                                                setTimeout(() => handleMapFeatureClick(feature), 10);
+                                            },
+                                            mouseover: (e) => {
+                                                const { tool: activeTool, map: m } = latest.current;
+                                                if (activeTool === "measure" || activeTool === "measureArea" || !m) return;
+                                                layer.setStyle({ weight: 3, color: "#0f172a" });
+                                                mapTipRef.current.setLatLng(e.latlng).setContent(buildMapTip(feature.properties || {})).openOn(m);
+                                            },
+                                            mousemove: (e) => mapTipRef.current.isOpen() && mapTipRef.current.setLatLng(e.latlng),
+                                            mouseout: () => {
+                                                layer.setStyle(parcelStyleRef.current(feature));
+                                                mapTipRef.current.close();
+                                            },
+                                        });
                                     }}
-                                    className={`rounded-2xl bg-white border shadow-sm p-5 space-y-4 relative transition-all cursor-pointer ${
-                                        isActive ? "border-blue-500 ring-1 ring-blue-500 shadow-blue-100" : "border-slate-200 hover:border-blue-300"
-                                    }`}
+                                />
+                            )}
+                            {showParcels && attached.length > 0 && (
+                                <GeoJSON
+                                    key={attachedKey}
+                                    data={attachedData}
+                                    interactive={false}
+                                    style={(f) => {
+                                        const color = CHECK_COLORS[f.properties.__check] || CHECK_COLORS.unverified;
+                                        return { color, weight: 3, opacity: 1, fillColor: color, fillOpacity: zoom >= PARCEL_MIN_ZOOM ? 0.08 : 0.45 };
+                                    }}
+                                />
+                            )}
+                            <IdentifyClick active={tool === "identify"} hitRef={identifyHitRef} onIdentify={handleIdentify} />
+                            <MeasureLayer key={tool} active={isMeasuring} mode={tool === "measureArea" ? "area" : "line"} onMeasure={setMeasure} />
+                            {tool === "identify" && identify && (
+                                <CircleMarker
+                                    ref={identifyMarkerRef}
+                                    key={`${identify.latlng.lat},${identify.latlng.lng}-${identify.feature ? "lot" : "point"}`}
+                                    center={identify.latlng}
+                                    radius={9}
+                                    // Transparent fill so the whole ring is clickable, not just its outline
+                                    pathOptions={{ color: "#dc2626", weight: 2.5, fillColor: "#dc2626", fillOpacity: 0.08 }}
+                                    interactive={Boolean(identify.feature)}
+                                    eventHandlers={{
+                                        click: (e) => {
+                                            // Don't let the map treat this as a new Identify click
+                                            L.DomEvent.stopPropagation(e);
+                                            if (identify.feature) zoomToLot(identify.feature);
+                                        },
+                                    }}
                                 >
-                                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                                        <span className={`inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest ${isActive ? 'text-blue-700' : 'text-slate-800'}`}>
-                                            <svg className={`w-4 h-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
-                                            {parcel.parcel_code || `Property Lot ${index + 1}`}
-                                        </span>
-                                        {form.parcels && form.parcels.length > 1 && (
-                                            <button 
-                                                type="button" 
-                                                onClick={() => removeParcel(index)} 
-                                                className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                </svg> 
-                                                <span>Remove Lot</span>
-                                            </button>
-                                        )}
-                                    </div>
+                                    {identify.feature && (
+                                        <Tooltip direction="top" offset={[0, -10]}>
+                                            Zoom to this lot
+                                        </Tooltip>
+                                    )}
+                                </CircleMarker>
+                            )}
+                            <ScaleBar />
+                            {MapController && <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />}
+                            <MapResizeTrigger watch={mapFull} />
+                        </MapContainer>
+                    </div>
 
-                                    {/* PIN Input & Verification Button */}
-                                    <div>
-                                        <Label required hasError={!!errors[`parcels.${index}.property_index_number`]}>
-                                            Property Identification Number (PIN) from Tax Declaration
-                                        </Label>
-                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-1">
-                                            <Input 
-                                                type="text" 
-                                                value={parcel.property_index_number || ""} 
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    if (!val.trim()) {
-                                                        setForm(prev => ({
-                                                            ...prev,
-                                                            parcels: prev.parcels.map((p, i) => i === index ? {
-                                                                ...p,
-                                                                property_index_number: "",
-                                                                is_verified: false,
-                                                                owner_name: "",
-                                                                cadastral_zone: "",
-                                                                land_use_class: "",
-                                                                parcel_code: "",
-                                                                lot_number: "",
-                                                                survey_number: "",
-                                                                arp_number: ""
-                                                            } : p)
-                                                        }));
-                                                        if (typeof handleSelectMapParcel === 'function') {
-                                                            handleSelectMapParcel(null, index);
-                                                        }
-                                                    } else {
-                                                        setParcelField(index, "property_index_number")(e);
-                                                    }
-                                                }}
-                                                placeholder="e.g. 04-01-021-XXX-XX-XXX" 
-                                                className="flex-1 font-mono bg-white uppercase" 
-                                                hasError={!!errors[`parcels.${index}.property_index_number`]} 
-                                            />
-                                            <button 
-                                                type="button" 
-                                                onClick={() => handlePinLookup(index)} 
-                                                disabled={pinLoading[index] || !parcel.property_index_number?.trim() || parcel.is_verified} 
-                                                className={`inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold transition-all shadow-xs whitespace-nowrap ${
-                                                    parcel.is_verified 
-                                                        ? "bg-slate-200 text-slate-500 cursor-default"
-                                                        : pinLoading[index] || !parcel.property_index_number?.trim() 
-                                                            ? "bg-slate-200 text-slate-400 cursor-not-allowed" 
-                                                            : "bg-slate-800 hover:bg-slate-900 text-white active:scale-98 cursor-pointer"
-                                                }`}
-                                            >
-                                                {pinLoading[index] ? (
-                                                    <>
-                                                        <span className="w-3.5 h-3.5 border-2 border-slate-400/40 border-t-slate-600 rounded-full animate-spin" />
-                                                        <span>Verifying...</span>
-                                                    </>
-                                                ) : parcel.is_verified ? (
-                                                    <>
-                                                        <span>Verified</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                        </svg>
-                                                        <span>Verify</span>
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
-                                        {errors[`parcels.${index}.property_index_number`] && (
-                                            <p className="text-xs font-medium text-rose-500 mt-1">{errors[`parcels.${index}.property_index_number`]}</p>
-                                        )}
-                                    </div>
+                    {/* Layers panel (docked, like QGIS) */}
+                    {layersOpen && (
+                        <div className="absolute top-0 left-0 bottom-7 z-10 w-72 bg-white/95 backdrop-blur-sm border-r border-slate-300 flex flex-col text-slate-700">
+                            <div className="h-7 pl-1 pr-1.5 flex items-end justify-between border-b border-slate-300 bg-slate-100" role="tablist" aria-label="Map panels">
+                                <div className="flex items-end gap-0.5">
+                                    {[
+                                        { id: "layers", label: "Layers" },
+                                        { id: "identify", label: "Identify Results" },
+                                    ].map((t) => (
+                                        <button
+                                            key={t.id}
+                                            type="button"
+                                            role="tab"
+                                            aria-selected={dockTab === t.id}
+                                            onClick={() => setDockTab(t.id)}
+                                            className={`h-6 px-2 text-[11px] border border-b-0 rounded-t cursor-pointer ${
+                                                dockTab === t.id ? "bg-white border-slate-300 text-slate-900 font-semibold -mb-px" : "border-transparent text-slate-500 hover:text-slate-800"
+                                            }`}
+                                        >
+                                            {t.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setLayersOpen(false)}
+                                    aria-label="Close panel"
+                                    className="mb-1 w-5 h-5 rounded flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-200 cursor-pointer"
+                                >
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
 
-                                    {/* Cross-Referenced Database Details */}
-                                    {parcel.is_verified || parcel.lot_number ? (
-                                        <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4">
-                                            <div className="flex items-center justify-between pb-3 border-b border-slate-200/80 mb-3">
-                                                <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold text-emerald-700">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                                    Property Found in Records
-                                                </span>
-                                                <span className="text-[10px] font-mono font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-2xs">
-                                                    {parcel.parcel_code}
-                                                </span>
-                                            </div>
-                                            
-                                            <div className="space-y-4 text-xs">
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Registered Owner</span>
-                                                    <span className="font-bold text-slate-800">{parcel.owner_name || "—"}</span>
-                                                </div>
-                                                
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="flex flex-col gap-1">
-                                                        <span className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Assessor Record</span>
-                                                        <span className="font-semibold text-slate-800 truncate">{parcel.cadastral_zone || "—"}</span>
-                                                    </div>
-                                                    <div className="flex flex-col gap-1 text-right">
-                                                        <span className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Mapped Land Use</span>
-                                                        <span className="font-bold text-slate-800 truncate">{parcel.land_use_class || "—"}</span>
-                                                    </div>
-                                                </div>
-                                                
-                                                <div className="flex items-center justify-between pt-3 border-t border-slate-200/80 text-[10px] font-mono">
-                                                    <span className="text-slate-400">ARP: <span className="font-semibold text-slate-700">{parcel.arp_number || "—"}</span></span>
-                                                    <span className="text-slate-400">SURVEY: <span className="font-semibold text-slate-700">{parcel.survey_number || "—"}</span></span>
-                                                    <span className="text-slate-400">LOT: <span className="font-semibold text-slate-700">{parcel.lot_number || "—"}</span></span>
-                                                </div>
-                                            </div>
+                            {dockTab === "identify" ? (
+                                <div className="flex-1 overflow-y-auto p-1.5 text-[11px]">
+                                    {!identify ? (
+                                        <div className="px-1.5 py-2 space-y-2 text-slate-500">
+                                            <p>Click a lot with the Identify tool, or search its PIN in the toolbar.</p>
+                                            <button type="button" onClick={() => setPanelUnlocked(true)} className="text-slate-700 underline underline-offset-2 hover:text-slate-900 cursor-pointer">
+                                                Lot not on the map? Encode the PIN manually
+                                            </button>
                                         </div>
                                     ) : (
-                                        <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 text-[11px] text-slate-500 flex items-start gap-2.5">
-                                            <div className="w-6 h-6 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center shrink-0 mt-0.5">
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
-                                            </div>
-                                            <p className="leading-relaxed">Enter the PIN printed on the applicant's Tax Declaration and click <b>Verify</b>, or select a parcel polygon on the GIS map.</p>
-                                        </div>
-                                    )}
-                                </div>
-                                );
-                            })}
-
-                            <button 
-                                type="button" 
-                                onClick={addParcel} 
-                                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 text-slate-500 hover:text-blue-700 font-bold text-xs transition-all cursor-pointer"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                </svg> 
-                                <span>Add Another Parcel</span>
-                            </button>
-                        </div>
-                            </div>
-                        )}
-
-                        {activeTab === "evaluation" && (
-                            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                                {shouldShowTargetZoning && (
-                                    <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-2xl space-y-3 mb-2 shadow-sm">
-                                        <div className="flex items-center gap-2 border-b border-blue-100 pb-2 mb-1">
-                                            <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                            </div>
-                                            <div>
-                                                <h4 className="text-[11px] font-bold uppercase tracking-wider text-blue-800">Legislative Amendment Target</h4>
-                                                <p className="text-[10px] text-blue-600/80">Select the proposed zoning class for this amendment request.</p>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <Label required hasError={!!errors.target_land_use_class}>Target Zoning Classification</Label>
-                                            <Select 
-                                                value={form.target_land_use_class || ""} 
-                                                onChange={set("target_land_use_class")} 
-                                                hasError={!!errors.target_land_use_class}
-                                                className="bg-white mt-1"
-                                            >
-                                                <option value="" disabled>Select target zoning...</option>
-                                                {isRezoningApplication ? (
-                                                    ZONING_SUB_CLASSES.map((group) => (
-                                                        <optgroup key={group.name} label={group.name} className="font-bold text-slate-900 bg-slate-50">
-                                                            {group.items.map((item) => (
-                                                                <option key={item.code} value={item.code} className="font-medium text-slate-700 bg-white">
-                                                                    {item.label} ({item.code})
-                                                                </option>
-                                                            ))}
-                                                        </optgroup>
-                                                    ))
-                                                ) : (
-                                                    LAND_USE_CLASSES.map((c) => (
-                                                        <option key={c} value={c} className="font-medium text-slate-700">{c}</option>
-                                                    ))
-                                                )}
-                                            </Select>
-                                            {errors.target_land_use_class && <p className="text-xs font-medium text-rose-500 mt-1">{errors.target_land_use_class}</p>}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {(form.parcels || []).map((parcel, index) => (
-                                    <div 
-                                        key={index} 
-                                        className={`space-y-4 rounded-xl border p-4 transition-all cursor-pointer ${
-                                            activeParcelIndex === index ? "border-blue-500 ring-1 ring-blue-500 bg-blue-50/20 shadow-sm" : "border-slate-200 hover:border-blue-300 bg-white"
-                                        }`}
-                                        onClick={() => {
-                                            if (typeof setActiveParcelIndex === 'function') {
-                                                setActiveParcelIndex(index);
-                                            }
-                                            if (typeof setActiveParcelFeature === 'function' && parcel.property_index_number && parcelMapData?.features) {
-                                                const feature = parcelMapData.features.find(f => 
-                                                    f.properties?.property_index_number?.trim() === parcel.property_index_number.trim()
-                                                );
-                                                setActiveParcelFeature(feature || null);
-                                            }
-                                        }}
-                                    >
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${activeParcelIndex === index ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200'}`}>Parcel {index + 1}</span>
-                                            {parcel.property_index_number && <span className={`font-mono text-[10px] font-bold ${activeParcelIndex === index ? 'text-blue-700' : 'text-slate-500'}`}>{parcel.property_index_number}</span>}
-                                        </div>
-                                        
-                                        {/* ── PER-PARCEL MISMATCH INTERCEPT BANNER ── */}
-                                        {(() => {
-                                            if (!parcel.is_verified || !parcel.land_use_class || !parcel.cadastral_zone) return null;
-                                            const cadastral = parcel.cadastral_zone.trim().toLowerCase();
-                                            const clup = parcel.land_use_class.trim().toLowerCase();
-                                            
-                                            if (cadastral === clup) return null;
-
-                                            let parcelIntercept = null;
-                                            if (isAmendmentStream) {
-                                                parcelIntercept = {
-                                                    color: "blue",
-                                                    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />,
-                                                    title: "Legislative Track Activated",
-                                                    message: "A legislative amendment track is activated for this lot. This file will bypass standard clearance checks."
-                                                };
-                                            } else if (cadastral.includes("agri") || cadastral.includes("agricultural") || cadastral.includes("agind")) {
-                                                parcelIntercept = {
-                                                    color: "rose",
-                                                    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />,
-                                                    title: "Zoning Mismatch Detected",
-                                                    message: `The Assessor record classifies this lot as "${parcel.cadastral_zone}", but the spatial Land Use Plan designates it as "${parcel.land_use_class}".`,
-                                                    action: { label: "Switch to Reclassification Stream", type: "Petition for Reclassification" }
-                                                };
-                                            } else {
-                                                parcelIntercept = {
-                                                    color: "amber",
-                                                    icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />,
-                                                    title: "System Intercept: Zoning Map Amendment Required",
-                                                    message: `The Assessor record classifies this lot as "${parcel.cadastral_zone}", but the spatial Land Use Plan designates it as "${parcel.land_use_class}".`,
-                                                    action: { label: "Switch to Rezoning Stream", type: "Petition for Rezoning" }
-                                                };
-                                            }
-
-                                            return (
-                                                <div className="mt-4 bg-white border border-slate-200 shadow-sm rounded-lg overflow-hidden flex flex-col sm:flex-row relative animate-in fade-in">
-                                                    {/* Left status bar */}
-                                                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${
-                                                        parcelIntercept.color === 'blue' ? 'bg-blue-500' :
-                                                        parcelIntercept.color === 'rose' ? 'bg-rose-500' :
-                                                        'bg-amber-500'
-                                                    }`} />
-                                                    
-                                                    <div className="flex-1 p-4 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between pl-5">
-                                                        <div className="flex items-start gap-3">
-                                                            <div className={`mt-0.5 shrink-0 ${
-                                                                parcelIntercept.color === 'blue' ? 'text-blue-500' :
-                                                                parcelIntercept.color === 'rose' ? 'text-rose-500' :
-                                                                'text-amber-500'
-                                                            }`}>
-                                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">{parcelIntercept.icon}</svg>
-                                                            </div>
-                                                            <div>
-                                                                <h4 className="text-[13px] font-semibold text-slate-900">{parcelIntercept.title}</h4>
-                                                                <p className="text-xs text-slate-600 mt-1 leading-relaxed">{parcelIntercept.message}</p>
-                                                            </div>
-                                                        </div>
-                                                        
-                                                        {parcelIntercept.action && (
-                                                            <div className="shrink-0 w-full sm:w-auto mt-2 sm:mt-0 pl-8 sm:pl-0">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleSwitchStream(parcelIntercept.action.type, index)}
-                                                                    className="w-full sm:w-auto inline-flex justify-center items-center gap-1.5 rounded-md bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm border border-slate-300 hover:bg-slate-50 transition-all active:bg-slate-100"
-                                                                >
-                                                                    <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-                                                                    </svg>
-                                                                    {parcelIntercept.action.label}
-                                                                </button>
+                                        <>
+                                            {/* Action: attach the identified lot to the application */}
+                                            {identify.feature && (() => {
+                                                const pin = identify.feature.properties?.property_index_number?.trim();
+                                                const attached = pin && attachedCodes[pin];
+                                                return (
+                                                    <div className="m-1 mb-2 p-2.5 rounded-md border border-slate-300 bg-slate-50">
+                                                        <p className="text-[10px] uppercase tracking-wider text-slate-400">Identified lot</p>
+                                                        <p className="font-mono font-semibold text-slate-900 text-xs break-all">{pin || "No PIN on this lot"}</p>
+                                                        {pin && (
+                                                            <div className="mt-2 pt-2 border-t border-slate-200">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <span className="text-slate-500">Zoning check</span>
+                                                                    {identifyPreview ? (
+                                                                        <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
+                                                                            <span className="w-2 h-2 rounded-full" style={{ background: CHECK_COLORS[identifyPreview.check.key] }} aria-hidden="true" />
+                                                                            {identifyPreview.check.label}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-slate-400">Checking…</span>
+                                                                    )}
+                                                                </div>
+                                                                {identifyPreview && (
+                                                                    <p className="mt-0.5 text-[10px] text-slate-500">
+                                                                        Assessor <b className="text-slate-700">{identifyPreview.assessor || "—"}</b> · CLUP <b className="text-slate-700">{identifyPreview.clup}</b>
+                                                                    </p>
+                                                                )}
+                                                                {identifyPreview?.check.key === "mismatch" && !attached && (
+                                                                    <p className="mt-1 text-[10px] text-amber-800">
+                                                                        Using this lot will require a {identifyPreview.check.action.type === "Petition for Reclassification" ? "reclassification" : "rezoning"} petition.
+                                                                    </p>
+                                                                )}
                                                             </div>
                                                         )}
+                                                        {pin && (
+                                                            <div className="mt-2 pt-2 border-t border-slate-200 flex items-start justify-between gap-2">
+                                                                <span className="text-slate-500 shrink-0">Area</span>
+                                                                <span className="text-right text-slate-800 font-semibold">
+                                                                    <AreaComparison declared={identify.feature.properties?.lot_area_sqm} feature={identify.feature} />
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {attached ? (
+                                                            <p className="mt-1.5 text-slate-600">✓ Attached to this application as {attached}</p>
+                                                        ) : pin ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => startEncode({ type: "map", feature: identify.feature })}
+                                                                disabled={isVerifying || !!pendingEncode}
+                                                                className="mt-2 w-full h-8 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
+                                                            >
+                                                                {pendingEncode || isVerifying ? "Checking…" : `Use as ${nextTargetCode} for this application`}
+                                                            </button>
+                                                        ) : null}
                                                     </div>
-                                                </div>
-                                            );
-                                        })()}
-
-                                        <ParcelInspectionScheduler
-                                            index={index}
-                                            parcel={parcel}
-                                            setParcelField={setParcelField}
-                                            inspectors={inspectors}
-                                            errors={errors}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {activeTab === "details" && (
-                            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
-                                <div>
-                                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                                        <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
-                                        Project Area & Layout Specifics
-                                    </h4>
-                                    <p className="text-[10px] text-slate-500 mt-0.5">Specify building coverage, development extent, and right-over-land data.</p>
-                                </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <div>
-                                    <Label>Building Area (sq.m)</Label>
-                                    <Input
-                                        type="number"
-                                        value={form.building_area || ""}
-                                        onChange={set("building_area")}
-                                        placeholder="e.g. 120.5"
-                                    />
-                                </div>
-                                <div>
-                                    <Label>Area to be Developed (sq.m)</Label>
-                                    <Input
-                                        type="number"
-                                        value={form.area_to_develop || ""}
-                                        onChange={set("area_to_develop")}
-                                        placeholder="e.g. 500.00"
-                                    />
-                                </div>
-                                <div>
-                                    <Label>Number of Saleable Lots</Label>
-                                    <Input
-                                        type="number"
-                                        value={form.number_of_saleable_lots || ""}
-                                        onChange={set("number_of_saleable_lots")}
-                                        placeholder="e.g. 10"
-                                    />
-                                </div>
-
-                                <div className="sm:col-span-2">
-                                    <Label>Project Type / Business Name (Optional)</Label>
-                                    <Input
-                                        type="text"
-                                        value={form.project_type_business_name || ""}
-                                        onChange={set("project_type_business_name")}
-                                        placeholder="e.g. Residential Subdivision / Juan's Hardware"
-                                    />
-                                </div>
-
-                                <div>
-                                    <Label>Project Cost</Label>
-                                    <div className="relative mt-1 rounded-md shadow-sm">
-                                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                                            <span className="text-slate-500 sm:text-sm">₱</span>
-                                        </div>
-                                        <input
-                                            type="text"
-                                            value={form.project_cost ? form.project_cost.toString().split('.').map((p, i) => i === 0 ? p.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : p).join('.') : ""}
-                                            onChange={(e) => {
-                                                let val = e.target.value.replace(/[^0-9.]/g, '');
-                                                const parts = val.split('.');
-                                                if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
-                                                set("project_cost")({ target: { value: val } });
-                                            }}
-                                            placeholder="0"
-                                            className={`block w-full rounded-md border-0 py-2.5 pl-8 text-right text-slate-900 ring-1 ring-inset ring-slate-300 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 transition-all ${
-                                                (!form.project_cost || !form.project_cost.toString().includes('.')) ? 'pr-9' : 'pr-3'
-                                            }`}
-                                        />
-                                        {(!form.project_cost || !form.project_cost.toString().includes('.')) && (
-                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                                                <span className="text-slate-400 sm:text-sm">.00</span>
+                                                );
+                                            })()}
+                                            <div className="px-1.5 pb-1.5 flex items-center justify-between gap-2">
+                                                <span className="font-mono text-slate-500">
+                                                    {identify.latlng.lat.toFixed(6)}, {identify.latlng.lng.toFixed(6)}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        const btn = e.currentTarget;
+                                                        navigator.clipboard
+                                                            ?.writeText(`${identify.latlng.lat.toFixed(6)}, ${identify.latlng.lng.toFixed(6)}`)
+                                                            .then(() => {
+                                                                btn.textContent = "Copied";
+                                                                setTimeout(() => (btn.textContent = "Copy"), 1500);
+                                                            })
+                                                            .catch(() => {});
+                                                    }}
+                                                    className="text-[10px] font-semibold text-slate-500 underline underline-offset-2 hover:text-slate-900 cursor-pointer"
+                                                >
+                                                    Copy
+                                                </button>
                                             </div>
-                                        )}
+                                            <details open className="mb-1">
+                                                <summary className="px-1.5 py-1 font-semibold text-slate-800 cursor-pointer hover:bg-slate-100 rounded">Barangay boundaries</summary>
+                                                <div className="px-1.5 pl-5 py-1 text-slate-800">
+                                                    {identifyBrgy ? identifyBrgy.name : <i className="text-slate-400">Outside Rosario</i>}
+                                                </div>
+                                            </details>
+                                            <details open className="mb-1">
+                                                <summary className="px-1.5 py-1 font-semibold text-slate-800 cursor-pointer hover:bg-slate-100 rounded">CLUP 2030 zoning</summary>
+                                                <div className="grid grid-cols-[84px_1fr] gap-x-2 px-1.5 pl-5 py-1">
+                                                    <span className="text-slate-400">lup_2030</span>
+                                                    <span className="font-medium text-slate-800 break-words">
+                                                        {identify.zone === undefined ? (
+                                                            "Loading…"
+                                                        ) : identify.zoneFailed ? (
+                                                            "Lookup failed"
+                                                        ) : identify.zone ? (
+                                                            <span className="inline-flex items-start gap-1.5">
+                                                                <span
+                                                                    className="mt-0.5 w-2.5 h-2.5 border shrink-0"
+                                                                    style={{ background: getZoneInfo(identify.zone).fill, borderColor: getZoneInfo(identify.zone).stroke }}
+                                                                    aria-hidden="true"
+                                                                />
+                                                                <span>
+                                                                    {identify.zone}
+                                                                    <span className="block text-slate-500 font-normal">{getZoneInfo(identify.zone).label}</span>
+                                                                </span>
+                                                            </span>
+                                                        ) : (
+                                                            <i className="text-slate-400">NULL</i>
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            </details>
+                                            {identify.feature ? (
+                                                <details open>
+                                                    <summary className="px-1.5 py-1 font-semibold text-slate-800 cursor-pointer hover:bg-slate-100 rounded">Land parcels</summary>
+                                                    <dl className="px-1.5 pl-5 py-1 space-y-0.5">
+                                                        {PARCEL_FIELD_ALIASES.filter(([k]) => k in (identify.feature.properties || {})).map(([k, label]) => {
+                                                            const v = identify.feature.properties[k];
+                                                            return (
+                                                                <div key={k} className="grid grid-cols-[96px_1fr] gap-x-2">
+                                                                    <dt className="text-slate-400">{label}</dt>
+                                                                    <dd className={`text-slate-800 break-words ${k === "property_index_number" ? "font-mono" : ""}`}>
+                                                                        {v === null || v === "" ? <i className="text-slate-400">NULL</i> : String(v)}
+                                                                    </dd>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </dl>
+                                                    <details className="pl-3.5">
+                                                        <summary className="px-1.5 py-1 text-slate-500 cursor-pointer hover:bg-slate-100 rounded">
+                                                            All fields ({Object.keys(identify.feature.properties || {}).length})
+                                                        </summary>
+                                                        <dl className="px-1.5 pl-5 py-1 space-y-0.5">
+                                                            {Object.entries(identify.feature.properties || {}).map(([k, v]) => (
+                                                                <div key={k} className="grid grid-cols-[96px_1fr] gap-x-2">
+                                                                    <dt className="text-slate-400 truncate font-mono text-[10px]" title={k}>{k}</dt>
+                                                                    <dd className="text-slate-800 break-words">
+                                                                        {v === null || v === "" ? <i className="text-slate-400">NULL</i> : String(v)}
+                                                                    </dd>
+                                                                </div>
+                                                            ))}
+                                                        </dl>
+                                                    </details>
+                                                </details>
+                                            ) : (
+                                                <p className="px-1.5 py-1 text-slate-400">No land parcel at this point.</p>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            ) : (
+                            <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+                                <LayerRow checked={showParcels} onChange={setShowParcels} swatch="bg-blue-500/25 border-blue-600">
+                                    Land parcels
+                                </LayerRow>
+                                <div className="pl-7 pb-1 flex items-center gap-1.5 text-[10px] text-slate-500">
+                                    <span className="w-2.5 h-2.5 bg-yellow-300/60 border border-yellow-400" aria-hidden="true" /> Selected lot
+                                </div>
+                                <LayerRow checked={showBarangays} onChange={setShowBarangays} swatch="bg-transparent border-slate-600">
+                                    Barangay boundaries
+                                </LayerRow>
+                                <LayerRow checked={showZoneLines} onChange={setShowZoneLines} swatch="bg-transparent border-2 border-slate-700">
+                                    Zoning boundaries (exact)
+                                </LayerRow>
+                                {showZoneLines && (
+                                    <p className="pl-7 pb-1 text-[10px] text-slate-500">
+                                        {!focusBarangay
+                                            ? "Identify a point or select a lot to load its barangay"
+                                            : zoom < ZONE_LINE_MIN_ZOOM
+                                            ? `Brgy. ${focusBarangay} · zoom in to show`
+                                            : zoneData?.key === focusBarangay.toLowerCase()
+                                            ? `Brgy. ${focusBarangay} · ${zoneData.data?.features?.length || 0} zones`
+                                            : `Loading Brgy. ${focusBarangay}…`}
+                                    </p>
+                                )}
+                                <LayerRow checked={showClup} onChange={setShowClup} swatch="bg-gradient-to-br from-yellow-300 via-rose-400 to-fuchsia-500 border-slate-400">
+                                    CLUP 2030 zoning
+                                </LayerRow>
+                                {showClup && (
+                                    <div className="pl-7 pr-2 pb-1.5 flex items-center gap-2">
+                                        <input
+                                            type="range"
+                                            min="0.1"
+                                            max="1"
+                                            step="0.05"
+                                            value={clupOpacity}
+                                            onChange={(e) => setClupOpacity(Number(e.target.value))}
+                                            aria-label="CLUP zoning opacity"
+                                            className="flex-1 accent-slate-700 cursor-pointer"
+                                        />
+                                        <span className="font-mono text-[10px] text-slate-500 w-8 text-right">{Math.round(clupOpacity * 100)}%</span>
                                     </div>
-                                </div>
+                                )}
+                                {showClup && (
+                                    <ul className="pl-7 pr-2 pb-1.5 space-y-0.5" aria-label="CLUP zoning legend">
+                                        {ZONE_CATEGORY_LEGEND.map((z) => (
+                                            <li key={z.id} className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                                                <span className="w-3 h-2.5 border shrink-0" style={{ background: z.fill, borderColor: z.stroke }} aria-hidden="true" />
+                                                {z.label}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
 
-                                <div>
-                                    <Label>Right over Land</Label>
-                                    <Select value={form.right_over_land || ""} onChange={set("right_over_land")}>
-                                        <option value="">Select</option>
-                                        <option value="Owner">Owner</option>
-                                        <option value="Lessee">Lessee</option>
-                                        <option value="Others">Others</option>
-                                    </Select>
-                                </div>
-
-                                <div>
-                                    <Label>Project Tenure</Label>
-                                    <Select value={form.project_tenure || ""} onChange={set("project_tenure")}>
-                                        <option value="">Select</option>
-                                        <option value="Permanent">Permanent</option>
-                                        <option value="Temporary">Temporary</option>
-                                    </Select>
+                                <div className="pt-1.5 mt-1 border-t border-slate-200" role="radiogroup" aria-label="Base map">
+                                    {Object.entries(BASEMAPS).map(([key, b]) => (
+                                        <label key={key} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-100 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="basemap"
+                                                checked={basemap === key}
+                                                onChange={() => setBasemap(key)}
+                                                className="w-3.5 h-3.5 accent-slate-700 cursor-pointer"
+                                            />
+                                            <span className="text-[11px] text-slate-700">{b.label}</span>
+                                        </label>
+                                    ))}
                                 </div>
                             </div>
+                            )}
                         </div>
-                        )}
+                    )}
+
+                    <MapLabels
+                        map={map}
+                        badges={showParcels ? attachedBadges : NO_LABELS}
+                        zoneLabels={showZoneLines ? zoneLabels : NO_LABELS}
+                        parcelLabels={parcelLabels}
+                        brgyLabels={brgyLabels}
+                        selectedPin={activePin}
+                        showParcels={showParcels}
+                        showBarangays={showBarangays}
+                    />
+
+                    {/* QGIS-style message bar */}
+                    {(lookupError || stepBlocked || (!showPanel && !guideDismissed && !identify)) && !pendingEncode && !isVerifying && (
+                        <div
+                            role="status"
+                            className={`absolute top-0 right-14 z-20 flex items-center gap-3 px-3 py-2 border-b border-x rounded-b-md text-[11px] shadow-sm ${
+                                layersOpen ? "left-72" : "left-0"
+                            } ${lookupError ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-white/95 border-slate-300 text-slate-700"}`}
+                        >
+                            <span className="flex-1 min-w-0">
+                                {lookupError ? (
+                                    <>
+                                        <b>PIN not found.</b> {lookupError}
+                                    </>
+                                ) : stepBlocked ? (
+                                    <>
+                                        <b>No lot verified yet.</b> Find the applicant's lot and choose <b>Use as {nextTargetCode}</b> before continuing.
+                                    </>
+                                ) : (
+                                    <>
+                                        <b>Find the applicant's lot.</b> Search its PIN (Ctrl+K) or click it with Identify, then choose <b>Use as {nextTargetCode}</b>.
+                                    </>
+                                )}
+                            </span>
+                            {lookupError && (
+                                <button type="button" onClick={() => setPanelUnlocked(true)} className="shrink-0 h-6 px-2.5 rounded border border-amber-300 bg-white font-semibold hover:bg-amber-100 cursor-pointer">
+                                    Encode manually
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => (lookupError ? setLastLookupIndex(null) : setGuideDismissed(true))}
+                                aria-label="Dismiss message"
+                                className="shrink-0 w-5 h-5 rounded flex items-center justify-center opacity-60 hover:opacity-100 cursor-pointer"
+                            >
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                    )}
+
+                    {/* North arrow decoration */}
+                    <div className="absolute top-2 right-2 z-10 w-9 h-11 rounded-md bg-white/90 border border-slate-300 flex flex-col items-center justify-center pointer-events-none" aria-hidden="true">
+                        <span className="text-[10px] font-bold leading-none text-slate-800">N</span>
+                        <svg className="w-4 h-5" viewBox="0 0 16 20">
+                            <path d="M8 1 L14 19 L8 15 Z" fill="#0f172a" />
+                            <path d="M8 1 L2 19 L8 15 Z" fill="#ffffff" stroke="#0f172a" strokeWidth="1" />
+                        </svg>
+                    </div>
+
+                    <MapStatusBar map={map} message={statusMessage} />
+                </div>
+            </div>
+
+            {/* ── RIGHT: PARCEL PANEL ── */}
+            <div
+                ref={formRef}
+                className={!showPanel || isMapExpanded ? "hidden" : "flex-1 lg:w-[42%] w-full flex flex-col p-5 overflow-y-auto bg-white"}
+            >
+                <div className="flex-1 flex flex-col justify-between gap-4">
+                    <div className="space-y-4">
+                        {/* Header */}
+                        <div className="flex items-end justify-between gap-3">
+                            <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Step 1 of 5</span>
+                                <h3 className="text-base font-bold text-slate-900 tracking-tight">Property Map & Zoning</h3>
+                            </div>
+                            {totalLotArea > 0 && (
+                                <span className="text-xs text-slate-500 shrink-0">
+                                    Total area <span className="font-mono font-semibold text-slate-800">{totalLotArea.toLocaleString()} m²</span>
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="space-y-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsMapExpanded(true)}
+                                    className="lg:hidden w-full p-2.5 rounded-full border border-slate-200 text-slate-700 text-xs font-semibold cursor-pointer hover:bg-slate-50"
+                                >
+                                    Open map
+                                </button>
+                                {/* Parcel list header */}
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="font-semibold text-slate-800">
+                                        Parcels <span className="text-slate-400 font-normal">· {verifiedCount} of {parcels.length} verified</span>
+                                    </span>
+                                    {form.barangay && <span className="text-slate-500">Brgy. {form.barangay}</span>}
+                                </div>
+                                {errors.barangay && <p className="text-xs font-medium text-rose-500 -mt-1.5">Verify a PIN to detect the barangay.</p>}
+
+                                {/* Parcel rows */}
+                                <ul className="rounded-xl border border-slate-200 divide-y divide-slate-200 overflow-hidden">
+                                    {parcels.map((parcel, index) => {
+                                        const isOpen = selectedIndex === index;
+                                        const check = getZoningCheck(parcel, isAmendmentStream);
+                                        const pinError = errors[`parcels.${index}.property_index_number`];
+                                        const hasRowError = Object.keys(errors).some((k) => k.startsWith(`parcels.${index}.`));
+                                        const code = parcel.parcel_code || `P-${String(index + 1).padStart(2, "0")}`;
+
+                                        return (
+                                            <li key={index} className={isOpen ? "bg-white" : "bg-slate-50/60"}>
+                                                {/* Row summary */}
+                                                <div className="flex items-center pr-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => selectParcel(index)}
+                                                        aria-expanded={isOpen}
+                                                        className="flex-1 min-w-0 flex items-center gap-3 px-3.5 py-2.5 text-left cursor-pointer hover:bg-slate-50"
+                                                    >
+                                                        <span className={`text-[11px] font-bold w-9 shrink-0 ${isOpen ? "text-slate-900" : "text-slate-500"}`}>{code}</span>
+                                                        <span className={`font-mono text-[11px] truncate ${parcel.property_index_number ? "text-slate-700" : "text-slate-400"}`}>
+                                                            {parcel.property_index_number || "No PIN yet"}
+                                                        </span>
+                                                        <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-600 shrink-0">
+                                                            {hasRowError && <span className="text-rose-500 font-semibold">Needs attention ·</span>}
+                                                            <span className={`w-1.5 h-1.5 rounded-full ${check.dot}`} aria-hidden="true" />
+                                                            {check.label}
+                                                        </span>
+                                                        <svg className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                        </svg>
+                                                    </button>
+                                                    {parcels.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveParcel(index)}
+                                                            aria-label={`Remove ${code}`}
+                                                            title={`Remove ${code}`}
+                                                            className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {isOpen && (
+                                                    <div className="px-3.5 pb-3.5 space-y-3.5">
+                                                        {/* PIN input */}
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <Input
+                                                                    type="text"
+                                                                    value={parcel.property_index_number || ""}
+                                                                    onChange={(e) => handlePinChange(index, e.target.value)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key !== "Enter") return;
+                                                                        e.preventDefault();
+                                                                        if (!parcel.is_verified && parcel.property_index_number?.trim() && !pinLoading[index]) handlePinLookup(index);
+                                                                    }}
+                                                                    data-no-advance="true"
+                                                                    placeholder="PIN from Tax Declaration"
+                                                                    aria-label={`PIN from Tax Declaration for ${code}`}
+                                                                    className="flex-1 font-mono uppercase"
+                                                                    hasError={!!pinError}
+                                                                />
+                                                                {parcel.is_verified ? (
+                                                                    <span className="inline-flex items-center gap-1 px-2 text-xs font-semibold text-slate-600 whitespace-nowrap">
+                                                                        <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3" aria-hidden="true">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                                        </svg>
+                                                                        Verified
+                                                                    </span>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handlePinLookup(index)}
+                                                                        disabled={pinLoading[index] || !parcel.property_index_number?.trim()}
+                                                                        className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-all bg-slate-800 hover:bg-slate-900 text-white active:scale-98 cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
+                                                                    >
+                                                                        {pinLoading[index] && <span className="w-3.5 h-3.5 border-2 border-slate-400/40 border-t-slate-600 rounded-full animate-spin" />}
+                                                                        {pinLoading[index] ? "Checking…" : "Verify"}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                            {pinError ? (
+                                                                <p className="text-xs font-medium text-rose-500 mt-1">{pinError}</p>
+                                                            ) : !parcel.is_verified ? (
+                                                                <p className="text-[11px] text-slate-400 mt-1.5">Press Enter to verify, or use Identify on the map.</p>
+                                                            ) : null}
+                                                        </div>
+
+                                                        {/* Identify results */}
+                                                        {parcel.is_verified && (
+                                                            <div>
+                                                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Attributes</p>
+                                                                <dl className="text-xs rounded-lg border border-slate-200 px-3">
+                                                                    <Attr label="Owner">{parcel.owner_name}</Attr>
+                                                                    <Attr label="Barangay">{parcel.barangay}</Attr>
+                                                                    <Attr label="Lot / Survey" mono>{[parcel.lot_number, parcel.survey_number].filter(Boolean).join(" · ")}</Attr>
+                                                                    <Attr label="ARP No." mono>{parcel.arp_number}</Attr>
+                                                                    <Attr label="Lot area">
+                                                                        <AreaComparison declared={parcel.lot_area_sqm} feature={featureByPin.get(parcel.property_index_number?.trim())} />
+                                                                    </Attr>
+                                                                    <Attr label="Assessor class">{parcel.cadastral_zone}</Attr>
+                                                                    <Attr label="CLUP zone">
+                                                                        {parcel.land_use_class && (
+                                                                            <span>
+                                                                                {parcel.land_use_class}
+                                                                                {getZoneInfo(parcel.land_use_class).label !== parcel.land_use_class && (
+                                                                                    <span className="block text-slate-400 font-normal">{getZoneInfo(parcel.land_use_class).label}</span>
+                                                                                )}
+                                                                            </span>
+                                                                        )}
+                                                                    </Attr>
+                                                                    <Attr label="Zoning check">
+                                                                        <span className="inline-flex items-center gap-1.5">
+                                                                            <span className={`w-1.5 h-1.5 rounded-full ${check.dot}`} aria-hidden="true" />
+                                                                            {check.label}
+                                                                        </span>
+                                                                    </Attr>
+                                                                </dl>
+
+                                                                {check.key === "mismatch" && (
+                                                                    <div className="mt-2 pl-3 border-l-2 border-amber-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                                                                            Recorded use doesn't match the zoning plan, so this can't proceed as a clearance.
+                                                                        </p>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleSwitchStream(check.action.type, index)}
+                                                                            className="shrink-0 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                                                        >
+                                                                            {check.action.label}
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                                {check.key === "amendment" && (
+                                                                    <p className="mt-2 text-[11px] text-slate-500">Handled through the legislative amendment track.</p>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                    </div>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+
+                                <button
+                                    type="button"
+                                    onClick={handleAddParcel}
+                                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                    </svg>
+                                    Add parcel
+                                </button>
+                        </div>
+                        {errors.parcels && <p className="text-xs font-medium text-rose-500">{errors.parcels}</p>}
                     </div>
 
                     {/* Bottom Navigation */}
-                    <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+                        {isProgressionLocked && (
+                            <span className="text-[11px] text-slate-500 text-right">Resolve the zoning mismatch to continue</span>
+                        )}
                         <button
                             type="button"
-                            onClick={() => {
-                                if (activeTab === "details") {
-                                    setActiveTab("evaluation");
-                                } else if (activeTab === "evaluation") {
-                                    setActiveTab("verification");
-                                } else {
-                                    handleBack();
-                                }
-                            }}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
+                            onClick={handleNext}
+                            disabled={isProgressionLocked}
+                            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-white text-xs font-semibold shadow-sm transition-all bg-blue-600 hover:bg-blue-700 active:scale-98 cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-70"
                         >
-                            <span>Back</span>
-                        </button>
-                            <button
-                            type="button"
-                            onClick={() => {
-                                if (activeTab === "verification") {
-                                    setActiveTab("evaluation");
-                                } else if (activeTab === "evaluation") {
-                                    setActiveTab("details");
-                                } else {
-                                    handleNext();
-                                }
-                            }}
-                            disabled={(activeTab === "evaluation" || activeTab === "details") ? isProgressionLocked : false}
-                            className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-white text-xs font-semibold shadow-sm transition-all ml-auto ${
-                                ((activeTab === "evaluation" || activeTab === "details") && isProgressionLocked)
-                                    ? "bg-slate-300 cursor-not-allowed opacity-70" 
-                                    : "bg-blue-600 hover:bg-blue-700 active:scale-98 cursor-pointer"
-                            }`}
-                        >
-                            <span>{activeTab === "verification" ? "Continue to Evaluation" : activeTab === "evaluation" ? "Continue to Details" : "Next"}</span>
-                            {(activeTab === "verification" || activeTab === "evaluation") && (
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
-                            )}
+                            Next: Application details
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                            </svg>
                         </button>
                     </div>
-                </form>
+                </div>
             </div>
         </div>
     );

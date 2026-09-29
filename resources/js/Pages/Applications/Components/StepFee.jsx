@@ -2,11 +2,20 @@
 import React, { useEffect } from "react";
 import { Label, Input } from "./FormControls";
 
+const peso = (v) => `₱ ${Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const SCHEDULE_FIELDS = ["zoning_certificate_fee", "locational_clearance_fee", "development_permit_fee", "other_fees"];
+
 export default function StepFee({
     form,
     set,
+    feeSuggestion,
+    applySuggestedFees,
     errors = {},
 }) {
+    const differsFromSchedule =
+        feeSuggestion &&
+        SCHEDULE_FIELDS.some((f) => Math.abs((parseFloat(form[f]) || 0) - (feeSuggestion.byField[f] || 0)) > 0.004);
+
     // Automatically sum all inputs (including penalties) to update the total assessment fee in real-time
     useEffect(() => {
         const zc = parseFloat(form.zoning_certificate_fee) || 0;
@@ -36,6 +45,49 @@ export default function StepFee({
 
     return (
         <div className="space-y-4">
+            {/* Municipal fee schedule: suggested amounts and their basis */}
+            {feeSuggestion && feeSuggestion.lines.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 p-3.5">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <p className="text-xs font-bold text-slate-800">Municipal fee schedule</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                                Basis: {feeSuggestion.landUse}
+                                {feeSuggestion.zoneCode ? ` (CLUP ${feeSuggestion.zoneCode})` : " (no CLUP zone on record)"} ·{" "}
+                                {Number(feeSuggestion.area || 0).toLocaleString()} m² · project cost {peso(form.project_cost)}
+                            </p>
+                        </div>
+                        {differsFromSchedule && (
+                            <button
+                                type="button"
+                                onClick={applySuggestedFees}
+                                className="shrink-0 px-3 py-1.5 rounded-full border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                            >
+                                Apply schedule amounts
+                            </button>
+                        )}
+                    </div>
+                    <ul className="mt-2.5 divide-y divide-slate-100 text-xs">
+                        {feeSuggestion.lines.map((line) => (
+                            <li key={line.type} className="py-1.5 flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="font-semibold text-slate-800">{line.type}</p>
+                                    <p className="text-[11px] text-slate-500">{line.calculationSummary}</p>
+                                </div>
+                                <span className="font-mono font-semibold text-slate-900 shrink-0">{peso(line.total)}</span>
+                            </li>
+                        ))}
+                    </ul>
+                    <p className="mt-1.5 pt-1.5 border-t border-slate-200 flex justify-between text-xs font-bold text-slate-900">
+                        <span>Schedule total</span>
+                        <span className="font-mono">{peso(feeSuggestion.total)}</span>
+                    </p>
+                    {differsFromSchedule && (
+                        <p className="mt-1 text-[11px] text-slate-500">The itemised amounts below differ from the schedule. They were adjusted, or the application changed after they were filled.</p>
+                    )}
+                </div>
+            )}
+
             <div className="flex items-center justify-between bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 <div>
                     <span className="text-xs font-bold text-slate-800">Itemized Municipal Assessment Fees</span>

@@ -87,9 +87,18 @@ Route::middleware('auth')->group(function () {
     Route::delete('/applications/drafts/{id}', [ApplicationController::class, 'destroyDraft'])
         ->name('drafts.destroy');
 
+    // Encoder lookups (read-only), before /applications/{id} for the same reason
+    Route::get('/applications/applicant-lookup', [ApplicationController::class, 'applicantLookup'])
+        ->name('applications.applicantLookup')
+        ->middleware('role:Planning Officer');
     // ── Single-View & Standard Status Transitions ──
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show');
+
+    Route::post('/applications/{id}/amendment-refs', [ApplicationController::class, 'updateAmendmentRefs'])
+        ->whereNumber('id')
+        ->name('applications.amendmentRefs')
+        ->middleware('role:Planning Officer');
 
     // Handles Approved / Declined standard status changes from the show docket
     Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])

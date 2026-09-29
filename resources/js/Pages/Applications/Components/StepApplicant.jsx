@@ -1,10 +1,14 @@
 // resources/js/Pages/Applications/Components/StepApplicant.jsx
 import React from "react";
-import { Label, Input } from "./FormControls";
+import { Label, Input, Select } from "./FormControls";
+import { splitFullName, normalizeName, joinName } from "@/utils/names";
+
+const CORPORATE = /\b(corp\.?|corporation|inc\.?|incorporated|co\.|company|cooperative|holdings|realty|development|enterprises?|ltd\.?)\b/i;
 
 export default function StepApplicant({
     form,
     set,
+    setForm,
     handleNameChange,
     handleContactInput,
     applicantSuggestion,
@@ -15,8 +19,57 @@ export default function StepApplicant({
     const [showCorp, setShowCorp] = React.useState(!!form.corporation_name || !!form.corporation_contact || !!form.corporation_address);
     const [showRep, setShowRep] = React.useState(!!form.representative_name || !!form.representative_contact || !!form.representative_address);
 
+    // Registered owner from the first verified lot's tax record
+    const ownerParcel = (form.parcels || []).find((p) => p.is_verified && p.owner_name?.trim());
+    const ownerName = ownerParcel?.owner_name?.trim() || "";
+    const ownerIsCorporate = CORPORATE.test(ownerName);
+    const applicantIsOwner =
+        Boolean(ownerName) &&
+        (normalizeName(form.applicant_name) === normalizeName(ownerName) || (ownerIsCorporate && normalizeName(form.corporation_name) === normalizeName(ownerName)));
+
+    const useOwnerAsApplicant = () => {
+        if (ownerIsCorporate) {
+            setForm((prev) => ({ ...prev, corporation_name: ownerName, right_over_land: "Owner" }));
+            setShowCorp(true);
+            return;
+        }
+        const parts = splitFullName(ownerName);
+        setForm((prev) => ({ ...prev, ...parts, applicant_name: joinName(parts), right_over_land: "Owner" }));
+    };
+
     return (
         <div className="space-y-4">
+            {/* Registered owner from the Property step */}
+            {ownerName && (
+                <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-xs">
+                    <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Registered owner · {ownerParcel.parcel_code || "P-01"} tax record
+                        </p>
+                        <p className="font-semibold text-slate-900 mt-0.5 truncate">{ownerName}</p>
+                        {applicantIsOwner ? (
+                            <p className="text-[11px] text-slate-600 mt-1">✓ The {ownerIsCorporate ? "corporation" : "applicant"} is the registered owner.</p>
+                        ) : form.applicant_name ? (
+                            <p className="text-[11px] text-amber-800 mt-1">
+                                The applicant is not the registered owner. Select their right over the land below and require the supporting document (lease, SPA or authorization).
+                            </p>
+                        ) : (
+                            <p className="text-[11px] text-slate-500 mt-1">
+                                {ownerIsCorporate ? "Owned by a company: fill in the authorized person below as the applicant." : "Use the owner as the applicant, or enter someone else below."}
+                            </p>
+                        )}
+                    </div>
+                    {!applicantIsOwner && (
+                        <button
+                            type="button"
+                            onClick={useOwnerAsApplicant}
+                            className="shrink-0 px-3 py-1.5 rounded-full bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-semibold cursor-pointer"
+                        >
+                            {ownerIsCorporate ? "Use as corporation" : "Use as applicant"}
+                        </button>
+                    )}
+                </div>
+            )}
             {/* Applicant Autocomplete Suggestion Banner */}
             {applicantSuggestion && (
                 <div className="p-3 bg-blue-50/90 border border-blue-200 rounded-2xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 shadow-xs">
@@ -28,7 +81,7 @@ export default function StepApplicant({
                         </span>
                         <div className="text-xs min-w-0">
                             <p className="font-bold text-blue-950 truncate">
-                                Found existing taxpayer record: <span className="underline">{applicantSuggestion.applicant_name}</span>
+                                Previous applicant: <span className="underline">{applicantSuggestion.applicant_name}</span>
                             </p>
                             <p className="text-[11px] text-blue-700 font-mono truncate">
                                 +63 {applicantSuggestion.contact_number} {applicantSuggestion.email ? `· ${applicantSuggestion.email}` : ""}
@@ -139,6 +192,17 @@ export default function StepApplicant({
                     />
                     {errors.email && <p className="text-xs font-medium text-rose-500 mt-1">{errors.email}</p>}
                 </div>
+            </div>
+
+            <div className="sm:w-1/2">
+                <Label required hasError={!!errors.right_over_land}>Applicant's Right over the Land</Label>
+                <Select value={form.right_over_land || ""} onChange={set("right_over_land")} hasError={!!errors.right_over_land}>
+                    <option value="">Select</option>
+                    <option value="Owner">Owner</option>
+                    <option value="Lessee">Lessee</option>
+                    <option value="Others">Others (authorized, buyer, heir…)</option>
+                </Select>
+                {errors.right_over_land && <p className="text-xs font-medium text-rose-500 mt-1">{errors.right_over_land}</p>}
             </div>
 
             <hr className="border-slate-100 my-5" />
