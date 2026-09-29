@@ -15,6 +15,10 @@ import StepApplicant from "./Components/StepApplicant";
 import StepPropertyGIS from "./Components/StepPropertyGIS";
 import StepReview from "./Components/StepReview";
 import StepFee from "./Components/StepFee";
+import SiteMapPrint from "./Components/SiteMapPrint";
+import QRCode from "qrcode";
+import { splitFullName, joinName } from "@/utils/names";
+import { getZoneInfo } from "@/utils/clupZones";
 const AMENDMENT_TYPES = [
     {
         id: "Petition for Rezoning",
@@ -54,26 +58,27 @@ const APPLICATION_TYPES = [
 
 const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"];
 
+// Property first: the verified lot supplies barangay, owner, area and zoning to every later step.
+// Review is last so it can show the fee being charged.
+const STEP = { PROPERTY: 1, APPLICATION: 2, APPLICANT: 3, FEES: 4, REVIEW: 5 };
 const STEPS = [
-    { id: 1, title: "Category", label: "Application Category" },
-    { id: 2, title: "Applicant", label: "Applicant Details" },
-    { id: 3, title: "Location", label: "Property & Map" },
-    { id: 4, title: "Review", label: "Review & Confirm" },
-    { id: 5, title: "Fee", label: "Assessment & Fees" },
+    { id: STEP.PROPERTY, title: "Property", label: "Property & Map" },
+    { id: STEP.APPLICATION, title: "Application", label: "Application Details" },
+    { id: STEP.APPLICANT, title: "Applicant", label: "Applicant Details" },
+    { id: STEP.FEES, title: "Fees", label: "Assessment & Fees" },
+    { id: STEP.REVIEW, title: "Review", label: "Review & Submit" },
 ];
 
-const ROSARIO_BARANGAYS = [
-    "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
-    "Calantas", "Colongan", "Itlugan", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", "Macalamcam A", 
-    "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", "Mayuro", 
-    "Namuco", "Namunga", "Natu", "Nasi", "Palakpak", "Pinagsibaan", "Poblacion A", "Poblacion B", 
-    "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", "San Carlos", 
-    "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan"
-];
+const STEP_ERROR_FIELDS = {
+    [STEP.APPLICATION]: ["application_stream", "application_type", "form_number", "land_use_class", "purpose", "target_land_use_class", "building_area", "area_to_develop", "number_of_saleable_lots", "project_type_business_name", "project_cost", "project_tenure"],
+    [STEP.APPLICANT]: ["applicant_name", "first_name", "last_name", "contact_number", "email", "representative_name", "representative_contact", "representative_address", "corporation_name", "corporation_contact", "corporation_address", "right_over_land"],
+    [STEP.FEES]: ["assessment_fee", "or_number", "date_of_receipt", "zoning_certificate_fee", "locational_clearance_fee", "development_permit_fee", "other_fees", "penalty_fee"],
+};
 
 const DRAFT_UUID_KEY = "imaps_current_draft_uuid";
 const DRAFT_PAYLOAD_KEY = "imaps_local_backup_payload";
-const APPLICANT_REGISTRY_KEY = "imaps_known_applicants_registry";
+// Retired: applicants used to be cached here per browser. Kept only so the old copy can be wiped.
+const LEGACY_APPLICANT_REGISTRY_KEY = "imaps_known_applicants_registry";
 
 // ── Official Municipal Assessment Fee Calculation Engine ──
 // Referenced from:
@@ -123,7 +128,7 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
                 calculationSummary = `₱720.00 + (₱${excess.toLocaleString()} × 0.1%) = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
             }
             formulaDesc = "HLURB 2013 Residential Rates (Bill of Materials)";
-        } else if (landUse.toLowerCase() === "Institutional") {
+        } else if (landUse === "Institutional") {
             if (cost <= 2000000) {
                 baseFee = 2880.00;
                 rateDetail = "HLURB Tier: Project Cost ≤ ₱2.0 Million (Flat ₱2,880.00)";
@@ -161,7 +166,7 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
                 rateDetail = `HLURB Tier: Project Cost > ₱2.0M (₱7,200.00 + 0.1% excess)`;
                 calculationSummary = `₱7,200.00 + (₱${excess.toLocaleString()} × 0.1%) = ₱${baseFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
             }
-            formulaDesc = `HLURB 2013 ${landUse || "Commercial/Industrial"} Rates (Bill of Materials)`;
+            formulaDesc = "HLURB 2013 Commercial / Industrial Rates (Bill of Materials)";
         }
     } else {
         // Special Land Use Permit
@@ -191,6 +196,33 @@ function calculateMunicipalFee(appType, landUse, areaSqm, projectCost = 0) {
     };
 }
 
+// Which itemised fee field each application type's charge goes into; petitions and PALC use "Other fees"
+const FEE_FIELD_BY_TYPE = {
+    "Zoning Certificate": "zoning_certificate_fee",
+    "Locational Clearance": "locational_clearance_fee",
+    "Development Permit": "development_permit_fee",
+};
+const TYPE_FEE_FIELDS = ["zoning_certificate_fee", "locational_clearance_fee", "development_permit_fee", "other_fees"];
+
+// Fee tier land use comes from the first verified lot's CLUP zone
+function feeLandUse(parcels) {
+    const zoneCode = (parcels || []).find((p) => p.is_verified && p.land_use_class?.trim())?.land_use_class?.trim() || "";
+    const category = zoneCode ? getZoneInfo(zoneCode).category : "";
+    // Everything that isn't residential or institutional shares the commercial/industrial tier
+    const landUse = category === "residential" ? "Residential" : category === "institutional" ? "Institutional" : "Non-residential";
+    return { landUse, zoneCode };
+}
+
+// Each selected application type is a separate permit with its own charge; combined filings pay the sum
+function computeFeeLines(applicationType, landUse, area, cost) {
+    const types = String(applicationType || "").split(",").map((t) => t.trim()).filter(Boolean);
+    const lines = types.map((type) => ({ type, field: FEE_FIELD_BY_TYPE[type] || "other_fees", ...calculateMunicipalFee(type, landUse, area, cost) }));
+    const byField = Object.fromEntries(TYPE_FEE_FIELDS.map((f) => [f, 0]));
+    lines.forEach((l) => (byField[l.field] += l.total));
+    const total = Math.round(lines.reduce((s, l) => s + l.total, 0) * 100) / 100;
+    return { lines, byField, total };
+}
+
 // ── Title Case & Formatting Helper ──
 function toTitleCase(str) {
     if (!str) return "";
@@ -201,66 +233,13 @@ function toTitleCase(str) {
         .join(" ");
 }
 
-// ── Applicant Registry Helpers ──
-const INITIAL_KNOWN_APPLICANTS = [
-    {
-        first_name: "Julience",
-        middle_name: "Rodriguez",
-        last_name: "Castillo",
-        suffix: "",
-        applicant_name: "Julience Rodriguez Castillo",
-        contact_number: "9494690596",
-        email: "juliencecastillo@gmail.com",
-        representative_name: "",
-    },
-    {
-        first_name: "Maria",
-        middle_name: "Clara",
-        last_name: "Santos",
-        suffix: "",
-        applicant_name: "Maria Clara Santos",
-        contact_number: "9175551234",
-        email: "maria.santos@gmail.com",
-        representative_name: "Atty. Juan Dela Cruz",
-    },
-    {
-        first_name: "Juan",
-        middle_name: "Protacio",
-        last_name: "Rizal",
-        suffix: "Jr.",
-        applicant_name: "Juan Protacio Rizal Jr.",
-        contact_number: "9182345678",
-        email: "juan.rizal@domain.com",
-        representative_name: "",
-    },
-];
-
-function loadApplicantRegistry() {
-    try {
-        const raw = localStorage.getItem(APPLICANT_REGISTRY_KEY);
-        if (!raw) {
-            localStorage.setItem(APPLICANT_REGISTRY_KEY, JSON.stringify(INITIAL_KNOWN_APPLICANTS));
-            return INITIAL_KNOWN_APPLICANTS;
-        }
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : INITIAL_KNOWN_APPLICANTS;
-    } catch (e) {
-        return INITIAL_KNOWN_APPLICANTS;
-    }
-}
-
-function saveApplicantToRegistry(applicant) {
-    if (!applicant?.applicant_name || !applicant?.contact_number) return;
-    try {
-        const list = loadApplicantRegistry();
-        const exists = list.some(
-            (a) => a.contact_number === applicant.contact_number || a.applicant_name.toLowerCase() === applicant.applicant_name.toLowerCase()
-        );
-        if (!exists) {
-            list.unshift(applicant);
-            localStorage.setItem(APPLICANT_REGISTRY_KEY, JSON.stringify(list.slice(0, 50)));
-        }
-    } catch (e) {}
+// Same comparison as the map step's progression lock: Assessor classification vs spatial CLUP zone
+function hasZoningMismatch(parcels) {
+    return (parcels || []).some((p) => {
+        const cadastral = p.cadastral_zone?.trim().toLowerCase();
+        const clup = p.land_use_class?.trim().toLowerCase();
+        return p.is_verified && cadastral && clup && cadastral !== clup;
+    });
 }
 
 const emptyForm = () => ({
@@ -320,13 +299,7 @@ const emptyForm = () => ({
             lot_area_sqm: "",
             land_use_class: "",
             allowable_use: "",
-            coordinates: "",decision: "",
-            decision_reason: "",
-            inspector_id: "",
-            scheduled_date: "",
-            deadline_date: "",
-
-            
+            coordinates: "",
         },
     ],
 });
@@ -362,13 +335,28 @@ function MapController({ brgyData, activeParcelFeature }) {
 }
 
 
-// ── Application Encoding Success Modal ──
-function RoutingSlipModal({ open, data, onClose }) {
+// ── Printable Official Application Routing & Acknowledgement Slip Modal ──
+function RoutingSlipModal({ open, data, onClose, onPrint }) {
+    const trackingUrl = `${window.location.origin}/track?ref=${encodeURIComponent(data?.reference_number || "")}`;
+
+    // Generated in the browser: reference numbers are never sent to a third-party QR service
+    const [qrCodeUrl, setQrCodeUrl] = useState("");
+    useEffect(() => {
+        if (!open || !data) return;
+        let cancelled = false;
+        QRCode.toDataURL(trackingUrl, { margin: 0, width: 150 })
+            .then((url) => !cancelled && setQrCodeUrl(url))
+            .catch(() => !cancelled && setQrCodeUrl(""));
+        return () => {
+            cancelled = true;
+        };
+    }, [open, data, trackingUrl]);
+
     if (!open || !data) return null;
 
     return (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in">
+            <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[82vh]">
                 
                 {/* Header */}
                 <div className="bg-emerald-600 px-6 py-6 text-white text-center relative overflow-hidden">
@@ -407,19 +395,94 @@ function RoutingSlipModal({ open, data, onClose }) {
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Applicant Name</span>
                             <p className="font-bold text-slate-900 truncate">{data.applicant_name}</p>
                         </div>
-                        <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Clearance Type</span>
-                            <p className="font-bold text-slate-900 truncate">{data.application_type}</p>
+                    </div>
+
+                    {/* Reference No. & Public Tracking QR Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                        <div className="sm:col-span-8 flex flex-col justify-center space-y-1">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Application Reference No.</span>
+                            <h3 className="text-lg sm:text-xl font-mono font-extrabold text-blue-700 tracking-tight">{data.reference_number}</h3>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-slate-600">
+                                <span>Date Filed: <strong className="text-slate-800 font-mono">{data.date_of_application || new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</strong></span>
+                                <span>Encoded By: <strong className="text-slate-800">{data.encoded_by_name || "Planning Staff"}</strong></span>
+                            </div>
                         </div>
-                        <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Location</span>
-                            <p className="font-medium text-slate-800 truncate">Brgy. {data.barangay}</p>
+                        <div className="sm:col-span-4 flex items-center justify-end gap-2.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3">
+                            <div className="text-right">
+                                <p className="text-[10px] font-bold text-slate-700 uppercase">Public Tracking</p>
+                                <p className="text-[9px] text-slate-400">Scan QR to track status</p>
+                            </div>
+                            <div className="bg-white p-1 rounded-lg border border-slate-200 shadow-2xs shrink-0 text-center">
+                                <img src={qrCodeUrl} alt="QR Code Tracking" className="w-12 h-12 object-contain" />
+                            </div>
                         </div>
-                        <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Status</span>
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md mt-0.5">
-                                Received · Evaluation
-                            </span>
+                    </div>
+
+                    {/* Applicant Profile & Clearance Scope */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Registered Applicant</p>
+                            <p className="font-bold text-slate-900 text-xs sm:text-sm truncate">{data.applicant_name}</p>
+                            <div className="flex items-center gap-3 text-[11px] text-slate-600">
+                                <span className="font-mono">+63 {data.contact_number}</span>
+                                {data.email && <span className="truncate">{data.email}</span>}
+                            </div>
+                            {data.representative_name && (
+                                <p className="text-[10px] text-slate-500 pt-1 border-t border-slate-200 mt-1 truncate">
+                                    Representative: <strong className="text-slate-700">{data.representative_name}</strong>
+                                </p>
+                            )}
+                        </div>
+                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Clearance Classification</p>
+                            <p className="font-bold text-slate-900 text-xs sm:text-sm">{data.application_type}</p>
+                            <div className="flex items-center gap-3 text-[11px] text-slate-600">
+                                <span>Land Use: <strong className="text-slate-800">{data.land_use_class}</strong></span>
+                                {data.project_cost && Number(data.project_cost) > 0 && (
+                                    <span>Project Cost: <strong className="text-slate-800 font-mono">₱ {Number(data.project_cost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+                                )}
+                            </div>
+                            <p className="text-[11px] text-slate-600 truncate">Purpose: <span className="font-medium text-slate-700">{data.purpose}</span></p>
+                        </div>
+                    </div>
+
+                    {/* Location Summary & Assessment Fee Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1.5">
+                            <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Location & Lots Summary</p>
+                                <p className="font-semibold text-slate-800 text-[11px] truncate">{data.street_address ? `${data.street_address}, ` : ""}Brgy. {data.barangay}</p>
+                            </div>
+                            <div className="max-h-16 overflow-y-auto divide-y divide-slate-100 text-[11px]">
+                                {(data.parcels || []).map((parcel, idx) => (
+                                    <div key={idx} className="py-0.5 flex items-center justify-between">
+                                        <span className="font-mono font-semibold text-slate-800 truncate">{parcel.parcel_code || `Lot ${idx + 1}`}: PIN {parcel.property_index_number || "—"}</span>
+                                        <span className="text-slate-600 font-mono text-[10px] shrink-0">{parcel.lot_area_sqm ? `${Number(parcel.lot_area_sqm).toLocaleString()} m²` : ""}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="pt-1 border-t border-slate-200 flex items-center justify-between text-[11px] font-bold text-blue-700">
+                                <span>Total Land Area:</span>
+                                <span className="font-mono">{Number(data.total_area || 0).toLocaleString()} sq.m</span>
+                            </div>
+                        </div>
+
+                        <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 flex flex-col justify-between">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-[9px] font-bold text-blue-800 uppercase tracking-wider">Assessed Clearance Fee</p>
+                                    <p className="text-base sm:text-lg font-mono font-bold text-blue-900 mt-0.5">₱ {Number(data.assessment_fee || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                    <p className="text-[10px] text-blue-700">OR No: <strong className="font-mono">{data.or_number || "To be issued"}</strong></p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[9px] font-bold text-blue-800 uppercase tracking-wider">Pipeline Status</p>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 mt-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                                        Received · Evaluation
+                                    </span>
+                                    <p className="text-[9px] text-slate-500 mt-0.5">Next: Site Inspection</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -463,7 +526,8 @@ function RoutingSlipModal({ open, data, onClose }) {
     );
 }
 
-export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null, inspectors = [] }) {    const userName = auth?.user?.name || "Planning Officer";
+export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null }) {
+    const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -489,9 +553,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     });
 
     // Smart Features State
-    const [feeMode, setFeeMode] = useState("auto"); // 'auto' | 'manual'
     const [applicantSuggestion, setApplicantSuggestion] = useState(null);
     const [showRoutingSlip, setShowRoutingSlip] = useState(false);
+    const [siteMapOpen, setSiteMapOpen] = useState(false);
     const [routingSlipData, setRoutingSlipData] = useState(null);
 
     // Tracking identifier
@@ -575,74 +639,75 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         return validParcels.reduce((acc, p) => acc + (parseFloat(p.lot_area_sqm) || 0), 0);
     }, [validParcels]);
 
-    // Smart Municipal Fee Calculation Engine
-    const calculatedFeeBreakdown = useMemo(() => {
-        return calculateMunicipalFee(
-            form.application_type || "Locational Clearance",
-            form.land_use_class || "Residential",
-            totalLotArea,
-            form.project_cost || 0
-        );
-    }, [form.application_type, form.land_use_class, totalLotArea, form.project_cost]);
+    // Municipal fee schedule: one line per selected application type, land use from the lot's CLUP zone
+    const feeBasis = useMemo(() => feeLandUse(form.parcels), [form.parcels]);
+    const feeSuggestion = useMemo(
+        () => ({ ...computeFeeLines(form.application_type, feeBasis.landUse, totalLotArea, form.project_cost || 0), ...feeBasis, area: totalLotArea }),
+        [form.application_type, feeBasis, totalLotArea, form.project_cost]
+    );
 
-    // Automatically sync calculated fee to form only when on Step 5 in 'auto' mode
+    // The schedule only pre-fills the itemised fees; the officer can adjust them and the total is always their sum
+    const applySuggestedFees = () => {
+        setForm((prev) => ({
+            ...prev,
+            ...Object.fromEntries(TYPE_FEE_FIELDS.map((f) => [f, feeSuggestion.byField[f] > 0 ? feeSuggestion.byField[f].toFixed(2) : ""])),
+        }));
+    };
+
+    // First visit to the Fees step with nothing itemised yet: pre-fill from the schedule
     useEffect(() => {
-        if (currentStep === 5 && feeMode === "auto" && calculatedFeeBreakdown) {
-            setForm((prev) => ({
-                ...prev,
-                assessment_fee: calculatedFeeBreakdown.total > 0 ? calculatedFeeBreakdown.total.toFixed(2) : "0.00",
-            }));
-        }
-    }, [currentStep, feeMode, calculatedFeeBreakdown]);
+        if (currentStep !== STEP.FEES) return;
+        const nothingEntered = TYPE_FEE_FIELDS.every((f) => !(parseFloat(form[f]) > 0));
+        if (nothingEntered && feeSuggestion.total > 0) applySuggestedFees();
+    }, [currentStep]);
 
-    // Zoning Compatibility Warning
-    const zoningWarning = useMemo(() => {
-        if (!form.land_use_class || !form.barangay) return null;
-        const isHeavy = ["Industrial", "agri-Industrial"].includes((form.land_use_class || "").toLowerCase());
-        const urbanPoblacion = ["Poblacion A", "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "San Carlos", "San Roque"];
-        if (isHeavy && urbanPoblacion.includes(form.barangay)) {
-            return `Zoning Notice: Proposed ${form.land_use_class} use in Brgy. ${form.barangay} is within a dense urban settlement and may require Sangguniang Bayan special clearance.`;
-        }
-        return null;
-    }, [form.land_use_class, form.barangay]);
+    // Wipe the retired per-browser applicant cache (it held applicants' personal data on shared PCs)
+    useEffect(() => {
+        try {
+            localStorage.removeItem(LEGACY_APPLICANT_REGISTRY_KEY);
+        } catch (e) {}
+    }, []);
 
-    // Applicant Auto-Complete Matcher
-    const checkApplicantMatches = (val, field) => {
-        if (!val || val.trim().length < 3) {
+    // Applicant auto-complete: past applicants from the database, looked up after typing pauses
+    const formLatest = useRef(form);
+    formLatest.current = form;
+    const applicantLookupTimer = useRef(null);
+    const applicantLookupSeq = useRef(0);
+    const checkApplicantMatches = (val) => {
+        clearTimeout(applicantLookupTimer.current);
+        const q = String(val || "").trim();
+        if (q.length < 3) {
             setApplicantSuggestion(null);
             return;
         }
-        const registry = loadApplicantRegistry();
-        const query = val.toLowerCase().trim();
-        const match = registry.find((a) => {
-            if (field === "contact_number") return a.contact_number.includes(query);
-            if (field === "email") return a.email?.toLowerCase().includes(query);
-            return (
-                a.applicant_name?.toLowerCase().includes(query) ||
-                a.last_name?.toLowerCase().includes(query) ||
-                a.first_name?.toLowerCase().includes(query)
-            );
-        });
-
-        if (match && match.applicant_name !== form.applicant_name) {
-            setApplicantSuggestion(match);
-        } else {
-            setApplicantSuggestion(null);
-        }
+        applicantLookupTimer.current = setTimeout(() => {
+            const seq = ++applicantLookupSeq.current;
+            axios
+                .get("/applications/applicant-lookup", { params: { q } })
+                .then(({ data }) => {
+                    if (seq !== applicantLookupSeq.current) return;
+                    const current = (formLatest.current.applicant_name || "").trim().toLowerCase();
+                    const match = (Array.isArray(data) ? data : []).find((a) => a.applicant_name?.trim().toLowerCase() !== current);
+                    setApplicantSuggestion(match || null);
+                })
+                .catch(() => seq === applicantLookupSeq.current && setApplicantSuggestion(null));
+        }, 350);
     };
+    useEffect(() => () => clearTimeout(applicantLookupTimer.current), []);
 
     const applyApplicantSuggestion = () => {
         if (!applicantSuggestion) return;
+        const parts = splitFullName(applicantSuggestion.applicant_name);
+        // Stored numbers are digits only; the form keeps the 10-digit 9XXXXXXXXX mobile format
+        const digits = String(applicantSuggestion.contact_number || "").replace(/\D/g, "");
+        const mobile = digits.length >= 10 && digits.slice(-10).startsWith("9") ? digits.slice(-10) : "";
         setForm((prev) => ({
             ...prev,
-            first_name: applicantSuggestion.first_name || "",
-            middle_name: applicantSuggestion.middle_name || "",
-            last_name: applicantSuggestion.last_name || "",
-            suffix: applicantSuggestion.suffix || "",
-            applicant_name: applicantSuggestion.applicant_name || "",
-            contact_number: applicantSuggestion.contact_number || "",
-            email: applicantSuggestion.email || "",
-            representative_name: applicantSuggestion.representative_name || "",
+            ...parts,
+            applicant_name: joinName(parts),
+            contact_number: mobile || prev.contact_number,
+            email: applicantSuggestion.email || prev.email,
+            representative_name: applicantSuggestion.representative_name || prev.representative_name,
         }));
         setApplicantSuggestion(null);
         setFlash({ type: "success", msg: `Auto-filled details for ${applicantSuggestion.applicant_name}.` });
@@ -654,7 +719,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         const handleKeyDown = (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                 e.preventDefault();
-                if (currentStep === 5) {
+                if (currentStep === STEP.REVIEW) {
                     if (!submitting && !submissionFinalized) handleSubmit(e);
                 } else {
                     handleNext();
@@ -669,7 +734,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             }
 
             if (e.key === "Enter" && e.target.tagName !== "TEXTAREA" && e.target.type !== "submit" && e.target.type !== "button" && !e.target.dataset.noAdvance) {
-                if (currentStep < 5) {
+                if (currentStep < STEP.REVIEW) {
                     e.preventDefault();
                     handleNext();
                 }
@@ -826,11 +891,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     land_use_class: "",
                     allowable_use: "",
                     coordinates: "",
-                    decision: "",
-                    decision_reason: "",
-                    inspector_id: "",
-                    scheduled_date: "",
-                    deadline_date: "",
                 },
             ],
         }));
@@ -1236,33 +1296,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const validateStep = (step) => {
         const newErrors = {};
 
-        if (step === 1) {
-            if (!form.application_type) newErrors.application_type = "Select an application category";
-            if (!form.form_number?.trim()) newErrors.form_number = "Form number is required";
-            if (!form.purpose?.trim()) newErrors.purpose = "Operational purpose is required";
-    }
-
-        if (step === 2) {
-            if (!form.last_name?.trim()) newErrors.last_name = "Last name is required";
-            if (!form.first_name?.trim()) newErrors.first_name = "First name is required";
-            if (!form.applicant_name?.trim()) newErrors.applicant_name = "Applicant name is required";
-            if (!form.contact_number?.trim()) newErrors.contact_number = "Phone number is required";
-            if (!form.email?.trim()) {
-                newErrors.email = "Email address is required";
-            } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-                newErrors.email = "Enter a valid email format";
-            }
-            if (form.representative_contact && (form.representative_contact.length !== 10 || !form.representative_contact.startsWith("9"))) {
-                newErrors.representative_contact = "Must be exactly 10 digits starting with 9";
-            }
-        }
-
-        if (step === 3) {
+        if (step === STEP.PROPERTY) {
             if (!form.barangay?.trim()) newErrors.barangay = "Barangay is required";
-            
-            if (form.application_stream === "amendment" && !form.target_land_use_class) {
-                newErrors.target_land_use_class = "Target zoning class is required";
-            }
 
             if (!form.parcels || form.parcels.length === 0) {
                 newErrors.parcels = "At least one parcel is required";
@@ -1277,34 +1312,55 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     } else {
                         seenPins.add(pin);
                     }
-
-                    // --- NEW: Enforce that an evaluation decision is selected ---
-                    if (!parcel.decision) {
-                        newErrors[`parcels.${index}.decision`] = "Evaluation decision is required";
-                    }
-
-                    // --- Existing 3-Way Decision Validation ---
-                    if (parcel.decision === "Needs Site Inspection") {
-                        if (!parcel.inspector_id) newErrors[`parcels.${index}.inspector_id`] = "Required";
-                        if (!parcel.scheduled_date) newErrors[`parcels.${index}.scheduled_date`] = "Required";
-                        if (!parcel.deadline_date) newErrors[`parcels.${index}.deadline_date`] = "Required";
-                    }
-
-                    if (parcel.decision === "Declined" && !parcel.decision_reason?.trim()) {
-                        newErrors[`parcels.${index}.decision_reason`] = "Required for declined parcels";
-                    }
                 });
             }
-        }
 
-        if (step === 4) {
-            if (!form.preferred_release_mode) {
-                newErrors.preferred_release_mode = "Preferred mode of release is required.";
+            // A standard clearance can't proceed on a lot whose recorded use contradicts the CLUP
+            if (form.application_stream !== "amendment" && hasZoningMismatch(form.parcels)) {
+                newErrors.parcels = "Resolve the zoning mismatch (switch to a rezoning or reclassification petition) before continuing";
             }
         }
-        if (step === 5) {
+
+        if (step === STEP.APPLICATION) {
+            if (!form.application_type) newErrors.application_type = "Select an application category";
+            if (!form.form_number?.trim()) newErrors.form_number = "Form number is required";
+            if (!form.purpose?.trim()) newErrors.purpose = "Operational purpose is required";
+            if (form.application_stream === "amendment" && !form.target_land_use_class) {
+                newErrors.target_land_use_class = "Target zoning class is required";
+            }
+            if (form.application_stream !== "amendment" && hasZoningMismatch(form.parcels)) {
+                newErrors.application_stream = "A lot's zoning doesn't match the CLUP, so this must be a legislative amendment (Track B)";
+            }
+        }
+
+        if (step === STEP.APPLICANT) {
+            if (!form.right_over_land) newErrors.right_over_land = "State the applicant's right over the land";
+            if (!form.last_name?.trim()) newErrors.last_name = "Last name is required";
+            if (!form.first_name?.trim()) newErrors.first_name = "First name is required";
+            if (!form.applicant_name?.trim()) newErrors.applicant_name = "Applicant name is required";
+            if (!form.contact_number?.trim()) newErrors.contact_number = "Phone number is required";
+            if (!form.email?.trim()) {
+                newErrors.email = "Email address is required";
+            } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+                newErrors.email = "Enter a valid email format";
+            }
+            if (form.representative_contact && (form.representative_contact.length !== 10 || !form.representative_contact.startsWith("9"))) {
+                newErrors.representative_contact = "Must be exactly 10 digits starting with 9";
+            }
+        }
+
+        if (step === STEP.FEES) {
             if (!form.or_number?.trim()) {
                 newErrors.or_number = "Official Receipt (OR) number is required.";
+            }
+            if (form.assessment_fee === "" || form.assessment_fee == null || Number(form.assessment_fee) < 0) {
+                newErrors.assessment_fee = "Assessment fee is required.";
+            }
+        }
+
+        if (step === STEP.REVIEW) {
+            if (!form.preferred_release_mode) {
+                newErrors.preferred_release_mode = "Preferred mode of release is required.";
             }
         }
 
@@ -1326,42 +1382,36 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const handleBack = () => {
-        if (currentStep > 1) setCurrentStep((p) => p - 1);
+        if (currentStep > STEP.PROPERTY) setCurrentStep((p) => p - 1);
         if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
     };
 
     const handleSubmit = (e) => {
         if (submitting || submissionFinalized) return;
         if (e && e.preventDefault) e.preventDefault();
-        if (!form.assessment_fee || Number(form.assessment_fee) < 0) {
-            setErrors({ assessment_fee: "Assessment fee is required." });
-            return setFlash({
-                type: "error",
-                msg: "Please verify the assessment fee.",
-            });
+
+        // Every step is re-checked: drafts and step-jumping can skip earlier validation
+        const failedStep = [STEP.PROPERTY, STEP.APPLICATION, STEP.APPLICANT, STEP.FEES, STEP.REVIEW].find((s) => !validateStep(s));
+        if (failedStep) {
+            setCurrentStep(failedStep);
+            setFlash({ type: "error", msg: `Please complete the required fields in the ${STEPS[failedStep - 1].title} step.` });
+            setTimeout(() => setFlash(null), 4000);
+            return;
         }
 
         setSubmissionFinalized(true);
         setSubmitting(true);
 
+        // Evaluation decisions belong to Technical Review, not intake. Strip any left in older drafts,
+        // otherwise the backend would record a review and change status on submission.
         const payload = {
             ...form,
+            parcels: (form.parcels || []).map(({ decision, decision_reason, inspector_id, scheduled_date, deadline_date, assigned_notes, findings, ...parcel }) => parcel),
             draft_id: tempDraftId,
         };
         router.post("/applications/encode", payload, {
             onSuccess: (page) => {
                 const ref = page.props.flash?.reference_number || `LC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(100 + Math.random() * 900)}`;
-
-                saveApplicantToRegistry({
-                    first_name: form.first_name,
-                    middle_name: form.middle_name,
-                    last_name: form.last_name,
-                    suffix: form.suffix,
-                    applicant_name: form.applicant_name,
-                    contact_number: form.contact_number,
-                    email: form.email,
-                    representative_name: form.representative_name,
-                });
 
                 setRoutingSlipData({
                     id: page.props.flash?.application_id || null,
@@ -1373,7 +1423,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     email: form.email,
                     representative_name: form.representative_name,
                     application_type: form.application_type,
-                    land_use_class: form.land_use_class,
+                    land_use_class: feeBasis.zoneCode || "—",
                     purpose: form.purpose,
                     barangay: form.barangay,
                     street_address: form.street_address,
@@ -1394,17 +1444,16 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 setSubmissionFinalized(false);
                 setErrors(errs);
 
-                let targetStep = 5;
                 const errKeys = Object.keys(errs);
-
-                if (errKeys.some((k) => ["application_type", "form_number", "land_use_class", "purpose"].includes(k))) {
-                    targetStep = 1;
-                } else if (errKeys.some((k) => ["applicant_name", "contact_number", "email", "representative_name"].includes(k))) {
-                    targetStep = 2;
-                } else if (errKeys.some((k) => ["barangay", "target_land_use_class"].includes(k) || k.startsWith("parcels"))) {
-                    targetStep = 3;
-                } else if (errKeys.some((k) => ["preferred_release_mode"].includes(k))) {
-                    targetStep = 4;
+                let targetStep = STEP.REVIEW;
+                if (errKeys.some((k) => k === "barangay" || k.startsWith("parcels"))) {
+                    targetStep = STEP.PROPERTY;
+                } else if (errKeys.some((k) => STEP_ERROR_FIELDS[STEP.APPLICATION].includes(k))) {
+                    targetStep = STEP.APPLICATION;
+                } else if (errKeys.some((k) => STEP_ERROR_FIELDS[STEP.APPLICANT].includes(k))) {
+                    targetStep = STEP.APPLICANT;
+                } else if (errKeys.some((k) => STEP_ERROR_FIELDS[STEP.FEES].includes(k))) {
+                    targetStep = STEP.FEES;
                 }
 
                 setCurrentStep(targetStep);
@@ -1434,39 +1483,26 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     const getParcelStyle = (feature) => {
         const isActive = activeParcelFeature && activeParcelFeature.properties?.property_index_number === feature.properties?.property_index_number;
+        // Selected feature uses QGIS's yellow selection colour
         return {
-            color: isActive ? "#ef4444" : "#2563eb",
+            color: isActive ? "#facc15" : "#2563eb",
             weight: isActive ? 3 : 1.5,
             opacity: 0.9,
-            fillOpacity: isActive ? 0.5 : 0.2,
-            fillColor: isActive ? "#ef4444" : "#3b82f6",
+            fillOpacity: isActive ? 0.45 : 0.2,
+            fillColor: isActive ? "#fde047" : "#3b82f6",
         };
     };
 
     const workflowProgress = useMemo(() => {
-        let progress = 0;
-        const step1Done = Boolean(
-            form.application_type &&
-            form.form_number?.trim() &&
-            form.purpose?.trim()
-        );
-        const step2Done = Boolean((form.last_name?.trim() && form.first_name?.trim() || form.applicant_name?.trim()) && form.contact_number?.trim() && form.email?.trim());
-        const step3Done = Boolean(
-            form.barangay && 
-            form.parcels?.some((p) => p.property_index_number?.trim()) &&
-            (form.application_stream !== "amendment" || form.target_land_use_class)
-        );        
-        const step4Done = currentStep >= 4;
-        const step5Done = currentStep === 5 && Boolean(form.assessment_fee && Number(form.assessment_fee) >= 0);
-
-        if (step1Done) progress += 20;
-        if (step2Done) progress += 20;
-        if (step3Done) progress += 20;
-        if (step4Done) progress += 20;
-        if (step5Done) progress += 20;
-
-        return progress;
-    }, [form, currentStep]);
+        const done = [
+            Boolean(form.barangay && form.parcels?.some((p) => p.property_index_number?.trim())),
+            Boolean(form.application_type && form.form_number?.trim() && form.purpose?.trim() && (form.application_stream !== "amendment" || form.target_land_use_class)),
+            Boolean((form.last_name?.trim() && form.first_name?.trim()) && form.contact_number?.trim() && form.email?.trim() && form.right_over_land),
+            Boolean(form.or_number?.trim() && form.assessment_fee !== "" && Number(form.assessment_fee) >= 0),
+            Boolean(form.preferred_release_mode),
+        ];
+        return done.filter(Boolean).length * 20;
+    }, [form]);
 
     const stepProgress = Math.round((currentStep / 5) * 100);
 
@@ -1715,11 +1751,10 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                         <div className="relative z-10 flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 lg:p-6 overflow-hidden">
                             <div className="w-full max-w-6xl h-[calc(100vh-8.5rem)] max-h-[680px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col lg:flex-row shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
                                 
-                                {currentStep === 3 ? (
-                                    /* ── STEP 3: GIS STUDIO (INSIDE FLOATING MODAL) ── */
+                                {currentStep === STEP.PROPERTY ? (
+                                    /* ── STEP 1: GIS STUDIO (INSIDE FLOATING MODAL) ── */
                                     <StepPropertyGIS
                                         form={form}
-                                        set={set}
                                         setForm={setForm}
                                         setParcelField={setParcelField}
                                         addParcel={addParcel}
@@ -1727,9 +1762,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                         handlePinLookup={handlePinLookup}
                                         pinLoading={pinLoading}
                                         errors={errors}
-                                        inspectors={inspectors} 
                                         totalLotArea={totalLotArea}
-                                        zoningWarning={zoningWarning}
                                         activeParcelIndex={activeParcelIndex}
                                         setActiveParcelIndex={setActiveParcelIndex}
                                         activeParcelFeature={activeParcelFeature}
@@ -1737,16 +1770,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                         brgyMapData={brgyMapData}
                                         parcelMapData={parcelMapData}
                                         rosarioCenter={rosarioCenter}
-                                        brgyStyle={brgyStyle}
                                         getParcelStyle={getParcelStyle}
                                         handleSelectMapParcel={handleSelectMapParcel}
                                         MapController={MapController}
-                                        ROSARIO_BARANGAYS={ROSARIO_BARANGAYS}
-                                        LAND_USE_CLASSES={LAND_USE_CLASSES}
-                                        handleBack={handleBack}
                                         handleNext={handleNext}
                                         formRef={formRef}
-                                        handleSubmit={handleSubmit}
+                                        onPrintSiteMap={() => setSiteMapOpen(true)}
                                     />
                                 ) : (
                                     /* ── STEPS 1, 2, 4, 5: LEFT DOSSIER + RIGHT ACTIVE FORM ── */
@@ -1759,22 +1788,19 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                         Step {currentStep} of 5 · Application Form
                                                     </span>
                                                     <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight mt-1.5">
-                                                        {currentStep === 1 && "Application Category"}
-                                                        {currentStep === 2 && "Applicant Information"}
-                                                        {currentStep === 4 && "Review & Confirm"}
-                                                        {currentStep === 5 && "Assessment & Fees"}
+                                                        {STEPS[currentStep - 1]?.label}
                                                     </h2>
                                                     <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                                                        {currentStep === 1 && "Choose the clearance type and specify the land use and purpose of the application."}
-                                                        {currentStep === 2 && "Enter primary applicant contact details and representative information (if any)."}
-                                                        {currentStep === 4 && "Review all recorded information before setting assessment fees and submitting."}
-                                                        {currentStep === 5 && "Compute assessment fee using municipal zoning formula or enter custom fee."}
+                                                        {currentStep === STEP.APPLICATION && "Choose the clearance type, then describe the project. Options follow the zoning check of the property."}
+                                                        {currentStep === STEP.APPLICANT && "Confirm who is applying and their right over the land. The registered owner can be used as the applicant."}
+                                                        {currentStep === STEP.FEES && "Compute the assessment fee and record the official receipt."}
+                                                        {currentStep === STEP.REVIEW && "Check every section, including the fee, then choose the release mode and submit."}
                                                     </p>
                                                 </div>
 
-                                                {/* Application Summary or Step 4 Review Checklist */}
-                                                {currentStep === 4 ? (
-                                                    /* ── STEP 4: REVIEW & SECTION COMPLETION CHECKLIST ── */
+                                                {/* Application Summary or Review Checklist */}
+                                                {currentStep === STEP.REVIEW ? (
+                                                    /* ── REVIEW & SECTION COMPLETION CHECKLIST ── */
                                                     <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-col items-center text-center">
                                                         <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-3 shadow-sm">
                                                             <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -1784,30 +1810,24 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                         <div>
                                                             <h3 className="text-[13px] font-bold text-slate-800 tracking-tight">Ready for Review</h3>
                                                             <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                                                                All primary sections are filled. Please verify the recorded information before assessing fees.
+                                                                Everything, including the assessed fee, is shown here for a final check before submission.
                                                             </p>
                                                         </div>
                                                         <div className="w-full pt-3.5 mt-3.5 border-t border-slate-100 text-left">
                                                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2.5">Required Actions</p>
                                                             <ul className="text-[11px] text-slate-600 space-y-2 font-medium">
-                                                                <li className="flex items-start gap-2">
-                                                                    <svg className="w-3.5 h-3.5 text-blue-500 mt-px shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
-                                                                    </svg>
-                                                                    <span>Verify details in all sections</span>
-                                                                </li>
-                                                                <li className="flex items-start gap-2">
-                                                                    <svg className="w-3.5 h-3.5 text-blue-500 mt-px shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
-                                                                    </svg>
-                                                                    <span>Select a mode of release</span>
-                                                                </li>
-                                                                <li className="flex items-start gap-2">
-                                                                    <svg className="w-3.5 h-3.5 text-slate-300 mt-px shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14" />
-                                                                    </svg>
-                                                                    <span className="text-slate-500">Proceed to fee assessment</span>
-                                                                </li>
+                                                                {[
+                                                                    ["Verify details in all sections", true],
+                                                                    ["Confirm the fee and OR number", true],
+                                                                    ["Select a mode of release", Boolean(form.preferred_release_mode)],
+                                                                ].map(([text, ok]) => (
+                                                                    <li key={text} className="flex items-start gap-2">
+                                                                        <svg className={`w-3.5 h-3.5 mt-px shrink-0 ${ok ? "text-blue-500" : "text-slate-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d={ok ? "M9 12l2 2 4-4" : "M5 12h14"} />
+                                                                        </svg>
+                                                                        <span className={ok ? "" : "text-slate-500"}>{text}</span>
+                                                                    </li>
+                                                                ))}
                                                             </ul>
                                                         </div>
                                                     </div>
@@ -1831,7 +1851,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                                 </div>
                                                                 <div>
                                                                     <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Zoning Class</p>
-                                                                    <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">{form.land_use_class || "—"}</p>
+                                                                    <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">{feeBasis.zoneCode || "—"}</p>
                                                                 </div>
                                                             </div>
                                                             <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
@@ -1850,7 +1870,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                                     </p>
                                                                 </div>
                                                             </div>
-                                                            {currentStep === 5 && form.assessment_fee ? (
+                                                            {currentStep >= STEP.FEES && form.assessment_fee ? (
                                                                 <div className="pt-1.5 border-t border-slate-100">
                                                                     <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Assessment Fee</p>
                                                                     <p className="font-mono font-bold text-emerald-600 text-xs mt-0.5">₱ {Number(form.assessment_fee).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
@@ -1888,8 +1908,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                         <div ref={formRef} className="flex-1 p-5 sm:p-6 lg:p-7 flex flex-col justify-between bg-white overflow-y-auto">
                                             <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
                                                 
-                                                {/* ── STEP 1: SCOPE & PURPOSE ── */}
-                                                {currentStep === 1 && (
+                                                {/* ── STEP 2: APPLICATION (category, purpose, project details) ── */}
+                                                {currentStep === STEP.APPLICATION && (
                                                     <>
                                                         {varianceNotice && (
                                                             <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs text-amber-800">
@@ -1916,15 +1936,18 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                             APPLICATION_TYPES={APPLICATION_TYPES}
                                                             AMENDMENT_TYPES={AMENDMENT_TYPES}
                                                             LAND_USE_CLASSES={LAND_USE_CLASSES}
+                                                            zoningMismatch={hasZoningMismatch(form.parcels)}
+                                                            goToProperty={() => setCurrentStep(STEP.PROPERTY)}
                                                         />
                                                     </>
                                                 )}
 
-                                                {/* ── STEP 2: APPLICANT PROFILE ── */}
-                                                {currentStep === 2 && (
+                                                {/* ── STEP 3: APPLICANT PROFILE ── */}
+                                                {currentStep === STEP.APPLICANT && (
                                                     <StepApplicant
                                                         form={form}
                                                         set={set}
+                                                        setForm={setForm}
                                                         handleNameChange={handleNameChange}
                                                         handleContactInput={handleContactInput}
                                                         applicantSuggestion={applicantSuggestion}
@@ -1934,14 +1957,27 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                     />
                                                 )}
 
-                                                {/* ── STEP 4: REVIEW & CONFIRM ── */}
-                                                {currentStep === 4 && (
+                                                {/* ── STEP 4: FEES ── */}
+                                                {currentStep === STEP.FEES && (
+                                                    <StepFee
+                                                        form={form}
+                                                        set={set}
+                                                        feeSuggestion={feeSuggestion}
+                                                        applySuggestedFees={applySuggestedFees}
+                                                        errors={errors}
+                                                    />
+                                                )}
+
+                                                {/* ── STEP 5: REVIEW & SUBMIT ── */}
+                                                {currentStep === STEP.REVIEW && (
                                                     <StepReview
                                                         form={form}
                                                         set={set}
                                                         errors={errors}
                                                         totalLotArea={totalLotArea}
                                                         setCurrentStep={setCurrentStep}
+                                                        STEP={STEP}
+                                                        onPrintSiteMap={() => setSiteMapOpen(true)}
                                                         onPreviewRoutingSlip={() => {
                                                             setRoutingSlipData({
                                                                 reference_number: `DRAFT-${form.form_number || tempDraftId}`,
@@ -1952,37 +1988,24 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                                 email: form.email || "—",
                                                                 representative_name: form.representative_name || "",
                                                                 application_type: form.application_type || "Locational Clearance",
-                                                                land_use_class: form.land_use_class || "Residential",
+                                                                land_use_class: feeBasis.zoneCode || "—",
                                                                 purpose: form.purpose || "—",
                                                                 barangay: form.barangay || "—",
                                                                 street_address: form.street_address || "",
                                                                 parcels: form.parcels || [],
                                                                 total_area: totalLotArea,
                                                                 project_cost: form.project_cost || "",
-                                                                assessment_fee: form.assessment_fee || calculatedFeeBreakdown.total,
+                                                                assessment_fee: form.assessment_fee || feeSuggestion.total,
                                                                 or_number: form.or_number || "",
                                                             });
                                                             setShowRoutingSlip(true);
                                                         }}
-                                                        
-                                                    />
-                                                )}
-
-                                                {/* ── STEP 5: SMART MUNICIPAL FEE CALCULATION & SUBMIT ── */}
-                                                {currentStep === 5 && (
-                                                    <StepFee
-                                                        form={form}
-                                                        set={set}
-                                                        feeMode={feeMode}
-                                                        setFeeMode={setFeeMode}
-                                                        calculatedFeeBreakdown={calculatedFeeBreakdown}
-                                                        errors={errors}
                                                     />
                                                 )}
 
                                                 {/* ── STEP NAVIGATION CONTROLS ── */}
                                                 <div className="pt-6 border-t border-slate-100 flex items-center justify-between gap-3 mt-auto">
-                                                    {currentStep > 1 ? (
+                                                    {currentStep > STEP.PROPERTY ? (
                                                         <button
                                                             type="button"
                                                             onClick={handleBack}
@@ -1992,7 +2015,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                         </button>
                                                     ) : <div />}
 
-                                                    {currentStep < 5 ? (
+                                                    {currentStep < STEP.REVIEW ? (
                                                         <button
                                                             key="next-btn"
                                                             type="button"
@@ -2029,13 +2052,22 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 </div>
             </div>
 
+            <SiteMapPrint
+                open={siteMapOpen}
+                onClose={() => setSiteMapOpen(false)}
+                form={form}
+                parcelMapData={parcelMapData}
+                preparedBy={userName}
+            />
+
             {/* Printable Application Routing Slip Modal */}
             <RoutingSlipModal
                 open={showRoutingSlip}
                 data={routingSlipData}
                 onClose={() => {
                     setShowRoutingSlip(false);
-                    if (workflowProgress === 100) {
+                    // Only leave after a real submission, not when closing the Review step's preview
+                    if (syncStatus === "Submitted") {
                         router.visit("/applications");
                     }
                 }}

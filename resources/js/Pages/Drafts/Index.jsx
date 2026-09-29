@@ -115,12 +115,12 @@ function SearchableSelect({
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className={`w-full text-xs font-medium px-3 py-1.5 rounded-xl border transition-all flex items-center justify-between gap-2 shadow-xs ${
+                className={`w-full text-xs font-medium px-3 py-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 shadow-sm ${
                     isOpen
-                        ? "border-blue-500 ring-2 ring-blue-500/10 bg-white text-slate-900"
+                        ? "border-blue-500 ring-2 ring-blue-500/20 bg-white text-slate-900"
                         : value
                         ? "border-blue-300 bg-blue-50/50 text-blue-900 font-semibold hover:border-blue-400"
-                        : "border-slate-200 bg-slate-50/50 hover:bg-white text-slate-700 hover:border-slate-300"
+                        : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:border-slate-300"
                 }`}
             >
                 <span className="truncate">{selectedLabel}</span>
@@ -435,7 +435,7 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                         {userRole === "Planning Officer" && (
                             <Link
                                 href="/applications/encode"
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 transition-all shadow-sm active:scale-95"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700 transition-all shadow-sm active:scale-95"
                             >
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -470,23 +470,23 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
 
                     {/* Foreground: Centered Master Elevated Floating Modal */}
                     <div className="relative z-10 flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 lg:p-6 overflow-hidden">
-                        <div className="w-full max-w-6xl h-[calc(100vh-8.5rem)] max-h-[750px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
+                        <div className="w-full max-w-6xl h-[calc(100vh-8.5rem)] max-h-[750px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/90 overflow-hidden flex flex-col shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
                                     
                                     {/* Filters & Search Toolbar */}
                                     <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between bg-slate-50/30">
                                         
                                         {/* Premium Segmented Control */}
-                                        <div className="inline-flex items-center bg-slate-100 border border-slate-200 rounded-xl p-1 shrink-0 overflow-x-auto no-scrollbar shadow-inner">
+                                        <div className="inline-flex items-center bg-slate-100/80 p-1 rounded-xl shrink-0 overflow-x-auto no-scrollbar shadow-inner border border-slate-200/60">
                                             {["", ...STATUSES].map((s) => {
                                                 const isSelected = (statusFilter || "") === s;
                                                 return (
                                                     <button
                                                         key={s || "all"}
                                                         onClick={() => applyFilter({ status: s })}
-                                                        className={`text-[13px] font-semibold px-5 py-2 rounded-lg transition-all whitespace-nowrap ${
+                                                        className={`text-[13px] font-semibold px-4 py-2 rounded-lg transition-all whitespace-nowrap ${
                                                             isSelected
-                                                                ? "bg-white text-blue-700 shadow-sm border border-slate-200/60 ring-1 ring-black/5"
-                                                                : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 border border-transparent"
+                                                                ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5"
+                                                                : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                                                         }`}
                                                     >
                                                         {s || "All Drafts"}
@@ -561,10 +561,10 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                                     ) : (
                                         <div className="flex-1 overflow-auto">
                                             <table className="w-full text-left border-collapse whitespace-nowrap">
-                                                <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-sm z-10 shadow-[0_1px_0_0_#e2e8f0]">
+                                                <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-md z-10">
                                                     <tr>
                                                         {["Draft Identifier", "Applicant", "Application Type", "Barangay", "Last Modified", "Status", ""].map((h, i) => (
-                                                            <th key={i} className="px-6 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                                                            <th key={i} className="px-6 py-4 text-[11px] font-extrabold text-slate-500 uppercase tracking-widest border-b border-slate-200/80">
                                                                 {h}
                                                             </th>
                                                         ))}
@@ -575,64 +575,68 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
                                                         <tr 
                                                             key={draft.id} 
                                                             onClick={(e) => handleResumeDraft(draft.id, e)}
-                                                            className="border-l-[3px] border-transparent hover:border-blue-500 hover:bg-blue-50/40 transition-all group cursor-pointer"
+                                                            className="group cursor-pointer hover:bg-slate-50/50 transition-colors"
                                                         >
-                                                            <td className="px-6 py-4.5">
-                                                                <div className="flex items-center gap-2.5 text-xs font-mono font-bold text-slate-600 group-hover:text-blue-700 transition-colors">
-                                                                    <div className="w-7 h-7 rounded bg-slate-50 flex items-center justify-center border border-slate-200/80 group-hover:bg-white group-hover:border-blue-200 group-hover:shadow-sm transition-all">
-                                                                        <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                                                         </svg>
                                                                     </div>
-                                                                    {draft.temp_reference_number || `DRAFT-${draft.id}`}
+                                                                    <div>
+                                                                        <div className="text-[13px] font-mono font-bold text-slate-700 group-hover:text-blue-600 transition-colors">
+                                                                            {draft.temp_reference_number || `DRAFT-${draft.id}`}
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-4.5">
-                                                                <p className="text-[13px] font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
+                                                            <td className="px-6 py-4">
+                                                                <div className="text-[14px] font-semibold text-slate-800">
                                                                     {draft.applicant_name || "Unspecified"}
-                                                                </p>
+                                                                </div>
                                                             </td>
-                                                            <td className="px-6 py-4.5">
-                                                                <span className="text-[13px] font-semibold text-slate-600 group-hover:text-slate-800 transition-colors">
+                                                            <td className="px-6 py-4">
+                                                                <div className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-[12px] font-medium">
                                                                     {draft.application_type || "Unspecified Category"}
-                                                                </span>
+                                                                </div>
                                                             </td>
-                                                            <td className="px-6 py-4.5">
-                                                                <span className="text-[13px] font-medium text-slate-500 group-hover:text-slate-700 transition-colors">{draft.barangay || "—"}</span>
+                                                            <td className="px-6 py-4 text-[13px] text-slate-600 font-medium">
+                                                                {draft.barangay || "—"}
                                                             </td>
-                                                            <td className="px-6 py-4.5 text-xs font-semibold text-slate-400">
+                                                            <td className="px-6 py-4 text-[12px] text-slate-500 font-medium">
                                                                 {formatDateTime(draft.updated_at)}
                                                             </td>
-                                                            <td className="px-6 py-4.5">
+                                                            <td className="px-6 py-4">
                                                                 <StatusBadge status={draft.status || "Auto-saved"} />
                                                             </td>
-                                                            <td className="px-6 py-4.5 text-right">
-                                                                <div className="flex items-center justify-end gap-2 transition-opacity duration-200" onClick={(e) => e.stopPropagation()}>
-                                                                <button 
-                                                                    type="button"
-                                                                    title="Resume Draft"
-                                                                    onClick={(e) => handleResumeDraft(draft.id, e)}
-                                                                    className="flex items-center justify-center w-8 h-8 rounded-lg bg-white border border-slate-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 shadow-sm transition-all active:scale-95"
-                                                                >
-                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-                                                                    </svg>
-                                                                </button>
-                                                                <button 
-                                                                    type="button"
-                                                                    title="Discard Draft"
-                                                                    onClick={(e) => handleDiscardDraft(draft.id, e)}
-                                                                    className="flex items-center justify-center w-8 h-8 rounded-lg bg-white border border-slate-200 text-rose-500 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-600 shadow-sm transition-all active:scale-95"
-                                                                >
-                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                                                    </svg>
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
+                                                            <td className="px-6 py-4 text-right">
+                                                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                                                    <button 
+                                                                        type="button"
+                                                                        title="Resume Draft"
+                                                                        onClick={(e) => handleResumeDraft(draft.id, e)}
+                                                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                                    >
+                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                                                                        </svg>
+                                                                    </button>
+                                                                    <button 
+                                                                        type="button"
+                                                                        title="Discard Draft"
+                                                                        onClick={(e) => handleDiscardDraft(draft.id, e)}
+                                                                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                                                    >
+                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                                        </svg>
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
                                         </table>
                                     </div>
                                 )}

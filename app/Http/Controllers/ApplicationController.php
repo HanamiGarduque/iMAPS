@@ -453,6 +453,38 @@ class ApplicationController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // APPLICANT LOOKUP — past applicants matching a name, email or phone
+    // Replaces the browser-local registry, which kept applicants' personal data
+    // on whichever shared PC encoded them.
+    // ─────────────────────────────────────────────────────────────────────────
+    public function applicantLookup(Request $request)
+    {
+        $q = trim((string) $request->query('q', ''));
+        if (mb_strlen($q) < 3) {
+            return response()->json([]);
+        }
+
+        $like = '%' . addcslashes(mb_strtolower($q), '\\%_') . '%';
+        $digits = preg_replace('/\D/', '', $q);
+
+        $rows = ZoningApplication::query()
+            ->where(function ($w) use ($like, $digits) {
+                $w->whereRaw('LOWER(applicant_name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(email) LIKE ?', [$like]);
+                if (strlen($digits) >= 4) {
+                    $w->orWhere('contact_number', 'like', '%' . $digits . '%');
+                }
+            })
+            ->orderByDesc('created_at')
+            ->limit(25)
+            ->get(['applicant_name', 'contact_number', 'email', 'representative_name']);
+
+        return response()->json(
+            $rows->unique(fn ($r) => mb_strtolower($r->applicant_name) . '|' . $r->contact_number)->take(5)->values()
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // SHOW — View single application, its parcels, and its technical review history
     // ─────────────────────────────────────────────────────────────────────────
     public function show(int $id)
@@ -505,7 +537,40 @@ class ApplicationController extends Controller
             'auditTrail'       => $auditTrail,
             'inspectors'       => $inspectors,
             'statusOrder'      => self::STATUS_ORDER,
+            // When each stage began, for "days in stage" on the record page
+            'statusHistory'    => DB::table('application_status_tracks')
+                ->where('reference_number', $application->reference_number)
+                ->orderBy('created_at')
+                ->get(['status', 'created_at']),
         ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AMENDMENT REFERENCES — SB ordinance / DAR clearance for rezoning and
+    // reclassification petitions (columns already on zoning_applications)
+    // ─────────────────────────────────────────────────────────────────────────
+    public function updateAmendmentRefs(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'sb_ordinance_number' => 'nullable|string|max:100',
+            'dar_clearance_ref'   => 'nullable|string|max:100',
+        ]);
+
+        $application = ZoningApplication::findOrFail($id);
+        $application->update($validated);
+
+        AuditLogger::log(
+            applicationId: $application->id,
+            action: 'AMENDMENT_REFS_UPDATED',
+            performedBy: Auth::id(),
+            note: sprintf(
+                'SB ordinance no.: %s; DAR clearance ref.: %s',
+                $validated['sb_ordinance_number'] ?? '—',
+                $validated['dar_clearance_ref'] ?? '—'
+            )
+        );
+
+        return back()->with('success', 'Amendment references saved.');
     }
 
     private function currentPlanningOfficerAssignmentActor(): array

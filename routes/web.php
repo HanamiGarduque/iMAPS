@@ -3,7 +3,6 @@
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\TechnicalReviewController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\MapsController;
 use App\Http\Controllers\PublicPortalController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
@@ -46,8 +45,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
 
-    // Geospatial map view (zoning overlays, barangay boundaries, land-use diversity)
-    Route::get('/maps', [MapsController::class, 'index'])
+    // Redirect /maps to the unified GIS Dashboard
+    Route::get('/maps', fn () => redirect()->route('dashboard'))
         ->name('maps.index');
     // Search
     Route::get('/api/global-search', [SearchController::class, 'globalSearch'])->middleware('auth');
@@ -93,12 +92,21 @@ Route::middleware('auth')->group(function () {
     Route::delete('/applications/drafts/{id}', [ApplicationController::class, 'destroyDraft'])
         ->name('drafts.destroy');
 
+    // Encoder lookups (read-only), before /applications/{id} for the same reason
+    Route::get('/applications/applicant-lookup', [ApplicationController::class, 'applicantLookup'])
+        ->name('applications.applicantLookup')
+        ->middleware('role:Planning Officer');
     // ── Single-View & Standard Status Transitions ──
     Route::match(['get', 'post'], '/applications/{id}/export-document/{type}', [ApplicationController::class, 'exportDocument'])
         ->name('applications.export-document');
 
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show');
+
+    Route::post('/applications/{id}/amendment-refs', [ApplicationController::class, 'updateAmendmentRefs'])
+        ->whereNumber('id')
+        ->name('applications.amendmentRefs')
+        ->middleware('role:Planning Officer');
 
     // Handles Approved / Declined standard status changes from the show docket
     Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])

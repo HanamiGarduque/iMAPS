@@ -1,270 +1,189 @@
 // resources/js/Pages/Applications/Show.jsx
-import React, { useState, useEffect, useMemo } from "react";
+// Application record: map of the lots (left) and Overview / Parcels & evaluation / History (right).
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Link, Head, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { performLogout } from "@/utils/auth";
-import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
+import { getZoningCheck, CHECK_COLORS, AreaComparison, Attr } from "@/Components/MapKit";
+import { getZoneInfo } from "@/utils/clupZones";
+import { loadBarangayBoundaries } from "@/utils/mapData";
+import ApplicationMap from "./Components/ApplicationMap";
+import SiteMapPrint from "./Components/SiteMapPrint";
 
-// ── Status Badge Configuration ──
-const STATUS_CONFIG = {
-    Received: { bg: "bg-emerald-50 text-emerald-700 border-emerald-200/70", dot: "bg-emerald-500" },
-    "Technical Review": { bg: "bg-amber-50 text-amber-700 border-amber-200/70", dot: "bg-amber-500" },
-    "Under Sangguniang Bayan": { bg: "bg-purple-50 text-purple-700 border-purple-200/70", dot: "bg-purple-500" },
-    "For Release": { bg: "bg-sky-50 text-sky-700 border-sky-200/70", dot: "bg-sky-500" },
-    Released: { bg: "bg-indigo-50 text-indigo-700 border-indigo-200/70", dot: "bg-indigo-600" },
-    Denied: { bg: "bg-rose-50 text-rose-700 border-rose-200/70", dot: "bg-rose-500" },
+const STAGES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released"];
+const STAGE_SHORT = { "Under Sangguniang Bayan": "SB" };
+const STATUS_DOT = {
+    Received: "bg-emerald-500",
+    "Technical Review": "bg-amber-500",
+    "Under Sangguniang Bayan": "bg-purple-500",
+    "For Release": "bg-sky-500",
+    Released: "bg-blue-600",
+    Denied: "bg-rose-500",
+};
+const DECISIONS = [
+    { value: "Approved", label: "Approve", dot: "bg-emerald-500" },
+    { value: "Needs Site Inspection", label: "Site inspection", dot: "bg-amber-500" },
+    { value: "Declined", label: "Decline", dot: "bg-rose-500" },
+];
+const DONE_INSPECTION = ["completed", "submitted"];
+
+// Ease of Doing Business (RA 11032) processing time for highly technical applications, in working days.
+// Only stages the office controls count against it (SB deliberation is legislative).
+const ARTA_WORKING_DAYS = 20;
+const OFFICE_STAGES = ["Received", "Technical Review", "For Release"];
+
+const AUDIT_LABELS = {
+    APPLICATION_CREATED: "Application encoded",
+    STATUS_UPDATE: "Status changed",
+    AMENDMENT_REFS_UPDATED: "SB / DAR references updated",
 };
 
-function StatusBadge({ status }) {
-    const cfg = STATUS_CONFIG[status] || { bg: "bg-slate-100 text-slate-700 border-slate-200", dot: "bg-slate-400" };
+// Mon–Fri days elapsed (national holidays not excluded)
+function workingDaysSince(from, to = new Date()) {
+    if (!from) return null;
+    const d = new Date(from);
+    if (isNaN(d.getTime())) return null;
+    d.setHours(0, 0, 0, 0);
+    const end = new Date(to);
+    end.setHours(0, 0, 0, 0);
+    let n = 0;
+    while (d < end) {
+        d.setDate(d.getDate() + 1);
+        const w = d.getDay();
+        if (w !== 0 && w !== 6) n++;
+    }
+    return n;
+}
+
+const fmtDate = (d, withTime = false) => {
+    if (!d) return "—";
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return "—";
+    const day = date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+    return withTime ? `${day} · ${date.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}` : day;
+};
+const peso = (v) => `₱ ${Number(v || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const dash = (v) => (v !== null && v !== undefined && String(v).trim() !== "" ? v : "—");
+const today = () => new Date().toISOString().split("T")[0];
+
+function StatusPill({ status }) {
     return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${cfg.bg}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} shrink-0`} />
-            {status}
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold whitespace-nowrap">
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status] || "bg-slate-400"}`} aria-hidden="true" />
+            {status || "—"}
         </span>
     );
 }
 
-// ── GeoJSON Sanitizer Utility ──
-const hasValidCoords = (coords) => {
-    if (!coords) return false;
-    if (Array.isArray(coords)) {
-        if (coords.length === 2 && typeof coords[0] === "number") {
-            return !isNaN(coords[0]) && !isNaN(coords[1]);
-        }
-        return coords.length > 0 && coords.every(hasValidCoords);
-    }
-    return false;
-};
+function StageProgress({ status }) {
+    const current = STAGES.indexOf(status);
+    const denied = status === "Denied";
+    return (
+        <ol className="hidden xl:flex items-center gap-1 text-[11px]" aria-label="Application stage">
+            {STAGES.map((s, i) => {
+                const done = !denied && current > i;
+                const isCurrent = !denied && current === i;
+                return (
+                    <li key={s} className="flex items-center gap-1" aria-current={isCurrent ? "step" : undefined}>
+                        {i > 0 && <span className={`w-4 h-px ${done || isCurrent ? "bg-slate-500" : "bg-slate-300"}`} aria-hidden="true" />}
+                        <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${
+                                isCurrent ? "bg-slate-800 text-white font-semibold" : done ? "text-slate-700 font-medium" : "text-slate-400"
+                            }`}
+                        >
+                            {done && "✓ "}
+                            {STAGE_SHORT[s] || s}
+                        </span>
+                    </li>
+                );
+            })}
+            {denied && (
+                <li className="flex items-center gap-1">
+                    <span className="w-4 h-px bg-rose-300" aria-hidden="true" />
+                    <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-semibold">Denied</span>
+                </li>
+            )}
+        </ol>
+    );
+}
 
-const sanitizeGeoJSON = (geojson) => {
-    if (!geojson || !geojson.features) return geojson;
-    const validFeatures = geojson.features.filter((feature) => {
-        try {
-            if (!feature.geometry || !hasValidCoords(feature.geometry.coordinates)) {
-                return false;
-            }
-            const layer = L.geoJSON(feature);
-            const bounds = layer.getBounds();
-            const sw = bounds?.getSouthWest();
-            const ne = bounds?.getNorthEast();
+function Section({ title, children, action }) {
+    return (
+        <section className="rounded-xl border border-slate-200 bg-white">
+            <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{title}</h3>
+                {action}
+            </div>
+            <dl className="px-4 py-1 text-xs">{children}</dl>
+        </section>
+    );
+}
 
-            return sw && ne && !isNaN(sw.lat) && !isNaN(sw.lng) && !isNaN(ne.lat) && !isNaN(ne.lng);
-        } catch (e) {
-            return false;
-        }
-    });
-    return { ...geojson, features: validFeatures };
-};
-
-// ── Custom Map Bounds Controller ──
-function MapController({ brgyData, activeParcelFeature }) {
-    const map = useMap();
+// Only the transitions the server accepts: the next stage, or Denied
+function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving }) {
+    const next = STAGES[STAGES.indexOf(currentStatus) + 1];
+    const options = [next, "Denied"].filter(Boolean);
+    const [newStatus, setNewStatus] = useState(preset && options.includes(preset) ? preset : options[0] || "");
+    const [remarks, setRemarks] = useState("");
+    const needsReason = newStatus === "Denied";
 
     useEffect(() => {
-        try {
-            if (activeParcelFeature) {
-                const layer = L.geoJSON(activeParcelFeature);
-                const bounds = layer.getBounds();
-                if (bounds.isValid()) {
-                    map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 18, duration: 1.2 });
-                }
-            } else if (brgyData) {
-                const layer = L.geoJSON(brgyData);
-                const bounds = layer.getBounds();
-                if (bounds.isValid()) {
-                    map.fitBounds(bounds, { padding: [30, 30] });
-                }
-            }
-        } catch (error) {}
-    }, [brgyData, activeParcelFeature, map]);
-
-    return null;
-}
-
-// ── Form Controls ──
-function Label({ children, required, hasError }) {
-    return (
-        <label className={`flex items-center gap-1.5 text-xs font-semibold mb-1.5 transition-colors ${hasError ? "text-rose-600" : "text-slate-700"}`}>
-            {children}
-            {required && <span className="text-rose-500 font-bold text-xs leading-none">*</span>}
-        </label>
-    );
-}
-
-const inputBaseStyles = (hasError) => `
-    w-full px-3.5 py-2 text-xs font-medium text-slate-800 transition-all duration-150 outline-none
-    placeholder:text-slate-400 rounded-xl border
-    ${hasError ? "border-rose-300 bg-rose-50/30 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10" : "border-slate-200 bg-white hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-xs"}
-`;
-
-const Textarea = ({ className = "", hasError = false, ...props }) => <textarea className={`${inputBaseStyles(hasError)} resize-none ${className}`} {...props} />;
-
-// ── Assign Inspector Drawer Modal ──
-function AssignInspectorDrawer({ onClose, onSubmit, saving, inspectors = [] }) {
-    const [inspectorId, setInspectorId] = useState("");
-    const [scheduledDate, setScheduledDate] = useState("");
-    const [deadlineDate, setDeadlineDate] = useState("");
-    const [assignedNotes, setAssignedNotes] = useState("");
+        const onKey = (e) => e.key === "Escape" && onClose();
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [onClose]);
 
     return (
-        <div className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden flex flex-col">
-                <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex justify-between items-center">
-                    <div>
-                        <span className="text-xs font-semibold text-amber-600">Field Task</span>
-                        <h3 className="text-base font-bold text-slate-900">Assign Site Inspector</h3>
-                    </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
+        <div className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-950/40" role="dialog" aria-modal="true" aria-labelledby="status-dialog-title">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100">
+                    <h3 id="status-dialog-title" className="text-base font-bold text-slate-900">Update application status</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Currently {currentStatus}. Applications move one stage at a time, or can be denied.</p>
                 </div>
-
                 <div className="p-5 space-y-4">
-                    <div>
-                        <Label required>Select Inspector</Label>
-                        <select
-                            value={inspectorId}
-                            onChange={(e) => setInspectorId(e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all cursor-pointer shadow-xs"
-                        >
-                            <option value="">-- Choose Inspector --</option>
-                            {inspectors.map((inspector) => (
-                                <option key={inspector.id} value={inspector.id}>
-                                    {inspector.name}
-                                </option>
+                    <fieldset>
+                        <legend className="text-xs font-semibold text-slate-700 mb-1.5">New status</legend>
+                        <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-slate-100">
+                            {options.map((s) => (
+                                <label key={s} className="relative">
+                                    <input type="radio" name="new-status" value={s} checked={newStatus === s} onChange={() => setNewStatus(s)} className="peer sr-only" />
+                                    <span className="flex justify-center py-1.5 rounded-full text-xs font-semibold text-slate-500 cursor-pointer peer-checked:bg-white peer-checked:text-slate-900 peer-checked:shadow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500">
+                                        {s === "Under Sangguniang Bayan" ? "Sangguniang Bayan" : s}
+                                    </span>
+                                </label>
                             ))}
-                        </select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <Label required>Scheduled Date</Label>
-                            <input
-                                type="date"
-                                value={scheduledDate}
-                                onChange={(e) => setScheduledDate(e.target.value)}
-                                min={new Date().toISOString().split("T")[0]}
-                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all shadow-xs"
-                            />
                         </div>
-                        <div>
-                            <Label required>Deadline Date</Label>
-                            <input
-                                type="date"
-                                value={deadlineDate}
-                                onChange={(e) => setDeadlineDate(e.target.value)}
-                                min={scheduledDate || new Date().toISOString().split("T")[0]}
-                                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all shadow-xs"
-                            />
-                        </div>
-                    </div>
-
+                    </fieldset>
                     <div>
-                        <Label>Inspection Focus & Notes</Label>
+                        <label htmlFor="status-remarks" className="text-xs font-semibold text-slate-700">
+                            {needsReason ? "Reason for denial" : "Remarks (optional)"} {needsReason && <span className="text-rose-500">*</span>}
+                        </label>
                         <textarea
-                            rows={3}
-                            value={assignedNotes}
-                            onChange={(e) => setAssignedNotes(e.target.value)}
-                            placeholder="Add specific instructions or focus areas for the field inspection..."
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all resize-none shadow-xs"
-                        />
-                    </div>
-                </div>
-
-                <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2.5 bg-slate-50/80">
-                    <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-50 transition-all shadow-xs">
-                        Cancel
-                    </button>
-                    <button
-                        onClick={() =>
-                            onSubmit({
-                                inspector_id: inspectorId,
-                                scheduled_date: scheduledDate,
-                                deadline_date: deadlineDate,
-                                assigned_notes: assignedNotes,
-                            })
-                        }
-                        disabled={saving || !inspectorId || !scheduledDate || !deadlineDate}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {saving ? "Assigning..." : "Confirm Assignment"}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// ── Update Status Drawer Modal ──
-function UpdateStatusDrawer({ onClose, onSubmit, saving, currentStatus }) {
-    const [newStatus, setNewStatus] = useState("");
-    const [remarks, setRemarks] = useState("");
-    const availableStatuses = ["Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
-
-    return (
-        <div className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden flex flex-col">
-                <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex justify-between items-center">
-                    <div>
-                        <span className="text-xs font-semibold text-blue-600">Workflow Action</span>
-                        <h3 className="text-base font-bold text-slate-900">Update Application Status</h3>
-                    </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-
-                <div className="p-5 space-y-4">
-                    <div>
-                        <Label required>Select Target Status</Label>
-                        <select
-                            value={newStatus}
-                            onChange={(e) => setNewStatus(e.target.value)}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all cursor-pointer shadow-xs"
-                        >
-                            <option value="">-- Choose New Status --</option>
-                            {availableStatuses
-                                .filter((s) => s !== currentStatus)
-                                .map((s) => (
-                                    <option key={s} value={s}>
-                                        {s}
-                                    </option>
-                                ))}
-                        </select>
-                    </div>
-
-                    <div>
-                        <Label>Status Transition Remarks (Optional)</Label>
-                        <textarea
+                            id="status-remarks"
                             rows={3}
                             value={remarks}
                             onChange={(e) => setRemarks(e.target.value)}
-                            placeholder="Add administrative notes, justification, or reason for this status update..."
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all resize-none shadow-xs"
+                            placeholder={needsReason ? "Regulatory basis for denying this application…" : "Notes recorded in the history…"}
+                            className="mt-1.5 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-xs text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 resize-none"
                         />
                     </div>
                 </div>
-
-                <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2.5 bg-slate-50/80">
-                    <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-50 transition-all shadow-xs">
+                <div className="px-5 py-3.5 border-t border-slate-100 flex justify-end gap-2">
+                    <button type="button" onClick={onClose} className="px-4 py-2 rounded-full border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
                         Cancel
                     </button>
                     <button
+                        type="button"
                         onClick={() => onSubmit({ new_status: newStatus, remarks })}
-                        disabled={saving || !newStatus}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={saving || !newStatus || (needsReason && !remarks.trim())}
+                        className={`px-5 py-2 rounded-full text-white text-xs font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed ${
+                            needsReason ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"
+                        }`}
                     >
-                        {saving ? "Updating..." : "Confirm Status Update"}
+                        {saving ? "Saving…" : needsReason ? "Deny application" : `Move to ${newStatus === "Under Sangguniang Bayan" ? "SB" : newStatus}`}
                     </button>
                 </div>
             </div>
@@ -272,228 +191,180 @@ function UpdateStatusDrawer({ onClose, onSubmit, saving, currentStatus }) {
     );
 }
 
-// ── Main Page Component ──
-export default function Show({ auth, application: initialApp, app: alternateApp, inspectors = [], errors: serverErrors = {} }) {
+function ShowInner({
+    auth,
+    application: initialApp,
+    app: alternateApp,
+    inspectors = [],
+    technicalReviews = [],
+    auditTrail = [],
+    statusHistory = [],
+    errors: serverErrors = {},
+}) {
     const app = initialApp || alternateApp || {};
-
-    const uniqueParcels = useMemo(() => {
-        if (!app.parcels) return [];
-        const map = new Map();
-        app.parcels.forEach((p) => map.set(p.id, p));
-        return Array.from(map.values());
-    }, [app.parcels]);
-
-    const [parcelReviews, setParcelReviews] = useState({});
-    const [liveStatuses, setLiveStatuses] = useState({});
-
-    const handleLiveStatusUpdate = (parcelId, status) => {
-        setLiveStatuses((prev) => {
-            if (prev[parcelId] === status) return prev;
-            return { ...prev, [parcelId]: status };
-        });
-    };
-
-    useEffect(() => {
-        if (uniqueParcels && Object.keys(parcelReviews).length === 0) {
-            const initial = {};
-            uniqueParcels.forEach((p) => {
-                const tr = p.technical_reviews?.[0] || {};
-                initial[p.id] = {
-                    decision: tr.decision || "",
-                    decision_reason: tr.decision_reason || "",
-                    inspector_id: p.site_inspection?.inspector_id || "",
-                    scheduled_date: p.site_inspection?.scheduled_date ? p.site_inspection.scheduled_date.split("T")[0] : "",
-                    deadline_date: p.site_inspection?.deadline_date ? p.site_inspection.deadline_date.split("T")[0] : "",
-                    assigned_notes: p.site_inspection?.assigned_notes || "",
-                };
-            });
-            setParcelReviews(initial);
-        }
-    }, [uniqueParcels]);
-
-    const handleParcelReviewChange = (parcelId, field, val) => {
-        setParcelReviews((prev) => ({
-            ...prev,
-            [parcelId]: {
-                ...prev[parcelId],
-                [field]: val,
-            },
-        }));
-    };
-
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
+    const isAmendment = String(app.application_stream || "").toLowerCase() === "amendment";
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
+    const [tab, setTab] = useState(app.status === "Technical Review" ? "parcels" : "overview");
+    const [selectedIndex, setSelectedIndex] = useState(0);
     const [saving, setSaving] = useState(false);
-    const [showAssignDrawer, setShowAssignDrawer] = useState(false);
-    const [showStatusModal, setShowStatusModal] = useState(false);
     const [showExportModal, setShowExportModal] = useState(false);
     const [toast, setToast] = useState(null);
-    const [errors, setErrors] = useState(serverErrors);
-
-    const [form, setForm] = useState({
-        inspector_id: app.inspector_id || "",
-        scheduled_date: app.scheduled_date ? app.scheduled_date.split("T")[0] : "",
-        assigned_notes: app.assigned_notes || "",
-    });
-
-    const showToast = (msg, type = "success") => {
-        setToast({ msg, type });
-        setTimeout(() => setToast(null), 4000);
-    };
-
-    // Geospatial States
-    const [brgyMapData, setBrgyMapData] = useState(null);
+    const [statusDialog, setStatusDialog] = useState(null); // preset status or null
+    const [siteMapOpen, setSiteMapOpen] = useState(false);
     const [parcelMapData, setParcelMapData] = useState(null);
-    const [landUseMapData, setLandUseMapData] = useState(null);
-    const [activeParcelFeature, setActiveParcelFeature] = useState(null);
-    const [activeParcelIndex, setActiveParcelIndex] = useState(0);
-    const [pinLookupMap, setPinLookupMap] = useState({});
-    const rosarioCenter = [13.845, 121.2063];
-
-    useEffect(() => {
-        fetch("/api/map/barangay_boundary")
-            .then((res) => res.json())
-            .then((data) => setBrgyMapData(sanitizeGeoJSON(data)))
-            .catch(() => {});
-
-        fetch("/api/map/land_use_plan")
-            .then((res) => res.json())
-            .then((data) => setLandUseMapData(sanitizeGeoJSON(data)))
-            .catch(() => {});
-
-        fetch("/api/map/land_parcels")
-            .then((res) => {
-                if (!res.ok) throw new Error("Unable to load land parcel layer");
-                return res.json();
-            })
-            .then((data) => {
-                const sanitized = sanitizeGeoJSON(data);
-                setParcelMapData(sanitized);
-
-                const lookupMap = {};
-                (sanitized?.features || []).forEach((feature) => {
-                    const pin = feature?.properties?.property_index_number?.trim();
-                    if (!pin) return;
-                    lookupMap[pin] = feature;
-                });
-                setPinLookupMap(lookupMap);
-            })
-            .catch(() => {});
-    }, []);
-
-    useEffect(() => {
-        if (uniqueParcels && uniqueParcels.length > 0) {
-            const currentParcel = uniqueParcels[activeParcelIndex] || uniqueParcels[0];
-            const targetPin = currentParcel?.property_index_number?.trim();
-            if (targetPin && pinLookupMap[targetPin]) {
-                setActiveParcelFeature(pinLookupMap[targetPin]);
-            } else {
-                setActiveParcelFeature(null);
-            }
-        }
-    }, [pinLookupMap, activeParcelIndex, app, uniqueParcels]);
+    const [brgyMapData, setBrgyMapData] = useState(null);
+    const [liveStatuses, setLiveStatuses] = useState({});
+    const [refs, setRefs] = useState({ sb_ordinance_number: app.sb_ordinance_number || "", dar_clearance_ref: app.dar_clearance_ref || "" });
 
     useEffect(() => {
         const tick = () => {
             const now = new Date();
-            setClock(now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) + " · " + now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }));
+            setClock(`${now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })} · ${now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}`);
         };
         tick();
         const id = setInterval(tick, 1000);
         return () => clearInterval(id);
     }, []);
 
-    const handleAssignSubmit = (assignmentData) => {
-        showToast("Processing inspector assignment...", "success");
-        const finalForm = {
-            ...form,
-            inspector_id: assignmentData.inspector_id,
-            scheduled_date: assignmentData.scheduled_date,
-            assigned_notes: assignmentData.assigned_notes,
-        };
-        setForm(finalForm);
-        setSaving(true);
+    useEffect(() => {
+        loadBarangayBoundaries().then((d) => d && setBrgyMapData(d));
+        fetch("/api/map/land_parcels", { headers: { Accept: "application/json" } })
+            .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+            .then(setParcelMapData)
+            .catch(() => {});
+    }, []);
 
-        const payload = { ...finalForm, id: app.id };
+    useEffect(() => {
+        const first = Object.values(serverErrors || {})[0];
+        if (first) showToast(String(first), "error");
+    }, [serverErrors]);
 
-        router.post("/technical-review/update-status", payload, {
-            preserveScroll: true,
-            onSuccess: () => {
-                Swal.fire({
-                    icon: "success",
-                    title: "Inspector Assigned",
-                    text: "Field inspection has been scheduled successfully.",
-                    confirmButtonColor: "#2563eb",
-                    customClass: { popup: "rounded-2xl" },
-                });
-                setShowAssignDrawer(false);
-            },
-            onError: (errs) => {
-                setErrors(errs);
-                showToast(Object.values(errs)[0] || "Submission failed.", "error");
-            },
-            onFinish: () => setSaving(false),
-        });
+    const showToast = (msg, type = "success") => {
+        setToast({ msg, type });
+        setTimeout(() => setToast(null), 4500);
     };
 
-    const handleBatchSubmit = () => {
-        let isValid = true;
-        let errorMessage = "";
+    const parcels = useMemo(() => {
+        const byId = new Map();
+        (app.parcels || []).forEach((p) => byId.set(p.id, p));
+        return [...byId.values()];
+    }, [app.parcels]);
 
-        for (let i = 0; i < uniqueParcels.length; i++) {
-            const pId = uniqueParcels[i].id;
-            const review = parcelReviews[pId];
+    // Latest review round per parcel (reviews come from the controller, newest round first)
+    const latestReview = useMemo(() => {
+        const out = {};
+        [...technicalReviews]
+            .sort((a, b) => (b.review_round || 0) - (a.review_round || 0) || new Date(b.reviewed_at) - new Date(a.reviewed_at))
+            .forEach((r) => {
+                if (r.parcel_id != null && !out[r.parcel_id]) out[r.parcel_id] = r;
+            });
+        return out;
+    }, [technicalReviews]);
 
-            if (!review || !review.decision) {
-                isValid = false;
-                errorMessage = `Please select an evaluation decision for Parcel ${i + 1}.`;
-                break;
-            }
+    const featureByPin = useMemo(() => new Map((parcelMapData?.features || []).map((f) => [f.properties?.property_index_number?.trim(), f])), [parcelMapData]);
 
-            if (review.decision === "Declined" && !review.decision_reason?.trim()) {
-                isValid = false;
-                errorMessage = `Reason for declination is required for Parcel ${i + 1}.`;
-                break;
-            }
+    // Lots with their mapped shape and zoning check (Assessor class from the tax map vs the stored CLUP zone)
+    const lots = useMemo(
+        () =>
+            parcels.map((p, i) => {
+                const pin = p.property_index_number?.trim() || "";
+                const feature = pin ? featureByPin.get(pin) || null : null;
+                const assessor = feature?.properties?.land_use_class || "";
+                const check = getZoningCheck({ is_verified: true, cadastral_zone: assessor, land_use_class: p.land_use_class || "" }, isAmendment);
+                return { index: i, parcel: p, code: p.parcel_code || `P-${String(i + 1).padStart(2, "0")}`, pin, feature, assessor, check, color: CHECK_COLORS[check.key] };
+            }),
+        [parcels, featureByPin, isAmendment]
+    );
 
-            if (review.decision === "Needs Site Inspection" && (!review.inspector_id || !review.scheduled_date || !review.deadline_date)) {
-                isValid = false;
-                errorMessage = `Inspector, scheduled date, and deadline are required for Parcel ${i + 1}.`;
-                break;
+    const inspectorName = (id) => inspectors.find((i) => String(i.id) === String(id))?.name || (id ? `Inspector #${id}` : "—");
+    const inspectionStatusOf = (p) => (liveStatuses[p.id] || p.site_inspection?.status || "").toLowerCase();
+    const inspectionOpen = (p) => Boolean(p.site_inspection) && !DONE_INSPECTION.includes(inspectionStatusOf(p));
+
+    // Stable per-parcel callbacks: ParcelInspectionStatus refetches whenever its callback identity changes
+    const statusCallbacks = useRef({});
+    const onInspectionStatus = (parcelId) =>
+        (statusCallbacks.current[parcelId] ||= (status) => setLiveStatuses((prev) => (prev[parcelId] === status ? prev : { ...prev, [parcelId]: status })));
+
+    // ── Evaluation (Technical Review) ──
+    const [reviews, setReviews] = useState(() => {
+        const init = {};
+        (app.parcels || []).forEach((p) => {
+            const r = latestReview[p.id] || {};
+            const si = p.site_inspection || {};
+            init[p.id] = {
+                decision: r.decision || "",
+                decision_reason: r.decision_reason || "",
+                findings: r.findings || "",
+                inspector_id: si.inspector_id || "",
+                scheduled_date: si.scheduled_date ? String(si.scheduled_date).split("T")[0] : "",
+                deadline_date: si.deadline_date ? String(si.deadline_date).split("T")[0] : "",
+                assigned_notes: si.assigned_notes || "",
+            };
+        });
+        return init;
+    });
+    const setReview = (parcelId, field, value) => setReviews((prev) => ({ ...prev, [parcelId]: { ...prev[parcelId], [field]: value } }));
+    const canSubmitEvaluation = parcels.length > 0 && parcels.every((p) => !inspectionOpen(p));
+
+    const submitEvaluation = () => {
+        for (const [i, p] of parcels.entries()) {
+            const r = reviews[p.id] || {};
+            const code = lots[i].code;
+            const problem = !r.decision
+                ? `Choose an evaluation decision for ${code}.`
+                : r.decision === "Declined" && !r.decision_reason?.trim()
+                ? `Give the reason for declining ${code}.`
+                : r.decision === "Needs Site Inspection" && (!r.inspector_id || !r.scheduled_date || !r.deadline_date)
+                ? `Choose the inspector, inspection date and deadline for ${code}.`
+                : null;
+            if (problem) {
+                setTab("parcels");
+                setSelectedIndex(i);
+                showToast(problem, "error");
+                return;
             }
         }
-
-        if (!isValid) {
-            showToast(errorMessage, "error");
-            return;
-        }
-
         setSaving(true);
-        showToast("Processing batch review...", "success");
+        router.post(
+            "/technical-review/submit-batch",
+            { application_id: app.id, reviews },
+            {
+                preserveScroll: true,
+                onSuccess: () => showToast("Evaluation submitted."),
+                onError: (errs) => showToast(Object.values(errs)[0] || "Evaluation could not be submitted.", "error"),
+                onFinish: () => setSaving(false),
+            }
+        );
+    };
 
-        const payload = {
-            application_id: app.id,
-            reviews: parcelReviews,
-        };
+    const submitStatus = ({ new_status, remarks }) => {
+        setSaving(true);
+        router.post(
+            "/applications/update-status",
+            { id: app.id, new_status, remarks },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setStatusDialog(null);
+                    showToast(`Application moved to ${new_status}.`);
+                },
+                onError: (errs) => showToast(Object.values(errs)[0] || "Status could not be updated.", "error"),
+                onFinish: () => setSaving(false),
+            }
+        );
+    };
 
-        router.post("/technical-review/submit-batch", payload, {
-            onSuccess: () => {
-                Swal.fire({
-                    icon: "success",
-                    title: "Batch Review Submitted",
-                    text: "All parcel evaluations have been recorded successfully.",
-                    confirmButtonColor: "#2563eb",
-                    customClass: { popup: "rounded-2xl" },
-                });
-            },
-            onError: (errs) => {
-                setErrors(errs);
-                setSaving(false);
-                showToast("Batch submission failed. Please verify the input values.", "error");
-            },
+    const saveRefs = () => {
+        setSaving(true);
+        router.post(`/applications/${app.id}/amendment-refs`, refs, {
+            preserveScroll: true,
+            onSuccess: () => showToast("SB / DAR references saved."),
+            onError: (errs) => showToast(Object.values(errs)[0] || "References could not be saved.", "error"),
+            onFinish: () => setSaving(false),
         });
     };
 
@@ -505,17 +376,6 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
             showCancelButton: true,
             confirmButtonText: "Yes, sign out",
             cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
-                title: "text-lg font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-5",
-                confirmButton:
-                    "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
-                cancelButton:
-                    "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
-            },
         }).then((result) => {
             if (result.isConfirmed) {
                 performLogout();
@@ -523,357 +383,507 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
         });
     };
 
-    const formatFee = (fee) => "₱" + parseFloat(fee || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // ── What's next ──
+    const stageStart = useMemo(() => {
+        const entries = statusHistory.filter((h) => h.status === app.status);
+        return entries.length ? entries[entries.length - 1].created_at : app.updated_at || app.created_at;
+    }, [statusHistory, app.status]);
+    const daysInStage = workingDaysSince(stageStart);
+    const daysSinceFiling = workingDaysSince(app.created_at);
+    const overARTA = OFFICE_STAGES.includes(app.status) && daysSinceFiling !== null && daysSinceFiling > ARTA_WORKING_DAYS;
 
-    const brgyStyle = {
-        color: "#2563eb",
-        weight: 1.5,
-        opacity: 0.7,
-        fillOpacity: 0.04,
-        fillColor: "#3b82f6",
-    };
+    const pendingInspections = lots.filter((l) => inspectionOpen(l.parcel));
+    const undecided = lots.filter((l) => !reviews[l.parcel.id]?.decision);
+    const nextStage = STAGES[STAGES.indexOf(app.status) + 1];
+    const isFinal = app.status === "Released" || app.status === "Denied";
+    const deniedReasons = lots.map((l) => latestReview[l.parcel.id]).filter((r) => r?.decision === "Declined" && r.decision_reason);
 
-    const landUseStyles = {
-        Residential: { color: "#16a34a", fillColor: "#22c55e", fillOpacity: 0.25, weight: 1 },
-        Commercial: { color: "#d97706", fillColor: "#f59e0b", fillOpacity: 0.25, weight: 1 },
-        Agricultural: { color: "#65a30d", fillColor: "#84cc16", fillOpacity: 0.25, weight: 1 },
-        Industrial: { color: "#dc2626", fillColor: "#ef4444", fillOpacity: 0.25, weight: 1 },
-        "Agro-industrial": { color: "#7c3aed", fillColor: "#8b5cf6", fillOpacity: 0.25, weight: 1 },
-        default: { color: "#475569", fillColor: "#64748b", fillOpacity: 0.15, weight: 1 },
-    };
+    const primaryAction =
+        app.status === "Technical Review"
+            ? { label: saving ? "Submitting…" : "Submit evaluation", onClick: submitEvaluation, disabled: saving || !canSubmitEvaluation, title: canSubmitEvaluation ? "" : "Waiting on an open site inspection" }
+            : app.status === "Received"
+            ? { label: "Start technical review", onClick: () => setStatusDialog("Technical Review") }
+            : app.status === "Under Sangguniang Bayan"
+            ? { label: "Mark for release", onClick: () => setStatusDialog("For Release") }
+            : app.status === "For Release"
+            ? { label: "Mark as released", onClick: () => setStatusDialog("Released") }
+            : null;
 
-    const getLandUseStyle = (feature) => {
-        const classification = feature.properties?.class || feature.properties?.LAND_USE || "default";
-        return landUseStyles[classification] || landUseStyles.default;
-    };
+    // ── History ──
+    const lotCodeById = Object.fromEntries(lots.map((l) => [l.parcel.id, l.code]));
+    const history = useMemo(
+        () =>
+            [
+                ...auditTrail.map((a) => ({ at: a.performed_at, who: a.performed_by_name, title: AUDIT_LABELS[a.action] || String(a.action || "").replace(/_/g, " ").toLowerCase(), note: a.note, kind: "audit" })),
+                ...technicalReviews.map((r) => ({
+                    at: r.reviewed_at,
+                    who: r.reviewed_by_name,
+                    title: `${lotCodeById[r.parcel_id] || "Lot"} evaluated: ${r.decision}${r.review_round > 1 ? ` (round ${r.review_round})` : ""}`,
+                    note: [r.decision_reason, r.findings].filter(Boolean).join(" · "),
+                    kind: "review",
+                    decision: r.decision,
+                })),
+            ].sort((a, b) => new Date(b.at) - new Date(a.at)),
+        [auditTrail, technicalReviews, lots]
+    );
 
-    const getParcelStyle = (feature) => {
-        const isActive = activeParcelFeature && activeParcelFeature.properties?.property_index_number === feature.properties?.property_index_number;
-        return {
-            color: isActive ? "#ef4444" : "#2563eb",
-            weight: isActive ? 2.5 : 1.5,
-            opacity: 0.9,
-            fillOpacity: isActive ? 0.5 : 0.2,
-            fillColor: isActive ? "#ef4444" : "#3b82f6",
-        };
-    };
-
-    const handleGeneralStatusSubmit = (updateData) => {
-        setSaving(true);
-        router.post(
-            "/applications/update-status",
-            {
-                id: app.id,
-                new_status: updateData.new_status,
-                remarks: updateData.remarks,
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    Swal.fire({
-                        icon: "success",
-                        title: "Status Updated",
-                        text: `Application moved to ${updateData.new_status}.`,
-                        confirmButtonColor: "#2563eb",
-                        customClass: { popup: "rounded-2xl" },
-                    });
-                    setShowStatusModal(false);
-                },
-                onError: (errs) => {
-                    setErrors(errs);
-                    showToast(Object.values(errs)[0] || "Failed to update status.", "error");
-                },
-                onFinish: () => setSaving(false),
-            },
-        );
-    };
-
-    const activeParcelData = uniqueParcels?.[activeParcelIndex] || uniqueParcels?.[0] || {};
-    const siteInspection = activeParcelData?.site_inspection || null;
-    const effectiveActiveStatus = liveStatuses[activeParcelData?.id]?.toLowerCase() || siteInspection?.status?.toLowerCase();
-
-    const showDecisionButtons = !siteInspection || ["completed", "submitted"].includes(effectiveActiveStatus);
-    const hasCompletedInspection = siteInspection && ["completed", "submitted"].includes(effectiveActiveStatus);
-
-    const isBatchSubmitAllowed = uniqueParcels.every((parcel) => {
-        const effectiveStatus = liveStatuses[parcel.id]?.toLowerCase() || parcel.site_inspection?.status?.toLowerCase();
-        return !parcel.site_inspection || ["completed", "submitted"].includes(effectiveStatus);
-    });
+    const selectedLot = lots[selectedIndex];
 
     return (
         <>
-            <Head title={`Application: ${app.reference_number || "Detail"} | iMAPS`} />
+            <Head title={`${app.reference_number || "Application"} | iMAPS`} />
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-                
-                #dashboard-root {
-                    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                }
-                .font-mono {
-                    font-family: 'JetBrains Mono', monospace !important;
-                }
-
-                ::-webkit-scrollbar { width: 6px; height: 6px; }
-                ::-webkit-scrollbar-track { background: transparent; }
-                ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
-                ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+                #record-root { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                .font-mono { font-family: 'JetBrains Mono', monospace !important; }
                 .leaflet-container { width: 100%; height: 100%; z-index: 0; }
             `}</style>
 
-            <div id="dashboard-root" className="bg-slate-100/60 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
-                {/* ── UNIFIED NAVBAR ── */}
+            <div id="record-root" className="bg-slate-50 text-slate-800 h-screen flex flex-col overflow-hidden">
                 <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
                 <div className="flex-1 overflow-hidden relative flex flex-col min-w-0">
                     <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="applications" />
+                    {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/20 z-[750]" />}
 
-                    {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] z-[750] transition-opacity duration-300" />}
-
-                    {/* ── SUB-NAVBAR ── */}
-                    <div className="h-12 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between shrink-0 z-10 shadow-xs">
-                        <div className="flex items-center gap-3">
-                            <Link
-                                href="/applications"
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/90 text-slate-700 hover:text-slate-900 text-xs font-semibold border border-slate-200/80 transition-all shadow-2xs active:scale-95 group cursor-pointer"
-                                title="Return to All Records"
-                            >
-                                <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                    {/* Top bar */}
+                    <div className="h-12 bg-white border-b border-slate-200 px-4 flex items-center justify-between gap-3 shrink-0 z-10">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                            <Link href="/applications" className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
                                 </svg>
-                                <span>All Records</span>
+                                All records
                             </Link>
-                            <span className="text-slate-300">/</span>
-                            <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">{app.reference_number || `APP-${app.id}`}</span>
-                            <span className="hidden sm:inline text-xs text-slate-500 font-medium">· Brgy. {app.barangay}</span>
+                            <span className="text-slate-300" aria-hidden="true">/</span>
+                            <span className="font-mono text-xs font-semibold text-slate-800">{app.reference_number || `APP-${app.id}`}</span>
+                            <StatusPill status={app.status} />
+                            <span className="h-4 w-px bg-slate-200 mx-1 hidden xl:block" aria-hidden="true" />
+                            <StageProgress status={app.status} />
                         </div>
-
-                        <div className="flex items-center gap-2">
-                            {["For Release", "Released"].includes(app.status) && (
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setSiteMapOpen(true)}
+                                disabled={!lots.some((l) => l.feature)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 9V3h10v6M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 14h10v7H7z" />
+                                </svg>
+                                <span className="hidden sm:inline">Site map</span>
+                            </button>
+                            {!isFinal && app.status !== "Technical Review" && (
                                 <button
-                                    onClick={() => setShowExportModal(true)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
+                                    type="button"
+                                    onClick={() => setStatusDialog("Denied")}
+                                    className="px-3 py-1.5 rounded-full border border-slate-200 text-xs font-semibold text-rose-700 hover:bg-rose-50 cursor-pointer"
                                 >
-                                    <svg className="w-3.5 h-3.5 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                    </svg>
-                                    <span>Export Official Permit (.docx)</span>
+                                    Deny
                                 </button>
                             )}
-                            {auth?.user?.role !== "Admin" && (
+                            {primaryAction && (
                                 <button
-                                    onClick={() => setShowStatusModal(true)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all active:scale-98 cursor-pointer"
+                                    type="button"
+                                    onClick={primaryAction.onClick}
+                                    disabled={primaryAction.disabled}
+                                    title={primaryAction.title || undefined}
+                                    className="px-4 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
                                 >
-                                    <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                                        />
-                                    </svg>
-                                    <span>Update Status</span>
+                                    {primaryAction.label}
                                 </button>
                             )}
                         </div>
                     </div>
 
-                    {/* ── WORKSPACE CONTENT ── */}
-                    <main className="flex-1 w-full h-full flex flex-col bg-white overflow-hidden relative">
-                        {toast && (
-                            <div className="absolute top-4 right-4 z-[999] pointer-events-none">
-                                <div
-                                    className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm pointer-events-auto transition-all ${toast.type === "success" ? "bg-slate-900 text-white border-slate-800" : "bg-rose-50 border-rose-200 text-rose-800"}`}
-                                >
-                                    <p className="font-semibold text-xs flex-1">{toast.msg}</p>
-                                    <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-200">
-                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
+                    {toast && (
+                        <div className="absolute top-16 right-4 z-[999]" role="status">
+                            <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm ${toast.type === "error" ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-slate-900 text-white border-slate-800"}`}>
+                                <p className="font-semibold text-xs flex-1">{toast.msg}</p>
+                                <button type="button" onClick={() => setToast(null)} aria-label="Dismiss" className="opacity-60 hover:opacity-100 cursor-pointer">
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    <main className="flex-1 flex flex-col lg:flex-row min-h-0">
+                        {/* Map */}
+                        <div className="h-72 lg:h-auto lg:w-[55%] border-b lg:border-b-0 lg:border-r border-slate-300 shrink-0">
+                            <ApplicationMap
+                                lots={lots}
+                                parcelMapData={parcelMapData}
+                                brgyMapData={brgyMapData}
+                                barangay={app.barangay}
+                                selectedIndex={selectedIndex}
+                                onSelectLot={(i) => {
+                                    setSelectedIndex(i);
+                                    setTab("parcels");
+                                }}
+                                onPrint={() => setSiteMapOpen(true)}
+                            />
+                        </div>
+
+                        {/* Record panel */}
+                        <div className="flex-1 min-w-0 flex flex-col bg-white">
+                            <div className="px-5 pt-4 pb-3 border-b border-slate-100 shrink-0">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <h1 className="text-lg font-bold text-slate-900 leading-tight truncate">{app.corporation_name || app.applicant_name || "—"}</h1>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            {dash(app.application_type)} · Brgy. {dash(app.barangay)}
+                                        </p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <p className="text-[10px] uppercase tracking-wider text-slate-400">Assessment fee</p>
+                                        <p className="font-mono text-sm font-bold text-slate-900">{peso(app.assessment_fee)}</p>
+                                    </div>
+                                </div>
+                                <div className="mt-3 grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-full" role="tablist" aria-label="Record sections">
+                                    {[
+                                        { id: "overview", label: "Overview" },
+                                        { id: "parcels", label: `Parcels & evaluation (${lots.length})` },
+                                        { id: "history", label: "History" },
+                                    ].map((t) => (
+                                        <button
+                                            key={t.id}
+                                            type="button"
+                                            role="tab"
+                                            aria-selected={tab === t.id}
+                                            onClick={() => setTab(t.id)}
+                                            className={`py-1.5 rounded-full text-xs font-semibold cursor-pointer ${tab === t.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                                        >
+                                            {t.label}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
-                        )}
 
-                        <div className="w-full h-full bg-white flex flex-col lg:flex-row flex-1 min-h-0">
-                            {/* ── LEFT SIDE: MAP ── */}
-                            <div className="hidden lg:flex flex-col lg:w-1/2 bg-slate-50 border-r border-slate-200 relative">
-                                <div className="absolute inset-0 z-0">
-                                    <MapContainer center={rosarioCenter} zoom={12} zoomControl={false} scrollWheelZoom={true}>
-                                        <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                        {landUseMapData && <GeoJSON data={landUseMapData} style={getLandUseStyle} />}
-                                        {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
-                                        {parcelMapData && <GeoJSON key={activeParcelFeature?.properties?.property_index_number || "parcels"} data={parcelMapData} style={getParcelStyle} />}
-                                        <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />
-                                    </MapContainer>
-                                </div>
-
-                                {/* Floating HUD */}
-                                <div className="absolute bottom-6 left-6 z-10 pointer-events-none">
-                                    {uniqueParcels?.map(
-                                        (parcel, idx) =>
-                                            idx === activeParcelIndex &&
-                                            parcel.property_index_number && (
-                                                <div key={idx} className="bg-white/90 backdrop-blur-md p-3.5 rounded-xl shadow-sm border border-slate-200/60 pointer-events-auto min-w-[220px]">
-                                                    <div className="flex items-center justify-between gap-4 mb-1.5">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{parcel.parcel_code || `Parcel ${idx + 1}`}</span>
-                                                        <span className="text-[10px] font-mono text-slate-400">{parcel.property_index_number}</span>
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[13px] font-bold text-slate-800">{parcel.lot_number || "No Lot No."}</span>
-                                                        <span className="text-[11px] font-medium text-slate-500 mt-0.5">
-                                                            {parcel.lot_area_sqm || "0"} sq.m · Brgy. {app.barangay}
-                                                        </span>
-                                                    </div>
+                            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                                {tab === "overview" && (
+                                    <>
+                                        {/* What's next */}
+                                        <section className={`rounded-xl border p-4 ${overARTA ? "border-amber-300 bg-amber-50/40" : "border-slate-200 bg-slate-50"}`}>
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">What's next</p>
+                                                    <p className="text-sm font-bold text-slate-900 mt-0.5">
+                                                        {app.status === "Technical Review"
+                                                            ? pendingInspections.length
+                                                                ? "Waiting on site inspection"
+                                                                : "Record the evaluation"
+                                                            : app.status === "Received"
+                                                            ? "Start the technical review"
+                                                            : app.status === "Under Sangguniang Bayan"
+                                                            ? "Awaiting Sangguniang Bayan action"
+                                                            : app.status === "For Release"
+                                                            ? "Ready for release"
+                                                            : app.status === "Released"
+                                                            ? "Released to the applicant"
+                                                            : app.status === "Denied"
+                                                            ? "Application denied"
+                                                            : "—"}
+                                                    </p>
                                                 </div>
-                                            ),
-                                    )}
-                                </div>
-                                {/* Map Legend */}
-                                <div className="absolute top-4 right-4 z-10 pointer-events-auto bg-white/90 backdrop-blur-md p-3.5 rounded-xl shadow-sm border border-slate-200/60 min-w-[140px]">
-                                    <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">Map Legend</h4>
-                                    <div className="flex flex-col gap-2 text-[11px] font-medium text-slate-600">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="w-3 h-3 rounded-sm border-[2px] border-[#ef4444] bg-[#ef4444]/50 shadow-xs"></div>
-                                            <span>Selected Parcel</span>
-                                        </div>
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="w-3 h-3 rounded-sm border-[1.5px] border-[#2563eb] bg-[#3b82f6]/20"></div>
-                                            <span>Application Parcels</span>
-                                        </div>
-                                        <div className="flex items-center gap-2.5 mt-1 pt-2 border-t border-slate-100">
-                                            <div className="w-3 h-3 rounded-sm border border-slate-400/60 bg-slate-400/20"></div>
-                                            <span>Zoning / Land Use</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* ── RIGHT SIDE: EVALUATION & DETAILS ── */}
-                            <div className="flex-1 flex flex-col relative overflow-hidden lg:w-1/2">
-                                {/* Header Info */}
-                                <div className="bg-white px-8 py-6 border-b border-slate-100 shrink-0 z-10 flex items-start justify-between">
-                                    <div>
-                                        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight leading-none mb-1.5">{app.applicant_name}</h2>
-                                        <p className="text-[13px] text-slate-500 font-medium">{app.application_type}</p>
-                                    </div>
-                                    <div className="flex flex-col items-end gap-3">
-                                        <StatusBadge status={app.status} />
-                                        <div className="text-right">
-                                            <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">Assessment Fee</p>
-                                            <p className="font-mono text-[15px] font-bold text-slate-800">{formatFee(app.assessment_fee)}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex-1 p-5 sm:p-7 overflow-y-auto relative">
-                                    <div className="max-w-xl mx-auto space-y-5">
-                                        {app.status === "Technical Review" ? (
-                                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-                                                {/* Parcel Tabs */}
-                                                <div className="bg-slate-50/80 border-b border-slate-200/80 px-3 pt-2 flex gap-1.5 overflow-x-auto">
-                                                    {uniqueParcels?.map((parcel, idx) => {
-                                                        const isActive = activeParcelIndex === idx;
-                                                        const decision = parcelReviews[parcel.id]?.decision;
-
-                                                        const getIndicatorColor = () => {
-                                                            if (decision === "Approved") return "bg-emerald-500";
-                                                            if (decision === "Needs Site Inspection") return "bg-amber-500";
-                                                            if (decision === "Declined") return "bg-rose-500";
-                                                            return "bg-slate-300";
-                                                        };
-
+                                                {!isFinal && (
+                                                    <div className="text-right shrink-0">
+                                                        <p className="text-lg font-bold text-slate-900 leading-none">{daysInStage ?? "—"}</p>
+                                                        <p className="text-[10px] text-slate-500">working days in stage</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <ul className="mt-2.5 space-y-1 text-xs text-slate-700">
+                                                {app.status === "Technical Review" &&
+                                                    pendingInspections.map((l) => {
+                                                        const si = l.parcel.site_inspection;
+                                                        const overdue = si?.deadline_date && String(si.deadline_date).split("T")[0] < today();
                                                         return (
-                                                            <button
-                                                                key={parcel.id}
-                                                                type="button"
-                                                                onClick={() => setActiveParcelIndex(idx)}
-                                                                className={`px-3.5 py-2 text-xs font-semibold flex items-center gap-2 rounded-t-xl transition-all border-t border-x ${
-                                                                    isActive
-                                                                        ? "bg-white text-blue-700 border-slate-200 shadow-xs"
-                                                                        : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100/50"
-                                                                }`}
-                                                            >
-                                                                <span className={`w-2 h-2 rounded-full ${getIndicatorColor()}`} />
-                                                                <span>Parcel {idx + 1}</span>
-                                                                <span className="font-mono text-[10px] text-slate-400">({parcel.property_index_number?.slice(-4) || "---"})</span>
-                                                            </button>
+                                                            <li key={l.code}>
+                                                                <b>{l.code}</b>: inspection by {inspectorName(si.inspector_id)}, due {fmtDate(si.deadline_date)}
+                                                                {overdue && <span className="ml-1 font-semibold text-rose-700">· overdue</span>}
+                                                            </li>
                                                         );
                                                     })}
+                                                {app.status === "Technical Review" && !pendingInspections.length && undecided.length > 0 && (
+                                                    <li>
+                                                        Choose a decision for {undecided.map((l) => l.code).join(", ")} in <b>Parcels & evaluation</b>, then <b>Submit evaluation</b>.
+                                                    </li>
+                                                )}
+                                                {app.status === "Under Sangguniang Bayan" && isAmendment && <li>Record the SB ordinance number below once the petition is approved.</li>}
+                                                {app.status === "For Release" && <li>Release mode: {dash(app.preferred_release_mode)}</li>}
+                                                {app.status === "Denied" &&
+                                                    deniedReasons.map((r) => (
+                                                        <li key={r.id}>
+                                                            <b>{lotCodeById[r.parcel_id]}</b>: {r.decision_reason}
+                                                        </li>
+                                                    ))}
+                                                <li className="text-slate-500">
+                                                    Filed {fmtDate(app.created_at)}
+                                                    {daysSinceFiling !== null && ` · ${daysSinceFiling} working days ago`}
+                                                    {overARTA && (
+                                                        <span className="block font-semibold text-amber-800 mt-0.5">
+                                                            Beyond the {ARTA_WORKING_DAYS}-working-day processing time for highly technical applications (RA 11032).
+                                                        </span>
+                                                    )}
+                                                </li>
+                                            </ul>
+                                        </section>
+
+                                        <Section title="Applicant">
+                                            <Attr label="Name">{app.applicant_name}</Attr>
+                                            {app.corporation_name && <Attr label="Corporation">{app.corporation_name}</Attr>}
+                                            <Attr label="Phone">
+                                                {app.contact_number && (
+                                                    <a href={`tel:+63${String(app.contact_number).replace(/^0/, "")}`} className="font-mono underline underline-offset-2 hover:text-blue-700">
+                                                        +63 {app.contact_number}
+                                                    </a>
+                                                )}
+                                            </Attr>
+                                            <Attr label="Email">
+                                                {app.email && (
+                                                    <a href={`mailto:${app.email}`} className="underline underline-offset-2 hover:text-blue-700 break-all">
+                                                        {app.email}
+                                                    </a>
+                                                )}
+                                            </Attr>
+                                            <Attr label="Right over land">{app.right_over_land}</Attr>
+                                            {app.representative_name && (
+                                                <Attr label="Representative">
+                                                    {app.representative_name}
+                                                    {(app.representative_contact || app.representative_address) && (
+                                                        <span className="block text-[11px] font-normal text-slate-500">
+                                                            {[app.representative_contact && `+63 ${app.representative_contact}`, app.representative_address].filter(Boolean).join(" · ")}
+                                                        </span>
+                                                    )}
+                                                </Attr>
+                                            )}
+                                        </Section>
+
+                                        <Section title="Application">
+                                            <Attr label="Category">{app.application_type}</Attr>
+                                            <Attr label="Track">{isAmendment ? "Legislative amendment (Track B)" : "Standard clearance (Track A)"}</Attr>
+                                            {isAmendment && (
+                                                <Attr label="Target zoning">
+                                                    {app.target_land_use_class && (
+                                                        <span>
+                                                            {app.target_land_use_class}
+                                                            <span className="block text-[11px] font-normal text-slate-400">{getZoneInfo(app.target_land_use_class).label}</span>
+                                                        </span>
+                                                    )}
+                                                </Attr>
+                                            )}
+                                            <Attr label="Form no." mono>{app.form_number}</Attr>
+                                            <Attr label="Purpose">{app.purpose}</Attr>
+                                        </Section>
+
+                                        {isAmendment && (
+                                            <section className="rounded-xl border border-slate-200 bg-white">
+                                                <div className="px-4 py-2.5 border-b border-slate-100">
+                                                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Sangguniang Bayan / DAR</h3>
                                                 </div>
+                                                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    {[
+                                                        ["sb_ordinance_number", "SB ordinance no.", "e.g. Ord. No. 2026-014"],
+                                                        ["dar_clearance_ref", "DAR clearance ref.", "e.g. DAR-CC-2026-0021"],
+                                                    ].map(([field, label, placeholder]) => (
+                                                        <div key={field}>
+                                                            <label htmlFor={field} className="text-xs font-semibold text-slate-700">
+                                                                {label}
+                                                            </label>
+                                                            <input
+                                                                id={field}
+                                                                type="text"
+                                                                maxLength={100}
+                                                                value={refs[field]}
+                                                                onChange={(e) => setRefs((r) => ({ ...r, [field]: e.target.value }))}
+                                                                placeholder={placeholder}
+                                                                className="mt-1 w-full rounded-full border border-slate-200 px-4 py-2 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                    <div className="sm:col-span-2 flex justify-end">
+                                                        <button
+                                                            type="button"
+                                                            onClick={saveRefs}
+                                                            disabled={saving || (refs.sb_ordinance_number === (app.sb_ordinance_number || "") && refs.dar_clearance_ref === (app.dar_clearance_ref || ""))}
+                                                            className="px-4 py-1.5 rounded-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
+                                                        >
+                                                            Save references
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </section>
+                                        )}
 
-                                                {activeParcelData && (
-                                                    <div className="p-5 space-y-4" key={`parcel-${activeParcelData.id}`}>
-                                                        <ParcelInspectionStatus
-                                                            inspectionId={activeParcelData.site_inspection?.id}
-                                                            onStatusFetched={(status) => handleLiveStatusUpdate(activeParcelData.id, status)}
-                                                        />
+                                        <Section title="Project">
+                                            <Attr label="Project / business">{app.project_type_business_name}</Attr>
+                                            <Attr label="Building area">{app.building_area && `${Number(app.building_area).toLocaleString()} sq.m`}</Attr>
+                                            <Attr label="Area to develop">{app.area_to_develop && `${Number(app.area_to_develop).toLocaleString()} sq.m`}</Attr>
+                                            {app.number_of_saleable_lots != null && <Attr label="Saleable lots">{String(app.number_of_saleable_lots)}</Attr>}
+                                            <Attr label="Project cost">{app.project_cost && peso(app.project_cost)}</Attr>
+                                            <Attr label="Tenure">{app.project_tenure}</Attr>
+                                        </Section>
 
-                                                        {showDecisionButtons ? (
-                                                            <>
+                                        <Section title="Fees & receipt">
+                                            {[
+                                                ["Zoning certificate", app.zoning_certificate_fee],
+                                                ["Locational clearance", app.locational_clearance_fee],
+                                                ["Development permit", app.development_permit_fee],
+                                                ["Other fees", app.other_fees],
+                                                ["Penalty", app.penalty_fee],
+                                            ]
+                                                .filter(([, v]) => Number(v) > 0)
+                                                .map(([label, v]) => (
+                                                    <Attr key={label} label={label} mono>
+                                                        {peso(v)}
+                                                    </Attr>
+                                                ))}
+                                            <Attr label="Total" mono>
+                                                {peso(app.assessment_fee)}
+                                            </Attr>
+                                            <Attr label="OR no." mono>
+                                                {app.or_number}
+                                            </Attr>
+                                            <Attr label="Date of receipt">{app.date_of_receipt && fmtDate(app.date_of_receipt)}</Attr>
+                                            <Attr label="Release mode">{app.preferred_release_mode}</Attr>
+                                        </Section>
+
+                                        <Section title="Record">
+                                            <Attr label="Encoded by">{app.encoded_by_name}</Attr>
+                                            <Attr label="Filed">{fmtDate(app.created_at, true)}</Attr>
+                                            <Attr label="Remarks">{app.remarks}</Attr>
+                                        </Section>
+                                    </>
+                                )}
+
+                                {tab === "parcels" && (
+                                    <>
+                                        {app.status === "Technical Review" && !canSubmitEvaluation && (
+                                            <p className="text-xs text-slate-600 pl-3 border-l-2 border-amber-400">
+                                                Decisions are locked for lots with an open site inspection. The evaluation can be submitted once every inspection report is in.
+                                            </p>
+                                        )}
+                                        <ul className="rounded-xl border border-slate-200 divide-y divide-slate-200 overflow-hidden">
+                                            {lots.map((l) => {
+                                                const p = l.parcel;
+                                                const isOpen = selectedIndex === l.index;
+                                                const review = reviews[p.id] || {};
+                                                const latest = latestReview[p.id];
+                                                const locked = inspectionOpen(p);
+                                                const editable = app.status === "Technical Review" && !locked;
+                                                const shownDecision = app.status === "Technical Review" ? review.decision : latest?.decision;
+                                                const decisionDot = DECISIONS.find((d) => d.value === shownDecision)?.dot || "bg-slate-300";
+                                                return (
+                                                    <li key={p.id} className={isOpen ? "bg-white" : "bg-slate-50/60"}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedIndex(l.index)}
+                                                            aria-expanded={isOpen}
+                                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer hover:bg-slate-50"
+                                                        >
+                                                            <span className={`text-[11px] font-bold w-9 shrink-0 ${isOpen ? "text-slate-900" : "text-slate-500"}`}>{l.code}</span>
+                                                            <span className="font-mono text-[11px] text-slate-700 truncate">{l.pin || "No PIN"}</span>
+                                                            <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-600 shrink-0">
+                                                                <span className="w-1.5 h-1.5 rounded-full" style={{ background: l.color }} aria-hidden="true" />
+                                                                {l.check.label}
+                                                            </span>
+                                                            <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 shrink-0">
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${decisionDot}`} aria-hidden="true" />
+                                                                {locked ? "Inspection open" : shownDecision || "No decision"}
+                                                            </span>
+                                                        </button>
+
+                                                        {isOpen && (
+                                                            <div className="px-4 pb-4 space-y-4">
                                                                 <div>
-                                                                    <Label>Parcel Evaluation Decision</Label>
-                                                                    <div className="grid grid-cols-3 gap-2.5 mt-1">
-                                                                        {["Approved", "Needs Site Inspection", "Declined"].map((d) => {
-                                                                            const currentDecision = parcelReviews[activeParcelData.id]?.decision;
-                                                                            const isSelected = currentDecision === d;
-
-                                                                            let displayLabel = d;
-                                                                            if (d === "Needs Site Inspection" && hasCompletedInspection) {
-                                                                                displayLabel = "Re-inspect Parcel";
-                                                                            } else if (d === "Approved") {
-                                                                                displayLabel = "Approve";
-                                                                            } else if (d === "Declined") {
-                                                                                displayLabel = "Decline";
-                                                                            }
-
-                                                                            return (
-                                                                                <button
-                                                                                    type="button"
-                                                                                    key={d}
-                                                                                    onClick={() => handleParcelReviewChange(activeParcelData.id, "decision", d)}
-                                                                                    className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all border text-center ${
-                                                                                        isSelected
-                                                                                            ? d === "Approved"
-                                                                                                ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs ring-1 ring-emerald-500"
-                                                                                                : d === "Declined"
-                                                                                                  ? "bg-rose-50 border-rose-500 text-rose-700 shadow-xs ring-1 ring-rose-500"
-                                                                                                  : "bg-amber-50 border-amber-500 text-amber-700 shadow-xs ring-1 ring-amber-500"
-                                                                                            : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                                                                                    }`}
-                                                                                >
-                                                                                    {displayLabel}
-                                                                                </button>
-                                                                            );
-                                                                        })}
-                                                                    </div>
+                                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Attributes</p>
+                                                                    <dl className="text-xs rounded-lg border border-slate-200 px-3">
+                                                                        <Attr label="Owner">{p.owner_name}</Attr>
+                                                                        <Attr label="Lot / Survey" mono>
+                                                                            {[p.lot_number, p.survey_number].filter(Boolean).join(" · ")}
+                                                                        </Attr>
+                                                                        <Attr label="ARP / TD / TCT" mono>
+                                                                            {[p.arp_number, p.tax_dec_number, p.tct_number].filter(Boolean).join(" · ")}
+                                                                        </Attr>
+                                                                        <Attr label="Address">{p.location_address}</Attr>
+                                                                        <Attr label="Lot area">
+                                                                            <AreaComparison declared={p.lot_area_sqm} feature={l.feature} />
+                                                                        </Attr>
+                                                                        <Attr label="Assessor class">{l.assessor}</Attr>
+                                                                        <Attr label="CLUP zone">
+                                                                            {p.land_use_class && (
+                                                                                <span>
+                                                                                    {p.land_use_class}
+                                                                                    {getZoneInfo(p.land_use_class).label !== p.land_use_class && (
+                                                                                        <span className="block text-slate-400 font-normal">{getZoneInfo(p.land_use_class).label}</span>
+                                                                                    )}
+                                                                                </span>
+                                                                            )}
+                                                                        </Attr>
+                                                                        <Attr label="Zoning check">
+                                                                            <span className="inline-flex items-center gap-1.5">
+                                                                                <span className="w-1.5 h-1.5 rounded-full" style={{ background: l.color }} aria-hidden="true" />
+                                                                                {l.feature ? l.check.label : "Lot not on the tax map"}
+                                                                            </span>
+                                                                        </Attr>
+                                                                    </dl>
                                                                 </div>
 
-                                                                <div className="space-y-3.5">
-                                                                    {parcelReviews[activeParcelData.id]?.decision === "Declined" && (
-                                                                        <div>
-                                                                            <Label required>Reason for Declination</Label>
-                                                                            <Textarea
-                                                                                rows={2}
-                                                                                value={parcelReviews[activeParcelData.id]?.decision_reason || ""}
-                                                                                onChange={(e) => handleParcelReviewChange(activeParcelData.id, "decision_reason", e.target.value)}
-                                                                                placeholder="Specify the regulatory basis for declining this specific parcel..."
-                                                                                hasError={true}
-                                                                            />
-                                                                        </div>
-                                                                    )}
+                                                                {p.site_inspection?.id && (
+                                                                    <ParcelInspectionStatus inspectionId={p.site_inspection.id} onStatusFetched={onInspectionStatus(p.id)} />
+                                                                )}
 
-                                                                    {parcelReviews[activeParcelData.id]?.decision === "Needs Site Inspection" && (
-                                                                        <div className="p-4 rounded-2xl border border-amber-200 bg-amber-50/40 space-y-3">
-                                                                            <h4 className="text-xs font-bold text-amber-800">Schedule Field Task</h4>
-                                                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                                                                <div>
-                                                                                    <Label required>Select Inspector</Label>
+                                                                {editable ? (
+                                                                    <div className="space-y-3">
+                                                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Evaluation decision</p>
+                                                                        <div role="radiogroup" aria-label={`Evaluation decision for ${l.code}`} className="grid grid-cols-3 gap-1 p-1 rounded-full bg-slate-100">
+                                                                            {DECISIONS.map((d) => (
+                                                                                <label key={d.value} className="relative">
+                                                                                    <input
+                                                                                        type="radio"
+                                                                                        name={`decision-${p.id}`}
+                                                                                        value={d.value}
+                                                                                        checked={review.decision === d.value}
+                                                                                        onChange={() => setReview(p.id, "decision", d.value)}
+                                                                                        className="peer sr-only"
+                                                                                    />
+                                                                                    <span className="flex items-center justify-center gap-1.5 py-1.5 rounded-full text-[11px] font-semibold text-slate-500 cursor-pointer hover:text-slate-800 peer-checked:bg-white peer-checked:text-slate-900 peer-checked:shadow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500">
+                                                                                        <span className={`w-1.5 h-1.5 rounded-full ${d.dot}`} aria-hidden="true" />
+                                                                                        {d.value === "Needs Site Inspection" && DONE_INSPECTION.includes(inspectionStatusOf(p)) ? "Re-inspect" : d.label}
+                                                                                    </span>
+                                                                                </label>
+                                                                            ))}
+                                                                        </div>
+
+                                                                        {review.decision === "Declined" && (
+                                                                            <div>
+                                                                                <label htmlFor={`reason-${p.id}`} className="text-xs font-semibold text-slate-700">
+                                                                                    Reason for declining <span className="text-rose-500">*</span>
+                                                                                </label>
+                                                                                <textarea
+                                                                                    id={`reason-${p.id}`}
+                                                                                    rows={2}
+                                                                                    value={review.decision_reason}
+                                                                                    onChange={(e) => setReview(p.id, "decision_reason", e.target.value)}
+                                                                                    placeholder="Regulatory basis for declining this lot…"
+                                                                                    className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 resize-none"
+                                                                                />
+                                                                            </div>
+                                                                        )}
+
+                                                                        {review.decision === "Needs Site Inspection" && (
+                                                                            <div className="grid grid-cols-2 gap-2.5">
+                                                                                <div className="col-span-2">
+                                                                                    <label htmlFor={`inspector-${p.id}`} className="text-xs font-semibold text-slate-700">
+                                                                                        Inspector <span className="text-rose-500">*</span>
+                                                                                    </label>
                                                                                     <select
-                                                                                        value={parcelReviews[activeParcelData.id]?.inspector_id || ""}
-                                                                                        onChange={(e) => handleParcelReviewChange(activeParcelData.id, "inspector_id", e.target.value)}
-                                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
+                                                                                        id={`inspector-${p.id}`}
+                                                                                        value={review.inspector_id}
+                                                                                        onChange={(e) => setReview(p.id, "inspector_id", e.target.value)}
+                                                                                        className="mt-1 w-full rounded-full border border-slate-200 px-4 py-2 text-xs bg-white outline-none focus:border-blue-500"
                                                                                     >
-                                                                                        <option value="">-- Choose --</option>
+                                                                                        <option value="">Choose inspector</option>
                                                                                         {inspectors.map((i) => (
                                                                                             <option key={i.id} value={i.id}>
                                                                                                 {i.name}
@@ -882,198 +892,128 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                                                     </select>
                                                                                 </div>
                                                                                 <div>
-                                                                                    <Label required>Inspection Date</Label>
+                                                                                    <label htmlFor={`sched-${p.id}`} className="text-xs font-semibold text-slate-700">
+                                                                                        Inspection date <span className="text-rose-500">*</span>
+                                                                                    </label>
                                                                                     <input
+                                                                                        id={`sched-${p.id}`}
                                                                                         type="date"
-                                                                                        min={new Date().toISOString().split("T")[0]}
-                                                                                        value={parcelReviews[activeParcelData.id]?.scheduled_date || ""}
-                                                                                        onChange={(e) => handleParcelReviewChange(activeParcelData.id, "scheduled_date", e.target.value)}
-                                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
+                                                                                        min={today()}
+                                                                                        value={review.scheduled_date}
+                                                                                        onChange={(e) => setReview(p.id, "scheduled_date", e.target.value)}
+                                                                                        className="mt-1 w-full rounded-full border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500"
                                                                                     />
                                                                                 </div>
                                                                                 <div>
-                                                                                    <Label required>Deadline</Label>
+                                                                                    <label htmlFor={`deadline-${p.id}`} className="text-xs font-semibold text-slate-700">
+                                                                                        Deadline <span className="text-rose-500">*</span>
+                                                                                    </label>
                                                                                     <input
+                                                                                        id={`deadline-${p.id}`}
                                                                                         type="date"
-                                                                                        min={parcelReviews[activeParcelData.id]?.scheduled_date || new Date().toISOString().split("T")[0]}
-                                                                                        value={parcelReviews[activeParcelData.id]?.deadline_date || ""}
-                                                                                        onChange={(e) => handleParcelReviewChange(activeParcelData.id, "deadline_date", e.target.value)}
-                                                                                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-blue-500 bg-white"
+                                                                                        min={review.scheduled_date || today()}
+                                                                                        value={review.deadline_date}
+                                                                                        onChange={(e) => setReview(p.id, "deadline_date", e.target.value)}
+                                                                                        className="mt-1 w-full rounded-full border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500"
+                                                                                    />
+                                                                                </div>
+                                                                                <div className="col-span-2">
+                                                                                    <label htmlFor={`notes-${p.id}`} className="text-xs font-semibold text-slate-700">
+                                                                                        Instructions for the inspector
+                                                                                    </label>
+                                                                                    <textarea
+                                                                                        id={`notes-${p.id}`}
+                                                                                        rows={2}
+                                                                                        value={review.assigned_notes}
+                                                                                        onChange={(e) => setReview(p.id, "assigned_notes", e.target.value)}
+                                                                                        placeholder="What to verify on site…"
+                                                                                        className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500 resize-none"
                                                                                     />
                                                                                 </div>
                                                                             </div>
-                                                                            <div>
-                                                                                <Label>Inspection Focus & Notes</Label>
-                                                                                <Textarea
-                                                                                    rows={3}
-                                                                                    value={parcelReviews[activeParcelData.id]?.assigned_notes || ""}
-                                                                                    onChange={(e) => handleParcelReviewChange(activeParcelData.id, "assigned_notes", e.target.value)}
-                                                                                    placeholder="Add specific instructions or focus areas for the field inspection..."
-                                                                                />
-                                                                            </div>
+                                                                        )}
+
+                                                                        <div>
+                                                                            <label htmlFor={`findings-${p.id}`} className="text-xs font-semibold text-slate-700">
+                                                                                Evaluation notes (optional)
+                                                                            </label>
+                                                                            <textarea
+                                                                                id={`findings-${p.id}`}
+                                                                                rows={2}
+                                                                                value={review.findings}
+                                                                                onChange={(e) => setReview(p.id, "findings", e.target.value)}
+                                                                                placeholder="Findings recorded with the decision…"
+                                                                                className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500 resize-none"
+                                                                            />
                                                                         </div>
-                                                                    )}
-                                                                </div>
-                                                            </>
-                                                        ) : (
-                                                            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-                                                                <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center shrink-0 text-amber-700">
-                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                                    </svg>
-                                                                </div>
-                                                                <div>
-                                                                    <h4 className="text-xs font-bold text-amber-800">Inspection In Progress</h4>
-                                                                    <p className="text-xs text-amber-700 mt-0.5 leading-relaxed font-medium">
-                                                                        Evaluation decisions are temporarily locked while the site inspector processes this parcel.
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {isBatchSubmitAllowed && (
-                                                    <div className="bg-slate-50/80 p-4 border-t border-slate-200 flex justify-end gap-3">
-                                                        <button
-                                                            type="button"
-                                                            onClick={handleBatchSubmit}
-                                                            disabled={saving}
-                                                            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-xs shadow-sm transition-all active:scale-98"
-                                                        >
-                                                            {saving ? "Submitting..." : "Submit Batch Review"}
-                                                            {!saving && (
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                                </svg>
-                                                            )}
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ) : (
-                                            <div className="max-w-xl mx-auto">
-                                                {/* Status Pipeline Progress Tracker */}
-                                                <div className="py-5 border-b border-slate-100 flex flex-col md:flex-row items-center gap-5">
-                                                    <div className="w-full flex-1 flex items-center justify-between relative before:absolute before:inset-0 before:top-[12px] before:h-[2px] before:w-full before:bg-slate-100 z-0 px-2">
-                                                        {(() => {
-                                                            const showSbStep = app.status === "Under Sangguniang Bayan" || 
-                                                                               Boolean(app.route_to_sb) || 
-                                                                               app.application_stream?.toLowerCase() === "amendment";
-
-                                                            const pipelineSteps = showSbStep 
-                                                                ? ["Received", "Technical Review", "Under SB", "For Release", "Released"]
-                                                                : ["Received", "Technical Review", "For Release", "Released"];
-
-                                                            const pipelineStatusKeys = pipelineSteps.map(step => step === "Under SB" ? "Under Sangguniang Bayan" : step);
-                                                            const statusIndex = pipelineStatusKeys.indexOf(app.status);
-
-                                                            return pipelineSteps.map((step, idx) => {
-                                                                const stepKey = step === "Under SB" ? "Under Sangguniang Bayan" : step;
-                                                                const isCurrent = app.status === stepKey;
-                                                                const isDenied = app.status === "Denied";
-                                                                const isPassed = statusIndex > idx && !isDenied;
-
-                                                                return (
-                                                                    <div key={step} className="relative z-10 flex flex-col items-center gap-1.5 text-center w-16">
-                                                                        <div
-                                                                            className={`flex items-center justify-center w-6 h-6 rounded-full border-[2px] border-white shrink-0 transition-colors duration-300
-                                                                                ${isCurrent ? "bg-blue-600 ring-2 ring-blue-500/20" : isPassed ? "bg-emerald-500" : "bg-slate-200"}
-                                                                            `}
-                                                                        >
-                                                                            {isPassed ? (
-                                                                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                                                </svg>
-                                                                            ) : isCurrent ? (
-                                                                                <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                                                                            ) : null}
-                                                                        </div>
-                                                                        <span
-                                                                            className={`text-[10px] font-semibold leading-tight w-full break-words
-                                                                                ${isCurrent ? "text-blue-700" : isPassed ? "text-slate-700" : "text-slate-400"}
-                                                                            `}
-                                                                        >
-                                                                            {step}
-                                                                        </span>
                                                                     </div>
-                                                                );
-                                                            });
-                                                        })()}
-                                                    </div>
-                                                </div>
-
-                                                {/* Application Dossier */}
-                                                <div className="py-6 border-b border-slate-100">
-                                                    <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Dossier Parameters</h4>
-                                                    <div className="grid grid-cols-2 gap-y-4 gap-x-5 text-sm">
-                                                        <div>
-                                                            <p className="text-[10px] text-slate-400 font-medium mb-0.5">Form Number</p>
-                                                            <p className="font-semibold text-slate-800">{app.form_number || "—"}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[10px] text-slate-400 font-medium mb-0.5">Land Use Class</p>
-                                                            <p className="font-semibold text-slate-800">{app.land_use_class || "—"}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[10px] text-slate-400 font-medium mb-0.5">Primary Contact</p>
-                                                            <p className="font-mono font-medium text-slate-800">{app.contact_number ? `+63 ${app.contact_number}` : "—"}</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[10px] text-slate-400 font-medium mb-0.5">Representative</p>
-                                                            <p className="font-semibold text-slate-800">{app.representative_name || "N/A"}</p>
-                                                        </div>
-                                                        {app.purpose && (
-                                                            <div className="col-span-2 pt-2">
-                                                                <p className="text-[10px] text-slate-400 font-medium mb-1">Operational Purpose</p>
-                                                                <p className="text-[13px] font-medium text-slate-700 leading-relaxed">{app.purpose}</p>
+                                                                ) : (
+                                                                    latest && (
+                                                                        <div className="rounded-lg border border-slate-200 px-3 py-2 text-xs">
+                                                                            <p className="font-semibold text-slate-800">
+                                                                                {latest.decision}
+                                                                                <span className="font-normal text-slate-500">
+                                                                                    {" "}
+                                                                                    · {dash(latest.reviewed_by_name)} · {fmtDate(latest.reviewed_at)}
+                                                                                    {latest.review_round > 1 && ` · round ${latest.review_round}`}
+                                                                                </span>
+                                                                            </p>
+                                                                            {latest.decision_reason && <p className="text-slate-600 mt-0.5">{latest.decision_reason}</p>}
+                                                                            {latest.findings && <p className="text-slate-600 mt-0.5">{latest.findings}</p>}
+                                                                        </div>
+                                                                    )
+                                                                )}
                                                             </div>
                                                         )}
-                                                    </div>
-                                                </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
 
-                                                {/* Involved Parcels List */}
-                                                <div className="py-6">
-                                                    <h4 className="text-xs font-bold text-slate-700 mb-3.5">Attached Spatial Parcels ({uniqueParcels?.length || 0})</h4>
-                                                    <div className="space-y-2.5">
-                                                        {uniqueParcels?.map((parcel, idx) => (
-                                                            <div
-                                                                key={parcel.id}
-                                                                onClick={() => setActiveParcelIndex(idx)}
-                                                                className={`p-4 border rounded-xl cursor-pointer transition-all flex justify-between items-center ${
-                                                                    activeParcelIndex === idx
-                                                                        ? "bg-blue-50/80 border-blue-300 ring-1 ring-blue-500/20 shadow-xs"
-                                                                        : "bg-slate-50/70 border-slate-200 hover:border-slate-300 hover:bg-white"
-                                                                }`}
-                                                            >
-                                                                <div>
-                                                                    <p className="text-[13px] font-bold text-slate-900 mb-1">
-                                                                        Parcel {idx + 1}
-                                                                        <span className="text-slate-500 font-mono text-[11px] font-medium ml-2">({parcel.property_index_number || "No PIN"})</span>
-                                                                    </p>
-                                                                    <p className="text-[11px] text-slate-500 font-medium">
-                                                                        {parcel.location_address ? parcel.location_address : `Brgy. ${parcel.barangay || app.barangay || "—"}`}
-                                                                    </p>
-                                                                    <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                                                                        Owner: {parcel.owner_name || app.applicant_name || "—"} <span className="mx-1.5 text-slate-300">•</span> {parcel.lot_number || "No Lot"} <span className="mx-1.5 text-slate-300">•</span> {parcel.lot_area_sqm || "—"} SQ.M
-                                                                    </p>
-                                                                    <p className="text-[11px] text-blue-700 mt-1 font-semibold">Land Use: {parcel.land_use_class || app.land_use_class || "—"}</p>
-                                                                </div>
-                                                                <span
-                                                                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border transition-all uppercase tracking-wider ${
-                                                                        activeParcelIndex === idx ? "bg-blue-600 text-white border-blue-600 shadow-xs" : "bg-white text-slate-500 border-slate-200"
-                                                                    }`}
-                                                                >
-                                                                    {activeParcelIndex === idx ? "Viewing" : "View"}
-                                                                </span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
+                                        {app.status === "Technical Review" && (
+                                            <div className="flex items-center justify-end gap-3">
+                                                <span className="text-[11px] text-slate-500">
+                                                    {lots.length - undecided.length} of {lots.length} decided
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={submitEvaluation}
+                                                    disabled={saving || !canSubmitEvaluation}
+                                                    className="px-5 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
+                                                >
+                                                    {saving ? "Submitting…" : "Submit evaluation"}
+                                                </button>
                                             </div>
                                         )}
-                                    </div>
-                                </div>
+                                    </>
+                                )}
+
+                                {tab === "history" && (
+                                    <>
+                                        {history.length === 0 ? (
+                                            <p className="text-xs text-slate-500">No recorded activity yet.</p>
+                                        ) : (
+                                            <ol className="relative border-l border-slate-200 ml-2 space-y-4">
+                                                {history.map((h, i) => (
+                                                    <li key={i} className="ml-4">
+                                                        <span
+                                                            className={`absolute -left-[5px] mt-1 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                                                                h.kind === "review" ? DECISIONS.find((d) => d.value === h.decision)?.dot || "bg-slate-400" : "bg-slate-400"
+                                                            }`}
+                                                            aria-hidden="true"
+                                                        />
+                                                        <p className="text-xs font-semibold text-slate-900 first-letter:uppercase">{h.title}</p>
+                                                        <p className="text-[11px] text-slate-500">
+                                                            {fmtDate(h.at, true)}
+                                                            {h.who && ` · ${h.who}`}
+                                                        </p>
+                                                        {h.note && <p className="text-[11px] text-slate-600 mt-0.5 whitespace-pre-line">{h.note}</p>}
+                                                    </li>
+                                                ))}
+                                            </ol>
+                                        )}
+                                    </>
+                                )}
                             </div>
                         </div>
                     </main>
@@ -1082,7 +1022,6 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
 
             {showAssignDrawer && <AssignInspectorDrawer onClose={() => setShowAssignDrawer(false)} onSubmit={handleAssignSubmit} saving={saving} inspectors={inspectors} />}
             {showStatusModal && <UpdateStatusDrawer onClose={() => setShowStatusModal(false)} onSubmit={handleGeneralStatusSubmit} saving={saving} currentStatus={app.status} />}
-            {showExportModal && <ExportPermitModal app={app} userName={userName} onClose={() => setShowExportModal(false)} />}
         </>
     );
 }
@@ -1315,3 +1254,48 @@ function ExportPermitModal({ app = {}, userName = "Planning Officer", onClose })
     );
 }
 
+
+class ShowErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error, errorInfo) {
+        console.error("Show component crashed:", error, errorInfo);
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+                    <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-6 text-center">
+                        <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <h2 className="text-base font-bold text-slate-900 mb-1">Failed to load application record</h2>
+                        <p className="text-xs text-slate-500 mb-4">{this.state.error?.message || "An unexpected error occurred while rendering this application."}</p>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors cursor-pointer"
+                        >
+                            Reload page
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+export default function Show(props) {
+    return (
+        <ShowErrorBoundary>
+            <ShowInner {...props} />
+        </ShowErrorBoundary>
+    );
+}

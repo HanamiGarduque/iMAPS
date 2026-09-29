@@ -17,6 +17,18 @@ class MapController extends Controller
     // served from cache until the next import.
     private const CACHE_TTL_DAYS = 30;
     private const VERSION_KEY = 'map_layers:version';
+    // Bump when buildGeoJson output changes, so cached bodies from the old code are not served.
+    private const GEOMETRY_REV = '4';
+
+    // ~5.5 m tolerance collapses a 25 m tax lot into a rough box, so cadastral
+    // parcels keep full detail. Barangays are simplified one polygon at a time,
+    // which pulled shared borders apart (7,292 m² of overlap vs 37 m² in the
+    // source); at 48 polygons / ~11.6k vertices they are cheap to send whole.
+    private const SIMPLIFY_TOLERANCE = [
+        'land_parcels' => 0.0,
+        'barangay_boundary' => 0.0,
+    ];
+    private const DEFAULT_SIMPLIFY_TOLERANCE = 0.00005;
 
     // Called after a shapefile import so the next request rebuilds from the new
     // table. Bumping a version (rather than deleting keys) also retires every
@@ -30,7 +42,8 @@ class MapController extends Controller
     // one who pays for a cold build. Measured cold: rosario_boundary ~2s,
     // barangay_boundary ~0.3s, land_use_plan ~19.5s — that last one used to be
     // part of every dashboard load.
-    public static function warmLayerCache(array $layers = ['rosario_boundary', 'barangay_boundary', 'land_use_plan']): array
+    // land_parcels (~4.2k lots, ~1.6s cold) is warmed too: the application encoder's map loads it on every visit.
+    public static function warmLayerCache(array $layers = ['rosario_boundary', 'barangay_boundary', 'land_use_plan', 'land_parcels']): array
     {
         $timings = [];
         $controller = new self();
@@ -45,7 +58,7 @@ class MapController extends Controller
     private function cacheKey(string $layer, string $scope): string
     {
         $version = Cache::rememberForever(self::VERSION_KEY, fn () => '1');
-        return 'map_layers:' . $version . ':' . $layer . ':' . md5(strtolower($scope));
+        return 'map_layers:' . $version . ':r' . self::GEOMETRY_REV . ':' . $layer . ':' . md5(strtolower($scope));
     }
 
     public function getLayer($layer, Request $request)
@@ -83,12 +96,17 @@ class MapController extends Controller
         }
 
         $key = $this->cacheKey($layer, $barangay);
+        // One barangay's zones (≤ ~17.5k vertices) are cheap to send whole, and lot-scale zoning checks
+        // need true edges; the ~5.5 m simplification is only worth it for the whole-municipality layer.
+        $tolerance = $scopeClause !== ''
+            ? 0.0
+            : (self::SIMPLIFY_TOLERANCE[$layer] ?? self::DEFAULT_SIMPLIFY_TOLERANCE);
 
         // The ETag lives under its own small key so a revalidation (the common
         // case after first load) never has to read the multi-megabyte body.
         $etag = Cache::get($key . ':etag');
         if ($etag === null) {
-            $geojson = $this->buildGeoJson($tableName, $scopeClause, $bindings);
+            $geojson = $this->buildGeoJson($tableName, $scopeClause, $bindings, $tolerance);
             $etag = '"' . md5($geojson) . '"';
 
             $ttl = now()->addDays(self::CACHE_TTL_DAYS);
@@ -132,14 +150,26 @@ class MapController extends Controller
         $body = Cache::get($key . ':body');
         if ($body === null) {
             // Evicted between the ETag check and now: rebuild inline.
-            $body = $this->buildGeoJson($tableName, $scopeClause, $bindings);
+            $body = $this->buildGeoJson($tableName, $scopeClause, $bindings, $tolerance);
         }
 
         return response($body, 200, $headers + ['Content-Length' => (string) strlen($body)]);
     }
 
-    private function buildGeoJson(string $tableName, string $scopeClause, array $bindings): string
+    private function buildGeoJson(string $tableName, string $scopeClause, array $bindings, float $tolerance): string
     {
+        $transformed = "CASE
+                        WHEN ST_XMax(geom) > 5000000
+                        THEN ST_Transform(ST_SetSRID(geom, 3857), 4326)
+                        WHEN ST_XMax(geom) > 180 OR ST_YMax(geom) > 90
+                        THEN ST_Transform(ST_SetSRID(geom, 25393), 4326)
+                        ELSE geom
+                      END";
+        // $tolerance comes from the class constants above, never from the request.
+        $geomExpr = $tolerance > 0
+            ? sprintf('ST_SimplifyPreserveTopology(%s, %F)', $transformed, $tolerance)
+            : $transformed;
+
         // 1. Transform coordinates to WGS84 (EPSG:4326)
         // 2. Filter out rogue/corrupt geometries that fall outside the Philippines bounds
         // 3. Drop shape_leng / shape_area: computed by the GIS export, read by
@@ -156,16 +186,7 @@ class MapController extends Controller
                 'properties', to_jsonb(inputs) - 'geom' - 'transformed_geom' - 'shape_leng' - 'shape_area'
               ) AS feature
               FROM (
-                  SELECT *,
-                  ST_SimplifyPreserveTopology(
-                      CASE 
-                        WHEN ST_XMax(geom) > 5000000 
-                        THEN ST_Transform(ST_SetSRID(geom, 3857), 4326)
-                        WHEN ST_XMax(geom) > 180 OR ST_YMax(geom) > 90 
-                        THEN ST_Transform(ST_SetSRID(geom, 25393), 4326)
-                        ELSE geom 
-                      END, 
-                  0.00005) AS transformed_geom
+                  SELECT *, $geomExpr AS transformed_geom
                   FROM $tableName WHERE geom IS NOT NULL $scopeClause
               ) inputs
               WHERE ST_XMin(transformed_geom) BETWEEN 115 AND 128 

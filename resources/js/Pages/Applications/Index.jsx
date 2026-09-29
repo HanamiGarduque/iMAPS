@@ -11,42 +11,77 @@ import "leaflet/dist/leaflet.css";
 // ── Status Configuration ──
 const STATUS_CONFIG = {
     Received: {
-        bg: "bg-emerald-50 text-emerald-800 border-emerald-300",
         dot: "bg-emerald-500",
         markerColor: "#10b981",
         label: "Received",
+        badge: "bg-emerald-50 text-emerald-700 border-emerald-200/80",
     },
     "Technical Review": {
-        bg: "bg-amber-50 text-amber-800 border-amber-300",
         dot: "bg-amber-500",
         markerColor: "#f59e0b",
         label: "Technical Review",
+        badge: "bg-amber-50 text-amber-700 border-amber-200/80",
     },
     "Under Sangguniang Bayan": {
-        bg: "bg-purple-50 text-purple-800 border-purple-300",
         dot: "bg-purple-500",
         markerColor: "#a855f7",
         label: "SB Review",
+        badge: "bg-purple-50 text-purple-700 border-purple-200/80",
     },
     "For Release": {
-        bg: "bg-sky-50 text-sky-800 border-sky-300",
         dot: "bg-sky-500",
         markerColor: "#0ea5e9",
         label: "For Release",
+        badge: "bg-sky-50 text-sky-700 border-sky-200/80",
     },
     Released: {
-        bg: "bg-indigo-50 text-indigo-800 border-indigo-300",
-        dot: "bg-indigo-600",
-        markerColor: "#4f46e5",
+        dot: "bg-blue-600",
+        markerColor: "#2563eb",
         label: "Released",
+        badge: "bg-blue-50 text-blue-700 border-blue-200/80",
     },
     Denied: {
-        bg: "bg-rose-50 text-rose-800 border-rose-300",
         dot: "bg-rose-500",
         markerColor: "#f43f5e",
         label: "Denied",
+        badge: "bg-rose-50 text-rose-700 border-rose-200/80",
     },
 };
+
+const TYPE_BADGES = {
+    "Locational Clearance": "bg-blue-50 text-blue-700 border-blue-200/80",
+    "Zoning Certificate": "bg-emerald-50 text-emerald-700 border-emerald-200/80",
+    "Development Permit": "bg-amber-50 text-amber-700 border-amber-200/80",
+    "Preliminary Approval and Locational Clearance (PALC)": "bg-purple-50 text-purple-700 border-purple-200/80",
+    "Petition for Rezoning": "bg-rose-50 text-rose-700 border-rose-200/80",
+    "Petition for Reclassification": "bg-pink-50 text-pink-700 border-pink-200/80",
+};
+
+const AVATAR_PALETTES = [
+    "bg-blue-100 text-blue-700 border-blue-200",
+    "bg-indigo-100 text-indigo-700 border-indigo-200",
+    "bg-emerald-100 text-emerald-700 border-emerald-200",
+    "bg-amber-100 text-amber-700 border-amber-200",
+    "bg-purple-100 text-purple-700 border-purple-200",
+    "bg-rose-100 text-rose-700 border-rose-200",
+    "bg-teal-100 text-teal-700 border-teal-200",
+];
+
+function getInitials(name) {
+    if (!name) return "AP";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function getAvatarPalette(name) {
+    if (!name) return AVATAR_PALETTES[0];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return AVATAR_PALETTES[Math.abs(hash) % AVATAR_PALETTES.length];
+}
 
 const LAND_USE_BADGES = {
     Residential: "bg-emerald-50 text-emerald-800 border-emerald-300 font-bold",
@@ -92,13 +127,13 @@ const BARANGAY_COORDS = {
 };
 
 const SORT_OPTIONS = [
-    { value: "newest", label: "Newest Filing First" },
-    { value: "oldest", label: "Oldest Filing First" },
-    { value: "fee_desc", label: "Highest Fee (₱)" },
-    { value: "fee_asc", label: "Lowest Fee (₱)" },
-    { value: "applicant_asc", label: "Applicant Name (A-Z)" },
-    { value: "applicant_desc", label: "Applicant Name (Z-A)" },
-    { value: "ref_asc", label: "Application Ref (A-Z)" },
+    { value: "newest", label: "Newest filing" },
+    { value: "oldest", label: "Oldest filing" },
+    { value: "fee_desc", label: "Highest fee" },
+    { value: "fee_asc", label: "Lowest fee" },
+    { value: "applicant_asc", label: "Applicant A–Z" },
+    { value: "applicant_desc", label: "Applicant Z–A" },
+    { value: "ref_asc", label: "Reference A–Z" },
 ];
 
 const DATE_PRESETS = [
@@ -313,15 +348,72 @@ const SAMPLE_APPLICATIONS = [
     },
 ];
 
+const getDocColor = (type) => {
+    if (type === "Locational Clearance") return "#3B82F6"; // blue
+    if (type === "Zoning Certificate") return "#10B981"; // emerald
+    if (type === "Development Permit") return "#F59E0B"; // amber
+    if (type === "Preliminary Approval and Locational Clearance (PALC)") return "#8B5CF6"; // purple
+    if (type === "Petition for Rezoning") return "#EF4444"; // red
+    if (type === "Petition for Reclassification") return "#F472B6"; // pink
+    return "#CBD5E1"; // slate
+};
+
+const getFoldColor = (type) => {
+    if (type === "Locational Clearance") return "#2563EB";
+    if (type === "Zoning Certificate") return "#059669";
+    if (type === "Development Permit") return "#D97706";
+    if (type === "Preliminary Approval and Locational Clearance (PALC)") return "#7C3AED";
+    if (type === "Petition for Rezoning") return "#DC2626";
+    if (type === "Petition for Reclassification") return "#DB2777";
+    return "#94A3B8";
+};
+
+const PROGRESS_STEPS = [
+    { key: "Received", label: "Received" },
+    { key: "Technical Review", label: "Technical review" },
+    { key: "Under Sangguniang Bayan", label: "Sangguniang Bayan" },
+    { key: "For Release", label: "Issued / ready for release" },
+];
+
+function getProgressSteps(status) {
+    if (status === "Denied") {
+        return PROGRESS_STEPS.map((step) => ({ ...step, state: "denied" }));
+    }
+    const currentIndex = status === "Released"
+        ? PROGRESS_STEPS.length
+        : PROGRESS_STEPS.findIndex((step) => step.key === status);
+    return PROGRESS_STEPS.map((step, idx) => ({
+        ...step,
+        state: idx < currentIndex ? "done" : idx === currentIndex ? "current" : "pending",
+    }));
+}
+
 function StatusBadge({ status }) {
     const s = status || "Received";
-    const cfg = STATUS_CONFIG[s] || { bg: "bg-slate-100 text-slate-700 border-slate-200", dot: "bg-slate-400", label: s };
+    const cfg = STATUS_CONFIG[s] || { dot: "bg-slate-400", label: s };
     return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border shadow-2xs ${cfg.bg}`}>
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold whitespace-nowrap">
             <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} shrink-0`} />
             {cfg.label}
         </span>
     );
+}
+
+function timeAgo(d) {
+    const date = new Date(d);
+    if (!d || isNaN(date.getTime())) return "";
+    const days = Math.floor((Date.now() - date.getTime()) / 86400000);
+    if (days <= 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days < 30) return `${days} days ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months} month${months > 1 ? "s" : ""} ago`;
+    const years = Math.floor(days / 365);
+    return `${years} year${years > 1 ? "s" : ""} ago`;
+}
+
+function splitTypes(type) {
+    return String(type || "").split(",").map((t) => t.trim()).filter(Boolean);
 }
 
 // ── Leaflet Custom Marker Icon Generator ──
@@ -359,6 +451,9 @@ function DropdownSelect({
     allLabel = "All",
     prefix = "",
     withSearch = false,
+    isActive = undefined,
+    variant = "default",
+    label = "",
 }) {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -400,7 +495,11 @@ function DropdownSelect({
     }, [options, searchQuery, withSearch]);
 
     const currentSelectedLabel = useMemo(() => {
-        if (!value) return allLabel;
+        if (!value || value === "newest") {
+            const defaultFound = options.find((opt) => getOptionValue(opt) === value);
+            if (defaultFound && value === "newest") return getOptionLabel(defaultFound);
+            return allLabel;
+        }
         if (Array.isArray(options)) {
             const found = options.find((opt) => getOptionValue(opt) === value);
             if (found) return getOptionLabel(found);
@@ -437,17 +536,56 @@ function DropdownSelect({
         }
     };
 
+    const isCurrentlyActive = isActive !== undefined ? isActive : Boolean(value);
+
     return (
-        <div className="relative w-full" ref={dropdownRef} onKeyDown={handleKeyDown}>
+        <div className={`relative ${variant === "default" ? "w-full" : ""}`} ref={dropdownRef} onKeyDown={handleKeyDown}>
+            {variant === "pill" ? (
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(!isOpen)}
+                    aria-haspopup="listbox"
+                    aria-expanded={isOpen}
+                    className={`h-9 px-3 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                        isCurrentlyActive
+                            ? "border-blue-300 bg-blue-50 text-blue-800 font-semibold"
+                            : "border-dashed border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-800"
+                    }`}
+                >
+                    {isCurrentlyActive ? (
+                        <span className="max-w-[160px] truncate">{label}: {currentSelectedLabel}</span>
+                    ) : (
+                        <>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                            </svg>
+                            <span>{label}</span>
+                        </>
+                    )}
+                </button>
+            ) : variant === "ghost" ? (
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(!isOpen)}
+                    aria-haspopup="listbox"
+                    aria-expanded={isOpen}
+                    className="h-9 px-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
+                    </svg>
+                    <span>{currentSelectedLabel}</span>
+                </button>
+            ) : (
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className={`w-full text-xs font-medium px-3 py-2 rounded-xl border transition-all flex items-center justify-between gap-2 shadow-xs ${
+                className={`w-full text-xs font-medium px-3 py-1.5 rounded-lg border transition-all flex items-center justify-between gap-2 shadow-2xs cursor-pointer ${
                     isOpen
-                        ? "border-blue-500 ring-2 ring-blue-500/10 bg-white text-slate-900 shadow-xs"
-                        : value
-                        ? "border-blue-300 bg-blue-50/50 text-blue-900 font-semibold hover:border-blue-400"
-                        : "border-slate-200 bg-slate-50/60 hover:bg-white text-slate-700 hover:border-slate-300"
+                        ? "border-blue-600 ring-1 ring-blue-600/20 bg-white text-slate-900"
+                        : isCurrentlyActive
+                        ? "border-blue-400 bg-blue-50/60 text-blue-900 font-semibold hover:border-blue-500"
+                        : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:border-slate-300"
                 }`}
             >
                 <span className="truncate">{currentSelectedLabel}</span>
@@ -461,9 +599,10 @@ function DropdownSelect({
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                 </svg>
             </button>
+            )}
 
             {isOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white rounded-2xl shadow-xl border border-slate-200/90 p-2 min-w-[210px] max-w-sm animate-in fade-in zoom-in-95 duration-150">
+                <div className={`absolute top-full mt-1 z-50 bg-white rounded-xl shadow-lg border border-slate-200/90 p-1.5 min-w-[210px] max-w-sm animate-in fade-in zoom-in-95 duration-100 ${variant === "ghost" ? "right-0" : variant === "pill" ? "left-0" : "left-0 right-0"}`}>
                     {withSearch && (
                         <div className="relative mb-1.5">
                             <svg
@@ -576,31 +715,24 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const [currentPage, setCurrentPage] = useState(Number(urlParams.get("page")) || 1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [copiedRef, setCopiedRef] = useState(null);
-    const [viewMode, setViewMode] = useState("folder"); // 'folder' | 'kanban'
+    const [viewMode, setViewMode] = useState("list"); // 'list' | 'folder'
     const [selectedFolder, setSelectedFolder] = useState(null);
-    const [isCompact, setIsCompact] = useState(false);
+    const [selectedApplicant, setSelectedApplicant] = useState(null);
+    const [peekItem, setPeekItem] = useState(null);
+    const [selectedIds, setSelectedIds] = useState([]);
+    const [moreOpen, setMoreOpen] = useState(false);
 
-    // ── NEW FEATURES STATE ──
-    // 1. Date Range Filter
+    // ── FILTER STATES ──
     const [dateRangePreset, setDateRangePreset] = useState(urlParams.get("date_preset") || "all");
     const [dateFrom, setDateFrom] = useState(urlParams.get("date_from") || filters?.date_from || "");
     const [dateTo, setDateTo] = useState(urlParams.get("date_to") || filters?.date_to || "");
     const [dateFilterOpen, setDateFilterOpen] = useState(false);
 
-    // 3. Column Visibility Customizer
-    const [columnSettingsOpen, setColumnSettingsOpen] = useState(false);
-    const [visibleColumns, setVisibleColumns] = useState({
-        lot_area: false,
-        tct_number: false,
-        contact: false,
-        remarks: false,
-    });
-
-    // 4. Active Keyboard Navigation Row
+    // Keyboard Navigation Active Row
     const [focusedRowIndex, setFocusedRowIndex] = useState(-1);
 
     const dateFilterRef = useRef(null);
-    const columnSettingsRef = useRef(null);
+    const searchInputRef = useRef(null);
 
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
@@ -634,9 +766,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         const handleOutside = (e) => {
             if (dateFilterRef.current && !dateFilterRef.current.contains(e.target)) {
                 setDateFilterOpen(false);
-            }
-            if (columnSettingsRef.current && !columnSettingsRef.current.contains(e.target)) {
-                setColumnSettingsOpen(false);
             }
         };
         document.addEventListener("mousedown", handleOutside);
@@ -713,8 +842,9 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     };
 
     const formatFee = (fee) => {
-        const num = Number(String(fee || 0).replace(/[^0-9.-]+/g, ""));
-        return isNaN(num) ? "₱0.00" : "₱" + num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (!fee || fee === "0" || fee === 0) return "—";
+        const num = Number(String(fee).replace(/[^0-9.-]+/g, ""));
+        return isNaN(num) || num === 0 ? "—" : "₱" + num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
     const isCorporateEntity = (name) => {
@@ -783,9 +913,15 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
             if (s === "") {
                 return Object.values(status_counts).reduce((a, b) => Number(a) + Number(b), 0);
             }
+            if (s === "Released") {
+                return Number(status_counts["Released"] || 0) + Number(status_counts["For Release"] || 0);
+            }
             return Number(status_counts[s] || 0);
         }
         if (s === "") return fullDataset.length;
+        if (s === "Released") {
+            return fullDataset.filter((a) => a?.status === "Released" || a?.status === "For Release").length;
+        }
         return fullDataset.filter((a) => a?.status === s).length;
     };
 
@@ -794,13 +930,17 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         let list = isUsingPlaceholders ? [...SAMPLE_APPLICATIONS] : [...(applications?.data || [])];
 
         if (selectedStatus) {
-            list = list.filter((item) => item?.status === selectedStatus);
+            if (selectedStatus === "Released") {
+                list = list.filter((item) => item?.status === "Released" || item?.status === "For Release");
+            } else {
+                list = list.filter((item) => item?.status === selectedStatus);
+            }
         }
         if (selectedCategory) {
             list = list.filter((item) => item?.application_type === selectedCategory);
         }
         if (selectedLandUse) {
-            list = list.filter((item) => String(item?.land_use_class || "").toLowerCase() === selectedLandUse.toLowerCase());
+            list = list.filter((item) => String(item?.target_land_use_class || item?.land_use_class || "").toLowerCase() === selectedLandUse.toLowerCase());
         }
         if (selectedBarangay) {
             list = list.filter((item) => String(item?.barangay || "").toLowerCase() === selectedBarangay.toLowerCase());
@@ -852,23 +992,56 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         return filteredList.slice(startIdx, startIdx + pageSize);
     }, [filteredList, currentPage, pageSize]);
 
-    // Group records by applicant name for the Folder view
+    // Group records by barangay for the Folder view
     const folderGroups = useMemo(() => {
         const groups = {};
-        // Group ALL filtered records, or just paginated? Usually it's better to group all filtered 
-        // to show accurate folders, but since it's client-side paginated we can group the filteredList
-        // and let them browse. But wait, pagination applies to rows. If we group filteredList, 
-        // we might have many folders.
+
         filteredList.forEach(app => {
+            const name = app.barangay?.trim() || 'Unknown Barangay';
+            if (!groups[name]) groups[name] = [];
+            groups[name].push(app);
+        });
+        
+        // Sort keys alphabetically
+        return Object.keys(groups).sort().reduce((acc, key) => {
+            acc[key] = groups[key];
+            return acc;
+        }, {});
+    }, [filteredList]);
+
+    // Group records by applicant name for the inner Applicant folder view
+    const applicantGroups = useMemo(() => {
+        if (!selectedFolder) return {};
+        const appsInBarangay = folderGroups[selectedFolder] || [];
+        const groups = {};
+        appsInBarangay.forEach(app => {
             const name = (app.corporation_name || app.applicant_name)?.trim() || 'Unknown Applicant';
             if (!groups[name]) groups[name] = [];
             groups[name].push(app);
         });
-        return groups;
-    }, [filteredList]);
+        
+        // Sort keys alphabetically
+        return Object.keys(groups).sort().reduce((acc, key) => {
+            acc[key] = groups[key];
+            return acc;
+        }, {});
+    }, [selectedFolder, folderGroups]);
 
-    const startIndex = (currentPage - 1) * pageSize + 1;
+    const startIndex = filteredList.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
     const endIndex = Math.min(currentPage * pageSize, filteredList.length);
+
+    const rowKey = (item) => item?.id ?? item?.reference_number;
+    const pageKeys = paginatedRecords.map(rowKey);
+    const allPageSelected = pageKeys.length > 0 && pageKeys.every((k) => selectedIds.includes(k));
+    const toggleRow = (key) => setSelectedIds((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+    const togglePage = () => setSelectedIds((prev) => (allPageSelected ? prev.filter((k) => !pageKeys.includes(k)) : [...new Set([...prev, ...pageKeys])]));
+
+    // Open the first record in the preview panel on load, like the registry concept
+    useEffect(() => {
+        if (paginatedRecords[0]) setPeekItem(paginatedRecords[0]);
+    }, []);
+
+    useEffect(() => setMoreOpen(false), [peekItem]);
 
     // KPI & Workflow Status Counts
     const totalCount = Math.max(1, getStatusCount(""));
@@ -885,32 +1058,90 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const forReleasePct = Math.round((forReleaseCount / totalCount) * 100);
     const releasedPct = Math.round((releasedCount / totalCount) * 100);
 
-    // ── Keyboard Navigation (↑ / ↓ / Enter / Space / Esc) ──
+    // ── Keyboard Navigation (/, ↑ / ↓, j / k, Enter, Space, Esc) ──
     useEffect(() => {
         const handleKeyDown = (e) => {
-            // Ignore if active typing inside input or textarea
-            if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+            const isInput = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
 
-            if (e.key === "ArrowDown" || e.key === "j") {
-                e.preventDefault();
-                setFocusedRowIndex((prev) => Math.min(prev + 1, paginatedRecords.length - 1));
-            } else if (e.key === "ArrowUp" || e.key === "k") {
-                e.preventDefault();
-                setFocusedRowIndex((prev) => Math.max(prev - 1, 0));
-            } else if (e.key === "Enter" && focusedRowIndex >= 0 && paginatedRecords[focusedRowIndex]) {
-                e.preventDefault();
-                router.visit(`/applications/${paginatedRecords[focusedRowIndex].id || 101}`);
-            } else if (e.key === " " && focusedRowIndex >= 0 && paginatedRecords[focusedRowIndex]) {
-                e.preventDefault();
-                setPeekItem(paginatedRecords[focusedRowIndex]);
-            } else if (e.key === "Escape") {
-                setPeekItem(null);
+            if (e.key === "Escape") {
+                if (peekItem) {
+                    setPeekItem(null);
+                    return;
+                }
+                if (dateFilterOpen) {
+                    setDateFilterOpen(false);
+                    return;
+                }
+                if (isInput) {
+                    document.activeElement?.blur();
+                    return;
+                }
+            }
+
+            if (!isInput) {
+                if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                    searchInputRef.current?.focus();
+                    return;
+                }
+
+                if (viewMode === "list" && paginatedRecords.length > 0) {
+                    if (e.key === "ArrowDown" || e.key === "j") {
+                        e.preventDefault();
+                        setFocusedRowIndex((prev) => Math.min(prev + 1, paginatedRecords.length - 1));
+                    } else if (e.key === "ArrowUp" || e.key === "k") {
+                        e.preventDefault();
+                        setFocusedRowIndex((prev) => Math.max(prev - 1, 0));
+                    } else if (e.key === "Enter" && focusedRowIndex >= 0 && paginatedRecords[focusedRowIndex]) {
+                        e.preventDefault();
+                        const item = paginatedRecords[focusedRowIndex];
+                        if (item?.id) router.visit(`/applications/${item.id}`);
+                    } else if (e.key === " " && focusedRowIndex >= 0 && paginatedRecords[focusedRowIndex]) {
+                        e.preventDefault();
+                        setPeekItem(paginatedRecords[focusedRowIndex]);
+                    }
+                }
             }
         };
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [focusedRowIndex, paginatedRecords]);
+    }, [viewMode, paginatedRecords, focusedRowIndex, peekItem, dateFilterOpen]);
+
+    // ── Export CSV Handler ──
+    const handleExportCSV = () => {
+        const headers = ["Reference Number", "Applicant Name", "Representative", "Application Type", "Land Use Class", "Barangay", "Lot Area (sqm)", "TCT Number", "Assessment Fee (PHP)", "OR Number", "Status", "Date Filed", "Purpose"];
+        const source = selectedIds.length > 0 ? filteredList.filter((app) => selectedIds.includes(rowKey(app))) : filteredList;
+        const rows = source.map((app) => [
+            `"${app.reference_number || ""}"`,
+            `"${app.applicant_name || ""}"`,
+            `"${app.representative_name || ""}"`,
+            `"${app.application_type || ""}"`,
+            `"${app.land_use_class || ""}"`,
+            `"${app.barangay || ""}"`,
+            `"${app.lot_area_sqm || ""}"`,
+            `"${app.tct_number || ""}"`,
+            `"${app.assessment_fee || ""}"`,
+            `"${app.or_number || ""}"`,
+            `"${app.status || ""}"`,
+            `"${formatDate(app.created_at)}"`,
+            `"${(app.purpose || "").replace(/"/g, '""')}"`,
+        ]);
+
+        const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Rosario_Zoning_Registry_${new Date().toISOString().split("T")[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    // ── Print Official Transmittal Registry ──
+    const handlePrintTransmittal = () => {
+        window.print();
+    };
 
     // Map bounds calculation
     const mapBounds = useMemo(() => {
@@ -968,86 +1199,130 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                             
                             {/* ── TOP HEADER SECTION ── */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 no-print">
-                                <div>
-                                    <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                        </svg>
+                                    </div>
+                                    <h1 className="text-xl font-bold text-slate-900 tracking-tight leading-none">
                                         Application Registry
                                     </h1>
-                                    <p className="text-xs text-slate-500 font-medium mt-0.5">
-                                        Manage, track, and geo-locate municipal zoning clearance applications
-                                    </p>
+                                    <span className="text-xs font-medium text-slate-500 pt-0.5">
+                                        {filteredList.length} {filteredList.length === 1 ? "record" : "records"}
+                                    </span>
                                 </div>
 
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    {/* 2-Way View Switcher: Board | Folders */}
-                                    <div className="bg-white p-0.5 rounded-xl border border-slate-200/90 shadow-2xs flex items-center">
+                                <div className="flex items-center gap-2">
+                                    {/* Secondary actions grouped into one segmented control */}
+                                    <div className="inline-flex items-stretch h-9 rounded-lg border border-slate-200 bg-white shadow-2xs divide-x divide-slate-200 overflow-hidden">
                                         <button
                                             type="button"
-                                            onClick={() => setViewMode("folder")}
-                                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                                                viewMode === "folder"
-                                                    ? "bg-slate-900 text-white shadow-2xs"
-                                                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                            }`}
+                                            onClick={handlePrintTransmittal}
+                                            className="inline-flex items-center gap-1.5 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                                            title="Print official transmittal summary"
                                         >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
+                                            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M7 9V3h10v6M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 14h10v7H7z" />
                                             </svg>
-                                            <span>Folders</span>
+                                            <span>Print</span>
                                         </button>
 
                                         <button
                                             type="button"
-                                            onClick={() => setViewMode("kanban")}
-                                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                                                viewMode === "kanban"
-                                                    ? "bg-slate-900 text-white shadow-2xs"
-                                                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                                            }`}
+                                            onClick={() => handleExportCSV()}
+                                            className="inline-flex items-center gap-1.5 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                                            title={selectedIds.length > 0 ? `Export ${selectedIds.length} selected to CSV` : "Export filtered records to CSV"}
                                         >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 4.5v15m6-15v15m-10.5-15h15a2.25 2.25 0 012.25 2.25v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75A2.25 2.25 0 014.5 4.5z" />
+                                            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                                             </svg>
-                                            <span>Board</span>
+                                            <span>{selectedIds.length > 0 ? `Export (${selectedIds.length})` : "Export"}</span>
                                         </button>
+
+                                        {userRole === "Planning Officer" && (
+                                            <Link
+                                                href="/applications/drafts"
+                                                className="inline-flex items-center gap-1.5 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                                            >
+                                                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                </svg>
+                                                <span>Drafts</span>
+                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600" aria-hidden="true"></span>
+                                            </Link>
+                                        )}
                                     </div>
 
                                     {/* Drafts */}
                                     {userRole === "Planning Officer" && (
-                                        <Link
-                                            href="/applications/drafts"
-                                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 shadow-2xs transition-all active:scale-98"
-                                        >
-                                            <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                            </svg>
-                                            <span>Drafts</span>
-                                        </Link>
-                                    )}
-
-                                    {/* New Application */}
-                                    {userRole === "Planning Officer" && (
-                                        <Link
-                                            href="/applications/encode"
-                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm shadow-blue-600/20 transition-all active:scale-98"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                            </svg>
-                                            <span>New Application</span>
-                                        </Link>
+                                        <>
+                                            <Link
+                                                href="/applications/encode"
+                                                className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                </svg>
+                                                <span>New Application</span>
+                                            </Link>
+                                        </>
                                     )}
                                 </div>
                             </div>
 
-               
+                            {/* ── STATUS KPI TILES (also act as status filter) ── */}
+                            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-1.5 grid grid-cols-2 md:grid-cols-5 gap-1.5 shrink-0 no-print">
+                                {[
+                                    { label: "All filings", status: "", count: getStatusCount(""), dot: "bg-slate-500" },
+                                    { label: "Received", status: "Received", count: receivedCount, dot: "bg-emerald-500" },
+                                    { label: "Technical Review", status: "Technical Review", count: reviewCount, dot: "bg-amber-500" },
+                                    { label: "Sangguniang Bayan", status: "Under Sangguniang Bayan", count: sbCount, dot: "bg-purple-500" },
+                                    { label: "Issued / Ready", status: "Released", count: releasedCount, dot: "bg-blue-600" },
+                                ].map((tile) => {
+                                    const isActive = tile.status === "" ? !selectedStatus : selectedStatus === tile.status;
+                                    const pct = tile.status === "" ? 100 : Math.round((tile.count / totalCount) * 100);
+                                    return (
+                                        <button
+                                            key={tile.label}
+                                            type="button"
+                                            aria-pressed={isActive}
+                                            onClick={() => {
+                                                setSelectedStatus(tile.status === "" || selectedStatus === tile.status ? "" : tile.status);
+                                                setCurrentPage(1);
+                                            }}
+                                            className={`text-left rounded-lg px-3.5 py-2.5 border transition-colors cursor-pointer ${
+                                                isActive ? "border-blue-500 ring-1 ring-blue-500/30 bg-blue-50/30" : "border-transparent hover:bg-slate-50"
+                                            }`}
+                                        >
+                                            <span className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                                                <span className={`w-2 h-2 rounded-full ${tile.dot}`} aria-hidden="true" />
+                                                {tile.label}
+                                            </span>
+                                            <span className="flex items-baseline gap-1.5 mt-1">
+                                                <span className="text-2xl font-bold text-slate-900 tabular-nums">{tile.count}</span>
+                                                <span className="text-[11px] text-slate-400 font-medium">{tile.status === "" ? "total" : `${pct}%`}</span>
+                                            </span>
+                                            <span className="block h-1 rounded-full bg-slate-100 mt-2 overflow-hidden" aria-hidden="true">
+                                                <span className={`block h-full rounded-full ${isActive ? "bg-blue-600" : "bg-slate-300"}`} style={{ width: `${pct}%` }} />
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
 
-                            {/* ── 2. UNIFIED COMMAND & SEARCH BAR ── */}
-                            <div className="bg-white p-2.5 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col gap-2 shrink-0 no-print">
-                                <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+                            {/* ── MASTER WORKSPACE ROW (TABLE CARD + QUICK PREVIEW PANEL) ── */}
+                            <div className="flex-1 flex gap-3.5 min-h-0 no-print">
+
+                            {/* ── UNIFIED MASTER WORKSPACE CARD ── */}
+                            <div className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200/90 shadow-2xs flex flex-col min-h-0 overflow-hidden">
+
+                                {/* ── INTEGRATED FILTER TOOLBAR ── */}
+                                <div className="px-3 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center gap-2 shrink-0">
                                     {/* Main Search Input */}
-                                    <div className="relative w-full lg:w-80 shrink-0">
+                                    <div className="relative w-full sm:w-56 shrink-0">
                                         <svg
-                                            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+                                            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"
                                             fill="none"
                                             viewBox="0 0 24 24"
                                             stroke="currentColor"
@@ -1056,13 +1331,15 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                                         </svg>
                                         <input
+                                            ref={searchInputRef}
                                             type="text"
                                             value={searchInput}
                                             onChange={(e) => setSearchInput(e.target.value)}
-                                            placeholder="Search ref #, applicant, purpose, OR #..."
-                                            className="w-full rounded-xl border border-slate-200 bg-slate-50/60 pl-9 pr-10 py-2 text-xs font-medium text-slate-800 transition-all focus:bg-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-2xs placeholder:text-slate-400"
+                                            placeholder="Search name, reference, barangay"
+                                            aria-label="Search applications"
+                                            className="w-full h-9 rounded-lg border border-slate-200 bg-white pl-8 pr-8 text-xs text-slate-800 transition-all focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 placeholder:text-slate-400"
                                         />
-                                        <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                                             {searchInput ? (
                                                 <button
                                                     onClick={() => { setSearchInput(""); setDebouncedSearch(""); setCurrentPage(1); }}
@@ -1073,83 +1350,69 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     </svg>
                                                 </button>
                                             ) : (
-                                                <span className="text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">/</span>
+                                                <span className="text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1 py-0.2 rounded">/</span>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* Right Side: Filters & Controls */}
-                                    <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4">
-                                        {/* Dropdown Filters */}
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 items-center">
-                                        {/* Category Filter */}
-                                        <div className="min-w-[125px]">
-                                            <DropdownSelect
-                                                value={selectedCategory}
-                                                onChange={(val) => { setSelectedCategory(val); setCurrentPage(1); }}
-                                                options={APP_TYPES}
-                                                allLabel="All Categories"
-                                                withSearch={false}
-                                            />
-                                        </div>
+                                    {/* Filters */}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <DropdownSelect
+                                            variant="pill"
+                                            label="Category"
+                                            value={selectedCategory}
+                                            onChange={(val) => { setSelectedCategory(val); setCurrentPage(1); }}
+                                            options={APP_TYPES}
+                                            allLabel="All categories"
+                                        />
 
-                                        {/* Barangay Jurisdiction (Searchable) */}
-                                        <div className="min-w-[130px]">
-                                            <DropdownSelect
-                                                value={selectedBarangay}
-                                                onChange={(val) => { setSelectedBarangay(val); setCurrentPage(1); }}
-                                                options={ROSARIO_BARANGAYS}
-                                                allLabel="All Barangays"
-                                                searchPlaceholder="Search 48 barangays..."
-                                                prefix="Brgy."
-                                                withSearch={true}
-                                            />
-                                        </div>
+                                        <DropdownSelect
+                                            variant="pill"
+                                            label="Barangay"
+                                            value={selectedBarangay}
+                                            onChange={(val) => { setSelectedBarangay(val); setCurrentPage(1); }}
+                                            options={ROSARIO_BARANGAYS}
+                                            allLabel="All barangays"
+                                            searchPlaceholder="Search 48 barangays..."
+                                            withSearch={true}
+                                        />
 
-                                        {/* Sort Order */}
-                                        <div className="min-w-[135px]">
-                                            <DropdownSelect
-                                                value={selectedSort}
-                                                onChange={(val) => { setSelectedSort(val || "newest"); setCurrentPage(1); }}
-                                                options={SORT_OPTIONS}
-                                                allLabel="Sort: Newest"
-                                                withSearch={false}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Utility Controls: Date Range, Clear */}
-                                    <div className="flex items-center gap-1.5 shrink-0 self-end lg:self-auto">
                                         {/* Date Range Popover Button */}
                                         <div className="relative" ref={dateFilterRef}>
                                             <button
                                                 type="button"
                                                 onClick={() => setDateFilterOpen(!dateFilterOpen)}
-                                                className={`text-xs font-semibold px-2.5 py-2 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                                                    dateFrom || dateTo || dateRangePreset !== "all"
-                                                        ? "bg-blue-50 border-blue-300 text-blue-800 font-bold"
-                                                        : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                aria-expanded={dateFilterOpen}
+                                                className={`h-9 px-3 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                                                    dateFrom || dateTo
+                                                        ? "border-blue-300 bg-blue-50 text-blue-800 font-semibold"
+                                                        : "border-dashed border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-800"
                                                 }`}
-                                                title="Filter by filing date"
                                             >
-                                                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5" />
-                                                </svg>
-                                                <span>{dateFrom ? `${formatDate(dateFrom)} - ${formatDate(dateTo)}` : "Date"}</span>
+                                                {dateFrom || dateTo ? (
+                                                    <span>Filed: {formatDate(dateFrom)} – {formatDate(dateTo)}</span>
+                                                ) : (
+                                                    <>
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                                        </svg>
+                                                        <span>Filing date</span>
+                                                    </>
+                                                )}
                                             </button>
 
                                             {dateFilterOpen && (
-                                                <div className="absolute right-0 mt-1.5 z-50 bg-white rounded-2xl shadow-xl border border-slate-200/90 p-3 min-w-[260px] animate-in fade-in zoom-in-95">
-                                                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Filing Date Presets</p>
+                                                <div className="absolute left-0 mt-1 z-50 bg-white rounded-xl shadow-lg border border-slate-200/90 p-3 min-w-[260px] animate-in fade-in zoom-in-95">
+                                                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Filing Date Presets</p>
                                                     <div className="grid grid-cols-2 gap-1 mb-3">
                                                         {DATE_PRESETS.map((p) => (
                                                             <button
                                                                 key={p.value}
                                                                 type="button"
                                                                 onClick={() => handleDatePreset(p.value)}
-                                                                className={`text-xs px-2 py-1.5 rounded-lg text-left font-medium transition-all ${
+                                                                className={`text-xs px-2 py-1.5 rounded-md text-left font-medium transition-all ${
                                                                     dateRangePreset === p.value
-                                                                        ? "bg-blue-600 text-white font-bold"
+                                                                        ? "bg-blue-600 text-white font-semibold"
                                                                         : "bg-slate-50 text-slate-700 hover:bg-slate-100"
                                                                 }`}
                                                             >
@@ -1158,7 +1421,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                         ))}
                                                     </div>
 
-                                                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Custom Date Range</p>
+                                                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Custom Date Range</p>
                                                     <div className="space-y-2">
                                                         <div>
                                                             <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Date From</label>
@@ -1166,7 +1429,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                 type="date"
                                                                 value={dateFrom}
                                                                 onChange={(e) => { setDateFrom(e.target.value); setDateRangePreset("custom"); }}
-                                                                className="w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:bg-white focus:border-blue-500"
+                                                                className="w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-md outline-none focus:bg-white focus:border-blue-500"
                                                             />
                                                         </div>
                                                         <div>
@@ -1175,7 +1438,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                 type="date"
                                                                 value={dateTo}
                                                                 onChange={(e) => { setDateTo(e.target.value); setDateRangePreset("custom"); }}
-                                                                className="w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:bg-white focus:border-blue-500"
+                                                                className="w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-md outline-none focus:bg-white focus:border-blue-500"
                                                             />
                                                         </div>
                                                     </div>
@@ -1191,7 +1454,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                         <button
                                                             type="button"
                                                             onClick={() => setDateFilterOpen(false)}
-                                                            className="text-xs bg-slate-900 text-white px-3 py-1 rounded-lg font-bold cursor-pointer"
+                                                            className="text-xs bg-slate-900 text-white px-3 py-1 rounded-md font-semibold cursor-pointer"
                                                         >
                                                             Apply
                                                         </button>
@@ -1200,58 +1463,72 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                             )}
                                         </div>
 
-                                        {hasActiveFilters && (
-                                            <button
-                                                onClick={clearFilters}
-                                                className="text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/60 px-2.5 py-2 rounded-xl flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                                title="Clear active filters"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                                <span>Reset</span>
-                                            </button>
-                                        )}
+                                    </div>
+
+                                    {/* Sort + View switcher */}
+                                    <div className="flex items-center gap-2 ml-auto">
+                                        <DropdownSelect
+                                            variant="ghost"
+                                            value={selectedSort === "newest" ? "" : selectedSort}
+                                            onChange={(val) => { setSelectedSort(val || "newest"); setCurrentPage(1); }}
+                                            options={SORT_OPTIONS.slice(1)}
+                                            allLabel="Newest filing"
+                                        />
+                                        <div className="bg-slate-100 p-0.5 rounded-lg flex items-center" role="group" aria-label="View mode">
+                                            {[
+                                                { mode: "list", label: "List view", d: "M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" },
+                                                { mode: "folder", label: "Folder view", d: "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" },
+                                            ].map((v) => (
+                                                <button
+                                                    key={v.mode}
+                                                    type="button"
+                                                    onClick={() => setViewMode(v.mode)}
+                                                    aria-label={v.label}
+                                                    aria-pressed={viewMode === v.mode}
+                                                    title={v.label}
+                                                    className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
+                                                        viewMode === v.mode ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+                                                    }`}
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d={v.d} />
+                                                    </svg>
+                                                </button>
+                                            ))}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Active Filter Pills Strip */}
+                                {/* ── ACTIVE FILTERS CHIP STRIP ── */}
                                 {hasActiveFilters && (
-                                    <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-100 text-xs">
+                                    <div className="flex items-center gap-1.5 flex-wrap px-3.5 py-2 bg-slate-50/70 border-b border-slate-100 text-xs shrink-0">
                                         <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Active:</span>
                                         {selectedStatus && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 text-xs font-semibold">
-                                                Status: {selectedStatus}
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-xs font-semibold">
+                                                Status: {selectedStatus === "Released" ? "Issued / Ready" : selectedStatus}
                                                 <button onClick={() => setSelectedStatus("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
                                         )}
-                                        {selectedLandUse && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
-                                                Use: {selectedLandUse}
-                                                <button onClick={() => setSelectedLandUse("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
-                                            </span>
-                                        )}
                                         {selectedCategory && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Type: {selectedCategory}
                                                 <button onClick={() => setSelectedCategory("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
                                         )}
                                         {selectedBarangay && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Brgy: {selectedBarangay}
                                                 <button onClick={() => setSelectedBarangay("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
                                         )}
                                         {(dateFrom || dateTo) && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Date: {formatDate(dateFrom)} - {formatDate(dateTo)}
                                                 <button onClick={() => { setDateFrom(""); setDateTo(""); setDateRangePreset("all"); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
                                         )}
                                         {debouncedSearch && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Query: "{debouncedSearch}"
                                                 <button onClick={() => { setSearchInput(""); setDebouncedSearch(""); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
@@ -1264,195 +1541,429 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                         </button>
                                     </div>
                                 )}
-                            </div>
 
-                            {/* ── DATA VIEW (PIPELINE KANBAN / FOLDERS) ── */}
-                            {viewMode === "kanban" ? (
-                                /* ── KANBAN PIPELINE BOARD VIEW ── */
-                                <div className="flex-1 overflow-x-auto min-h-0 pb-2 custom-scrollbar">
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 min-w-[1000px] h-full">
-                                        {[
-                                            { title: "Received Queue", statusKey: "Received", badgeColor: "bg-emerald-500" },
-                                            { title: "Technical Review", statusKey: "Technical Review", badgeColor: "bg-amber-500" },
-                                            { title: "Sangguniang Bayan", statusKey: "Under Sangguniang Bayan", badgeColor: "bg-purple-500" },
-                                            { title: "For Release / Released", statusKey: "Released", badgeColor: "bg-indigo-600" },
-                                        ].map((col) => {
-                                            const colItems = filteredList.filter((a) => {
-                                                if (col.statusKey === "Released") return a.status === "Released" || a.status === "For Release";
-                                                return a.status === col.statusKey;
-                                            });
+                            {/* ── DATA VIEW (LIST / FOLDERS) ── */}
+                            {viewMode === "list" ? (
+                                <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
+                                    <div className="flex-1 overflow-auto custom-scrollbar">
+                                        <table className="w-full text-left border-collapse min-w-[640px]">
+                                            <thead className="sticky top-0 z-10 bg-white border-b border-slate-200/90">
+                                                <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                                    <th className="py-3 pl-4 pr-2 w-10">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={allPageSelected}
+                                                            onChange={togglePage}
+                                                            aria-label="Select all applications on this page"
+                                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                        />
+                                                    </th>
+                                                    <th className="py-3 px-3">
+                                                        <button type="button" onClick={() => handleHeaderSort("applicant")} className="uppercase tracking-wider hover:text-slate-800 cursor-pointer">
+                                                            Applicant{selectedSort === "applicant_asc" ? " ↑" : selectedSort === "applicant_desc" ? " ↓" : ""}
+                                                        </button>
+                                                    </th>
+                                                    <th className="py-3 px-3">Application</th>
+                                                    <th className="py-3 px-3">Barangay</th>
+                                                    <th className="py-3 px-3">
+                                                        <button type="button" onClick={() => handleHeaderSort("date")} className="uppercase tracking-wider hover:text-slate-800 cursor-pointer">
+                                                            Filed{selectedSort === "newest" ? " ↓" : selectedSort === "oldest" ? " ↑" : ""}
+                                                        </button>
+                                                    </th>
+                                                    <th className="py-3 pr-4 w-10"><span className="sr-only">Open</span></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {paginatedRecords.map((item, idx) => {
+                                                    const refCode = item.reference_number || `APP-${item.id}`;
+                                                    const key = rowKey(item);
+                                                    const types = splitTypes(item.application_type);
+                                                    const landUse = item.target_land_use_class || item.land_use_class;
+                                                    const subline = types.length > 1
+                                                        ? types.slice(1).join(", ")
+                                                        : landUse
+                                                        ? `Land use · ${landUse}`
+                                                        : item.remarks?.trim()
+                                                        ? `Remark · ${item.remarks}`
+                                                        : "—";
+                                                    const isSelected = peekItem && rowKey(peekItem) === key;
+                                                    const isFocused = focusedRowIndex === idx;
 
-                                            return (
-                                                <div key={col.title} className="bg-slate-50/50 rounded-xl border border-slate-200/80 flex flex-col h-full overflow-hidden">
-                                                    {/* Column Header */}
-                                                    <div className="flex items-center justify-between p-3 border-b border-slate-200/80 bg-white/50">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className={`w-2 h-2 rounded-full ${col.badgeColor}`} />
-                                                            <h3 className="text-sm font-semibold text-slate-800">{col.title}</h3>
-                                                        </div>
-                                                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-200/50 text-slate-600">
-                                                            {colItems.length}
-                                                        </span>
-                                                    </div>
+                                                    return (
+                                                        <tr
+                                                            key={key ?? idx}
+                                                            onClick={() => { setPeekItem(item); setFocusedRowIndex(idx); }}
+                                                            aria-selected={Boolean(isSelected)}
+                                                            className={`cursor-pointer transition-colors group ${
+                                                                isSelected ? "bg-blue-50/50" : "hover:bg-slate-50"
+                                                            } ${isFocused ? "ring-1 ring-inset ring-blue-500" : ""}`}
+                                                        >
+                                                            <td className="py-3 pl-4 pr-2" onClick={(e) => e.stopPropagation()}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedIds.includes(key)}
+                                                                    onChange={() => toggleRow(key)}
+                                                                    aria-label={`Select ${item.applicant_name || refCode}`}
+                                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                />
+                                                            </td>
 
-                                                    {/* Column Body (Cards) */}
-                                                    <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5 custom-scrollbar">
-                                                        {colItems.length === 0 ? (
-                                                            <div className="py-8 text-center">
-                                                                <span className="text-[12px] font-medium text-slate-400">Empty</span>
-                                                            </div>
-                                                        ) : (
-                                                            colItems.map((card) => {
-                                                                const refCode = card?.reference_number || `APP-${card?.id}`;
-                                                                const landUseBadgeStyle = LAND_USE_BADGES[card?.land_use_class] || "bg-slate-100 text-slate-700 border-slate-200";
-
-                                                                return (
-                                                                    <div
-                                                                        key={card.id || refCode}
-                                                                        onClick={() => router.visit(`/applications/${card.id || 101}`)}
-                                                                        className="group bg-white rounded-lg border border-slate-200/80 p-3 hover:border-slate-300 hover:shadow-sm transition-all duration-200 cursor-pointer flex flex-col gap-2"
-                                                                    >
-                                                                        {/* Header: Ref & Date */}
-                                                                        <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium tracking-wide mb-0.5">
-                                                                            <span>{refCode}</span>
-                                                                            <span>{formatDate(card.created_at)}</span>
-                                                                        </div>
-
-                                                                        {/* Body: Applicant & Purpose */}
-                                                                        <div>
-                                                                            <h4 className="text-[13px] font-semibold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-1">
-                                                                                {card.applicant_name || "Unknown Applicant"}
-                                                                            </h4>
-                                                                            {card.purpose?.trim() && (
-                                                                                <p className="text-[12px] text-slate-500 mt-1 line-clamp-2 leading-snug">
-                                                                                    {card.purpose}
-                                                                                </p>
-                                                                            )}
-                                                                        </div>
-
-                                                                        {/* Footer: Land Use & Fee */}
-                                                                        <div className="mt-2 pt-2 border-t border-slate-100/80 flex items-center justify-between">
-                                                                            {card.land_use_class?.trim() ? (
-                                                                                <span className={`px-2 py-0.5 rounded text-[10px] ${landUseBadgeStyle} font-medium border-transparent bg-opacity-40`}>
-                                                                                    {card.land_use_class}
-                                                                                </span>
-                                                                            ) : (
-                                                                                <span className="px-2 py-0.5 rounded text-[10px] text-slate-500 bg-slate-100 font-medium border border-slate-200/50">
-                                                                                    Unclassified
-                                                                                </span>
-                                                                            )}
-                                                                            <span className="text-[12px] font-medium text-slate-700">
-                                                                                {formatFee(card.assessment_fee)}
-                                                                            </span>
-                                                                        </div>
+                                                            <td className="py-3 px-3">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-semibold shrink-0">
+                                                                        {getInitials(item.applicant_name)}
                                                                     </div>
-                                                                );
-                                                            })
-                                                        )}
-                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-[13px] font-semibold text-slate-900 truncate max-w-[180px]">
+                                                                            {item.applicant_name || "Unknown Applicant"}
+                                                                        </p>
+                                                                        <p className="font-mono text-[11px] text-slate-400">{refCode}</p>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+
+                                                            <td className="py-3 px-3">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="text-[13px] text-slate-800 truncate max-w-[200px]">{types[0] || "—"}</span>
+                                                                    {types.length > 1 && (
+                                                                        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded" title={types.slice(1).join(", ")}>
+                                                                            +{types.length - 1}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-[11px] text-slate-400 truncate max-w-[220px]">{subline}</p>
+                                                            </td>
+
+                                                            <td className="py-3 px-3 text-[13px] text-slate-700 whitespace-nowrap">
+                                                                {item.barangay || "—"}
+                                                            </td>
+
+                                                            <td className="py-3 px-3 whitespace-nowrap">
+                                                                <p className="text-[13px] text-slate-700">{formatDate(item.created_at)}</p>
+                                                                <p className="text-[11px] text-slate-400">{timeAgo(item.created_at)}</p>
+                                                            </td>
+
+                                                            <td className="py-3 pr-4 text-right" onClick={(e) => e.stopPropagation()}>
+                                                                <Link
+                                                                    href={item.id ? `/applications/${item.id}` : "#"}
+                                                                    aria-label={`View full record for ${item.applicant_name || refCode}`}
+                                                                    title="View full record"
+                                                                    className="inline-flex w-8 h-8 items-center justify-center rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                    </svg>
+                                                                </Link>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+
+                                        {filteredList.length === 0 && (
+                                            <div className="flex flex-col items-center justify-center text-slate-400 py-16">
+                                                <p className="font-bold text-[14px] text-slate-700">No applications match your filter</p>
+                                                <p className="text-xs mt-1 text-slate-400">Try clearing active filters or adjusting your search term</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={clearFilters}
+                                                    className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 cursor-pointer"
+                                                >
+                                                    Clear All Filters
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Table Footer with Summary & Pagination */}
+                                    <div className="px-4 py-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 shrink-0">
+                                        <span>
+                                            <strong className="text-slate-900 font-semibold">{startIndex}–{endIndex}</strong> of {filteredList.length} applications
+                                            {selectedIds.length > 0 && <span className="ml-2 text-blue-700 font-medium">· {selectedIds.length} selected</span>}
+                                        </span>
+
+                                        <div className="flex items-center gap-5">
+                                            <div className="flex items-center gap-2">
+                                                <span>Rows per page</span>
+                                                <div className="bg-slate-100 p-0.5 rounded-lg flex items-center" role="group" aria-label="Rows per page">
+                                                    {[10, 25, 50].map((size) => (
+                                                        <button
+                                                            key={size}
+                                                            type="button"
+                                                            aria-pressed={pageSize === size}
+                                                            onClick={() => { setPageSize(size); setCurrentPage(1); }}
+                                                            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                                                                pageSize === size ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+                                                            }`}
+                                                        >
+                                                            {size}
+                                                        </button>
+                                                    ))}
                                                 </div>
-                                            );
-                                        })}
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                <span>Page <strong className="text-slate-900 font-semibold">{currentPage}</strong> of {totalPages}</span>
+                                                <button
+                                                    type="button"
+                                                    disabled={currentPage <= 1}
+                                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                                    aria-label="Previous page"
+                                                    className="w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={currentPage >= totalPages}
+                                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                                    aria-label="Next page"
+                                                    className="w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+
+                                            <span
+                                                className="hidden lg:flex w-8 h-8 items-center justify-center rounded-lg text-slate-400"
+                                                title="Shortcuts: / search · ↑↓ or j/k move · Space preview · Enter open · Esc close"
+                                                aria-label="Keyboard shortcuts: slash to search, arrows to move, space to preview, enter to open, escape to close"
+                                                role="img"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                                    <rect x="2.25" y="6" width="19.5" height="12" rx="2" />
+                                                    <path strokeLinecap="round" d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M7.5 14h9" />
+                                                </svg>
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             ) : (
-                                /* ── FOLDER GRID VIEW ── */
-                                <div className="flex-1 bg-white rounded-2xl shadow-2xs border border-slate-200/90 overflow-y-auto p-6 relative">
-                                    {selectedFolder ? (
+                                /* ── FOLDER ARCHIVE VIEW ── */
+                                <div className="flex-1 overflow-y-auto p-6 relative">
+                                    {selectedFolder && selectedApplicant ? (
                                         <>
-                                            <div className="flex items-center gap-3 mb-8">
+                                            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
                                                 <button 
                                                     type="button" 
-                                                    onClick={() => setSelectedFolder(null)}
-                                                    className="flex items-center justify-center w-8 h-8 bg-white border border-slate-200/80 rounded-full hover:bg-slate-50 text-slate-500 hover:text-blue-600 shadow-sm transition-all ring-1 ring-black/[0.02]"
+                                                    onClick={() => setSelectedApplicant(null)}
+                                                    className="flex items-center justify-center w-8 h-8 bg-white border border-slate-200/90 rounded-lg hover:bg-slate-50 text-slate-600 hover:text-blue-700 shadow-2xs transition-all cursor-pointer"
+                                                    title="Back to applicants"
                                                 >
-                                                    <svg className="w-4 h-4 -ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
                                                 </button>
-                                                <div>
-                                                    <h3 className="text-[15px] font-bold text-slate-900 tracking-tight">{selectedFolder}</h3>
-                                                    <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">{(folderGroups[selectedFolder] || []).length} Document{(folderGroups[selectedFolder] || []).length !== 1 ? 's' : ''}</p>
-                                                </div>
-                                            </div>
-                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
-                                                {(folderGroups[selectedFolder] || []).map((item, idx) => (
-                                                    <div
-                                                        key={idx}
-                                                        className="group flex flex-col items-center p-3 rounded-2xl transition-all cursor-pointer hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 border border-transparent hover:border-slate-200/60"
-                                                        onClick={() => router.visit(`/applications/${item.id || 101}`)}
-                                                    >
-                                                        <div className="relative mb-3 transition-transform duration-300 text-slate-300 group-hover:text-blue-500">
-                                                            <svg width="72" height="72" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-md text-blue-500 group-hover:drop-shadow-lg transition-all duration-300">
-                                                                <path d="M22 14C22 10.6863 24.6863 8 28 8H60L82 30V86C82 89.3137 79.3137 92 76 92H28C24.6863 92 22 89.3137 22 86V14Z" fill="url(#doc-base)"/>
-                                                                <path d="M60 8V24C60 27.3137 62.6863 30 66 30H82L60 8Z" fill="url(#doc-fold)"/>
-                                                                <rect x="34" y="44" width="32" height="5" rx="2.5" fill="#CBD5E1"/>
-                                                                <rect x="34" y="58" width="20" height="5" rx="2.5" fill="#CBD5E1"/>
-                                                                <rect x="34" y="72" width="26" height="5" rx="2.5" fill="#CBD5E1"/>
-                                                                <rect x="34" y="24" width="12" height="12" rx="4" fill="#3B82F6"/>
-                                                                <defs>
-                                                                    <linearGradient id="doc-base" x1="52" y1="8" x2="52" y2="92" gradientUnits="userSpaceOnUse">
-                                                                        <stop stopColor="#ffffff"/>
-                                                                        <stop offset="1" stopColor="#F1F5F9"/>
-                                                                    </linearGradient>
-                                                                    <linearGradient id="doc-fold" x1="71" y1="8" x2="71" y2="30" gradientUnits="userSpaceOnUse">
-                                                                        <stop stopColor="#E0E7FF"/>
-                                                                        <stop offset="1" stopColor="#93C5FD"/>
-                                                                    </linearGradient>
-                                                                </defs>
-                                                            </svg>
-                                                        </div>
-                                                        <span className="text-[12px] font-bold text-slate-700 leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
-                                                            {item.reference_number || `APP-${item.id}`}
+                                                <div className="flex flex-col">
+                                                    <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+                                                        <span 
+                                                            className="hover:text-blue-600 cursor-pointer transition-colors"
+                                                            onClick={() => { setSelectedFolder(null); setSelectedApplicant(null); }}
+                                                        >
+                                                            Barangays
                                                         </span>
-                                                        <span className="text-[10px] text-slate-400 font-medium mt-1">
-                                                            {item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : "—"}
+                                                        <span className="text-slate-300">/</span>
+                                                        <span 
+                                                            className="hover:text-blue-600 cursor-pointer transition-colors"
+                                                            onClick={() => setSelectedApplicant(null)}
+                                                        >
+                                                            {selectedFolder}
+                                                        </span>
+                                                        <span className="text-slate-300">/</span>
+                                                        <span className="text-slate-700 font-semibold">{selectedApplicant}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                        <h3 className="text-base font-bold text-slate-900 tracking-tight">{selectedApplicant}</h3>
+                                                        <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/60 font-mono text-[11px] font-bold">
+                                                            {(applicantGroups[selectedApplicant] || []).length} Document{(applicantGroups[selectedApplicant] || []).length !== 1 ? 's' : ''}
                                                         </span>
                                                     </div>
-                                                ))}
+                                                </div>
                                             </div>
+                                            {applicantGroups[selectedApplicant]?.length > 0 ? (
+                                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
+                                                    {(applicantGroups[selectedApplicant] || []).map((item, idx) => (
+                                                        <div
+                                                            key={idx}
+                                                            className="group flex flex-col items-center p-3 rounded-2xl transition-all cursor-pointer hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 border border-transparent hover:border-slate-200/60"
+                                                            onClick={() => router.visit(item.id ? `/applications/${item.id}` : '#')}
+                                                        >
+                                                            <div className="relative mb-3 transition-transform duration-300 text-slate-300 group-hover:text-blue-500">
+                                                                <svg width="72" height="72" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-md text-blue-500 group-hover:drop-shadow-lg transition-all duration-300">
+                                                                    <path d="M22 14C22 10.6863 24.6863 8 28 8H60L82 30V86C82 89.3137 79.3137 92 76 92H28C24.6863 92 22 89.3137 22 86V14Z" fill="url(#doc-base)"/>
+                                                                    <path d="M60 8V24C60 27.3137 62.6863 30 66 30H82L60 8Z" fill={getFoldColor(item.application_type)}/>
+                                                                    <rect x="34" y="44" width="32" height="5" rx="2.5" fill="#CBD5E1"/>
+                                                                    <rect x="34" y="58" width="20" height="5" rx="2.5" fill="#CBD5E1"/>
+                                                                    <rect x="34" y="72" width="26" height="5" rx="2.5" fill="#CBD5E1"/>
+                                                                    <rect x="34" y="24" width="12" height="12" rx="4" fill={getDocColor(item.application_type)}/>
+                                                                    <defs>
+                                                                        <linearGradient id="doc-base" x1="52" y1="8" x2="52" y2="92" gradientUnits="userSpaceOnUse">
+                                                                            <stop stopColor="#ffffff"/>
+                                                                            <stop offset="1" stopColor="#F1F5F9"/>
+                                                                        </linearGradient>
+                                                                        <linearGradient id="doc-fold" x1="71" y1="8" x2="71" y2="30" gradientUnits="userSpaceOnUse">
+                                                                            <stop stopColor="#E0E7FF"/>
+                                                                            <stop offset="1" stopColor="#93C5FD"/>
+                                                                        </linearGradient>
+                                                                    </defs>
+                                                                </svg>
+                                                            </div>
+                                                            <span className="text-[12px] font-bold text-slate-700 leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
+                                                                {item.reference_number || `APP-${item.id}`}
+                                                            </span>
+                                                            <span className="text-[10px] text-slate-400 font-medium mt-1">
+                                                                {item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : "—"}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                                                    <svg className="w-10 h-10 mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                    </svg>
+                                                    <p className="font-semibold text-sm">No applications found</p>
+                                                </div>
+                                            )}
+                                        </>
+                                    ) : selectedFolder ? (
+                                        <>
+                                            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => { setSelectedFolder(null); setSelectedApplicant(null); }}
+                                                    className="flex items-center justify-center w-8 h-8 bg-white border border-slate-200/90 rounded-lg hover:bg-slate-50 text-slate-600 hover:text-blue-700 shadow-2xs transition-all cursor-pointer"
+                                                    title="Back to all barangays"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                                                </button>
+                                                <div className="flex flex-col">
+                                                    <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+                                                        <span 
+                                                            className="hover:text-blue-600 cursor-pointer transition-colors"
+                                                            onClick={() => { setSelectedFolder(null); setSelectedApplicant(null); }}
+                                                        >
+                                                            Barangays
+                                                        </span>
+                                                        <span className="text-slate-300">/</span>
+                                                        <span className="text-slate-700 font-semibold">{selectedFolder}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-0.5">
+                                                        <h3 className="text-base font-bold text-slate-900 tracking-tight">{selectedFolder}</h3>
+                                                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/60 font-mono text-[11px] font-bold">
+                                                            {Object.keys(applicantGroups).length} Applicant{Object.keys(applicantGroups).length !== 1 ? 's' : ''}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {Object.keys(applicantGroups).length > 0 ? (
+                                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
+                                                    {Object.entries(applicantGroups).map(([appName, apps]) => (
+                                                        <div
+                                                            key={appName}
+                                                            className="group cursor-pointer flex flex-col items-center p-2 rounded-xl hover:bg-blue-50/50 transition-colors"
+                                                            onClick={() => setSelectedApplicant(appName)}
+                                                            title={`View ${apps.length} application(s) for ${appName}`}
+                                                        >
+                                                            <div className="relative mb-3 transition-transform duration-200 group-hover:scale-105 group-hover:-translate-y-1">
+                                                                <svg width="76" height="76" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm">
+                                                                    <path d="M10 28C10 24.6863 12.6863 22 16 22H36.1716C37.7628 22 39.2889 22.6321 40.4142 23.7574L46.5858 29.9289C47.7111 31.0543 49.2372 31.6863 50.8284 31.6863H84C87.3137 31.6863 90 34.3726 90 37.6863V76C90 79.3137 87.3137 82 84 82H16C12.6863 82 10 79.3137 10 76V28Z" fill="url(#folder-back)"/>
+                                                                    <path d="M26 14C26 12.8954 26.8954 12 28 12H58L72 26V48C72 49.1046 71.1046 50 70 50H28C26.8954 50 26 49.1046 26 48V14Z" fill={getDocColor(apps[0]?.application_type)} />
+                                                                    <path d="M72 26H60C58.8954 26 58 25.1046 58 24V12L72 26Z" fill={getFoldColor(apps[0]?.application_type)} />
+                                                                    <rect x="34" y="22" width="18" height="3" rx="1.5" fill="#CBD5E1" />
+                                                                    <rect x="34" y="28" width="24" height="3" rx="1.5" fill="#CBD5E1" />
+                                                                    <rect x="34" y="34" width="20" height="3" rx="1.5" fill="#CBD5E1" />
+                                                                    <path d="M10 40C10 36.6863 12.6863 34 16 34H84C87.3137 34 90 36.6863 90 40V76C90 79.3137 87.3137 82 84 82H16C12.6863 82 10 79.3137 10 76V40Z" fill="url(#folder-front)"/>
+                                                                    <defs>
+                                                                        <linearGradient id="folder-back" x1="50" y1="22" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+                                                                            <stop stopColor="#F59E0B" />
+                                                                            <stop offset="1" stopColor="#D97706" />
+                                                                        </linearGradient>
+                                                                        <linearGradient id="folder-front" x1="50" y1="34" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+                                                                            <stop stopColor="#FCD34D" />
+                                                                            <stop offset="1" stopColor="#F59E0B" />
+                                                                        </linearGradient>
+                                                                    </defs>
+                                                                </svg>
+                                                                <span className="absolute -bottom-1 -right-1 bg-white text-slate-800 text-[10px] font-black px-1.5 py-0.5 min-w-[20px] rounded-full shadow-sm border border-slate-200">
+                                                                    {apps.length}
+                                                                </span>
+                                                            </div>
+                                                            <span className="text-[11px] font-bold text-slate-700 leading-snug line-clamp-2 px-1 group-hover:text-blue-700">
+                                                                {appName}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                                                    <svg className="w-10 h-10 mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                                    </svg>
+                                                    <p className="font-semibold text-sm">No applications in this barangay</p>
+                                                </div>
+                                            )}
                                         </>
                                     ) : (
                                         <>
+                                            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200/60">
+                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                                                        </svg>
+                                                    </div>
+                                                    <h3 className="text-sm font-bold text-slate-800 tracking-tight">Barangay Archive Folders</h3>
+                                                </div>
+                                                <span className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 border border-slate-200/60 font-mono text-xs font-bold">
+                                                    {Object.keys(folderGroups).length} Barangays
+                                                </span>
+                                            </div>
                                             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
-                                                {Object.entries(folderGroups).map(([applicant, apps]) => (
+                                                {Object.entries(folderGroups).map(([groupName, apps]) => (
                                                     <div
-                                                        key={applicant}
+                                                        key={groupName}
                                                         className="group cursor-pointer flex flex-col items-center p-2 rounded-xl hover:bg-blue-50/50 transition-colors"
-                                                        onClick={() => setSelectedFolder(applicant)}
-                                                        title={`View ${apps.length} application(s) for ${applicant}`}
+                                                        onClick={() => setSelectedFolder(groupName)}
+                                                        title={`View ${apps.length} application(s) for ${groupName}`}
                                                     >
                                                         <div className="relative mb-3 transition-transform duration-200 group-hover:scale-105 group-hover:-translate-y-1">
-                                                            {/* Custom SVG folder icon mimicking desktop file explorer folders */}
                                                             <svg
                                                                 width="76"
                                                                 height="76"
                                                                 viewBox="0 0 100 100"
                                                                 fill="none"
                                                                 xmlns="http://www.w3.org/2000/svg"
-                                                                className="drop-shadow-sm text-blue-500"
+                                                                className="drop-shadow-sm"
                                                             >
-                                                                {/* Back flap of folder */}
                                                                 <path d="M10 28C10 24.6863 12.6863 22 16 22H36.1716C37.7628 22 39.2889 22.6321 40.4142 23.7574L46.5858 29.9289C47.7111 31.0543 49.2372 31.6863 50.8284 31.6863H84C87.3137 31.6863 90 34.3726 90 37.6863V76C90 79.3137 87.3137 82 84 82H16C12.6863 82 10 79.3137 10 76V28Z" fill="url(#folder-back)"/>
-                                                                {/* Front flap */}
+                                                                <path d="M26 14C26 12.8954 26.8954 12 28 12H58L72 26V48C72 49.1046 71.1046 50 70 50H28C26.8954 50 26 49.1046 26 48V14Z" fill="white" />
+                                                                <path d="M72 26H60C58.8954 26 58 25.1046 58 24V12L72 26Z" fill="#E2E8F0" />
+                                                                <rect x="34" y="22" width="18" height="3" rx="1.5" fill="#CBD5E1" />
+                                                                <rect x="34" y="28" width="24" height="3" rx="1.5" fill="#CBD5E1" />
+                                                                <rect x="34" y="34" width="20" height="3" rx="1.5" fill="#CBD5E1" />
                                                                 <path d="M10 40C10 36.6863 12.6863 34 16 34H84C87.3137 34 90 36.6863 90 40V76C90 79.3137 87.3137 82 84 82H16C12.6863 82 10 79.3137 10 76V40Z" fill="url(#folder-front)"/>
                                                                 <defs>
                                                                     <linearGradient id="folder-back" x1="50" y1="22" x2="50" y2="82" gradientUnits="userSpaceOnUse">
-                                                                        <stop stopColor="#60A5FA" />
-                                                                        <stop offset="1" stopColor="#3B82F6" />
+                                                                        <stop stopColor="#F59E0B" />
+                                                                        <stop offset="1" stopColor="#D97706" />
                                                                     </linearGradient>
                                                                     <linearGradient id="folder-front" x1="50" y1="34" x2="50" y2="82" gradientUnits="userSpaceOnUse">
-                                                                        <stop stopColor="#93C5FD" />
-                                                                        <stop offset="1" stopColor="#2563EB" />
+                                                                        <stop stopColor="#FCD34D" />
+                                                                        <stop offset="1" stopColor="#F59E0B" />
                                                                     </linearGradient>
                                                                 </defs>
                                                             </svg>
-                                                            
-                                                            {/* Count badge styled like notification pills */}
                                                             <span className="absolute -bottom-1 -right-1 bg-white text-slate-800 text-[10px] font-black px-1.5 py-0.5 min-w-[20px] rounded-full shadow-sm border border-slate-200">
                                                                 {apps.length}
                                                             </span>
                                                         </div>
                                                         <span className="text-[11px] font-bold text-slate-700 leading-snug line-clamp-2 px-1 group-hover:text-blue-700">
-                                                            {applicant}
+                                                            {groupName}
                                                         </span>
                                                     </div>
                                                 ))}
@@ -1462,7 +1973,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     <svg className="w-12 h-12 mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                                     </svg>
-                                                    <p className="font-semibold">No applicants found</p>
+                                                    <p className="font-semibold text-sm">No records found</p>
                                                 </div>
                                             )}
                                         </>
@@ -1471,12 +1982,178 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                             )}
                         </div>
 
+                        {/* ── QUICK PREVIEW PANEL ── */}
+                        {viewMode === "list" && peekItem && (
+                            <aside id="quick-preview" aria-label="Quick preview" className="hidden lg:flex w-[300px] shrink-0 bg-white rounded-xl border border-slate-200/90 shadow-2xs flex-col min-h-0 overflow-hidden">
+                                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                    {/* Identity */}
+                                    <div className="p-4 border-b border-slate-100">
+                                        <div className="flex items-start gap-3">
+                                            <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center text-sm font-semibold shrink-0">
+                                                {getInitials(peekItem.applicant_name)}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <h3 className="text-[15px] font-bold text-slate-900 leading-snug">
+                                                    {peekItem.applicant_name || "Unknown Applicant"}
+                                                </h3>
+                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                    <span className="font-mono text-[11px] text-slate-500">
+                                                        {peekItem.reference_number || `APP-${peekItem.id}`}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => handleCopyRef(e, peekItem.reference_number || `APP-${peekItem.id}`)}
+                                                        aria-label="Copy reference number"
+                                                        className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer"
+                                                    >
+                                                        {copiedRef === (peekItem.reference_number || `APP-${peekItem.id}`) ? (
+                                                            <span className="text-[10px] text-emerald-600 font-semibold">Copied</span>
+                                                        ) : (
+                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v2.25A2.25 2.25 0 0113.5 21.75h-9a2.25 2.25 0 01-2.25-2.25v-9a2.25 2.25 0 012.25-2.25h2.25m3 0v-2.25A2.25 2.25 0 0110.5 3.75h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-2.25" />
+                                                            </svg>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPeekItem(null)}
+                                                aria-label="Close preview"
+                                                className="ml-auto -mr-1 -mt-1 w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <div className="mt-3">
+                                            <StatusBadge status={peekItem.status} />
+                                        </div>
+                                    </div>
 
+                                    {/* Progress */}
+                                    <div className="p-4 border-b border-slate-100">
+                                        <h4 className="text-xs font-semibold text-slate-900 mb-3">Progress</h4>
+                                        <ol>
+                                            {getProgressSteps(peekItem.status).map((step, idx, arr) => {
+                                                const isLast = idx === arr.length - 1;
+                                                const sub = step.state === "current"
+                                                    ? "Current stage"
+                                                    : step.state === "pending"
+                                                    ? "Pending"
+                                                    : step.state === "denied"
+                                                    ? "Not reached"
+                                                    : step.key === "Received"
+                                                    ? `Filed ${formatDate(peekItem.created_at)}`
+                                                    : "Completed";
+                                                return (
+                                                    <li key={step.key} className="flex gap-3" aria-current={step.state === "current" ? "step" : undefined}>
+                                                        <div className="flex flex-col items-center">
+                                                            {step.state === "done" ? (
+                                                                <span className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+                                                                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5" aria-hidden="true">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                                    </svg>
+                                                                </span>
+                                                            ) : step.state === "current" ? (
+                                                                <span className="w-4 h-4 rounded-full border-[3px] border-blue-600 bg-white shrink-0" />
+                                                            ) : (
+                                                                <span className={`w-4 h-4 rounded-full border-2 bg-white shrink-0 ${step.state === "denied" ? "border-rose-200" : "border-slate-300"}`} />
+                                                            )}
+                                                            {!isLast && <span className={`w-0.5 flex-1 min-h-[20px] ${step.state === "done" ? "bg-blue-600" : "bg-slate-200"}`} />}
+                                                        </div>
+                                                        <div className={isLast ? "" : "pb-3"}>
+                                                            <p className={`text-xs leading-4 ${step.state === "current" ? "font-bold text-slate-900" : step.state === "done" ? "font-medium text-slate-900" : "font-medium text-slate-500"}`}>
+                                                                {step.label}
+                                                            </p>
+                                                            <p className="text-[11px] text-slate-400">{sub}</p>
+                                                        </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ol>
+                                        {peekItem.status === "Denied" && (
+                                            <p className="mt-3 text-[11px] font-semibold text-rose-600 bg-rose-50 border border-rose-200/80 rounded-lg px-2.5 py-1.5">
+                                                Application denied
+                                            </p>
+                                        )}
+                                    </div>
 
-                        {/* ── END OF MAIN CONTENT ── */}
-                    </main>
-                </div>
+                                    {/* Details */}
+                                    <dl className="p-4 grid grid-cols-[96px_1fr] gap-x-3 gap-y-2.5 text-xs">
+                                        <dt className="text-slate-500">Application</dt>
+                                        <dd className="text-slate-900">{splitTypes(peekItem.application_type).join(", ") || "—"}</dd>
+                                        <dt className="text-slate-500">Land use</dt>
+                                        <dd className="text-slate-900">{peekItem.target_land_use_class || peekItem.land_use_class || "—"}</dd>
+                                        <dt className="text-slate-500">Location</dt>
+                                        <dd className="text-slate-900">{peekItem.barangay ? `Brgy. ${peekItem.barangay}` : "—"}</dd>
+                                        <dt className="text-slate-500">Assessment fee</dt>
+                                        <dd className="font-mono font-semibold text-slate-900">{formatFee(peekItem.assessment_fee)}</dd>
+                                        <dt className="text-slate-500">Filed</dt>
+                                        <dd className="text-slate-900">{formatDate(peekItem.created_at)} <span className="text-slate-400">· {timeAgo(peekItem.created_at)}</span></dd>
+                                        <dt className="text-slate-500">Remarks</dt>
+                                        <dd className="text-slate-900 break-words">{peekItem.remarks?.trim() || "—"}</dd>
+                                    </dl>
+                                </div>
+
+                                <div className="p-3.5 border-t border-slate-200/80 flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => { if (peekItem.id) router.visit(`/applications/${peekItem.id}`); }}
+                                        disabled={!peekItem.id}
+                                        className="flex-1 h-10 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+                                    >
+                                        Open full record
+                                    </button>
+                                    <div className="relative">
+                                        <button
+                                            type="button"
+                                            onClick={() => setMoreOpen((o) => !o)}
+                                            aria-label="More actions"
+                                            aria-haspopup="menu"
+                                            aria-expanded={moreOpen}
+                                            className="w-10 h-10 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center transition-colors cursor-pointer"
+                                        >
+                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+                                            </svg>
+                                        </button>
+                                        {moreOpen && (
+                                            <div role="menu" className="absolute bottom-full right-0 mb-1 w-48 bg-white rounded-xl shadow-lg border border-slate-200/90 p-1 z-50">
+                                                <button
+                                                    type="button"
+                                                    role="menuitem"
+                                                    onClick={(e) => { handleCopyRef(e, peekItem.reference_number || `APP-${peekItem.id}`); setMoreOpen(false); }}
+                                                    className="w-full text-left px-2.5 py-1.5 text-xs rounded-lg text-slate-700 hover:bg-slate-50 cursor-pointer"
+                                                >
+                                                    Copy reference number
+                                                </button>
+                                                {peekItem.id && (
+                                                    <a
+                                                        role="menuitem"
+                                                        href={`/applications/${peekItem.id}`}
+                                                        target="_blank"
+                                                        rel="noopener"
+                                                        onClick={() => setMoreOpen(false)}
+                                                        className="block px-2.5 py-1.5 text-xs rounded-lg text-slate-700 hover:bg-slate-50"
+                                                    >
+                                                        Open in new tab
+                                                    </a>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </aside>
+                        )}
+                    </div>
+                        </div>
+
+                    {/* ── END OF MAIN CONTENT ── */}
+                </main>
             </div>
+        </div>
         </>
     );
 }
