@@ -86,7 +86,7 @@ export default function ForecastPanel({
                         </span>
                     </div>
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                        Model Confidence: SARIMAX Multivariate
+                        Model Confidence: Multivariate Forecast
                     </span>
                 </div>
             )}

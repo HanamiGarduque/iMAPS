@@ -23,7 +23,7 @@ class AnalyticsController extends Controller
         
         $file = $request->file('cpi_file');
         $fileName = 'cpi_data.xlsx';
-        $destinationPath = base_path('python-analytics/data');
+        $destinationPath = storage_path('app/data');
 
         try {
             $file->move($destinationPath, $fileName);

@@ -15,7 +15,6 @@ export default defineConfig({
             // Merged all ignored patterns into a single array
             ignored: [
                 '**/public/tiles/**',
-                '**/python-analytics/**',
                 '**/ml_service/**',
                 '**/.venv/**',
                 '**/venv/**',

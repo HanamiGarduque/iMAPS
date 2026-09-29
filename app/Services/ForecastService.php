@@ -110,9 +110,6 @@ class ForecastService
             } else {
                 $defaultPath = storage_path('app/rosario_zoning_apps_2021_2026.csv');
                 if (!file_exists($defaultPath)) {
-                    $defaultPath = base_path('python-analytics/data/rosario_zoning_apps_2021_2026.csv');
-                }
-                if (!file_exists($defaultPath)) {
                     throw new Exception("Default historical CSV data file not found.");
                 }
                 $fileContent = file_get_contents($defaultPath);
