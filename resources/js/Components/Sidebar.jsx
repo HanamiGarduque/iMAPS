@@ -25,17 +25,6 @@ export default function Sidebar({
             adminOnly: false,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-                </svg>
-            ),
-        },
-        {
-            href: '/maps',
-            label: 'Maps',
-            badge: null,
-            adminOnly: false,
-            icon: (
-                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                     <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
                     <line x1="9" y1="3" x2="9" y2="18" />
                     <line x1="15" y1="6" x2="15" y2="21" />
@@ -109,8 +98,7 @@ export default function Sidebar({
     const isActive = (href) => {
         if (activePage) {
             const normalized = activePage.toLowerCase();
-            if (href === '/dashboard' && normalized === 'dashboard') return true;
-            if (href === '/maps' && normalized === 'maps') return true;
+            if (href === '/dashboard' && (normalized === 'dashboard' || normalized === 'maps')) return true;
             if (href === '/applications' && (normalized === 'applications' || normalized === 'drafts')) return true;
             if (href === '/reports-and-forecasting' && (normalized === 'reports-and-forecasting' || normalized === 'analytics')) return true;
             if (href === '/settings' && normalized === 'settings') return true;

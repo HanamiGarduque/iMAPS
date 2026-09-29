@@ -190,7 +190,7 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving }
     );
 }
 
-export default function Show({
+function ShowInner({
     auth,
     application: initialApp,
     app: alternateApp,
@@ -214,54 +214,9 @@ export default function Show({
     const [statusDialog, setStatusDialog] = useState(null); // preset status or null
     const [siteMapOpen, setSiteMapOpen] = useState(false);
     const [parcelMapData, setParcelMapData] = useState(null);
-    const [landUseMapData, setLandUseMapData] = useState(null);
-    const [activeParcelFeature, setActiveParcelFeature] = useState(null);
-    const [activeParcelIndex, setActiveParcelIndex] = useState(0);
-    const [pinLookupMap, setPinLookupMap] = useState({});
-    const rosarioCenter = [13.845, 121.2063];
-
-    useEffect(() => {
-        fetch("/geojson/rosario_brgy_map.geojson")
-            .then((res) => res.json())
-            .then((data) => setBrgyMapData(sanitizeGeoJSON(data)))
-            .catch(() => {});
-
-        fetch("/geojson/land_use_plan.geojson")
-            .then((res) => res.json())
-            .then((data) => setLandUseMapData(sanitizeGeoJSON(data)))
-            .catch(() => {});
-
-        fetch("/api/map/land_parcels")
-            .then((res) => {
-                if (!res.ok) throw new Error("Unable to load land parcel layer");
-                return res.json();
-            })
-            .then((data) => {
-                const sanitized = sanitizeGeoJSON(data);
-                setParcelMapData(sanitized);
-
-                const lookupMap = {};
-                (sanitized?.features || []).forEach((feature) => {
-                    const pin = feature?.properties?.property_index_number?.trim();
-                    if (!pin) return;
-                    lookupMap[pin] = feature;
-                });
-                setPinLookupMap(lookupMap);
-            })
-            .catch(() => {});
-    }, []);
-
-    useEffect(() => {
-        if (uniqueParcels && uniqueParcels.length > 0) {
-            const currentParcel = uniqueParcels[activeParcelIndex] || uniqueParcels[0];
-            const targetPin = currentParcel?.property_index_number?.trim();
-            if (targetPin && pinLookupMap[targetPin]) {
-                setActiveParcelFeature(pinLookupMap[targetPin]);
-            } else {
-                setActiveParcelFeature(null);
-            }
-        }
-    }, [pinLookupMap, activeParcelIndex, app, uniqueParcels]);
+    const [brgyMapData, setBrgyMapData] = useState(null);
+    const [liveStatuses, setLiveStatuses] = useState({});
+    const [refs, setRefs] = useState({ sb_ordinance_number: app.sb_ordinance_number || "", dar_clearance_ref: app.dar_clearance_ref || "" });
 
     useEffect(() => {
         const tick = () => {
@@ -1068,5 +1023,50 @@ export default function Show({
 
             <SiteMapPrint open={siteMapOpen} onClose={() => setSiteMapOpen(false)} form={app} parcelMapData={parcelMapData} preparedBy={userName} />
         </>
+    );
+}
+
+class ShowErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error, errorInfo) {
+        console.error("Show component crashed:", error, errorInfo);
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+                    <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-6 text-center">
+                        <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <h2 className="text-base font-bold text-slate-900 mb-1">Failed to load application record</h2>
+                        <p className="text-xs text-slate-500 mb-4">{this.state.error?.message || "An unexpected error occurred while rendering this application."}</p>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors cursor-pointer"
+                        >
+                            Reload page
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+export default function Show(props) {
+    return (
+        <ShowErrorBoundary>
+            <ShowInner {...props} />
+        </ShowErrorBoundary>
     );
 }

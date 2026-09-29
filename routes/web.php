@@ -3,7 +3,6 @@
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\TechnicalReviewController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\MapsController;
 use App\Http\Controllers\PublicPortalController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
@@ -46,8 +45,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard');
 
-    // Geospatial map view (zoning overlays, barangay boundaries, land-use diversity)
-    Route::get('/maps', [MapsController::class, 'index'])
+    // Redirect /maps to the unified GIS Dashboard
+    Route::get('/maps', fn () => redirect()->route('dashboard'))
         ->name('maps.index');
     // Search
     Route::get('/api/global-search', [SearchController::class, 'globalSearch'])->middleware('auth');
