@@ -4031,3 +4031,204 @@ rows - zero writes from the browser.
 **Next: 9C-3 - Planning Officer Technical Retry Service + POST Action.** Not
 started. It introduces business mutation and audit logging, so it requires its
 own bounded audit and implementation review.
+---
+
+# LOOP 9C-3 - PLANNING OFFICER TECHNICAL DELIVERY RETRY - SERVER-SIDE IMPLEMENTED 2026-09-30
+
+## What this is
+
+A Planning Officer who currently owns a zoning application can re-queue the
+**delivery transport** for one recorded delivery failure, without touching the
+inspection, the application, the assignment, or any business decision.
+
+## Status
+
+**SERVER-SIDE IMPLEMENTED.** The retry service, the shared eligibility rules,
+the POST action, the read-only status reader, and the writer re-dispatch are all
+in place. The **retry UI is NOT YET IMPLEMENTED** (9C-4).
+
+## Authority
+
+The **current assigned Planning Officer only.** All five rules live in
+`app/Support/InspectionDeliveryRetryEligibility.php` and are shared verbatim by
+the reader and the retry service, so the panel and the POST can never disagree:
+
+- **A.** the actor's role is exactly `Planning Officer`
+- **B.** `zoning_applications.assigned_planning_officer_id` is NOT NULL **and**
+  equals the authenticated local user id
+- **C.** the round's `delivery_status` is exactly `delivery_failed`
+- **D.** the round is not superseded
+- **E.** the round's inspector satisfies the repository's canonical **local**
+  FieldSync eligibility rule
+
+**Authority is a single stored pointer.** `encoded_by`,
+`technical_reviews.reviewed_by`, `audit_trail.performed_by` and the application
+creator are deliberately NOT consulted. Every live application happens to carry
+an `encoded_by` pointing at a Planning Officer who does **not** own it, so
+inferring ownership from that column would hand retry authority to the wrong
+person on every single application.
+
+**No Admin retry. No Site Inspector retry. No reviewer retry.** A role other
+than `Planning Officer` fails rule A, and a Planning Officer who does not own the
+application fails rule B, even for an Admin or the original encoder.
+
+## Eligibility
+
+`delivery_failed` **and** not superseded **and** a locally deliverable
+inspector. `delivery_failed` is the only state a retry can act on: a
+`pending_delivery` round is already in flight, and a `delivered` round has
+succeeded.
+
+## Supersession
+
+A round is superseded when another `site_inspections` row exists with the
+**same `zoning_application_id`** AND the **same `parcel_id`** AND a **higher
+`id`**. That is exactly the scope `TechnicalReviewController::createInspectionRound()`
+and `resolveReviewedInspectionId()` already use, so "current round" means the
+same thing to the technical review that can create a superseding round as it
+does to the retry gate. Neither `parcel_id` alone nor application alone is used,
+and neither is array position nor the 9C-1 display round number.
+
+A **NULL `parcel_id` fails closed**: the composite scope cannot be evaluated
+without one, so such a round is never reported as non-superseded.
+
+## Inspector rule
+
+`active Site Inspector` + correct role + non-blank **local** `handshake_key`,
+resolved through the repository's existing active-inspector rule.
+
+**This is not remote validation.** `handshake_key` is a local column: its
+presence proves the local account has a FieldSync account to deliver to. It does
+**not** prove the remote `profiles` row exists, that Supabase is reachable, or
+that the remote field job can be written. Those are owned by
+`PushInspectionToSupabase::resolveSupabaseUserId()`, and a failure there becomes
+a durable 9B delivery attempt. The HTTP request and the service must never grow
+a remote check: doing so would fork the single bridge authority and could
+pre-empt a durable failure record with a synchronous request error.
+
+## Lock order
+
+**application then inspection**, both `lockForUpdate()`, inside one local
+transaction:
+
+1. `zoning_applications` by id, `lockForUpdate()`
+2. `site_inspections` by id, `lockForUpdate()`
+
+The application is locked first because ownership lives on
+`zoning_applications`, not on the inspection. This order also removes the only
+plausible deadlock: a superseding round for the same application cannot be
+created while the application row is held, so the inspection cannot be replaced
+between the two reads.
+
+## Atomic write
+
+One local transaction contains all three:
+
+1. `site_inspections.delivery_status` moved to `pending_delivery` - the **only**
+   column this service writes on an inspection
+2. one **strict** `audit_trail` row with action `DELIVERY_RETRY_QUEUED`,
+   inserted with `DB::table('audit_trail')->insert([...])` rather than
+   `AuditLogger::log()`, because that helper swallows insert failures
+3. one `jobs` row from the database queue `insertGetId` on that same connection
+
+**No compensation logic.** There is deliberately no "revert pending on dispatch
+failure" path. An infrastructure failure lets the exception propagate and the
+transaction unwinds all three writes together, so the system can never be left
+describing a retry that was not queued.
+
+**No attempt row is created by the request.** `inspection_delivery_attempts` is
+never inserted by the HTTP request or by this service. Attempt history is
+written later by the 9B writer/recorder when the remote side actually acts, so a
+queue row that never runs leaves no fabricated attempt.
+
+## Queue source
+
+`PushInspectionToSupabase::dispatch($inspection, 'planning_officer_retry')`.
+The **same** writer job is re-queued that already carries delivery; the retry
+does not introduce a second writer. The source constant is
+`InspectionDeliveryAttempt::SOURCE_PLANNING_OFFICER_RETRY`, which the 9B
+recorder resolves so a retry delivery stays attributable in attempt history.
+
+## Verification evidence - stated exactly
+
+| Claim | State |
+|---|---|
+| Server-side retry path | **IMPLEMENTED** |
+| PostgreSQL + database-queue atomicity (lock order, three writes, rollback) | **PREVIOUSLY VERIFIED** |
+| Double submit (second POST conflicts, creates nothing) | **PREVIOUSLY VERIFIED** |
+| Wrong owner / NULL owner / wrong state / superseded / invalid inspector | **PREVIOUSLY VERIFIED** |
+| Remote Supabase retry execution | **NOT YET E2E VERIFIED** |
+
+The runtime probes behind the verified rows above require a real PostgreSQL
+target and a development baseline. They were executed and recorded before this
+branch was isolated, and they are **not re-enacted here**: this branch carries
+no database-safety guard, so re-running a database-writing probe in the current
+environment would put the canonical database at risk in order to reproduce
+evidence that already exists. Recorded as
+`SKIPPED - PREVIOUSLY RUNTIME-PROVEN; NO NEED TO RISK CANONICAL`.
+
+**Remote delivery has not been exercised.** Nothing in this section should be
+read as proof that a retry reached FieldSync. Until 9C-5, the only
+authoritative statement is that an accepted retry atomically records intent and
+queues the existing writer.
+
+## What a retry does NOT change
+
+Retry is a **transport** operation. It re-queues delivery of a result that
+already exists. It is not a workflow restart, and it must not be read as one.
+
+9C-3 changes **only** the delivery transport/retry layer. It does **NOT** change:
+
+- application status
+- inspection business status
+- inspector assignment
+- Planning Officer ownership
+- technical review decisions
+- photo evidence
+- FieldSync `current_step` / `progress`
+- Planning Review identity
+- reinspection identity
+
+A retry never grants a new round, never reopens a review, never re-assigns
+anyone, and never re-sends photographs. The only three writes are the delivery
+status, one audit row, and one queue row.
+
+## Current data limitation (development/E2E, NOT a business defect)
+
+The current development database has **0 applications with
+`assigned_planning_officer_id` populated**, and `application_po_assignments` and
+`site_inspection_assignments` are both empty. Therefore **no persistent current
+row is eligible for Planning Officer retry**, and rule B fails for every
+application.
+
+This is a development-data state, not a defect and not a regression:
+
+- historical owners were **not** backfilled, because inventing ownership would
+  fabricate business history;
+- ownership was **not** inferred from `encoded_by`, which would grant authority
+  to the wrong person on every application;
+- eligibility was **not** relaxed to make retry executable.
+
+A future controlled E2E must establish legitimate Planning Officer ownership
+first, and only then exercise the retry. That belongs to 9C-5, not to this phase.
+
+## Boundaries respected
+
+No schema change, no migration, no forward SQL, no canonical write, no Supabase
+change, no FieldSync change, no business-logic change outside the delivery
+retry layer, and no frontend change.
+
+Verification for this closure: `Loop9c1DeliveryStatusContractTest`,
+`Loop9c2DeliveryPanelContractTest`, `Loop9c2RetryActionContractTest` and
+`Loop9c3RetryEligibilityContractTest` together 139 tests / 953 assertions PASS;
+`Loop9c1DeliveryStatusReaderTest` 11 tests / 49 assertions PASS; full Unit suite
+530 / 2895 PASS; `php -l` clean; `git diff --check` clean. Live canonical
+verified read-only and unchanged: 70 applications, 35 inspections, 6
+`delivery_failed`, 0 `pending_delivery`, 0 `delivered`, 29 NULL, 6 attempts, 0
+`DELIVERY_RETRY_QUEUED` audit rows, 0 jobs, 16 ledger rows, sequences
+141 / 73 / 37 / 25 / 194 / 78 / 19.
+
+**Next: 9C-4 - Planning Officer Retry Delivery UI.** Not started. The backend
+already exposes `retry_available` and `retry_unavailable_reason` on the 9C-1
+reader, and the POST action already refuses correctly, so 9C-4 is a frontend
+surface over a settled contract.

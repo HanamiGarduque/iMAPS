@@ -104,8 +104,16 @@ class Loop9c1DeliveryStatusReaderTest extends TestCase
         );
     }
 
-    public function test_reader_exposes_no_mutation_route(): void
+    public function test_delivery_reader_remains_read_only_when_retry_post_route_exists(): void
     {
+        // RENAMED 2026-09-30 (Loop 9C-3-3, cosmetic only - no assertion changed).
+        //
+        // The old name, test_reader_exposes_no_mutation_route, described the
+        // OPPOSITE of what this test now proves. It survived the Gap Issue D
+        // body replacement and would have misled any reader into thinking the
+        // contract still forbids a mutation route. The body has asserted the
+        // correct contract since 2026-09-30; only the label was stale.
+        //
         // REPLACED 2026-09-30 (Gap Issue D).
         //
         // The previous version of this test asserted two things that were true
