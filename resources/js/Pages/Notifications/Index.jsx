@@ -3,6 +3,7 @@ import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 
 const TYPE_CONFIG = {
     application_created: {
@@ -129,8 +130,7 @@ export default function Index({
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };

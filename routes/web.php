@@ -94,6 +94,9 @@ Route::middleware('auth')->group(function () {
         ->name('drafts.destroy');
 
     // ── Single-View & Standard Status Transitions ──
+    Route::match(['get', 'post'], '/applications/{id}/export-document/{type}', [ApplicationController::class, 'exportDocument'])
+        ->name('applications.export-document');
+
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show');
 

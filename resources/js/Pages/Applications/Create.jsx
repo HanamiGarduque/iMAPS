@@ -5,6 +5,7 @@ import axios from "axios";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -267,6 +268,7 @@ const emptyForm = () => ({
     application_type: "",
     form_number: "",
     target_land_use_class: "",
+    allowable_use: "",
     purpose: "",
     first_name: "",
     middle_name: "",
@@ -291,6 +293,7 @@ const emptyForm = () => ({
     right_over_land: "",
     project_tenure: "",
     preferred_release_mode: "",
+    route_to_sb: false,
     remarks: "",
     zoning_certificate_fee: "",
     locational_clearance_fee: "",
@@ -316,6 +319,7 @@ const emptyForm = () => ({
             survey_number: "",
             lot_area_sqm: "",
             land_use_class: "",
+            allowable_use: "",
             coordinates: "",decision: "",
             decision_reason: "",
             inspector_id: "",
@@ -358,174 +362,100 @@ function MapController({ brgyData, activeParcelFeature }) {
 }
 
 
-// ── Printable Official Application Routing & Acknowledgement Slip Modal ──
-function RoutingSlipModal({ open, data, onClose, onPrint }) {
+// ── Application Encoding Success Modal ──
+function RoutingSlipModal({ open, data, onClose }) {
     if (!open || !data) return null;
 
-    const trackingUrl = typeof window !== "undefined" 
-        ? `${window.location.origin}/track?ref=${encodeURIComponent(data.reference_number || "")}`
-        : `https://imaps.rosario-batangas.gov.ph/track?ref=${encodeURIComponent(data.reference_number || "")}`;
-
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(trackingUrl)}`;
-
     return (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in">
-            <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[82vh]">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto">
                 
-                {/* Header Controls (Non-Printable) */}
-                <div className="flex items-center justify-between px-5 py-2.5 border-b border-slate-100 bg-slate-50 print:hidden shrink-0">
-                    <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-xs font-bold text-slate-800">Application Routing Slip Generated</span>
+                {/* Header */}
+                <div className="bg-emerald-600 px-6 py-6 text-white text-center relative overflow-hidden">
+                    <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/10 rounded-full blur-xl pointer-events-none" />
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white text-emerald-600 text-xl font-bold shadow-lg mb-2">
+                        ✓
                     </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={onPrint}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
-                        >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
-                            </svg>
-                            <span>Print Slip</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                        >
-                            ✕
-                        </button>
-                    </div>
+                    <h3 className="text-base sm:text-lg font-extrabold tracking-tight">Application Encoded Successfully!</h3>
+                    <p className="text-emerald-100 text-xs mt-0.5">Application record created & auto-linked to workflow pipeline.</p>
                 </div>
 
-                {/* Printable Document Area */}
-                <div id="printable-routing-slip" className="p-4 sm:p-5 overflow-y-auto space-y-3 bg-white text-slate-900 font-sans">
+                {/* Details Body */}
+                <div className="p-5 space-y-3.5 bg-slate-50/50">
                     
-                    {/* Official Document Header */}
-                    <div className="text-center border-b border-slate-900/80 pb-2">
-                        <p className="text-[9px] font-semibold tracking-widest text-slate-500 uppercase">Republic of the Philippines · Province of Batangas</p>
-                        <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-tight text-slate-950 mt-0.5">Municipality of Rosario</h2>
-                        <p className="text-[10px] font-bold tracking-wider uppercase text-blue-700">Municipal Planning and Development Office (MPDO)</p>
-                        <div className="inline-block bg-slate-900 text-white text-[9px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded mt-1">
-                            Official Zoning Application Routing Slip
+                    {/* Reference Box */}
+                    <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs flex items-center justify-between">
+                        <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Application Reference No.</span>
+                            <h4 className="text-lg font-mono font-extrabold text-blue-700 tracking-tight">{data.reference_number}</h4>
                         </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                navigator.clipboard.writeText(data.reference_number);
+                                alert("Reference number copied to clipboard!");
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-300 transition-all cursor-pointer"
+                        >
+                            📋 Copy Ref
+                        </button>
                     </div>
 
-                    {/* Reference No. & Public Tracking QR Row */}
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <div className="sm:col-span-8 flex flex-col justify-center space-y-1">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Application Reference No.</span>
-                            <h3 className="text-lg sm:text-xl font-mono font-extrabold text-blue-700 tracking-tight">{data.reference_number}</h3>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-slate-600">
-                                <span>Date Filed: <strong className="text-slate-800 font-mono">{data.date_of_application || new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</strong></span>
-                                <span>Encoded By: <strong className="text-slate-800">{data.encoded_by_name || "Planning Staff"}</strong></span>
-                            </div>
+                    {/* Summary Grid */}
+                    <div className="grid grid-cols-2 gap-3 text-xs bg-white p-3.5 rounded-xl border border-slate-200">
+                        <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Applicant Name</span>
+                            <p className="font-bold text-slate-900 truncate">{data.applicant_name}</p>
                         </div>
-                        <div className="sm:col-span-4 flex items-center justify-end gap-2.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3">
-                            <div className="text-right">
-                                <p className="text-[10px] font-bold text-slate-700 uppercase">Public Tracking</p>
-                                <p className="text-[9px] text-slate-400">Scan QR to track status</p>
-                            </div>
-                            <div className="bg-white p-1 rounded-lg border border-slate-200 shadow-2xs shrink-0 text-center">
-                                <img src={qrCodeUrl} alt="QR Code Tracking" className="w-12 h-12 object-contain" />
-                            </div>
+                        <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Clearance Type</span>
+                            <p className="font-bold text-slate-900 truncate">{data.application_type}</p>
                         </div>
-                    </div>
-
-                    {/* Applicant Profile & Clearance Scope */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Registered Applicant</p>
-                            <p className="font-bold text-slate-900 text-xs sm:text-sm truncate">{data.applicant_name}</p>
-                            <div className="flex items-center gap-3 text-[11px] text-slate-600">
-                                <span className="font-mono">+63 {data.contact_number}</span>
-                                {data.email && <span className="truncate">{data.email}</span>}
-                            </div>
-                            {data.representative_name && (
-                                <p className="text-[10px] text-slate-500 pt-1 border-t border-slate-200 mt-1 truncate">
-                                    Representative: <strong className="text-slate-700">{data.representative_name}</strong>
-                                </p>
-                            )}
+                        <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Location</span>
+                            <p className="font-medium text-slate-800 truncate">Brgy. {data.barangay}</p>
                         </div>
-                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Clearance Classification</p>
-                            <p className="font-bold text-slate-900 text-xs sm:text-sm">{data.application_type}</p>
-                            <div className="flex items-center gap-3 text-[11px] text-slate-600">
-                                <span>Land Use: <strong className="text-slate-800">{data.land_use_class}</strong></span>
-                                {data.project_cost && Number(data.project_cost) > 0 && (
-                                    <span>Project Cost: <strong className="text-slate-800 font-mono">₱ {Number(data.project_cost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
-                                )}
-                            </div>
-                            <p className="text-[11px] text-slate-600 truncate">Purpose: <span className="font-medium text-slate-700">{data.purpose}</span></p>
+                        <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Status</span>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md mt-0.5">
+                                Received · Evaluation
+                            </span>
                         </div>
                     </div>
-
-                    {/* Location Summary & Assessment Fee Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1.5">
-                            <div className="flex items-center justify-between border-b border-slate-200 pb-1">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Location & Lots Summary</p>
-                                <p className="font-semibold text-slate-800 text-[11px] truncate">{data.street_address ? `${data.street_address}, ` : ""}Brgy. {data.barangay}</p>
-                            </div>
-                            <div className="max-h-16 overflow-y-auto divide-y divide-slate-100 text-[11px]">
-                                {(data.parcels || []).map((parcel, idx) => (
-                                    <div key={idx} className="py-0.5 flex items-center justify-between">
-                                        <span className="font-mono font-semibold text-slate-800 truncate">{parcel.parcel_code || `Lot ${idx + 1}`}: PIN {parcel.property_index_number || "—"}</span>
-                                        <span className="text-slate-600 font-mono text-[10px] shrink-0">{parcel.lot_area_sqm ? `${Number(parcel.lot_area_sqm).toLocaleString()} m²` : ""}</span>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="pt-1 border-t border-slate-200 flex items-center justify-between text-[11px] font-bold text-blue-700">
-                                <span>Total Land Area:</span>
-                                <span className="font-mono">{Number(data.total_area || 0).toLocaleString()} sq.m</span>
-                            </div>
-                        </div>
-
-                        <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 flex flex-col justify-between">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-[9px] font-bold text-blue-800 uppercase tracking-wider">Assessed Clearance Fee</p>
-                                    <p className="text-base sm:text-lg font-mono font-bold text-blue-900 mt-0.5">₱ {Number(data.assessment_fee || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                                    <p className="text-[10px] text-blue-700">OR No: <strong className="font-mono">{data.or_number || "To be issued"}</strong></p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-[9px] font-bold text-blue-800 uppercase tracking-wider">Pipeline Status</p>
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 mt-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                                        Received · Evaluation
-                                    </span>
-                                    <p className="text-[9px] text-slate-500 mt-0.5">Next: Site Inspection</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Official Notice */}
-                    <p className="text-[9px] text-center text-slate-400 pt-1.5 border-t border-slate-100 leading-relaxed">
-                        Present this routing slip to the MPDO Zoning Division for inspection tracking. Scan the QR code for 24/7 public tracking updates.
-                    </p>
                 </div>
 
-                {/* Footer Buttons (Non-Printable) */}
-                <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 print:hidden flex items-center justify-between shrink-0">
+                {/* Footer Actions */}
+                <div className="px-5 py-3.5 border-t border-slate-100 bg-white flex flex-col sm:flex-row items-center justify-end gap-2 shrink-0">
                     <button
                         type="button"
-                        onClick={onPrint}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
+                        onClick={() => router.visit("/applications")}
+                        className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition-all cursor-pointer text-center"
                     >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
-                        </svg>
-                        <span>Print Routing Slip</span>
+                        Applications List
                     </button>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
-                    >
-                        <span>Done & Return to Applications</span>
-                    </button>
+
+                    {data.id ? (
+                        <Link
+                            href={`/applications/${data.id}`}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer text-center"
+                        >
+                            <span>View Application Details</span>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                            </svg>
+                        </Link>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => router.visit("/applications")}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                        >
+                            <span>View Application Details</span>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                            </svg>
+                        </button>
+                    )}
                 </div>
 
             </div>
@@ -893,6 +823,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     tct_number: "",
                     tax_dec_number: "",
                     lot_area_sqm: "",
+                    land_use_class: "",
+                    allowable_use: "",
                     coordinates: "",
                     decision: "",
                     decision_reason: "",
@@ -1206,8 +1138,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };
@@ -1321,9 +1252,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
                 newErrors.email = "Enter a valid email format";
             }
-            if (form.corporation_contact && (form.corporation_contact.length !== 10 || !form.corporation_contact.startsWith("9"))) {
-                newErrors.corporation_contact = "Must be exactly 10 digits starting with 9";
-            }
             if (form.representative_contact && (form.representative_contact.length !== 10 || !form.representative_contact.startsWith("9"))) {
                 newErrors.representative_contact = "Must be exactly 10 digits starting with 9";
             }
@@ -1436,6 +1364,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 });
 
                 setRoutingSlipData({
+                    id: page.props.flash?.application_id || null,
                     reference_number: ref,
                     date_of_application: new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
                     encoded_by_name: userName,

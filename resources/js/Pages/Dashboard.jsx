@@ -3,6 +3,7 @@ import { Head, Link, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 import {
     BarChart,
     Bar,
@@ -148,7 +149,7 @@ export default function Dashboard({
                 cancelButton: "px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold transition-colors cursor-pointer",
             },
         }).then((r) => {
-            if (r.isConfirmed) { sessionStorage.removeItem("hasShownWelcome"); router.post("/logout"); }
+            if (r.isConfirmed) { performLogout(); }
         });
     };
 

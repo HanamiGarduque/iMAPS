@@ -171,6 +171,11 @@ export default function StepReview({
                             </p>
                         </div>
                         
+                        <div className="sm:col-span-3">
+                            <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">Selected Allowable Use</p>
+                            <p className="font-semibold text-slate-900 bg-slate-50 p-2 rounded-lg border border-slate-100">{form.allowable_use || form.parcels?.[0]?.allowable_use || "—"}</p>
+                        </div>
+                        
                         <div className="sm:col-span-3 mt-2">
                             <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-1.5">Registered Lots</p>
                             <div className="space-y-1.5 max-h-32 overflow-y-auto pr-2">
@@ -247,6 +252,30 @@ export default function StepReview({
                         )}
                     </div>
                 </div>
+            </div>
+
+            {/* 6. Legislative Routing Option */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col mt-3">
+                <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={Boolean(form.route_to_sb)}
+                        onChange={(e) => {
+                            if (set) {
+                                set("route_to_sb")({ target: { value: e.target.checked } });
+                            }
+                        }}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <div>
+                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">
+                            6. Route Application to Sangguniang Bayan (SB)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                            Check this option if this application requires Sangguniang Bayan legislative endorsement or ordinance approval (e.g., Rezoning, Reclassification, or Special Land Use Approval). Leave unchecked to proceed to standard Technical Review.
+                        </p>
+                    </div>
+                </label>
             </div>
         </div>
     );

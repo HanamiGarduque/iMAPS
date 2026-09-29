@@ -3,6 +3,7 @@ import { Head, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 
 // ── Layer Metadata Specifications ──
 const LAYER_METADATA = {
@@ -119,8 +120,7 @@ export default function Settings({ auth = {} }) {
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };

@@ -4,6 +4,7 @@ import Swal from "sweetalert2";
 import axios from "axios";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 
 export default function ReportsIndex({ auth = {} }) {
     const userName = auth?.user?.name || "Planning Officer";
@@ -179,8 +180,7 @@ export default function ReportsIndex({ auth = {} }) {
             buttonsStyling: false,
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };

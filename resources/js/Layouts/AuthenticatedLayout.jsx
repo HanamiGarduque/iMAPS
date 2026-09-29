@@ -4,6 +4,7 @@ import NavLink from '@/Components/NavLink';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink';
 import { Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
+import { performLogout } from '@/utils/auth';
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
@@ -72,7 +73,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                             Profile
                                         </Dropdown.Link>
                                         <button
-                                            onClick={() => router.post('/logout')}
+                                            onClick={() => performLogout()}
                                             className="w-full text-left block px-4 py-2 text-sm leading-5 text-gray-700 hover:bg-gray-100 transition duration-150 ease-in-out"
                                         >
                                             Log Out
@@ -163,7 +164,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                 Profile
                             </ResponsiveNavLink>
                             <button
-                                onClick={() => router.post('/logout')}
+                                onClick={() => performLogout()}
                                 className="w-full text-left block px-4 py-2 text-sm leading-5 text-gray-700 hover:bg-gray-100"
                             >
                                 Log Out

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 
+import { performLogout } from '@/utils/auth';
+
 // ── Predictive Highlight Helper ──
 const HighlightMatch = ({ text, query }) => {
     if (!query || !text) return <span>{text}</span>;
@@ -251,6 +253,15 @@ export default function Header({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [shortcutsModalOpen, profileMenuOpen, searchFocused]);
 
+    // ── Session Keep-Alive Heartbeat Ping ──
+    useEffect(() => {
+        const pingInterval = setInterval(() => {
+            fetch('/ping').catch(() => {});
+        }, 5 * 60 * 1000); // Ping every 5 minutes
+
+        return () => clearInterval(pingInterval);
+    }, []);
+
     const handleSignOutClick = () => {
         setProfileMenuOpen(false);
         if (onLogout) {
@@ -276,8 +287,7 @@ export default function Header({
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };

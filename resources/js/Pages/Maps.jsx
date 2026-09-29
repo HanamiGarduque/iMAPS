@@ -3,6 +3,7 @@ import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 import StatusPanel, { getSLAInfo, getZoningConformity, STATUS_MARKER_CONFIG, getStatusMarkerConfig } from "@/Components/MapLayers/StatusPanel";
 import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
@@ -2208,8 +2209,7 @@ function DashboardInner({ userName, userRole, total, thisMonth, statusMap, bgySt
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };

@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import ParcelInspectionScheduler from "./ParcelInspectionScheduler";
 import "leaflet/dist/leaflet.css";
 import { Label, Input, Select } from "./FormControls";
+import { ALLOWABLE_USES_BY_ZONE } from "../data/allowableUses";
 
 // ── Approved Municipal Zoning Categories ──
 const ZONING_SUB_CLASSES = [
@@ -937,6 +938,37 @@ export default function StepPropertyGIS({
                                     />
                                 </div>
 
+                                <div className="sm:col-span-3">
+                                    <Label hasError={!!errors.allowable_use}>Allowable Use (Zoning Ordinance List)</Label>
+                                    <Select
+                                        value={form.allowable_use || ""}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            set("allowable_use")(e);
+                                            if (form.parcels && form.parcels.length > 0) {
+                                                const targetIdx = activeParcelIndex !== null ? activeParcelIndex : 0;
+                                                setParcelField(targetIdx, "allowable_use")({ target: { value: val } });
+                                            }
+                                        }}
+                                        hasError={!!errors.allowable_use}
+                                        className="bg-white mt-1 text-xs"
+                                    >
+                                        <option value="">Select allowable use from Zoning Ordinance...</option>
+                                        {ALLOWABLE_USES_BY_ZONE.map((group) => (
+                                            <optgroup key={group.zone} label={group.zone}>
+                                                {group.uses.map((useItem, uIdx) => (
+                                                    <option key={`${group.zone}-${uIdx}`} value={useItem}>
+                                                        {useItem}
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        ))}
+                                    </Select>
+                                    {errors.allowable_use && (
+                                        <p className="text-xs font-medium text-rose-500 mt-1">{errors.allowable_use}</p>
+                                    )}
+                                </div>
+
                                 <div className="sm:col-span-2">
                                     <Label>Project Type / Business Name (Optional)</Label>
                                     <Input
@@ -1019,16 +1051,18 @@ export default function StepPropertyGIS({
                             type="button"
                             onClick={() => {
                                 if (activeTab === "verification") {
+                                    if (!isVerificationDone) return;
                                     setActiveTab("evaluation");
                                 } else if (activeTab === "evaluation") {
+                                    if (isProgressionLocked) return;
                                     setActiveTab("details");
                                 } else {
                                     handleNext();
                                 }
                             }}
-                            disabled={(activeTab === "evaluation" || activeTab === "details") ? isProgressionLocked : false}
+                            disabled={activeTab === "verification" ? !isVerificationDone : ((activeTab === "evaluation" || activeTab === "details") ? isProgressionLocked : false)}
                             className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-white text-xs font-semibold shadow-sm transition-all ml-auto ${
-                                ((activeTab === "evaluation" || activeTab === "details") && isProgressionLocked)
+                                (activeTab === "verification" && !isVerificationDone) || ((activeTab === "evaluation" || activeTab === "details") && isProgressionLocked)
                                     ? "bg-slate-300 cursor-not-allowed opacity-70" 
                                     : "bg-blue-600 hover:bg-blue-700 active:scale-98 cursor-pointer"
                             }`}

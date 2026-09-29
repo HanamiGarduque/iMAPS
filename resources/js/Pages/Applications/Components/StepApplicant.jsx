@@ -169,31 +169,16 @@ export default function StepApplicant({
                         />
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
                             <div>
-                                <Label>Corporation Contact</Label>
-                                <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+639</span>
-                                    <Input
-                                        type="tel"
-                                        value={form.corporation_contact ? form.corporation_contact.replace(/^9/, "") : ""}
-                                        onChange={(e) => {
-                                            let val = e.target.value.replace(/\D/g, "");
-                                            if (val === "") {
-                                                set("corporation_contact")({ target: { value: "" } });
-                                                return;
-                                            }
-                                            if (val.startsWith("09")) val = val.slice(2);
-                                            else if (val.startsWith("9")) val = val.slice(1);
-                                            val = "9" + val;
-                                            if (val.length > 10) val = val.slice(0, 10);
-                                            set("corporation_contact")({ target: { value: val } });
-                                        }}
-                                        maxLength={9}
-                                        placeholder="XX XXX XXXX"
-                                        className="pl-[4rem] font-mono bg-white"
-                                        hasError={!!errors.corporation_contact}
-                                    />
-                                    {errors.corporation_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.corporation_contact}</p>}
-                                </div>
+                                <Label>Corporation Telephone</Label>
+                                <Input
+                                    type="text"
+                                    value={form.corporation_contact || ""}
+                                    onChange={set("corporation_contact")}
+                                    placeholder="e.g. (043) 774-1234 or 0917 123 4567"
+                                    className="bg-white font-mono"
+                                    hasError={!!errors.corporation_contact}
+                                />
+                                {errors.corporation_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.corporation_contact}</p>}
                             </div>
                             <div>
                                 <Label>Corporation Address</Label>

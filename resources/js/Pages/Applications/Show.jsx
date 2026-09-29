@@ -4,6 +4,7 @@ import { Link, Head, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -328,6 +329,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
     const [saving, setSaving] = useState(false);
     const [showAssignDrawer, setShowAssignDrawer] = useState(false);
     const [showStatusModal, setShowStatusModal] = useState(false);
+    const [showExportModal, setShowExportModal] = useState(false);
     const [toast, setToast] = useState(null);
     const [errors, setErrors] = useState(serverErrors);
 
@@ -516,8 +518,7 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };
@@ -647,19 +648,32 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setShowStatusModal(true)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all active:scale-98"
-                            >
-                                <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                                    />
-                                </svg>
-                                <span>Update Status</span>
-                            </button>
+                            {["For Release", "Released"].includes(app.status) && (
+                                <button
+                                    onClick={() => setShowExportModal(true)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
+                                >
+                                    <svg className="w-3.5 h-3.5 text-emerald-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                    </svg>
+                                    <span>Export Official Permit (.docx)</span>
+                                </button>
+                            )}
+                            {auth?.user?.role !== "Admin" && (
+                                <button
+                                    onClick={() => setShowStatusModal(true)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-all active:scale-98 cursor-pointer"
+                                >
+                                    <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                                        />
+                                    </svg>
+                                    <span>Update Status</span>
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -942,38 +956,50 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
                                                 {/* Status Pipeline Progress Tracker */}
                                                 <div className="py-5 border-b border-slate-100 flex flex-col md:flex-row items-center gap-5">
                                                     <div className="w-full flex-1 flex items-center justify-between relative before:absolute before:inset-0 before:top-[12px] before:h-[2px] before:w-full before:bg-slate-100 z-0 px-2">
-                                                        {["Received", "Technical Review", "Under SB", "For Release", "Released"].map((step, idx) => {
-                                                            const stepKey = step === "Under SB" ? "Under Sangguniang Bayan" : step;
-                                                            const isCurrent = app.status === stepKey;
-                                                            const isDenied = app.status === "Denied";
-                                                            const statusIndex = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released"].indexOf(app.status);
-                                                            const isPassed = statusIndex > idx && !isDenied;
+                                                        {(() => {
+                                                            const showSbStep = app.status === "Under Sangguniang Bayan" || 
+                                                                               Boolean(app.route_to_sb) || 
+                                                                               app.application_stream?.toLowerCase() === "amendment";
 
-                                                            return (
-                                                                <div key={step} className="relative z-10 flex flex-col items-center gap-1.5 text-center w-16">
-                                                                    <div
-                                                                        className={`flex items-center justify-center w-6 h-6 rounded-full border-[2px] border-white shrink-0 transition-colors duration-300
-                                                                            ${isCurrent ? "bg-blue-600 ring-2 ring-blue-500/20" : isPassed ? "bg-emerald-500" : "bg-slate-200"}
-                                                                        `}
-                                                                    >
-                                                                        {isPassed ? (
-                                                                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                                            </svg>
-                                                                        ) : isCurrent ? (
-                                                                            <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                                                                        ) : null}
+                                                            const pipelineSteps = showSbStep 
+                                                                ? ["Received", "Technical Review", "Under SB", "For Release", "Released"]
+                                                                : ["Received", "Technical Review", "For Release", "Released"];
+
+                                                            const pipelineStatusKeys = pipelineSteps.map(step => step === "Under SB" ? "Under Sangguniang Bayan" : step);
+                                                            const statusIndex = pipelineStatusKeys.indexOf(app.status);
+
+                                                            return pipelineSteps.map((step, idx) => {
+                                                                const stepKey = step === "Under SB" ? "Under Sangguniang Bayan" : step;
+                                                                const isCurrent = app.status === stepKey;
+                                                                const isDenied = app.status === "Denied";
+                                                                const isPassed = statusIndex > idx && !isDenied;
+
+                                                                return (
+                                                                    <div key={step} className="relative z-10 flex flex-col items-center gap-1.5 text-center w-16">
+                                                                        <div
+                                                                            className={`flex items-center justify-center w-6 h-6 rounded-full border-[2px] border-white shrink-0 transition-colors duration-300
+                                                                                ${isCurrent ? "bg-blue-600 ring-2 ring-blue-500/20" : isPassed ? "bg-emerald-500" : "bg-slate-200"}
+                                                                            `}
+                                                                        >
+                                                                            {isPassed ? (
+                                                                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                                                </svg>
+                                                                            ) : isCurrent ? (
+                                                                                <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                                                                            ) : null}
+                                                                        </div>
+                                                                        <span
+                                                                            className={`text-[10px] font-semibold leading-tight w-full break-words
+                                                                                ${isCurrent ? "text-blue-700" : isPassed ? "text-slate-700" : "text-slate-400"}
+                                                                            `}
+                                                                        >
+                                                                            {step}
+                                                                        </span>
                                                                     </div>
-                                                                    <span
-                                                                        className={`text-[10px] font-semibold leading-tight w-full break-words
-                                                                            ${isCurrent ? "text-blue-700" : isPassed ? "text-slate-700" : "text-slate-400"}
-                                                                        `}
-                                                                    >
-                                                                        {step}
-                                                                    </span>
-                                                                </div>
-                                                            );
-                                                        })}
+                                                                );
+                                                            });
+                                                        })()}
                                                     </div>
                                                 </div>
 
@@ -1056,6 +1082,236 @@ export default function Show({ auth, application: initialApp, app: alternateApp,
 
             {showAssignDrawer && <AssignInspectorDrawer onClose={() => setShowAssignDrawer(false)} onSubmit={handleAssignSubmit} saving={saving} inspectors={inspectors} />}
             {showStatusModal && <UpdateStatusDrawer onClose={() => setShowStatusModal(false)} onSubmit={handleGeneralStatusSubmit} saving={saving} currentStatus={app.status} />}
+            {showExportModal && <ExportPermitModal app={app} userName={userName} onClose={() => setShowExportModal(false)} />}
         </>
     );
 }
+
+// ── Export Permit Modal Component with Official MPDO Document Preview ──
+function ExportPermitModal({ app = {}, userName = "Planning Officer", onClose }) {
+    const defaultTemplate = useMemo(() => {
+        const lowerType = (app.application_type || "").toLowerCase();
+        if (lowerType.includes("zoning cert")) return "zc";
+        if (lowerType.includes("development")) return "dp";
+        if (lowerType.includes("evaluation")) return "ze";
+        return "lc";
+    }, [app.application_type]);
+
+    const [selectedType, setSelectedType] = useState(defaultTemplate);
+
+    const templates = [
+        { type: "lc", label: "Locational Clearance", docName: "LOCATIONAL CLEARANCE", fileName: "LC_TEMPLATE_removed.docx", icon: "📄", color: "border-blue-200 bg-blue-50/50 hover:bg-blue-100/70" },
+        { type: "ze", label: "Zoning Evaluation", docName: "ZONING EVALUATION SHEET", fileName: "ZONING EVAL_TEMPLATE.docx", icon: "📋", color: "border-purple-200 bg-purple-50/50 hover:bg-purple-100/70" },
+        { type: "dp", label: "Development Permit", docName: "DEVELOPMENT PERMIT", fileName: "DP_TEMPLATE.docx", icon: "🏛️", color: "border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/70" },
+        { type: "zc", label: "Zoning Certification", docName: "ZONING CERTIFICATION", fileName: "ZC_TEMPLATE_removed.docx", icon: "📜", color: "border-amber-200 bg-amber-50/50 hover:bg-amber-100/70" },
+    ];
+
+    const currentTpl = templates.find((t) => t.type === selectedType) || templates[0];
+
+    const firstParcel = app.parcels?.[0] || {};
+    const pins = (app.parcels || []).pluck ? app.parcels.pluck('property_index_number').filter(Boolean).join(', ') : (app.parcels || []).map(p => p.property_index_number).filter(Boolean).join(', ') || firstParcel.property_index_number || "—";
+    const dateToday = new Date().toLocaleDateString("en-US", { month: "long", day: "2-digit", year: "numeric" });
+    const dateFiled = app.created_at ? new Date(app.created_at).toLocaleDateString("en-US", { month: "long", day: "2-digit", year: "numeric" }) : dateToday;
+
+    return (
+        <div className="fixed inset-0 z-[999] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
+                
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg">
+                            📄
+                        </div>
+                        <div>
+                            <h3 className="text-base font-extrabold text-slate-900">Official MPDO Permit Export</h3>
+                            <p className="text-xs text-slate-500 font-medium">Select and download the official Word document template for this application</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-all cursor-pointer">
+                        ✕
+                    </button>
+                </div>
+
+                {/* Template Selector Bar */}
+                <div className="px-6 py-3 border-b border-slate-200/80 bg-slate-100/60 flex items-center gap-2 overflow-x-auto shrink-0">
+                    <span className="text-xs font-bold text-slate-600 uppercase tracking-wider shrink-0 mr-2">Template:</span>
+                    {templates.map((tpl) => {
+                        const active = selectedType === tpl.type;
+                        return (
+                            <button
+                                key={tpl.type}
+                                type="button"
+                                onClick={() => setSelectedType(tpl.type)}
+                                className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                                    active 
+                                        ? "bg-emerald-600 border-emerald-600 text-white shadow-xs" 
+                                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                                }`}
+                            >
+                                <span>{tpl.icon}</span>
+                                <span>{tpl.label}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* MPDO Document Preview (Matching LC_TEMPLATE_removed.docx Official Table Layout) */}
+                <div className="flex-1 bg-slate-200/70 p-4 sm:p-6 overflow-y-auto flex items-center justify-center">
+                    <div className="bg-white rounded-xl shadow-xl border border-slate-300 w-full max-w-2xl p-6 sm:p-8 space-y-4 text-slate-900 font-sans leading-relaxed text-xs">
+                        
+                        {/* Municipal Header */}
+                        <div className="text-center space-y-0.5">
+                            <p className="text-[10px] uppercase font-semibold text-slate-600">Republic of the Philippines</p>
+                            <p className="text-[11px] uppercase font-bold text-slate-800">MUNICIPALITY OF ROSARIO</p>
+                            <p className="text-[10px] uppercase font-medium text-slate-600">Province of Batangas</p>
+                            <p className="text-[9px] uppercase font-bold text-slate-900 tracking-wider pt-1">
+                                OFFICE OF THE MUNICIPAL PLANNING AND DEVELOPMENT COORDINATOR ZONING ADMINISTRATOR
+                            </p>
+                        </div>
+
+                        {/* Title */}
+                        <div className="text-center pt-2 pb-1">
+                            <h1 className="text-sm font-extrabold uppercase tracking-wider text-slate-900 border-b-2 border-slate-900 inline-block px-3 pb-0.5">
+                                {currentTpl.docName}
+                            </h1>
+                        </div>
+
+                        {/* Official MPDO Data Grid Table (Matching LC_TEMPLATE_removed.docx) */}
+                        <div className="border border-slate-800 text-[11px]">
+                            {/* Row 1: Application No. & Decision No. */}
+                            <div className="grid grid-cols-2 border-b border-slate-800 divide-x divide-slate-800">
+                                <div className="p-2">
+                                    <span className="text-[10px] text-slate-500 font-bold">Application No. : </span>
+                                    <span className="font-mono font-bold text-slate-900">{app.reference_number || "2026-U-0-09"}</span>
+                                </div>
+                                <div className="p-2">
+                                    <span className="text-[10px] text-slate-500 font-bold">Decision No. : </span>
+                                    <span className="font-mono font-bold text-slate-900">{app.reference_number ? `DEC-${app.reference_number}` : "0"}</span>
+                                </div>
+                            </div>
+
+                            {/* Row 2: Date Filed & Date Issued */}
+                            <div className="grid grid-cols-2 border-b border-slate-800 divide-x divide-slate-800">
+                                <div className="p-2">
+                                    <span className="text-[10px] text-slate-500 font-bold">Date Filed : </span>
+                                    <span className="font-medium text-slate-900">{dateFiled}</span>
+                                </div>
+                                <div className="p-2">
+                                    <span className="text-[10px] text-slate-500 font-bold">Date Issued : </span>
+                                    <span className="font-medium text-slate-900">{dateToday}</span>
+                                </div>
+                            </div>
+
+                            {/* Row 3: Applicant & Corporation */}
+                            <div className="grid grid-cols-2 border-b border-slate-800 divide-x divide-slate-800">
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Name of Applicant</p>
+                                    <p className="font-bold uppercase text-slate-900">{app.applicant_name || "—"}</p>
+                                </div>
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Name of Corporation</p>
+                                    <p className="font-bold uppercase text-slate-900">{app.corporation_name || "N/A"}</p>
+                                </div>
+                            </div>
+
+                            {/* Row 4: Applicant Address & Corporation Address */}
+                            <div className="grid grid-cols-2 border-b border-slate-800 divide-x divide-slate-800">
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Address</p>
+                                    <p className="font-semibold uppercase text-slate-900">{app.street_address ? `${app.street_address}, BRGY. ${app.barangay}` : `BRGY. ${app.barangay}, ROSARIO, BATANGAS`}</p>
+                                </div>
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Address/Telephone of Corporation</p>
+                                    <p className="font-semibold uppercase text-slate-900">{app.corporation_address || "N/A"}</p>
+                                </div>
+                            </div>
+
+                            {/* Row 5: Project Name & Contact Number */}
+                            <div className="grid grid-cols-2 border-b border-slate-800 divide-x divide-slate-800">
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Name/Type of Project</p>
+                                    <p className="font-semibold uppercase text-slate-900">{app.purpose || app.project_type_business_name || "—"}</p>
+                                </div>
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Address/Contact Phone Number</p>
+                                    <p className="font-mono font-semibold text-slate-900">{app.contact_number ? `+63 ${app.contact_number}` : "—"}</p>
+                                </div>
+                            </div>
+
+                            {/* Row 6: Business Name & Project Location */}
+                            <div className="grid grid-cols-2 border-b border-slate-800 divide-x divide-slate-800">
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Business Name</p>
+                                    <p className="font-semibold uppercase text-slate-900">{app.project_type_business_name || "—"}</p>
+                                </div>
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Project Location</p>
+                                    <p className="font-semibold uppercase text-slate-900">BRGY. {app.barangay || "ROSARIO"}, ROSARIO, BATANGAS</p>
+                                </div>
+                            </div>
+
+                            {/* Row 7: Setback & PIN */}
+                            <div className="grid grid-cols-2 border-b border-slate-800 divide-x divide-slate-800">
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Building Setback (from road centerline)</p>
+                                    <p className="font-medium text-slate-800">-</p>
+                                </div>
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Property Index No.</p>
+                                    <p className="font-mono font-bold text-slate-900">{pins}</p>
+                                </div>
+                            </div>
+
+                            {/* Row 8: Zoning Classification */}
+                            <div className="grid grid-cols-2 divide-x divide-slate-800">
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Zoning Certification No.</p>
+                                    <p className="font-medium text-slate-800">-</p>
+                                </div>
+                                <div className="p-2">
+                                    <p className="text-[10px] text-slate-500 font-bold">Zoning Classification</p>
+                                    <p className="font-bold text-slate-900">{app.target_land_use_class || app.land_use_class || "Residential"}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Signatory Footer Note */}
+                        <div className="pt-3 flex justify-between items-end text-[10px] font-semibold text-slate-600">
+                            <div>
+                                <p>O.R. No: <span className="font-bold font-mono text-slate-900">{app.or_number || "—"}</span></p>
+                                <p>Assessment Fee: <span className="font-bold font-mono text-slate-900">₱{parseFloat(app.assessment_fee || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</span></p>
+                            </div>
+                            <div className="text-right">
+                                <p className="font-bold text-xs uppercase text-slate-900 underline">{userName?.toUpperCase() || "ENGR. JUAN DELA CRUZ"}</p>
+                                <p className="text-[9px] text-slate-500">Zoning Administrator / MPDO Coordinator</p>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                {/* Actions Footer */}
+                <div className="px-6 py-4 border-t border-slate-100 bg-white flex items-center justify-between shrink-0">
+                    <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-100 transition-all cursor-pointer">
+                        Close
+                    </button>
+
+                    <a
+                        href={`/applications/${app.id}/export-document/${currentTpl.type}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-lg transition-all active:scale-95 cursor-pointer"
+                    >
+                        <span>Download {currentTpl.label} ({currentTpl.fileName})</span>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                    </a>
+                </div>
+
+            </div>
+        </div>
+    );
+}
+

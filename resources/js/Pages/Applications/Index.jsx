@@ -3,6 +3,7 @@ import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -746,8 +747,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };
@@ -912,40 +912,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [focusedRowIndex, paginatedRecords]);
 
-    // ── Export CSV Handler ──
-    const handleExportCSV = () => {
-        const headers = ["Reference Number", "Applicant Name", "Representative", "Application Type", "Land Use Class", "Barangay", "Lot Area (sqm)", "TCT Number", "Assessment Fee (PHP)", "OR Number", "Status", "Date Filed", "Purpose"];
-        const rows = filteredList.map((app) => [
-            `"${app.reference_number || ""}"`,
-            `"${app.applicant_name || ""}"`,
-            `"${app.representative_name || ""}"`,
-            `"${app.application_type || ""}"`,
-            `"${app.land_use_class || ""}"`,
-            `"${app.barangay || ""}"`,
-            `"${app.lot_area_sqm || ""}"`,
-            `"${app.tct_number || ""}"`,
-            `"${app.assessment_fee || ""}"`,
-            `"${app.or_number || ""}"`,
-            `"${app.status || ""}"`,
-            `"${formatDate(app.created_at)}"`,
-            `"${(app.purpose || "").replace(/"/g, '""')}"`,
-        ]);
-
-        const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `Rosario_Zoning_Registry_${new Date().toISOString().split("T")[0]}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    // ── Print Official Transmittal Registry ──
-    const handlePrintTransmittal = () => {
-        window.print();
-    };
-
     // Map bounds calculation
     const mapBounds = useMemo(() => {
         return filteredList.map((app) => BARANGAY_COORDS[app.barangay] || BARANGAY_COORDS["Default"]);
@@ -968,16 +934,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                 ::-webkit-scrollbar-track { background: transparent; }
                 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
                 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-                /* Print Stylesheet for Official Transmittal Sheet */
-                @media print {
-                    body { background: white !important; color: black !important; }
-                    header, aside, .no-print, button, .print-hide { display: none !important; }
-                    #print-transmittal-header { display: block !important; }
-                    table { width: 100% !important; border: 1px solid #000 !important; }
-                    th, td { border: 1px solid #ddd !important; padding: 6px !important; font-size: 10pt !important; }
-                }
-                #print-transmittal-header { display: none; }
             `}</style>
 
             <div id="dashboard-root" className="bg-slate-100/60 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
@@ -1010,17 +966,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                     <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
                         <div className="p-4 sm:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1580px] mx-auto w-full gap-3.5">
                             
-                            {/* ── PRINT-ONLY TRANSMITTAL HEADER ── */}
-                            <div id="print-transmittal-header" className="mb-4 text-center">
-                                <h2 className="text-sm font-bold uppercase tracking-widest text-slate-600">Republic of the Philippines · Province of Batangas</h2>
-                                <h1 className="text-xl font-black text-slate-900">MUNICIPALITY OF ROSARIO</h1>
-                                <p className="text-xs font-semibold text-slate-500">Municipal Planning and Development Office (MPDO) · Zoning & Land Use Registry</p>
-                                <div className="mt-2 border-b-2 border-slate-900 pb-1 flex justify-between text-xs text-slate-600">
-                                    <span>Official Transmittal Summary</span>
-                                    <span>Date Generated: {new Date().toLocaleDateString("en-PH")}</span>
-                                </div>
-                            </div>
-
                             {/* ── TOP HEADER SECTION ── */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 no-print">
                                 <div>
@@ -1065,32 +1010,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                             <span>Board</span>
                                         </button>
                                     </div>
-
-                                    {/* Print Transmittal Sheet */}
-                                    <button
-                                        type="button"
-                                        onClick={handlePrintTransmittal}
-                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 shadow-2xs transition-all active:scale-98 cursor-pointer"
-                                        title="Print official registry transmittal sheet"
-                                    >
-                                        <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0h-11.32M19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H8.25A2.25 2.25 0 016 18.75V14" />
-                                        </svg>
-                                        <span>Print Sheet</span>
-                                    </button>
-
-                                    {/* Export CSV */}
-                                    <button
-                                        type="button"
-                                        onClick={() => handleExportCSV(false)}
-                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 hover:border-slate-300 shadow-2xs transition-all active:scale-98 cursor-pointer"
-                                        title="Export filtered records to CSV"
-                                    >
-                                        <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                                        </svg>
-                                        <span>Export CSV</span>
-                                    </button>
 
                                     {/* Drafts */}
                                     {userRole === "Planning Officer" && (

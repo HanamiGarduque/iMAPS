@@ -13,6 +13,7 @@ use App\Jobs\PushInspectionToSupabase;
 use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
 use App\Models\AppNotification;
+use App\Services\PermitDocumentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -200,6 +201,7 @@ class ApplicationController extends Controller
             'corporation_contact'    => ['nullable', 'regex:/^9\d{9}$/'],
             'representative_contact' => ['nullable', 'regex:/^9\d{9}$/'],
             'preferred_release_mode' => 'required|string',
+            'route_to_sb'             => 'nullable|boolean',
             'zoning_certificate_fee'   => 'nullable|numeric|min:0',
             'locational_clearance_fee' => 'nullable|numeric|min:0',
             'development_permit_fee'   => 'nullable|numeric|min:0',
@@ -387,15 +389,18 @@ class ApplicationController extends Controller
                 }
             }
 
+            $routeToSb = $request->boolean('route_to_sb');
+
             // 3. Roll up overall status dynamically based on "restrictive precedence"
             if (!empty($decisionsSeen)) {
                 if (in_array('Declined', $decisionsSeen, true)) {
                     $application->update(['status' => 'Denied']);
-                } elseif (!in_array('Needs Site Inspection', $decisionsSeen, true)) {
-                    // All parcels evaluated as "Approved" without site inspections needed
+                } elseif (in_array('Needs Site Inspection', $decisionsSeen, true)) {
+                    $application->update(['status' => 'Technical Review']);
+                } elseif ($routeToSb) {
                     $application->update(['status' => 'Under Sangguniang Bayan']);
                 } else {
-                    $application->update(['status' => 'Technical Review']);
+                    $application->update(['status' => 'For Release']);
                 }
 
                 ApplicationStatusTracker::log(
@@ -408,24 +413,24 @@ class ApplicationController extends Controller
                     applicationId: $application->id,
                     action: 'STATUS_UPDATE',
                     performedBy: Auth::id(),
-                    note: "Application automatically moved to {$application->status} based on initial encoded parcel evaluations."
+                    note: "Application automatically moved to {$application->status} based on encoded parcel evaluations."
                 );
 
             } else {
-                // Default transition if no evaluations were assigned during encoding
-                $application->update(['status' => 'Technical Review']);
+                $targetStatus = $routeToSb ? 'Under Sangguniang Bayan' : 'Technical Review';
+                $application->update(['status' => $targetStatus]);
                 
                 ApplicationStatusTracker::log(
                     $application->reference_number,
                     $application->applicant_name,
-                    'Technical Review'
+                    $targetStatus
                 );
 
                 AuditLogger::log(
                     applicationId: $application->id,
                     action: 'STATUS_UPDATE',
                     performedBy: Auth::id(),
-                    note: 'Application automatically moved from Received to Technical Review upon encoding.'
+                    note: "Application automatically moved from Received to {$targetStatus} upon encoding."
                 );
             }
 
@@ -439,7 +444,8 @@ class ApplicationController extends Controller
             DB::commit();
             return back()
                 ->with('success', "Application encoded successfully. Status: {$application->status}")
-                ->with('reference_number', $referenceNumber);
+                ->with('reference_number', $referenceNumber)
+                ->with('application_id', $application->id);
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['db' => 'Database error: ' . $e->getMessage()]);
@@ -739,11 +745,15 @@ class ApplicationController extends Controller
             );
 
             if ($validated['decision'] === 'Approved') {
-                $application->update(['status' => 'Under Sangguniang Bayan']);
+                $targetStatus = ($application->status === 'Under Sangguniang Bayan' || $application->application_stream === 'amendment')
+                    ? 'Under Sangguniang Bayan'
+                    : 'For Release';
+
+                $application->update(['status' => $targetStatus]);
                 ApplicationStatusTracker::log(
                     $application->reference_number,
                     $application->applicant_name,
-                    'Under Sangguniang Bayan'
+                    $targetStatus
                 );
             } elseif ($validated['decision'] === 'Declined') {
                 $application->update([
@@ -987,5 +997,32 @@ class ApplicationController extends Controller
     {
         // Fetches any complete drafts to attempt mass insertion, or returns back with instructions
         return back()->with('success', 'Local offline configurations synchronized successfully.');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // EXPORT PERMIT DOCUMENT (.docx)
+    // ─────────────────────────────────────────────────────────────────────────
+    public function exportDocument(Request $request, int $id, string $type, PermitDocumentService $documentService)
+    {
+        $application = ZoningApplication::with(['parcels', 'encodedBy'])->findOrFail($id);
+        $customFields = $request->all();
+
+        try {
+            $filePath = match (strtolower($type)) {
+                'locational-clearance', 'lc' => $documentService->generateLocationalClearance($application, $customFields),
+                'zoning-evaluation', 'ze'   => $documentService->generateZoningEvaluation($application, $customFields),
+                'development-permit', 'dp'   => $documentService->generateDevelopmentPermit($application, $customFields),
+                'zoning-certification', 'zc' => $documentService->generateZoningCertification($application, $customFields),
+                default                     => throw new \InvalidArgumentException("Invalid permit document type: {$type}"),
+            };
+
+            $fileName = basename($filePath);
+
+            return response()->download($filePath, $fileName, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ]);
+        } catch (\Exception $e) {
+            return back()->withErrors(['export' => 'Failed to generate document: ' . $e->getMessage()]);
+        }
     }
 }
