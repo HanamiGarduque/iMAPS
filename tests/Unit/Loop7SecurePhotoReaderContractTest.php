@@ -108,23 +108,15 @@ class Loop7SecurePhotoReaderContractTest extends TestCase
     }
 
     /**
-     * POST-LOOP-9 SMOKE FIX - the SECURITY intent is unchanged; two identifiers
-     * were renamed because "PIN" meant two different things.
-     *
      * The security property this test exists to protect is the CROSS-PARCEL
      * REJECTION: a remote `supabase_parcels` row may only supply a value when
      * its `local_parcel_id` matches the parcel actually being displayed.
      * Otherwise an officer looking at lot A would be shown lot B's data. That
      * guard is preserved exactly, and is asserted first below.
      *
-     * What changed is naming and separation of concerns. The component used one
-     * variable, `remoteParcelPin`, for a remote CADASTRAL NUMBER, and rendered
-     * it into a field labelled "Parcel PIN" that was really showing
-     * `property_index_number`. So "pin" simultaneously meant the cadastral
-     * number and the coordinate. The remote value is now named
-     * `remotePropertyIndexNumber`, and the "Parcel PIN" field carries the parcel
-     * coordinate while the cadastral number is shown under its own
-     * "Property Index No." label.
+     * The remote fallback supplies only the cadastral Property Index No.
+     * Parcel Pin is confirmed FieldSync GPS evidence, never the local parcel
+     * location or a cadastral number.
      */
     public function test_parcel_pin_projection_prefers_local_pin_and_rejects_cross_parcel_remote_pin(): void
     {
@@ -149,13 +141,12 @@ class Loop7SecurePhotoReaderContractTest extends TestCase
             'The local cadastral number must win, with the matched remote row as fallback.'
         );
 
-        // The displayed PIN is the parcel coordinate, gated on both coordinates
-        // being valid so a half-valid pair yields nothing rather than a bogus pin.
+        // Parcel Pin shares the validated confirmed point, with no location fallback.
         $this->assertStringContainsString('displayParcelPin', $component);
-        $this->assertMatchesRegularExpression(
-            '/const displayParcelPin = hasParcelPin\s*\?/s',
+        $this->assertStringContainsString(
+            "const displayParcelPin = displayConfirmedPoint ?? 'N/A';",
             $component,
-            'The Parcel PIN must be gated on the parcel coordinates being valid.'
+            'Parcel Pin must be N/A until both FieldSync-confirmed coordinates are valid.'
         );
     }
 

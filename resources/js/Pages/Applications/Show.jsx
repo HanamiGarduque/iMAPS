@@ -1031,25 +1031,15 @@ function ShowInner({
 
                                                                 {p.site_inspection?.id && (
                                                                     <div className="mt-2">
-                                                                                                        {/* POST-LOOP-9 SMOKE FIX A: the parcel and
-                                                    its own coordinates were never passed
-                                                    down, so the report's "Parcel PIN"
-                                                    resolved to null and rendered "N/A"
-                                                    even for parcels that have valid
-                                                    stored coordinates. `p` is the local
-                                                    parcel row the controller already
-                                                    ships (latitude/longitude and
-                                                    property_index_number), so the pin is
-                                                    now sourced from the LOCAL record
-                                                    and never from confirmed FieldSync
-                                                    evidence. */}
-                                                <ParcelInspectionStatus
-                                                    inspectionId={p.site_inspection.id}
-                                                    localInspection={p.site_inspection}
-                                                    localParcel={p}
-                                                    onStatusFetched={onInspectionStatus(p.id)}
-                                                    onInspectionDataFetched={onInspectionDataFetched(p.id)}
-                                                />
+                                                                        {/* Local parcel supplies cadastral identity;
+                                                                            Parcel Pin uses only confirmed inspection GPS. */}
+                                                                        <ParcelInspectionStatus
+                                                                            inspectionId={p.site_inspection.id}
+                                                                            localInspection={p.site_inspection}
+                                                                            localParcel={p}
+                                                                            onStatusFetched={onInspectionStatus(p.id)}
+                                                                            onInspectionDataFetched={onInspectionDataFetched(p.id)}
+                                                                        />
 
                                                                         {/* ── MASTER MERGE CORRECTION §6: SITE INSPECTOR ROUND
                                                                             ASSIGNMENT, re-homed into master's expanded-lot layout.

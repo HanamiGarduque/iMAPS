@@ -10,12 +10,9 @@ use PHPUnit\Framework\TestCase;
  *
  * SCOPE
  * -----
- *   A. PARCEL PIN. "PIN" was overloaded to mean both the cadastral property
- *      index number and the parcel's own latitude/longitude, and the field
- *      labelled "Parcel PIN" read only the former from a prop that was never
- *      passed. The result was "N/A" on parcels that have valid stored
- *      coordinates. The pin must come from parcels.latitude/longitude, and the
- *      inspector-confirmed FieldSync point must stay a separate fact.
+ *   A. PARCEL PIN. Corrected contract: the report's pin is confirmed FieldSync
+ *      GPS evidence. Local parcel coordinates are application location only;
+ *      property_index_number is separately labelled cadastral identity.
  *   B. DIAGNOSTIC ACCESS. Read access widened to Admin + Planning Officer, with
  *      a Site Inspector still refused, and no write path for anybody.
  *   C. NOTIFICATION. Intentionally NOT implemented: the existing notification
@@ -69,12 +66,8 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * The bug: the Applications Detail mount never passed `localParcel`, so the
-     * prop defaulted to null, both PIN fallbacks resolved to nothing, and the
-     * field rendered "N/A" for parcels that have valid stored coordinates.
-     *
-     * Asserting the PROP IS PASSED is the whole point - the display logic was
-     * already correct in shape, it just had no data to read.
+     * Local parcel data supplies Property Index No.; the relevant inspection
+     * supplies confirmed GPS. Both records must reach the report component.
      */
     public function test_the_applications_detail_mount_passes_the_local_parcel(): void
     {
@@ -83,7 +76,7 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
         $this->assertMatchesRegularExpression(
             '/<ParcelInspectionStatus\b[^>]*\blocalParcel=\{p\}/s',
             $show,
-            'The parcel must be passed down, or the Parcel PIN field can never resolve.'
+            'The parcel must be passed down so its cadastral identity can be displayed.'
         );
 
         // The local inspection row carries the confirmed-GPS fields, so passing
@@ -103,57 +96,50 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
     }
 
     /**
-     * The Parcel PIN must read the PARCEL's coordinates, not the inspection's
-     * confirmed coordinates. These are different facts and conflating them was
-     * the original defect.
+     * Local application location must never be presented as GPS-verification evidence.
      */
-    public function test_parcel_pin_is_read_from_the_parcel_coordinates(): void
+    public function test_parcel_pin_is_read_only_from_confirmed_inspection_coordinates(): void
     {
         $component = $this->code('resources/js/Components/ParcelInspectionStatus.jsx');
 
         $this->assertMatchesRegularExpression(
-            '/toValidCoordinate\(\s*localParcel\?\.latitude\s*,\s*-90\s*,\s*90\s*\)/',
+            '/toValidCoordinate\(\s*inspection\?\.confirmed_latitude\s*,\s*-90\s*,\s*90\s*\)/',
             $component,
-            'The parcel pin latitude must come from the local parcel.'
+            'GPS-verification latitude must come from the relevant inspection.'
         );
         $this->assertMatchesRegularExpression(
-            '/toValidCoordinate\(\s*localParcel\?\.longitude\s*,\s*-180\s*,\s*180\s*\)/',
+            '/toValidCoordinate\(\s*inspection\?\.confirmed_longitude\s*,\s*-180\s*,\s*180\s*\)/',
             $component,
-            'The parcel pin longitude must come from the local parcel.'
+            'GPS-verification longitude must come from the relevant inspection.'
         );
 
-        // The pin must NOT be derived from confirmed FieldSync evidence.
+        $this->assertStringContainsString("const displayParcelPin = displayConfirmedPoint ?? 'N/A';", $component);
+        $this->assertStringContainsString('{displayParcelPin}', $component);
         $this->assertDoesNotMatchRegularExpression(
-            '/displayParcelPin\s*=\s*[^;]*confirmed_latitude/',
+            '/localParcel(?:\?\.|\.)(latitude|longitude)/',
             $component,
-            'The parcel pin must never be sourced from the confirmed inspection coordinates.'
-        );
-        $this->assertDoesNotMatchRegularExpression(
-            '/displayParcelPin\s*=\s*[^;]*confirmed_longitude/',
-            $component,
-            'The parcel pin must never be sourced from the confirmed inspection coordinates.'
+            'The report must never substitute application location for confirmed GPS.'
         );
     }
 
     /**
-     * "N/A" must mean "the parcel genuinely has no stored coordinates" and
-     * nothing else. In particular it must not be reachable merely because the
-     * inspection has not happened yet.
+     * Missing, partial or invalid confirmed GPS must render N/A regardless of
+     * stored parcel location. Completion status is not a prerequisite.
      */
-    public function test_parcel_pin_shows_na_only_when_the_parcel_lacks_coordinates(): void
+    public function test_parcel_pin_requires_both_valid_confirmed_coordinates(): void
     {
         $component = $this->code('resources/js/Components/ParcelInspectionStatus.jsx');
 
         $this->assertMatchesRegularExpression(
-            '/const hasParcelPin = parcelPinLatitude !== null && parcelPinLongitude !== null;/',
+            '/const hasConfirmedPoint = confirmedLatitude !== null && confirmedLongitude !== null;/',
             $component,
-            'Availability of the parcel pin must depend on BOTH parcel coordinates being valid.'
+            'Availability must depend on BOTH confirmed coordinates being valid.'
         );
 
         $this->assertMatchesRegularExpression(
-            '/const displayParcelPin = hasParcelPin\s*\?/s',
+            '/const displayConfirmedPoint = hasConfirmedPoint\s*\?/s',
             $component,
-            'The displayed pin must be gated on the parcel coordinates, not on the inspection.'
+            'Only the validated confirmed pair may be displayed.'
         );
 
         // A half-valid pair must yield no pin at all, rather than a bogus one.
@@ -184,21 +170,20 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
             'The confirmed point must read the FieldSync confirmed longitude.'
         );
 
-        // Both concepts must be visibly distinct on the page.
+        // Separate UI purposes share the same confirmed GPS source.
         $this->assertStringContainsString('Parcel PIN', $component);
         $this->assertStringContainsString('Confirmed Inspection Point', $component);
 
-        // A missing confirmed point must be explained, not silently blank, and
-        // must never fall back to the parcel pin.
+        // Explain missing GPS evidence without substituting application location.
         $this->assertMatchesRegularExpression(
-            '/Not yet confirmed/',
+            '/Not yet captured/',
             $component,
             'An unconfirmed inspection must say so explicitly.'
         );
         $this->assertDoesNotMatchRegularExpression(
             '/displayConfirmedPoint\s*=\s*[^;]*displayParcelPin/',
             $component,
-            'The confirmed point must never fall back to the parcel pin.'
+            'The confirmed point must be validated before being used for Parcel Pin.'
         );
     }
 
@@ -211,11 +196,154 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
         $component = $this->code('resources/js/Components/ParcelInspectionStatus.jsx');
 
         $this->assertStringContainsString('Property Index No.', $component);
+        $this->assertStringContainsString('{displayPropertyIndexNumber}', $component);
         $this->assertMatchesRegularExpression(
             '/const displayPropertyIndexNumber = localParcel\?\.property_index_number \|\| remotePropertyIndexNumber/',
             $component,
             'The property index number must still resolve from the local parcel, then the matched remote row.'
         );
+    }
+
+    /** Execute the component's actual display calculations, not a PHP reimplementation. */
+    private function evaluatePinCases(array $cases): array
+    {
+        $source = $this->source('resources/js/Components/ParcelInspectionStatus.jsx');
+        $start = strpos($source, 'const toValidCoordinate =');
+        $end = strpos($source, 'const actualPhotoCount =');
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $this->assertGreaterThan($start, $end);
+
+        $calculations = substr($source, $start, $end - $start);
+        $script = 'const cases = '.json_encode($cases, JSON_THROW_ON_ERROR).';'
+            .'process.stdout.write(JSON.stringify(cases.map(({inspection, localParcel}) => {'
+            .$calculations
+            .'return {displayParcelPin, displayConfirmedPoint, displayPropertyIndexNumber};'
+            .'})));';
+        $process = proc_open(
+            [getenv('NODE_BINARY') ?: 'node'],
+            [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            dirname(__DIR__, 2),
+        );
+        $this->assertIsResource($process, 'Node is required to execute the shipped GPS display logic.');
+        fwrite($pipes[0], $script);
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $this->assertSame(0, proc_close($process), 'GPS display calculation failed: '.$stderr);
+
+        return json_decode($stdout, true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    private function parcelLocationFixture(): array
+    {
+        return [
+            'id' => 76,
+            'latitude' => '13.8419970',
+            'longitude' => '121.2801310',
+            'property_index_number' => '04-01-021-001-15-511',
+        ];
+    }
+
+    public function test_app_144_location_without_confirmed_gps_displays_na(): void
+    {
+        $result = $this->evaluatePinCases([[
+            'localParcel' => $this->parcelLocationFixture(),
+            'inspection' => ['status' => 'assigned', 'confirmed_latitude' => null, 'confirmed_longitude' => null],
+        ]])[0];
+
+        $this->assertSame('N/A', $result['displayParcelPin']);
+        $this->assertNull($result['displayConfirmedPoint']);
+        $this->assertSame('04-01-021-001-15-511', $result['displayPropertyIndexNumber']);
+    }
+
+    public function test_valid_confirmed_gps_is_displayed_before_inspection_completion(): void
+    {
+        $cases = [];
+        foreach (['assigned', 'in_progress', 'completed'] as $status) {
+            $cases[] = [
+                'localParcel' => $this->parcelLocationFixture(),
+                'inspection' => ['status' => $status, 'confirmed_latitude' => '13.842111', 'confirmed_longitude' => '121.280222'],
+            ];
+        }
+        foreach ($this->evaluatePinCases($cases) as $result) {
+            $this->assertSame('13.842111, 121.280222', $result['displayParcelPin']);
+            $this->assertSame($result['displayParcelPin'], $result['displayConfirmedPoint']);
+        }
+    }
+
+    public function test_a_partial_confirmed_pair_never_uses_local_coordinates(): void
+    {
+        $cases = [];
+        foreach ([[], ['confirmed_latitude' => '13.842111'], ['confirmed_longitude' => '121.280222']] as $inspection) {
+            $cases[] = ['localParcel' => $this->parcelLocationFixture(), 'inspection' => $inspection];
+        }
+        foreach ($this->evaluatePinCases($cases) as $result) {
+            $this->assertSame('N/A', $result['displayParcelPin']);
+            $this->assertNull($result['displayConfirmedPoint']);
+        }
+    }
+
+    public function test_invalid_confirmed_values_never_use_local_coordinates(): void
+    {
+        $cases = [];
+        $invalidValues = [null, '', ' ', "\t", 'not a coordinate', 'NaN', 'Infinity', '-Infinity', '1e999', true, false, [], [13], new \stdClass()];
+        foreach (['confirmed_latitude', 'confirmed_longitude'] as $field) {
+            $outOfRange = $field === 'confirmed_latitude' ? [90.000001, -90.000001] : [180.000001, -180.000001];
+            foreach (array_merge($invalidValues, $outOfRange) as $invalid) {
+                $inspection = ['confirmed_latitude' => '13.842111', 'confirmed_longitude' => '121.280222'];
+                $inspection[$field] = $invalid;
+                $cases[] = ['localParcel' => $this->parcelLocationFixture(), 'inspection' => $inspection];
+            }
+        }
+        foreach ($this->evaluatePinCases($cases) as $index => $result) {
+            $this->assertSame('N/A', $result['displayParcelPin'], 'Invalid pair case '.$index);
+            $this->assertNull($result['displayConfirmedPoint'], 'Invalid pair case '.$index);
+        }
+    }
+
+    public function test_confirmed_gps_does_not_require_a_local_parcel_location(): void
+    {
+        $cases = [];
+        foreach ([null, [], $this->parcelLocationFixture()] as $parcel) {
+            $cases[] = [
+                'localParcel' => $parcel,
+                'inspection' => ['confirmed_latitude' => 0, 'confirmed_longitude' => 0],
+            ];
+        }
+        foreach ($this->evaluatePinCases($cases) as $result) {
+            $this->assertSame('0.000000, 0.000000', $result['displayParcelPin']);
+            $this->assertSame($result['displayParcelPin'], $result['displayConfirmedPoint']);
+        }
+    }
+
+    public function test_cross_parcel_remote_cadastral_identity_is_rejected(): void
+    {
+        $cases = [];
+        foreach ([76, 77] as $remoteParcelId) {
+            foreach (['04-01-021-001-15-511', null] as $localNumber) {
+                $parcel = $this->parcelLocationFixture();
+                $parcel['property_index_number'] = $localNumber;
+                $cases[] = [
+                    'localParcel' => $parcel,
+                    'inspection' => ['supabase_parcels' => [
+                        'local_parcel_id' => $remoteParcelId,
+                        'property_index_number' => 'remote-cadastral-number',
+                        'latitude' => '13.842111',
+                        'longitude' => '121.280222',
+                    ]],
+                ];
+            }
+        }
+        $results = $this->evaluatePinCases($cases);
+        $this->assertSame(
+            ['04-01-021-001-15-511', 'remote-cadastral-number', '04-01-021-001-15-511', 'N/A'],
+            array_column($results, 'displayPropertyIndexNumber'),
+        );
+        $this->assertSame(['N/A', 'N/A', 'N/A', 'N/A'], array_column($results, 'displayParcelPin'));
     }
 
     // ─────────────────────────────────────────────────────────────────────
