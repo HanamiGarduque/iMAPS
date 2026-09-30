@@ -476,7 +476,8 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 26. **Validation:** `Loop9c2DeliveryPanelContractTest` 48 / 531; 9C-1 contract 36 / 367; 9C-1 reader 11 / 35; 9A 33 / 133; 9A-R 16 / 77; 9B 36 / 152; 9B schema 20 / 47; 9B correction 22 / 72; 9B Scenario E 11 / 55; full Unit suite 475 / 2839. `npm run build` PASS. `php -l` clean. `git diff --check` clean. No `package.json` or lockfile change and no dependency installed.
 27. **Master overlap:** `origin/master` did not advance (`1307db8`). A three-way `merge-tree` dry run confirms `Applications/Show.jsx` still auto-merges cleanly. The 4 pre-existing upstream conflicts (`ApplicationController`, `TechnicalReviewController`, `Header.jsx`, `Sidebar.jsx`) are untouched. Nothing was merged, rebased or cherry-picked.
 28. **Status:** **LOOP 9C-2 IMPLEMENTED AND BROWSER VERIFIED.** 9C is **NOT** complete.
-29. **Remaining:** 9C-3 retry service + server-side POST action; 9C-4 retry UI; 9C-5 full regression and E2E closure. 9C-3 introduces business mutation and audit logging and requires its own bounded audit and implementation review.
+29. **Remaining (as recorded on 2026-09-29):** 9C-3 retry service + server-side POST action; 9C-4 retry UI; 9C-5 full regression and E2E closure. 9C-3 introduces business mutation and audit logging and requires its own bounded audit and implementation review.
+30. **CLOSURE ANNOTATION (added by the Loop 9 final docs-only pass):** the three items above were all subsequently closed. **9C-3: DONE - server-side Planning Officer retry contract. 9C-4: DONE - Planning Officer Retry Delivery UI. 9C-5: DONE - controlled retry E2E verified through FieldSync.** See the entries dated 2026-09-30 for each. The wording of line 29 is deliberately left as it was originally written, because it is an accurate record of what was outstanding at the time 9C-2 closed.
 ## Future-entry template
 
 Record all 14 fields used above. Never include secrets.
@@ -737,6 +738,7 @@ Record all 14 fields used above. Never include secrets.
 12. **Supabase:** **UNCHANGED.** **FieldSync:** **UNCHANGED.** Remote Supabase retry execution is **NOT YET E2E VERIFIED**.
 13. **Validation:** `Loop9c1DeliveryStatusContractTest`, `Loop9c2DeliveryPanelContractTest`, `Loop9c2RetryActionContractTest`, `Loop9c3RetryEligibilityContractTest` 139 tests / 953 assertions PASS; `Loop9c1DeliveryStatusReaderTest` 11 tests / 49 assertions PASS; full Unit suite 530 / 2895 PASS; `php -l` clean; `git diff --check` clean. The PostgreSQL / database-queue atomicity, double-submit and refusal-path probes were **SKIPPED - PREVIOUSLY RUNTIME-PROVEN; NO NEED TO RISK CANONICAL**; this branch carries no database-safety guard, so re-running a database-writing probe would put canonical at risk to reproduce evidence that already exists.
 14. **Status:** **SERVER-SIDE RETRY CONTRACT CLOSED.** Retry UI (9C-4) and remote retry E2E (9C-5) remain outstanding.
+15. **CLOSURE ANNOTATION (added by the Loop 9 final docs-only pass):** line 14 is the accurate status **as at 2026-09-30** and is preserved unchanged as chronology. Both items it names as outstanding were subsequently closed. **9C-4: DONE - Planning Officer Retry Delivery UI.** **9C-5: DONE - controlled retry E2E verified through FieldSync**, proven from a real browser-originated click on `APP-2026-00028` / inspection 39 through the server, the queue worker and the recorder to Supabase and FieldSync with no duplicate remote task. Remote Supabase retry execution is therefore **no longer unverified**, superseding line 12 of this entry as at the 9G audit.
 
 ### 2026-09-30 - Loop 9C-5 blocker fix - parcel point bridge correction - schema/data migration: NONE - BRIDGE WRITER CORRECTION
 
@@ -798,6 +800,31 @@ Record all 14 fields used above. Never include secrets.
 20. **Notification is not required and not proven:** iMAPS has zero OneSignal call sites, so the backend half of the push contract does not exist. Task visibility after sync is the delivery proof. The Team Leader separately observed a device notification for the initial delivery; that was recorded but not investigated.
 21. **Known limits, recorded not worked around:** the precondition is synthetic; a real `delivery_failed` is only produced by the recorder's failure branch via the queue's terminal `failed()` hook. This test therefore proves the recorder's SUCCESS branch, the branch that the `updated_at` defect had broken. Its failure branch remains unexercised end to end.
 22. **Status:** **9C-5 CONTROLLED RETRY E2E VERIFIED.** The Planning Officer retry path is proven from the browser UI through the server, the queue worker and the recorder to Supabase and FieldSync, with no duplicate remote task and no protected-data movement.
+
+### 2026-09-30 - Loop 9C-4 Planning Officer Retry Delivery UI - UI CHANGE (NO DB CHANGE)
+
+1. **Loop / issue:** Loop 9C-4. The Planning Officer retry contract existed server-side after 9C-3, but no person could invoke it: there was no control anywhere in the browser.
+2. **Purpose:** the Planning Officer retry-delivery control in the existing FieldSync Delivery panel.
+3. **Classification:** **UI CHANGE.** A read-only phase until a person actually clicked it, which is why 9C-5 had to prove the path independently.
+4. **SCHEMA CHANGE: NONE.** **FORWARD SQL: NONE.** **MIGRATION: NONE.**
+5. **Exact SQL / operation:** **NONE.** No `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `INSERT`, `UPDATE` or `DELETE` was executed against any database. Canonical was read only.
+6. **Production scope:** `InspectionDeliveryStatusPanel` only. No Controller, route, service, model, job, migration or database file changed.
+7. **Commit:** `4958fc4`.
+8. **Contract:**
+   - Retry Delivery renders **only** from server-authored `delivery.can_retry === true`;
+   - **no client-side retry eligibility inference**;
+   - the button enters a **Queueing** state while the request is active;
+   - a duplicate click is guarded;
+   - the POST target is the established Planning Officer retry route;
+   - **no Admin retry control**;
+   - **no delivery-state mutation from React** - React never writes `delivery_status`.
+9. **Authority is server-owned.** The control is a rendering of a server decision. The retry route stayed `role:Planning Officer` and the retry service still re-checked `actorAuthorized()` under the application row lock, so hiding the button was never the enforcement.
+10. **Supabase:** **NO SCHEMA CHANGE. NO CHANGE.**
+11. **FieldSync:** **NO CHANGE.**
+12. **E2E:** the UI implementation itself was completed in 9C-4. The real browser-originated retry click and the full transport verification were subsequently proven in **Loop 9C-5** using `APP-2026-00028` / inspection 39. 9C-4 is not claimed to have performed the E2E.
+13. **Validation:** new `Loop9c4RetryUiContractTest`, 16 tests / 93 assertions PASS on live source, plus the updated `Loop9c2DeliveryPanelContractTest`. `npm run build` PASS, `php -l` clean, `git diff --check` clean. No database access is involved in this phase or its test.
+14. **Status:** **9C-4 DONE - PLANNING OFFICER RETRY DELIVERY UI.** A separate test commit `0c0186f` later scoped a 9C-4 boundary assertion to its own commit, correcting a stale freeze of the same class already corrected elsewhere in this branch.
+
 ### 2026-09-30 - Loop 9D Admin delivery monitoring - schema/data migration: NONE - READ-ONLY MONITORING
 
 1. **Loop / issue:** Loop 9D. The first aggregate delivery monitoring surface and the first reader of delivery attempt history.
@@ -821,6 +848,7 @@ Record all 14 fields used above. Never include secrets.
 19. **Real-data verification:** `delivery_status=delivery_failed` returned exactly the 6 known failures with the rendered label "Inspector mapping unresolved"; `delivered` returned `APP-2026-00028` and `APP-2026-00029`; `pending_delivery` returned empty, correct because no pending rows exist; `no_delivery_record` returned 22. On `APP-2026-00028` the default payload contained no `attempts` key, `is_superseded` was `false`, `can_retry` was `false` for Admin, and the on-demand request returned the single `planning_officer_retry` / `delivered` attempt with its queue uuid and no exception text. A Planning Officer requesting the same history received **403** and their default payload was unchanged. Application 50 showed 6 of 7 rounds marked superseded with all 7 still visible.
 20. **Notification sender behaviour, Technical Review transport, remote-only identity drift, the FieldSync role label and the unexercised recorder failure branch remain SEPARATE and untouched.**
 21. **Status:** **ADMIN DELIVERY MONITORING COMPLETE.** Next is 9E / 9F diagnostics scope audit only. 9D must not be read as closing Loop 9E/9F or Loop 9G.
+22. **CLOSURE ANNOTATION (added by the Loop 9 final docs-only pass):** preserved as written, because it was accurate as at 2026-09-30 and remains correct as a statement about 9D's own scope. **9E/9F and 9G are both DONE**, and neither was closed by 9D.
 ### 2026-09-30 - Loop 9E/9F inspector diagnostic report Admin triage - schema/data migration: NONE - READ-ONLY REMOTE READER
 
 1. **Loop / issue:** Loop 9E/9F, treated as ONE unit because the canonical record never defines them separately. The architecture record deferred "no diagnostic backend (**9E/9F**)" and named the Admin diagnostic access path as "CONTRACT/ACCESS WORK REQUIRED".
@@ -843,3 +871,5 @@ Record all 14 fields used above. Never include secrets.
 18. **FieldSync:** **UNCHANGED** - 126 dirty files, SHA-256 `961B640F...` identical.
 19. **Deliberately out of scope and untouched:** queue/worker observability and `queue:restart` automation; the recorder terminal-failure branch; partial remote-write stage diagnostics; Juan Dela Cruz and Renato/Hubbie identity drift; Technical Review / `field_job_reviews`; the FieldSync role label; the notification sender question; Admin/PO provisioning; the master merge.
 20. **Status:** **ADMIN DIAGNOSTIC TRIAGE COMPLETE.** 9E/9F closes the documented diagnostic-backend obligation. 9G - full cross-system E2E and final Loop 9 closure audit - has not started.
+21. **CLOSURE ANNOTATION (added by the Loop 9 final docs-only pass):** the "9G has not started" wording above is the accurate status as at 2026-09-30 and is preserved as chronology. **9G is DONE.** The final cross-system closure audit was performed read-only and classified the loop as having docs-only closure items, which this pass has now recorded. 9G itself made **no** code, schema, data or test change. See `LOOP 9 - FINAL CLOSURE` in the architecture document.
+22. **Final database closure statement (added by the Loop 9 final docs-only pass):** final Loop 9 schema state **MATCHES CANONICAL**; unrecorded schema changes **NONE**; 9C-4 was **UI ONLY**; 9C-5 was **E2E TEST DATA ONLY**; 9D was **NO DB CHANGE**; 9E/9F was **NO LOCAL DB CHANGE**; 9G was **AUDIT ONLY**; this docs pass is **NO DB CHANGE** — no migration, no forward SQL, no Supabase schema change, no FieldSync schema change.

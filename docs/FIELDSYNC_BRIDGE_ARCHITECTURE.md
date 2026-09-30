@@ -39,15 +39,17 @@ Every material assertion should use one of these classifications when its status
 
 # CURRENT ACTIVE LOOP
 
-**LOOP 9 — Delivery Monitoring + Admin Diagnostics — 9C-2 UI VERIFIED, 9C-3 NEXT**
+**LOOP 9 — Delivery Monitoring + Admin Diagnostics — CLOSED**
 
 > **Supersedes the previous `LOOP 3 — Assigning Planning Officer — IN PROGRESS` entry, which correctly described the state at the time it was written. Loop 3 is closed; see Loop status reconciliation below. That historical text is retained further down in this document and is not falsified here.**
 >
 > **Status history:** this entry previously read `AUDIT NEXT`, which correctly described the state when the Loop 9 audit and the D1–D20 contract decision had just been recorded. The audit has since **PASSED**, the contract was decided, and Loop 9C was **Team Leader APPROVED** on the audited narrow scope. Progress: **9A** schema (pushed) → **9A-R** legacy reconciliation (pushed) → **9B** writer + queue-correlation schema + writer correlation correction + Scenario E regression (**pushed**) → **9C-1** server-side delivery status reader (**implemented, unpushed**). Retry is **not** implemented and no UI exists yet. Do not skip ahead to Loop 10.
+>
+> *That status history is a point-in-time record from 2026-09-28 and is preserved verbatim. The parenthetical "implemented, unpushed" and the sentence "Retry is not implemented and no UI exists yet" are both **superseded**: all of 9A through 9G are now implemented, pushed and closed. See the closure update immediately below and **LOOP 9 - FINAL CLOSURE**.*
 
-Loop 9 is **partially** implemented. Phases 9A, 9A-R, 9B and 9C-1 are complete; 9C-2 onward, 9D, 9E/9F and 9G have not started. **9C-2 is next** and is not implemented.
+> **Closure update (2026-10-01, Loop 9 final docs-only pass):** this paragraph previously read *"Loop 9 is partially implemented. Phases 9A, 9A-R, 9B and 9C-1 are complete; 9C-2 onward, 9D, 9E/9F and 9G have not started. 9C-2 is next and is not implemented."* That was the accurate status on 2026-09-28. It has been replaced rather than kept, because a document's **current** status must not keep claiming an unimplemented phase is next. The superseded wording is recorded verbatim in this note, and the dated 9C-2, 9C-3, 9D and 9E/9F entries below remain untouched as point-in-time history. **Loop 9 is now CLOSED:** all of 9A, 9A-R, 9B, 9C-1, 9C-2, 9C-3, 9C-4, 9C-5, 9D, 9E/9F and 9G are complete and verified. See **LOOP 9 - FINAL CLOSURE** at the end of this document. **Do not start Loop 10 from this section; the next activity is Team Leader handoff / master integration review.**
 
-Loop 9 initial scope is recorded verbatim in **CANONICAL ISSUE ORDER → LOOP 9** below. It is planning scope only for the phases that have not started.
+Loop 9 initial scope is recorded verbatim in **CANONICAL ISSUE ORDER → LOOP 9** below. It remains the original planning scope; every phase in it is now closed.
 
 ## Superseded historical entry — LOOP 3 "Assigning Planning Officer — IN PROGRESS"
 
@@ -4047,6 +4049,8 @@ inspection, the application, the assignment, or any business decision.
 the POST action, the read-only status reader, and the writer re-dispatch are all
 in place. The **retry UI is NOT YET IMPLEMENTED** (9C-4).
 
+> **Closure annotation (added by the Loop 9 final docs-only pass):** the sentence above is the accurate status as at 2026-09-30 and is preserved as chronology. **9C-4 is DONE** — the Retry Delivery control was implemented in `InspectionDeliveryStatusPanel` (`4958fc4`) and its real browser-originated click was proven end to end in **9C-5**.
+
 ## Authority
 
 The **current assigned Planning Officer only.** All five rules live in
@@ -4232,6 +4236,11 @@ verified read-only and unchanged: 70 applications, 35 inspections, 6
 already exposes `retry_available` and `retry_unavailable_reason` on the 9C-1
 reader, and the POST action already refuses correctly, so 9C-4 is a frontend
 surface over a settled contract.
+
+> **Closure annotation (added by the Loop 9 final docs-only pass):** "Not started"
+> above is the accurate status as at 2026-09-30, preserved as chronology.
+> **9C-4 and 9C-5 are both DONE** — see `LOOP 9C-4 - PLANNING OFFICER RETRY
+> DELIVERY UI` and the 9C-5 entry below.
 
 ---
 
@@ -4841,6 +4850,45 @@ whole-JSON decode is only a refinement that is allowed to fail.
 
 All three are now pinned as regression tests.
 
+### REMOTE-TEXT REAL-DATA VERIFICATION RULE
+
+This is a **standing engineering and closure rule**, not a 9E/9F implementation note.
+It applies to every future surface in iMAPS, and it was established by Loop 9E/9F.
+
+**Contract:** any iMAPS surface that renders untrusted text originating from
+Supabase, FieldSync, another remote service, or user-submitted remote records
+**MUST be verified against representative real remote data before closure.**
+
+**Why:** synthetic fixtures and source-level/unit verification alone are
+**insufficient for the final security gate.** The first `diagnostic_reports`
+sanitizer passed every synthetic test and every source review, and still leaked
+the real payload, because the real data had **transport shapes the fixtures did
+not represent.**
+
+**Reason established by Loop 9E/9F** - the real-data verification of
+`DR-2026-0001` uncovered all of:
+
+1. **slash-escaped URL transport** (`https:\/\/...`), invisible to a rule written
+   for the literal form;
+2. **URL immediately adjacent to the preceding prose**, which invalidated the
+   original word-boundary assumption;
+3. **multi-line raw text causing whole-string JSON decoding to return `NULL`**,
+   which would have made every multi-line report leak verbatim.
+
+The implementation was corrected and regression-tested before closure.
+
+**Standing requirement.** Before closing any future remote-text rendering surface:
+
+- exercise at least one representative **real remote record, READ ONLY**;
+- scan the **actual server/browser response** for secret-bearing material;
+- verify sanitization occurs **server-side**;
+- do not expose raw payload alongside sanitized payload;
+- do not log removed credentials or tokens;
+- record the real-data security verification in the closure evidence.
+
+**This is a verification rule. It does NOT authorize mutation of production or
+remote data.**
+
 ### Explicit allowlist, never a wildcard
 
 The remote table is outside this repository, so `select *` would make every
@@ -4878,3 +4926,112 @@ No queue monitor, no worker-freshness UI, no `failed_jobs` dashboard, no
 terminal-failure branch remains **unexercised** and was not exercised here. No
 partial remote-write diagnostics were added, because that is a different domain
 and answering it needs live Supabase reads.
+
+## LOOP 9 - FINAL CLOSURE
+
+**Status: CLOSED / VERIFIED**
+
+**Closure branch:** `loop9-delivery-handoff`
+**Closure evidence through:** `4e807a3` plus this final docs-only closure commit.
+
+### Completed phases
+
+| Phase | Contract |
+|---|---|
+| 9A | schema foundation |
+| 9A-R | historical failure reconciliation |
+| 9B | delivery-attempt recorder |
+| 9C-1 | delivery status reader |
+| 9C-2 | delivery status UI |
+| 9C-3 | Planning Officer retry server contract |
+| 9C-4 | Retry Delivery UI |
+| 9C-5 | controlled retry cross-system E2E |
+| 9D | Admin delivery monitoring |
+| 9E/9F | Admin diagnostic report triage |
+| 9G | final cross-system closure audit |
+
+### Verified contracts
+
+- initial iMAPS -> Supabase -> FieldSync delivery **proven**
+- Planning Officer retry **proven through a real browser click**
+- parcel **POINT** bridge contract proven
+- delivery attempt recorder **success path** proven
+- retry **preserves the same logical FieldSync job** - no duplicate task
+- Admin delivery monitoring is **read-only**
+- Admin **cannot** invoke Planning Officer retry
+- Admin diagnostic triage is **read-only**
+- diagnostic remote text is **server-sanitized**
+- **real remote leak scan passes** - zero exposure of the signed Supabase Storage
+  URL, any JWT, or any credential
+- PO / Admin / SI authority boundaries remain **separated**
+- canonical schema and DB change log **reconciled**
+- **no FieldSync production-code change was required by Loop 9**
+
+### Accepted operational / test risks
+
+These are carried forward deliberately. **Loop 9 closure does not mark them
+resolved.**
+
+1. **Stale queue worker after deployment or code change.**
+   Observed in `failed_jobs` 13 and 14, both of which were produced by a worker
+   started before the deploying commit. The recorder kept succeeding while the
+   worker silently ran pre-change class definitions. A prevention or
+   worker-freshness mechanism remains a **separate** piece of work.
+   **Not a Loop 9 closure blocker.**
+
+2. **Delivery recorder terminal-failure branch.**
+   `InspectionDeliveryRecorder::reconcileTerminalFailure` remains **unexercised
+   end to end**; its source and test coverage exist, and the initial-dispatch and
+   `planning_officer_retry` success branches are both proven against real data.
+   Accepted open test risk.
+
+3. **Partial remote-write diagnosis.**
+   Local evidence can classify that a delivery failed, but it cannot always
+   determine *which* Supabase stage succeeded. Historical evidence shows the
+   application mirror present while the parcel and `field_job` are absent. The
+   writer's retry/upsert behaviour is idempotent and self-healing, and reliable
+   stage diagnosis may require read-only remote inspection. Accepted diagnostic
+   limitation.
+
+### Open separate issues
+
+**Loop 9 closure does NOT close any of these.**
+
+- Juan Dela Cruz remote-only identity
+- Renato / Hubbie identity-name mismatch
+- Technical Review / `field_job_reviews` transport gap
+- FieldSync "ZONING OFFICER I" inspector display label
+- notification sender / source behaviour
+- general Admin / Planning Officer / Site Inspector provisioning consistency
+- stale-worker prevention / deployment operations
+- master integration / merge conflicts
+
+### Master handoff (read-only status at the 9G audit)
+
+- `origin/master` at the 9G audit: **`3721d7f`**
+- Loop 9 closure branch: **`loop9-delivery-handoff`**
+- **Team Leader owns integration to master.**
+- **No master merge was performed during Loop 9.**
+- 9G found **9 textual conflicts**.
+- **Semantic review is required in addition to textual conflict resolution.**
+- **Several Loop 9 bridge files do not exist on current master**, so a textual
+  merge would not reveal that master may still carry the pre-correction parcel
+  polygon writer.
+- **Master must not overwrite or reintroduce the old parcel polygon writer.**
+
+### Database closure statement
+
+- Final Loop 9 schema state: **MATCHES CANONICAL**
+- Unrecorded schema changes: **NONE**
+- 9C-4: **UI ONLY**
+- 9C-5: **E2E TEST DATA ONLY**
+- 9D: **NO DB CHANGE**
+- 9E/9F: **NO LOCAL DB CHANGE**
+- 9G: **AUDIT ONLY**
+- This final docs pass: **NO DB CHANGE**
+
+No migration. No forward SQL. No Supabase schema change. No FieldSync schema
+change.
+
+**Next activity: TEAM LEADER HANDOFF / MASTER INTEGRATION REVIEW - not another
+Loop 9 feature.**
