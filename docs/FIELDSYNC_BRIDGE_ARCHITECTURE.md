@@ -4232,3 +4232,214 @@ verified read-only and unchanged: 70 applications, 35 inspections, 6
 already exposes `retry_available` and `retry_unavailable_reason` on the 9C-1
 reader, and the POST action already refuses correctly, so 9C-4 is a frontend
 surface over a settled contract.
+
+---
+
+# LOOP 9C-4 - PLANNING OFFICER RETRY DELIVERY UI - IMPLEMENTED 2026-09-30
+
+## What this is
+
+One control added to the existing FieldSync Delivery panel on Application Detail:
+a per-round **Retry Delivery** action for the Planning Officer who currently
+owns the application. It is the only UI for the 9C-3 retry contract that the
+server-side closure already delivered.
+
+Production change is a single file: `resources/js/Components/InspectionDeliveryStatusPanel.jsx`.
+`resources/js/Pages/Applications/Show.jsx` is **unchanged** - the panel already
+received `applicationId` and fetches its own rounds, so it had everything needed
+to submit the retry. That matters: `Applications/Show.jsx` has unresolved
+master-side conflict history, and leaving it alone keeps this branch's merge
+surface small.
+
+## The server is the authority for eligibility
+
+The button is gated on the server's per-round `delivery.can_retry` and on
+**nothing else**. The panel does not check `delivery.state`, the viewer's role,
+`assigned_planning_officer_id`, the inspector's role, the handshake key, round
+ordering, `parcel_id`, or the failure category.
+
+That is the whole point of the 9C-1 design. `can_retry` is the output of the one
+shared `InspectionDeliveryRetryEligibility` contract that the 9C-3 retry service
+also enforces, so a browser can never offer a control the POST would refuse.
+Re-deriving any of those rules in the client would fork that single authority in
+exactly the two bad directions: showing a button the server rejects, or hiding
+one the server would accept.
+
+The application-level `retry_actor_unavailable_reason` is **not** used to gate
+the control. It answers a different question (may this person act on this
+application at all) and it is `null` for Admin by design, so gating on it would
+depend on the wrong flag. When the server offers it, it is rendered once as
+subtle guidance above the rounds.
+
+## Who sees the control
+
+`can_retry: false` is returned identically to an Admin, a non-owning Planning
+Officer, a Site Inspector and a guest. Therefore **none of them ever sees a
+button** - there is no client-side role check to get wrong, and no disabled
+placeholder advertising an authority the viewer does not have. An Admin who can
+read delivery monitoring gets no action at all, which is the intended reading
+experience rather than a tease.
+
+## The request
+
+`router.post` to `/site-inspections/{inspection}/retry-delivery`, with an
+**empty body**.
+
+- The established convention for a Component-initiated mutation in this
+  repository is Inertia's `router` (`WorkAssignment.jsx`, `Header.jsx`), and it
+  inherits the Inertia CSRF and redirect behaviour. No manual `X-CSRF-TOKEN` is
+  constructed, which is the exact anti-pattern the Loop 6 CSRF contract exists
+  to prevent.
+- No application id, parcel id, actor id, inspector id, delivery state or queue
+  source is sent. The server derives every one of them, and re-runs the same
+  eligibility contract. A browser may not assert facts about a business record.
+
+## "Queueing" is not "delivered"
+
+The in-flight button reads **Queueing…**, not "Retrying…" or "Sending…". An
+accepted retry means the request was **accepted and queued**; it says nothing
+about whether FieldSync ever received anything. On success the panel re-reads the
+9C-1 reader and renders whatever the **server** now reports - a round that was
+`delivery_failed` becomes `pending_delivery` because the server says so, and its
+button disappears because the refreshed `can_retry` is false.
+
+There is **no optimistic state**. The panel never writes a delivery state
+locally, and `pending_delivery` appears in this file only as a pre-existing
+9C-2 `DELIVERY_TONE` styling key, which paints whatever label the server sent.
+
+## Failure and concurrency
+
+Refusals are handled without leaking anything:
+
+- **403 / 404 / 409 / 503** all show one generic inline message, "Delivery retry
+  could not be queued.", in the panel's existing amber reader-failure shape,
+  explicitly worded so it cannot be read as a delivery that failed.
+- The 9C-3 controller already authors safe prose for every refusal
+  (`InspectionDeliveryRetryResult::MESSAGES`) and returns no exception message,
+  SQLSTATE, table name or stack trace. The UI still does not surface it, because
+  Inertia's `onError` callback is not a reliable channel for an `abort()` body:
+  relying on it would risk showing either nothing or an internal token. The
+  authored reason is not the officer's to act on here, and the re-fetch below
+  lets the reader re-state the truth.
+- No internal blocker token (`wrong_delivery_state`, `superseded_round`,
+  `inspector_invalid`, `application_mismatch`, `parcel_unknown`,
+  `not_authorized`), no `planning_officer_retry`, and no `queue_job_uuid` is
+  rendered.
+- **Both** the success and the failure branch re-read the reader. A 409 means the
+  server state moved on, so a stale enabled button must not survive a refusal.
+- The submitting state clears in `onFinish`, which Inertia fires on success and
+  on error alike. Without that, a refused retry would leave a permanently
+  disabled button. A second retry is also refused client-side while one is in
+  flight, so no double POST is possible.
+- Only the acting round shows the pending state, so unrelated rounds and
+  unrelated application controls are never disabled.
+
+## Accessibility
+
+The control is a real `<button type="button">` with visible text, a `min-h` touch
+target, `disabled` and `aria-busy` while submitting, and
+`aria-label="Retry FieldSync delivery for Inspection Round N"` so the label
+names the round it acts on. It is never icon-only.
+
+Visually it is a small outlined secondary action that sits beside the delivery
+badge, deliberately quieter than a primary application workflow button, and it
+reuses only the panel's existing Tailwind tokens. No design token was added and
+the round layout, spacing, typography and status colours are unchanged.
+
+## Verification
+
+`tests/Unit/Loop9c4RetryUiContractTest.php` - 16 tests. It proves the control
+exists; is gated only on `can_retry === true`; posts to the 9C-3 route with an
+empty body and no business field; constructs no CSRF header; disables and
+`aria-busy`s while in flight; refuses a second activation; scopes the pending
+state to one round; re-reads on both success and error; never fabricates a
+delivery state; clears the submitting state in `onFinish`; renders **no** control
+(never a disabled one) for a non-retryable round; exposes no internal token;
+shows only the generic refusal message; carries the round-tied `aria-label`; and
+proves 9C-4 changed neither `Applications/Show.jsx` nor any 9C-3 backend file,
+route or migration.
+
+Four 9C-2 containment assertions were **scoped rather than deleted**, because
+they were written for a read-only panel that legitimately had no retry:
+
+- `router.` is no longer forbidden - it is now required, and axios, a raw
+  `XMLHttpRequest`, `useForm` and `sendBeacon` remain forbidden.
+- `setTimeout` is no longer forbidden outright for the toast dismissal timer, but
+  `setInterval`, `WebSocket`, `EventSource`, `realtime`, `subscribe(`,
+  `refetchInterval` and `poll` remain forbidden, and every `setTimeout` must be
+  paired with a `clearTimeout`.
+- "no retry token at all" became "no client-side eligibility reconstruction",
+  which is **stricter**: it enumerates the specific tokens that would mean the
+  browser re-derives a server rule, and `retry_actor_authorized` stays forbidden
+  outright.
+- "no button at all" became "exactly one button, and no form, anchor or
+  onSubmit".
+- The "component must be byte-identical to 9C-2-1" freeze was replaced by a
+  scope assertion, because that rule would have forbidden this entire phase. The
+  reader content it used to protect is still pinned by the other 9C-2 tests in
+  the same file.
+
+Results: `Loop9c4RetryUiContractTest` + `Loop9c2DeliveryPanelContractTest` 64
+tests / 361 assertions PASS; full Unit suite 546 / 2993 PASS;
+`Loop9c1DeliveryStatusReaderTest` 11 / 49 PASS; `npm run build` PASS;
+`git diff --check` clean.
+
+## What was NOT verified, and why
+
+- **No automated render.** This project has no frontend test runner (no vitest,
+  jest, @testing-library, playwright, cypress, jsdom or happy-dom; no `test`
+  script), and there is no jsdom to drive a real DOM. A `renderToStaticMarkup`
+  harness was attempted and abandoned: it would not have exercised the mounted
+  panel, because SSR does not run `useEffect`, so it could only ever have
+  rendered the loading state. Per the phase's own preference order, option B (the
+  source contract) is the correct available gate. **No claim is made that the
+  button has been visually confirmed in a browser.**
+- **The real POST was never executed against canonical.** Doing so would require
+  a Planning Officer to own a failed round, and no such row exists.
+- **Remote FieldSync delivery remains unverified.** 9C-4 queues the existing
+  writer; it does not prove anything reached the bridge.
+
+## Current data limitation (development state, NOT a defect)
+
+The development database now holds **71** applications, and exactly **one**
+(`id 142`, `APP-2026-00027`) has a non-null `assigned_planning_officer_id` -
+owned by Planning Officer user 4. That application has a single round,
+`id 38`, whose `delivery_status` is NULL, so it is **not** a recorded failure.
+
+The six `delivery_failed` rounds (ids 25-30) belong to applications 104 and
+115-119, **none of which has a Planning Officer owner**.
+
+Evaluating the real `can_retry` contract read-only against the live data
+therefore yields `false` for every round, for the owning Planning Officer **and**
+for Admin. The correct rendering on current data is **no retry button anywhere**,
+and that is a correct result, not a UI failure.
+
+This state was not created or altered by 9C-4, which performed no database
+write. No owner was backfilled, no ownership was inferred from `encoded_by`, and
+eligibility was not relaxed to make a button appear. Establishing legitimate
+ownership on a genuinely failed round is a prerequisite for the controlled
+9C-5 E2E, together with its own authorization.
+
+## Boundaries respected
+
+No backend change: `InspectionDeliveryController`, `InspectionDeliveryRetryService`,
+`InspectionDeliveryRetryEligibility`, `InspectionDeliveryRetryResult`,
+`InspectionDeliveryStatus`, `PushInspectionToSupabase`, `routes/web.php` and
+`database/migrations/` are all untouched, and this is asserted by test. No
+`Applications/Show.jsx` change. No schema change, no migration, no forward SQL,
+no canonical write, no Supabase change, no FieldSync change, no retry
+business-logic change.
+
+## Boundaries respected by the UI
+
+Retry remains a **transport** operation. Adding this control does not change
+application status, inspection business status, inspector assignment, Planning
+Officer ownership, technical review decisions, photo evidence, FieldSync
+`current_step` / `progress`, Planning Review identity, or reinspection identity.
+A retry never grants a new round, never reopens a review, and never re-assigns
+anyone.
+
+**Next: 9C-5 - controlled retry E2E.** It requires an explicitly authorized
+fixture that gives a Planning Officer legitimate ownership of a genuinely
+`delivery_failed` round, plus a live FieldSync bridge, to prove the queued writer
+actually delivers. That fixture is deliberately NOT created here.

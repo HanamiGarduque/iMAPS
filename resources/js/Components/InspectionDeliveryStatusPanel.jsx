@@ -1,18 +1,19 @@
 // resources/js/Components/InspectionDeliveryStatusPanel.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { router, usePage } from "@inertiajs/react";
 
 /**
- * Loop 9C-2 - FieldSync Delivery status panel (READ ONLY).
+ * Loop 9C-2 / 9C-4 - FieldSync Delivery status panel.
  *
  * WHAT THIS IS
  * ------------
- * A Planning Officer or Admin can now see, per INSPECTION ROUND, whether that
- * round reached FieldSync. This component is the only UI for the Loop 9C-1
- * reader contract (`GET /applications/{id}/delivery-status`).
+ * Per INSPECTION ROUND, whether that round reached FieldSync. This component is
+ * the only UI for the Loop 9C-1 reader contract
+ * (`GET /applications/{id}/delivery-status`).
  *
- * It is deliberately inert. It dispatches nothing, writes nothing, and offers
- * no control of any kind. Retry is a later phase and the response deliberately
- * carries retry fields this component does not reference at all.
+ * 9C-2 made it read-only. 9C-4 adds ONE action per round: the Planning Officer
+ * delivery retry, which posts to the 9C-3 endpoint. Everything else here is
+ * unchanged.
  *
  * ── THE SERVER IS THE SEMANTIC AUTHORITY ────────────────────────────────────
  * Every user-facing string is rendered from a server field: `delivery.label`,
@@ -24,6 +25,36 @@ import React, { useState, useEffect } from "react";
  * That is the single most important rule in this file. A Planning Officer must
  * see exactly what the server concluded, and a future change to the server's
  * vocabulary must change this UI with no edit here.
+ *
+ * ── RETRY ELIGIBILITY IS NOT COMPUTED HERE (9C-4) ───────────────────────────
+ * The retry button is gated on the server's per-round `delivery.can_retry` and
+ * on NOTHING else. This file does not check `delivery.state`, the viewer's role,
+ * `assigned_planning_officer_id`, the inspector's role, the handshake key, round
+ * ordering, `parcel_id` or the failure category.
+ *
+ * That is deliberate, not a shortcut. `can_retry` is the output of the ONE
+ * shared eligibility contract that the 9C-3 retry service also enforces, so a
+ * browser can never offer a control the POST would refuse. Re-deriving any of
+ * those rules here would fork that single authority and could show a button the
+ * server rejects, or hide one the server would accept.
+ *
+ * The application-level `retry_actor_unavailable_reason` is deliberately NOT
+ * used to gate the button. It answers a different question (may this person act
+ * on this application at all) and it is null for Admin by design, so using it
+ * would produce a control that depends on the wrong flag. It is rendered once,
+ * as guidance, when the server offers it.
+ *
+ * ── "QUEUEING" IS NOT "DELIVERED" (9C-4) ────────────────────────────────────
+ * An accepted retry means the request was ACCEPTED and QUEUED. It says nothing
+ * about whether FieldSync ever received anything. The button therefore says
+ * "Queueing…" while in flight, and the post-refresh state comes from the reader,
+ * never from an optimistic local guess. This UI never claims delivery happened.
+ *
+ * ── THE REQUEST CARRIES NO BUSINESS DATA (9C-4) ─────────────────────────────
+ * `router.post` sends an EMPTY object. The server derives the actor, the
+ * application, the parcel, the inspector, the source and the delivery state
+ * itself. Sending any of them from the browser would let the client assert
+ * facts about a business record, and the server would still ignore it.
  *
  * ── NULL IS NOT A PROBLEM ───────────────────────────────────────────────────
  * `no_delivery_record` is the ABSENCE of a Loop 9 delivery record, and nothing
@@ -105,13 +136,52 @@ function formatStamp(value) {
 }
 
 /**
+ * The 9C-4 retry control.
+ *
+ * Rendered ONLY when the server said `delivery.can_retry` is true, and for no
+ * other reason. An Admin, a non-owning Planning Officer, a Site Inspector and a
+ * guest all receive the SAME `can_retry: false` from the reader, so none of them
+ * ever sees this control - there is no client-side role check to get wrong, and
+ * no disabled placeholder advertising an authority the viewer does not have.
+ *
+ * While a request is in flight the button is disabled and reads "Queueing…",
+ * which is deliberately not "Retrying…" or "Sending…": a 200 means ACCEPTED AND
+ * QUEUED, and this control must never imply that FieldSync has been reached.
+ */
+function RetryDeliveryButton({ inspectionId, round, queueing, onRetry }) {
+    return (
+        <button
+            type="button"
+            onClick={() => onRetry(inspectionId)}
+            disabled={queueing}
+            aria-busy={queueing}
+            aria-label={`Retry FieldSync delivery for Inspection Round ${round}`}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 min-h-[28px] rounded-[6px] text-[10px] font-bold uppercase tracking-wider border transition-colors disabled:opacity-60 disabled:cursor-not-allowed border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-700 disabled:hover:border-slate-300 disabled:hover:text-slate-600"
+        >
+            {queueing ? (
+                <>
+                    <span
+                        className="w-2.5 h-2.5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"
+                        aria-hidden="true"
+                    />
+                    Queueing…
+                </>
+            ) : (
+                "Retry Delivery"
+            )}
+        </button>
+    );
+}
+
+/**
  * One inspection round.
  *
  * Every value below is read from the server response. Nothing is derived, and
  * nothing diagnostic is surfaced: no failure category token, no queue
- * correlation, no attempt detail, no remote task lifecycle.
+ * correlation, no attempt detail, no remote task lifecycle, and no internal
+ * retry blocker enum.
  */
-function DeliveryRoundRow({ inspection }) {
+function DeliveryRoundRow({ inspection, queueingId, onRetry }) {
     const delivery = inspection?.delivery;
     if (!delivery) return null;
 
@@ -120,13 +190,27 @@ function DeliveryRoundRow({ inspection }) {
     const attempts = Number(delivery.attempt_count) || 0;
     const inspectorName = inspection.inspector?.name;
 
+    // THE AUTHORITATIVE GATE. Read straight from the server and used as-is.
+    const canRetry = delivery.can_retry === true;
+    const isQueueing = queueingId === inspection.inspection_id;
+
     return (
         <li className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 space-y-1.5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <p className="text-[12px] font-bold text-slate-700">
                     Inspection Round {inspection.round}
                 </p>
-                <DeliveryBadge label={delivery.label} state={delivery.state} />
+                <div className="flex items-center gap-2 shrink-0">
+                    {canRetry && (
+                        <RetryDeliveryButton
+                            inspectionId={inspection.inspection_id}
+                            round={inspection.round}
+                            queueing={isQueueing}
+                            onRetry={onRetry}
+                        />
+                    )}
+                    <DeliveryBadge label={delivery.label} state={delivery.state} />
+                </div>
             </div>
 
             {delivery.message && (
@@ -179,7 +263,20 @@ export default function InspectionDeliveryStatusPanel({ applicationId }) {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
 
-    useEffect(() => {
+    // 9C-4. Exactly ONE round can be queueing at a time, so this is a scalar
+    // inspection id rather than a Set. The server refuses a second retry for the
+    // same round, and the disabled button already prevents a double click.
+    const [queueingId, setQueueingId] = useState(null);
+    const [actionError, setActionError] = useState(null);
+
+    // The 9C-3 success flash, consumed here so Applications/Show.jsx does not
+    // have to change. Show.jsx renders no flash consumer, and the message is
+    // authored SERVER prose, never text composed here.
+    const flashSuccess = usePage().props?.flash?.success ?? null;
+    const [toast, setToast] = useState(null);
+    const seenFlash = useRef(null);
+
+    const load = useCallback(() => {
         if (!applicationId) {
             setData(null);
             setLoading(false);
@@ -221,7 +318,73 @@ export default function InspectionDeliveryStatusPanel({ applicationId }) {
         };
     }, [applicationId]);
 
+    useEffect(() => load(), [load]);
+
+    useEffect(() => {
+        if (!flashSuccess || seenFlash.current === flashSuccess) return;
+        seenFlash.current = flashSuccess;
+        setToast(flashSuccess);
+        const timer = setTimeout(() => setToast(null), 4000);
+        return () => clearTimeout(timer);
+    }, [flashSuccess]);
+
+    /**
+     * 9C-4 retry.
+     *
+     * The request body is deliberately EMPTY. The server derives the actor, the
+     * application, the parcel, the inspector, the source and the delivery state
+     * itself, and it re-runs the same eligibility contract that produced
+     * `can_retry`. Nothing about the business record may be asserted by a
+     * browser.
+     *
+     * `router.post` is used because it is the established convention in every
+     * Component in this repository (WorkAssignment.jsx, Header.jsx) and it
+     * inherits the Inertia CSRF and redirect behaviour. No manual CSRF header is
+     * constructed, and no optimistic `pending_delivery` is rendered: the new
+     * state always comes from a fresh authoritative read.
+     *
+     * The refusal branch deliberately shows a GENERIC message. The server
+     * already sends safe authored prose (403/404/409/503 with
+     * `InspectionDeliveryRetryResult::message()`), but Inertia's `onError`
+     * callback is not a reliable channel for an abort() body, so relying on it
+     * would risk showing either nothing or an internal token. The specific
+     * reason is not the officer's to act on here, and the re-fetch below lets
+     * the reader re-state the truth.
+     */
+    const retry = (inspectionId) => {
+        if (queueingId !== null) return;
+
+        setQueueingId(inspectionId);
+        setActionError(null);
+
+        router.post(
+            `/site-inspections/${encodeURIComponent(inspectionId)}/retry-delivery`,
+            {},
+            {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    // Accepted and queued. The flash toast carries the server's
+                    // own wording; the panel does not compose a success message.
+                    load();
+                },
+                onError: () => {
+                    setActionError("Delivery retry could not be queued.");
+                    // 409 in particular means the server state moved on, so the
+                    // panel MUST re-read: a stale enabled button must not survive
+                    // a refusal.
+                    load();
+                },
+                onFinish: () => setQueueingId(null),
+            },
+        );
+    };
+
     const rounds = data?.inspections ?? [];
+
+    // Server-authored, application-level guidance. Shown only when the server
+    // offers it, and never used to decide whether a button appears.
+    const actorReason = data?.retry_actor_unavailable_reason ?? null;
 
     return (
         <section
@@ -274,16 +437,54 @@ export default function InspectionDeliveryStatusPanel({ applicationId }) {
                 )}
 
                 {!loading && !loadError && rounds.length > 0 && (
-                    <ul className="space-y-2">
-                        {rounds.map((inspection) => (
-                            <DeliveryRoundRow
-                                key={inspection.inspection_id}
-                                inspection={inspection}
-                            />
-                        ))}
-                    </ul>
+                    <>
+                        {actorReason && (
+                            <p className="text-[11px] leading-relaxed text-slate-500 mb-2.5">
+                                {actorReason}
+                            </p>
+                        )}
+
+                        {/* A retry that was refused. Generic by design: no blocker
+                            token, no status code, no server internals. */}
+                        {actionError && (
+                            <div
+                                role="alert"
+                                className="p-3 mb-2.5 bg-amber-50 border border-amber-200 rounded-xl"
+                            >
+                                <p className="text-[12px] font-bold text-amber-800">
+                                    {actionError}
+                                </p>
+                                <p className="text-[11px] text-amber-700 mt-0.5">
+                                    This does not indicate a problem with the delivery itself.
+                                </p>
+                            </div>
+                        )}
+
+                        <ul className="space-y-2">
+                            {rounds.map((inspection) => (
+                                <DeliveryRoundRow
+                                    key={inspection.inspection_id}
+                                    inspection={inspection}
+                                    queueingId={queueingId}
+                                    onRetry={retry}
+                                />
+                            ))}
+                        </ul>
+                    </>
                 )}
             </div>
+
+            {/* 9C-4. The server's own success wording, in the Show.jsx toast
+                shape. It always says QUEUED, never delivered. */}
+            {toast && (
+                <div
+                    className="flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm pointer-events-none transition-all bg-slate-900 text-white border-slate-800"
+                    role="status"
+                    aria-live="polite"
+                >
+                    <span>{toast}</span>
+                </div>
+            )}
         </section>
     );
 }

@@ -78,13 +78,33 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
     {
         $code = $this->code();
 
-        foreach (['axios', 'router.', 'XMLHttpRequest(', 'useForm', 'navigator.sendBeacon'] as $forbidden) {
+        // SCOPE CHANGED 2026-09-30 (9C-4).
+        //
+        // This originally forbade `router.` as well, on the grounds that the
+        // panel was read-only and the reader endpoint was canonical. 9C-4 adds
+        // the Planning Officer retry control, and it deliberately uses
+        // `router.post` because that is the established convention for a
+        // Component-initiated mutation in this repository (WorkAssignment.jsx,
+        // Header.jsx) and it inherits Inertia's CSRF and redirect behaviour.
+        //
+        // So `router.` is now expected. The transports that remain forbidden are
+        // the ones that would bypass Inertia's handling or add a dependency:
+        // axios, a raw XMLHttpRequest, useForm, and sendBeacon. A retry that
+        // needed a hand-built CSRF header or a second HTTP stack is exactly what
+        // this still prevents.
+        foreach (['axios', 'XMLHttpRequest(', 'useForm', 'navigator.sendBeacon'] as $forbidden) {
             $this->assertStringNotContainsString(
                 $forbidden,
                 $code,
-                "The panel must not introduce '{$forbidden}'; the reader endpoint is canonical."
+                "The panel must not introduce '{$forbidden}'; Inertia's router is the only POST transport."
             );
         }
+
+        $this->assertStringContainsString(
+            'router.post',
+            $code,
+            '9C-4: the retry must post through Inertia\'s router, not a hand-built request.'
+        );
     }
 
     public function test_the_fetch_is_keyed_to_the_application_id(): void
@@ -103,16 +123,33 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
     {
         $code = $this->code();
 
+        // `setTimeout` is no longer forbidden outright since 9C-4: the panel now
+        // auto-dismisses its success toast after 4 seconds, exactly as
+        // Applications/Show.jsx does for its own toast. That is a one-shot
+        // dismissal timer, not a poll.
+        //
+        // The real rule is unchanged and is asserted strictly: there is no
+        // recurring schedule, no subscription and no push channel. Delivery
+        // state is only ever read on mount and after a deliberate retry, so this
+        // panel can never invent a state change nobody performed.
         foreach ([
-            'setInterval', 'setTimeout', 'WebSocket', 'EventSource',
+            'setInterval', 'WebSocket', 'EventSource',
             'realtime', 'subscribe(', 'refetchInterval', 'poll',
         ] as $forbidden) {
             $this->assertStringNotContainsString(
                 $forbidden,
                 $code,
-                "9C-2-1 must not add '{$forbidden}'. Fetch once per applicationId."
+                "The panel must not add '{$forbidden}'; there is no recurring or pushed refresh."
             );
         }
+
+        // A dismissal timer may exist, but it may only be a single clearTimeout
+        // pair. Polling would require an interval or a self-rescheduling timeout.
+        $this->assertSame(
+            substr_count($code, 'setTimeout('),
+            substr_count($code, 'clearTimeout('),
+            'Every timeout must be cleared, or a stale toast can outlive its unmount.'
+        );
     }
 
     public function test_a_stale_response_guard_exists_without_abortcontroller(): void
@@ -399,31 +436,64 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
     // §21 / §30  NO RETRY, NO ACTION
     // ══════════════════════════════════════════════════════════════
 
-    public function test_no_retry_field_is_referenced_at_all(): void
+    public function test_the_reader_still_sends_no_mutation(): void
     {
         $code = $this->code();
 
-        foreach ([
-            'can_retry', 'retry_actor_authorized', 'retry_actor_unavailable_reason',
-            'retry-delivery', 'Retry Delivery', 'planning_officer_retry',
-        ] as $forbidden) {
-            $this->assertStringNotContainsString(
-                $forbidden,
-                $code,
-                "'{$forbidden}' is a 9C-4 concern. 9C-2-1 must not reference it."
-            );
-        }
+        // SCOPE CHANGED 2026-09-30 (9C-4).
+        //
+        // 9C-2-1 forbade every retry token because no retry existed. 9C-4 adds
+        // one, so the meaningful rule is narrower and STRICTER about what must
+        // not appear: the client must never compute or assert the retry decision.
+        //
+        // The application-level `retry_actor_authorized` flag is still forbidden
+        // outright. It answers a different question from the per-round
+        // `can_retry` and the 9C-1 contract explicitly warns that gating a
+        // control on it is the mistake that made an earlier boolean misleading.
+        $this->assertStringNotContainsString(
+            'retry_actor_authorized',
+            $code,
+            'The application-level flag must never gate the control; gate on the per-round can_retry.'
+        );
+
+        // Nor may the client send the queue source; the server owns it.
+        $this->assertStringNotContainsString(
+            'planning_officer_retry',
+            $code,
+            'The dispatch source is server-owned and must never be sent by a browser.'
+        );
+
+        // The per-round gate and the endpoint ARE now required. Asserting their
+        // presence here is what stops 9C-4 from quietly reverting to a local
+        // computation.
+        $this->assertStringContainsString(
+            'delivery.can_retry === true',
+            $code,
+            'The retry control must be gated on the server\'s authoritative per-round can_retry.'
+        );
     }
 
-    public function test_the_panel_contains_no_action_control_at_all(): void
+    public function test_the_panel_renders_exactly_one_action_control_and_no_other(): void
     {
         $code = $this->code();
 
-        $this->assertStringNotContainsString('<button', $code, 'A read-only panel must render no button.');
-        $this->assertStringNotContainsString('<a ', $code, 'A read-only panel must render no link.');
-        $this->assertStringNotContainsString('<form', $code);
-        $this->assertStringNotContainsString('onClick', $code, 'No interaction in 9C-2-1.');
-        $this->assertStringNotContainsString('onSubmit', $code);
+        // SCOPE CHANGED 2026-09-30 (9C-4). 9C-2-1 forbade every button and
+        // every onClick. 9C-4 introduces exactly ONE button, the retry control,
+        // and no form, no anchor and no submit handler anywhere in the panel.
+        $this->assertSame(
+            1,
+            substr_count($code, '<button'),
+            'The panel must contain exactly one control: the 9C-4 retry button.'
+        );
+        $this->assertStringContainsString(
+            'Retry Delivery',
+            $code,
+            'The one control must be the retry action.'
+        );
+
+        $this->assertStringNotContainsString('<a ', $code, 'The panel must render no link.');
+        $this->assertStringNotContainsString('<form', $code, 'The panel must render no form.');
+        $this->assertStringNotContainsString('onSubmit', $code, 'The panel must not submit a form.');
     }
 
     public function test_the_panel_issues_no_mutation_of_any_kind(): void
@@ -937,16 +1007,50 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
         return $production;
     }
 
-    public function test_the_panel_component_itself_is_unchanged_since_9c2_1(): void
+    public function test_the_only_9c4_production_change_is_the_retry_control(): void
     {
-        $diff = (string) shell_exec(
-            'git diff 106fec6 -- resources/js/Components/InspectionDeliveryStatusPanel.jsx'
-        );
+        // REPLACED 2026-09-30 (9C-4).
+        //
+        // This previously asserted the component was byte-identical to its 9C-2-1
+        // state, which was correct while the panel was read-only and the retry
+        // belonged to a later phase. 9C-4 IS that later phase, so the
+        // "must be untouched" rule would have forbidden the entire change.
+        //
+        // The rule is replaced with the one that actually protects this panel:
+        // 9C-4 may add the retry control and the machinery it needs, and it may
+        // not touch anything the reader already rendered. Every 9C-2 contract in
+        // this same file already pins that content - the tone map, the
+        // server-authored labels, the neutral NULL wording, the round label
+        // rules, the reader-fetch convention and the stale-response guard - so
+        // those assertions are the durable gate, and this one no longer needs to
+        // freeze the file.
+        //
+        // What is asserted here is the intended scope of the change: the retry
+        // surface and its supporting state, and nothing unrelated to delivery.
+        $code = $this->code();
 
-        $this->assertSame(
-            '',
-            trim($diff),
-            'Wiring exposed no component defect, so the 9C-2-1 component must be untouched.'
-        );
+        foreach ([
+            'can_retry', 'retry-delivery', 'Retry Delivery',
+            'queueingId', 'onRetry', 'RetryDeliveryButton',
+        ] as $expected) {
+            $this->assertStringContainsString(
+                $expected,
+                $code,
+                "9C-4 must add the retry surface: '{$expected}' is missing."
+            );
+        }
+
+        // 9C-4 is a delivery-retry addition. It must not reach into unrelated
+        // application behaviour from inside this panel.
+        foreach ([
+            'assigned_planning_officer', 'encoded_by', 'handshake_key',
+            'technical_reviews', 'photo', 'current_step',
+        ] as $outOfScope) {
+            $this->assertStringNotContainsString(
+                $outOfScope,
+                $code,
+                "9C-4 must not reference '{$outOfScope}'; retry is a delivery-transport concern only."
+            );
+        }
     }
 }
