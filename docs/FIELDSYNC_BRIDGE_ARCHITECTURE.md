@@ -4773,3 +4773,108 @@ One wording correction worth recording: the attempt disclosure originally read
 "Completed:" for `completed_at`. `Completed` is a FieldSync **task** lifecycle
 value, and delivery history must never be worded as task lifecycle, so it reads
 "Outcome recorded:" instead.
+---
+
+## LOOP 9E/9F - INSPECTOR DIAGNOSTIC REPORT ADMIN TRIAGE
+
+Implemented 2026-09-30 on `loop9-delivery-handoff`. 9E and 9F are treated as ONE
+bounded unit, because the canonical record never defines them separately.
+
+### What was already built, and what was missing
+
+The support path this closes was already live everywhere except here:
+
+- **FieldSync side: COMPLETE.** A Site Inspector can submit a support issue into
+  the remote `diagnostic_reports` table - `diagnostics_screen.dart`,
+  `diagnostics_service.dart` with `fetchMyReports()` and `submitReport()`.
+- **Remote table: EXISTS.** Verified live read-only, with exactly the 13 columns
+  the architecture record documents, and one real row (`DR-2026-0001`).
+- **iMAPS side: DID NOT EXIST.** Zero references to `diagnostic_reports` anywhere
+  in `app/`, `resources/`, `routes/`, `tests/` or `database/`. The architecture
+  record had called this "CONTRACT/ACCESS WORK REQUIRED" and warned "do not claim
+  it already works in iMAPS".
+
+This loop is that missing Admin half. It is **not** delivery monitoring, queue
+monitoring, retry diagnostics, Technical Review, assignment or FieldSync task
+lifecycle. `diagnostic_reports` is a support-ticket domain and shares no
+vocabulary with the delivery state machine.
+
+### The security finding, and what it forced
+
+The audit proved that the one live report contains a **signed Supabase Storage
+URL carrying a JWT** inside its `summary` - a time-limited bearer capability
+granting read on a private inspection photo. `summary` is 3,473 characters of
+free text typed by a person on a phone.
+
+So the absolute rule is: **raw remote free text must never reach a browser.**
+Escaping would not help; only redaction does.
+
+`App\Support\DiagnosticTextSanitizer` is the single bounded sanitizer. It redacts
+Supabase storage URLs, any Supabase project host, credential-shaped query
+parameters, JWT-shaped values, `Bearer`/`Authorization` fragments, and
+service-key-shaped assignments. It also compares against the **live configured**
+service key, because shape rules cannot recognize an unusual key. It never logs
+its input, never returns the raw value beside the safe one, and never echoes a
+prefix of a removed secret - a prefix is a confirmation oracle.
+
+Ordinary prose survives intact, so a support agent still reads the actual bug
+report. A plain non-Supabase URL is preserved, because it is not a secret, and the
+UI renders it as inert non-clickable text.
+
+### Two real defects found by verifying against live data
+
+Both were found by testing against the actual report, not by reasoning, and both
+would have shipped as a silent total failure of the redaction:
+
+1. **Escape blindness.** The value arrives slash-escaped (`https:\/\/host\/...`),
+   so a rule written for literal `https://` matched nothing.
+2. **A word boundary that matched nothing.** The URL rule began with `\b`, but the
+   inspector typed the URL straight onto the previous word
+   (`pagkakaintindi kohttps://...`). The boundary never matched and every URL in
+   the text passed through.
+
+A third, subtler one: a naive `json_decode('"' . $text . '"')` returns NULL for any
+text containing a raw newline - which inspector prose is full of. Had that null
+fallen through to "return the input untouched", every multi-line report would have
+leaked verbatim. The per-escape decoder is therefore the primary path and the
+whole-JSON decode is only a refinement that is allowed to fail.
+
+All three are now pinned as regression tests.
+
+### Explicit allowlist, never a wildcard
+
+The remote table is outside this repository, so `select *` would make every
+future remote column browser-visible by default. Only 8 safe metadata columns are
+requested, and only the keys written in `shape()` are ever returned. Free text is
+limited to `summary`, `technical_description`, `repro_steps` and
+`recommended_action`, each sanitized before it can become a prop.
+
+### Identity is reported honestly
+
+The live report's `inspector_id` is `ddcebeac-...` - the remote profile whose
+local identity is an **open, separately frozen question**. The reader therefore
+reports `resolved: false` with the label "Unresolved inspector" and a short UUID.
+
+It never guesses a name and never reaches into local handshake data to invent
+one. Resolving that identity drift is explicitly not this loop's job.
+
+### Authority
+
+Admin only, enforced by route middleware `role:Admin` - the real, strict,
+fail-closed `RoleMiddleware`. Verified live: Admin 200, **Planning Officer 403 on
+both routes**, guest redirected to login.
+
+**Read only.** There is no POST, PATCH or DELETE route and no `store`/`update`/
+`destroy` method, so an Admin cannot change a report's status and no report can be
+deleted or written from iMAPS at all. The remote table's only writer remains the
+FieldSync client. The pages state "Read only" explicitly rather than implying the
+boundary by the absence of buttons.
+
+### What is deliberately NOT here
+
+No queue monitor, no worker-freshness UI, no `failed_jobs` dashboard, no
+`queue:restart` automation. The stale-worker class of failure remains an
+**operational risk** that no canonical document assigns to any loop. The recorder's
+terminal-failure branch remains **unexercised** and was not exercised here. No
+partial remote-write diagnostics were added, because that is a different domain
+and answering it needs live Supabase reads.

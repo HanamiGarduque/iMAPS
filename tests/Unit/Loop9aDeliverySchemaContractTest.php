@@ -28,6 +28,11 @@ class Loop9aDeliverySchemaContractTest extends TestCase
 
     private const MIGRATION = 'database/migrations/2026_09_28_030000_add_inspection_delivery_monitoring.php';
 
+    /**
+     * The 9A commit itself, used to scope the phase-boundary assertion below.
+     */
+    private const PHASE_COMMIT = '5ea984f';
+
     private function sql(): string
     {
         return (string) file_get_contents(base_path(self::FORWARD_SQL));
@@ -498,8 +503,45 @@ class Loop9aDeliverySchemaContractTest extends TestCase
 
     public function test_no_delivery_controller_or_ui_was_introduced(): void
     {
+        // SCOPE CORRECTED 2026-09-30 (Loop 9E/9F).
+        //
+        // This asserted that BOTH `DeliveryMonitoringController.php` and
+        // `DiagnosticReportController.php` must not exist. That silently became a
+        // freeze on all future authorized work - the same defect class already
+        // corrected in this repository four times, in Loop9c4RetryUiContractTest,
+        // Loop9c1DeliveryStatusContractTest, Loop9c3RetryEligibilityContractTest and
+        // Loop9c2DeliveryPanelContractTest.
+        //
+        // It broke on 9E/9F, which is precisely the phase those files exist for:
+        // the architecture record named an Admin diagnostic access path as
+        // "CONTRACT/ACCESS WORK REQUIRED" and deferred the diagnostic backend to
+        // 9E/9F.
+        //
+        // WHAT 9A ACTUALLY PROVED, AND WHAT STILL HOLDS
+        // ------------------------------------------------
+        // 9A was a SCHEMA-ONLY phase. Its real invariant is that 9A itself did not
+        // implement monitoring, diagnostics, or any writer instrumentation. So the
+        // file-existence checks are now made against the 9A COMMIT, where they
+        // state exactly what they always meant, and the SUBSTANCE of the invariant
+        // is asserted against live code below: no attempt-writing model may be
+        // referenced from the controllers 9A was forbidden to touch.
+        $phaseFiles = (string) shell_exec('git show --name-only --format= ' . self::PHASE_COMMIT);
+
+        foreach ([
+            'app/Http/Controllers/DeliveryMonitoringController.php',
+            'app/Http/Controllers/DiagnosticReportController.php',
+        ] as $controller) {
+            $this->assertStringNotContainsString(
+                $controller,
+                $phaseFiles,
+                "9A was schema-only and must not have introduced {$controller}."
+            );
+        }
+
+        // `DeliveryMonitoringController` has no later phase, so its absence is
+        // still a live invariant: 9D deliberately extended the existing
+        // applications list instead of introducing a new module.
         $this->assertFileDoesNotExist(base_path('app/Http/Controllers/DeliveryMonitoringController.php'));
-        $this->assertFileDoesNotExist(base_path('app/Http/Controllers/DiagnosticReportController.php'));
 
         foreach ([
             'app/Http/Controllers/ApplicationController.php',
@@ -509,6 +551,31 @@ class Loop9aDeliverySchemaContractTest extends TestCase
             $this->assertStringNotContainsString(
                 'InspectionDeliveryAttempt',
                 (string) file_get_contents(base_path($controller))
+            );
+        }
+
+        // The 9E/9F controller is authorized now, but it is a READER for a remote
+        // support table. It must never become a second place that reads or writes
+        // the Loop 9 delivery state machine, or 9D's single authoritative surface
+        // would stop being authoritative.
+        //
+        // Executable code only. The class docblock deliberately NAMES the delivery
+        // concerns in prose to state what this loop is not, and asserting against
+        // raw text would punish that documentation.
+        $diagnostics = (string) file_get_contents(base_path('app/Http/Controllers/DiagnosticReportController.php'));
+        $diagnostics = (string) preg_replace('#/\*.*?\*/#s', '', $diagnostics);
+        $diagnostics = (string) preg_replace('#^\s*(//|\*).*$#m', '', $diagnostics);
+
+        foreach ([
+            'InspectionDeliveryAttempt',
+            'site_inspections',
+            'delivery_status',
+            'retry-delivery',
+        ] as $deliveryConcern) {
+            $this->assertStringNotContainsString(
+                $deliveryConcern,
+                $diagnostics,
+                "9E/9F must not touch the Loop 9 delivery state machine. Found '{$deliveryConcern}'."
             );
         }
     }

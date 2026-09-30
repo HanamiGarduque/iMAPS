@@ -233,6 +233,34 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::post('/api/analytics/report/preview', [ReportController::class, 'previewReport'])->name('reports.preview');
     Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->name('reports.generate');
 
+    // ── LOOP 9E/9F: Admin triage of FieldSync inspector diagnostic reports ──
+    // READ ONLY. A FieldSync Site Inspector submits a support issue into the
+    // REMOTE `diagnostic_reports` table; this is the missing iMAPS Admin half of
+    // that path. It is NOT delivery monitoring (that is 9D, on local PostgreSQL)
+    // and it shares no vocabulary with the delivery state machine.
+    //
+    // GET ONLY, deliberately. There is no POST, PATCH or DELETE here: the loop
+    // contract is read-only, an Admin may not change a report's status, and the
+    // remote table's only writer remains the FieldSync client. Adding a mutation
+    // route later would be new scope, not an extension of this one.
+    //
+    // `role:Admin` is the WHOLE boundary and it is real: RoleMiddleware compares
+    // the canonical role string exactly and aborts 403. A Planning Officer or a
+    // Site Inspector using iMAPS is refused, and a guest is sent to login by the
+    // surrounding `auth` group.
+    //
+    // PLACEMENT. Appended after the standard reports block and before settings,
+    // using the inline FQCN form already used elsewhere in this file so no import
+    // is added to a file origin/master also edits. This file is a KNOWN
+    // upstream-contested merge point, so the patch is additive and self-contained.
+    Route::get('/diagnostics', [\App\Http\Controllers\DiagnosticReportController::class, 'index'])
+        ->name('diagnostics.index')
+        ->middleware('role:Admin');
+
+    Route::get('/diagnostics/{report}', [\App\Http\Controllers\DiagnosticReportController::class, 'show'])
+        ->name('diagnostics.show')
+        ->middleware('role:Admin');
+
     Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');
         

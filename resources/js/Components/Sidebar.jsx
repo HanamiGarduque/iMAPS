@@ -71,6 +71,28 @@ export default function Sidebar({
             ),
         },
         {
+            // LOOP 9E/9F. Admin triage of FieldSync inspector-submitted
+            // diagnostic reports. Read only.
+            //
+            // `adminOnly: true` is PRESENTATION ONLY, matching the comment on
+            // the Site Inspections item: the security boundary is the server-side
+            // `role:Admin` middleware on the route, not the visibility of this
+            // entry. Both routes are GET-only, so a Planning Officer following a
+            // direct link receives 403.
+            //
+            // This file is a known upstream-contested merge point, so the entry
+            // is a single self-contained object appended after an existing one.
+            href: '/diagnostics',
+            label: 'Diagnostic Reports',
+            badge: null,
+            adminOnly: true,
+            icon: (
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                </svg>
+            ),
+        },
+        {
             href: '/reports',
             label: 'Report Generation',
             badge: null,
