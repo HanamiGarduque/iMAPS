@@ -101,19 +101,26 @@
 -- TIMESTAMPS
 -- ---------
 -- Laravel's `$table->timestamps()` on PostgreSQL produces two NULLABLE
--- `timestamp(0) without time zone` columns with NO default. The model does not
--- set them automatically, so a row written by `AppNotification::create()` has
--- both columns NULL unless the writer supplies them.
+-- `timestamp(0) without time zone` columns with NO database default.
 --
--- This is reproduced EXACTLY rather than "improved":
---   * The existing reads are `orderByDesc('created_at')` (NotificationController
---     index and getUnread) and the header bell's "5 most recent". A populated
---     default would be a silent behaviour change to ordering.
---   * A NOT NULL default would make the shipped migration's own definition
---     diverge from the table, and would fail any writer that omits them.
--- NULLABLE + no default is what the migration specifies, so that is what is
--- created. This is recorded as a known cosmetic weakness, deliberately not
--- silently repaired.
+-- This is reproduced EXACTLY rather than "improved". A `DEFAULT now()` would
+-- diverge from the shipped migration, and a NOT NULL would reject any writer
+-- that supplies neither value.
+--
+-- CORRECTION (2026-10-01, post-apply runtime smoke): it is NOT the case that
+-- rows written by `AppNotification::create()` end up with NULL timestamps. The
+-- model is a normal Eloquent model with `$timestamps` left enabled, so
+-- Eloquent populates `created_at` and `updated_at` itself on every create and
+-- update. Verified: 0 of 8 smoke-written rows had a NULL `created_at`, and
+-- `orderByDesc('created_at')` ordered newest-first as the notifications page
+-- and the header bell intend. The nullable, default-free columns are therefore
+-- correct and cause no ordering defect.
+--
+-- One real characteristic does remain: `timestamp(0)` is SECOND precision, so
+-- two notifications created in the same second tie on `created_at` and their
+-- relative order is whatever the planner returns. That is inherent to the
+-- migration's type and is not repaired here, because changing the type would
+-- diverge from `2026_09_27_000000_create_notifications_table.php`.
 --
 --
 -- IDEMPOTENCE AND COMPATIBILITY GUARD
@@ -256,10 +263,12 @@ CREATE INDEX IF NOT EXISTS notifications_broadcast_index
     ON public.notifications (user_id) WHERE user_id IS NULL;
 
 -- 2c. Newest-first ordering. `orderByDesc('created_at')` is the default read
---     order on both the notifications page and the header bell. created_at is
---     nullable, and PostgreSQL sorts NULLs LAST on DESC by default, which is
---     the correct presentation order here, so the index matches the query
---     as written rather than reordering rows.
+--     order on both the notifications page and the header bell. Eloquent
+--     populates created_at on every write, so the index matches the query as
+--     written. (An earlier draft of this file claimed PostgreSQL sorts NULLs
+--     LAST under DESC; that is wrong - the default is NULLS FIRST - and it was
+--     corrected during the post-apply smoke. The column is nullable for
+--     fidelity to the migration, not because ordering depends on it.)
 CREATE INDEX IF NOT EXISTS notifications_created_at_index
     ON public.notifications (created_at DESC);
 

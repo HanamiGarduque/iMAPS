@@ -312,6 +312,33 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
         ->name('diagnostics.show')
         ->middleware('role:Admin,Planning Officer');
 
+    // ── Admin → Notify Planning Officers (post-Loop 9 smoke) ────────────────
+    //
+    // THE ONE DIAGNOSTICS POST, AND IT IS ADMIN-ONLY.
+    //
+    // A Planning Officer resolves the FieldSync issue inside MPDO. When an
+    // Admin sees a report exists, this is how the officers who can actually act
+    // on it find out. It is `role:Admin`, not `role:Admin,Planning Officer`, so
+    // a Planning Officer cannot notify themselves and the action cannot be
+    // driven from the read-only surface.
+    //
+    // WHAT IT DOES AND DOES NOT DO
+    // ----------------------------
+    // * It writes an IN-APP NOTICE to the existing `notifications` table. It
+    //   does not touch the remote report. The report's status, summary,
+    //   technical description, reproduction steps and submitted metadata stay
+    //   immutable, so this is still the only POST under `diagnostics` and it
+    //   cannot mutate a report.
+    // * It does NOT mark the report resolved. A notice is a reminder, and
+    //   resolution is a FieldSync-side fact this application must not invent.
+    //
+    // This is why the section above can still state that the REPORT is read-only
+    // for both roles: that claim is about the report, and this route only
+    // creates a notification.
+    Route::post('/diagnostics/{report}/notify-planning-officers', [\App\Http\Controllers\DiagnosticReportController::class, 'notifyPlanningOfficers'])
+        ->name('diagnostics.notify-planning-officers')
+        ->middleware('role:Admin');
+
     Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');
         

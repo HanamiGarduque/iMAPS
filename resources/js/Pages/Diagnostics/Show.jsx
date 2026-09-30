@@ -76,6 +76,27 @@ export default function Show({ report, readOnly = true, escalation = null }) {
     const userRole = auth?.user?.role || "Planning Officer";
     const isAdmin = auth?.user?.role === "Admin";
 
+    // ── Notify Planning Officers (Admin only) ───────────────────────────────
+    // The button is disabled while the request is in flight and the outcome is
+    // reported by the SERVER flash, not by an optimistic local message, so the
+    // confirmation cannot claim a send that did not happen. The server reports
+    // an honest count and says how many recipients were skipped as duplicates.
+    const [notifying, setNotifying] = useState(false);
+
+    const notifyPlanningOfficers = () => {
+        if (notifying) return;
+        setNotifying(true);
+
+        router.post(
+            `/diagnostics/${encodeURIComponent(report.id)}/notify-planning-officers`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setNotifying(false),
+            }
+        );
+    };
+
     useEffect(() => {
         const tick = () => {
             const now = new Date();
@@ -90,8 +111,7 @@ export default function Show({ report, readOnly = true, escalation = null }) {
         return () => clearInterval(id);
     }, []);
 
-    const handleLogout = () => {
-        Swal.fire({
+    const handleLogout = () => {        Swal.fire({
             title: "Sign Out?",
             text: "Are you sure you want to log out of iMAPS?",
             icon: "warning",
@@ -176,6 +196,32 @@ export default function Show({ report, readOnly = true, escalation = null }) {
                             <span className="px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-300">
                                 Read only
                             </span>
+                        )}
+
+                        {/* ── ADMIN ONLY: Notify Planning Officers ──────────────
+                            A reminder in the in-app notification channel, for the
+                            role that resolves FieldSync issues inside MPDO.
+
+                            It is Admin-only in BOTH directions: the server route is
+                            `role:Admin`, and this button is rendered only for an
+                            Admin. A Planning Officer sees no button AND receives
+                            403 if they post directly.
+
+                            It does NOT resolve the report, and the report's own
+                            fields stay read-only. Success is reported by the
+                            server flash, which the shared shell already renders. */}
+                        {isAdmin && report.id && (
+                            <button
+                                type="button"
+                                onClick={notifyPlanningOfficers}
+                                disabled={notifying}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-blue-200 bg-blue-50 text-blue-700 text-[12px] font-semibold hover:bg-blue-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                </svg>
+                                {notifying ? "Notifying…" : "Notify Planning Officers"}
+                            </button>
                         )}
                     </div>
 

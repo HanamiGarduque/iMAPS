@@ -517,14 +517,36 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
             );
         }
 
-        // Read access must not have become write access for anyone.
-        foreach (['post', 'put', 'patch', 'delete'] as $verb) {
+        // Read access must not have become write access for anybody. The ONE
+        // authorized POST is the Admin "Notify Planning Officers" action, and it
+        // writes a local notification - never the remote report. Every other
+        // verb, and every other path, stays absent.
+        foreach (['put', 'patch', 'delete'] as $verb) {
             $this->assertDoesNotMatchRegularExpression(
                 "#Route::{$verb}\('/diagnostics#i",
                 $web,
-                "No {$verb} route may exist for diagnostics; the report is read-only for every role."
+                "No {$verb} route may ever exist for diagnostics; the report is immutable in iMAPS."
             );
         }
+
+        $this->assertSame(
+            1,
+            preg_match_all("#Route::post\('/diagnostics#i", $web),
+            'Exactly one diagnostics POST may exist: the Admin notice action.'
+        );
+
+        $this->assertMatchesRegularExpression(
+            "#Route::post\('/diagnostics/\{report\}/notify-planning-officers'.*?role:Admin'#s",
+            $web,
+            'The notice action must be Admin-only, never shared with a Planning Officer.'
+        );
+
+        // No POST may target a report's own data: the report has no write verb.
+        $this->assertDoesNotMatchRegularExpression(
+            "#Route::post\('/diagnostics(?:/|')\s*(?!\{report\}/notify)#i",
+            $web,
+            'No diagnostics POST may address the report itself; only the notice action may exist.'
+        );
 
         // A Site Inspector must not gain the nav entry either.
         $sidebar = (string) file_get_contents(base_path('resources/js/Components/Sidebar.jsx'));
@@ -608,11 +630,13 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
         foreach (['Index', 'Show'] as $page) {
             $source = (string) file_get_contents(base_path("resources/js/Pages/Diagnostics/{$page}.jsx"));
 
-            // A write aimed at the diagnostic resource itself, in any verb.
+            // A write aimed at the diagnostic REPORT itself, in any verb. The
+            // single authorized Admin notice action is excluded by name,
+            // because it writes a local notification, not the report.
             $this->assertDoesNotMatchRegularExpression(
-                '#router\.(post|put|patch|delete)\s*\(\s*[`"\'](?:/diagnostics|[^`"\']*notif)#i',
+                '#router\.(post|put|patch|delete)\s*\(\s*[`"\'](/diagnostics/(?!.*notify-planning-officers))#i',
                 $source,
-                "Diagnostics/{$page}.jsx must not issue a write against diagnostics or notifications."
+                "Diagnostics/{$page}.jsx must not issue a write against a diagnostic report."
             );
 
             // No Inertia options-bag verb, which is the other way to mutate.
@@ -622,13 +646,16 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
                 "Diagnostics/{$page}.jsx must not issue a write. Found 'method:'."
             );
 
-            // And the only POST the page may contain is the shell's sign-out.
+            // Any POST the page may contain is either the shell's sign-out or
+            // the single authorized Admin notice action - nothing else.
             preg_match_all('#router\.post\s*\(\s*[`"\']([^`"\']+)#i', $source, $posts);
             foreach ($posts[1] as $target) {
-                $this->assertStringContainsString(
-                    'logout',
-                    $target,
-                    "Diagnostics/{$page}.jsx may only POST to logout; found '{$target}'."
+                $isAllowed = str_contains($target, 'logout')
+                    || str_contains($target, 'notify-planning-officers');
+
+                $this->assertTrue(
+                    $isAllowed,
+                    "Diagnostics/{$page}.jsx may only POST to logout or the Admin notice action; found '{$target}'."
                 );
             }
 
@@ -637,6 +664,47 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
                 $this->assertStringNotContainsString($foreignControl, $source);
             }
         }
+    }
+
+    /**
+     * The one authorized POST is the Admin notice action, and it must not be
+     * able to resolve or otherwise mutate the report it points at.
+     *
+     * The 9E/9F contract was "the report is immutable in iMAPS". Adding an
+     * in-app reminder does not weaken that, but it does mean the proof cannot
+     * simply be "there is no POST route any more" - it has to become "the only
+     * POST writes a notification and touches no report field".
+     */
+    public function test_the_admin_notice_action_cannot_resolve_a_report(): void
+    {
+        $controller = $this->executable(
+            (string) file_get_contents(base_path('app/Http/Controllers/DiagnosticReportController.php'))
+        );
+
+        $start = strpos($controller, 'public function notifyPlanningOfficers(');
+        $this->assertNotFalse($start, 'The Admin notice action must exist.');
+        $body = substr($controller, $start, 4000);
+
+        // It writes a notification and nothing else: no local update, no
+        // delete, no create on any other table, no raw query.
+        foreach (['->update(', '->delete()', '->create(', 'DB::table('] as $writer) {
+            $this->assertStringNotContainsString(
+                $writer,
+                $body,
+                "The notice action must not write anything but a notification. Found '{$writer}'."
+            );
+        }
+
+        // It must not claim to resolve the report.
+        $this->assertDoesNotMatchRegularExpression(
+            '/(is_resolved|resolved_at|setResolved|markResolved|[\'"\'](?:is_)?resolved[\'"\'\s]*=>)/i',
+            $body,
+            'The notice action must not set or claim a resolved state.'
+        );
+
+        // The notice text comes from the dedicated sanitizer-only builder, not
+        // from an ad-hoc interpolation at the call site.
+        $this->assertStringContainsString('DiagnosticNotice::send(', $controller);
     }
 
     public function test_sanitized_text_is_never_reparsed_as_markup(): void

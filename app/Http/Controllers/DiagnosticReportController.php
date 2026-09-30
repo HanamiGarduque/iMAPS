@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Services\DiagnosticReportReader;
+use App\Support\DiagnosticNotice;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -47,10 +49,17 @@ use Inertia\Response;
  * controller could only ever drift from the route.
  *
  * READ ONLY. There is no store/update/destroy method here and no POST, PATCH or
- * DELETE route. Both an Admin and a Planning Officer may read and triage by
- * reading; neither may change a report's status, and no report may be deleted
- * or written from iMAPS at all. The remote table's write path remains the
- * FieldSync client's alone.
+ * DELETE route against a REPORT. An Admin and a Planning Officer may read and
+ * triage by reading; neither may change a report's status, and no report may be
+ * deleted or written from iMAPS at all. The remote table's write path remains
+ * the FieldSync client's alone.
+ *
+ * THE ONE EXCEPTION IS NOT AN EXCEPTION TO THAT
+ * ---------------------------------------------
+ * `notifyPlanningOfficers` is a POST, but it writes ONLY to the local
+ * `notifications` table: an in-app reminder for the Planning Officers. It
+ * performs no remote write, changes no report field, and does not resolve
+ * anything. It is Admin-only and is the only POST under `diagnostics`.
  *
  * FREE TEXT
  * ---------
@@ -106,6 +115,78 @@ class DiagnosticReportController extends Controller
             'readOnly' => true,
             'escalation' => $this->escalationFor($request),
         ]);
+    }
+
+    /**
+     * Admin → Notify Planning Officers, for one diagnostic report.
+     *
+     * WHAT THIS IS
+     * ------------
+     * A reminder in the existing in-app notification channel. A FieldSync Site
+     * Inspector reported an issue; an Admin has seen it; this tells the active
+     * Planning Officers, who are the role that resolves the issue inside MPDO.
+     *
+     * WHAT IT DELIBERATELY DOES NOT DO
+     * --------------------------------
+     * * It does NOT write to the remote report. No status change, no edit, no
+     *   delete. The report's summary, technical description, reproduction
+     *   steps and submitted metadata stay immutable, which is why the report
+     *   surface itself is still GET-only.
+     * * It does NOT mark the report resolved. A notice is a reminder; whether
+     *   FieldSync has resolved anything is a remote fact this application must
+     *   not invent.
+     *
+     * AUTHORITY
+     * ---------
+     * `role:Admin` on the route is the whole boundary, and the role is re-read
+     * from the authenticated session here as well. Re-checking is not a second
+     * policy: it is the same exact comparison the middleware already made, and
+     * it keeps this method safe if it is ever called from another route. A
+     * Planning Officer reaching the page sees no button AND is refused 403 if
+     * they post the request directly.
+     *
+     * A Site Inspector is refused twice over: they are not in `role:Admin`, and
+     * they have no iMAPS web diagnostics access at all.
+     *
+     * CONTENT SAFETY
+     * --------------
+     * The message is built entirely by {@see DiagnosticNotice} from the
+     * ALREADY-SANITIZED report shape. It carries the reference code, module, a
+     * short safe headline and a relative in-app link, and never the report's
+     * free text, which is where the live signed Storage URL lives. No service
+     * key, token, handshake key or raw remote payload is read here.
+     */
+    public function notifyPlanningOfficers(Request $request, string $report)
+    {
+        if (($request->user()?->role ?? null) !== 'Admin') {
+            abort(403);
+        }
+
+        $result = $this->reader->find($report);
+
+        // A malformed id, a report that does not exist, and a read failure are
+        // reported the same way the detail route reports them, so this endpoint
+        // cannot be used to probe which report ids exist.
+        if ($result['report'] === null) {
+            abort(404);
+        }
+
+        try {
+            $outcome = DiagnosticNotice::send($result['report']);
+        } catch (Throwable $e) {
+            // The notification is an aid, not the work. A failure here must not
+            // look like the report changed, and must not leak a driver message.
+            Log::error('[Diagnostics] Planning Officer notice failed.', [
+                'report_id' => $result['report']['id'] ?? null,
+            ]);
+
+            return back()->with(
+                'error',
+                'The notice could not be sent. The diagnostic report is unchanged.'
+            );
+        }
+
+        return back()->with('success', $outcome['message']);
     }
 
     /**

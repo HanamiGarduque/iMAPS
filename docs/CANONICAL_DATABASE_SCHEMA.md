@@ -979,12 +979,17 @@ started. 9C is NOT complete.
 
 ---
 
-## 22. `notifications` table - 2026-10-01 (PLANNED / **NOT APPLIED**)
+## 22. `notifications` table - 2026-10-01 (APPLIED)
 
 Forward SQL: `database/sql/2026_10_01_create_notifications_table_for_0921_forward.sql`
 
-**STATUS: PLANNED / NOT APPLIED. Awaiting explicit user DB approval.**
-Nothing in this section has been executed. The canonical database is unchanged.
+**STATUS: APPLIED to `imaps_db_0921` on 2026-10-01 with explicit user approval.**
+`psql -v ON_ERROR_STOP=1 -f ...` exited 0. Ledger untouched at 16 rows. All
+business row counts and fingerprints verified unchanged. See
+`FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md` for the applied entry.
+
+The plan as originally written is preserved in 22.14 so the record is not
+rewritten.
 
 ### 22.1 Why
 
@@ -1051,15 +1056,29 @@ live table disagree with the repository migration.
 ### 22.5 `created_at` / `updated_at` behaviour
 
 Laravel's `$table->timestamps()` on PostgreSQL yields two **nullable**
-`timestamp(0) without time zone` columns with **no default**, and
-`AppNotification` does not populate them. A row written by
-`AppNotification::create()` therefore has both columns NULL.
+`timestamp(0) without time zone` columns with **no database default**. This is
+reproduced exactly; a `DEFAULT now()` or a `NOT NULL` would both diverge from
+the shipped migration.
 
-This is reproduced exactly. A `DEFAULT now()` would silently change the
-newest-first ordering that `NotificationController::index` and the header bell's
-"5 most recent" both rely on; a `NOT NULL` would diverge from the shipped
-migration and reject writers that omit them. Recorded as a known cosmetic
-weakness, deliberately not silently repaired.
+**Corrected after the post-apply runtime smoke (2026-10-01).** An earlier draft
+of this section claimed that rows written by `AppNotification::create()` end up
+with NULL timestamps, and cited that as a cosmetic weakness. **That was wrong.**
+`AppNotification` is a normal Eloquent model with `$timestamps` left enabled, so
+Eloquent populates `created_at` and `updated_at` on every create and update.
+Measured: 0 of 8 smoke-written rows had a NULL `created_at`, and
+`orderByDesc('created_at')` ordered newest-first as intended. The nullable,
+default-free columns are correct and cause **no** ordering defect.
+
+The same smoke also corrected a second claim: PostgreSQL's default under `DESC`
+is `NULLS FIRST`, not `NULLS LAST`. That mattered only for the discarded
+NULL-timestamp theory, and the `created_at DESC` index still matches the query
+as written.
+
+One characteristic genuinely remains: `timestamp(0)` is **second** precision, so
+two notifications created in the same second tie and their relative order is
+whatever the planner returns. This is inherent to the migration's type and is
+deliberately not "fixed", because changing the type would make the live table
+diverge from `2026_09_27_000000_create_notifications_table.php`.
 
 ### 22.6 Migration ledger and the `2026_09_27_000000` prefix collision
 
@@ -1243,12 +1262,31 @@ Once 22.7 is applied, the intended action is:
 
 | Item | Result |
 | --- | --- |
-| Forward SQL | CREATED - `2026_10_01_create_notifications_table_for_0921_forward.sql` |
-| SQL executed | **NO** |
-| Existing 0921 mutation | **NONE** - canonical unchanged |
-| Migration ledger | **UNCHANGED** - 16 rows, no row inserted |
-| Migration | **NONE created or edited** |
+| Forward SQL | CREATED and **APPLIED** - `2026_10_01_create_notifications_table_for_0921_forward.sql` |
+| SQL executed | **YES**, with explicit user approval, `psql` exit 0 |
+| Pre-apply backup | TAKEN - `pg_dump` exit 0, 26,220,886 bytes, contents verified |
+| Existing 0921 mutation | **ADDITIVE ONLY** - one table, one FK, three indexes |
+| Migration ledger | **UNCHANGED** - 16 rows, no row inserted or edited |
+| Migration | **NONE created, edited or run** |
 | Fresh DB | **UNAFFECTED** - already covered by the existing repository migration |
-| Canonical tables | 26 -> 26 (**unchanged**) |
-| Notify PO action | **NOT IMPLEMENTED** - blocked on 22.7 |
+| Canonical tables | 26 -> 27 |
+| Business data | **UNCHANGED** - all 9 row counts and all 6 fingerprints identical |
 | `php artisan migrate` | **NOT RUN** |
+| Notify PO action | Implemented separately, after this apply |
+
+### 22.14 The plan as originally written (preserved, superseded)
+
+The PLANNED / NOT APPLIED version of this section is preserved because it
+records the reasoning that preceded approval, and because it contains two claims
+that the post-apply smoke proved wrong. Both corrections are in 22.5.
+
+- The table was justified as fixing six broken production call sites, with five
+  of them inside a database transaction.
+- It was stated that no `migrations` ledger row would be inserted, and that the
+  `2026_09_27_000000` prefix collision was recorded but deliberately not fixed.
+- **Wrong as written:** "a row written by `AppNotification::create()` has both
+  columns NULL". Eloquent populates them. See 22.5.
+- **Wrong as written:** "PostgreSQL sorts NULLs LAST on DESC by default". The
+  default is `NULLS FIRST`. See 22.5.
+- **Correct as written:** the table contract, the index set, the guard design,
+  the 0921-vs-fresh split, and the decision not to touch the ledger.

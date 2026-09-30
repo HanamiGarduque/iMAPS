@@ -397,24 +397,36 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
     {
         $web = $this->code('routes/web.php');
 
-        foreach (['post', 'put', 'patch', 'delete'] as $verb) {
+        // The report itself has NO write verb, for any role. The single
+        // authorized POST creates a local notification and is scoped to that
+        // one path, so no verb can address the report's own fields.
+        foreach (['put', 'patch', 'delete'] as $verb) {
             $this->assertDoesNotMatchRegularExpression(
                 "#Route::{$verb}\('/diagnostics#i",
                 $web,
-                "No {$verb} route may exist; the report is immutable in iMAPS for Admin and Planning Officer alike."
+                "No {$verb} route may ever exist for diagnostics; the report is immutable in iMAPS."
             );
         }
+
+        // No POST may target a report's own data. The notice action is the one
+        // authorized POST and is excluded by name, because it writes a local
+        // notification rather than anything on the report.
+        $this->assertDoesNotMatchRegularExpression(
+            "#Route::post\('/diagnostics(?!/\{report\}/notify-planning-officers)#i",
+            $web,
+            'No diagnostics POST may address the report itself; only the Admin notice action may exist.'
+        );
 
         $controller = $this->code('app/Http/Controllers/DiagnosticReportController.php');
         $this->assertDoesNotMatchRegularExpression(
             '/public function (store|update|destroy)\s*\(/',
             $controller,
-            'The controller must expose no mutation method.'
+            'The controller must expose no report mutation method.'
         );
         $this->assertDoesNotMatchRegularExpression(
             '/\b(DB::|->update\(|->create\(|->delete\(|->insert\()/',
             $controller,
-            'The controller must not write to any table.'
+            'The controller must not write to any table directly; the notice goes through DiagnosticNotice.'
         );
     }
 
@@ -423,37 +435,57 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * The notify action is blocked on a database object canonical does not
-     * have, so nothing half-built may ship on this branch.
+     * THE NOTIFICATIONS TABLE NOW EXISTS IN CANONICAL, so the notify action is
+     * AUTHORIZED and this test has flipped from "ship nothing" to "ship exactly
+     * this much, and nothing more".
      *
-     * If a future change adds the action, these assertions fail on purpose: the
-     * missing `notifications` table is a real blocker, and shipping a button
-     * that cannot work is worse than shipping none.
+     * It was previously a deliberate refusal: the action was blocked on a
+     * `notifications` table canonical did not have, and shipping a button that
+     * cannot work is worse than shipping none. `2026_10_01_create_notifications_table_for_0921_forward.sql`
+     * was applied on 2026-10-01 with explicit approval (ledger untouched at 16
+     * rows, all business data verified unchanged), so the blocker is gone.
+     *
+     * The bound is now narrower and stricter than a blanket ban: exactly one
+     * diagnostics POST may exist, it must be the Admin notice action, and no
+     * other page may post to it.
      */
-    public function test_no_diagnostic_notify_action_shipped_without_the_notifications_table(): void
+    public function test_exactly_one_diagnostics_post_exists_and_it_is_the_admin_notice(): void
     {
         $web = $this->code('routes/web.php');
 
-        $this->assertDoesNotMatchRegularExpression(
-            "#Route::post\('/diagnostics#i",
-            $web,
-            'No diagnostics POST route may exist: the notification action is blocked on the missing notifications table.'
+        $this->assertSame(
+            1,
+            preg_match_all("#Route::post\('/diagnostics#i", $web),
+            'Exactly one diagnostics POST may exist: the Admin notice action.'
         );
 
+        $this->assertMatchesRegularExpression(
+            "#Route::post\('/diagnostics/\{report\}/notify-planning-officers'.*?role:Admin'#s",
+            $web,
+            'The one POST must be the Admin notice action, and it must be Admin-only.'
+        );
+
+        // The list page never gains the action: the notice is raised from the
+        // report detail, where the report is actually being read.
         $index = $this->code('resources/js/Pages/Diagnostics/Index.jsx');
+        $this->assertStringNotContainsString('Notify Planning Officers', $index);
+        $this->assertStringNotContainsString('notify-planning-officers', $index);
+
+        // The detail page offers it, and only behind an Admin check.
         $show = $this->code('resources/js/Pages/Diagnostics/Show.jsx');
+        $this->assertStringContainsString('Notify Planning Officers', $show);
+        $this->assertMatchesRegularExpression(
+            '/\{isAdmin && report\.id && \(/',
+            $show,
+            'The notice button must be rendered only for an Admin.'
+        );
 
-        foreach (['Notify Planning Officers', 'notifyPlanningOfficers'] as $needle) {
-            $this->assertStringNotContainsString($needle, $index);
-            $this->assertStringNotContainsString($needle, $show);
-        }
-
-        // No diagnostic page may post anywhere.
-        foreach ([$index, $show] as $page) {
+        // No other diagnostics page may post to it.
+        foreach (['resources/js/Pages/Diagnostics/Index.jsx'] as $page) {
             $this->assertDoesNotMatchRegularExpression(
-                '/router\.post\s*\(\s*[`"\'](?:\/diagnostics|.*notify)/i',
-                $page,
-                'A diagnostic page must not post; the report is read-only and the notify action is blocked.'
+                '#/diagnostics/\$\{[^}]+\}/notify-planning-officers#',
+                $this->code($page),
+                "{$page} must not trigger the notice action."
             );
         }
     }
