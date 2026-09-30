@@ -426,39 +426,45 @@ class Loop9c4RetryUiContractTest extends TestCase
         // Applications/Show.jsx has unresolved master-side conflict history, so
         // proving it is untouched keeps the merge surface small.
         //
-        // The comparison point is the 9C-3-3 closure commit 921d452, NOT the
-        // branch base. A three-dot diff from the base is non-empty by design here,
-        // because 9C-1/9C-2/9C-3 legitimately added the backend this phase
-        // consumes. The rule that matters is that 9C-4 changed nothing outside the
-        // panel and its own test.
-        $since = '921d452';
+        // SCOPE CORRECTED 2026-09-30 (9C-5 blocker fix).
+        //
+        // This previously ran `git diff 921d452` and `git diff --cached 921d452`.
+        // Both compare a commit against the WORKING TREE, not against the 9C-4
+        // commit, so the "9C-4 boundary" they measured actually spanned every
+        // LATER commit too. That is the same defect class already corrected in
+        // Loop9c1DeliveryStatusContractTest: a phase assertion that silently
+        // becomes a freeze on all future authorized work.
+        //
+        // Concretely it broke on the 9C-5 parcel POINT bridge correction, which
+        // legitimately changed PushInspectionToSupabase in a later commit. The
+        // 9C-4 commit itself touched only the panel, its test, the 9C-2 contract
+        // test, and the architecture doc.
+        //
+        // The assertion is now made against the 9C-4 COMMIT's own file list, so
+        // it states exactly what it always meant: this phase, and only this phase.
+        $phaseFiles = (string) shell_exec('git show --name-only --format= 4958fc4');
 
-        $showDiff = (string) shell_exec(
-            "git diff {$since} -- resources/js/Pages/Applications/Show.jsx"
-        );
-
-        $this->assertSame(
-            '',
-            trim($showDiff),
+        $this->assertStringNotContainsString(
+            'resources/js/Pages/Applications/Show.jsx',
+            $phaseFiles,
             'Applications/Show.jsx must be UNCHANGED by 9C-4; the panel already receives applicationId.'
         );
 
-        $backendDiff = (string) shell_exec(
-            "git diff --cached {$since} -- "
-            .'app/Http/Controllers/InspectionDeliveryController.php '
-            .'app/Services/InspectionDeliveryRetryService.php '
-            .'app/Support/InspectionDeliveryRetryEligibility.php '
-            .'app/Support/InspectionDeliveryRetryResult.php '
-            .'app/Support/InspectionDeliveryStatus.php '
-            .'app/Jobs/PushInspectionToSupabase.php '
-            .'routes/web.php '
-            .'database/migrations/'
-        );
-
-        $this->assertSame(
-            '',
-            trim($backendDiff),
-            '9C-4 is a UI phase. The settled 9C-3 backend contract, routes and schema must be untouched.'
-        );
+        foreach ([
+            'app/Http/Controllers/InspectionDeliveryController.php',
+            'app/Services/InspectionDeliveryRetryService.php',
+            'app/Support/InspectionDeliveryRetryEligibility.php',
+            'app/Support/InspectionDeliveryRetryResult.php',
+            'app/Support/InspectionDeliveryStatus.php',
+            'app/Jobs/PushInspectionToSupabase.php',
+            'routes/web.php',
+            'database/migrations/',
+        ] as $forbidden) {
+            $this->assertStringNotContainsString(
+                $forbidden,
+                $phaseFiles,
+                "9C-4 is a UI phase and must not have modified {$forbidden}."
+            );
+        }
     }
 }
