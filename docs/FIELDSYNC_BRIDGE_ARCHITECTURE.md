@@ -351,7 +351,7 @@ Fields listed here describe ownership, not universal requiredness. A value is no
 | Application applicant/contact/purpose/location fields | Corresponding columns in `supabase_zoning_applications` | Applicant and application context in task screens |
 | `parcels.id` | `supabase_parcels.local_parcel_id` | Stable local-to-remote parcel correlation |
 | Pushed application row UUID | `supabase_parcels.supabase_application_id` | Associates parcel mirror to the application mirror |
-| Parcel property/location/classification/coordinate fields | Corresponding columns in `supabase_parcels`; coordinates also produce pushed `geom` | Parcel identity, parcel details, map/GPS context |
+| Parcel property/location/classification/coordinate fields | Corresponding columns in `supabase_parcels`; the stored parcel pin (`parcels.longitude`, `parcels.latitude`) also produces the pushed `geom` POINT | Parcel identity, parcel details, map/GPS context |
 | `site_inspections.id` | `field_jobs.local_inspection_id` | Stable task correlation and local completion lookup |
 | Pushed application row UUID | `field_jobs.supabase_application_id` | Application relationship read with a task |
 | `site_inspections.parcel_id` | `field_jobs.supabase_parcel_id`, via the corresponding pushed parcel row | Identifies the intended parcel and loads parcel context |
@@ -790,7 +790,7 @@ This matrix maps every bridge-relevant column across the four systems: local Pos
 | `land_area_sqm` | — | ✅ nullable | ❌ active clients do not read this spelling | ⚠️ NAMING DRIFT |
 | `latitude` | ✅ | ✅ nullable | ✅ via relation | ✅ OK |
 | `longitude` | ✅ | ✅ nullable | ✅ via relation | ✅ OK |
-| `geom` | ✅ WKT point or null | ❌ NOT DEFINED | map/RPC behavior depends on deployment | ⚠️ LIVE VERIFY |
+| `geom` | ✅. WKT **POINT** `POINT(<longitude> <latitude>)` or null | ❌ NOT DEFINED | `distance_to_parcel_boundary()` RPC for GPS proximity; `sync_parcel_latlng()` trigger derives `latitude`/`longitude` via `ST_X`/`ST_Y` | ✅. **CONFIRMED 2026-09-30** - see "Parcel geometry contract" below |
 | `geojson_boundary` | — | ✅ nullable | — | OK (unused) |
 | `owner_name` | ✅ | ✅ nullable | — | ✅ OK |
 | `tct_number` | ✅ | ✅ nullable | — | ✅ OK |
@@ -4443,3 +4443,76 @@ anyone.
 fixture that gives a Planning Officer legitimate ownership of a genuinely
 `delivery_failed` round, plus a live FieldSync bridge, to prove the queued writer
 actually delivers. That fixture is deliberately NOT created here.
+
+# LOOP 9C-5 BLOCKER FIX - PARCEL POINT BRIDGE CORRECTION - IMPLEMENTED 2026-09-30
+
+This closes the `⚠️ LIVE VERIFY` marker on `supabase_parcels.geom` in section
+15.2. It is a **bridge-writer correction**: no schema, data, or FieldSync change
+was made on either side.
+
+**The defect.** `PushInspectionToSupabase` built the remote parcel geometry by
+preferring `ST_AsText(land_parcels.geom)` whenever a parcel's
+`property_index_number` matched a row in `land_parcels`. That column is
+`geometry(MultiPolygon,4326)` - a cadastral boundary, and **4177 of 4177** rows
+are `MultiPolygon`. The remote column is `geometry(Geometry,4326)` and therefore
+accepted the polygon, but the remote `sync_parcel_latlng()` BEFORE INSERT/UPDATE
+trigger derives the row's `latitude` and `longitude` with `ST_X()` and `ST_Y()`,
+which are **POINT-only** accessors. Every PIN-matched delivery therefore failed
+remotely:
+
+```
+SQLSTATE XX000: Argument to ST_Y() must have type POINT
+```
+
+and the exception aborted the whole inspection push at the parcel step. The
+application, parcel and inspection rows were already committed locally, so the
+outcome was a locally-created application with **no** FieldSync task and no
+delivery attempt. Proven on `imaps_db_0921` as `failed_jobs` id 13.
+
+**The contract now enforced:**
+
+| Layer | Object | Meaning |
+|---|---|---|
+| LOCAL, reference only | `land_parcels.geom` | Cadastral **MULTIPOLYGON** parcel boundary. Stays local; still read by the cadastral map and the land-use spatial lookup. **Not transported.** |
+| BRIDGE payload | `parcels.longitude`, `parcels.latitude` | The **operational site pin** an officer selected on the GIS map. This is the canonical point source. |
+| REMOTE | `supabase_parcels.geom` | A **representative POINT**, `POINT(<longitude> <latitude>)`, longitude first. Feeds FieldSync map placement and its GPS proximity check. |
+
+**Why the stored pin and not a derived point.** `ST_Centroid()` and
+`ST_PointOnSurface()` were both considered and rejected. For a concave cadastral
+lot either can sit away from the officer's selected site pin, which would move
+the GPS threshold an inspector is judged against without anyone noticing. The
+stored pin is also what the 15 pre-existing remote rows already carry - **14 of
+15 are byte-equal to the stored `parcels.latitude`/`longitude`**, because those
+rows were written by the old fallback when no PIN matched. Building the geometry
+from the same source keeps the local and remote coordinates from silently
+disagreeing, and it makes the remote trigger a no-op rather than a re-derivation.
+
+**`distance_to_parcel_boundary` is historically named.** It measures straight-line
+distance to the **representative point**, not to a boundary polygon, because that
+is what `supabase_parcels.geom` holds. FieldSync's own source states this
+("`supabase_parcels.geom` is a Point (confirmed via `ST_GeometryType`), so this
+returns straight-line distance in meters to the parcel's declared pin"). The RPC
+is **not** renamed in this phase; the name is a historical artifact of a
+point-based implementation and is left alone to avoid a remote contract change.
+
+**Null contract.** If either stored coordinate is absent, the geometry stays
+`NULL`. No centroid, no `(0,0)`, no municipal default, and no borrowing from
+another parcel. A missing pin must fail visibly rather than invent a location.
+56 of 57 local parcels carry coordinates, so this is the rare case.
+
+**Scope.** Exactly one value changed: the source of `supabase_parcels.geom`.
+Unchanged: the application mirror, parcel identity and upsert key, PIN, barangay,
+lot metadata, inspection identity, assigned Site Inspector, handshake resolution,
+field-job identity, photo behaviour, the delivery recorder, the planning-review
+bridge, and the 9C-3 retry dispatch source. No migration, no forward SQL, no
+Supabase schema change, no FieldSync change, and no existing remote row was
+modified.
+
+**Pre-existing on master.** This defect is present, byte-identical, on
+`origin/master`. It is not a Loop 9 regression and was not introduced by any
+Loop 9 commit.
+
+Verification: `ParcelPointBridgeContractTest` 10 tests / 49 assertions PASS,
+including a negative control confirming the assertions fail against the previous
+geometry logic. Full Unit suite 556 tests PASS. A read-only proof on parcel 74
+produces `POINT(121.3146050 13.8325540)`, which `ST_X`/`ST_Y` both accept.

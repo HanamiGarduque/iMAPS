@@ -773,10 +773,27 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
 
     public function test_no_schema_or_runtime_write_artifacts_were_added(): void
     {
-        $stack = explode("\n", (string) shell_exec('git status --porcelain'));
+        // SCOPE CORRECTED 2026-09-30 (9C-5 blocker fix).
+        //
+        // This previously read the LIVE WORKING TREE. That only ever proved
+        // "9C-1 added no files", and it silently became a freeze on the 9B
+        // writer for the whole life of the branch: a later, separately
+        // authorized phase could not correct the writer at all without failing
+        // a 9C-1 test.
+        //
+        // The real property is about the 9C-1 COMMIT, so it is now asserted
+        // against that commit's own diff. The 9C-5 bridge correction touches
+        // `PushInspectionToSupabase` in a later commit and is unaffected,
+        // which is precisely the distinction this test was trying to make.
+        $phaseDiff = (string) shell_exec(
+            'git show --name-only --format= c52ad8d'
+        );
 
-        foreach ($stack as $line) {
-            $path = trim(substr($line, 3));
+        foreach (explode("\n", $phaseDiff) as $path) {
+            $path = trim($path);
+            if ($path === '') {
+                continue;
+            }
 
             foreach (['database/sql/', 'database/migrations/'] as $forbidden) {
                 $this->assertStringStartsNotWith(
@@ -787,12 +804,18 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
             }
         }
 
-        // And the recorder / writer are untouched, so no attempt row, summary
-        // column, or queue correlation can change from this phase.
-        $this->assertSame(
-            0,
-            (int) shell_exec('git status --porcelain -- app/Jobs/PushInspectionToSupabase.php app/Services/InspectionDeliveryRecorder.php | findstr /R /C:"." | find /c /v ""'),
-            'The 9B writer and recorder must be untouched by 9C-1.'
-        );
+        // And the 9C-1 commit did not modify the recorder or the writer, so no
+        // attempt row, summary column, or queue correlation could have changed
+        // from the reader phase.
+        foreach ([
+            'app/Jobs/PushInspectionToSupabase.php',
+            'app/Services/InspectionDeliveryRecorder.php',
+        ] as $untouched) {
+            $this->assertStringNotContainsString(
+                $untouched,
+                $phaseDiff,
+                "The 9C-1 reader phase must not have modified {$untouched}."
+            );
+        }
     }
 }

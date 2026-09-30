@@ -136,17 +136,51 @@ class PushInspectionToSupabase implements ShouldQueue
             // ==========================================
             // 4. Push to supabase_parcels
             // ==========================================
-            $landParcel = null;
-            if (!empty($parcel->property_index_number)) {
-                $landParcel = \Illuminate\Support\Facades\DB::table('land_parcels')
-                    ->selectRaw('ST_AsText(geom) as wkt_geom')
-                    ->where('property_index_number', $parcel->property_index_number)
-                    ->first();
-            }
-
-            $geom = ($landParcel && $landParcel->wkt_geom) 
-                ? $landParcel->wkt_geom 
-                : (($parcel->longitude && $parcel->latitude) ? "POINT({$parcel->longitude} {$parcel->latitude})" : null); 
+            //
+            // PARCEL GEOMETRY CONTRACT (corrected 2026-09-30)
+            // ------------------------------------------------
+            // `supabase_parcels.geom` is a REPRESENTATIVE POINT, not the parcel
+            // boundary. It is the operational site pin FieldSync uses for map
+            // placement and its GPS proximity check
+            // (`distance_to_parcel_boundary`).
+            //
+            // The remote column is declared `geometry(Geometry,4326)`, so it
+            // accepts any geometry, but the remote `sync_parcel_latlng` trigger
+            // derives `latitude`/`longitude` with `ST_X()`/`ST_Y()`, which are
+            // POINT-only accessors. The previous code sent
+            // `ST_AsText(land_parcels.geom)` whenever a PIN matched
+            // `land_parcels`, and that column is a cadastral
+            // `geometry(MultiPolygon,4326)` - all 4177 rows. Every
+            // PIN-matched delivery therefore failed remotely with
+            // `SQLSTATE XX000: Argument to ST_Y() must have type POINT`,
+            // aborting the whole inspection push at the parcel step.
+            //
+            // `land_parcels.geom` remains LOCAL-ONLY reference geometry. It is
+            // still what the cadastral map and the land-use spatial lookup read
+            // in iMAPS; it is simply not a FieldSync transport.
+            //
+            // The point is built from the STORED parcel pin
+            // (`parcels.longitude`, `parcels.latitude`), which is the same value
+            // the officer selected on the GIS map and the same value already
+            // present in the remote rows that predate this defect. Building it
+            // from the stored pin also makes the remote trigger a no-op, so the
+            // local and remote coordinates cannot silently disagree.
+            //
+            // Deliberately NOT used: ST_Centroid, ST_PointOnSurface, or the
+            // cadastral polygon. A centroid or point-on-surface of a concave
+            // cadastral lot can differ from the selected site pin, which would
+            // move the GPS threshold an inspector is judged against.
+            //
+            // WKT order is LONGITUDE FIRST: POINT(<lng> <lat>), matching the
+            // fallback this replaces and every existing remote row.
+            //
+            // If either coordinate is absent the geometry stays NULL. No
+            // centroid, no (0,0), no municipal default, and no borrowing from
+            // another parcel: a missing pin must fail visibly rather than
+            // invent a location.
+            $geom = ($parcel->longitude !== null && $parcel->latitude !== null)
+                ? "POINT({$parcel->longitude} {$parcel->latitude})"
+                : null;
 
             // ADDED: ?on_conflict=local_parcel_id
             $parcelResponse = $http->post("{$supabaseUrl}/rest/v1/supabase_parcels?on_conflict=local_parcel_id", [
