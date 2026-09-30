@@ -278,10 +278,27 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     // remote table's only writer remains the FieldSync client. Adding a mutation
     // route later would be new scope, not an extension of this one.
     //
-    // `role:Admin` is the WHOLE boundary and it is real: RoleMiddleware compares
-    // the canonical role string exactly and aborts 403. A Planning Officer or a
-    // Site Inspector using iMAPS is refused, and a guest is sent to login by the
-    // surrounding `auth` group.
+    // READ ACCESS is `role:Admin,Planning Officer` and it is the WHOLE boundary:
+    // RoleMiddleware compares the canonical role strings exactly and aborts 403.
+    // A Site Inspector using iMAPS is refused, and a guest is sent to login by
+    // the surrounding `auth` group.
+    //
+    // WHY THE PLANNING OFFICER IS INCLUDED (post-Loop 9 smoke fix)
+    // ------------------------------------------------------------
+    // A FieldSync Site Inspector reports an issue from the FieldSync app. The
+    // Planning Officer is the role that actually resolves day-to-day operational
+    // problems inside MPDO, so denying them read access to the report left the
+    // only person who could act on it unable to read it, and the report was
+    // reachable only by an Admin who does not make normal PO workflow
+    // decisions. READ access is now shared by both roles.
+    //
+    // WHAT IS NOT GRANTED
+    // -------------------
+    // * A Site Inspector is still refused: they submit through FieldSync only.
+    // * Nothing here grants WRITE access. Both routes are GET-only, and
+    //   DiagnosticReportController has no store/update/destroy method, so the
+    //   report's summary, technical description, reproduction steps and
+    //   submitted metadata stay immutable in iMAPS for BOTH roles.
     //
     // PLACEMENT. Appended after the standard reports block and before settings,
     // using the inline FQCN form already used elsewhere in this file so no import
@@ -289,11 +306,11 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     // upstream-contested merge point, so the patch is additive and self-contained.
     Route::get('/diagnostics', [\App\Http\Controllers\DiagnosticReportController::class, 'index'])
         ->name('diagnostics.index')
-        ->middleware('role:Admin');
+        ->middleware('role:Admin,Planning Officer');
 
     Route::get('/diagnostics/{report}', [\App\Http\Controllers\DiagnosticReportController::class, 'show'])
         ->name('diagnostics.show')
-        ->middleware('role:Admin');
+        ->middleware('role:Admin,Planning Officer');
 
     Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');

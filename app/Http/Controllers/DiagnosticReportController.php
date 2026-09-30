@@ -30,17 +30,27 @@ use Inertia\Response;
  *
  * THE AUTHORITY BOUNDARY
  * ----------------------
- * Admin only, enforced by route middleware `role:Admin` - the same boundary the
- * architecture record assigns to this triage. The controller itself performs no
- * role check, deliberately: `role` is real, strict and fail-closed
- * (RoleMiddleware compares the canonical role string exactly and aborts 403), so
- * a second, differently-spelled check inside the controller could only ever drift
- * from the route.
+ * READ access is Admin + Planning Officer, enforced by route middleware
+ * `role:Admin,Planning Officer`. A Site Inspector is refused: they submit
+ * through FieldSync only and get no iMAPS read path.
+ *
+ * The Planning Officer is included because they are the role that resolves
+ * day-to-day operational issues inside MPDO, and denying them read access left
+ * the person best placed to act on a report unable to read it. Inclusion is
+ * READ ONLY and does NOT make the Planning Officer an author: the remote
+ * report's summary, technical description, reproduction steps and submitted
+ * metadata remain immutable in iMAPS for both roles.
+ *
+ * The controller itself performs no role check, deliberately: `role` is real,
+ * strict and fail-closed (RoleMiddleware compares the canonical role strings
+ * exactly and aborts 403), so a second, differently-spelled check inside the
+ * controller could only ever drift from the route.
  *
  * READ ONLY. There is no store/update/destroy method here and no POST, PATCH or
- * DELETE route. An Admin may read and triage by reading; they may not change a
- * report's status, and no report may be deleted or written from iMAPS at all.
- * The remote table's write path remains the FieldSync client's alone.
+ * DELETE route. Both an Admin and a Planning Officer may read and triage by
+ * reading; neither may change a report's status, and no report may be deleted
+ * or written from iMAPS at all. The remote table's write path remains the
+ * FieldSync client's alone.
  *
  * FREE TEXT
  * ---------
@@ -58,7 +68,7 @@ class DiagnosticReportController extends Controller
     }
 
     /**
-     * Admin triage list.
+     * Diagnostic report list (Admin + Planning Officer, read only).
      */
     public function index(Request $request): Response
     {
@@ -74,7 +84,7 @@ class DiagnosticReportController extends Controller
     }
 
     /**
-     * One report.
+     * One report (Admin + Planning Officer, read only).
      */
     public function show(Request $request, string $report)
     {
@@ -94,6 +104,54 @@ class DiagnosticReportController extends Controller
         return Inertia::render('Diagnostics/Show', [
             'report' => $result['report'],
             'readOnly' => true,
+            'escalation' => $this->escalationFor($request),
         ]);
+    }
+
+    /**
+     * The developer/support escalation block, for an Admin only.
+     *
+     * RESPONSIBILITY SPLIT
+     * -------------------
+     * A Planning Officer assesses and resolves the operational issue inside
+     * MPDO. If they cannot, an ADMIN contacts the development/support team.
+     * So the escalation detail is the Admin's, and giving it to a Planning
+     * Officer would blur exactly the line this controller is meant to keep
+     * clear: an Admin coordinates escalation, they do not take over the
+     * Planning Officer's workflow decisions.
+     *
+     * CONFIGURATION-BACKED, NEVER INVENTED
+     * ----------------------------------
+     * Every value comes from `config('imaps.contact')`, which is null until an
+     * operator sets the matching environment variables. No name, address or
+     * phone number is hardcoded or guessed; an unconfigured deployment renders
+     * a placeholder instead of a fabricated contact.
+     *
+     * SAFE FIELDS ONLY
+     * ----------------
+     * Contact name, email, contact channel and support instructions. No
+     * password, API key, service-role key, token or other private credential
+     * is read here, and the page renders these as inert text rather than
+     * links, so a value can never become an unintended navigation target.
+     *
+     * @return array{name: ?string, email: ?string, channel: ?string, instructions: ?string}
+     */
+    private function escalationFor(Request $request): array
+    {
+        $isAdmin = ($request->user()?->role ?? null) === 'Admin';
+
+        $configured = (array) config('imaps.contact', []);
+
+        $safe = [
+            'name' => $isAdmin ? ($configured['name'] ?? null) : null,
+            'email' => $isAdmin ? ($configured['email'] ?? null) : null,
+            'channel' => $isAdmin ? ($configured['channel'] ?? null) : null,
+            'instructions' => $isAdmin ? ($configured['instructions'] ?? null) : null,
+        ];
+
+        // An all-empty block is not worth sending to the browser at all.
+        return array_filter($safe, fn ($value) => $value !== null && $value !== '') !== []
+            ? $safe
+            : ['name' => null, 'email' => null, 'channel' => null, 'instructions' => null];
     }
 }

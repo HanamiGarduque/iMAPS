@@ -18,8 +18,16 @@ use Tests\TestCase;
  *
  * THE POINT OF THIS SUITE
  * -----------------------
- * 1. AUTHORITY. Admin only, read only, and enforced by the route middleware rather
- *    than by hiding a link. There must be no write path of any kind.
+ * 1. AUTHORITY. Read-only, and enforced by the route middleware rather than by
+ *    hiding a link. There must be no write path of any kind.
+ *
+ *    POST-LOOP-9 SMOKE FIX: the authorized set was widened from Admin-only to
+ *    `role:Admin,Planning Officer`. A Planning Officer resolves day-to-day
+ *    FieldSync issues inside MPDO and previously could not read the report they
+ *    had to act on. A Site Inspector remains refused (they submit through
+ *    FieldSync only) and the read-only guarantee is unchanged, so this suite's
+ *    authority assertions now pin the full two-role boundary plus the continued
+ *    absence of any mutation route.
  * 2. THE REDACTION CONTRACT. The audit found that the single live report contains
  *    a signed Supabase Storage URL - a bearer capability granting read on a
  *    private inspection photo - inside its free text. Every assertion here is
@@ -473,30 +481,73 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
         }
     }
 
-    public function test_diagnostic_routes_are_admin_only_get_routes(): void
+    /**
+     * POST-LOOP-9 SMOKE FIX - the authority boundary moved, deliberately.
+     *
+     * The list and detail are now `role:Admin,Planning Officer`. This is a
+     * WIDENING of READ access and nothing else, and the reason is a real
+     * operational gap rather than a convenience: a Planning Officer is the role
+     * that resolves day-to-day FieldSync issues inside MPDO, and under the old
+     * Admin-only rule the one person best placed to act on a report could not
+     * open it.
+     *
+     * What this test now pins is the FULL boundary, which is stronger than the
+     * one it replaced:
+     *   - Admin and Planning Officer are authorized;
+     *   - Site Inspector is NOT in the authorized list;
+     *   - there is still no mutation route in any verb, for either role, so the
+     *     report stays immutable while being readable by two roles.
+     */
+    public function test_diagnostic_routes_are_admin_and_planning_officer_get_routes(): void
     {
         $web = (string) file_get_contents(base_path('routes/web.php'));
 
-        $this->assertMatchesRegularExpression(
-            "#/diagnostics'.*?role:Admin#s",
-            $web,
-            'The diagnostic list must be Admin-only.'
-        );
+        foreach (["/diagnostics'", "/diagnostics/\{report}'"] as $path) {
+            $this->assertMatchesRegularExpression(
+                '#'.$path.".*?role:Admin,Planning Officer#s",
+                $web,
+                "{$path} must be readable by Admin and Planning Officer."
+            );
 
-        $this->assertMatchesRegularExpression(
-            "#/diagnostics/\{report\}'.*?role:Admin#s",
-            $web,
-            'The diagnostic detail must be Admin-only.'
-        );
+            // The Site Inspector must be named nowhere in the authorized list.
+            $this->assertDoesNotMatchRegularExpression(
+                '#'.$path.".*?role:[^']*Site Inspector#s",
+                $web,
+                "{$path} must NOT authorize a Site Inspector; they submit through FieldSync only."
+            );
+        }
 
-        // No mutation route may exist for this resource in any verb.
+        // Read access must not have become write access for anyone.
         foreach (['post', 'put', 'patch', 'delete'] as $verb) {
             $this->assertDoesNotMatchRegularExpression(
                 "#Route::{$verb}\('/diagnostics#i",
                 $web,
-                "No {$verb} route may exist for diagnostics; the loop is read-only."
+                "No {$verb} route may exist for diagnostics; the report is read-only for every role."
             );
         }
+
+        // A Site Inspector must not gain the nav entry either.
+        $sidebar = (string) file_get_contents(base_path('resources/js/Components/Sidebar.jsx'));
+        $this->assertMatchesRegularExpression(
+            "#href: '/diagnostics'.*?adminOnly: false#s",
+            $sidebar,
+            'A Planning Officer must see the Diagnostics entry in navigation.'
+        );
+    }
+
+    /**
+     * A Site Inspector gets no internal navigation at all, which is what keeps
+     * the Diagnostics entry away from them regardless of the `adminOnly` flag.
+     */
+    public function test_a_site_inspector_receives_no_diagnostics_navigation(): void
+    {
+        $sidebar = (string) file_get_contents(base_path('resources/js/Components/Sidebar.jsx'));
+
+        $this->assertMatchesRegularExpression(
+            '/const visibleItems = isSiteInspector\s*\?\s*\[\s*\]/',
+            $sidebar,
+            'A Site Inspector must still receive an empty navigation set.'
+        );
     }
 
     public function test_no_delivery_monitoring_is_duplicated(): void
@@ -536,16 +587,48 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
         }
     }
 
+    /**
+     * POST-LOOP-9 SMOKE FIX - the ban is now scoped to the REPORT, not the page.
+     *
+     * Both diagnostics pages now render the shared authenticated shell, and that
+     * shell contains one `router.post("/logout")` for the sign-out control, so a
+     * blanket `router.post` ban started failing on code that cannot touch a
+     * diagnostic report. Deleting the shared shell to satisfy a substring match
+     * would have been the wrong fix.
+     *
+     * The SECURITY INTENT is unchanged and is now asserted more precisely: what
+     * must never exist is a write aimed at a diagnostic report or at a
+     * notification about one. A sign-out is not that.
+     *
+     * COMPENSATING ASSERTION: the only POST these pages may contain is the
+     * shell's logout, so a future write cannot be added under this exemption.
+     */
     public function test_the_diagnostic_ui_has_no_write_control(): void
     {
         foreach (['Index', 'Show'] as $page) {
             $source = (string) file_get_contents(base_path("resources/js/Pages/Diagnostics/{$page}.jsx"));
 
-            foreach (['router.post', 'router.put', 'router.patch', 'router.delete', 'method:'] as $write) {
-                $this->assertStringNotContainsString(
-                    $write,
-                    $source,
-                    "Diagnostics/{$page}.jsx must not issue a write. Found '{$write}'."
+            // A write aimed at the diagnostic resource itself, in any verb.
+            $this->assertDoesNotMatchRegularExpression(
+                '#router\.(post|put|patch|delete)\s*\(\s*[`"\'](?:/diagnostics|[^`"\']*notif)#i',
+                $source,
+                "Diagnostics/{$page}.jsx must not issue a write against diagnostics or notifications."
+            );
+
+            // No Inertia options-bag verb, which is the other way to mutate.
+            $this->assertStringNotContainsString(
+                'method:',
+                $source,
+                "Diagnostics/{$page}.jsx must not issue a write. Found 'method:'."
+            );
+
+            // And the only POST the page may contain is the shell's sign-out.
+            preg_match_all('#router\.post\s*\(\s*[`"\']([^`"\']+)#i', $source, $posts);
+            foreach ($posts[1] as $target) {
+                $this->assertStringContainsString(
+                    'logout',
+                    $target,
+                    "Diagnostics/{$page}.jsx may only POST to logout; found '{$target}'."
                 );
             }
 

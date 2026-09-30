@@ -107,15 +107,56 @@ class Loop7SecurePhotoReaderContractTest extends TestCase
         $this->assertStringNotContainsString('photosToRender.length || inspection.photo_count', $component);
     }
 
+    /**
+     * POST-LOOP-9 SMOKE FIX - the SECURITY intent is unchanged; two identifiers
+     * were renamed because "PIN" meant two different things.
+     *
+     * The security property this test exists to protect is the CROSS-PARCEL
+     * REJECTION: a remote `supabase_parcels` row may only supply a value when
+     * its `local_parcel_id` matches the parcel actually being displayed.
+     * Otherwise an officer looking at lot A would be shown lot B's data. That
+     * guard is preserved exactly, and is asserted first below.
+     *
+     * What changed is naming and separation of concerns. The component used one
+     * variable, `remoteParcelPin`, for a remote CADASTRAL NUMBER, and rendered
+     * it into a field labelled "Parcel PIN" that was really showing
+     * `property_index_number`. So "pin" simultaneously meant the cadastral
+     * number and the coordinate. The remote value is now named
+     * `remotePropertyIndexNumber`, and the "Parcel PIN" field carries the parcel
+     * coordinate while the cadastral number is shown under its own
+     * "Property Index No." label.
+     */
     public function test_parcel_pin_projection_prefers_local_pin_and_rejects_cross_parcel_remote_pin(): void
     {
         $component = file_get_contents(dirname(__DIR__, 2) . '/resources/js/Components/ParcelInspectionStatus.jsx');
 
-        $this->assertStringContainsString('localParcel', $component);
-        $this->assertStringContainsString('remoteParcelPin', $component);
+        // THE SECURITY PROPERTY. A remote parcel row is only trusted when it
+        // demonstrably refers to the parcel on screen.
         $this->assertStringContainsString('local_parcel_id === localParcel?.id', $component);
+        $this->assertMatchesRegularExpression(
+            '/local_parcel_id === localParcel\?\.id\s*\?\s*inspection\.supabase_parcels\?\.property_index_number\s*:\s*null;/',
+            $component,
+            'A remote parcel value must be discarded entirely when the local parcel does not match.'
+        );
+
+        // The local parcel is the primary source, and the remote row is only a
+        // fallback for the cadastral number.
+        $this->assertStringContainsString('localParcel', $component);
+        $this->assertStringContainsString('remotePropertyIndexNumber', $component);
+        $this->assertStringContainsString(
+            'localParcel?.property_index_number || remotePropertyIndexNumber',
+            $component,
+            'The local cadastral number must win, with the matched remote row as fallback.'
+        );
+
+        // The displayed PIN is the parcel coordinate, gated on both coordinates
+        // being valid so a half-valid pair yields nothing rather than a bogus pin.
         $this->assertStringContainsString('displayParcelPin', $component);
-        $this->assertStringContainsString("localParcel?.property_index_number || remoteParcelPin || 'N/A'", $component);
+        $this->assertMatchesRegularExpression(
+            '/const displayParcelPin = hasParcelPin\s*\?/s',
+            $component,
+            'The Parcel PIN must be gated on the parcel coordinates being valid.'
+        );
     }
 
     /**

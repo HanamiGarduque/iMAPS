@@ -147,11 +147,65 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
     // Legacy raw photo paths are intentionally not rendered directly.
     const photosToRender = (inspection.field_job_photos || []).filter((photo) => photo.signed_url);
 
-    // Get the accurate photo count
-    const remoteParcelPin = inspection.supabase_parcels?.local_parcel_id === localParcel?.id
+    // ── PARCEL PIN vs CONFIRMED INSPECTION POINT (two different facts) ──────
+    //
+    // "PIN" was being used for two unrelated things in this component, which
+    // is how a lot with perfectly good stored coordinates ended up reading
+    // "N/A":
+    //
+    //   * the cadastral property index number, e.g. "04-01-021-001-15-511", and
+    //   * the parcel's own latitude/longitude, i.e. the parcel pin on the map.
+    //
+    // The field labelled "Parcel PIN" read only the first, from
+    // `localParcel.property_index_number`. `localParcel` was not passed at the
+    // Applications Detail mount, so the value was null, the remote fallback
+    // could never match a null id, and the field fell through to "N/A" even
+    // though the parcel had both a property index number AND valid
+    // coordinates. That is a wiring defect, not missing data.
+    //
+    // Both concepts are now sourced correctly and shown separately, because an
+    // officer needs to be able to tell a cadastral identifier apart from a
+    // location:
+    //
+    //   Parcel PIN        <- parcels.latitude / parcels.longitude.
+    //                       Available BEFORE an inspection starts, whenever the
+    //                       parcel itself has stored coordinates.
+    //   Confirmed point   <- confirmed_latitude / confirmed_longitude from
+    //                       FieldSync evidence. Present ONLY when the inspector
+    //                       actually confirmed a position in the field.
+    //
+    // The two are never derived from one another. A missing confirmed point is
+    // the normal case (an inspection that has not been performed yet) and must
+    // NOT make the parcel pin read "N/A". Nothing here manufactures or guesses
+    // a coordinate: a partial, out-of-range or non-numeric pair yields no
+    // value at all and the field reports that honestly.
+    const toValidCoordinate = (value, min, max) => {
+        if (value === null || value === undefined || value === '') return null;
+        const n = Number(value);
+        return Number.isFinite(n) && n >= min && n <= max ? n : null;
+    };
+
+    const parcelPinLatitude = toValidCoordinate(localParcel?.latitude, -90, 90);
+    const parcelPinLongitude = toValidCoordinate(localParcel?.longitude, -180, 180);
+    const hasParcelPin = parcelPinLatitude !== null && parcelPinLongitude !== null;
+    const displayParcelPin = hasParcelPin
+        ? `${parcelPinLatitude.toFixed(6)}, ${parcelPinLongitude.toFixed(6)}`
+        : 'N/A';
+
+    // The cadastral identifier is a different fact from the coordinate, and is
+    // shown under its own name so "PIN" is no longer ambiguous.
+    const remotePropertyIndexNumber = inspection.supabase_parcels?.local_parcel_id === localParcel?.id
         ? inspection.supabase_parcels?.property_index_number
         : null;
-    const displayParcelPin = localParcel?.property_index_number || remoteParcelPin || 'N/A';
+    const displayPropertyIndexNumber = localParcel?.property_index_number || remotePropertyIndexNumber || 'N/A';
+
+    // FieldSync-confirmed evidence. Deliberately independent of the parcel pin.
+    const confirmedLatitude = toValidCoordinate(inspection?.confirmed_latitude, -90, 90);
+    const confirmedLongitude = toValidCoordinate(inspection?.confirmed_longitude, -180, 180);
+    const hasConfirmedPoint = confirmedLatitude !== null && confirmedLongitude !== null;
+    const displayConfirmedPoint = hasConfirmedPoint
+        ? `${confirmedLatitude.toFixed(6)}, ${confirmedLongitude.toFixed(6)}`
+        : null;
 
     const actualPhotoCount = photosToRender.length;
 
@@ -211,8 +265,17 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                     </div>
                     <div>
                         <SectionLabel>Parcel PIN</SectionLabel>
+                        {/* The parcel's own stored coordinate. NOT the
+                            inspector-confirmed GPS point, which is shown
+                            separately below. */}
                         <p className="text-[12px] font-mono font-medium text-slate-700 bg-slate-50 inline-block px-1.5 py-0.5 rounded border border-slate-200">
                             {displayParcelPin}
+                        </p>
+                    </div>
+                    <div>
+                        <SectionLabel>Property Index No.</SectionLabel>
+                        <p className="text-[12px] font-mono font-medium text-slate-700 bg-slate-50 inline-block px-1.5 py-0.5 rounded border border-slate-200">
+                            {displayPropertyIndexNumber}
                         </p>
                     </div>
                     <div>
@@ -225,6 +288,39 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                             <span className="text-[13px] font-medium text-slate-400">Pending</span>
                         )}
                     </div>
+                </div>
+
+                {/* CONFIRMED INSPECTION POINT - kept deliberately separate from the
+                    Parcel PIN above.
+
+                    This is FieldSync EVIDENCE: the position the inspector actually
+                    confirmed in the field. It is absent until they do, and its
+                    absence is normal and is NOT a fault in the parcel record. The
+                    wording never claims a position the system has not been told,
+                    and it never falls back to the parcel pin, because a stored
+                    parcel coordinate is not proof that anyone stood there. */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3.5 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <SectionLabel>Confirmed Inspection Point (FieldSync)</SectionLabel>
+                        {displayConfirmedPoint ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                GPS confirmed
+                            </span>
+                        ) : null}
+                    </div>
+
+                    {displayConfirmedPoint ? (
+                        <p className="text-[12px] font-mono font-medium text-slate-700 mt-0.5">
+                            {displayConfirmedPoint}
+                        </p>
+                    ) : (
+                        <p className="text-[12px] text-slate-500 mt-0.5">
+                            Not yet confirmed. This position is recorded by the Site
+                            Inspector in the FieldSync app during the inspection. The
+                            Parcel PIN above is the parcel&apos;s stored location and is
+                            not a substitute for it.
+                        </p>
+                    )}
                 </div>
 
                 {/* Progress & Media Metrics */}
