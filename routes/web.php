@@ -17,12 +17,12 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-// ── Session Keep-Alive Ping ──
+// â”€â”€ Session Keep-Alive Ping â”€â”€
 Route::get('/ping', function () {
     return response()->json(['status' => 'ok', 'timestamp' => now()->toIso8601String()]);
 })->name('ping');
 
-// ── Public Landing Page ──
+// â”€â”€ Public Landing Page â”€â”€
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin'       => Route::has('login'),
@@ -32,7 +32,7 @@ Route::get('/', function () {
     ]);
 });
 
-// ── Internal Authenticated Routes (Loop 6: Admin + Planning Officer only) ──
+// â”€â”€ Internal Authenticated Routes (Loop 6: Admin + Planning Officer only) â”€â”€
 // Site Inspectors are FieldSync-only and receive 403 here even with an
 // existing session. Per-role exceptions are declared on individual routes.
 Route::middleware('auth')->group(function () {
@@ -48,7 +48,7 @@ Route::middleware('auth')->group(function () {
         ->name('api.map.layer') // Generic layer access (whitelisted inside controller)
         ->middleware('role:Admin,Planning Officer');
 
-    // ── Forecasting + geospatial data (upstream) ──
+    // â”€â”€ Forecasting + geospatial data (upstream) â”€â”€
     Route::get('/api/forecast/{year}/{quarter}', [\App\Http\Controllers\ForecastController::class, 'getQuarterData'])
         ->middleware('role:Admin,Planning Officer');
     Route::post('/api/forecast/generate', [\App\Http\Controllers\ForecastController::class, 'generate'])
@@ -64,7 +64,7 @@ Route::middleware('auth')->group(function () {
         ->name('dashboard')
         ->middleware('role:Admin,Planning Officer');
 
-    // ── /maps product decision ─────────────────────────────────────────────
+    // â”€â”€ /maps product decision â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // MASTER'S DIRECTION WINS. origin/master deliberately replaced the separate
     // geospatial Maps page with a single unified GIS Dashboard and deleted both
     // `app/Http/Controllers/MapsController.php` and `resources/js/Pages/Maps.jsx`.
@@ -94,9 +94,9 @@ Route::middleware('auth')->group(function () {
         ->name('technicalreview.index')
         ->middleware('role:Admin,Planning Officer');
 
-    // ── Internal tax-map lookup (Loop 6: moved from routes/api.php so the
+    // â”€â”€ Internal tax-map lookup (Loop 6: moved from routes/api.php so the
     // session guard works; Admin + Planning Officer only. Sole caller is the
-    // application encode form — public portal does not use it.) ──
+    // application encode form â€” public portal does not use it.) â”€â”€
     Route::get('/api/tax-map/lookup/{pin}', [TaxMapLookupController::class, 'lookup'])
         ->middleware('role:Admin,Planning Officer');
 
@@ -111,7 +111,7 @@ Route::middleware('auth')->group(function () {
         ->name('site-inspections.show')
         ->middleware('role:Admin');
 
-    // ── Application Creation Form (Must be placed before wildcard {id} route) ──
+    // â”€â”€ Application Creation Form (Must be placed before wildcard {id} route) â”€â”€
     // Loop 6: application encoding is Planning Officer-only (Admin excluded).
     Route::get('/applications/encode', [ApplicationController::class, 'create'])
         ->name('applications.create')
@@ -121,7 +121,7 @@ Route::middleware('auth')->group(function () {
         ->name('applications.store')
         ->middleware('role:Planning Officer');
 
-    // ── Drafts / Offline Storage (Loop 6: Planning Officer-only) ──
+    // â”€â”€ Drafts / Offline Storage (Loop 6: Planning Officer-only) â”€â”€
     // Placed correctly before the /applications/{id} route to avoid wildcard conflicts
     Route::get('/applications/drafts', [ApplicationController::class, 'draftsIndex'])
         ->name('drafts.index')
@@ -139,7 +139,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/applications/applicant-lookup', [ApplicationController::class, 'applicantLookup'])
         ->name('applications.applicantLookup')
         ->middleware('role:Planning Officer');
-    // ── Single-View & Standard Status Transitions ──
+    // â”€â”€ Single-View & Standard Status Transitions â”€â”€
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show')
         ->middleware('role:Admin,Planning Officer');
@@ -150,12 +150,12 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:Planning Officer');
 
     // Handles Approved / Declined standard status changes from the show docket
-    // Loop 6 (Leader correction): status update is Planning Officer-only — NOT Admin.
+    // Loop 6 (Leader correction): status update is Planning Officer-only â€” NOT Admin.
     Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])
         ->name('applications.updateStatus')
         ->middleware('role:Planning Officer');
 
-    // ── Technical Review & Field Scheduling Transitions ──
+    // â”€â”€ Technical Review & Field Scheduling Transitions â”€â”€
     // Handles changing technical review status (e.g., transition to Site Inspection)
     Route::post('/technical-review/update-status', [TechnicalReviewController::class, 'updateStatus'])
         ->name('technical-review.update')
@@ -171,7 +171,7 @@ Route::middleware('auth')->group(function () {
         ->name('technical-review.assign-inspector')
         ->middleware('role:Planning Officer');
 
-    // ── Loop 9C-1: read-only Loop 9 delivery state per inspection round ─────
+    // â”€â”€ Loop 9C-1: read-only Loop 9 delivery state per inspection round â”€â”€â”€â”€â”€
     // READ-ONLY. It reports `can_retry` as a server-computed authorization
     // fact. 9C-1 itself added no action, no dispatch and no UI; the retry
     // ROUTE that consumes that fact arrived later, in Loop 9C-2, directly below.
@@ -225,7 +225,7 @@ Route::middleware('auth')->group(function () {
         ->name('api.inspections.supabase')
         ->middleware('role:Admin,Planning Officer');
 
-    // ── Work Reassignment (business continuity, no account sharing) ──
+    // â”€â”€ Work Reassignment (business continuity, no account sharing) â”€â”€
     // Two SEPARATE responsibilities that are deliberately not merged:
     //   * Application ownership is Admin-initiated. Handing an application to
     //     another active Planning Officer keeps the work moving WITHOUT giving
@@ -245,7 +245,7 @@ Route::middleware('auth')->group(function () {
         ->name('work-reassignment.reasons')
         ->middleware('role:Admin,Planning Officer');
 
-    // ── Notifications ──
+    // â”€â”€ Notifications â”€â”€
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::get('/api/notifications', [NotificationController::class, 'getUnread'])->name('api.notifications.unread');
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
@@ -255,89 +255,17 @@ Route::middleware('auth')->group(function () {
 
 });
 
-// ── Admin-Only Routes (Loop 6: preserved Admin-only; not broadened to Planning Officer) ──
+// â”€â”€ Admin-Only Routes (Loop 6: preserved Admin-only; not broadened to Planning Officer) â”€â”€
 Route::middleware(['auth', 'role:Admin'])->group(function () {
 
     // Override Default Registration to be Admin-Only
     Route::get('register-new-account', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('register-new-account', [RegisteredUserController::class, 'store']);
 
-    // ── Standard Reports ──
+    // â”€â”€ Standard Reports â”€â”€
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
     Route::post('/api/analytics/report/preview', [ReportController::class, 'previewReport'])->name('reports.preview');
     Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->name('reports.generate');
-
-    // ── LOOP 9E/9F: Admin triage of FieldSync inspector diagnostic reports ──
-    // READ ONLY. A FieldSync Site Inspector submits a support issue into the
-    // REMOTE `diagnostic_reports` table; this is the missing iMAPS Admin half of
-    // that path. It is NOT delivery monitoring (that is 9D, on local PostgreSQL)
-    // and it shares no vocabulary with the delivery state machine.
-    //
-    // GET ONLY, deliberately. There is no POST, PATCH or DELETE here: the loop
-    // contract is read-only, an Admin may not change a report's status, and the
-    // remote table's only writer remains the FieldSync client. Adding a mutation
-    // route later would be new scope, not an extension of this one.
-    //
-    // READ ACCESS is `role:Admin,Planning Officer` and it is the WHOLE boundary:
-    // RoleMiddleware compares the canonical role strings exactly and aborts 403.
-    // A Site Inspector using iMAPS is refused, and a guest is sent to login by
-    // the surrounding `auth` group.
-    //
-    // WHY THE PLANNING OFFICER IS INCLUDED (post-Loop 9 smoke fix)
-    // ------------------------------------------------------------
-    // A FieldSync Site Inspector reports an issue from the FieldSync app. The
-    // Planning Officer is the role that actually resolves day-to-day operational
-    // problems inside MPDO, so denying them read access to the report left the
-    // only person who could act on it unable to read it, and the report was
-    // reachable only by an Admin who does not make normal PO workflow
-    // decisions. READ access is now shared by both roles.
-    //
-    // WHAT IS NOT GRANTED
-    // -------------------
-    // * A Site Inspector is still refused: they submit through FieldSync only.
-    // * Nothing here grants WRITE access. Both routes are GET-only, and
-    //   DiagnosticReportController has no store/update/destroy method, so the
-    //   report's summary, technical description, reproduction steps and
-    //   submitted metadata stay immutable in iMAPS for BOTH roles.
-    //
-    // PLACEMENT. Appended after the standard reports block and before settings,
-    // using the inline FQCN form already used elsewhere in this file so no import
-    // is added to a file origin/master also edits. This file is a KNOWN
-    // upstream-contested merge point, so the patch is additive and self-contained.
-    Route::get('/diagnostics', [\App\Http\Controllers\DiagnosticReportController::class, 'index'])
-        ->name('diagnostics.index')
-        ->middleware('role:Admin,Planning Officer');
-
-    Route::get('/diagnostics/{report}', [\App\Http\Controllers\DiagnosticReportController::class, 'show'])
-        ->name('diagnostics.show')
-        ->middleware('role:Admin,Planning Officer');
-
-    // ── Admin → Notify Planning Officers (post-Loop 9 smoke) ────────────────
-    //
-    // THE ONE DIAGNOSTICS POST, AND IT IS ADMIN-ONLY.
-    //
-    // A Planning Officer resolves the FieldSync issue inside MPDO. When an
-    // Admin sees a report exists, this is how the officers who can actually act
-    // on it find out. It is `role:Admin`, not `role:Admin,Planning Officer`, so
-    // a Planning Officer cannot notify themselves and the action cannot be
-    // driven from the read-only surface.
-    //
-    // WHAT IT DOES AND DOES NOT DO
-    // ----------------------------
-    // * It writes an IN-APP NOTICE to the existing `notifications` table. It
-    //   does not touch the remote report. The report's status, summary,
-    //   technical description, reproduction steps and submitted metadata stay
-    //   immutable, so this is still the only POST under `diagnostics` and it
-    //   cannot mutate a report.
-    // * It does NOT mark the report resolved. A notice is a reminder, and
-    //   resolution is a FieldSync-side fact this application must not invent.
-    //
-    // This is why the section above can still state that the REPORT is read-only
-    // for both roles: that claim is about the report, and this route only
-    // creates a notification.
-    Route::post('/diagnostics/{report}/notify-planning-officers', [\App\Http\Controllers\DiagnosticReportController::class, 'notifyPlanningOfficers'])
-        ->name('diagnostics.notify-planning-officers')
-        ->middleware('role:Admin');
 
     Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');
@@ -355,7 +283,95 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::post('/users/{id}/update', [UserManagementController::class, 'updateProfile'])->name('users.update-profile');
 });
 
-// ── Public Portal Access ──
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// DIAGNOSTIC REPORTS (Loop 9E/9F) - READ: Admin + Planning Officer
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//
+// A FieldSync Site Inspector submits a support issue into the REMOTE
+// `diagnostic_reports` table. This is the iMAPS half of that path. It is NOT
+// delivery monitoring (that is 9D, on local PostgreSQL) and it shares no
+// vocabulary with the delivery state machine.
+//
+// âš  WHY THESE ROUTES ARE NOT INSIDE THE `role:Admin` GROUP ABOVE
+// ------------------------------------------------------------
+// THIS IS A REAL, USER-PROVEN BUG FIX, NOT A STYLE PREFERENCE.
+//
+// Group middleware is INHERITED and then COMBINED with a route's own
+// middleware; it is NOT replaced by it. While these routes sat inside the
+// `Route::middleware(['auth', 'role:Admin'])` group, the runtime middleware
+// list for each one was:
+//
+//     RoleMiddleware:Admin                    <- inherited from the group
+//     RoleMiddleware:Admin,Planning Officer    <- added on the route
+//
+// Laravel runs BOTH. The inherited `role:Admin` is evaluated FIRST and aborts
+// 403, so a Planning Officer was refused before the widened list was ever
+// consulted - even though the route source, the sidebar entry and the
+// notification link all said they were allowed. That produced exactly the
+// reported symptom: the Planning Officer could see "Diagnostic Reports" in the
+// navigation and receive the notification, but every click returned 403.
+//
+// `php artisan route:list --name=diagnostics` prints BOTH middleware entries,
+// which is why the duplicate authority is now asserted against the runtime
+// route table rather than against the source, in
+// `AdminPoPriorityClosureContractTest`.
+//
+// THE CONTRACT
+// ------------
+//   GET  /diagnostics                       Admin, Planning Officer
+//   GET  /diagnostics/{report}              Admin, Planning Officer
+//   POST /diagnostics/{report}/notify-...   Admin ONLY
+//   Site Inspector: refused everywhere (they submit through FieldSync only)
+//
+// A Site Inspector still sees no navigation at all, and a guest is redirected
+// to login by `auth`.
+//
+// READ ONLY FOR BOTH READ ROLES. There is no PATCH or DELETE for a report and
+// no POST that addresses one, so the report's summary, technical description,
+// reproduction steps and submitted metadata stay immutable in iMAPS. The
+// controller exposes no store/update/destroy and performs no remote write; the
+// remote table's only writer remains the FieldSync client.
+Route::middleware(['auth', 'role:Admin,Planning Officer'])->group(function () {
+
+    Route::get('/diagnostics', [\App\Http\Controllers\DiagnosticReportController::class, 'index'])
+        ->name('diagnostics.index');
+
+    Route::get('/diagnostics/{report}', [\App\Http\Controllers\DiagnosticReportController::class, 'show'])
+        ->name('diagnostics.show');
+
+});
+
+// â”€â”€ Admin â†’ Notify Planning Officers (post-Loop 9 smoke fix) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//
+// THE ONE DIAGNOSTICS POST, AND IT IS ADMIN-ONLY.
+//
+// A Planning Officer resolves the FieldSync issue inside MPDO. When an Admin
+// sees a report exists, this is how the officers who can actually act on it find
+// out. It is `role:Admin`, never `role:Admin,Planning Officer`, so a Planning
+// Officer cannot notify themselves and the action cannot be driven from the
+// read-only surface.
+//
+// WHAT IT DOES AND DOES NOT DO
+// ----------------------------
+// * It writes an IN-APP NOTICE to the local `notifications` table. It does not
+//   touch the remote report: the report's status, summary, technical
+//   description, reproduction steps and submitted metadata stay immutable, so
+//   this remains the only POST under `diagnostics` and it cannot mutate a
+//   report.
+// * It does NOT mark the report resolved. A notice is a reminder, and
+//   resolution is a FieldSync-side fact this application must not invent.
+//
+// The notification links to `/diagnostics/{uuid}` - the SAME public detail GET
+// route an Admin uses, not an Admin-only alias - so a Planning Officer who
+// clicks it lands on the page they are already entitled to read.
+Route::middleware(['auth', 'role:Admin'])->group(function () {
+
+    Route::post('/diagnostics/{report}/notify-planning-officers', [\App\Http\Controllers\DiagnosticReportController::class, 'notifyPlanningOfficers'])
+        ->name('diagnostics.notify-planning-officers');
+
+});
+
+// â”€â”€ Public Portal Access â”€â”€
 Route::get('/public-portal', [PublicPortalController::class, 'index'])
     ->name('public-portal');
 

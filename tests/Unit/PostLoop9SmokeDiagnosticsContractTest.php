@@ -2,7 +2,9 @@
 
 namespace Tests\Unit;
 
-use PHPUnit\Framework\TestCase;
+use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Route as RouteFacade;
+use Tests\TestCase;
 
 /**
  * POST-LOOP-9 SMOKE FIX - the four bounded corrections made on
@@ -25,6 +27,15 @@ use PHPUnit\Framework\TestCase;
  * established style in this suite. They are deliberately written against
  * BEHAVIOUR and DATA PROVENANCE rather than one exact string, so a restyle does
  * not silently void them.
+ *
+ * NOTE ON THE BASE CLASS. This suite now extends `Tests\TestCase` (the
+ * application-booting base) rather than PHPUnit's plain `TestCase`, because the
+ * diagnostics AUTHORITY assertions must read the live route table and resolve
+ * the middleware chain through the real router. Asserting authority from source
+ * text is what allowed a Planning Officer 403 to ship: the source said
+ * `role:Admin,Planning Officer` while an inherited `role:Admin` from the
+ * enclosing group ran first. `DiagnosticsRouteAuthorityTest` carries the
+ * detailed regression proof.
  */
 class PostLoop9SmokeDiagnosticsContractTest extends TestCase
 {
@@ -350,15 +361,43 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
     // B. DIAGNOSTIC ACCESS
     // ─────────────────────────────────────────────────────────────────────
 
+    /**
+     * Authority is now asserted against the RESOLVED runtime chain, not the
+     * source text.
+     *
+     * This test previously read routes/web.php and looked for
+     * `role:Admin,Planning Officer` next to each route declaration. That passed
+     * while the routes 403'd for a Planning Officer, because the routes were
+     * declared INSIDE `Route::middleware(['auth', 'role:Admin'])`, and group
+     * middleware is inherited and COMBINED with a route's own rather than
+     * replaced by it. The resolved chain therefore contained a stricter
+     * inherited `role:Admin` that ran FIRST.
+     *
+     * The group placement is still asserted, but as a separate, explicit
+     * structural check in `DiagnosticsRouteAuthorityTest`, which also asserts
+     * against the resolved chain. Asserting only on the source is precisely
+     * what let the defect ship.
+     */
     public function test_admin_and_planning_officer_can_access_diagnostics(): void
     {
-        $web = $this->code('routes/web.php');
+        foreach (['diagnostics.index', 'diagnostics.show'] as $name) {
+            $route = RouteFacade::getRoutes()->getByName($name);
+            $this->assertNotNull($route, "Route {$name} must be registered.");
 
-        foreach (["/diagnostics'", "/diagnostics/\{report}'"] as $path) {
-            $this->assertMatchesRegularExpression(
-                '#'.$path.".*?role:Admin,Planning Officer#s",
-                $web,
-                "{$path} must be readable by Admin and Planning Officer."
+            $chain = array_values(array_filter(
+                app(Router::class)->gatherRouteMiddleware($route),
+                fn ($p) => str_contains((string) $p, 'RoleMiddleware')
+            ));
+
+            $this->assertCount(
+                1,
+                $chain,
+                "{$name} must resolve to exactly ONE authority; a second entry is inherited from a group and runs first."
+            );
+            $this->assertStringEndsWith(
+                ':Admin,Planning Officer',
+                (string) $chain[0],
+                "{$name} must be readable by Admin and Planning Officer."
             );
         }
     }
@@ -459,10 +498,29 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
             'Exactly one diagnostics POST may exist: the Admin notice action.'
         );
 
-        $this->assertMatchesRegularExpression(
-            "#Route::post\('/diagnostics/\{report\}/notify-planning-officers'.*?role:Admin'#s",
-            $web,
+        // The authority is read from the RESOLVED chain, because that is what
+        // actually runs. A source-level "there is a role:Admin nearby" check is
+        // exactly the assertion that let the Planning Officer 403 ship: the
+        // source said `role:Admin,Planning Officer` while an inherited
+        // `role:Admin` from the enclosing group ran first.
+        $notifyRoute = RouteFacade::getRoutes()->getByName('diagnostics.notify-planning-officers');
+        $this->assertNotNull($notifyRoute, 'The notice action must be registered.');
+
+        $notifyChain = array_values(array_filter(
+            app(Router::class)->gatherRouteMiddleware($notifyRoute),
+            fn ($p) => str_contains((string) $p, 'RoleMiddleware')
+        ));
+
+        $this->assertCount(1, $notifyChain, 'The notice action must resolve to exactly ONE authority.');
+        $this->assertStringEndsWith(
+            ':Admin',
+            (string) $notifyChain[0],
             'The one POST must be the Admin notice action, and it must be Admin-only.'
+        );
+        $this->assertStringNotContainsString(
+            'Planning Officer',
+            (string) $notifyChain[0],
+            'A Planning Officer must not be able to trigger the notice action.'
         );
 
         // The list page never gains the action: the notice is raised from the

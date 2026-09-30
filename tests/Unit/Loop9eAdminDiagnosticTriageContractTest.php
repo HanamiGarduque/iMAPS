@@ -502,18 +502,38 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
     {
         $web = (string) file_get_contents(base_path('routes/web.php'));
 
-        foreach (["/diagnostics'", "/diagnostics/\{report}'"] as $path) {
-            $this->assertMatchesRegularExpression(
-                '#'.$path.".*?role:Admin,Planning Officer#s",
-                $web,
-                "{$path} must be readable by Admin and Planning Officer."
+        // Authority is asserted against the RESOLVED runtime chain, not the
+        // source text. Asserting only on routes/web.php is what let the
+        // Planning Officer 403 ship: the source read
+        // `role:Admin,Planning Officer`, but the routes were declared INSIDE
+        // `Route::middleware(['auth', 'role:Admin'])`, and group middleware is
+        // inherited and COMBINED with a route's own rather than replaced by it.
+        // An inherited `role:Admin` therefore ran FIRST and aborted 403.
+        foreach (['diagnostics.index', 'diagnostics.show'] as $name) {
+            $route = \Illuminate\Support\Facades\Route::getRoutes()->getByName($name);
+            $this->assertNotNull($route, "Route {$name} must be registered.");
+
+            $chain = array_values(array_filter(
+                app(\Illuminate\Routing\Router::class)->gatherRouteMiddleware($route),
+                fn ($p) => str_contains((string) $p, 'RoleMiddleware')
+            ));
+
+            $this->assertCount(
+                1,
+                $chain,
+                "{$name} must resolve to exactly ONE authority; a second entry is inherited from an enclosing group and runs first."
+            );
+            $this->assertStringEndsWith(
+                ':Admin,Planning Officer',
+                (string) $chain[0],
+                "{$name} must be readable by Admin and Planning Officer."
             );
 
             // The Site Inspector must be named nowhere in the authorized list.
-            $this->assertDoesNotMatchRegularExpression(
-                '#'.$path.".*?role:[^']*Site Inspector#s",
-                $web,
-                "{$path} must NOT authorize a Site Inspector; they submit through FieldSync only."
+            $this->assertStringNotContainsString(
+                'Site Inspector',
+                (string) $chain[0],
+                "{$name} must NOT authorize a Site Inspector; they submit through FieldSync only."
             );
         }
 
@@ -535,10 +555,27 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
             'Exactly one diagnostics POST may exist: the Admin notice action.'
         );
 
-        $this->assertMatchesRegularExpression(
-            "#Route::post\('/diagnostics/\{report\}/notify-planning-officers'.*?role:Admin'#s",
-            $web,
+        // Read the notice action's authority from the RESOLVED chain, for the
+        // same reason as the GET routes above.
+        $notifyRoute = \Illuminate\Support\Facades\Route::getRoutes()
+            ->getByName('diagnostics.notify-planning-officers');
+        $this->assertNotNull($notifyRoute, 'The notice action must be registered.');
+
+        $notifyChain = array_values(array_filter(
+            app(\Illuminate\Routing\Router::class)->gatherRouteMiddleware($notifyRoute),
+            fn ($p) => str_contains((string) $p, 'RoleMiddleware')
+        ));
+
+        $this->assertCount(1, $notifyChain, 'The notice action must resolve to exactly ONE authority.');
+        $this->assertStringEndsWith(
+            ':Admin',
+            (string) $notifyChain[0],
             'The notice action must be Admin-only, never shared with a Planning Officer.'
+        );
+        $this->assertStringNotContainsString(
+            'Planning Officer',
+            (string) $notifyChain[0],
+            'A Planning Officer must not be able to trigger the notice action.'
         );
 
         // No POST may target a report's own data: the report has no write verb.
