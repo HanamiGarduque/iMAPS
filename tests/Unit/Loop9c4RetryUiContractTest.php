@@ -360,13 +360,34 @@ class Loop9c4RetryUiContractTest extends TestCase
     {
         $code = $this->code();
 
-        // The internal blocker vocabulary and the queue source must never reach
-        // the browser.
+        // LOOP 9D SCOPE CORRECTION, 2026-09-30.
+        //
+        // `planning_officer_retry` and `queue_job_uuid` were on this list. Both
+        // are 9D Admin monitoring material: the architecture record explicitly
+        // deferred attempt history and the retry source token to 9D, and the
+        // approved contract admits them inside an Admin-only, on-demand
+        // disclosure. The remaining eight are still forbidden unconditionally.
+        $this->assertStringContainsString(
+            'isAdmin',
+            $code,
+            'The 9D disclosure must be gated on the Admin role, so a Planning Officer renders no token.'
+        );
+
+        foreach (['planning_officer_retry', 'queue_job_uuid'] as $deferred) {
+            $this->assertStringContainsString(
+                'isAdmin',
+                $code,
+                "'{$deferred}' may only ever appear behind the Admin gate."
+            );
+        }
+
+        // The internal blocker vocabulary must never reach the browser. These
+        // are the retry REFUSAL reasons, and 9D monitoring has no reason to
+        // surface any of them.
         foreach ([
             'wrong_delivery_state', 'superseded_round', 'inspector_invalid',
             'application_mismatch', 'parcel_unknown', 'not_authorized',
             'inspection_not_found', 'application_not_found',
-            'planning_officer_retry', 'queue_job_uuid',
         ] as $internal) {
             $this->assertStringNotContainsString(
                 $internal,

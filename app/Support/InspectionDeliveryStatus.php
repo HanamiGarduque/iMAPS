@@ -149,6 +149,97 @@ final class InspectionDeliveryStatus
     }
 
     /**
+     * LOOP 9D: short human-readable name for each failure category.
+     *
+     * This is the Admin diagnostic view of the closed vocabulary. The 9C-1/9C-4
+     * Planning Officer surface deliberately never renders the raw token; the
+     * architecture record assigns the token to 9D Admin monitoring, and this map
+     * is where it becomes readable.
+     *
+     * Authored copy, keyed by the closed vocabulary, exactly like
+     * FAILURE_MESSAGES. No value is derived from an exception, a response body,
+     * SQL text, a path, a URL or any credential, so nothing can leak through it.
+     * Every entry is a diagnostic NAME; FAILURE_MESSAGES remains the prose.
+     */
+    private const FAILURE_CATEGORY_LABELS = [
+        InspectionDeliveryAttempt::FAILURE_INSPECTOR_MAPPING_UNRESOLVED
+            => 'Inspector mapping unresolved',
+        InspectionDeliveryAttempt::FAILURE_SUPABASE_UNREACHABLE
+            => 'FieldSync unreachable',
+        InspectionDeliveryAttempt::FAILURE_AUTHENTICATION_FAILURE
+            => 'Bridge authentication failure',
+        InspectionDeliveryAttempt::FAILURE_REMOTE_CONSTRAINT_FAILURE
+            => 'Remote constraint failure',
+        InspectionDeliveryAttempt::FAILURE_REMOTE_VALIDATION_FAILURE
+            => 'Remote validation failure',
+        InspectionDeliveryAttempt::FAILURE_CONFIGURATION_FAILURE
+            => 'Bridge configuration failure',
+        InspectionDeliveryAttempt::FAILURE_UNKNOWN
+            => 'Unclassified failure',
+    ];
+
+    /**
+     * Human-readable failure-category name for a monitoring surface.
+     *
+     * Normalizes first, so a stored value this class has never seen degrades to
+     * the `unknown` label rather than reaching a browser verbatim. NULL stays
+     * NULL: absence of a category is not a category.
+     */
+    public static function failureCategoryLabel(?string $category): ?string
+    {
+        $normalized = self::failureCategory($category);
+
+        if ($normalized === null) {
+            return null;
+        }
+
+        return self::FAILURE_CATEGORY_LABELS[$normalized]
+            ?? self::FAILURE_CATEGORY_LABELS[InspectionDeliveryAttempt::FAILURE_UNKNOWN];
+    }
+
+    /**
+     * LOOP 9D: human-readable names for the attempt `source` vocabulary.
+     *
+     * Authored copy keyed by the closed vocabulary, exactly like the other maps
+     * in this class. The browser is given a name so it never has to invent one,
+     * and an unrecognized stored value degrades to the `unknown` name rather
+     * than reaching a screen raw.
+     */
+    private const SOURCE_LABELS = [
+        InspectionDeliveryAttempt::SOURCE_INITIAL_DISPATCH => 'Initial delivery',
+        InspectionDeliveryAttempt::SOURCE_AUTOMATIC_RETRY => 'Automatic retry',
+        InspectionDeliveryAttempt::SOURCE_PLANNING_OFFICER_RETRY => 'Planning Officer retry',
+        InspectionDeliveryAttempt::SOURCE_LEGACY_RECONCILIATION => 'Legacy reconciliation',
+    ];
+
+    /** LOOP 9D: human-readable names for the attempt `outcome` vocabulary. */
+    private const OUTCOME_LABELS = [
+        InspectionDeliveryAttempt::OUTCOME_PENDING => 'In progress',
+        InspectionDeliveryAttempt::OUTCOME_DELIVERED => 'Delivered',
+        InspectionDeliveryAttempt::OUTCOME_FAILED => 'Failed',
+    ];
+
+    /** Readable name for an attempt source, or NULL when there is none. */
+    public static function sourceLabel(?string $source): ?string
+    {
+        if ($source === null) {
+            return null;
+        }
+
+        return self::SOURCE_LABELS[$source] ?? 'Unrecognised source';
+    }
+
+    /** Readable name for an attempt outcome, or NULL when there is none. */
+    public static function outcomeLabel(?string $outcome): ?string
+    {
+        if ($outcome === null) {
+            return null;
+        }
+
+        return self::OUTCOME_LABELS[$outcome] ?? 'Unrecognised outcome';
+    }
+
+    /**
      * Normalize a stored failure category onto the closed vocabulary.
      *
      * An unexpected stored value becomes `unknown` so a client can only ever

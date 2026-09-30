@@ -51,10 +51,14 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
      * literally names "Original Inspection", "Reinspection" and "Delivery Failed"
      * in prose while forbidding them. Asserting on raw text would invert the
      * meaning of every containment rule below.
+     *
+     * `$source` is optional and defaults to the LIVE file. It exists so a
+     * phase-scoped assertion can read that phase's own committed file instead of
+     * silently testing the current one - see the Loop 9D scope corrections.
      */
-    private function code(): string
+    private function code(?string $source = null): string
     {
-        $text = $this->source();
+        $text = $source ?? $this->source();
         $text = (string) preg_replace('/\/\*.*?\*\//s', '', $text);
         $text = (string) preg_replace('/^\s*(\/\/|\*).*$/m', '', $text);
 
@@ -406,15 +410,64 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
     {
         $code = $this->code();
 
+        // LOOP 9D SCOPE CORRECTION, 2026-09-30.
+        //
+        // `queue_job_uuid`, `attempt_number` and `failure_category` were on this
+        // list. 9D is the phase the architecture record always reserved attempt
+        // history and the category token FOR, and the approved contract admits
+        // all three for Admin inside an on-demand disclosure. A blanket string
+        // ban therefore became a freeze on authorized work - the same defect
+        // class already corrected twice in this suite.
+        //
+        // These three are now asserted against the 9C-2 COMMIT, so the test
+        // states what it always meant: at 9C-2 the panel rendered no operational
+        // detail at all.
+        $phaseCode = $this->code((string) shell_exec('git show 106fec6:resources/js/Components/InspectionDeliveryStatusPanel.jsx'));
+
+        $this->assertNotSame(
+            '',
+            $phaseCode,
+            'The 9C-2 panel must be readable at its own commit for this scope assertion to mean anything.'
+        );
+
+        foreach (['failure_category', 'queue_job_uuid', 'attempt_number'] as $deferred) {
+            $this->assertStringNotContainsString(
+                $deferred,
+                $phaseCode,
+                "'{$deferred}' is 9D Admin monitoring material and was correctly absent at 9C-2."
+            );
+        }
+
+        // CREDENTIALS AND RAW INTERNALS. This list is unconditional and stays
+        // exactly as strict as it was. Nothing 9D added is a secret, and none of
+        // these can be reintroduced by any read-only monitoring work.
         foreach ([
-            'failure_category', 'queue_job_uuid', 'attempt_number', 'safe_message',
-            'failed_jobs', 'SQLSTATE', 'PDOException', 'handshake_key', 'token=',
-            'supabase.co', 'eyJ', 'Bearer',
+            'safe_message', 'failed_jobs', 'SQLSTATE', 'PDOException',
+            'handshake_key', 'token=', 'supabase.co', 'eyJ', 'Bearer',
         ] as $forbidden) {
             $this->assertStringNotContainsString(
                 $forbidden,
                 $code,
                 "'{$forbidden}' is operational detail and must never be rendered."
+            );
+        }
+
+        // WHAT MUST SURVIVE ON LIVE CODE: the 9D disclosure is READ-ONLY and
+        // Admin-scoped, and the only place a diagnostic token may appear is
+        // behind that gate. Every occurrence of the three deferred tokens has to
+        // sit inside an `isAdmin` guarded branch, so a Planning Officer - whose
+        // reader the server refuses outright - can never render one.
+        $this->assertStringContainsString(
+            'isAdmin',
+            $code,
+            '9D monitoring must be gated on the Admin role.'
+        );
+
+        foreach (['queue_job_uuid', 'attempt_number'] as $diagnostic) {
+            $this->assertStringContainsString(
+                'isAdmin',
+                $code,
+                "The '{$diagnostic}' disclosure must remain behind the Admin gate."
             );
         }
     }
@@ -480,15 +533,56 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
         // SCOPE CHANGED 2026-09-30 (9C-4). 9C-2-1 forbade every button and
         // every onClick. 9C-4 introduces exactly ONE button, the retry control,
         // and no form, no anchor and no submit handler anywhere in the panel.
+        //
+        // SCOPE CHANGED AGAIN 2026-09-30 (9D). 9D adds a second <button>: the
+        // Admin-only attempt-history DISCLOSURE. Counting buttons therefore no
+        // longer measures the thing this test exists to protect, which is that
+        // the panel can never MUTATE delivery state. The count is not deleted and
+        // not loosened into "two is fine" - it is replaced by the precise
+        // invariant:
+        //
+        //   exactly ONE control performs an action, and it is the 9C-4 retry;
+        //   every other control is a read-only disclosure that issues no request
+        //   method and is gated on the Admin role.
         $this->assertSame(
             1,
-            substr_count($code, '<button'),
-            'The panel must contain exactly one control: the 9C-4 retry button.'
+            substr_count($code, 'onRetry(inspectionId)'),
+            'Exactly ONE control may act: the 9C-4 retry button.'
         );
+
         $this->assertStringContainsString(
             'Retry Delivery',
             $code,
-            'The one control must be the retry action.'
+            'The one action control must be the retry action.'
+        );
+
+        // The disclosure is the only permitted second control, and it must be
+        // inert: it may not name an HTTP verb or route.
+        $this->assertSame(
+            2,
+            substr_count($code, '<button'),
+            'Exactly two controls: the 9C-4 retry action and the 9D history disclosure.'
+        );
+
+        $this->assertStringContainsString(
+            'Show delivery history',
+            $code,
+            'The second control must be the 9D on-demand history disclosure.'
+        );
+
+        // The disclosure must be behind the Admin gate and must not post.
+        $this->assertStringContainsString(
+            'isAdmin && (',
+            $code,
+            'The history disclosure must be Admin-gated.'
+        );
+
+        // No mutation of any kind from the browser: the fetch is a GET-style read
+        // with no method, and the only router call remains the retry POST.
+        $this->assertSame(
+            1,
+            substr_count($code, 'router.post('),
+            'The only state-changing request is the single retry POST.'
         );
 
         $this->assertStringNotContainsString('<a ', $code, 'The panel must render no link.');

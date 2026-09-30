@@ -4655,3 +4655,121 @@ was not modified.
 - **The recorder's failure branch is still unexercised end to end.** This test
   proves the SUCCESS branch of the recorder, which is the branch that was
   proven broken by the `updated_at` defect.
+---
+
+## LOOP 9D - ADMIN DELIVERY MONITORING
+
+Implemented 2026-09-30 on `loop9-delivery-handoff`. Contract approved before any code
+was written.
+
+### What was already true, and what was actually missing
+
+9C did not leave Admin without delivery visibility. `Applications/Show.jsx` mounts
+the FieldSync Delivery panel in both branches and is explicitly "shared read-only
+visibility for Admin and Planning Officer alike", and the 9C-1 reader is already
+`role:Admin,Planning Officer`. Admin could already open any application and see
+per-round delivery state, attempt count, timestamps, inspector and safe failure
+prose.
+
+What did not exist was the thing the 9D audit actually found missing:
+
+- **No aggregate monitoring.** Answering "which deliveries are broken?" meant
+  opening 72 applications one at a time. `ApplicationController@index` filtered on
+  `barangay`, `status`, `application_type` and `search` - never delivery state.
+- **No attempt history anywhere.** `SiteInspection::deliveryAttempts()` existed but
+  the only display consumer was `withCount`. The 11 references were the recorder's
+  own correlation writes.
+- **No supersession signal.** `isSuperseded()` was internal-only, so a monitoring
+  surface could not distinguish "current" from "history" without a client-side
+  inference the architecture record had already forbidden.
+- **The raw `failure_category` token was unreachable**, which the architecture
+  record had explicitly assigned to 9D.
+
+### Surface
+
+The existing `applications.index`, per the approved contract. No new module, no new
+dashboard, no new route. Attempt history reuses the **existing** 9C-1 reader route
+through an opt-in `include_attempts` parameter, so `routes/web.php` is untouched.
+
+### The monitoring round
+
+One business decision had to be made server-side, and it is made in exactly one
+place. An application's **monitoring round** is the highest-id `site_inspections`
+row across all of its parcels. `site_inspections` stores no round number, so the
+primary key is the round chronology - the same fact `InspectionDeliveryRetryEligibility`
+and the existing `latestOfMany()` relation already rely on.
+
+The filter and the rendered row use that **same** rule, so a row can never
+disagree with the filter that selected it. `no_delivery_record` is one predicate
+that honestly covers both cases: no inspection round at all, and a newest round
+that has never had delivery state recorded.
+
+### Supersession is a marker, never a filter
+
+`is_superseded` is computed on the server by asking
+`InspectionDeliveryRetryEligibility::isSuperseded()` - the **same** predicate the
+retry service enforces, from the **same** latest-round map. The reader and the
+retry refusal therefore cannot disagree about what "current" means.
+
+A superseded round stays **visible**. It is historical evidence that an inspection
+really happened, and hiding it would erase the record. Verified against real data:
+application 50 (parcel 21) has 7 rounds, 6 report `is_superseded: true`, and all 7
+are returned and rendered.
+
+### Attempt history is on demand, and Admin-only
+
+`GET /applications/{id}/delivery-status?include_attempts=<round>` returns history
+for **one named round only**. It is off by default, so the ordinary read is still
+the same three queries it has always been. A non-Admin is refused with **403**,
+not quietly served a smaller payload. A round belonging to another application is
+**404**, so an id cannot read across applications.
+
+Exposed: `attempt_number`, `source` + server label, `outcome` + server label,
+`failure_category` + server label, `attempted_at`, `completed_at`, `created_at`, and
+`queue_job_uuid` as operational detail inside the disclosure.
+
+**`safe_message` is deliberately NOT exposed.** It is the only free-text column on
+the table. The 9D contract authorizes the closed category vocabulary, and a
+free-text column is the one field that could ever carry wording authored outside
+this codebase. The category is CHECK-constrained to seven values with a fixed
+label map, so it is the safe diagnostic signal.
+
+### Authority boundary - unchanged and re-proven
+
+Admin **may** monitor delivery state, attempt count, last attempt, delivered
+timestamp, failure category, assigned inspector, supersession and attempt history.
+
+Admin **may not** retry, dispatch, change `delivery_status`, reassign an inspector
+from monitoring, make Technical Review or Planning Review decisions, or perform
+FieldSync field work. The retry route remains `role:Planning Officer`, the service
+still re-checks `actorAuthorized()` under the application row lock, and Admin still
+receives `can_retry: false` for every round.
+
+### Performance
+
+Monitoring is local PostgreSQL only - no Supabase call, no FieldSync call, no
+device-availability dependency, which is what makes it usable as support tooling.
+
+The list adds **zero** queries: the aggregate attempt count rides along as a
+sub-select on the already-eager-loaded latest round, and attempt ROWS are never
+loaded per list row. Attempt history costs at most **one** extra query, only when
+an Admin expands a disclosure.
+
+No index or migration was added. The existing partial index
+`site_inspections (delivery_status) WHERE delivery_status IS NOT NULL` serves the
+three concrete states. `no_delivery_record` is a NULL predicate and therefore
+cannot use it - noted as a known characteristic at current scale (30 of 37 rounds),
+not addressed, because adding an index for 37 rows would be unjustified.
+
+### Vocabulary stays on the server
+
+`InspectionDeliveryStatus` gained `failureCategoryLabel()`, `sourceLabel()` and
+`outcomeLabel()`, all keyed by the closed vocabularies with authored copy. An
+unrecognized stored value degrades to the authored unknown label rather than
+reaching a screen raw. The browser holds a colour map and nothing else: no
+delivery vocabulary, no business predicate, no supersession inference.
+
+One wording correction worth recording: the attempt disclosure originally read
+"Completed:" for `completed_at`. `Completed` is a FieldSync **task** lifecycle
+value, and delivery history must never be worded as task lifecycle, so it reads
+"Outcome recorded:" instead.

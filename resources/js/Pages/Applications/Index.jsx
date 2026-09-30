@@ -61,6 +61,17 @@ const LAND_USE_BADGES = {
 const STATUSES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
 const APP_TYPES = ["Locational Clearance", "Zoning Certificate", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)", "Petition for Rezoning", "Petition for Reclassification"];
 const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"];
+// LOOP 9D: presentation ONLY, keyed by the server's state tokens. This map
+// chooses colors and nothing else: the state, the label, the message and the
+// failure-category label are all authored by InspectionDeliveryStatus on the
+// server. The browser holds no delivery vocabulary and no business predicate.
+const DELIVERY_STATE_STYLES = {
+    no_delivery_record: "bg-slate-100 text-slate-600 border-slate-300",
+    pending_delivery: "bg-blue-50 text-blue-700 border-blue-300",
+    delivered: "bg-emerald-50 text-emerald-700 border-emerald-300",
+    delivery_failed: "bg-red-50 text-red-700 border-red-300",
+};
+
 const ROSARIO_BARANGAYS = [
     "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
     "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", 
@@ -354,7 +365,7 @@ function DropdownSelect({
     );
 }
 
-export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [], applicant_counts = {} }) {
+export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [], applicant_counts = {}, delivery_monitoring = {} }) {
     const [clock, setClock] = useState("");
 
     // URL parameter synchronization
@@ -369,6 +380,17 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const [selectedCategory, setSelectedCategory] = useState(urlParams.get("category") || filters?.application_type || "");
     const [selectedLandUse, setSelectedLandUse] = useState(urlParams.get("land_use") || filters?.land_use_class || "");
     const [selectedBarangay, setSelectedBarangay] = useState(urlParams.get("barangay") || filters?.barangay || "");
+
+    // LOOP 9D: Admin aggregate delivery monitoring state.
+    //
+    // `enabled` is a SERVER fact, not a client role guess. The server sends the
+    // block only to Admin and only ever honours `delivery_status` for Admin, so
+    // honouring that flag keeps the control and the server in agreement instead
+    // of the browser offering a filter the server would ignore.
+    const deliveryMonitoringEnabled = delivery_monitoring?.enabled === true;
+    const [selectedDelivery, setSelectedDelivery] = useState(
+        urlParams.get("delivery_status") || delivery_monitoring?.selected || "all"
+    );
     const [selectedSort, setSelectedSort] = useState(urlParams.get("sort") || filters?.sort || "newest");
     const [pageSize, setPageSize] = useState(Number(urlParams.get("size")) || 10);
     const [currentPage, setCurrentPage] = useState(Number(urlParams.get("page")) || 1);
@@ -465,6 +487,16 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         if (currentPage > 1) params.set("page", String(currentPage));
         if (pageSize !== 10) params.set("size", String(pageSize));
 
+        // LOOP 9D: the delivery filter is SERVER-side. It is pushed into the URL
+        // and applied by ApplicationController::applyRegistryFilters(); the
+        // browser never filters delivery state itself, because deciding which
+        // round an application is judged by is a business fact.
+        if (deliveryMonitoringEnabled && selectedDelivery && selectedDelivery !== "all") {
+            params.set("delivery_status", selectedDelivery);
+        } else {
+            params.delete("delivery_status");
+        }
+
         // The open folder travels with the registry state, so a refresh or a
         // pasted link returns the user to the folder they were working in.
         // `from` is dropped here: it describes how a DETAIL page was reached and
@@ -476,7 +508,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         const queryStr = params.toString();
         const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
         window.history.replaceState({}, "", newUrl);
-    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, currentPage, pageSize, selectedFolder]);
+    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, currentPage, pageSize, selectedFolder, deliveryMonitoringEnabled, selectedDelivery]);
 
     // Admin/PO audit (P1): this used to fall back to a SAMPLE_APPLICATIONS
     // fixture and render invented applicants, TCT and OR numbers as though they
@@ -495,6 +527,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         setDateRangePreset("all");
         setDateFrom("");
         setDateTo("");
+        // LOOP 9D
+        if (deliveryMonitoringEnabled) setSelectedDelivery("all");
         setCurrentPage(1);
     };
 
@@ -1018,6 +1052,40 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                 withSearch={false}
                                             />
                                         </div>
+
+                                        {/* LOOP 9D: Admin aggregate delivery monitoring filter.
+                                            Rendered only when the SERVER enabled the feature, and
+                                            applied server-side, so the browser never decides which
+                                            round an application is judged by. */}
+                                        {deliveryMonitoringEnabled && (
+                                            <div className="min-w-[165px]">
+                                                <select
+                                                    value={selectedDelivery}
+                                                    onChange={(e) => {
+                                                        setSelectedDelivery(e.target.value);
+                                                        setCurrentPage(1);
+                                                        const next = new URLSearchParams(window.location.search);
+                                                        if (e.target.value && e.target.value !== "all") {
+                                                            next.set("delivery_status", e.target.value);
+                                                        } else {
+                                                            next.delete("delivery_status");
+                                                        }
+                                                        const qs = next.toString();
+                                                        router.visit(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, {
+                                                            preserveScroll: true,
+                                                        });
+                                                    }}
+                                                    title="Filter by FieldSync delivery state (Admin monitoring)"
+                                                    className="w-full text-xs font-semibold px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 shadow-2xs focus:outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 cursor-pointer"
+                                                >
+                                                    {(delivery_monitoring?.states || []).map((s) => (
+                                                        <option key={s.value} value={s.value}>
+                                                            {s.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Utility Controls: Date Range, Clear */}
@@ -1238,6 +1306,62 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                                 <p className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/70 rounded-md px-1.5 py-0.5 mt-1.5 inline-block self-start leading-tight">
                                                                                     {card.inspection_summary}
                                                                                 </p>
+                                                                            )}
+
+                                                                            {/* LOOP 9D: Admin aggregate delivery monitoring.
+                                                                                Every string here is server-authored: the
+                                                                                state, its label, the failure category label
+                                                                                and the message all come from
+                                                                                InspectionDeliveryStatus. The browser holds no
+                                                                                delivery vocabulary of its own, so a future server
+                                                                                change reaches this card with no React edit, and
+                                                                                this card can never invent a delivery verdict. */}
+                                                                            {deliveryMonitoringEnabled && card.delivery_monitoring && (
+                                                                                <div className="mt-1.5 rounded-md border border-slate-200/80 bg-slate-50/70 px-2 py-1.5 self-start w-full">
+                                                                                    <div className="flex items-center justify-between gap-2">
+                                                                                        <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${DELIVERY_STATE_STYLES[card.delivery_monitoring.state] || DELIVERY_STATE_STYLES.no_delivery_record}`}>
+                                                                                            {card.delivery_monitoring.label}
+                                                                                        </span>
+                                                                                        {card.delivery_monitoring.is_superseded === true && (
+                                                                                            <span
+                                                                                                className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-slate-100 text-slate-500 border-slate-300"
+                                                                                                title="A newer inspection round exists for this parcel."
+                                                                                            >
+                                                                                                Superseded
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+                                                                                        {card.delivery_monitoring.message}
+                                                                                    </p>
+                                                                                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-[10px] text-slate-500">
+                                                                                        {card.delivery_monitoring.inspector && (
+                                                                                            <span>
+                                                                                                Inspector:{" "}
+                                                                                                <span className="font-semibold text-slate-700">
+                                                                                                    {card.delivery_monitoring.inspector.name}
+                                                                                                </span>
+                                                                                            </span>
+                                                                                        )}
+                                                                                        <span>
+                                                                                            Attempts:{" "}
+                                                                                            <span className="font-semibold text-slate-700">
+                                                                                                {card.delivery_monitoring.attempt_count}
+                                                                                            </span>
+                                                                                        </span>
+                                                                                        {card.delivery_monitoring.last_attempt_at && (
+                                                                                            <span>Last attempt: {formatDate(card.delivery_monitoring.last_attempt_at)}</span>
+                                                                                        )}
+                                                                                        {card.delivery_monitoring.delivered_at && (
+                                                                                            <span>Delivered: {formatDate(card.delivery_monitoring.delivered_at)}</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    {card.delivery_monitoring.failure_label && (
+                                                                                        <p className="text-[10px] font-semibold text-red-700 mt-1">
+                                                                                            Category: {card.delivery_monitoring.failure_label}
+                                                                                        </p>
+                                                                                    )}
+                                                                                </div>
                                                                             )}
                                                                         </div>
 

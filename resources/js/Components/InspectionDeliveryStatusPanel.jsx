@@ -181,7 +181,7 @@ function RetryDeliveryButton({ inspectionId, round, queueing, onRetry }) {
  * correlation, no attempt detail, no remote task lifecycle, and no internal
  * retry blocker enum.
  */
-function DeliveryRoundRow({ inspection, queueingId, onRetry }) {
+function DeliveryRoundRow({ inspection, queueingId, onRetry, isAdmin, onToggleHistory, historyOpen, history }) {
     const delivery = inspection?.delivery;
     if (!delivery) return null;
 
@@ -194,6 +194,18 @@ function DeliveryRoundRow({ inspection, queueingId, onRetry }) {
     const canRetry = delivery.can_retry === true;
     const isQueueing = queueingId === inspection.inspection_id;
 
+    // LOOP 9D. Server-computed supersession, rendered verbatim. A superseded
+    // round stays VISIBLE: it is historical monitoring evidence, and hiding it
+    // would erase the record of an inspection that really happened. It is marked
+    // as non-actionable, never removed.
+    const isSuperseded = inspection.is_superseded === true;
+
+    // Attempt history is 9D Admin monitoring material. `attempts` is ABSENT
+    // unless the server sent it for this exact round, which it does only for an
+    // explicit Admin request. Absent is not the same as empty: an empty array
+    // means "requested, and there are none".
+    const historyLoaded = Array.isArray(inspection.attempts);
+
     return (
         <li className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 space-y-1.5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -201,6 +213,14 @@ function DeliveryRoundRow({ inspection, queueingId, onRetry }) {
                     Inspection Round {inspection.round}
                 </p>
                 <div className="flex items-center gap-2 shrink-0">
+                    {isSuperseded && (
+                        <span
+                            className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-300"
+                            title="A newer inspection round exists for this parcel."
+                        >
+                            Superseded
+                        </span>
+                    )}
                     {canRetry && (
                         <RetryDeliveryButton
                             inspectionId={inspection.inspection_id}
@@ -213,17 +233,32 @@ function DeliveryRoundRow({ inspection, queueingId, onRetry }) {
                 </div>
             </div>
 
+            {isSuperseded && (
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                    A newer inspection round exists for this parcel.
+                </p>
+            )}
+
             {delivery.message && (
                 <p className="text-[12px] leading-relaxed text-slate-500">
                     {delivery.message}
                 </p>
             )}
 
-            {/* Server-authored failure prose only. The raw category token is a
-                diagnostic detail for 9D Admin monitoring and is never shown. */}
+            {/* Server-authored failure prose. The Planning Officer surface shows
+                only the prose; LOOP 9D additionally surfaces the category NAME
+                for Admin, labelled server-side. Neither is a raw exception: the
+                category is a CHECK-constrained token and the prose is authored
+                copy, so no response body, SQL text or credential can appear. */}
             {delivery.failure_message && (
                 <p className="text-[12px] leading-relaxed text-rose-700">
                     {delivery.failure_message}
+                </p>
+            )}
+
+            {isAdmin && delivery.failure_label && (
+                <p className="text-[11px] font-semibold text-rose-700">
+                    Category: {delivery.failure_label}
                 </p>
             )}
 
@@ -253,7 +288,93 @@ function DeliveryRoundRow({ inspection, queueingId, onRetry }) {
                         Inspector: {inspectorName}
                     </span>
                 )}
+
+                {/* LOOP 9D: on-demand, Admin-only, per round. Nothing is
+                    fetched until this is expanded, so the ordinary panel load
+                    stays the same three-query reader with no attempt rows. */}
+                {isAdmin && (
+                    <button
+                        type="button"
+                        onClick={() => onToggleHistory(inspection.inspection_id)}
+                        aria-expanded={historyOpen}
+                        className="ml-auto text-[11px] font-semibold text-blue-700 hover:text-blue-800 underline underline-offset-2"
+                    >
+                        {historyOpen ? "Hide delivery history" : "Show delivery history"}
+                    </button>
+                )}
             </div>
+
+            {isAdmin && historyOpen && (
+                <div className="mt-1.5 rounded-lg border border-slate-200 bg-slate-50/70 p-2.5">
+                    {history?.loading && (
+                        <p className="text-[11px] text-slate-500">Loading delivery history...</p>
+                    )}
+                    {history?.error && (
+                        <p className="text-[11px] text-rose-700">{history.error}</p>
+                    )}
+                    {historyLoaded && !history?.loading && (
+                        inspection.attempts.length === 0 ? (
+                            <p className="text-[11px] text-slate-500">
+                                No delivery attempts have been recorded for this round.
+                            </p>
+                        ) : (
+                            <ol className="space-y-1.5">
+                                {inspection.attempts.map((a) => (
+                                    <li
+                                        key={a.attempt_id}
+                                        className="rounded border border-slate-200 bg-white px-2 py-1.5 text-[11px] text-slate-600"
+                                    >
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                            <span className="font-bold text-slate-700">
+                                                Attempt {a.attempt_number}
+                                            </span>
+                                            {/* Vocabulary comes from the server's closed
+                                                sets. The file has no map of its own, so a
+                                                future token can never render as undefined. */}
+                                            <span className="font-semibold text-slate-600">
+                                                {a.source_label || a.source}
+                                            </span>
+                                            <span
+                                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
+                                                    a.outcome === "delivered"
+                                                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                                        : a.outcome === "failed"
+                                                          ? "bg-red-50 text-red-700 border-red-300"
+                                                          : "bg-blue-50 text-blue-700 border-blue-300"
+                                                }`}
+                                            >
+                                                {a.outcome_label || a.outcome}
+                                            </span>
+                                        </div>
+                                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-500">
+                                            {a.attempted_at && <span>Attempted: {formatStamp(a.attempted_at)}</span>}
+                                            {/* NOT "Completed". That word is a FieldSync TASK
+                                                lifecycle value, and delivery history must never be
+                                                worded as task lifecycle. This is the instant the
+                                                attempt's own outcome was recorded. */}
+                                            {a.completed_at && <span>Outcome recorded: {formatStamp(a.completed_at)}</span>}
+                                            {a.created_at && <span>Row written: {formatStamp(a.created_at)}</span>}
+                                        </div>
+                                        {a.failure_label && (
+                                            <p className="mt-0.5 text-[10px] font-semibold text-rose-700">
+                                                Category: {a.failure_label}
+                                            </p>
+                                        )}
+                                        {/* Operational detail, deliberately not a
+                                            list column. An opaque queue payload UUID:
+                                            not a credential, not a secret. */}
+                                        {a.queue_job_uuid && (
+                                            <p className="mt-0.5 text-[10px] text-slate-400 break-all">
+                                                Queue job: {a.queue_job_uuid}
+                                            </p>
+                                        )}
+                                    </li>
+                                ))}
+                            </ol>
+                        )
+                    )}
+                </div>
+            )}
         </li>
     );
 }
@@ -268,6 +389,67 @@ export default function InspectionDeliveryStatusPanel({ applicationId }) {
     // same round, and the disabled button already prevents a double click.
     const [queueingId, setQueueingId] = useState(null);
     const [actionError, setActionError] = useState(null);
+
+    // ── LOOP 9D: on-demand attempt history, Admin only ─────────────────────
+    //
+    // The role comes from the Inertia `auth` prop the server already shares to
+    // every page, so this introduces no new identity channel. It only decides
+    // whether to OFFER a read-only disclosure; the server independently refuses
+    // the underlying request for any other role, so hiding the control is
+    // presentation, not the security boundary.
+    const isAdmin = usePage().props?.auth?.user?.role === "Admin";
+
+    // At most ONE round's history is requested at a time. The response is scoped
+    // server-side to a single named round, so this is a disclosure, never a bulk
+    // history load, and it cannot become an N+1 across rounds.
+    const [historyRoundId, setHistoryRoundId] = useState(null);
+    const [historyByRound, setHistoryByRound] = useState({});
+    const [historyState, setHistoryState] = useState({});
+
+    const toggleHistory = useCallback(
+        (roundId) => {
+            if (historyRoundId === roundId) {
+                setHistoryRoundId(null);
+                return;
+            }
+
+            setHistoryRoundId(roundId);
+            setHistoryState((prev) => ({ ...prev, [roundId]: { loading: true, error: null } }));
+
+            fetch(
+                `/applications/${encodeURIComponent(applicationId)}/delivery-status` +
+                    `?include_attempts=${encodeURIComponent(roundId)}`,
+                {
+                    credentials: "same-origin",
+                    headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+                }
+            )
+                .then((res) => {
+                    if (!res.ok) throw new Error("delivery history request failed");
+                    return res.json();
+                })
+                .then((payload) => {
+                    const round = (payload?.inspections || []).find(
+                        (i) => i.inspection_id === roundId
+                    );
+                    // Absent means the server withheld it; treat that as empty
+                    // rather than rendering a permanently open, blank panel.
+                    const attempts = Array.isArray(round?.attempts) ? round.attempts : [];
+                    setHistoryByRound((prev) => ({
+                        ...prev,
+                        [roundId]: { ...(round || {}), attempts },
+                    }));
+                    setHistoryState((prev) => ({ ...prev, [roundId]: { loading: false, error: null } }));
+                })
+                .catch(() => {
+                    setHistoryState((prev) => ({
+                        ...prev,
+                        [roundId]: { loading: false, error: "Delivery history could not be loaded." },
+                    }));
+                });
+        },
+        [applicationId, historyRoundId]
+    );
 
     // The 9C-3 success flash, consumed here so Applications/Show.jsx does not
     // have to change. Show.jsx renders no flash consumer, and the message is
@@ -461,14 +643,32 @@ export default function InspectionDeliveryStatusPanel({ applicationId }) {
                         )}
 
                         <ul className="space-y-2">
-                            {rounds.map((inspection) => (
-                                <DeliveryRoundRow
-                                    key={inspection.inspection_id}
-                                    inspection={inspection}
-                                    queueingId={queueingId}
-                                    onRetry={retry}
-                                />
-                            ))}
+                            {rounds.map((inspection) => {
+                                // The server-shaped round, plus the on-demand
+                                // history ONLY for the round that was asked for.
+                                // A fresh reload therefore behaves exactly as it
+                                // did before 9D: no attempt rows in the payload.
+                                const withHistory =
+                                    historyByRound[inspection.inspection_id]?.attempts
+                                        ? {
+                                              ...inspection,
+                                              attempts: historyByRound[inspection.inspection_id].attempts,
+                                          }
+                                        : inspection;
+
+                                return (
+                                    <DeliveryRoundRow
+                                        key={inspection.inspection_id}
+                                        inspection={withHistory}
+                                        queueingId={queueingId}
+                                        onRetry={retry}
+                                        isAdmin={isAdmin}
+                                        onToggleHistory={toggleHistory}
+                                        historyOpen={historyRoundId === inspection.inspection_id}
+                                        history={historyState[inspection.inspection_id]}
+                                    />
+                                );
+                            })}
                         </ul>
                     </>
                 )}

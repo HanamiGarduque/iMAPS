@@ -693,8 +693,6 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
 
     public function test_no_queue_correlation_or_diagnostic_material_is_exposed(): void
     {
-        $controller = $this->code($this->controllerSource());
-
         // Queue correlation, raw attempt detail, and remote failures are 9D
         // Admin monitoring material, not 9C-1 Planning Officer material.
         //
@@ -702,6 +700,29 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
         // reader SELECTS the local column to compute `can_retry`; what must
         // never happen is it becoming a RESPONSE FIELD, which is asserted
         // separately below as an array key.
+        //
+        // SCOPE CORRECTED 2026-09-30 (Loop 9D).
+        //
+        // This inspected the LIVE controller source, so it silently became a
+        // freeze on all future authorized work - the same defect class already
+        // corrected in Loop9c1DeliveryStatusReaderTest and again in
+        // Loop9c4RetryUiContractTest. It broke on 9D, which is the phase these
+        // fields were always reserved FOR: the comment directly above says so.
+        //
+        // The assertion is therefore made against the 9C-1 COMMIT's own
+        // controller, so it states exactly what it always meant: at 9C-1, no
+        // queue correlation and no raw attempt detail existed anywhere in the
+        // reader.
+        //
+        // The invariant that must survive is now asserted where it is actually
+        // meaningful, against live behavior, in
+        // Loop9dAdminDeliveryMonitoringContractTest: the DEFAULT reader response
+        // still carries no attempt history, no queue uuid and no free text for
+        // ANY viewer, and a Planning Officer can never obtain it.
+        $controller = $this->code(
+            (string) shell_exec('git show c52ad8d:app/Http/Controllers/InspectionDeliveryController.php')
+        );
+
         foreach ([
             'queue_job_uuid', 'attempt_number', 'safe_message',
             'failed_jobs', 'inspector_notes', 'signed_url',
@@ -713,12 +734,17 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
             );
         }
 
-        // As a response field it is still absolutely forbidden.
+        // As a response field it is still absolutely forbidden. This one is
+        // asserted on the LIVE controller, because it is a response-SHAPE
+        // invariant rather than a 9C-1-era fact, and 9D had no reason to relax
+        // it.
+        $live = $this->code($this->controllerSource());
+
         foreach (['handshake_key', 'role', 'is_active', 'email'] as $notAField) {
             $this->assertStringNotContainsString(
                 "'" . $notAField . "' =>",
-                $controller,
-                "'{$notAField}' must never be a response field of the 9C-1 reader."
+                $live,
+                "'{$notAField}' must never be a response field of the reader."
             );
         }
     }

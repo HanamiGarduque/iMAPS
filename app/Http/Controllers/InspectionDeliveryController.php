@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\InspectionDeliveryAttempt;
 use App\Models\SiteInspection;
 use App\Models\ZoningApplication;
 use App\Services\InspectionDeliveryRetryService;
@@ -54,7 +55,7 @@ class InspectionDeliveryController extends Controller
      * it is a `latestOfMany()` singular relation and would collapse an original
      * inspection and its reinspection into a single badge.
      */
-    public function status(int $id): JsonResponse
+    public function status(Request $request, int $id): JsonResponse
     {
         // Same read boundary as applications.show, so a 404 here means only
         // that the application does not exist - never that the caller lacks
@@ -73,6 +74,15 @@ class InspectionDeliveryController extends Controller
         // emits an explicit `['id' => ..., 'name' => ...]` object, so no
         // handshake key, role, active flag, queue uuid, supersession internal or
         // remote profile data can reach a browser. The query count is unchanged.
+        //
+        // LOOP 9D: `include_attempts` opts ONE named round into its full attempt
+        // history. It is off by default, so the ordinary read stays exactly the
+        // three queries it has always been. Only an Admin may ask for it; a
+        // Planning Officer is refused rather than silently served a different
+        // payload, because attempt history is 9D Admin monitoring material.
+        $attemptRoundId = $this->resolveAttemptHistoryRequest($request);
+        $includeAttempts = $attemptRoundId !== null;
+
         $rounds = $application->siteInspections()
             ->with(['inspector' => fn ($query) => $query->select('id', 'name', 'role', 'is_active', 'handshake_key')])
             ->withCount('deliveryAttempts')
@@ -104,6 +114,11 @@ class InspectionDeliveryController extends Controller
         // predicate, so "current round" means one thing on both sides.
         $latestRoundIdsByParcel = InspectionDeliveryRetryEligibility::latestRoundIdsByParcel($rounds);
 
+        // LOOP 9D: at most ONE extra query, and only when an Admin asked for one
+        // named round's history. Loading it here rather than per round is what
+        // keeps the disclosure on-demand instead of an N+1.
+        $attemptsByRound = $this->loadAttemptHistory($application, $attemptRoundId);
+
         return response()->json([
             'application_id' => (int) $application->id,
 
@@ -133,8 +148,102 @@ class InspectionDeliveryController extends Controller
             // label and message.
             'retry_actor_unavailable_reason' => InspectionDeliveryStatus::retryUnavailableReason($viewerRole, $ownerId, $viewerId),
 
-            'inspections' => $this->shapeRounds($rounds, $ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel),
+            'inspections' => $this->shapeRounds($rounds, $ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, $attemptsByRound),
         ]);
+    }
+
+    /**
+     * LOOP 9D: resolve an on-demand attempt-history request.
+     *
+     * Returns the requested round id, or NULL when no history was asked for.
+     * Throws 403 for a non-Admin viewer and 422 for a malformed value, so this
+     * can never widen the read boundary or become a client-controlled query.
+     */
+    private function resolveAttemptHistoryRequest(Request $request): ?int
+    {
+        if (! $request->filled('include_attempts')) {
+            return null;
+        }
+
+        // Attempt history is 9D Admin monitoring material. The Planning Officer
+        // surface stays exactly as 9C-1 shipped it.
+        abort_unless($request->user()?->role === 'Admin', 403);
+
+        $raw = $request->query('include_attempts');
+
+        abort_unless(is_numeric($raw) && (int) $raw > 0, 422, 'include_attempts must be a positive inspection id.');
+
+        return (int) $raw;
+    }
+
+    /**
+     * LOOP 9D: full attempt history for ONE round, oldest attempt first.
+     *
+     * Local PostgreSQL only. No Supabase call, no FieldSync call, so monitoring
+     * never depends on a device being online.
+     *
+     * Every column is selected explicitly. `safe_message` is omitted on purpose
+     * even though the recorder stores authored prose in it: the 9D contract
+     * authorizes the closed category vocabulary, and a free-text column is the
+     * one field on this table that could ever carry wording authored outside
+     * this codebase. The category, which is a CHECK-constrained token with a
+     * fixed label map, is the safe diagnostic signal.
+     *
+     * @return array<int, list<array<string, mixed>>> keyed by round id
+     */
+    private function loadAttemptHistory(ZoningApplication $application, ?int $roundId): array
+    {
+        if ($roundId === null) {
+            return [];
+        }
+
+        $belongsToApplication = $application->siteInspections()
+            ->whereKey($roundId)
+            ->exists();
+
+        // A round id belonging to another application must not read that
+        // application's history, and must not be distinguishable from a round
+        // that simply has no attempts.
+        abort_unless($belongsToApplication, 404);
+
+        $attempts = InspectionDeliveryAttempt::query()
+            ->where('site_inspection_id', $roundId)
+            ->orderBy('attempt_number')
+            ->get([
+                'id',
+                'site_inspection_id',
+                'attempt_number',
+                'source',
+                'outcome',
+                'failure_category',
+                'attempted_at',
+                'completed_at',
+                'created_at',
+                'queue_job_uuid',
+            ])
+            ->map(fn (InspectionDeliveryAttempt $attempt): array => [
+                'attempt_id'       => (int) $attempt->getKey(),
+                'attempt_number'   => (int) $attempt->attempt_number,
+                'source'           => (string) $attempt->source,
+                'source_label'     => InspectionDeliveryStatus::sourceLabel($attempt->source),
+                'outcome'          => (string) $attempt->outcome,
+                'outcome_label'    => InspectionDeliveryStatus::outcomeLabel($attempt->outcome),
+                'failure_category' => InspectionDeliveryStatus::failureCategory($attempt->failure_category),
+                'failure_label'    => InspectionDeliveryStatus::failureCategoryLabel($attempt->failure_category),
+                'attempted_at'     => $attempt->attempted_at?->toIso8601String(),
+                'completed_at'     => $attempt->completed_at?->toIso8601String(),
+                'created_at'       => $attempt->created_at?->toIso8601String(),
+                // Operational detail only. An opaque queue payload UUID, never a
+                // credential, and never a primary list column.
+                'queue_job_uuid'   => $attempt->queue_job_uuid,
+            ])
+            ->all();
+
+        // Keyed by round id so `shapeRounds()` attaches history to exactly the
+        // round that was requested. A round with zero attempts still gets an
+        // empty array, which is how the UI can say "no attempts recorded"
+        // instead of leaving the viewer guessing.
+        return [$roundId => $attempts];
     }
 
     /**
@@ -149,14 +258,29 @@ class InspectionDeliveryController extends Controller
         ?int $ownerId,
         ?int $viewerId,
         ?string $viewerRole,
-        array $latestRoundIdsByParcel
+        array $latestRoundIdsByParcel,
+        array $attempts = []
     ): array {
         $index = 0;
 
-        return $rounds->map(function (SiteInspection $round) use ($ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, &$index): array {
+        return $rounds->map(function (SiteInspection $round) use ($ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, &$index, $attempts): array {
             $index++;
+            $roundId = (int) $round->getKey();
 
-            return [
+            // LOOP 9D: server-computed supersession. This asks the SAME
+            // predicate `InspectionDeliveryRetryService` enforces, from the SAME
+            // already-built latest-round map, so "non-actionable because
+            // superseded" means exactly one thing in the reader and in the retry
+            // refusal. It is deliberately NOT derived in React: a browser
+            // inference here would be a second, disagreeable definition of which
+            // round is current.
+            $isSuperseded = InspectionDeliveryRetryEligibility::isSuperseded(
+                $roundId,
+                $round->parcel_id === null ? null : (int) $round->parcel_id,
+                $latestRoundIdsByParcel,
+            );
+
+            $row = [
                 // Stable identity first. A later round never replaces an
                 // earlier one; both are always returned.
                 'inspection_id'     => (int) $round->getKey(),
@@ -184,7 +308,23 @@ class InspectionDeliveryController extends Controller
                     $viewerRole,
                     $latestRoundIdsByParcel,
                 ),
+
+                // LOOP 9D. A superseded round stays VISIBLE and is never hidden:
+                // it is historical monitoring evidence. It is marked here so an
+                // Admin can tell "current, actionable" from "history" without
+                // opening anything, and so the marker can never be a client-side
+                // guess. Retry authority is unaffected and still refuses it.
+                'is_superseded' => $isSuperseded,
             ];
+
+            // LOOP 9D: present ONLY for the single round an Admin explicitly
+            // asked about. Absent (not null) for every other round, so a client
+            // cannot mistake "not requested" for "no history".
+            if (array_key_exists($roundId, $attempts)) {
+                $row['attempts'] = $attempts[$roundId];
+            }
+
+            return $row;
         })->all();
     }
 
@@ -224,6 +364,18 @@ class InspectionDeliveryController extends Controller
             // Present only for a recorded failure.
             'failure_category' => $isFailed
                 ? InspectionDeliveryStatus::failureCategory($round->last_delivery_failure_category)
+                : null,
+            // LOOP 9D: the closed category token with a server-authored human
+            // name, so an Admin can read the category without the browser
+            // inventing a label map. Deliberately named `failure_label` and not
+            // `failure_category_label`: the raw token is never sent here, only
+            // its readable name, and the field name says so.
+            //
+            // Never a raw exception: the category is CHECK-constrained to seven
+            // values and both the token and the name come from fixed authored
+            // tables.
+            'failure_label' => $isFailed
+                ? InspectionDeliveryStatus::failureCategoryLabel($round->last_delivery_failure_category)
                 : null,
             'failure_message' => $isFailed
                 ? InspectionDeliveryStatus::failureMessage($round->last_delivery_failure_category)

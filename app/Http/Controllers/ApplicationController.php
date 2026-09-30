@@ -16,6 +16,7 @@ use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
 use App\Services\SupabaseService;
 use App\Services\WorkAssignmentService;
+use App\Support\InspectionDeliveryStatus;
 use App\Support\InspectionSummary;
 use App\Support\InspectorTransferGuard;
 use App\Support\ReassignmentReasons;
@@ -47,6 +48,14 @@ class ApplicationController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function index(Request $request)
     {
+        // LOOP 9D: Admin aggregate delivery monitoring.
+        //
+        // The monitoring block and its filter are Admin-only. A Planning Officer
+        // must not be able to reach a half state where the list is filtered by a
+        // control it cannot see, so the parameter is ignored for every other
+        // role rather than half-applied.
+        $isAdminMonitoring = (Auth::user()?->role ?? null) === 'Admin';
+
         $query = ZoningApplication::query()
             // Admin/PO audit: the list showed no inspection context at all, so a
             // Planning Officer had to open every application to learn whether it
@@ -57,7 +66,15 @@ class ApplicationController extends Controller
             //   siteInspection.inspector -> human-readable inspector name
             //   site_inspections_count  -> round count (a 2nd row = reinspection)
             ->with(['parcels' => function ($q) {
-                $q->with(['siteInspection.inspector'])->withCount('siteInspections');
+                // LOOP 9D: the aggregate attempt count rides along as a
+                // sub-select on the already-loaded latest round, so delivery
+                // monitoring costs ZERO additional queries. Attempt ROWS are
+                // never loaded here: full history is on-demand, detail-level
+                // only, and loading it per list row is the N+1 this must not
+                // introduce.
+                $q->with([
+                    'siteInspection' => fn ($sq) => $sq->with('inspector')->withCount('deliveryAttempts'),
+                ])->withCount('siteInspections');
             }])
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->withCount('parcels')
@@ -130,7 +147,7 @@ class ApplicationController extends Controller
         // rather than a placeholder. Wording is owned by InspectionSummary so
         // the "never claim field progress from a local assignment" rule is
         // enforced in one testable place.
-        $applications->getCollection()->transform(function ($application) {
+        $applications->getCollection()->transform(function ($application) use ($isAdminMonitoring) {
             $line = null;
 
             foreach ($application->parcels as $parcel) {
@@ -148,6 +165,12 @@ class ApplicationController extends Controller
 
             $application->inspection_summary = $line;
 
+            // LOOP 9D. Present for Admin only, and NULL for every other role so
+            // the Planning Officer payload is byte-identical to what 9C shipped.
+            $application->delivery_monitoring = $isAdminMonitoring
+                ? $this->buildDeliveryMonitoring($application)
+                : null;
+
             return $application;
         });
 
@@ -157,7 +180,99 @@ class ApplicationController extends Controller
             'inspectors'      => $inspectors,
             'status_counts'   => $statusCounts,
             'applicant_counts' => $applicantCounts,
+            // LOOP 9D. Lets the browser render the filter without inventing the
+            // vocabulary, and states that the feature is Admin-only.
+            'delivery_monitoring' => [
+                'enabled' => $isAdminMonitoring,
+                'selected' => $isAdminMonitoring ? (string) $request->query('delivery_status', 'all') : 'all',
+                'states' => [
+                    ['value' => 'all', 'label' => 'All delivery states'],
+                    ['value' => 'no_delivery_record', 'label' => 'No delivery record'],
+                    ['value' => 'pending_delivery', 'label' => 'Pending delivery'],
+                    ['value' => 'delivered', 'label' => 'Delivered'],
+                    ['value' => 'delivery_failed', 'label' => 'Delivery failed'],
+                ],
+            ],
         ]);
+    }
+
+    /**
+     * LOOP 9D: the server-authored delivery monitoring line for one application.
+     *
+     * WHICH round this describes is a business decision, so it is made here and
+     * never in the browser: the application's MONITORING ROUND is the highest-id
+     * `site_inspections` row across all of its parcels. `site_inspections` stores
+     * no round number, so the primary key is the round chronology - the same fact
+     * `InspectionDeliveryRetryEligibility` and the existing `latestOfMany()`
+     * relation already use. The delivery filter below orders the identical way,
+     * so a row can never disagree with the filter that selected it.
+     *
+     * Entirely local PostgreSQL. No Supabase call, no FieldSync call, no device
+     * dependency, and no attempt rows are loaded.
+     */
+    private function buildDeliveryMonitoring($application): array
+    {
+        $round = null;
+
+        foreach ($application->parcels as $parcel) {
+            $candidate = $parcel->siteInspection;
+
+            if ($candidate !== null && ($round === null || (int) $candidate->id > (int) $round->id)) {
+                $round = $candidate;
+            }
+        }
+
+        // No round at all is a first-class monitoring answer, not a gap: the
+        // application has no delivery record because it was never inspected.
+        if ($round === null) {
+            return [
+                'inspection_id'    => null,
+                'parcel_id'        => null,
+                'state'            => InspectionDeliveryStatus::STATE_NO_RECORD,
+                'label'            => InspectionDeliveryStatus::label(InspectionDeliveryStatus::STATE_NO_RECORD),
+                'message'          => InspectionDeliveryStatus::message(InspectionDeliveryStatus::STATE_NO_RECORD),
+                'attempt_count'    => 0,
+                'last_attempt_at'  => null,
+                'delivered_at'     => null,
+                'failure_category' => null,
+                'failure_label'    => null,
+                'inspector'        => null,
+                'is_superseded'    => false,
+            ];
+        }
+
+        $state = InspectionDeliveryStatus::state($round->delivery_status);
+        $isFailed = $state === InspectionDeliveryStatus::STATE_FAILED;
+
+        return [
+            'inspection_id'    => (int) $round->id,
+            'parcel_id'        => $round->parcel_id === null ? null : (int) $round->parcel_id,
+            'state'            => $state,
+            'label'            => InspectionDeliveryStatus::label($state),
+            'message'          => InspectionDeliveryStatus::message($state),
+            'attempt_count'    => (int) ($round->delivery_attempts_count ?? 0),
+            'last_attempt_at'  => $round->last_delivery_attempt_at?->toIso8601String(),
+            'delivered_at'     => $round->delivered_at?->toIso8601String(),
+            // LOOP 9D authorizes Admin to see the closed category token. It is
+            // normalized and labelled server-side, so only a value from the
+            // fixed vocabulary can ever reach the browser.
+            'failure_category' => $isFailed
+                ? InspectionDeliveryStatus::failureCategory($round->last_delivery_failure_category)
+                : null,
+            'failure_label'    => $isFailed
+                ? InspectionDeliveryStatus::failureCategoryLabel($round->last_delivery_failure_category)
+                : null,
+            'inspector'        => $round->inspector === null
+                ? null
+                : ['id' => (int) $round->inspector->id, 'name' => $round->inspector->name],
+            // Always false HERE, and provably so rather than by omission: this is
+            // the highest-id round across every parcel of the application, so a
+            // newer round of the same parcel would itself be in `parcels` and
+            // would have won. The real supersession signal belongs on
+            // application detail, which enumerates EVERY round - see
+            // `InspectionDeliveryController::shapeRounds()`.
+            'is_superseded'    => false,
+        ];
     }
 // ─────────────────────────────────────────────────────────────────────────
     // CREATE — Show encode form
@@ -193,6 +308,63 @@ class ApplicationController extends Controller
                     ->orWhereRaw('LOWER(zoning_applications.reference_number) LIKE ?', [$search]);
             });
         }
+
+        // LOOP 9D: Admin aggregate delivery monitoring filter.
+        //
+        // ADMIN ONLY. The control is not rendered for any other role, so the
+        // parameter is ignored for them rather than silently filtering a list
+        // that shows no delivery column.
+        if ((Auth::user()?->role ?? null) !== 'Admin') {
+            return $query;
+        }
+
+        $requested = (string) $request->query('delivery_status', 'all');
+
+        // Closed vocabulary. An unrecognized value matches EVERYTHING rather than
+        // nothing, so a stale bookmark can never silently produce an empty
+        // registry that looks like "no delivery problems exist".
+        $filterable = [
+            InspectionDeliveryStatus::STATE_NO_RECORD,
+            InspectionDeliveryStatus::STATE_PENDING,
+            InspectionDeliveryStatus::STATE_DELIVERED,
+            InspectionDeliveryStatus::STATE_FAILED,
+        ];
+
+        if ($requested === 'all' || ! in_array($requested, $filterable, true)) {
+            return $query;
+        }
+
+        // THE MONITORING ROUND, in SQL. This is the identical rule the row data
+        // uses in `buildDeliveryMonitoring()`: the highest-id `site_inspections`
+        // row across the application's parcels. Ordering by the primary key is
+        // the same round chronology the rest of the codebase relies on, so the
+        // filter and the rendered row can never disagree about which round they
+        // are describing.
+        //
+        // A scalar subquery rather than a join: it needs no GROUP BY, so it does
+        // not collide with the eager loads and `withCount` sub-selects this list
+        // already carries, and it cannot multiply rows.
+        $monitoringRoundDelivery = <<<'SQL'
+            (SELECT si.delivery_status
+               FROM site_inspections si
+               JOIN parcels p ON p.id = si.parcel_id
+              WHERE p.zoning_application_id = zoning_applications.id
+              ORDER BY si.id DESC
+              LIMIT 1)
+            SQL;
+
+        if ($requested === InspectionDeliveryStatus::STATE_NO_RECORD) {
+            // ONE predicate covers both honest cases: the application has no
+            // inspection round at all (the subquery finds no row and yields
+            // NULL), or its newest round has never had delivery state recorded
+            // (the subquery yields NULL). Neither is "delivered", so neither may
+            // be presented as a delivery success.
+            $query->whereRaw("{$monitoringRoundDelivery} IS NULL");
+
+            return $query;
+        }
+
+        $query->whereRaw("{$monitoringRoundDelivery} = ?", [$requested]);
 
         return $query;
     }

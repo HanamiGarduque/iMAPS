@@ -762,7 +762,38 @@ class AdminPoPriorityClosureContractTest extends TestCase
     {
         $controller = $this->codeOf('app/Http/Controllers/ApplicationController.php');
 
-        $this->assertStringContainsString("with(['siteInspection.inspector'])->withCount('siteInspections')", $controller);
+        // LOOP 9D SCOPE CORRECTION, 2026-09-30.
+        //
+        // This asserted one exact eager-load STRING:
+        //     with(['siteInspection.inspector'])->withCount('siteInspections')
+        //
+        // 9D legitimately extended that same clause so the delivery monitoring line
+        // can read the latest round's delivery state and its aggregate attempt count
+        // without an extra query. Asserting the literal string therefore froze the
+        // shape rather than the meaning.
+        //
+        // What this test exists to protect is unchanged and is now asserted as
+        // FACTS, which is strictly stronger than matching one spelling: the latest
+        // round, its inspector and the round count must all still be eager-loaded,
+        // and the list must still never reach a remote.
+        $this->assertStringContainsString(
+            "'siteInspection'",
+            $controller,
+            'The list must still eager-load the latest inspection round per parcel.'
+        );
+
+        $this->assertStringContainsString(
+            "withCount('siteInspections')",
+            $controller,
+            'The list must still eager-load the per-parcel round count.'
+        );
+
+        $this->assertStringContainsString(
+            '->with(',
+            $controller,
+            'The round and inspector must still arrive by eager load, not per row.'
+        );
+
         $this->assertStringContainsString('InspectionSummary::line(', $controller);
 
         // The list must never reach Supabase / FieldSync for this summary.
@@ -772,6 +803,21 @@ class AdminPoPriorityClosureContractTest extends TestCase
 
         $this->assertStringNotContainsString('SupabaseService', $indexBody);
         $this->assertStringNotContainsString('field_jobs', $indexBody);
+
+        // LOOP 9D: the same remote-free guarantee for the monitoring block, which
+        // is the new part of index().
+        $monitoringStart = strpos($controller, 'private function buildDeliveryMonitoring');
+        $this->assertNotFalse($monitoringStart, 'The monitoring builder must exist.');
+
+        $monitoringBody = substr($controller, $monitoringStart, 2600);
+
+        foreach (['SupabaseService', 'Http::', 'PushInspectionToSupabase', 'dispatch('] as $remote) {
+            $this->assertStringNotContainsString(
+                $remote,
+                $monitoringBody,
+                "Delivery monitoring must stay local PostgreSQL. Found '{$remote}'."
+            );
+        }
     }
 
     public function test_parcel_exposes_all_rounds_without_changing_the_primary_relation(): void

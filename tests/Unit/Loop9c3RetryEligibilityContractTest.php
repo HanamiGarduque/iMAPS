@@ -51,6 +51,26 @@ class Loop9c3RetryEligibilityContractTest extends TestCase
         return (string) preg_replace('/\s+/', ' ', $text);
     }
 
+    /**
+     * Extract one method body from a class source, so a response-shape rule can
+     * be scoped to the method that actually builds that shape.
+     */
+    private function methodBody(string $source, string $signature): string
+    {
+        $start = strpos($source, $signature);
+
+        $this->assertNotFalse($start, "Method not found in source: {$signature}");
+
+        $rest = substr($source, $start + strlen($signature));
+
+        // The body ends at the next method declaration at class-member indent.
+        if (preg_match('/\n {4}(?:public|private|protected)\s+function\s/', $rest, $match, PREG_OFFSET_CAPTURE) === 1) {
+            return substr($rest, 0, $match[0][1]);
+        }
+
+        return $rest;
+    }
+
     private function round(int $id, ?int $parcelId, ?string $deliveryStatus = 'delivery_failed', bool $inspectorEligible = true): array
     {
         return [
@@ -444,13 +464,43 @@ class Loop9c3RetryEligibilityContractTest extends TestCase
         );
 
         // The response must never carry the internal eligibility inputs.
-        foreach (['handshake_key', 'is_active', 'queue_job_uuid', 'superseded'] as $forbidden) {
+        foreach (['handshake_key', 'is_active', 'superseded'] as $forbidden) {
             $this->assertStringNotContainsString(
                 "'" . $forbidden . "' =>",
                 $code,
                 "The reader must not expose {$forbidden} as a response field."
             );
         }
+
+        // LOOP 9D SCOPE CORRECTION, 2026-09-30.
+        //
+        // `queue_job_uuid` was on the list above. 9D is the phase that was always
+        // meant to expose attempt history, and the contract deliberately admits
+        // `queue_job_uuid` as operational detail inside an Admin-only, explicitly
+        // requested history. A blanket string ban therefore became a freeze on
+        // authorized work - the same defect class already corrected twice in this
+        // suite.
+        //
+        // The invariant that actually matters is NARROWER and is now asserted
+        // directly: queue correlation must never reach the per-round delivery
+        // block that EVERY viewer always receives. `shapeDelivery()` is the
+        // method that builds it, so the ban is scoped to that method instead of
+        // the whole file. Attempt-history reachability, the Admin-only gate and
+        // the "absent by default" rule are asserted against live behavior in
+        // Loop9dAdminDeliveryMonitoringContractTest.
+        $shapeDelivery = $this->statements($this->methodBody($this->controllerSource(), 'private function shapeDelivery'));
+
+        $this->assertStringContainsString(
+            "'attempt_count' =>",
+            $shapeDelivery,
+            'shapeDelivery must still expose the aggregate attempt count.'
+        );
+
+        $this->assertStringNotContainsString(
+            "'queue_job_uuid' =>",
+            $shapeDelivery,
+            'Queue correlation must never reach the per-round delivery block shown to every viewer.'
+        );
     }
 
     public function test_reader_does_not_add_a_per_round_query(): void
