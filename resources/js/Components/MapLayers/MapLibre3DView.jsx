@@ -4,6 +4,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { getLens, resolveLensValue, DIVERSITY_LENSES } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
+import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
 import useReducedMotion from "@/utils/useReducedMotion";
 import { loadBarangayBoundaries, resolveBarangayName } from "@/utils/mapData";
 
@@ -1140,10 +1141,7 @@ export default function MapLibre3DView({
                     style={{ backgroundColor: CANVAS }}
                 >
                     {loadState === "loading" ? (
-                        <div className="flex flex-col items-center gap-3">
-                            <div className="w-8 h-8 rounded-full border-2 border-slate-200 border-t-slate-900 animate-spin" />
-                            <span className="text-[11.5px] font-semibold text-slate-500">Building massing model…</span>
-                        </div>
+                        <MapSkeleton visible label="Building 3D model…" tone={CANVAS} />
                     ) : (
                         <div className="flex flex-col items-center gap-2 text-center px-6 max-w-xs">
                             <div className="w-8 h-8 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 font-bold">!</div>

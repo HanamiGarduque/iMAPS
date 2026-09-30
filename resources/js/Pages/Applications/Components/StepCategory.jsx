@@ -1,6 +1,7 @@
 // resources/js/Pages/Applications/Components/StepCategory.jsx
 import React from "react";
 import { Label, Input, Select, Textarea } from "./FormControls";
+import ParcelInspectionScheduler from "./ParcelInspectionScheduler";
 
 const ZONING_SUB_CLASSES = [
     {
@@ -64,6 +65,8 @@ export default function StepCategory({
     LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"],
     zoningMismatch = false,
     goToProperty,
+    setParcelField,
+    inspectors = [],
 }) {
     const activeTypes = form.application_stream === "amendment" ? AMENDMENT_TYPES : APPLICATION_TYPES;
     const hasVerifiedLot = (form.parcels || []).some((p) => p.is_verified);
@@ -232,6 +235,32 @@ export default function StepCategory({
                               ))}
                     </Select>
                     {errors.target_land_use_class && <p className="text-xs font-medium text-rose-500 mt-1">{errors.target_land_use_class}</p>}
+                </div>
+            )}
+
+            {/* Parcel evaluation decision (Approved / Needs Site Inspection / Declined), one per lot */}
+            {setParcelField && (form.parcels || []).length > 0 && (
+                <div className="pt-4 border-t border-slate-100">
+                    <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800">Parcel Evaluation</h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Record the evaluation decision for each lot.</p>
+                    <div className="space-y-3 mt-2">
+                        {(form.parcels || []).map((parcel, index) => (
+                            <div key={index} className="rounded-xl border border-slate-200 p-3">
+                                <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                                    <span className="font-bold text-slate-900">{parcel.parcel_code || `P-${String(index + 1).padStart(2, "0")}`}</span>
+                                    <span className="font-mono text-slate-600">{parcel.property_index_number || "No PIN"}</span>
+                                    {parcel.land_use_class && <span className="ml-auto text-slate-500">CLUP {parcel.land_use_class}</span>}
+                                </div>
+                                <ParcelInspectionScheduler
+                                    index={index}
+                                    parcel={parcel}
+                                    setParcelField={setParcelField}
+                                    inspectors={inspectors}
+                                    errors={errors}
+                                />
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
 

@@ -50,59 +50,75 @@ class SearchController extends Controller
 
     // ─────────────────────────────────────────────────────────────────────────
     // VERIFY PARCEL — GET /api/parcels/verify?code=...
-    // Looks up a parcel by TCT number or Tax Declaration number so the Permits
-    // & Status map layer can confirm a parcel exists and check its linked
-    // application (if any) before an applicant starts a new filing.
+    // Finds a parcel by TCT, Tax Declaration or Property Index Number. The
+    // cadastral tax map (land_parcels, the same source Step 1 of the
+    // application form uses) is searched first, so any titled lot in Rosario
+    // can be checked; parcels only recorded on an application are the
+    // fallback. Returns the lot outline, its CLUP 2030 zone and any
+    // application already filed on it.
     // ─────────────────────────────────────────────────────────────────────────
     public function verifyParcel(Request $request)
     {
         $code = trim((string) $request->query('code', ''));
+        $normalized = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $code));
 
-        if ($code === '') {
+        if ($normalized === '' || strlen($normalized) > 64) {
             return response()->json([
                 'found' => false,
-                'message' => 'A TCT or Tax Declaration number is required.',
+                'message' => 'Enter a TCT, Tax Declaration or Property Index Number.',
             ], 422);
         }
 
-        $normalized = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $code));
+        $cadastral = DB::selectOne(
+            "SELECT property_index_number, tct_number, tax_dec_number, lot_number, barangay,
+                    land_use_class, lot_area_sqm, owner_name, location_address, parcel_code,
+                    ST_Y(ST_PointOnSurface(geom)) AS latitude,
+                    ST_X(ST_PointOnSurface(geom)) AS longitude,
+                    ST_AsGeoJSON(geom) AS geometry
+             FROM public.land_parcels
+             WHERE UPPER(REGEXP_REPLACE(tct_number, '[^A-Za-z0-9]', '', 'g')) = ?
+                OR UPPER(REGEXP_REPLACE(tax_dec_number, '[^A-Za-z0-9]', '', 'g')) = ?
+                OR UPPER(REGEXP_REPLACE(property_index_number, '[^A-Za-z0-9]', '', 'g')) = ?
+             LIMIT 1",
+            [$normalized, $normalized, $normalized]
+        );
 
-        $parcel = Parcel::with('zoningApplication')
-            ->whereRaw("UPPER(REGEXP_REPLACE(tct_number, '[^A-Za-z0-9]', '', 'g')) = ?", [$normalized])
-            ->orWhereRaw("UPPER(REGEXP_REPLACE(tax_dec_number, '[^A-Za-z0-9]', '', 'g')) = ?", [$normalized])
-            ->latest('id')
-            ->first();
+        $matchParcel = function ($query) use ($normalized) {
+            $query->whereRaw("UPPER(REGEXP_REPLACE(tct_number, '[^A-Za-z0-9]', '', 'g')) = ?", [$normalized])
+                ->orWhereRaw("UPPER(REGEXP_REPLACE(tax_dec_number, '[^A-Za-z0-9]', '', 'g')) = ?", [$normalized])
+                ->orWhereRaw("UPPER(REGEXP_REPLACE(property_index_number, '[^A-Za-z0-9]', '', 'g')) = ?", [$normalized]);
+        };
+        $recorded = Parcel::with('zoningApplication')->where($matchParcel)->latest('id')->first();
 
-        if (!$parcel) {
+        if (!$cadastral && !$recorded) {
             return response()->json([
                 'found' => false,
                 'message' => "No parcel found for \"{$code}\".",
             ], 404);
         }
 
-        $application = $parcel->zoningApplication;
-        $clupZoneCode = $this->resolveClupZoneAt(
-            $parcel->latitude !== null ? (float) $parcel->latitude : null,
-            $parcel->longitude !== null ? (float) $parcel->longitude : null
-        );
+        $source = $cadastral ?? $recorded;
+        $lat = $source->latitude !== null ? (float) $source->latitude : null;
+        $lng = $source->longitude !== null ? (float) $source->longitude : null;
+        $application = $recorded?->zoningApplication;
 
         return response()->json([
             'found' => true,
             'parcel' => [
-                'id' => $parcel->id,
-                'parcel_code' => $parcel->parcel_code,
-                'tct_number' => $parcel->tct_number,
-                'tax_dec_number' => $parcel->tax_dec_number,
-                'lot_number' => $parcel->lot_number,
-                'barangay' => $parcel->barangay,
-                'land_use_class' => $parcel->land_use_class,
-                'clup_zone_code' => $clupZoneCode,
-                'lot_area_sqm' => $parcel->lot_area_sqm,
-                'latitude' => $parcel->latitude,
-                'longitude' => $parcel->longitude,
-                'owner_name' => $parcel->owner_name,
-                'location_address' => $parcel->location_address,
-                'property_index_number' => $parcel->property_index_number,
+                'parcel_code' => $source->parcel_code,
+                'tct_number' => $source->tct_number,
+                'tax_dec_number' => $source->tax_dec_number,
+                'property_index_number' => $source->property_index_number,
+                'lot_number' => $source->lot_number,
+                'barangay' => $source->barangay,
+                'land_use_class' => $source->land_use_class,
+                'clup_zone_code' => $this->resolveClupZoneAt($lat, $lng),
+                'lot_area_sqm' => $source->lot_area_sqm,
+                'latitude' => $lat,
+                'longitude' => $lng,
+                'owner_name' => $source->owner_name,
+                'location_address' => $source->location_address,
+                'geometry' => $cadastral?->geometry ? json_decode($cadastral->geometry, true) : null,
             ],
             'application' => $application ? [
                 'id' => $application->id,

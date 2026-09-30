@@ -1,22 +1,31 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
+import { getTrendsDemandColor } from '@/Components/Dashboard/LeafletMap';
+
+const formatWmape = (val) => {
+    const n = Number(val);
+    if (!Number.isFinite(n)) return '—';
+    return (n > 1 ? n.toFixed(1) : (n * 100).toFixed(1)) + '%';
+};
 
 export default function TrendsPanel({
     urbanGrowthData = null,
     activeQuarter = null,
     forecastMetrics = null,
     selectedBgy = null,
-    onClearBgy,
     onSelectBgy,
-    onLocateApp,
-    recent = [],
+    onHoverBgy = () => {},
     onForecastGenerated = null,
     activePins = [],
+    series = [],
+    loading = false,
+    activeIndex = 0,
+    onSelectQuarter = () => {},
 }) {
-    const isBgy = Boolean(selectedBgy && selectedBgy.name);
+    const isBgy = Boolean(selectedBgy?.name);
     const bgyName = selectedBgy?.name || '';
 
-    // File Upload & Intake State
+    // Model intake state
     const [selectedFile, setSelectedFile] = useState(null);
     const [isExecuting, setIsExecuting] = useState(false);
     const [intakeResult, setIntakeResult] = useState(() => {
@@ -28,617 +37,286 @@ export default function TrendsPanel({
     });
     const [intakeError, setIntakeError] = useState(null);
 
-    // Auto-execute default forecast on mount if no cached data exists
+    // Run the default forecast once if nothing is cached yet.
     useEffect(() => {
-        if (!intakeResult) {
-            handleExecuteForecast(true);
-        }
+        if (!intakeResult) handleExecuteForecast(true);
     }, []);
 
-    const displayHotspots = useMemo(() => {
-        return urbanGrowthData?.hotspots || [];
-    }, [urbanGrowthData]);
-
-    // Forecasted Demand per Barangay (Ranked) when in a forecast quarter
-    const forecastedHotspots = useMemo(() => {
-        if (!activeQuarter?.isForecast) return [];
-
-        let pinsToUse = [];
-        if (activePins && Array.isArray(activePins) && activePins.length > 0) {
-            pinsToUse = activePins;
-        } else if (intakeResult?.pins && Array.isArray(intakeResult.pins)) {
-            pinsToUse = intakeResult.pins.filter(p => {
-                if (p.year && p.quarter) {
-                    return p.year === activeQuarter.year && p.quarter === activeQuarter.quarter;
-                }
-                return true;
-            });
-        }
-
-        const countsMap = {};
-        const categoryMap = {};
-
-        pinsToUse.forEach(pin => {
-            const bName = (pin.barangay || 'Poblacion').trim();
-            countsMap[bName] = (countsMap[bName] || 0) + 1;
-            if (pin.target_land_use_class || pin.zoning_code) {
-                categoryMap[bName] = pin.target_land_use_class || pin.zoning_code;
-            }
+    // Ranking for the active quarter, counted from the same pins the map
+    // draws, so the list and the choropleth always agree.
+    const ranking = useMemo(() => {
+        const counts = {};
+        (activePins || []).forEach((pin) => {
+            const name = (pin.barangay || '').trim();
+            if (name) counts[name] = (counts[name] || 0) + 1;
         });
+        return Object.entries(counts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count);
+    }, [activePins]);
+    const rankingMax = Math.max(1, ...ranking.map((r) => r.count));
+    const quarterTotal = ranking.reduce((sum, r) => sum + r.count, 0);
 
-        const bgyNames = Object.keys(countsMap);
-        if (bgyNames.length === 0 && displayHotspots.length > 0) {
-            return displayHotspots.map((h, idx) => ({
-                rank: idx + 1,
-                name: h.name,
-                type: 'Forecasted Demand',
-                count: `${Math.max(1, Math.round((h.rank === 1 ? 12 : h.rank === 2 ? 9 : 15 - h.rank * 2)))} Predicted LC`,
-                color: h.color || '#2563eb',
-                bg: h.bg || '#dbeafe',
-                val: Math.max(1, 15 - h.rank * 2)
-            }));
-        }
+    // Change against the quarter before, when that quarter is known.
+    const previous = activeIndex > 0 ? series[activeIndex - 1] : null;
+    const deltaFor = (name) => {
+        if (!previous || previous.total === null) return null;
+        const key = name.trim().toLowerCase();
+        return (series[activeIndex]?.byBgy?.[key] || 0) - (previous.byBgy?.[key] || 0);
+    };
 
-        const categoryColors = {
-            'Commercial': { color: '#2563eb', bg: '#dbeafe', label: 'Commercial Demand' },
-            'Industrial': { color: '#d97706', bg: '#fef3c7', label: 'Industrial Growth' },
-            'Agro-industrial': { color: '#059669', bg: '#d1fae5', label: 'Agro-Ind Demand' },
-            'Residential': { color: '#7c3aed', bg: '#ede9fe', label: 'Residential Expansion' },
-        };
+    // The selected barangay tracked across every quarter on the timeline.
+    const bgyTrend = useMemo(() => {
+        if (!isBgy) return [];
+        const key = bgyName.trim().toLowerCase();
+        return series.map((q) => ({ ...q, value: q.total === null ? null : q.byBgy?.[key] || 0 }));
+    }, [series, isBgy, bgyName]);
+    const bgyTrendMax = Math.max(1, ...bgyTrend.map((q) => q.value || 0));
 
-        const sorted = Object.entries(countsMap)
-            .map(([name, count]) => {
-                const cat = categoryMap[name] || 'Commercial';
-                const style = categoryColors[cat] || { color: '#2563eb', bg: '#dbeafe', label: `${cat} Forecast` };
-                return {
-                    name,
-                    count: `${count} Predicted LC`,
-                    val: count,
-                    type: style.label,
-                    color: style.color,
-                    bg: style.bg
-                };
-            })
-            .sort((a, b) => b.val - a.val);
-
-        return sorted.map((item, idx) => ({
-            ...item,
-            rank: idx + 1
-        }));
-    }, [activeQuarter, activePins, intakeResult, displayHotspots]);
-
-    // Pagination state for Forecasted Demand ranking
-    const [forecastPage, setForecastPage] = useState(1);
-    const ITEMS_PER_PAGE = 5;
-
-    useEffect(() => {
-        setForecastPage(1);
-    }, [activeQuarter]);
-
-    const totalForecastPages = Math.ceil(forecastedHotspots.length / ITEMS_PER_PAGE) || 1;
-    const paginatedForecastedHotspots = useMemo(() => {
-        const start = (forecastPage - 1) * ITEMS_PER_PAGE;
-        return forecastedHotspots.slice(start, start + ITEMS_PER_PAGE);
-    }, [forecastedHotspots, forecastPage]);
-
-    // Historical applications fetched from DB (historical_data table) for the selected barangay
-    const bgyHistoricalRecords = useMemo(() => {
-        if (!isBgy || !bgyName) return [];
-        const targetName = bgyName.trim().toLowerCase();
-        const pinsByYear = urbanGrowthData?.historicalPins || {};
+    // Historical LC records for the selected barangay
+    const bgyRecords = useMemo(() => {
+        if (!isBgy) return [];
+        const target = bgyName.trim().toLowerCase();
         const records = [];
-
-        Object.keys(pinsByYear).forEach((year) => {
-            const yearPins = pinsByYear[year] || [];
-            yearPins.forEach((pin) => {
-                if ((pin.barangay || '').trim().toLowerCase() === targetName) {
-                    records.push(pin);
-                }
+        Object.values(urbanGrowthData?.historicalPins || {}).forEach((pins) => {
+            (pins || []).forEach((pin) => {
+                if ((pin.barangay || '').trim().toLowerCase() === target) records.push(pin);
             });
         });
-
         return records.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     }, [urbanGrowthData, isBgy, bgyName]);
 
-    // Pagination state for LC Applications (selected barangay)
-    const [bgyAppsPage, setBgyAppsPage] = useState(1);
-    const BGY_APPS_PER_PAGE = 3;
-
-    useEffect(() => {
-        setBgyAppsPage(1);
-    }, [selectedBgy, activeQuarter]);
-
-    const totalBgyAppsPages = Math.ceil(bgyHistoricalRecords.length / BGY_APPS_PER_PAGE) || 1;
-    const paginatedBgyHistoricalRecords = useMemo(() => {
-        const start = (bgyAppsPage - 1) * BGY_APPS_PER_PAGE;
-        return bgyHistoricalRecords.slice(start, start + BGY_APPS_PER_PAGE);
-    }, [bgyHistoricalRecords, bgyAppsPage]);
-
-    // Format metrics, defaulting to baseline metrics (MAE: 2.16, WMAPE: 30.2%)
-    const maeDisplay = useMemo(() => {
-        if (forecastMetrics && forecastMetrics.mae !== null && forecastMetrics.mae !== undefined) {
-            return forecastMetrics.mae.toFixed(2);
-        }
-        if (intakeResult?.metrics?.validation_mae) {
-            return Number(intakeResult.metrics.validation_mae).toFixed(2);
-        }
-        return '2.16';
-    }, [forecastMetrics, intakeResult]);
-
-    const wmapeDisplay = useMemo(() => {
-        if (forecastMetrics && forecastMetrics.wmape !== null && forecastMetrics.wmape !== undefined) {
-            const val = forecastMetrics.wmape;
-            return (val > 1 ? val.toFixed(1) : (val * 100).toFixed(1)) + '%';
-        }
-        if (intakeResult?.metrics?.validation_wmape) {
-            const val = Number(intakeResult.metrics.validation_wmape);
-            return (val > 1 ? val.toFixed(1) : (val * 100).toFixed(1)) + '%';
-        }
-        return '30.2%';
-    }, [forecastMetrics, intakeResult]);
-
-    const handleFileChange = (e) => {
-        if (e.target.files && e.target.files[0]) {
-            setSelectedFile(e.target.files[0]);
-            setIntakeError(null);
-        }
-    };
+    const mae = forecastMetrics?.mae ?? intakeResult?.metrics?.validation_mae;
+    const wmape = forecastMetrics?.wmape ?? intakeResult?.metrics?.validation_wmape;
 
     const handleExecuteForecast = async (isAutoRun = false) => {
         setIsExecuting(true);
         setIntakeError(null);
-
         try {
             const formData = new FormData();
-            if (selectedFile) {
-                formData.append('file', selectedFile);
-            }
+            if (selectedFile) formData.append('file', selectedFile);
 
             const response = await axios.post('/api/forecast/generate', formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
+                headers: { 'Content-Type': 'multipart/form-data' },
             });
 
-            if (response.data && response.data.status === 'success') {
+            if (response.data?.status === 'success') {
                 const resData = response.data.data;
                 setIntakeResult(resData);
                 try {
                     localStorage.setItem('imaps_forecast_data', JSON.stringify(resData));
                 } catch (e) {}
-                if (onForecastGenerated) {
-                    onForecastGenerated(resData);
-                }
-            } else {
-                if (!isAutoRun) {
-                    setIntakeError(response.data?.message || 'Failed to execute forecast.');
-                }
+                onForecastGenerated?.(resData);
+            } else if (!isAutoRun) {
+                setIntakeError(response.data?.message || 'Failed to run the forecast.');
             }
         } catch (err) {
             if (!isAutoRun) {
                 console.error('Forecast intake error:', err);
-                setIntakeError(err.response?.data?.message || 'Error running forecast model.');
+                setIntakeError(err.response?.data?.message || 'Error running the forecast model.');
             }
         } finally {
             setIsExecuting(false);
         }
     };
 
+    const isForecast = Boolean(activeQuarter?.isForecast);
     return (
-        <div className="flex flex-col gap-3 p-3 select-none">
-            {isBgy && (
-                <>
-                    <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs flex items-center justify-between">
-                        <div>
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 block">
-                                Barangay Focus Mode
-                            </span>
-                            <h3 className="text-sm font-black text-slate-900 mt-0.5">
-                                Brgy. {bgyName}
-                            </h3>
-                        </div>
-                        {onClearBgy && (
-                            <button
-                                type="button"
-                                onClick={onClearBgy}
-                                className="text-[10.5px] font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1 rounded-lg transition-colors cursor-pointer border border-slate-200/80 shrink-0"
-                                title="Return to Municipal Overview"
-                            >
-                                ✕ All Barangays
-                            </button>
-                        )}
+        <div className="flex-1 min-h-0 flex flex-col">
+            <div className="shrink-0 grid grid-cols-3 border-b border-slate-200">
+                {[
+                    { label: isForecast ? 'Projected LC' : 'LC filed', value: quarterTotal },
+                    { label: 'MAE', value: mae != null ? Number(mae).toFixed(2) : '—', title: 'Mean absolute error of the model on held-out quarters' },
+                    { label: 'WMAPE', value: wmape != null ? formatWmape(wmape) : '—', title: 'Weighted mean absolute percentage error' },
+                ].map((k, i) => (
+                    <div key={k.label} title={k.title} className={`px-3 py-2 ${i > 0 ? 'border-l border-slate-200' : ''}`}>
+                        <span className="block text-[18px] font-semibold tabular-nums leading-none text-slate-900">{k.value}</span>
+                        <span className="block text-[10.5px] text-slate-500 mt-1">{k.label}</span>
                     </div>
+                ))}
+            </div>
 
-                    {/* LC Applications for Selected Barangay */}
-                    {!activeQuarter?.isForecast && (
-                        <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2">
-                            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                                <div className="flex items-center gap-1.5">
-                                    <span className="w-2 h-2 rounded-full bg-blue-600" />
-                                    <h4 className="text-xs font-bold text-slate-800">
-                                        LC Applications
-                                    </h4>
-                                </div>
-                                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                                    {bgyHistoricalRecords.length} Record{bgyHistoricalRecords.length !== 1 ? 's' : ''}
-                                </span>
-                            </div>
-
-                            {paginatedBgyHistoricalRecords.length > 0 ? (
-                                <div className="space-y-2">
-                                    {paginatedBgyHistoricalRecords.map((item, idx) => {
-                                        const dateStr = item.created_at
-                                            ? new Date(item.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
-                                            : "—";
-
-                                        return (
-                                            <div
-                                                key={item.id || `${item.reference_number}-${idx}`}
-                                                className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 hover:border-blue-200 transition-all space-y-1.5"
-                                            >
-                                                <div className="flex items-center justify-between text-[10px]">
-                                                    <span className="font-mono font-bold text-blue-700 bg-blue-100/70 px-1.5 py-0.5 rounded border border-blue-200/50">
-                                                        {item.reference_number || 'FC-2026'}
-                                                    </span>
-                                                    <span className="font-mono text-slate-400 text-[9.5px]">
-                                                        {dateStr}
-                                                    </span>
-                                                </div>
-
-                                                <div>
-                                                    <h5 className="text-[11.5px] font-bold text-slate-900 leading-tight">
-                                                        {item.applicant_name || 'Locational Clearance Applicant'}
-                                                    </h5>
-                                                    {item.purpose && (
-                                                        <p className="text-[10.5px] text-slate-600 mt-0.5 line-clamp-2 leading-relaxed">
-                                                            {item.purpose}
-                                                        </p>
-                                                    )}
-                                                </div>
-
-                                                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 text-[10px]">
-                                                    <span className="font-semibold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
-                                                        🏷️ {item.target_land_use_class || item.zoning_code || 'Locational Clearance'}
-                                                    </span>
-                                                    {item.lot_area_sqm && (
-                                                        <span className="font-mono font-bold text-slate-500">
-                                                            📐 {item.lot_area_sqm} sqm
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <div className="text-center py-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                                    <p className="text-xs font-semibold text-slate-500">No clearance records on file</p>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">No clearance applications found for Brgy. {bgyName}</p>
-                                </div>
-                            )}
-
-                            {/* Pagination Controls */}
-                            {totalBgyAppsPages > 1 && (
-                                <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[10.5px]">
-                                    <button
-                                        type="button"
-                                        onClick={() => setBgyAppsPage(p => Math.max(p - 1, 1))}
-                                        disabled={bgyAppsPage === 1}
-                                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold cursor-pointer transition-colors flex items-center gap-1"
-                                    >
-                                        <span>◀</span> Previous
-                                    </button>
-                                    <span className="text-[10px] font-mono text-slate-500 font-bold">
-                                        {bgyAppsPage} / {totalBgyAppsPages}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setBgyAppsPage(p => Math.min(p + 1, totalBgyAppsPages))}
-                                        disabled={bgyAppsPage === totalBgyAppsPages}
-                                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold cursor-pointer transition-colors flex items-center gap-1"
-                                    >
-                                        Next <span>▶</span>
-                                    </button>
-                                </div>
-                            )}
+            {isBgy ? (
+                <>
+                    <div className="shrink-0 px-4 pt-2.5 pb-3 border-b border-slate-200">
+                        <div className="flex items-baseline mb-1.5">
+                            <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">LC per quarter · {bgyName}</h3>
+                            <span className="text-[10.5px] text-slate-400">Click a bar to view it</span>
                         </div>
-                    )}
+                        <div className="flex items-end gap-[2px] h-12">
+                            {bgyTrend.map((q, i) => {
+                                const known = q.value !== null;
+                                const selected = i === activeIndex;
+                                return (
+                                    <button
+                                        key={`${q.year}-${q.quarter}`}
+                                        type="button"
+                                        onClick={() => onSelectQuarter(i)}
+                                        title={`${q.label}${q.isForecast ? ' (forecast)' : ''}: ${known ? `${q.value} LC` : 'not loaded'}`}
+                                        aria-label={`${q.label}, ${known ? `${q.value} LC` : 'not loaded'}`}
+                                        className="flex-1 h-full flex items-end cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
+                                    >
+                                        <span
+                                            className={`block w-full rounded-t-[2px] ${known ? '' : 'border border-dashed border-slate-300'}`}
+                                            style={known
+                                                ? { height: `${Math.max(q.value ? 10 : 3, (q.value / bgyTrendMax) * 100)}%`, background: selected ? '#0b2a5b' : q.isForecast ? '#fd8d3c' : '#9fb1c9' }
+                                                : { height: '25%' }}
+                                        />
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <div className="shrink-0 flex items-baseline px-4 pt-2.5 pb-2">
+                        <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">LC records · {bgyName}</h3>
+                        <span className="text-[10.5px] text-slate-400 tabular-nums">{bgyRecords.length} on file</span>
+                    </div>
+                    <ul className="flex-1 min-h-0 overflow-y-auto border-t border-slate-200">
+                        {bgyRecords.length === 0 && (
+                            <li className="px-4 py-6 text-center text-[12px] text-slate-500">No locational clearance records for this barangay.</li>
+                        )}
+                        {bgyRecords.map((item, idx) => (
+                            <li key={item.id || `${item.reference_number}-${idx}`} className="px-4 py-2 border-b border-slate-100">
+                                <div className="flex items-baseline justify-between gap-2">
+                                    <span className="text-[12px] font-semibold text-slate-900 truncate">{item.applicant_name || 'Applicant'}</span>
+                                    <span className="text-[10.5px] tabular-nums text-slate-500 shrink-0">
+                                        {item.created_at ? new Date(item.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                                    </span>
+                                </div>
+                                <div className="text-[10.5px] text-slate-500 truncate">
+                                    <span className="font-mono">{item.reference_number || '—'}</span>
+                                    {' · '}{item.target_land_use_class || item.zoning_code || 'Locational clearance'}
+                                    {item.lot_area_sqm ? ` · ${item.lot_area_sqm} sqm` : ''}
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </>
+            ) : (
+                <>
+                    <div className="shrink-0 flex items-baseline px-4 pt-2.5 pb-2">
+                        <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">
+                            {isForecast ? 'Projected demand by barangay' : 'Filings by barangay'}
+                        </h3>
+                        <span className="text-[10.5px] text-slate-400">Click to open</span>
+                    </div>
+                    <ol className="flex-1 min-h-0 overflow-y-auto border-t border-slate-200" onMouseLeave={() => onHoverBgy(null)}>
+                        {loading && ranking.length === 0 && [0, 1, 2, 3, 4, 5].map((n) => (
+                            <li key={n} className="px-4 py-2 flex items-center gap-2 animate-pulse" aria-hidden="true">
+                                <span className="w-3 h-2.5 rounded-sm bg-slate-200" />
+                                <span className="flex-1">
+                                    <span className="block h-2.5 rounded-sm bg-slate-200" style={{ width: `${70 - n * 8}%` }} />
+                                    <span className="block h-1 mt-1.5 rounded-sm bg-slate-100" style={{ width: `${60 - n * 8}%` }} />
+                                </span>
+                                <span className="w-5 h-2.5 rounded-sm bg-slate-200" />
+                            </li>
+                        ))}
+                        {!loading && ranking.length === 0 && (
+                            <li className="px-4 py-6 text-center text-[12px] text-slate-500">
+                                {isForecast ? 'No forecast output for this quarter yet. Run the model below.' : 'No locational clearances were filed this quarter.'}
+                            </li>
+                        )}
+                        {ranking.map((r, i) => {
+                            const cls = getTrendsDemandColor(r.count);
+                            const delta = deltaFor(r.name);
+                            return (
+                                <li key={r.name}>
+                                    <button
+                                        type="button"
+                                        onClick={() => onSelectBgy?.(r.name)}
+                                        onMouseEnter={() => onHoverBgy(r.name)}
+                                        onFocus={() => onHoverBgy(r.name)}
+                                        className="w-full grid grid-cols-[20px_1fr_28px_auto] items-center gap-2 px-4 py-1.5 text-left hover:bg-slate-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b]"
+                                    >
+                                        <span className="text-[10.5px] tabular-nums text-slate-400">{i + 1}</span>
+                                        <span className="min-w-0">
+                                            <span className="block text-[12px] text-slate-800 truncate">{r.name}</span>
+                                            <span className="block h-1 mt-1 rounded-sm bg-slate-100">
+                                                <span className="block h-full rounded-sm" style={{ width: `${(r.count / rankingMax) * 100}%`, backgroundColor: cls.color, boxShadow: `inset 0 0 0 1px ${cls.stroke}` }} />
+                                            </span>
+                                        </span>
+                                        <span
+                                            className={`text-[10.5px] tabular-nums text-right ${delta > 0 ? 'text-[#b32a17]' : 'text-slate-400'}`}
+                                            title={previous ? `vs ${previous.label}` : undefined}
+                                        >
+                                            {delta === null || delta === 0 ? '' : `${delta > 0 ? '+' : '−'}${Math.abs(delta)}`}
+                                        </span>
+                                        <span className="text-[12px] font-semibold tabular-nums text-slate-900">{r.count}</span>
+                                    </button>
+                                </li>
+                            );
+                        })}
+                    </ol>
                 </>
             )}
 
-            {activeQuarter?.isForecast ? (
-                /* Forecasted Demand per Barangay (Ranked) */
-                <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                            <h4 className="text-xs font-bold text-slate-800">
-                                Forecasted Demand (Ranked)
-                            </h4>
-                        </div>
-                        <span className="text-[9.5px] font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
-                            {activeQuarter?.label || 'Forecast'}
-                        </span>
-                    </div>
-
-                    <div className="space-y-1">
-                        {paginatedForecastedHotspots.map((h) => {
-                            const isSelected = isBgy && bgyName.toLowerCase() === (h.name || '').toLowerCase();
-                            return (
-                                <div
-                                    key={h.rank || h.name}
-                                    onClick={() => onSelectBgy && onSelectBgy(h.name)}
-                                    className={`flex items-center gap-2 p-1.5 px-2 rounded-xl border transition-all cursor-pointer group ${
-                                        isSelected
-                                            ? "bg-blue-50 border-blue-300 shadow-2xs"
-                                            : "hover:bg-slate-50 border-slate-100 hover:border-blue-200"
-                                    }`}
-                                    title={`Click to center map on Brgy. ${h.name}`}
-                                >
-                                    <span
-                                        className={`text-[9px] font-black font-mono w-4 h-4 rounded-md flex items-center justify-center shrink-0 ${
-                                            h.rank === 1
-                                                ? "bg-blue-600 text-white"
-                                                : h.rank === 2
-                                                ? "bg-blue-100 text-blue-800"
-                                                : h.rank === 3
-                                                ? "bg-blue-50 text-blue-700"
-                                                : "bg-slate-100 text-slate-500"
-                                        }`}
-                                    >
-                                        {h.rank}
-                                    </span>
-
-                                    <span className="text-[11.5px] font-bold text-slate-800 flex-1 truncate group-hover:text-blue-700">
-                                        {h.name}
-                                    </span>
-
-                                    <span
-                                        className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                                        style={{ color: h.color, background: h.bg }}
-                                    >
-                                        {h.type}
-                                    </span>
-
-                                    <span className="text-[10px] text-blue-700 font-bold truncate max-w-[110px]" title={h.count}>
-                                        {h.count}
-                                    </span>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Pagination Controls */}
-                    {totalForecastPages > 1 && (
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[10.5px]">
-                            <button
-                                type="button"
-                                onClick={() => setForecastPage(p => Math.max(p - 1, 1))}
-                                disabled={forecastPage === 1}
-                                className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold cursor-pointer transition-colors flex items-center gap-1"
-                            >
-                                <span>◀</span> Previous
-                            </button>
-                            <span className="text-[10px] font-mono text-slate-500 font-bold">
-                                {forecastPage} / {totalForecastPages}
-                            </span>
-                            <button
-                                type="button"
-                                onClick={() => setForecastPage(p => Math.min(p + 1, totalForecastPages))}
-                                disabled={forecastPage === totalForecastPages}
-                                className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold cursor-pointer transition-colors flex items-center gap-1"
-                            >
-                                Next <span>▶</span>
-                            </button>
-                        </div>
-                    )}
-                </div>
-            ) : (
-                /* Development Corridors Ranked (From Backend) */
-                <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-amber-500" />
-                            <h4 className="text-xs font-bold text-slate-800">
-                                Development Corridors (Ranked)
-                            </h4>
-                        </div>
-                        <span className="text-[9px] font-mono text-slate-400">
-                            Click to Focus
-                        </span>
-                    </div>
-
-                    <div className="space-y-1">
-                        {displayHotspots.map((h) => {
-                            const isSelected = isBgy && bgyName.toLowerCase() === (h.name || '').toLowerCase();
-                            return (
-                                <div
-                                    key={h.rank || h.name}
-                                    onClick={() => onSelectBgy && onSelectBgy(h.name)}
-                                    className={`flex items-center gap-2 p-1.5 px-2 rounded-xl border transition-all cursor-pointer group ${
-                                        isSelected
-                                            ? "bg-blue-50 border-blue-300 shadow-2xs"
-                                            : "hover:bg-slate-50 border-slate-100 hover:border-blue-200"
-                                    }`}
-                                    title={`Click to center map on Brgy. ${h.name}`}
-                                >
-                                    <span
-                                        className={`text-[9px] font-black font-mono w-4 h-4 rounded-md flex items-center justify-center shrink-0 ${
-                                            h.rank === 1
-                                                ? "bg-amber-100 text-amber-800"
-                                                : h.rank === 2
-                                                ? "bg-slate-200 text-slate-700"
-                                                : h.rank === 3
-                                                ? "bg-amber-50 text-amber-700"
-                                                : "bg-slate-100 text-slate-500"
-                                        }`}
-                                    >
-                                        {h.rank}
-                                    </span>
-
-                                    <span className="text-[11.5px] font-bold text-slate-800 flex-1 truncate group-hover:text-blue-700">
-                                        {h.name}
-                                    </span>
-
-                                    <span
-                                        className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                                        style={{ color: h.color, background: h.bg }}
-                                    >
-                                        {h.type}
-                                    </span>
-
-                                    <span className="text-[10px] text-slate-500 font-medium truncate max-w-[110px]" title={h.count}>
-                                        {h.count}
-                                    </span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
-            {/* Forecasting Metrics Card */}
-            <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2">
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+            <details className="group shrink-0 border-t border-slate-200">
+                <summary className="flex items-center justify-between px-4 py-2.5 cursor-pointer list-none hover:bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+                    Model data
+                    <svg className="w-3.5 h-3.5 text-slate-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </summary>
+                <div className="px-4 pb-3.5 space-y-2">
+                    <p className="text-[11px] text-slate-500">
+                        The forecast is trained on historical zoning applications. Upload a CSV to retrain it on a different dataset.
+                    </p>
                     <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                        <h4 className="text-xs font-bold text-slate-800">
-                            Forecasting Metrics
-                        </h4>
-                    </div>
-                </div>
-                <div className="flex gap-5 items-center pt-0.5">
-                    <div className="flex flex-col">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">MAE</span>
-                        <span className="text-lg font-black text-slate-900">{maeDisplay}</span>
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">WMAPE</span>
-                        <span className="text-lg font-black text-blue-600">{wmapeDisplay}</span>
-                    </div>
-                    <div className="ml-auto text-right">
-                        <span className="text-[9.5px] text-slate-400 font-medium block">Spatial Model</span>
-                        <span className="text-[10px] text-slate-600 font-bold">Rosario, Batangas</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Historical Dataset Intake */}
-            <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs space-y-2.5">
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                        <h4 className="text-xs font-bold text-slate-800">
-                            Historical Dataset Intake
-                        </h4>
-                    </div>
-                </div>
-
-                <div className="space-y-2">
-                    <div className="border border-dashed border-slate-200 rounded-xl p-2.5 bg-slate-50/60 flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-slate-700">
-                                Active Dataset
-                            </span>
-                            <span className="text-[9px] text-slate-400 font-mono">
-                                CSV Format
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-2">
+                        <label
+                            htmlFor="historical-csv-file"
+                            className="flex-1 min-w-0 h-7 px-2 flex items-center text-[11.5px] bg-white border border-slate-300 rounded-[3px] cursor-pointer hover:bg-slate-50 truncate focus-within:ring-1 focus-within:ring-[#0b2a5b]"
+                        >
                             <input
                                 id="historical-csv-file"
                                 type="file"
                                 accept=".csv"
-                                onChange={handleFileChange}
-                                className="hidden"
+                                onChange={(e) => {
+                                    if (e.target.files?.[0]) {
+                                        setSelectedFile(e.target.files[0]);
+                                        setIntakeError(null);
+                                    }
+                                }}
+                                className="sr-only"
                             />
-                            <label
-                                htmlFor="historical-csv-file"
-                                className="flex-1 truncate text-[10.5px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 cursor-pointer hover:bg-slate-50 transition-colors shadow-2xs flex items-center gap-1.5"
-                                title="Click to upload custom historical CSV dataset"
+                            <span className="truncate">{selectedFile ? selectedFile.name : 'Default dataset (2021–2026)'}</span>
+                        </label>
+                        {selectedFile && (
+                            <button
+                                type="button"
+                                onClick={() => setSelectedFile(null)}
+                                className="h-7 px-2 text-[11px] text-slate-600 border border-slate-300 rounded-[3px] hover:bg-slate-50 cursor-pointer"
                             >
-                                <span className="text-blue-500">📁</span>
-                                <span className="truncate">
-                                    {selectedFile ? selectedFile.name : 'rosario_zoning_apps_2021_2026.csv'}
-                                </span>
-                            </label>
-                            {selectedFile && (
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedFile(null)}
-                                    className="text-[10px] text-slate-400 hover:text-slate-600 px-1.5 py-1 rounded"
-                                    title="Reset to default dataset"
-                                >
-                                    ✕
-                                </button>
-                            )}
-                        </div>
+                                Reset
+                            </button>
+                        )}
                     </div>
-
                     <button
                         type="button"
                         onClick={() => handleExecuteForecast(false)}
                         disabled={isExecuting}
-                        className={`w-full py-2 px-3 rounded-xl font-bold text-[11px] text-white flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer ${
-                            isExecuting
-                                ? 'bg-blue-400 cursor-not-allowed'
-                                : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.99]'
-                        }`}
+                        className="w-full h-7 rounded-[3px] text-[11.5px] font-semibold bg-[#0b2a5b] hover:bg-[#0e3574] text-white disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
                     >
-                        {isExecuting ? (
-                            <>
-                                <svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span>Running Spatial Model...</span>
-                            </>
-                        ) : (
-                            <>
-                                <span>Run Forecast Model</span>
-                            </>
-                        )}
+                        {isExecuting ? 'Running model…' : 'Run forecast model'}
                     </button>
+                    {intakeError && (
+                        <p role="alert" className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-[3px] px-2 py-1.5">{intakeError}</p>
+                    )}
+                    {intakeResult?.summary && (
+                        <dl className="grid grid-cols-3 gap-2 text-[11px] pt-1">
+                            {[
+                                ['Q3 2026', intakeResult.summary.q3_2026_total],
+                                ['Q4 2026', intakeResult.summary.q4_2026_total],
+                                ['Combined', intakeResult.summary.combined_total],
+                            ].map(([k, v]) => (
+                                <div key={k}>
+                                    <dt className="text-slate-500">{k}</dt>
+                                    <dd className="font-semibold tabular-nums text-slate-900">{v ?? '—'}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                    )}
                 </div>
-
-                {intakeError && (
-                    <div className="p-2.5 bg-rose-50 border border-rose-200/80 rounded-xl text-rose-700 text-[10.5px]">
-                        <p className="font-bold flex items-center gap-1">
-                            <span>⚠️</span> Forecast Error
-                        </p>
-                        <p className="mt-0.5 text-rose-600">{intakeError}</p>
-                    </div>
-                )}
-
-                {intakeResult && (
-                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5">
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-extrabold text-emerald-800 flex items-center gap-1">
-                                <span>✅</span> Forecast Model Output Active
-                            </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-[10px] pt-1">
-                            <div className="bg-white/80 p-1.5 rounded-lg border border-emerald-100">
-                                <span className="text-slate-500 font-bold block text-[9px] uppercase">Validation MAE</span>
-                                <span className="text-slate-900 font-black">{intakeResult.metrics?.validation_mae?.toFixed(3) || '2.155'}</span>
-                            </div>
-                            <div className="bg-white/80 p-1.5 rounded-lg border border-emerald-100">
-                                <span className="text-slate-500 font-bold block text-[9px] uppercase">Validation WMAPE</span>
-                                <span className="text-emerald-700 font-black">
-                                    {intakeResult.metrics?.validation_wmape ? (intakeResult.metrics.validation_wmape > 1 ? intakeResult.metrics.validation_wmape + '%' : (intakeResult.metrics.validation_wmape * 100).toFixed(1) + '%') : '30.2%'}
-                                </span>
-                            </div>
-                        </div>
-                        {intakeResult.summary && (
-                            <div className="text-[9.5px] text-emerald-900 font-medium pt-1 border-t border-emerald-200/60 flex items-center justify-between">
-                                <span>Q3 2026: <strong>{intakeResult.summary.q3_2026_total || 42}</strong></span>
-                                <span>Q4 2026: <strong>{intakeResult.summary.q4_2026_total || 92}</strong></span>
-                                <span>Combined: <strong className="text-emerald-700">{intakeResult.summary.combined_total || 134}</strong></span>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
+            </details>
         </div>
     );
 }

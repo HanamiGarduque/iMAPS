@@ -119,9 +119,7 @@ export function findRank(rankedList, name) {
 //
 // A lens binds one backend metric to a colour scale, a prism height, and the
 // copy that explains it, so the map, the legend and the side panel can never
-// drift apart. Both lenses read fields DashboardController already computes:
-//   mix   → diversity   (live Simpson index, permit-integrated)
-//   drift → variance    (live index − CLUP 2030 target index)
+// disagree. The mix lens reads the live Simpson index DashboardController computes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Prism heights in metres, kept low enough that the town reads as a massing
@@ -143,58 +141,6 @@ function toNumber(value, fallback = 0) {
     return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-// Flat diverging set for plan drift. Ordered high → low so `find(v >= band.min)`
-// resolves the same way DIVERSITY_TIERS does.
-//
-// The midpoint is a warm neutral, not a green. This scale was red/amber/green
-// until a colour-vision check showed `sprawl` and `on_target` collapsing to an
-// RGB distance of 43 under deuteranopia — the two most operationally opposite
-// states on the map becoming indistinguishable for roughly 8% of men. A
-// diverging scale's midpoint should be neutral anyway: saturated ends mean
-// "something is happening in this direction", and the middle means "nothing to
-// see here". Red ↔ neutral ↔ blue keeps the ends 96 apart under both
-// deuteranopia and protanopia.
-export const DRIFT_BANDS = [
-    {
-        id: "sprawl",
-        min: 0.05,
-        label: "Commercial Sprawl (> +0.05)",
-        shortLabel: "Sprawl",
-        fill: "#c0504d",
-        stroke: "#8c3936",
-        onFill: "#ffffff",
-        classification: "Unexpected Commercial Growth",
-        summary: "Permits show businesses are growing faster than the CLUP 2030 plan expected.",
-    },
-    {
-        id: "on_target",
-        min: -0.05,
-        label: "On Target (±0.05)",
-        shortLabel: "On Target",
-        fill: "#cfc9bd",
-        stroke: "#a49c8c",
-        onFill: "#0f172a",
-        classification: "Following the Plan",
-        summary: "Current land use is matching the CLUP 2030 plan. No action needed.",
-    },
-    {
-        id: "lagging",
-        min: -Infinity,
-        label: "Development Lagging (< −0.05)",
-        shortLabel: "Lagging",
-        fill: "#4a6fa5",
-        stroke: "#345080",
-        onFill: "#ffffff",
-        classification: "Slower Growth",
-        summary: "The area is less mixed than the plan expected — planned growth has not happened yet.",
-    },
-];
-
-function bandFor(bands, value) {
-    const v = toNumber(value);
-    return bands.find((b) => v >= b.min) || bands[bands.length - 1];
-}
-
 export const DIVERSITY_LENSES = [
     {
         id: "mix",
@@ -211,27 +157,6 @@ export const DIVERSITY_LENSES = [
         format: (value) => toNumber(value).toFixed(2),
         getBand: (value) => getDiversityTheme(value),
         getHeight: (value) => lerpHeight(clamp(toNumber(value), 0, 1)),
-    },
-    {
-        id: "drift",
-        label: "CLUP Plan Drift",
-        shortLabel: "Drift",
-        tabLabel: "Plan Drift",
-        metricLabel: "Variance vs CLUP 2030",
-        question: "Is permitting on the ground pulling away from the 2030 plan?",
-        caption: "Live mix minus the CLUP 2030 target mix. Positive means reality is diversifying ahead of the plan; negative means programmed growth has not arrived.",
-        heightNote: "Height = size of the gap · colour = its direction",
-        bands: DRIFT_BANDS,
-        domain: [-0.3, 0.3],
-        getValue: (stat) => toNumber(stat?.variance),
-        format: (value) => {
-            const v = toNumber(value);
-            return (v > 0 ? "+" : "") + v.toFixed(2);
-        },
-        getBand: (value) => bandFor(DRIFT_BANDS, value),
-        // Height encodes magnitude only — direction is carried by colour, so a
-        // badly lagging barangay stands as tall as a badly sprawling one.
-        getHeight: (value) => lerpHeight(clamp(Math.abs(toNumber(value)) / 0.3, 0, 1)),
     },
 ];
 
@@ -310,8 +235,7 @@ export function computeBandCounts(lensId, bgyStats) {
     return counts;
 }
 
-// Ranks every barangay by the active lens's metric. `drift` ranks by absolute
-// gap (worst offenders first, in either direction); `mix` ranks high → low.
+// Ranks every barangay by the lens's metric, high → low.
 export function rankByLens(lensId, bgyStats) {
     const lens = getLens(lensId);
     const rows = Object.entries(bgyStats || {})
@@ -322,6 +246,5 @@ export function rankByLens(lensId, bgyStats) {
         })
         .filter(Boolean);
 
-    const score = lensId === "drift" ? (r) => Math.abs(r.value) : (r) => r.value;
-    return rows.sort((a, b) => score(b) - score(a));
+    return rows.sort((a, b) => b.value - a.value);
 }
