@@ -4516,3 +4516,142 @@ Verification: `ParcelPointBridgeContractTest` 10 tests / 49 assertions PASS,
 including a negative control confirming the assertions fail against the previous
 geometry logic. Full Unit suite 556 tests PASS. A read-only proof on parcel 74
 produces `POINT(121.3146050 13.8325540)`, which `ST_X`/`ST_Y` both accept.
+
+---
+
+## LOOP 9C-5 - CONTROLLED RETRY E2E VERIFIED
+
+Verified 2026-09-30 on `loop9-delivery-handoff` at `8e343d9`. This is the first
+end-to-end proof that a Planning Officer retry, executed by a person through the
+real browser UI, reaches Supabase and FieldSync.
+
+### Fixture
+
+| Fact | Value |
+|---|---|
+| Reference | `APP-2026-00028` |
+| Application | 143 (`Petition for Rezoning`, `Technical Review`) |
+| Parcel | 75 (`P-01`, PIN `04-01-021-001-10-38-8` -> stored pin `121.2948460`, `13.8494510`) |
+| Inspection | 39, the sole and therefore current round for both application 143 and parcel 75 |
+| Planning Officer | user 4, Jyerine Desunia |
+| Site Inspector | user 26, Gemini Norawit Titicharoenrak |
+| Remote Gemini profile | `7abb9a75-8df1-491c-8677-de2da43af494` |
+| Pre-retry restore point | `20260930-203900_imaps_db_0921_before-loop9c5-gemini-retry.dump`, SHA-256 `DC094C80542E745A5BEDCD874DDBF783382A319A2BB09387E3F7F2C4F6875BFD`, `pg_restore --list` exit 0 |
+
+### The starting state was synthetic, and is recorded as such
+
+The initial NORMAL delivery of `APP-2026-00028` had already been verified
+successful before this test: the queue worker ran
+`App\Jobs\PushInspectionToSupabase` at 20:22:20 and finished `DONE` at 20:22:24,
+creating the Supabase application mirror, the parcel row and the `field_job`,
+and the task became visible to Gemini in FieldSync.
+
+That initial delivery happened BEFORE the Loop 9B recorder hotfix, so the
+recorder could not write and `site_inspections.delivery_status` correctly
+remained `NULL`. `NULL` was never retro-fitted.
+
+To obtain a retry-eligible starting state, ONE synthetic precondition was
+applied, with separate authorization, and nothing else was touched:
+
+```sql
+UPDATE site_inspections SET delivery_status = 'delivery_failed' WHERE id = 39;
+```
+
+`UPDATE 1`, one column, one row. No business field changed (`status` stayed
+`assigned`, `inspector_id` stayed 26). No fake attempt row, no fake failed job,
+no fabricated `last_delivery_attempt_at`, no fabricated `delivered_at`, and
+`last_delivery_failure_category` was left `NULL`.
+
+**This `delivery_failed` state was a controlled E2E precondition. It was not a
+naturally occurring bridge failure.** No infrastructure was broken to produce
+it. Supabase, credentials, handshake mapping, network, queue configuration and
+FieldSync were all healthy throughout.
+
+### Verified chain
+
+1. **Reader.** Through the real owning-Planning-Officer session,
+   `GET /applications/143/delivery-status` returned `retry_actor_authorized: true`,
+   an empty `retry_actor_unavailable_reason`, and for round 1
+   `delivery.state: delivery_failed`, `delivery.label: Delivery Failed`,
+   `delivery.can_retry: true`.
+2. **UI.** The Retry Delivery control renders ONLY when the server reports
+   `delivery.can_retry === true`, with no disabled placeholder. The page had to
+   be reloaded after the precondition for the control to exist at all; a page
+   loaded earlier shows no button, because the server was still reporting
+   `can_retry: false`. The Team Leader reloaded, confirmed the visible
+   `Delivery Failed` state, the `Retry Delivery` control and
+   `Gemini Norawit Titicharoenrak`, and clicked ONCE.
+3. **HTTP.** Exactly one browser-originated request, at **21:01:01**:
+   `POST /site-inspections/39/retry-delivery` with an empty payload. No
+   application id, parcel id, actor id, inspector id, delivery status or
+   delivery source is accepted from the client; the server derives all of them.
+4. **Request-side atomicity.** `DELIVERY_RETRY_QUEUED` audit row id 201 for
+   application 143, performed by user 4, at 21:01:02; the round moved
+   `delivery_failed` -> `pending_delivery` in the same transaction as the queue
+   insert. The HTTP request itself created no attempt row.
+5. **Worker.** Exactly one execution, source `planning_officer_retry`:
+   `RUNNING` 21:01:03, `6s DONE` 21:01:09. No failure.
+6. **Recorder (the reason 9C-5 was previously impossible).** One attempt row,
+   id 20, attempt_number 1, `source: planning_officer_retry`,
+   `outcome: delivered`, `failure_category: NULL`, `attempted_at` 21:01:03,
+   `completed_at` 21:01:09, `created_at` 21:01:03, `queue_job_uuid`
+   `85c40bbd-eab2-481d-80bb-73f10ae30a4e`. No `updated_at` column exists and
+   none was written; no `SQLSTATE 42703`.
+7. **Final local state.** `delivery_status: delivered`,
+   `last_delivery_attempt_at` 21:01:03, `delivered_at` 21:01:09,
+   `last_delivery_failure_category: NULL`. Not altered by hand.
+8. **Supabase idempotency.** The retry UPSERTed rather than duplicated. The
+   application mirror stayed exactly one (`4f2a5d18-86b5-4a87-8c6d-a9c443dbd4cf`),
+   parcel 75 exactly one (`ce341bfb-340d-425b-9c34-f08ab42b0a86`, geom still
+   `Point [121.294846, 13.849451]`), and the `field_job` exactly one and with
+   the SAME id `d5d68298-c1a9-475a-b5eb-77d7a6bcf5bb` it had from the initial
+   delivery. Gemini remained assigned. Remote totals were unchanged at 20 / 16 /
+   10. FieldSync-owned task lifecycle was preserved: the writer reads the
+   existing `field_jobs.status` and re-sends it, so a delivery retry can never
+   reset an inspector's progress.
+9. **FieldSync.** After one normal relaunch, Gemini's dashboard showed exactly
+   ONE active assignment, `APP-2026-00028`, `Alupay`, `Ralph Lauren Bautista`,
+   `ID: D5D68298` (matching the remote `field_job`), status `PENDING`. No second
+   task was created, and no lifecycle was reset.
+10. **No geometry regression.** `Argument to ST_Y() must have type POINT` did
+    not recur. `failed_jobs` stayed at 14, and the count of failures mentioning
+    `ST_Y` stayed at 2, both of them the pre-restart stale-worker evidence from
+    before the worker was restarted onto the corrected writer.
+
+### Delta accounting
+
+| Fact | Before | After |
+|---|---|---|
+| `site_inspections` 39 `delivery_status` | `NULL` | `delivered` |
+| `last_delivery_attempt_at` | `NULL` | 21:01:03 |
+| `delivered_at` | `NULL` | 21:01:09 |
+| `last_delivery_failure_category` | `NULL` | `NULL` |
+| `audit_trail` rows | 158 | **159** (+1 `DELIVERY_RETRY_QUEUED`) |
+| `inspection_delivery_attempts` | 6 | **7** (+1) |
+| `jobs` | 0 | 0 (inserted and consumed) |
+| `failed_jobs` | 14 | **14** (unchanged) |
+| `migrations` | 16 | **16** (unchanged) |
+| Remote applications / parcels / field jobs | 20 / 16 / 10 | **20 / 16 / 10** |
+
+**No schema change. No migration. No forward SQL.** The `delivery_failed`
+precondition and everything after it is E2E TEST DATA, not schema evolution.
+
+### Protected evidence
+
+Rounds 25-30 were untouched and re-verified by hash after the retry:
+their rows, their six existing `legacy_reconciliation` attempts, their audit
+rows, all non-fixture `site_inspections`, and all non-fixture `audit_trail`
+rows were all byte-identical to their pre-test values. The FieldSync repository
+was not modified.
+
+### Known limits, recorded not worked around
+
+- **Notification is not required and not proven.** iMAPS contains zero
+  OneSignal call sites, so the backend half of the push contract does not
+  exist. Task visibility after sync is the delivery proof.
+- **The precondition is synthetic.** A real `delivery_failed` is only produced
+  by `InspectionDeliveryRecorder::markAttemptFailed()` via the queue's terminal
+  `failed()` hook, which needs an actually failing delivery.
+- **The recorder's failure branch is still unexercised end to end.** This test
+  proves the SUCCESS branch of the recorder, which is the branch that was
+  proven broken by the `updated_at` defect.
