@@ -216,7 +216,6 @@ class InspectionDeliveryRecorder
                     'failure_category' => $failure['category'],
                     'safe_message' => $failure['message'],
                     'completed_at' => now(),
-                    'updated_at' => now(),
                 ]);
         });
     }

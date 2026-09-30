@@ -96,12 +96,39 @@ class InspectionDeliveryAttempt extends Model
      */
     public const CORRELATION_COLUMN = 'queue_job_uuid';
 
+    /**
+     * TIMESTAMP CONTRACT (Loop 9B recorder hotfix).
+     *
+     * `inspection_delivery_attempts` is deliberately created with `created_at`
+     * and WITHOUT `updated_at` (migration 2026_09_28_030000). This constant is
+     * what makes the model agree with that table.
+     *
+     * Why null instead of `public $timestamps = false`:
+     *   - Eloquent still owns and populates `created_at` on insert, which is the
+     *     contract the table declares (`useCurrent()`, nullable).
+     *   - Eloquent never emits an `updated_at` column in any INSERT or UPDATE.
+     *
+     * Why the table has no `updated_at` at all: an attempt row is created once
+     * and then transitioned at most once from `pending` to `delivered` or
+     * `failed`. Both meaningful instants are already stored explicitly and
+     * semantically - `attempted_at` when the dispatch began and `completed_at`
+     * when the outcome was finalized. An `updated_at` would duplicate
+     * `completed_at` and could only be written by the recorder, never by a
+     * request, so it carries no information the row does not already hold.
+     *
+     * Without this constant Eloquent emits `updated_at` on every write and the
+     * insert fails with `SQLSTATE 42703: column "updated_at" of relation
+     * "inspection_delivery_attempts" does not exist`, which silently degrades
+     * the whole recorder: the writer catches it, continues, and the round is
+     * delivered with NO attempt evidence and NO delivery summary.
+     */
+    public const UPDATED_AT = null;
+
     protected $casts = [
         'attempt_number' => 'integer',
         'attempted_at' => 'datetime',
         'completed_at' => 'datetime',
         'created_at' => 'datetime',
-        'updated_at' => 'datetime',
     ];
 
     /** The exact inspection round this attempt targets. */
