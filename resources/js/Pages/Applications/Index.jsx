@@ -7,7 +7,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// ── Status Configuration ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Status Configuration Ã¢â€â‚¬Ã¢â€â‚¬
 const STATUS_CONFIG = {
     Received: {
         dot: "bg-emerald-500",
@@ -94,6 +94,17 @@ const LAND_USE_BADGES = {
 const STATUSES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
 const APP_TYPES = ["Locational Clearance", "Zoning Certificate", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)", "Petition for Rezoning", "Petition for Reclassification"];
 const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"];
+// LOOP 9D: presentation ONLY, keyed by the server's state tokens. This map
+// chooses colors and nothing else: the state, the label, the message and the
+// failure-category label are all authored by InspectionDeliveryStatus on the
+// server. The browser holds no delivery vocabulary and no business predicate.
+const DELIVERY_STATE_STYLES = {
+    no_delivery_record: "bg-slate-100 text-slate-600 border-slate-300",
+    pending_delivery: "bg-blue-50 text-blue-700 border-blue-300",
+    delivered: "bg-emerald-50 text-emerald-700 border-emerald-300",
+    delivery_failed: "bg-red-50 text-red-700 border-red-300",
+};
+
 const ROSARIO_BARANGAYS = [
     "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
     "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", 
@@ -130,9 +141,9 @@ const SORT_OPTIONS = [
     { value: "oldest", label: "Oldest filing" },
     { value: "fee_desc", label: "Highest fee" },
     { value: "fee_asc", label: "Lowest fee" },
-    { value: "applicant_asc", label: "Applicant A–Z" },
-    { value: "applicant_desc", label: "Applicant Z–A" },
-    { value: "ref_asc", label: "Reference A–Z" },
+    { value: "applicant_asc", label: "Applicant AÃ¢â‚¬â€œZ" },
+    { value: "applicant_desc", label: "Applicant ZÃ¢â‚¬â€œA" },
+    { value: "ref_asc", label: "Reference AÃ¢â‚¬â€œZ" },
 ];
 
 const DATE_PRESETS = [
@@ -143,209 +154,7 @@ const DATE_PRESETS = [
     { label: "Custom Range", value: "custom" },
 ];
 
-// ── 10 Realistic Applications ──
-const SAMPLE_APPLICATIONS = [
-    {
-        id: 101,
-        reference_number: "LC-2026-0814",
-        applicant_name: "Batangas Agro-Industrial Corp.",
-        representative_name: "Atty. Eduardo Castillo",
-        contact_number: "0917-882-9012",
-        email: "operations@batangasagro.ph",
-        application_type: "Locational Clearance",
-        purpose: "Cold storage facility & processing plant with logistics loading bay",
-        land_use_class: "Agro-Industrial",
-        barangay: "San Carlos",
-        lot_number: "Lot 412-A",
-        tct_number: "TCT-058-202400918",
-        lot_area_sqm: "4500.00",
-        created_at: "2026-08-28T09:30:00Z",
-        assessment_fee: "18500.00",
-        or_number: "OR-7890123",
-        remarks: "Environmental clearance certificate submitted. Endorsed for technical evaluation.",
-        status: "Technical Review",
-    },
-    {
-        id: 102,
-        reference_number: "ZC-2026-0932",
-        applicant_name: "Rosario Heights Realty Dev.",
-        representative_name: "Engr. Maria Santos",
-        contact_number: "0920-554-1920",
-        email: "msantos@rosarioheights.com",
-        application_type: "Zoning Certificate",
-        purpose: "Medium-density residential subdivision phase 2 development",
-        land_use_class: "Residential",
-        barangay: "Poblacion C",
-        lot_number: "Lot 108",
-        tct_number: "TCT-058-202300451",
-        lot_area_sqm: "12500.00",
-        created_at: "2026-08-27T14:15:00Z",
-        assessment_fee: "12400.00",
-        or_number: "OR-7890124",
-        remarks: "Endorsed to Sangguniang Bayan committee on housing and land use.",
-        status: "Under Sangguniang Bayan",
-    },
-    {
-        id: 103,
-        reference_number: "DP-2026-0419",
-        applicant_name: "Prime Meridian Commercial Hub",
-        representative_name: "Arch. Dominic Velasquez",
-        contact_number: "0918-332-8811",
-        email: "dvelasquez@primemeridian.ph",
-        application_type: "Development Permit",
-        purpose: "Commercial complex & logistics terminal with parking arcade",
-        land_use_class: "Commercial",
-        barangay: "Namunga",
-        lot_number: "Lot 25-B",
-        tct_number: "TCT-058-202500892",
-        lot_area_sqm: "8200.00",
-        created_at: "2026-08-26T11:00:00Z",
-        assessment_fee: "35000.00",
-        or_number: "OR-7890125",
-        remarks: "Final assessment clearance approved. Application ready for release.",
-        status: "For Release",
-    },
-    {
-        id: 104,
-        reference_number: "LC-2026-0775",
-        applicant_name: "Southpoint Grain Silo Corp.",
-        representative_name: "Jonathan D. Perez",
-        contact_number: "0922-771-4091",
-        email: "jperez@southpointgrain.com",
-        application_type: "Locational Clearance",
-        purpose: "Post-harvest solar grain drying facility and silo depot",
-        land_use_class: "Agricultural",
-        barangay: "Quilib",
-        lot_number: "Lot 701",
-        tct_number: "TCT-058-202200114",
-        lot_area_sqm: "6300.00",
-        created_at: "2026-08-25T16:45:00Z",
-        assessment_fee: "8750.00",
-        or_number: "OR-7890126",
-        remarks: "Official locational clearance certificate issued to applicant.",
-        status: "Released",
-    },
-    {
-        id: 105,
-        reference_number: "SLUP-2026-0120",
-        applicant_name: "Batangas Green Power Systems",
-        representative_name: "Clarissa Ramos",
-        contact_number: "0919-445-6672",
-        email: "cramos@greenpower.ph",
-        application_type: "Preliminary Approval and Locational Clearance (PALC)",
-        purpose: "5MW ground-mounted solar utility substation installation",
-        land_use_class: "Special Use",
-        barangay: "Pinagsibaan",
-        lot_number: "Lot 14-E",
-        tct_number: "TCT-058-202600019",
-        lot_area_sqm: "22000.00",
-        created_at: "2026-08-24T10:20:00Z",
-        assessment_fee: "24600.00",
-        or_number: "OR-7890127",
-        remarks: "Initial application received. Queueing for technical evaluation review.",
-        status: "Received",
-    },
-    {
-        id: 106,
-        reference_number: "LC-2026-0562",
-        applicant_name: "Batangas Poultry & Feed Mills Inc.",
-        representative_name: "Ricardo G. Alcantara",
-        contact_number: "0917-550-9933",
-        email: "ralcantara@batangaspoultry.com",
-        application_type: "Locational Clearance",
-        purpose: "Automated broiler poultry farm & organic fertilizer processing unit",
-        land_use_class: "Agro-Industrial",
-        barangay: "Cahigam",
-        lot_number: "Lot 88",
-        tct_number: "TCT-058-202400331",
-        lot_area_sqm: "9500.00",
-        created_at: "2026-08-23T08:15:00Z",
-        assessment_fee: "15200.00",
-        or_number: "OR-7890128",
-        remarks: "Site inspection scheduled for odor and buffer-zone setback verification.",
-        status: "Technical Review",
-    },
-    {
-        id: 107,
-        reference_number: "DP-2026-0881",
-        applicant_name: "Sunrise Eco-Park & Resort Residences",
-        representative_name: "Arch. Patricia Lim",
-        contact_number: "0921-663-8822",
-        email: "plim@sunriseecopark.ph",
-        application_type: "Development Permit",
-        purpose: "Eco-tourism park with private villa subdivision residential strip",
-        land_use_class: "Special Use",
-        barangay: "Bagong Pook",
-        lot_number: "Lot 301-C",
-        tct_number: "TCT-058-202300891",
-        lot_area_sqm: "35000.00",
-        created_at: "2026-08-22T13:40:00Z",
-        assessment_fee: "42000.00",
-        or_number: "OR-7890129",
-        remarks: "Referred to Sangguniang Bayan committee on environment & tourism.",
-        status: "Under Sangguniang Bayan",
-    },
-    {
-        id: 108,
-        reference_number: "ZC-2026-0411",
-        applicant_name: "Dr. Antonio V. Hernandez Clinic",
-        representative_name: null,
-        contact_number: "0918-229-4410",
-        email: "ahernandez.md@gmail.com",
-        application_type: "Zoning Certificate",
-        purpose: "Outpatient surgical, dialysis & diagnostic laboratory facility",
-        land_use_class: "Institutional",
-        barangay: "Poblacion B",
-        lot_number: "Lot 52",
-        tct_number: "TCT-058-202100412",
-        lot_area_sqm: "1850.00",
-        created_at: "2026-08-21T15:10:00Z",
-        assessment_fee: "9500.00",
-        or_number: "OR-7890130",
-        remarks: "New application filed. Documents undergoing initial completeness check.",
-        status: "Received",
-    },
-    {
-        id: 109,
-        reference_number: "LC-2026-0929",
-        applicant_name: "Grand Rosario Fuel & Convenience Hub",
-        representative_name: "Ferdinand M. Tan",
-        contact_number: "0917-440-1928",
-        email: "ftan@grandfuel.ph",
-        application_type: "Locational Clearance",
-        purpose: "Service gasoline station with retail strip convenience arcade",
-        land_use_class: "Commercial",
-        barangay: "San Roque",
-        lot_number: "Lot 19-A",
-        tct_number: "TCT-058-202500122",
-        lot_area_sqm: "3200.00",
-        created_at: "2026-08-20T11:25:00Z",
-        assessment_fee: "21800.00",
-        or_number: "OR-7890131",
-        remarks: "Zoning requirements met. Certificate pending final release signature.",
-        status: "For Release",
-    },
-    {
-        id: 110,
-        reference_number: "SLUP-2026-0305",
-        applicant_name: "Calantas Telecommunications Tower Site",
-        representative_name: "Atty. Vincent Cruz",
-        contact_number: "0920-881-2299",
-        email: "legal@telecominfra.ph",
-        application_type: "Preliminary Approval and Locational Clearance (PALC)",
-        purpose: "48-meter 5G cellular transceiver tower structure and shelter",
-        land_use_class: "Special Use",
-        barangay: "Calantas",
-        lot_number: "Lot 99",
-        tct_number: "TCT-058-202400551",
-        lot_area_sqm: "800.00",
-        created_at: "2026-08-19T09:50:00Z",
-        assessment_fee: "16000.00",
-        or_number: "OR-7890132",
-        remarks: "Denied due to non-compliance with municipal residential radius clearance buffer.",
-        status: "Denied",
-    },
-];
+// Ã¢â€â‚¬Ã¢â€â‚¬ 10 Realistic Applications Ã¢â€â‚¬Ã¢â€â‚¬
 
 const getDocColor = (type) => {
     if (type === "Locational Clearance") return "#3B82F6"; // blue
@@ -415,7 +224,7 @@ function splitTypes(type) {
     return String(type || "").split(",").map((t) => t.trim()).filter(Boolean);
 }
 
-// ── Leaflet Custom Marker Icon Generator ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Leaflet Custom Marker Icon Generator Ã¢â€â‚¬Ã¢â€â‚¬
 const createCustomMarker = (status, refNo) => {
     const color = STATUS_CONFIG[status]?.markerColor || "#3b82f6";
     return L.divIcon({
@@ -441,7 +250,7 @@ function MapViewRecenter({ bounds }) {
     return null;
 }
 
-// ── Accessible, Keyboard-Friendly Dropdown Select Component ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Accessible, Keyboard-Friendly Dropdown Select Component Ã¢â€â‚¬Ã¢â€â‚¬
 function DropdownSelect({
     value,
     onChange,
@@ -694,7 +503,7 @@ function DropdownSelect({
     );
 }
 
-export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [] }) {
+export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [], applicant_counts = {}, delivery_monitoring = {} }) {
     const [clock, setClock] = useState("");
 
     // URL parameter synchronization
@@ -709,6 +518,18 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const [selectedCategory, setSelectedCategory] = useState(urlParams.get("category") || filters?.application_type || "");
     const [selectedLandUse, setSelectedLandUse] = useState(urlParams.get("land_use") || filters?.land_use_class || "");
     const [selectedBarangay, setSelectedBarangay] = useState(urlParams.get("barangay") || filters?.barangay || "");
+
+    // LOOP 9D: Admin aggregate delivery monitoring state.
+    //
+    // `enabled` is a SERVER fact, not a client role guess. The server sends the
+    // block only to Admin and only ever honours `delivery_status` for Admin, so
+    // honouring that flag keeps the control and the server in agreement instead
+    // of the browser offering a filter the server would ignore.
+    const deliveryMonitoringEnabled = delivery_monitoring?.enabled === true;
+    const [selectedDelivery, setSelectedDelivery] = useState(
+        urlParams.get("delivery_status") || delivery_monitoring?.selected || "all"
+    );
+
     const [selectedSort, setSelectedSort] = useState(urlParams.get("sort") || filters?.sort || "newest");
     const [pageSize, setPageSize] = useState(Number(urlParams.get("size")) || 10);
     const [currentPage, setCurrentPage] = useState(Number(urlParams.get("page")) || 1);
@@ -721,7 +542,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const [selectedIds, setSelectedIds] = useState([]);
     const [moreOpen, setMoreOpen] = useState(false);
 
-    // ── FILTER STATES ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ FILTER STATES Ã¢â€â‚¬Ã¢â€â‚¬
     const [dateRangePreset, setDateRangePreset] = useState(urlParams.get("date_preset") || "all");
     const [dateFrom, setDateFrom] = useState(urlParams.get("date_from") || filters?.date_from || "");
     const [dateTo, setDateTo] = useState(urlParams.get("date_to") || filters?.date_to || "");
@@ -751,7 +572,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
             const now = new Date();
             setClock(
                 now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
-                " · " +
+                " Ã‚Â· " +
                 now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })
             );
         };
@@ -787,12 +608,22 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         if (currentPage > 1) params.set("page", String(currentPage));
         if (pageSize !== 10) params.set("size", String(pageSize));
 
+        // LOOP 9D: the delivery filter is SERVER-side. It is pushed into the URL
+        // and applied by ApplicationController::applyRegistryFilters(); the
+        // browser never filters delivery state itself, because deciding which
+        // round an application is judged by is a business fact.
+        if (deliveryMonitoringEnabled && selectedDelivery && selectedDelivery !== "all") {
+            params.set("delivery_status", selectedDelivery);
+        } else {
+            params.delete("delivery_status");
+        }
+
         const queryStr = params.toString();
         const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
         window.history.replaceState({}, "", newUrl);
-    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, currentPage, pageSize]);
+    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, currentPage, pageSize, deliveryMonitoringEnabled, selectedDelivery]);
 
-    const isUsingPlaceholders = !applications || !Array.isArray(applications?.data) || applications.data.length === 0;
+
 
     const clearFilters = () => {
         setSearchInput("");
@@ -805,6 +636,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         setDateRangePreset("all");
         setDateFrom("");
         setDateTo("");
+        // LOOP 9D
+        if (deliveryMonitoringEnabled) setSelectedDelivery("all");
         setCurrentPage(1);
     };
 
@@ -831,19 +664,19 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     };
 
     const formatDate = (d) => {
-        if (!d) return "—";
+        if (!d) return "Ã¢â‚¬â€";
         try {
             const date = new Date(d);
-            return isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+            return isNaN(date.getTime()) ? "Ã¢â‚¬â€" : date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
         } catch {
-            return "—";
+            return "Ã¢â‚¬â€";
         }
     };
 
     const formatFee = (fee) => {
-        if (!fee || fee === "0" || fee === 0) return "—";
+        if (!fee || fee === "0" || fee === 0) return "Ã¢â‚¬â€";
         const num = Number(String(fee).replace(/[^0-9.-]+/g, ""));
-        return isNaN(num) || num === 0 ? "—" : "₱" + num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return isNaN(num) || num === 0 ? "Ã¢â‚¬â€" : "Ã¢â€šÂ±" + num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
     const isCorporateEntity = (name) => {
@@ -906,7 +739,19 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     };
 
     // Dynamic Status Count Helper
-    const fullDataset = isUsingPlaceholders ? SAMPLE_APPLICATIONS : (applications?.data || []);
+    // PRE-EXISTING DATA-INTEGRITY DEFECT, FIXED DURING THE LOOP 9 INTEGRATION.
+    //
+    // This dataset used to fall back to `SAMPLE_APPLICATIONS` Ã¢â‚¬â€ ten INVENTED
+    // records with fabricated applicant names, TCT numbers and phone numbers Ã¢â‚¬â€
+    // whenever the server returned no applications. An empty registry therefore
+    // displayed invented companies as if they were real filings, and the status
+    // counts below were computed from that fiction.
+    //
+    // The server payload is now the only source of truth. Zero applications
+    // renders zero rows and the honest empty state. This defect was present
+    // identically on the merge base, on origin/master and on the Loop 9 source;
+    // it is NOT a Loop 9 merge regression.
+    const fullDataset = applications?.data || [];
 
     const getStatusCount = (s) => {
         if (status_counts && Object.keys(status_counts).length > 0) {
@@ -927,7 +772,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
     // Filter & Sort Dataset
     const filteredList = useMemo(() => {
-        let list = isUsingPlaceholders ? [...SAMPLE_APPLICATIONS] : [...(applications?.data || [])];
+        let list = [...(applications?.data || [])];
 
         if (selectedStatus) {
             if (selectedStatus === "Released") {
@@ -981,7 +826,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         });
 
         return list;
-    }, [applications, isUsingPlaceholders, selectedStatus, selectedCategory, selectedLandUse, debouncedSearch, selectedBarangay, selectedSort, dateFrom, dateTo]);
+    }, [applications, selectedStatus, selectedCategory, selectedLandUse, debouncedSearch, selectedBarangay, selectedSort, dateFrom, dateTo]);
 
     // Client-side pagination calculation
     const totalPages = Math.max(1, Math.ceil(filteredList.length / pageSize));
@@ -1058,7 +903,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const forReleasePct = Math.round((forReleaseCount / totalCount) * 100);
     const releasedPct = Math.round((releasedCount / totalCount) * 100);
 
-    // ── Keyboard Navigation (/, ↑ / ↓, j / k, Enter, Space, Esc) ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Keyboard Navigation (/, Ã¢â€ â€˜ / Ã¢â€ â€œ, j / k, Enter, Space, Esc) Ã¢â€â‚¬Ã¢â€â‚¬
     useEffect(() => {
         const handleKeyDown = (e) => {
             const isInput = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
@@ -1108,7 +953,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [viewMode, paginatedRecords, focusedRowIndex, peekItem, dateFilterOpen]);
 
-    // ── Export CSV Handler ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Export CSV Handler Ã¢â€â‚¬Ã¢â€â‚¬
     const handleExportCSV = () => {
         const headers = ["Reference Number", "Applicant Name", "Representative", "Application Type", "Land Use Class", "Barangay", "Lot Area (sqm)", "TCT Number", "Assessment Fee (PHP)", "OR Number", "Status", "Date Filed", "Purpose"];
         const source = selectedIds.length > 0 ? filteredList.filter((app) => selectedIds.includes(rowKey(app))) : filteredList;
@@ -1138,7 +983,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         document.body.removeChild(link);
     };
 
-    // ── Print Official Transmittal Registry ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Print Official Transmittal Registry Ã¢â€â‚¬Ã¢â€â‚¬
     const handlePrintTransmittal = () => {
         window.print();
     };
@@ -1207,18 +1052,18 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                     <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
                         <div className="p-4 sm:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1580px] mx-auto w-full gap-3.5">
                             
-                            {/* ── PRINT-ONLY TRANSMITTAL HEADER ── */}
+                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ PRINT-ONLY TRANSMITTAL HEADER Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             <div id="print-transmittal-header" className="mb-4 text-center">
-                                <h2 className="text-sm font-bold uppercase tracking-widest text-slate-600">Republic of the Philippines · Province of Batangas</h2>
+                                <h2 className="text-sm font-bold uppercase tracking-widest text-slate-600">Republic of the Philippines Ã‚Â· Province of Batangas</h2>
                                 <h1 className="text-xl font-black text-slate-900">MUNICIPALITY OF ROSARIO</h1>
-                                <p className="text-xs font-semibold text-slate-500">Municipal Planning and Development Office (MPDO) · Zoning & Land Use Registry</p>
+                                <p className="text-xs font-semibold text-slate-500">Municipal Planning and Development Office (MPDO) Ã‚Â· Zoning & Land Use Registry</p>
                                 <div className="mt-2 border-b-2 border-slate-900 pb-1 flex justify-between text-xs text-slate-600">
                                     <span>Official Transmittal Summary</span>
                                     <span>Date Generated: {new Date().toLocaleDateString("en-PH")}</span>
                                 </div>
                             </div>
 
-                            {/* ── TOP HEADER SECTION ── */}
+                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ TOP HEADER SECTION Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 no-print">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
@@ -1291,7 +1136,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                 </div>
                             </div>
 
-                            {/* ── STATUS KPI TILES (also act as status filter) ── */}
+                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ STATUS KPI TILES (also act as status filter) Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-1.5 grid grid-cols-2 md:grid-cols-5 gap-1.5 shrink-0 no-print">
                                 {[
                                     { label: "All filings", status: "", count: getStatusCount(""), dot: "bg-slate-500" },
@@ -1331,13 +1176,13 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                 })}
                             </div>
 
-                            {/* ── MASTER WORKSPACE ROW (TABLE CARD + QUICK PREVIEW PANEL) ── */}
+                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ MASTER WORKSPACE ROW (TABLE CARD + QUICK PREVIEW PANEL) Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             <div className="flex-1 flex gap-3.5 min-h-0 no-print">
 
-                            {/* ── UNIFIED MASTER WORKSPACE CARD ── */}
+                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ UNIFIED MASTER WORKSPACE CARD Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             <div className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200/90 shadow-2xs flex flex-col min-h-0 overflow-hidden">
 
-                                {/* ── INTEGRATED FILTER TOOLBAR ── */}
+                                {/* Ã¢â€â‚¬Ã¢â€â‚¬ INTEGRATED FILTER TOOLBAR Ã¢â€â‚¬Ã¢â€â‚¬ */}
                                 <div className="px-3 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center gap-2 shrink-0">
                                     {/* Main Search Input */}
                                     <div className="relative w-full sm:w-56 shrink-0">
@@ -1410,7 +1255,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                 }`}
                                             >
                                                 {dateFrom || dateTo ? (
-                                                    <span>Filed: {formatDate(dateFrom)} – {formatDate(dateTo)}</span>
+                                                    <span>Filed: {formatDate(dateFrom)} Ã¢â‚¬â€œ {formatDate(dateTo)}</span>
                                                 ) : (
                                                     <>
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -1487,6 +1332,41 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
                                     {/* Sort + View switcher */}
                                     <div className="flex items-center gap-2 ml-auto">
+                                        {/* LOOP 9D: Admin aggregate delivery monitoring filter.
+                                            Rendered only when the SERVER enabled the feature, and
+                                            applied server-side, so the browser never decides which
+                                            round an application is judged by. */}
+                                        {deliveryMonitoringEnabled && (
+                                            <div className="min-w-[165px]">
+                                                <select
+                                                    value={selectedDelivery}
+                                                    onChange={(e) => {
+                                                        setSelectedDelivery(e.target.value);
+                                                        setCurrentPage(1);
+                                                        const next = new URLSearchParams(window.location.search);
+                                                        if (e.target.value && e.target.value !== "all") {
+                                                            next.set("delivery_status", e.target.value);
+                                                        } else {
+                                                            next.delete("delivery_status");
+                                                        }
+                                                        const qs = next.toString();
+                                                        router.visit(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, {
+                                                            preserveScroll: true,
+                                                        });
+                                                    }}
+                                                    title="Filter by FieldSync delivery state (Admin monitoring)"
+                                                    aria-label="Filter by FieldSync delivery state"
+                                                    className="h-9 w-full text-xs font-semibold px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 focus:outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 cursor-pointer"
+                                                >
+                                                    {(delivery_monitoring?.states || []).map((s) => (
+                                                        <option key={s.value} value={s.value}>
+                                                            {s.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+
                                         <DropdownSelect
                                             variant="ghost"
                                             value={selectedSort === "newest" ? "" : selectedSort}
@@ -1519,38 +1399,38 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     </div>
                                 </div>
 
-                                {/* ── ACTIVE FILTERS CHIP STRIP ── */}
+                                {/* Ã¢â€â‚¬Ã¢â€â‚¬ ACTIVE FILTERS CHIP STRIP Ã¢â€â‚¬Ã¢â€â‚¬ */}
                                 {hasActiveFilters && (
                                     <div className="flex items-center gap-1.5 flex-wrap px-3.5 py-2 bg-slate-50/70 border-b border-slate-100 text-xs shrink-0">
                                         <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Active:</span>
                                         {selectedStatus && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-xs font-semibold">
                                                 Status: {selectedStatus === "Released" ? "Issued / Ready" : selectedStatus}
-                                                <button onClick={() => setSelectedStatus("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
+                                                <button onClick={() => setSelectedStatus("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
                                             </span>
                                         )}
                                         {selectedCategory && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Type: {selectedCategory}
-                                                <button onClick={() => setSelectedCategory("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
+                                                <button onClick={() => setSelectedCategory("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
                                             </span>
                                         )}
                                         {selectedBarangay && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Brgy: {selectedBarangay}
-                                                <button onClick={() => setSelectedBarangay("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
+                                                <button onClick={() => setSelectedBarangay("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
                                             </span>
                                         )}
                                         {(dateFrom || dateTo) && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Date: {formatDate(dateFrom)} - {formatDate(dateTo)}
-                                                <button onClick={() => { setDateFrom(""); setDateTo(""); setDateRangePreset("all"); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
+                                                <button onClick={() => { setDateFrom(""); setDateTo(""); setDateRangePreset("all"); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
                                             </span>
                                         )}
                                         {debouncedSearch && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Query: "{debouncedSearch}"
-                                                <button onClick={() => { setSearchInput(""); setDebouncedSearch(""); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
+                                                <button onClick={() => { setSearchInput(""); setDebouncedSearch(""); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
                                             </span>
                                         )}
                                         <button
@@ -1562,7 +1442,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     </div>
                                 )}
 
-                            {/* ── DATA VIEW (LIST / FOLDERS) ── */}
+                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ DATA VIEW (LIST / FOLDERS) Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             {viewMode === "list" ? (
                                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                                     <div className="flex-1 overflow-auto custom-scrollbar">
@@ -1580,14 +1460,14 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     </th>
                                                     <th className="py-3 px-3">
                                                         <button type="button" onClick={() => handleHeaderSort("applicant")} className="uppercase tracking-wider hover:text-slate-800 cursor-pointer">
-                                                            Applicant{selectedSort === "applicant_asc" ? " ↑" : selectedSort === "applicant_desc" ? " ↓" : ""}
+                                                            Applicant{selectedSort === "applicant_asc" ? " Ã¢â€ â€˜" : selectedSort === "applicant_desc" ? " Ã¢â€ â€œ" : ""}
                                                         </button>
                                                     </th>
                                                     <th className="py-3 px-3">Application</th>
                                                     <th className="py-3 px-3">Barangay</th>
                                                     <th className="py-3 px-3">
                                                         <button type="button" onClick={() => handleHeaderSort("date")} className="uppercase tracking-wider hover:text-slate-800 cursor-pointer">
-                                                            Filed{selectedSort === "newest" ? " ↓" : selectedSort === "oldest" ? " ↑" : ""}
+                                                            Filed{selectedSort === "newest" ? " Ã¢â€ â€œ" : selectedSort === "oldest" ? " Ã¢â€ â€˜" : ""}
                                                         </button>
                                                     </th>
                                                     <th className="py-3 pr-4 w-10"><span className="sr-only">Open</span></th>
@@ -1602,10 +1482,10 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     const subline = types.length > 1
                                                         ? types.slice(1).join(", ")
                                                         : landUse
-                                                        ? `Land use · ${landUse}`
+                                                        ? `Land use Ã‚Â· ${landUse}`
                                                         : item.remarks?.trim()
-                                                        ? `Remark · ${item.remarks}`
-                                                        : "—";
+                                                        ? `Remark Ã‚Â· ${item.remarks}`
+                                                        : "Ã¢â‚¬â€";
                                                     const isSelected = peekItem && rowKey(peekItem) === key;
                                                     const isFocused = focusedRowIndex === idx;
 
@@ -1644,7 +1524,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
                                                             <td className="py-3 px-3">
                                                                 <div className="flex items-center gap-1.5">
-                                                                    <span className="text-[13px] text-slate-800 truncate max-w-[200px]">{types[0] || "—"}</span>
+                                                                    <span className="text-[13px] text-slate-800 truncate max-w-[200px]">{types[0] || "Ã¢â‚¬â€"}</span>
                                                                     {types.length > 1 && (
                                                                         <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded" title={types.slice(1).join(", ")}>
                                                                             +{types.length - 1}
@@ -1652,10 +1532,80 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                     )}
                                                                 </div>
                                                                 <p className="text-[11px] text-slate-400 truncate max-w-[220px]">{subline}</p>
+
+                                                                {/* RESTORED BY THE MASTER MERGE: the inspection line.
+                                                                    ApplicationController::index already computes a
+                                                                    locally-provable inspection_summary per
+                                                                    application and sends it with the payload; the
+                                                                    table simply stopped rendering it. It is shown
+                                                                    directly rather than behind a tooltip or hover
+                                                                    affordance, because it is a provable local fact
+                                                                    and must never be inferred by the browser. */}
+                                                                {item.inspection_summary && (
+                                                                    <p className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/70 rounded-md px-1.5 py-0.5 mt-1 inline-block leading-tight">
+                                                                        {item.inspection_summary}
+                                                                    </p>
+                                                                )}
+
+                                                                {/* LOOP 9D: Admin aggregate delivery monitoring.
+                                                                    Every string here is server-authored: the
+                                                                    state, its label, the failure category label
+                                                                    and the message all come from
+                                                                    InspectionDeliveryStatus. The browser holds no
+                                                                    delivery vocabulary of its own, so a future server
+                                                                    change reaches this row with no React edit, and
+                                                                    this row can never invent a delivery verdict. */}
+                                                                {deliveryMonitoringEnabled && item.delivery_monitoring && (
+                                                                    <div className="mt-1.5 rounded-md border border-slate-200/80 bg-slate-50/70 px-2 py-1.5 text-left">
+                                                                        <div className="flex items-center justify-between gap-2">
+                                                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${DELIVERY_STATE_STYLES[item.delivery_monitoring.state] || DELIVERY_STATE_STYLES.no_delivery_record}`}>
+                                                                                {item.delivery_monitoring.label}
+                                                                            </span>
+                                                                            {item.delivery_monitoring.is_superseded === true && (
+                                                                                <span
+                                                                                    className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-slate-100 text-slate-500 border-slate-300"
+                                                                                    title="A newer inspection round exists for this parcel."
+                                                                                >
+                                                                                    Superseded
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-[10px] text-slate-500 mt-1 leading-snug">
+                                                                            {item.delivery_monitoring.message}
+                                                                        </p>
+                                                                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-[10px] text-slate-500">
+                                                                            {item.delivery_monitoring.inspector && (
+                                                                                <span>
+                                                                                    Inspector:{" "}
+                                                                                    <span className="font-semibold text-slate-700">
+                                                                                        {item.delivery_monitoring.inspector.name}
+                                                                                    </span>
+                                                                                </span>
+                                                                            )}
+                                                                            <span>
+                                                                                Attempts:{" "}
+                                                                                <span className="font-semibold text-slate-700">
+                                                                                    {item.delivery_monitoring.attempt_count}
+                                                                                </span>
+                                                                            </span>
+                                                                            {item.delivery_monitoring.last_attempt_at && (
+                                                                                <span>Last attempt: {formatDate(item.delivery_monitoring.last_attempt_at)}</span>
+                                                                            )}
+                                                                            {item.delivery_monitoring.delivered_at && (
+                                                                                <span>Delivered: {formatDate(item.delivery_monitoring.delivered_at)}</span>
+                                                                            )}
+                                                                        </div>
+                                                                        {item.delivery_monitoring.failure_label && (
+                                                                            <p className="text-[10px] font-semibold text-red-700 mt-1">
+                                                                                Category: {item.delivery_monitoring.failure_label}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                )}
                                                             </td>
 
                                                             <td className="py-3 px-3 text-[13px] text-slate-700 whitespace-nowrap">
-                                                                {item.barangay || "—"}
+                                                                {item.barangay || "Ã¢â‚¬â€"}
                                                             </td>
 
                                                             <td className="py-3 px-3 whitespace-nowrap">
@@ -1700,8 +1650,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     {/* Table Footer with Summary & Pagination */}
                                     <div className="px-4 py-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 shrink-0">
                                         <span>
-                                            <strong className="text-slate-900 font-semibold">{startIndex}–{endIndex}</strong> of {filteredList.length} applications
-                                            {selectedIds.length > 0 && <span className="ml-2 text-blue-700 font-medium">· {selectedIds.length} selected</span>}
+                                            <strong className="text-slate-900 font-semibold">{startIndex}Ã¢â‚¬â€œ{endIndex}</strong> of {filteredList.length} applications
+                                            {selectedIds.length > 0 && <span className="ml-2 text-blue-700 font-medium">Ã‚Â· {selectedIds.length} selected</span>}
                                         </span>
 
                                         <div className="flex items-center gap-5">
@@ -1752,7 +1702,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
                                             <span
                                                 className="hidden lg:flex w-8 h-8 items-center justify-center rounded-lg text-slate-400"
-                                                title="Shortcuts: / search · ↑↓ or j/k move · Space preview · Enter open · Esc close"
+                                                title="Shortcuts: / search Ã‚Â· Ã¢â€ â€˜Ã¢â€ â€œ or j/k move Ã‚Â· Space preview Ã‚Â· Enter open Ã‚Â· Esc close"
                                                 aria-label="Keyboard shortcuts: slash to search, arrows to move, space to preview, enter to open, escape to close"
                                                 role="img"
                                             >
@@ -1765,7 +1715,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     </div>
                                 </div>
                             ) : (
-                                /* ── FOLDER ARCHIVE VIEW ── */
+                                /* Ã¢â€â‚¬Ã¢â€â‚¬ FOLDER ARCHIVE VIEW Ã¢â€â‚¬Ã¢â€â‚¬ */
                                 <div className="flex-1 overflow-y-auto p-6 relative">
                                     {selectedFolder && selectedApplicant ? (
                                         <>
@@ -1799,7 +1749,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     <div className="flex items-center gap-2 mt-0.5">
                                                         <h3 className="text-base font-bold text-slate-900 tracking-tight">{selectedApplicant}</h3>
                                                         <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/60 font-mono text-[11px] font-bold">
-                                                            {(applicantGroups[selectedApplicant] || []).length} Document{(applicantGroups[selectedApplicant] || []).length !== 1 ? 's' : ''}
+                                                            {(applicantGroups[selectedApplicant] || []).length} Application{(applicantGroups[selectedApplicant] || []).length !== 1 ? 's' : ''}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -1836,7 +1786,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                 {item.reference_number || `APP-${item.id}`}
                                                             </span>
                                                             <span className="text-[10px] text-slate-400 font-medium mt-1">
-                                                                {item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : "—"}
+                                                                {item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : "Ã¢â‚¬â€"}
                                                             </span>
                                                         </div>
                                                     ))}
@@ -2002,7 +1952,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                             )}
                         </div>
 
-                        {/* ── QUICK PREVIEW PANEL ── */}
+                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ QUICK PREVIEW PANEL Ã¢â€â‚¬Ã¢â€â‚¬ */}
                         {viewMode === "list" && peekItem && (
                             <aside id="quick-preview" aria-label="Quick preview" className="hidden lg:flex w-[300px] shrink-0 bg-white rounded-xl border border-slate-200/90 shadow-2xs flex-col min-h-0 overflow-hidden">
                                 <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -2103,17 +2053,17 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     {/* Details */}
                                     <dl className="p-4 grid grid-cols-[96px_1fr] gap-x-3 gap-y-2.5 text-xs">
                                         <dt className="text-slate-500">Application</dt>
-                                        <dd className="text-slate-900">{splitTypes(peekItem.application_type).join(", ") || "—"}</dd>
+                                        <dd className="text-slate-900">{splitTypes(peekItem.application_type).join(", ") || "Ã¢â‚¬â€"}</dd>
                                         <dt className="text-slate-500">Land use</dt>
-                                        <dd className="text-slate-900">{peekItem.target_land_use_class || peekItem.land_use_class || "—"}</dd>
+                                        <dd className="text-slate-900">{peekItem.target_land_use_class || peekItem.land_use_class || "Ã¢â‚¬â€"}</dd>
                                         <dt className="text-slate-500">Location</dt>
-                                        <dd className="text-slate-900">{peekItem.barangay ? `Brgy. ${peekItem.barangay}` : "—"}</dd>
+                                        <dd className="text-slate-900">{peekItem.barangay ? `Brgy. ${peekItem.barangay}` : "Ã¢â‚¬â€"}</dd>
                                         <dt className="text-slate-500">Assessment fee</dt>
                                         <dd className="font-mono font-semibold text-slate-900">{formatFee(peekItem.assessment_fee)}</dd>
                                         <dt className="text-slate-500">Filed</dt>
-                                        <dd className="text-slate-900">{formatDate(peekItem.created_at)} <span className="text-slate-400">· {timeAgo(peekItem.created_at)}</span></dd>
+                                        <dd className="text-slate-900">{formatDate(peekItem.created_at)} <span className="text-slate-400">Ã‚Â· {timeAgo(peekItem.created_at)}</span></dd>
                                         <dt className="text-slate-500">Remarks</dt>
-                                        <dd className="text-slate-900 break-words">{peekItem.remarks?.trim() || "—"}</dd>
+                                        <dd className="text-slate-900 break-words">{peekItem.remarks?.trim() || "Ã¢â‚¬â€"}</dd>
                                     </dl>
                                 </div>
 
@@ -2170,7 +2120,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                     </div>
                         </div>
 
-                    {/* ── END OF MAIN CONTENT ── */}
+                    {/* Ã¢â€â‚¬Ã¢â€â‚¬ END OF MAIN CONTENT Ã¢â€â‚¬Ã¢â€â‚¬ */}
                 </main>
             </div>
         </div>

@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="csrf-token" content="{{ csrf_token() }}">
-    
+    <!-- Loop 6: no cached CSRF meta tag. CSRF relies on the Laravel XSRF
+         cookie plus Axios' standard XSRF behavior. Re-adding a cached meta
+         token reintroduces the stale-token 419 failure. -->
     <!-- Updated icon link -->
     <link rel="icon" type="image/png" href="{{ asset('favicon.png') }}">
 

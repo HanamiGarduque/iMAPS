@@ -38,6 +38,7 @@ return [
         'url'         => env('SUPABASE_URL'),
         'anon_key'    => env('SUPABASE_ANON_KEY'),
         'service_key' => env('SUPABASE_SERVICE_KEY'),
+        'inspection_photo_signed_url_ttl' => (int) env('INSPECTION_PHOTO_SIGNED_URL_TTL', 300),
         // Alias used by PushInspectionToSupabase job (config('services.supabase.key'))
         'key'         => env('SUPABASE_SERVICE_KEY'),
     ],

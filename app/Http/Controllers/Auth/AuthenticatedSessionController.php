@@ -38,8 +38,47 @@ class AuthenticatedSessionController extends Controller
 
         $throttleKey = Str::transliterate(Str::lower($request->input('email')).'|'.$request->ip());
 
-        // 2. Attempt authentication
-        if (! Auth::attempt($request->only('email', 'password'), $request->boolean('remember'))) {
+        // 2. Attempt authentication.
+        //
+        // ── Loop 6 — Site Inspector iMAPS web access gate (Leader-approved) ──
+        // attemptWhen() proves the credentials FIRST: the installed
+        // SessionGuard runs this callback only after hasValidCredentials()
+        // passes and BEFORE any password rehash, session establishment, or
+        // remember-token handling can occur. Returning false fails the
+        // attempt itself (no login(), no rehash, no session, no users-row
+        // write). Invalid credentials never execute the callback, so they
+        // keep the ordinary invalid-credentials response below and never
+        // reveal the FieldSync role guidance to a caller whose password did
+        // not verify.
+        $siteInspectorRejected = false;
+
+        if (! Auth::attemptWhen(
+            $request->only('email', 'password'),
+            function ($attemptedUser) use (&$siteInspectorRejected) {
+                if ($attemptedUser instanceof User && $attemptedUser->role === 'Site Inspector') {
+                    $siteInspectorRejected = true;
+
+                    return false;
+                }
+
+                return true;
+            },
+            $request->boolean('remember')
+        )) {
+            if ($siteInspectorRejected) {
+                // Credentials verified + Site Inspector role: a role rejection,
+                // not a failed password. Clear the failure counter exactly as
+                // any credential-valid attempt always has, then reject with
+                // user-facing FieldSync guidance. No authenticated session was
+                // ever established, so there is nothing to tear down and no
+                // account state to restore.
+                RateLimiter::clear($throttleKey);
+
+                throw ValidationException::withMessages([
+                    'email' => 'Site Inspectors use FieldSync for site inspection activities.',
+                ]);
+            }
+
             RateLimiter::hit($throttleKey);
             $attempts = RateLimiter::attempts($throttleKey);
 
@@ -66,7 +105,7 @@ class AuthenticatedSessionController extends Controller
 
         // 4. On success: clear failures and update timestamp
         RateLimiter::clear($throttleKey);
-        
+
         $request->session()->regenerate();
 
         $authUser = Auth::user();

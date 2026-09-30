@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import { promptParcelApplication } from '@/utils/parcelHandoff.jsx';
 import { getZoneInfo } from '@/utils/clupZones';
 
-// ── Predictive Highlight Helper ──
+// â”€â”€ Predictive Highlight Helper â”€â”€
 const HighlightMatch = ({ text, query }) => {
     if (!query || !text) return <span>{text}</span>;
     // Escaped so a query like "T-(12" can't throw on an invalid pattern.
@@ -35,6 +35,12 @@ export default function Header({
     activePage,
 }) {
     // Dynamic navigation badge determination (Zero redundancy, automatically syncs with route)
+    //
+    // The badge represents the MODULE, not the subsection. All Applications,
+    // Technical Review and Drafts are sibling sections of the APPLICATIONS
+    // module, so every one of them resolves to the same parent badge; the page
+    // H1 names the subsection. Technical Review is deliberately NOT badged as
+    // its own top-level module.
     const page = usePage();
     const currentUrl = page?.url || (typeof window !== 'undefined' ? window.location.pathname : '');
     const currentComponent = page?.component || '';
@@ -44,8 +50,8 @@ export default function Header({
             const raw = activePage.trim();
             const normalized = raw.toLowerCase();
             if (normalized === 'audit' || normalized === 'audit-log' || normalized === 'audittrail') return 'AUDIT TRAIL';
-            if (normalized === 'tech-review' || normalized === 'technical-review') return 'TECHNICAL REVIEW';
-            if (normalized === 'drafts') return 'APPLICATIONS';
+            // Applications subsections share the parent module badge.
+            if (normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review') return 'APPLICATIONS';
             return raw.toUpperCase();
         }
 
@@ -60,6 +66,7 @@ export default function Header({
                 return 'MAPS';
             case 'applications':
             case 'drafts':
+            case 'technical-review':
                 return 'APPLICATIONS';
             case 'analytics':
                 return 'ANALYTICS';
@@ -71,8 +78,6 @@ export default function Header({
                 return 'SETTINGS';
             case 'users':
                 return 'USERS';
-            case 'technical-review':
-                return 'TECHNICAL REVIEW';
             case 'public-portal':
                 return 'PUBLIC PORTAL';
             case 'profile':
@@ -83,12 +88,11 @@ export default function Header({
             const comp = currentComponent.toLowerCase();
             if (comp.startsWith('dashboard')) return 'DASHBOARD';
             if (comp.startsWith('maps')) return 'MAPS';
-            if (comp.startsWith('applications') || comp.startsWith('drafts')) return 'APPLICATIONS';
+            if (comp.startsWith('applications') || comp.startsWith('drafts') || comp.startsWith('technicalreview')) return 'APPLICATIONS';
             if (comp.startsWith('analytics')) return 'ANALYTICS';
             if (comp.startsWith('audittrail') || comp.startsWith('audit')) return 'AUDIT TRAIL';
             if (comp.startsWith('settings')) return 'SETTINGS';
             if (comp.startsWith('users')) return 'USERS';
-            if (comp.startsWith('technicalreview')) return 'TECHNICAL REVIEW';
             if (comp.startsWith('publicportal')) return 'PUBLIC PORTAL';
             if (comp.startsWith('profile')) return 'PROFILE';
         }
@@ -102,7 +106,9 @@ export default function Header({
 
     const navigationBadge = getNavigationBadge();
 
-    const shouldShowSearch = showSearch || Boolean(onSelectLocation);
+    // Loop 6: internal search is an Admin/Planning Officer capability only â€”
+    // never shown to Site Inspectors (server middleware still enforces it).
+    const shouldShowSearch = (showSearch || Boolean(onSelectLocation)) && userRole !== 'Site Inspector';
     const [searchQuery, setSearchQuery] = useState('');
     const [searchFocused, setSearchFocused] = useState(false);
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -145,7 +151,7 @@ export default function Header({
         });
     };
 
-    // ── Predictive Search Effect ──
+    // â”€â”€ Predictive Search Effect â”€â”€
     useEffect(() => {
         if (!searchQuery.trim()) {
             setSuggestions([]);
@@ -311,7 +317,7 @@ export default function Header({
 
     return (
         <header className="h-14 bg-white border-b border-slate-200/90 shadow-[0_1px_4px_rgba(0,0,0,0.03)] flex items-center justify-between px-3.5 sm:px-5 shrink-0 z-[700] relative select-none">
-            {/* ── LEFT SECTION: Interactive Brand Capsule Menu Trigger ── */}
+            {/* â”€â”€ LEFT SECTION: Interactive Brand Capsule Menu Trigger â”€â”€ */}
             <div className="flex items-center h-full">
                 <button
                     id="imaps-brand-trigger"
@@ -389,7 +395,7 @@ export default function Header({
                 </button>
             </div>
 
-            {/* ── CENTER SECTION: Interactive Spatial Command Search Bar ── */}
+            {/* â”€â”€ CENTER SECTION: Interactive Spatial Command Search Bar â”€â”€ */}
             {shouldShowSearch ? (
                 <div className="hidden md:flex items-center flex-1 max-w-xs lg:max-w-md mx-4 relative" ref={searchRef}>
                     <div className="relative w-full group">
@@ -429,7 +435,7 @@ export default function Header({
                         ) : (
                             <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
                                 <span className="text-[10px] font-mono font-semibold text-slate-400 bg-white border border-slate-200/80 rounded px-1.5 py-0.5 shadow-2xs">
-                                    ⌘K
+                                    âŒ˜K
                                 </span>
                             </div>
                         )}
@@ -533,7 +539,7 @@ export default function Header({
                 <div className="flex-1" />
             )}
 
-            {/* ── RIGHT SECTION: PST Clock, Shortcuts, Notifications & Profile ── */}
+            {/* â”€â”€ RIGHT SECTION: PST Clock, Shortcuts, Notifications & Profile â”€â”€ */}
             <div className="flex items-center gap-1.5 sm:gap-2.5">
                 {/* Philippine Standard Time Display */}
                 {clock && (
@@ -712,7 +718,11 @@ export default function Header({
                             </div>
 
                             <div className="space-y-0.5">
-                               
+                                {/* Upstream (origin/master) intentionally removed the
+                                    "Account & Settings" link from the profile dropdown.
+                                    Loop 6 keeps that removal: /settings stays backend-protected
+                                    with role:Admin and is reachable through the Admin-only
+                                    Sidebar entry, so no equivalent header guard is needed. */}
 
                                 <button
                                     onClick={handleSignOutClick}
@@ -729,7 +739,7 @@ export default function Header({
                 </div>
             </div>
 
-            {/* ── KEYBOARD SHORTCUTS & HELP MODAL ── */}
+            {/* â”€â”€ KEYBOARD SHORTCUTS & HELP MODAL â”€â”€ */}
             {shortcutsModalOpen && (
                 <div 
                     className="fixed inset-0 z-[9999] bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
@@ -742,7 +752,7 @@ export default function Header({
                         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                             <div className="flex items-center gap-2.5">
                                 <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm border border-blue-200/60">
-                                    ⌨
+                                    âŒ¨
                                 </div>
                                 <div>
                                     <h3 className="text-sm font-bold text-slate-900">Spatial Keyboard Shortcuts</h3>
@@ -763,7 +773,7 @@ export default function Header({
                             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
                                 <span className="text-slate-800 font-semibold">Quick Command Search</span>
                                 <div className="flex gap-1 font-mono font-bold text-[11px]">
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">⌘ / Ctrl</kbd>
+                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">âŒ˜ / Ctrl</kbd>
                                     <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">K</kbd>
                                 </div>
                             </div>
