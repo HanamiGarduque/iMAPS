@@ -976,3 +976,279 @@ manufacture them.
 
 **Next: 9C-3 - Planning Officer Technical Retry Service + POST Action.** Not
 started. 9C is NOT complete.
+
+---
+
+## 22. `notifications` table - 2026-10-01 (PLANNED / **NOT APPLIED**)
+
+Forward SQL: `database/sql/2026_10_01_create_notifications_table_for_0921_forward.sql`
+
+**STATUS: PLANNED / NOT APPLIED. Awaiting explicit user DB approval.**
+Nothing in this section has been executed. The canonical database is unchanged.
+
+### 22.1 Why
+
+`App\Models\AppNotification` declares `protected $table = 'notifications'`.
+That table does **not** exist in the canonical 0921 database, so the model and
+its whole read surface raise:
+
+```
+SQLSTATE[42P01]: Undefined table: 7
+ERROR:  relation "notifications" does not exist
+```
+
+This is a **pre-existing master-side schema inconsistency**, not something the
+post-Loop 9 diagnostics work introduced. It is recorded here because the
+"Admin -> Notify Planning Officers" diagnostic action is blocked on it, and
+because six already-shipped production features are already broken by it.
+
+The repository migration `2026_09_27_000000_create_notifications_table.php` is
+present but was never applied to canonical (section 22.6).
+
+### 22.2 Table contract
+
+Identical to the shipped migration. Reproduced rather than "improved", so the
+live table and the repository migration cannot diverge.
+
+| Column | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `id` | `bigserial` | NO | sequence | PRIMARY KEY |
+| `user_id` | `bigint` | YES | none | FK -> `users(id)` `ON DELETE CASCADE` |
+| `title` | `varchar(255)` | NO | none | |
+| `message` | `text` | NO | none | |
+| `type` | `varchar(255)` | NO | `'system_alert'` | no CHECK - see 22.4 |
+| `action_url` | `varchar(255)` | YES | none | relative in-app path only |
+| `is_read` | `boolean` | NO | `false` | |
+| `read_at` | `timestamp(0)` | YES | none | set on first mark-read |
+| `created_at` | `timestamp(0)` | YES | none | see 22.5 |
+| `updated_at` | `timestamp(0)` | YES | none | see 22.5 |
+
+`user_id` is **nullable by design**: `AppNotification::notifyAll()` writes a
+broadcast row with `user_id = NULL`, and `scopeForUser()` deliberately matches
+`user_id = ? OR user_id IS NULL`. The FK must permit NULL.
+
+### 22.3 Constraints and indexes
+
+| Object | Definition | Reason |
+| --- | --- | --- |
+| `notifications_pkey` | `PRIMARY KEY (id)` | from `$table->id()` |
+| `notifications_user_id_foreign` | `FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE` | `->constrained('users')->onDelete('cascade')` |
+| `notifications_user_id_is_read_index` | `(user_id, is_read)` | the migration's index; serves the unread badge and the per-user list |
+| `notifications_broadcast_index` | `(user_id) WHERE user_id IS NULL` | the composite cannot serve the broadcast branch, because NULLs are not indexed by it |
+| `notifications_created_at_index` | `(created_at DESC)` | matches the actual `orderByDesc('created_at')` read order |
+
+**Checks/enums: NONE, deliberately.** The migration's own comment lists types as
+`e.g.`, not as an exhaustive set, and `notifyUser()` accepts any string. A CHECK
+or enum would reject legitimate new types and would diverge from the shipped
+migration.
+
+### 22.4 No CHECK on `type`
+
+Recorded explicitly because it looks like an omission. Adding an enum here would
+break `AppNotification::notifyUser(..., 'any_string', ...)` and would make the
+live table disagree with the repository migration.
+
+### 22.5 `created_at` / `updated_at` behaviour
+
+Laravel's `$table->timestamps()` on PostgreSQL yields two **nullable**
+`timestamp(0) without time zone` columns with **no default**, and
+`AppNotification` does not populate them. A row written by
+`AppNotification::create()` therefore has both columns NULL.
+
+This is reproduced exactly. A `DEFAULT now()` would silently change the
+newest-first ordering that `NotificationController::index` and the header bell's
+"5 most recent" both rely on; a `NOT NULL` would diverge from the shipped
+migration and reject writers that omit them. Recorded as a known cosmetic
+weakness, deliberately not silently repaired.
+
+### 22.6 Migration ledger and the `2026_09_27_000000` prefix collision
+
+**No ledger row is inserted by the forward SQL.** Section 2 forbids manually
+editing the ledger on the 0921 path, and section 12 records that a global
+`php artisan migrate` cannot be run against canonical at all.
+
+The collision itself is pre-existing: two repository migrations share the
+prefix `2026_09_27_000000` -
+
+- `2026_09_27_000000_create_notifications_table.php`
+- `2026_09_27_000000_add_reviewed_site_inspection_id_to_technical_reviews_table.php`
+
+Laravel keys the ledger by migration **name**, not filename, so both would be
+recorded and both would run, but the shared prefix makes execution order
+ambiguous. This is why the notifications table is absent from canonical today.
+Renaming a migration is a repository-history change and is **not** performed by
+this plan. Reconciling the ledger remains a separate decision, exactly as
+section 12 states.
+
+### 22.7 Existing 0921 handling
+
+```
+1. BACK UP the database.
+2. psql -v ON_ERROR_STOP=1 -d imaps_db_0921 \
+     -f database/sql/2026_10_01_create_notifications_table_for_0921_forward.sql
+3. Run the verification queries in 22.9.
+```
+
+The script is additive, idempotent, and wrapped in one transaction. It
+**aborts loudly** rather than silently reconciling if a `notifications` relation
+already exists with an incompatible shape: that relation may hold notification
+history this repository did not write, and overwriting it could destroy it.
+
+`public.users` is verified present first; the script refuses to run without it.
+
+### 22.8 Fresh database handling
+
+**No duplicate definition is added anywhere.** A fresh database already receives
+this table from the existing repository migration
+`2026_09_27_000000_create_notifications_table.php`, which runs as part of the
+normal migration sequence (section 2, fresh path, steps 1-7).
+
+The forward-SQL file is therefore **0921-path only** and must never be run
+against a fresh/ledger-managed database, exactly like
+`2026_09_26_fresh_install_canonical_corrections.sql` (section 1: "**Never** run
+the fresh-install corrections against a database that already has a ledger").
+
+### 22.9 Verification queries
+
+After apply, all of these must hold. Queries 6-8 are the regression guard.
+
+```sql
+-- 1. table present (expect 10 columns)
+SELECT count(*) FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='notifications';
+
+-- 2. exact column contract
+SELECT column_name, data_type, character_maximum_length, is_nullable, column_default
+  FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='notifications'
+ ORDER BY ordinal_position;
+
+-- 3. constraints: PK + the single FK
+SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
+ WHERE conrelid='public.notifications'::regclass ORDER BY conname;
+
+-- 4. indexes (expect 4 rows: the 3 explicit ones + the PK index)
+SELECT indexname FROM pg_indexes
+ WHERE schemaname='public' AND tablename='notifications' ORDER BY indexname;
+
+-- 5. usable, empty on a fresh apply
+SELECT count(*) FROM notifications;
+
+-- 6. migration ledger MUST still be 16, unedited by the script
+SELECT count(*) FROM migrations;
+
+-- 7. business row counts MUST be unchanged
+SELECT (SELECT count(*) FROM zoning_applications)          AS zoning_applications,  -- 73
+       (SELECT count(*) FROM site_inspections)             AS site_inspections,     -- 38
+       (SELECT count(*) FROM technical_reviews)            AS technical_reviews,    -- 79
+       (SELECT count(*) FROM inspection_delivery_attempts) AS delivery_attempts,    --  8
+       (SELECT count(*) FROM audit_trail)                  AS audit_trail,          -- 162
+       (SELECT count(*) FROM users)                        AS users,                --  7
+       (SELECT count(*) FROM failed_jobs)                  AS failed_jobs;          -- 14
+
+-- 8. business fingerprints MUST be unchanged
+SELECT md5(string_agg(t::text, ',' ORDER BY t.id)) FROM (SELECT * FROM zoning_applications) t;
+--   cf1bc99afe8b2d7f90ca5d179f1d700b
+SELECT md5(string_agg(t::text, ',' ORDER BY t.id)) FROM (SELECT * FROM site_inspections) t;
+--   222f3a3cbe3e90b5246f58585e5a8504
+SELECT md5(string_agg(t::text, ',' ORDER BY t.id)) FROM (SELECT * FROM technical_reviews) t;
+--   4024d7cf21533bea82af2d26023bf2b5
+SELECT md5(string_agg(t::text, ',' ORDER BY t.id)) FROM (SELECT * FROM audit_trail) t;
+--   11a22c9d6b5689f3bb094808689f6930
+
+-- 9. the header bell read path now works: GET /api/notifications
+```
+
+The forward SQL was parse-validated against a real PostgreSQL parser inside a
+throwaway schema that was rolled back and dropped: it creates exactly the
+10 columns above, the PK, the FK and the 3 explicit indexes; `scopeForUser`
+semantics (targeted + broadcast) hold; `is_read` defaults to `false`; a re-run
+is a no-op; and the incompatible-schema guard aborts as intended. Canonical was
+confirmed unchanged afterwards (ledger 16, 26 tables, no `notifications`).
+
+### 22.10 Rollback / recovery
+
+Before any notification is written - which is the current state - the table can
+be removed cleanly and the ledger is still 16 rows:
+
+```sql
+DROP TABLE IF EXISTS public.notifications;   -- drops its indexes and FK
+SELECT count(*) FROM migrations;             -- 16
+```
+
+After rows exist, do **not** drop: notification history would be lost and the
+header bell would break again. Prefer a forward repair. Back up first, as the
+0921 procedure requires.
+
+### 22.11 Application call sites that depend on this table
+
+Every one of these is currently broken on canonical.
+
+**Write sites (6):**
+
+All three `TechnicalReviewController` sites are in **one** method,
+`updateStatus` (L153-345), inside a single `DB::transaction` spanning
+L190-L326. Verified by reading the transaction boundaries rather than inferred.
+
+| File | Method | Trigger | Target | Failure class |
+| --- | --- | --- | --- | --- |
+| `ApplicationController.php` | `store` (L582) | new application encoded | Admin + Planning Officer | **fatal, inside `DB::beginTransaction`/`rollBack`** (L518-732) - the whole application creation rolls back |
+| `RegisteredUserController.php` | `store` (L97) | new user registered | Admin | **fatal, not caught** - the user row is created, then the request 500s, leaving a half-completed registration |
+| `TechnicalReviewController.php` | `updateStatus` (L244) | inspection assigned to a Site Inspector | one Site Inspector | **fatal, inside `DB::transaction`** - rolls the assignment back |
+| `TechnicalReviewController.php` | `updateStatus` (L292) | final decision, application status updated | Admin + Planning Officer | **fatal, inside `DB::transaction`** - rolls the review back |
+| `TechnicalReviewController.php` | `updateStatus` (L315) | inspection flagged | Admin + Planning Officer | **fatal, inside `DB::transaction`** - rolls the review back |
+| `SiteInspectionController.php` | `forceSync` (L131) | FieldSync sync finished | Admin + Planning Officer | **caught** - `catch (\Exception)` converts it to a flash error, so the sync reports failure even though the sync itself succeeded |
+
+`updateStatus` is reached from the Technical Review queue, so all three
+Technical Review write paths fail together.
+
+**Read sites (6, all in `NotificationController`):** `index`, `getUnread`,
+`markAsRead`, `markAllAsRead`, `destroy`, `clearAll`.
+
+`getUnread` backs the header bell, which `Header.jsx` polls every 30 seconds on
+every authenticated page. It degrades safely in the browser (the fetch is
+`.catch`-guarded and falls back to a zero count), so the bell shows no
+notifications rather than breaking the page - but the notifications page itself
+and every write above fail.
+
+**The highest-severity finding:** five of the six write sites are inside a
+database transaction, so on canonical a Planning Officer currently **cannot
+encode an application, or record a technical review decision** (which is also
+how a site inspection gets assigned) - the transaction rolls back on the
+notification insert. This is a live production defect that predates the
+diagnostics work and is fixed by applying 22.7.
+
+Note that `submitBatch` and `assignInspector` do **not** write notifications and
+are therefore unaffected; the exposure is `updateStatus` and `store`.
+
+### 22.12 Post-Loop 9 "Notify Planning Officers" - contract, not yet implemented
+
+Recorded here so the DB precondition and the intended action are documented
+together. **No button, route or controller exists for this yet.**
+
+Once 22.7 is applied, the intended action is:
+
+| Concern | Contract |
+| --- | --- |
+| Who may send | **Admin only** |
+| Who may read | Admin + Planning Officer; a Site Inspector has no iMAPS web diagnostics access at all |
+| Target users | active `Planning Officer` users |
+| Content | diagnostic `reference_code`, `module`, a short safe summary, and a link to the diagnostic detail |
+| Must NOT contain | signed URL, JWT, token, credential, handshake key, or any text the sanitizer removed |
+| Sanitization | content is taken from the **sanitized** `DiagnosticReportReader` output, never the raw remote row |
+| Duplicate sends | a rate limit / cooldown should prevent rapid repeated sends |
+| On success | a small confirmation; the report is **NOT** marked resolved - the notice is a reminder only |
+
+### 22.13 Section status
+
+| Item | Result |
+| --- | --- |
+| Forward SQL | CREATED - `2026_10_01_create_notifications_table_for_0921_forward.sql` |
+| SQL executed | **NO** |
+| Existing 0921 mutation | **NONE** - canonical unchanged |
+| Migration ledger | **UNCHANGED** - 16 rows, no row inserted |
+| Migration | **NONE created or edited** |
+| Fresh DB | **UNAFFECTED** - already covered by the existing repository migration |
+| Canonical tables | 26 -> 26 (**unchanged**) |
+| Notify PO action | **NOT IMPLEMENTED** - blocked on 22.7 |
+| `php artisan migrate` | **NOT RUN** |
