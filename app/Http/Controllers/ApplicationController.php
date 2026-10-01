@@ -657,6 +657,29 @@ class ApplicationController extends Controller
                             'status'                     => 'assigned',
                         ]);
 
+                        // The round's inspector-ownership history must open with its
+                        // first entry here too. This encode-time path created the round
+                        // and set the inspector pointer without writing any provenance,
+                        // so `site_inspection_assignments` stayed empty and the round
+                        // answered "who was this given to, and by whom" for nobody.
+                        //
+                        // It reuses the ONE canonical writer that
+                        // TechnicalReviewController::createInspectionRound() and
+                        // assignInspector() already use, rather than a second history
+                        // mechanism. It runs inside the same enclosing transaction as
+                        // the SiteInspection::create() above, so the pointer and its
+                        // provenance row commit together or not at all.
+                        //
+                        // Initial assignment is not a transfer: the canonical writer
+                        // records assignment_type 'initial' with from_inspector_id and
+                        // reason both NULL, which is what the DB CHECK for 'initial'
+                        // requires. Naming any handover reason here would record a
+                        // transfer that never happened.
+                        app(WorkAssignmentService::class)->recordInitialInspectorAssignment(
+                            $inspection,
+                            Auth::user(),
+                        );
+
                         $siteInspectionId = $inspection->id;
                         PushInspectionToSupabase::dispatch($inspection);
                     }
