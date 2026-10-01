@@ -189,10 +189,18 @@ ALTER TABLE field_job_reviews
     ADD CONSTRAINT field_job_reviews_bridge_source_id_technical_review_id_key
     UNIQUE (bridge_source_id, technical_review_id);
 
+-- Only the index a PROVEN iMAPS reader needs. PullCompletedInspections filters
+-- bridge_source_id + status, and status is not the leading column of the
+-- composite UNIQUE above.
+--
+-- (bridge_source_id, assigned_inspector_id) is deliberately absent: FieldSync's
+-- inspector query filters assigned_inspector_id = auth.uid() and is not a
+-- bridge_source_id-scoped reader, so the index would not have served it. No
+-- reference_number or property_index_number index is created either: no proven
+-- reader identifies a mirror row by those columns, which are business display
+-- data rather than bridge identity.
 CREATE INDEX field_jobs_bridge_source_id_status_index
     ON field_jobs (bridge_source_id, status);
-CREATE INDEX field_jobs_bridge_source_id_assigned_inspector_id_index
-    ON field_jobs (bridge_source_id, assigned_inspector_id);
 
 
 -- =====================================================================

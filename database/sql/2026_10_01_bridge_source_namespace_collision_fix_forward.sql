@@ -675,26 +675,31 @@ ALTER TABLE public.field_job_reviews
 --   field_jobs ?bridge_source_id=eq.X&local_inspection_id=eq.N
 -- as a leftmost-prefix equality lookup, and likewise for the two mirror tables.
 --
--- These extra indexes exist because real readers filter on a column that is
--- not the leading part of the composite key:
+-- ONE INDEX IS KEPT, because one PROVEN iMAPS reader needs it:
 --   * PullCompletedInspections(): bridge_source_id + status='completed'.
---   * FieldSync inspector visibility: assigned_inspector_id = auth.uid().
---     That query is FieldSync's normal read and is UNCHANGED; the index is
---     supporting infrastructure only. No query text is altered.
---   * Application / parcel mirror display reads by reference_number and
---     property_index_number.
+--     status is not the leading part of the composite UNIQUE, so this lookup has
+--     no covering index.
+--
+-- THREE SPECULATIVE INDEXES ARE DELIBERATELY NOT CREATED. They were proposed
+-- before the readers were audited, and no proven iMAPS reader needs them:
+--   * (bridge_source_id, assigned_inspector_id) - FieldSync's inspector query
+--     filters assigned_inspector_id = auth.uid() and is UNCHANGED by this work.
+--     It does not scope that read by bridge_source_id at all, so an index leading
+--     with bridge_source_id would not have served it.
+--   * (bridge_source_id, reference_number) - no reader identifies or correlates
+--     an application mirror row by reference_number. reference_number is a
+--     BUSINESS identifier, not bridge identity, and it is deliberately NOT given
+--     a UNIQUE constraint for that reason.
+--   * (bridge_source_id, property_index_number) - same: property_index_number is
+--     cadastral display data, not a bridge identity component.
+--
+-- Creating an index that no query uses costs write amplification on every mirror
+-- write and implies a correlation that does not exist. They are recorded here
+-- rather than silently dropped, and no EXISTING live index is removed by this
+-- artifact.
 -- =====================================================================
 CREATE INDEX IF NOT EXISTS field_jobs_bridge_source_id_status_index
     ON public.field_jobs (bridge_source_id, status);
-
-CREATE INDEX IF NOT EXISTS field_jobs_bridge_source_id_assigned_inspector_id_index
-    ON public.field_jobs (bridge_source_id, assigned_inspector_id);
-
-CREATE INDEX IF NOT EXISTS supabase_zoning_applications_bridge_source_id_reference_number_index
-    ON public.supabase_zoning_applications (bridge_source_id, reference_number);
-
-CREATE INDEX IF NOT EXISTS supabase_parcels_bridge_source_id_property_index_number_index
-    ON public.supabase_parcels (bridge_source_id, property_index_number);
 
 
 -- =====================================================================
@@ -845,9 +850,6 @@ COMMIT;
 --     ALTER TABLE public.supabase_parcels DROP CONSTRAINT IF EXISTS supabase_parcels_bridge_source_id_local_parcel_id_key;
 --     ALTER TABLE public.field_job_reviews DROP CONSTRAINT IF EXISTS field_job_reviews_bridge_source_id_technical_review_id_key;
 --     DROP INDEX IF EXISTS field_jobs_bridge_source_id_status_index;
---     DROP INDEX IF EXISTS field_jobs_bridge_source_id_assigned_inspector_id_index;
---     DROP INDEX IF EXISTS supabase_zoning_applications_bridge_source_id_reference_number_index;
---     DROP INDEX IF EXISTS supabase_parcels_bridge_source_id_property_index_number_index;
 --     ALTER TABLE public.field_jobs DROP COLUMN IF EXISTS bridge_source_id;
 --     ALTER TABLE public.supabase_zoning_applications DROP COLUMN IF EXISTS bridge_source_id;
 --     ALTER TABLE public.supabase_parcels DROP COLUMN IF EXISTS bridge_source_id;

@@ -1,6 +1,6 @@
-# Canonical Database Schema — iMAPS ↔ FieldSync Bridge
+﻿# Canonical Database Schema â€” iMAPS â†” FieldSync Bridge
 
-**Status:** CANONICAL — reconciled 2026-09-26; Maps compatibility added 2026-09-27
+**Status:** CANONICAL â€” reconciled 2026-09-26; Maps compatibility added 2026-09-27
 **Scope:** iMAPS PostgreSQL (Rosario). Defines ONE schema contract for the team.
 **Authority:** This document plus the forward-update and fresh-install SQL files in `database/sql/` listed below.
 
@@ -9,7 +9,7 @@
 ## 1. Baseline model
 
 All team members started from the **0921 database** (`imaps_db_0921`). Since then the
-schema accumulated approved Loop 1–7 bridge changes.
+schema accumulated approved Loop 1â€“7 bridge changes.
 
 `origin/master` (SHA `926fd8f`) introduced a consolidated
 `2026_09_19_000000_create_initial_schema.php` that **deleted 28 incremental migrations**
@@ -65,59 +65,59 @@ Loop 3/4/5/7 closed contracts, cross-checked against `origin/master`.
 
 | Field | Why required | Source writer | Local DB | Fresh schema (pre-correction) | Action |
 |---|---|---|---|---|---|
-| `id` | PK | Eloquent | ✅ | ✅ | — |
-| `zoning_application_id` | owning application | ApplicationController | ✅ | ✅ | — |
-| `inspector_id` | assigned Site Inspector | ApplicationController, TechnicalReviewController | ✅ | ✅ | — |
-| `status` | lifecycle, default `assigned` | ApplicationController | ✅ | ⚠️ default `Pending` | **default corrected** |
-| `scheduled_date` | schedule | ApplicationController | ✅ | ✅ | — |
-| `deadline_date` | assignment deadline | ApplicationController, TechnicalReviewController | ✅ | ✅ | — |
-| `completed_at` | completion marker | PullCompletedInspections | ✅ | ✅ | — |
-| `assigned_notes` | **CANONICAL assignment instructions** | ApplicationController, TechnicalReviewController | ✅ | ✅ | — |
-| `assigned_by_imaps_user_id` | assignment provenance | TechnicalReviewController | ✅ | ⚠️ later migration | — |
-| `assigned_by_name` | assignment provenance | TechnicalReviewController | ✅ | ⚠️ later migration | — |
-| `parcel_id` | GIS target parcel | ApplicationController | ✅ | ⚠️ no FK | **FK added** |
-| `findings` | result narrative | PullCompletedInspections | ✅ | ❌ | **added** |
-| `is_compliant` | compliance result | PullCompletedInspections | ✅ | ❌ | **added** |
-| `submitted_at` | submission timestamp | FieldSync bridge | ✅ | ⚠️ later migration | — |
-| `inspection_result` | result summary | PullCompletedInspections | ✅ | ⚠️ later migration | — |
-| `observations` | field observation | PullCompletedInspections | ✅ | ⚠️ later migration | — |
-| `discrepancies` | field discrepancy | PullCompletedInspections | ✅ | ⚠️ later migration | — |
-| `recommendations` | **live** recommendation field | PullCompletedInspections | ✅ | ⚠️ later migration | — |
-| `inspector_notes` | inspector-authored notes | PullCompletedInspections | ✅ | ⚠️ later migration | — |
-| `checklist_data` | checklist snapshot | PullCompletedInspections | ✅ | ⚠️ later migration | — |
-| `confirmed_latitude` | GPS evidence | FieldSync bridge | ✅ | ⚠️ later migration | — |
-| `confirmed_longitude` | GPS evidence | FieldSync bridge | ✅ | ⚠️ later migration | — |
-| `gps_accuracy_m` | GPS accuracy | FieldSync bridge | ✅ | ⚠️ later migration | — |
-| `gps_confirmed_at` | GPS confirmation time | FieldSync bridge | ✅ | ⚠️ later migration | — |
+| `id` | PK | Eloquent | âœ… | âœ… | â€” |
+| `zoning_application_id` | owning application | ApplicationController | âœ… | âœ… | â€” |
+| `inspector_id` | assigned Site Inspector | ApplicationController, TechnicalReviewController | âœ… | âœ… | â€” |
+| `status` | lifecycle, default `assigned` | ApplicationController | âœ… | âš ï¸ default `Pending` | **default corrected** |
+| `scheduled_date` | schedule | ApplicationController | âœ… | âœ… | â€” |
+| `deadline_date` | assignment deadline | ApplicationController, TechnicalReviewController | âœ… | âœ… | â€” |
+| `completed_at` | completion marker | PullCompletedInspections | âœ… | âœ… | â€” |
+| `assigned_notes` | **CANONICAL assignment instructions** | ApplicationController, TechnicalReviewController | âœ… | âœ… | â€” |
+| `assigned_by_imaps_user_id` | assignment provenance | TechnicalReviewController | âœ… | âš ï¸ later migration | â€” |
+| `assigned_by_name` | assignment provenance | TechnicalReviewController | âœ… | âš ï¸ later migration | â€” |
+| `parcel_id` | GIS target parcel | ApplicationController | âœ… | âš ï¸ no FK | **FK added** |
+| `findings` | result narrative | PullCompletedInspections | âœ… | âŒ | **added** |
+| `is_compliant` | compliance result | PullCompletedInspections | âœ… | âŒ | **added** |
+| `submitted_at` | submission timestamp | FieldSync bridge | âœ… | âš ï¸ later migration | â€” |
+| `inspection_result` | result summary | PullCompletedInspections | âœ… | âš ï¸ later migration | â€” |
+| `observations` | field observation | PullCompletedInspections | âœ… | âš ï¸ later migration | â€” |
+| `discrepancies` | field discrepancy | PullCompletedInspections | âœ… | âš ï¸ later migration | â€” |
+| `recommendations` | **live** recommendation field | PullCompletedInspections | âœ… | âš ï¸ later migration | â€” |
+| `inspector_notes` | inspector-authored notes | PullCompletedInspections | âœ… | âš ï¸ later migration | â€” |
+| `checklist_data` | checklist snapshot | PullCompletedInspections | âœ… | âš ï¸ later migration | â€” |
+| `confirmed_latitude` | GPS evidence | FieldSync bridge | âœ… | âš ï¸ later migration | â€” |
+| `confirmed_longitude` | GPS evidence | FieldSync bridge | âœ… | âš ï¸ later migration | â€” |
+| `gps_accuracy_m` | GPS accuracy | FieldSync bridge | âœ… | âš ï¸ later migration | â€” |
+| `gps_confirmed_at` | GPS confirmation time | FieldSync bridge | âœ… | âš ï¸ later migration | â€” |
 
 ### Deliberately NOT part of the contract
 
 | Field | Classification | Reason |
 |---|---|---|
 | `remarks` | **RETIRED** | Team Leader decision: `remarks` is zoning-application context, **not** the Site Inspection instruction field. Local 0921 DB correctly lacks it. The stale merged `$fillable` entry was removed in `d5e2112`. |
-| `recommendation` (singular) | **LEGACY — dead** | Stale `$fillable` entry removed in `d5e2112`; no live writer. `recommendations` (plural) is live. Not created. |
+| `recommendation` (singular) | **LEGACY â€” dead** | Stale `$fillable` entry removed in `d5e2112`; no live writer. `recommendations` (plural) is live. Not created. |
 | `review_round` | **NOT ON THIS TABLE** | Reinspection round counter lives on `technical_reviews`. |
 
 ---
 
-## 4. `remarks` vs assignment instructions — resolved
+## 4. `remarks` vs assignment instructions â€” resolved
 
 **Decision (Team Leader):** Planning Officer inspection instructions use the
 assignment-instructions field. `remarks` is zoning-application context.
 
-**Audit result — `assigned_notes` is the canonical field.** It is used consistently by:
+**Audit result â€” `assigned_notes` is the canonical field.** It is used consistently by:
 
-- `ApplicationController::store()` — `parcels.*.assigned_notes` validation + create
-- `TechnicalReviewController` — 6 sites including reinspection-required validation
-- `ParcelInspectionScheduler.jsx` — "Assignment Instructions" textarea
+- `ApplicationController::store()` â€” `parcels.*.assigned_notes` validation + create
+- `TechnicalReviewController` â€” 6 sites including reinspection-required validation
+- `ParcelInspectionScheduler.jsx` â€” "Assignment Instructions" textarea
 - `SiteInspection::$fillable`
-- Supabase bridge — forwarded to `field_jobs.assignment_instructions`
-- Local 0921 DB — column present
+- Supabase bridge â€” forwarded to `field_jobs.assignment_instructions`
+- Local 0921 DB â€” column present
 
 `assignment_instructions` exists only as a **Supabase `field_jobs` column**, not an
 iMAPS `site_inspections` column. No rename is required or performed.
 
-`zoning_applications.remarks` is retained — it is correct in that context.
+`zoning_applications.remarks` is retained â€” it is correct in that context.
 
 ---
 
@@ -125,12 +125,12 @@ iMAPS `site_inspections` column. No rename is required or performed.
 
 | Field | Canonical | Notes |
 |---|---|---|
-| `role` | ✅ CHECK-constrained | Exactly `Admin`, `Planning Officer`, `Site Inspector` |
-| `handshake_key` | ✅ retained | Used by the FieldSync/iMAPS handshake path |
-| `supabase_uuid` | ❌ **NOT canonical** | **Zero** readers/writers on this branch AND on `origin/master`. Not created. |
-| `is_active`, `last_login` | ✅ retained | Loop 6 rejected-login non-impact contract |
+| `role` | âœ… CHECK-constrained | Exactly `Admin`, `Planning Officer`, `Site Inspector` |
+| `handshake_key` | âœ… retained | Used by the FieldSync/iMAPS handshake path |
+| `supabase_uuid` | âŒ **NOT canonical** | **Zero** readers/writers on this branch AND on `origin/master`. Not created. |
+| `is_active`, `last_login` | âœ… retained | Loop 6 rejected-login non-impact contract |
 
-A DB-level CHECK constraint **is** retained — the local 0921 database already enforces
+A DB-level CHECK constraint **is** retained â€” the local 0921 database already enforces
 it, and the Loop 6 role matrix depends on exactly these three values.
 
 Local data confirms only canonical values exist: `Admin` 2, `Planning Officer` 2, `Site Inspector` 2.
@@ -141,20 +141,20 @@ Local data confirms only canonical values exist: `Admin` 2, `Planning Officer` 2
 
 | Field | Canonical | Notes |
 |---|---|---|
-| `review_round` | ✅ | Reinspection round counter, default 1 |
-| `decision` | ✅ CHECK | `Approved`, `Needs Site Inspection`, `Requires Reinspection`, `Declined` |
-| `site_inspection_task_id` | ✅ | The **NEW** inspection round created by this review decision, when applicable. Nullable. |
-| `reviewed_site_inspection_id` | ✅ Loop 8, nullable | The **EXISTING** inspection round whose result this review is reviewing. FK → `site_inspections(id)` `ON DELETE SET NULL`, plus a supporting index. |
+| `review_round` | âœ… | Reinspection round counter, default 1 |
+| `decision` | âœ… CHECK | `Approved`, `Needs Site Inspection`, `Requires Reinspection`, `Declined` |
+| `site_inspection_task_id` | âœ… | The **NEW** inspection round created by this review decision, when applicable. Nullable. |
+| `reviewed_site_inspection_id` | âœ… Loop 8, nullable | The **EXISTING** inspection round whose result this review is reviewing. FK â†’ `site_inspections(id)` `ON DELETE SET NULL`, plus a supporting index. |
 
 `Requires Reinspection` is required by the Loop 4 reinspection contract.
 
-### 6.1 Loop 8 — reviewed round vs created round (never synonyms)
+### 6.1 Loop 8 â€” reviewed round vs created round (never synonyms)
 
 - `reviewed_site_inspection_id` answers *"which finished round is being reviewed?"*
 - `site_inspection_task_id` answers *"which new round did this decision create?"*
 
 Contract example: completed inspection `36` is reviewed with a `Requires Reinspection`
-decision → `reviewed_site_inspection_id = 36` and `site_inspection_task_id = 37`.
+decision â†’ `reviewed_site_inspection_id = 36` and `site_inspection_task_id = 37`.
 Inspection 36 remains `completed`; inspection 37 is the new task.
 
 Rules:
@@ -173,7 +173,7 @@ Rules:
 
 ---
 
-## 7. `application_sequences` — LEGACY, RETAINED
+## 7. `application_sequences` â€” LEGACY, RETAINED
 
 - **Not dropped. Not deleted.** The table still exists in the local 0921 database.
 - The target reference-number strategy is `origin/master`'s approach: derive the next
@@ -259,13 +259,13 @@ SELECT id, form_number, name, barangay, zoning_code, lot_area_sqm,
 
 ---
 
-## 10. Merged-master Maps compatibility — 2026-09-27
+## 10. Merged-master Maps compatibility â€” 2026-09-27
 
 - The shared team base remains **0921**. Post-0921 compatibility is delivered as
   forward SQL, not a database rebuild or migration-ledger rewrite.
 - Merged master introduced `2026_09_23_145135_create_historical_data_table.php`.
   `MapsController` queries this table unconditionally; its absence caused HTTP 500.
-  This is merged-master compatibility, not a Loop 1–7 regression.
+  This is merged-master compatibility, not a Loop 1â€“7 regression.
 - `2026_09_27_add_historical_data_for_0921.sql` mirrors the migration: `id`
   sequence-backed bigint PK; nullable `encoding_date` date; nullable varchar(255)
   `form_number`, `name`, `barangay`, `zoning_code`, `application_type`; nullable
@@ -306,7 +306,7 @@ explicit **initial assignment**.
 Eligibility is a pure predicate,
 `WorkAssignmentService::canReceiveInitialOwnership($role, $isActive)`: the
 creator must be `role = 'Planning Officer'` **and** `is_active = true`. A
-creation by anybody else leaves the column **NULL** and writes no history row —
+creation by anybody else leaves the column **NULL** and writes no history row â€”
 ownership is never invented.
 
 | Column | Meaning | Changes on handover? |
@@ -344,7 +344,7 @@ The current inspector pointer is unchanged: `site_inspections.inspector_id`.
 | `assignment_type` | `varchar(20)` | `initial` \| `reassignment` |
 | `from_planning_officer_id` | `bigint` NULL | FK `-> users(id) ON DELETE SET NULL` |
 | `to_planning_officer_id` | `bigint` | FK `-> users(id) ON DELETE RESTRICT` |
-| `reason` | `varchar(30)` **NULL** | `Absent` \| `On Leave` \| `Workload Transfer` \| `Unavailable` \| `Other`. **NULL is correct for an `initial` row** — see 11.6 |
+| `reason` | `varchar(30)` **NULL** | `Absent` \| `On Leave` \| `Workload Transfer` \| `Unavailable` \| `Other`. **NULL is correct for an `initial` row** â€” see 11.6 |
 | `reason_note` | `text` NULL | required when `reason = 'Other'` |
 | `reassigned_by` | `bigint` | FK `-> users(id) ON DELETE RESTRICT` |
 | `reassigned_at` | `timestamp` | |
@@ -396,7 +396,7 @@ relaxes `reason` to nullable.
 
 This corrects a real defect. `reason` was originally `NOT NULL` with a
 closed-vocabulary CHECK, so a first assignment was **forced to state a reason
-that was not true** — and since nothing else was possible, the code had begun
+that was not true** â€” and since nothing else was possible, the code had begun
 defaulting to "Workload Transfer". Every brand-new application and every
 brand-new inspection round was recorded as a workload handover that never
 happened.
@@ -535,11 +535,11 @@ retry never has to erase a historical `delivered_at`.
 `id`, `site_inspection_id`, `attempt_number`, `source`, `outcome`,
 `failure_category`, `safe_message`, `attempted_at`, `completed_at`, `created_at`
 
-- FK `site_inspection_id -> site_inspections(id) ON DELETE CASCADE` — matching the
+- FK `site_inspection_id -> site_inspections(id) ON DELETE CASCADE` â€” matching the
   existing operational-history contract (`site_inspection_assignments`), and
   deliberately different from business decision records
   (`technical_reviews.reviewed_site_inspection_id` = SET NULL).
-- `UNIQUE (site_inspection_id, attempt_number)` — per-round attempt numbering.
+- `UNIQUE (site_inspection_id, attempt_number)` â€” per-round attempt numbering.
 - `source`: `initial_dispatch` | `automatic_retry` | `planning_officer_retry` | `legacy_reconciliation`
 - `outcome`: `pending` | `delivered` | `failed`
 - `failure_category`: `inspector_mapping_unresolved` | `supabase_unreachable` |
@@ -550,9 +550,9 @@ retry never has to erase a historical `delivered_at`.
 
 ### 15.3 No backfill, and the preserved exclusions
 
-No existing row received a delivery value. Inspections 3–21 and 24 remain NULL
-permanently (pre-bridge historical records). Inspections 25–30 — the 6 proven
-post-bridge delivery failures — also remain NULL; their reconciliation is a
+No existing row received a delivery value. Inspections 3â€“21 and 24 remain NULL
+permanently (pre-bridge historical records). Inspections 25â€“30 â€” the 6 proven
+post-bridge delivery failures â€” also remain NULL; their reconciliation is a
 separately authorized execution step, not schema creation. No speculative
 backfill, and `failed_jobs` is never treated as business delivery state.
 
@@ -574,7 +574,7 @@ unchanged, including the 0921 forward-update instructions, the
 and the explicit `--path` requirement.
 
 Artifact: `database/sql/2026_09_28_reconcile_legacy_delivery_failures_25_30.sql`
-— **existing-0921 data patch only.** It is deliberately NOT a migration and
+â€” **existing-0921 data patch only.** It is deliberately NOT a migration and
 must never be applied to a fresh database, which has no historical inspections
 25-30.
 
@@ -665,10 +665,10 @@ inspection_delivery_attempts.queue_job_uuid  uuid NULL
 The stable Laravel queue payload UUID of the queued `PushInspectionToSupabase`
 dispatch that produced the attempt.
 
-- one separately dispatched job → one uuid
-- automatic retries of that job → the **same** uuid, new `attempt_number`
-- separately dispatched jobs → different uuids
-- **not unique** — the retries of one dispatch legitimately share it
+- one separately dispatched job â†’ one uuid
+- automatic retries of that job â†’ the **same** uuid, new `attempt_number`
+- separately dispatched jobs â†’ different uuids
+- **not unique** â€” the retries of one dispatch legitimately share it
 - no default
 
 Native `uuid` type is used rather than a length-guessed `varchar`, because
@@ -722,7 +722,7 @@ Section 18.5.
 
 `queue_job_uuid` is written **prospectively** by
 `InspectionDeliveryRecorder::beginAttempt()` for every real queue execution. The
-value is `$this->job?->uuid()` — the actual Laravel 12.58.0 queue payload uuid of
+value is `$this->job?->uuid()` â€” the actual Laravel 12.58.0 queue payload uuid of
 the dispatch executing right now, from the concrete
 `Illuminate\Queue\Jobs\Job::uuid()` accessor inherited by `DatabaseJob`. No uuid
 is ever generated by the writer, and no surrogate (inspection id, attempt id) is
@@ -748,9 +748,9 @@ non-NULL at the time of this correction.
 `reconcileTerminalFailure()` now requires **two independent** conditions before
 writing `delivery_status = delivery_failed`:
 
-1. **Correlation** — the callback's own dispatch uuid must match a real attempt
+1. **Correlation** â€” the callback's own dispatch uuid must match a real attempt
    for that inspection, and that attempt's `outcome` must be `failed`.
-2. **Ownership of current state** — that correlated attempt must also be the
+2. **Ownership of current state** â€” that correlated attempt must also be the
    **globally latest** attempt for the inspection.
 
 Correlation alone is explicitly **not** sufficient. A terminal callback whose
@@ -758,7 +758,7 @@ uuid is NULL is **refused before any lookup**, a safe server-side warning is
 logged, and the summary is left unchanged. There is deliberately **no**
 globally-latest fallback for a queued terminal callback, because that fallback is
 the exact race this column exists to prevent. NULL-correlated legacy rows can
-therefore never be picked up by future queue processing — they are already
+therefore never be picked up by future queue processing â€” they are already
 terminal historical facts.
 
 An older terminal callback cannot overwrite a newer delivery execution,
@@ -793,7 +793,7 @@ state.
 **`MONITORING FAILURE MUST NOT SILENTLY REDEFINE THE BUSINESS ASSIGNMENT.`**
 
 If `InspectionDeliveryRecorder::beginAttempt()` fails before an attempt row
-exists, the outcome is classified as **`DEGRADED OBSERVABILITY`** — **not**
+exists, the outcome is classified as **`DEGRADED OBSERVABILITY`** â€” **not**
 `DELIVERY FAILURE`, and **not** `FULLY MONITORED SUCCESS`.
 
 This is a **local recording** outcome only. It is not a new
@@ -804,9 +804,9 @@ a single `Log::warning` line carrying only a closed literal and the integer
 never carry a response body, URL, key or header.
 
 The established remote bridge delivery continues, because Loop 9 monitoring is
-additive and must not break the previously working Loops 1–8 assignment path. A
+additive and must not break the previously working Loops 1â€“8 assignment path. A
 successful remote delivery whose local recording failed may therefore remain
-**locally untracked** until a later idempotent delivery execution converges it —
+**locally untracked** until a later idempotent delivery execution converges it â€”
 and it must never be described as a clean monitored success.
 
 ## 20. Loop 9C-1 delivery status reader contract - 2026-09-29 (NO SCHEMA CHANGE)
@@ -916,7 +916,7 @@ No Supabase change. No FieldSync change. No existing business Controller edit.
 by `origin/master`, and a three-way `merge-tree` dry run confirms
 `routes/web.php` still auto-merges cleanly. Nothing was merged.
 
-**Next: 9C-2 — Planning Officer delivery status UI.** Not started.
+**Next: 9C-2 â€” Planning Officer delivery status UI.** Not started.
 
 ## 21. Loop 9C-2 delivery status UI - 2026-09-29 (UI / READ-ONLY, NO SCHEMA CHANGE)
 
@@ -1291,162 +1291,3 @@ that the post-apply smoke proved wrong. Both corrections are in 22.5.
 - **Correct as written:** the table contract, the index set, the guard design,
   the 0921-vs-fresh split, and the decision not to touch the ledger.
 ---
-
-## 23. CROSS-ENVIRONMENT BRIDGE NAMESPACE (REMOTE / SUPABASE) - PREPARED, NOT APPLIED
-
-**Status: PREPARED — NOT YET APPLIED REMOTELY.** Recorded here because the remote
-FieldSync bridge tables are part of the system's durable contract, even though
-they are not part of the local iMAPS database and have no migration in this
-repository.
-
-### 23.1 Why this is documented here at all
-
-`CANONICAL_DATABASE_SCHEMA.md` is the authority for what the database guarantees.
-On 2026-10-01 the bridge guarantee turned out to be wrong in a way no local
-migration could fix: the mirror tables on the shared Supabase project identified
-iMAPS rows by **bare local integers**, which are unique only inside ONE iMAPS
-database while the Supabase project is shared by more than one. Two environments
-therefore resolved the same local id onto the same remote row and overwrote each
-other's assignment.
-
-### 23.2 Remote tables affected
-
-Four tables, each PROVEN to key on a bare iMAPS-local integer. Proven from the
-live schema, not from documentation.
-
-| Remote table | Local-id identity column | Type | Constraint before | Constraint after (prepared) |
-|---|---|---|---|---|
-| `public.field_jobs` | `local_inspection_id` | `integer`, nullable | `UNIQUE (local_inspection_id)` | `UNIQUE (bridge_source_id, local_inspection_id)` named `field_jobs_bridge_source_id_local_inspection_id_key` |
-| `public.supabase_zoning_applications` | `local_application_id` | `integer`, nullable | `UNIQUE (local_application_id)` | `UNIQUE (bridge_source_id, local_application_id)` named `supabase_zoning_applications_bridge_local_application_id_key` |
-| `public.supabase_parcels` | `local_parcel_id` | `integer`, nullable | `UNIQUE (local_parcel_id)` | `UNIQUE (bridge_source_id, local_parcel_id)` named `supabase_parcels_bridge_source_id_local_parcel_id_key` |
-| `public.field_job_reviews` | `technical_review_id` | `bigint` | `UNIQUE (technical_review_id)` | `UNIQUE (bridge_source_id, technical_review_id)` named `field_job_reviews_bridge_source_id_technical_review_id_key` |
-
-The `supabase_zoning_applications` constraint name is 58 characters on purpose.
-PostgreSQL truncates identifiers at 63, and a silently truncated name would make
-the post-apply verification and the documented rollback refer to an object that
-does not exist. (The original 74-character name was caught by the dry run, which
-is exactly why the dry run exists.)
-
-### 23.3 New column
-
-`bridge_source_id text`, **nullable**, added to all four tables. Each column is
-commented in the database with the reason it exists.
-
-Nullable in phase 1 is a deliberate choice, not an oversight:
-
-- rows with PROVEN provenance are backfilled with the deployment's identity;
-- rows whose real owner is not yet known are left `NULL`, and PostgreSQL treats
-  `NULL` as distinct inside a `UNIQUE` constraint, so an unclaimed row cannot
-  collide with either namespace;
-- `SET NOT NULL` is Phase 2 and requires its own approval after every
-  environment on the project has deployed the namespaced writer.
-
-### 23.4 Preserved objects
-
-| Object | Treatment |
-|---|---|
-| `id uuid` primary keys on all four tables | **PRESERVED.** Replacing a `UNIQUE` constraint does not touch a primary key. |
-| `field_job_photos.field_job_id` -> `field_jobs(id)` | **PRESERVED.** Proved in the dry run by inserting a photo and resolving it back through the uuid. |
-| `field_job_reviews.field_job_id` -> `field_jobs(id)` | **PRESERVED.** |
-| `supabase_parcels.supabase_application_id` | **PRESERVED.** |
-| All FieldSync-owned lifecycle columns | **NOT WRITTEN.** `status`, `current_step`, `started_at`, `step_timestamps`, `rework_started_at`, `submitted_at`, `checklist_*`, `photo_*`, GPS, `findings`, `observations`, `discrepancies`, `recommendations`, `inspection_result`, `is_compliant`, `inspector_notes`. |
-| Row counts | **UNCHANGED.** Asserted in the script: 16 / 24 / 20, with no `DELETE`, `TRUNCATE`, `DROP TABLE` or `DROP COLUMN` anywhere in it. |
-| Supporting indexes | Added for readers that filter on a non-leading column: `(bridge_source_id, status)` for `sync:pull-inspections`, `(bridge_source_id, assigned_inspector_id)` for FieldSync's **unchanged** `assigned_inspector_id = auth.uid()` query, and `(bridge_source_id, reference_number)` / `(bridge_source_id, property_index_number)` for mirror display reads. |
-
-### 23.5 Supporting indexes added (prepared)
-
-```sql
-CREATE INDEX IF NOT EXISTS field_jobs_bridge_source_id_status_index
-    ON public.field_jobs (bridge_source_id, status);
-
-CREATE INDEX IF NOT EXISTS field_jobs_bridge_source_id_assigned_inspector_id_index
-    ON public.field_jobs (bridge_source_id, assigned_inspector_id);
-
-CREATE INDEX IF NOT EXISTS supabase_zoning_applications_bridge_source_id_reference_number_index
-    ON public.supabase_zoning_applications (bridge_source_id, reference_number);
-
-CREATE INDEX IF NOT EXISTS supabase_parcels_bridge_source_id_property_index_number_index
-    ON public.supabase_parcels (bridge_source_id, property_index_number);
-```
-
-The composite `UNIQUE` constraints already serve every
-`bridge_source_id = eq.X AND local_*_id = eq.N` lookup as a leftmost-prefix
-equality scan, so those need no extra index.
-
-### 23.6 iMAPS-side configuration
-
-| Item | Value |
-|---|---|
-| Environment variable | `IMAPS_BRIDGE_SOURCE_ID` |
-| Config file | `config/bridge.php` |
-| Config key | `config('bridge.source_id')` |
-| Authority class | `App\Services\BridgeSourceIdentity` |
-| Template | `.env.example` (new, non-secret, contains no credential) |
-| Accepted shape | `^[A-Za-z0-9][A-Za-z0-9._-]{1,62}$` |
-| Rejected values | `default`, `none`, `null`, `nil`, `undefined`, `changeme`, `todo`, `fixme`, `localhost`, `example`, `placeholder`, `your-bridge-source-id` |
-| Missing value | **FAIL CLOSED** before any HTTP request. No default, no `production` fallback, no hostname, no database name. |
-
-**No local migration.** The namespace lives in the shared remote mirror tables.
-The local iMAPS schema is unchanged, so `php artisan migrate` is neither
-required nor appropriate, and is not run.
-
-### 23.7 Legacy backfill, frozen at audit time
-
-| Table | Claimed (Class A) | Total | Left `NULL` |
-|---|---|---|---|
-| `field_jobs` | 15 | 16 | 1 (Teshow job `a761b17a…`, Class C, unresolved) |
-| `supabase_zoning_applications` | 21 | 24 | 3 (Class B, proven other environment) |
-| `supabase_parcels` | 19 | 20 | 1 (Class B, proven other environment) |
-| `field_job_reviews` | 0 | 0 | 0 |
-| **Total** | **55** | **60** | **5** |
-
-Class A rows were proven by four independent checks (local row exists; remote
-application `reference_number` **and** `applicant_name` match; remote parcel
-`property_index_number` **and** `owner_name` match with a consistent application
-relationship; remote `assigned_inspector_id` resolves through this deployment's
-own `handshake_key` mapping to the local inspector). Class B rows have no local
-counterpart at all. Class C is the single row whose mapping and whose lifecycle
-evidence disagree.
-
-The UUID lists are **frozen literals inside the script**, joined on the primary
-key. The backfill `UPDATE`s cannot match a row outside those lists even if the
-lists were edited incorrectly.
-
-### 23.8 Old-deployment behaviour after the apply
-
-An old iMAPS deployment still sending `ON CONFLICT (local_inspection_id)` receives
-`SQLSTATE 42P10`, surfaced by PostgREST as HTTP 409, and its delivery attempt is
-marked failed by the writer's existing non-2xx branch. It **fails closed** rather
-than corrupting another environment. Every active iMAPS deployment sharing this
-Supabase project must be upgraded to the namespaced contract before the apply.
-No compatibility shim is provided, because preserving the bare-local-id conflict
-target preserves the vulnerability.
-
-### 23.9 Artifacts
-
-| Artifact | Purpose |
-|---|---|
-| `database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql` | The forward SQL. **Not applied.** Includes the incompatible-schema guard, the frozen backfill lists, the catalog-based constraint swap, the supporting indexes, the post-apply assertions and the full rollback. |
-| `database/sql/2026_10_01_bridge_source_namespace_dryrun.sql` | Throwaway-schema validation against real PostgreSQL. Never references a real bridge table. |
-
-### 23.10 Dry-run result
-
-Nine proofs, all PASS, all against real PostgreSQL in a scratch database inside a
-throwaway schema that the script drops before finishing:
-
-1. The pre-fix defect reproduces - a bare `UNIQUE(local_inspection_id)` rejects the second writer.
-2. `(source_a, 37)` and `(source_b, 37)` coexist as two distinct `field_jobs` rows.
-3. A source_a retry converges on the source_a row and leaves FieldSync lifecycle untouched.
-4. The same retry does not touch the source_b row.
-5. A source_b write cannot overwrite the source_a mapping - the incident, replayed and neutralised.
-6. An old bare-local-id writer is rejected with SQLSTATE 42P10.
-7. Repeated identical writes stay one row per namespace.
-8. An unclaimed (`NULL`) legacy row coexists with both namespaces.
-9. Application mirrors, parcel mirrors and review mirrors all coexist per namespace, and a photo still resolves to its job through the uuid primary key.
-
-### 23.11 Rollback
-
-Full rollback is written out at the foot of the forward SQL. Reverting restores
-the collision vulnerability, so it is an emergency measure only, and every
-already-deployed namespaced writer must be reverted at the same time or its
-`ON CONFLICT` targets will fail with 42P10.

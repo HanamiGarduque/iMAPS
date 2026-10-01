@@ -22,7 +22,13 @@ use RuntimeException;
  *  - explicit      - only `IMAPS_BRIDGE_SOURCE_ID` / `config('bridge.source_id')`;
  *  - stable        - nothing here derives it from hostname, environment name,
  *                    database name, APP_ENV or any runtime state;
- *  - unique        - one distinct value per iMAPS database/environment;
+ *  - unique        - one value per LOGICAL iMAPS source. The same logical
+ *                    database/environment keeps the same id across restarts,
+ *                    deploys and rebuilds. ANY independent clone or database that
+ *                    can write to this Supabase project MUST be given a NEW id.
+ *                    An independently writable clone that inherits the parent
+ *                    source's id reproduces the original collision, because bare
+ *                    local integer ids are unique only inside one database;
  *  - non-secret    - it is an environment label, never a credential;
  *  - FAIL CLOSED   - a write that requires bridge identity without a configured
  *                    source id raises, and is never retried against another

@@ -5124,12 +5124,17 @@ Rules, in order of importance:
 
 1. **Explicit.** Only `IMAPS_BRIDGE_SOURCE_ID` is read. Nothing derives it —
    not the hostname, not `APP_ENV`, not the database name, not a UUID.
-2. **Stable.** Identical across restart, deploy, clone and rollback. It is
+2. **Stable.** Identical across restart, deploy and rollback. It is
    configuration, not runtime state.
-3. **Unique.** One distinct value per iMAPS database/environment sharing this
-   Supabase project. This is an operational obligation of whoever sets it; the
-   application cannot verify it across deployments, so it is documented rather
-   than guessed.
+3. **Unique per LOGICAL SOURCE.** One value per logical iMAPS database /
+   environment. The same logical source keeps the same id across restarts,
+   deploys and rebuilds. **Any independent clone or database that can write to
+   this Supabase project must be given a new id.** An independently writable
+   clone that inherits the parent source's id reproduces the original
+   collision, because the bare local integer ids are unique only inside one
+   database. This is an operational obligation of whoever stands up a new
+   writer; the application cannot verify it across deployments, so it is
+   documented rather than guessed.
 4. **Non-secret.** It is an environment label. It appears in logs and in the
    remote table, so it must never be a credential.
 5. **Fail closed.** A write that needs bridge identity and does not have a
@@ -5459,9 +5464,10 @@ psql -c "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE cont
 ### Rollback / recovery
 
 Phase 1 is revertible, and the rollback is written out in full at the foot of
-the forward SQL: drop the four composite constraints, drop the four supporting
-indexes, drop the four `bridge_source_id` columns, and restore the four original
-bare `UNIQUE` constraints.
+the forward SQL: drop the four composite constraints, drop the one supporting
+index that is created (`field_jobs_bridge_source_id_status_index`), drop the four
+`bridge_source_id` columns, and restore the four original bare `UNIQUE`
+constraints.
 
 Reverting **restores the collision vulnerability**. It is an emergency measure
 only, and every already-deployed namespaced writer must be reverted at the same
@@ -5471,3 +5477,95 @@ If a namespace value is later found to be duplicated between two environments,
 the fix is to give one of them a new `IMAPS_BRIDGE_SOURCE_ID` and re-push its own
 rows under it. Existing rows are not rewritten in place; that would be the
 hijack all over again.
+
+---
+
+## CURRENT STATE — LOOP 10 PARTIAL / FIELD ACCEPTANCE PENDING (2026-10-01)
+
+**This block is authoritative for current status. The dated loop entries above it
+are point-in-time history and are deliberately NOT rewritten.**
+
+### Loop status
+
+**LOOP 10 — PARTIAL / FIELD ACCEPTANCE PENDING.**
+
+| Row | Check | Result |
+|---|---|---|
+| CP1 | brand-new application + initial PO ownership | PASS |
+| CP2 | Round 1 via *Needs Site Inspection* | PASS |
+| CP3 | Gemini initial assignment + provenance | PASS (defect found and fixed) |
+| CP4 | FieldSync delivery, POINT geometry | PASS |
+| CP5 | retry idempotency, same remote job | PASS |
+| CP6 | task start scoped to Round 1 | PASS |
+| — | authorization matrix / diagnostics / notification | PASS |
+| CP7–CP13 | GPS, offline/reconnect, Final Submit, reverse sync, *Requires Reinspection*, Round 2 assignment + delivery, Round 1→2 retention | **FIELD ACCEPTANCE PENDING** |
+
+CP7–CP13 are unproven because FieldSync enforces a real 30 m proximity rule
+against the assigned parcel and no device session has taken place on site. This
+is **pending acceptance, not a failure and not a regression**. Full evidence,
+including the frozen resume baseline for `APP-2026-00030` (application 145,
+round 41, remote job `1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999`), is in
+`docs/LOOP_10_ACCEPTANCE_RECORD.md` on branch `loop10-full-e2e-acceptance`.
+
+### Cross-environment bridge collision — BLOCKING HOTFIX INSIDE THE LOOP 10 PERIOD
+
+The bridge namespace work recorded above is **not** a Loop 10 deliverable. It is a
+**blocking hotfix that landed inside the Loop 10 period**, because it concerns the
+shared Supabase project that every environment writes to, and Loop 10 was
+exercising that same bridge.
+
+| | |
+|---|---|
+| Classification | **BLOCKING HOTFIX, inside the Loop 10 period** |
+| Branch | `fix/bridge-source-namespace-collision` |
+| Remote apply | **NOT AUTHORIZED / NOT APPLIED** |
+| Relation to Loop 10 | Independent. Loop 10's own E2E rows do not depend on it, and Loop 10 acceptance is unaffected by its absence. |
+
+Incident: the shared Supabase mirror tables key iMAPS rows by **bare local integer
+ids**, unique only inside ONE iMAPS database. Two writable environments therefore
+resolved the same local id onto the same remote row and overwrote each other
+(observed on `APP-2026-00026` / inspection 37 / job `a761b17a-…`).
+
+Resolution in preparation: bridge identity becomes the composite
+`(bridge_source_id, local_*_id)`, with `bridge_source_id` supplied explicitly per
+logical source. See `FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md` for the full
+rationale, the frozen legacy backfill classification and the nine dry-run proofs.
+
+### Source identity rule (authoritative)
+
+- **The same logical database / environment keeps the same source id** across
+  restarts, deploys and rebuilds.
+- **Any independent clone or database that can write to this Supabase project must
+  be given a new source id.** An independently writable clone that inherits the
+  parent source's id reproduces the original collision, because bare local
+  integer ids are unique only within one database.
+- This logical source's id is **`rosario-imaps-local-0921-a`**. It is recorded in
+  `.env.example` and documentation only; **it has NOT been written into any `.env`**,
+  and writing requires explicit approval.
+- `reference_number` is **not** bridge identity. No `UNIQUE(reference_number)` is
+  added, and no proven iMAPS reader identifies or correlates an application mirror
+  row by it.
+
+### Prepared remote artifacts (not applied)
+
+| Artifact | Purpose |
+|---|---|
+| `database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql` | Forward SQL: incompatible-schema guard, frozen backfill lists, catalog-based `UNIQUE` swap, post-apply assertions, full rollback. |
+| `database/sql/2026_10_01_bridge_source_namespace_dryrun.sql` | Throwaway-schema validation against real PostgreSQL; never references a real bridge table. |
+
+Only ONE supporting index is created,
+`field_jobs_bridge_source_id_status_index`, because
+`PullCompletedInspections` filters `bridge_source_id` + `status` and `status` is
+not the leading column of the composite `UNIQUE`. Three speculative indexes
+(`assigned_inspector_id`, `reference_number`, `property_index_number`) were
+**removed** during the pre-apply gate: no proven iMAPS reader needs them, and
+FieldSync's inspector query does not filter by `bridge_source_id` at all, so the
+composite index would not have served it. **No existing live index is removed by
+this artifact.**
+
+### Open separate — not fixed in Loop 10
+
+The remote `field_job` for historical round 35 (`c7315702-…`) is `completed`
+(`submitted_at 2026-09-21T12:11:00Z`) while its local `site_inspections` row is
+still `assigned`. It satisfies the `status=eq.completed` filter in
+`PullCompletedInspections` and simply has not been pulled. Predates Loop 10.

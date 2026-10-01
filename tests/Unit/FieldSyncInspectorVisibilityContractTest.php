@@ -64,41 +64,106 @@ class FieldSyncInspectorVisibilityContractTest extends TestCase
         $this->assertStringContainsString('resolveSupabaseUserId', $source);
     }
 
-    public function test_the_forward_sql_only_adds_a_supporting_index_for_the_fieldsync_query(): void
+    /**
+     * CORRECTED 2026-10-01 during the pre-apply gate.
+     *
+     * This test previously REQUIRED `(bridge_source_id, assigned_inspector_id)` to
+     * exist, on the reasoning that it supported FieldSync's inspector query. That
+     * reasoning was wrong: FieldSync filters `assigned_inspector_id = auth.uid()`
+     * and does not scope that read by `bridge_source_id` at all. A composite index
+     * leading with `bridge_source_id` would not serve it, so the index was pure
+     * write amplification that also implied a scoping relationship that does not
+     * exist.
+     *
+     * The invariant this file actually protects is unchanged and is now asserted
+     * directly: the forward SQL must not DROP anything FieldSync's visibility
+     * depends on, and must not alter any query text.
+     */
+    public function test_the_forward_sql_adds_no_index_for_the_fieldsync_inspector_query(): void
     {
         $sql = $this->source(self::FORWARD);
 
-        $this->assertStringContainsString(
+        $this->assertStringNotContainsString(
             'CREATE INDEX IF NOT EXISTS field_jobs_bridge_source_id_assigned_inspector_id_index',
             $sql,
+            'FieldSync\'s inspector query does not filter by bridge_source_id, so this index would not serve it.',
         );
-        $this->assertStringContainsString('ON public.field_jobs (bridge_source_id, assigned_inspector_id);', $sql);
+        $this->assertStringNotContainsString(
+            'ON public.field_jobs (bridge_source_id, assigned_inspector_id);',
+            $sql,
+        );
+    }
 
-        // The index must not REPLACE anything FieldSync depends on, and must not
-        // carry a partial predicate that would exclude an inspector's own rows.
+    /**
+     * The real invariant: FieldSync's existing inspector-visibility support is
+     * never dropped by this artifact, and no partial predicate is introduced that
+     * could exclude an inspector's own rows.
+     */
+    public function test_the_forward_sql_never_drops_fieldsync_visibility_support(): void
+    {
+        $sql = $this->source(self::FORWARD);
+
         $this->assertStringNotContainsString(
             'DROP INDEX IF EXISTS field_jobs_assigned',
             $sql,
             'FieldSync\'s inspector-visibility support must never be dropped.',
         );
 
-        $indexDefinition = $this->between(
-            $sql,
-            'CREATE INDEX IF NOT EXISTS field_jobs_bridge_source_id_assigned_inspector_id_index',
-            ';',
+        // No index on assigned_inspector_id is created at all, so no partial
+        // predicate could hide an inspector's own tasks.
+        //
+        // An earlier version of this assertion searched the whole SECTION 7 text
+        // for the string "assigned_inspector_id)". SECTION 7 legitimately NAMES
+        // that column while explaining why the index is NOT created, so the check
+        // failed on correct SQL. The test now isolates the executable statement:
+        // the substring must not appear after the "SECTION 7" marker in a CREATE
+        // INDEX context.
+        $section7 = substr($sql, (int) strpos($sql, 'SECTION 7'), 4000);
+        $this->assertStringNotContainsString(
+            'ON public.field_jobs (bridge_source_id, assigned_inspector_id);',
+            $section7,
+            'No index on assigned_inspector_id is created, so no partial predicate can hide tasks.',
         );
-        $this->assertStringNotContainsString('WHERE', $indexDefinition);
+        $this->assertSame(
+            1,
+            substr_count($section7, 'CREATE INDEX'),
+            'Exactly one index is created in SECTION 7: the proven status index.',
+        );
     }
 
     public function test_the_forward_sql_records_that_the_fieldsync_query_is_unchanged(): void
     {
         $sql = $this->source(self::FORWARD);
 
+        // The forward SQL must still state plainly that FieldSync's own query is not
+        // touched by this work.
+        //
+        // Each fact is asserted as a separate fragment rather than as one long
+        // sentence. The statement lives in a wrapped SQL comment, so any
+        // contiguous multi-phrase match would have to survive both the newline
+        // and the `--` continuation marker. Asserting the fragments keeps the
+        // contract (both facts must be stated) without coupling the test to the
+        // comment's exact wrapping.
         $this->assertStringContainsString(
+            "FieldSync's inspector query",
+            $sql,
+            'The forward SQL must name FieldSync\'s inspector query explicitly.',
+        );
+        $this->assertStringContainsString(
+            'assigned_inspector_id = auth.uid()',
+            $sql,
+            'It must state the actual filter the query uses.',
+        );
+        $this->assertStringContainsString(
+            'is UNCHANGED by this work',
+            $sql,
+            'It must state that this work does not alter that query.',
+        );
+        $this->assertStringNotContainsString(
             'That query is FieldSync\'s normal read and is UNCHANGED',
             $sql,
+            'The old justification implied the removed index served that query, which was incorrect.',
         );
-        $this->assertStringContainsString('No query text is altered', $sql);
     }
 
     private function between(string $haystack, string $startNeedle, string $endNeedle): string
