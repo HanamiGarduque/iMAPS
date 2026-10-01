@@ -560,6 +560,13 @@ function ShowInner({
                             >
                                 Print site map
                             </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowExportModal(true)}
+                                className="h-9 px-3 rounded-md border border-slate-300 bg-white text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                            >
+                                Export permit/doc
+                            </button>
                             {!isFinal && app.status !== "Technical Review" && (
                                 <button
                                     type="button"
@@ -999,8 +1006,9 @@ function ShowInner({
                 </div>
             </div>
 
-            {showAssignDrawer && <AssignInspectorDrawer onClose={() => setShowAssignDrawer(false)} onSubmit={handleAssignSubmit} saving={saving} inspectors={inspectors} />}
-            {showStatusModal && <UpdateStatusDrawer onClose={() => setShowStatusModal(false)} onSubmit={handleGeneralStatusSubmit} saving={saving} currentStatus={app.status} />}
+            {statusDialog && <UpdateStatusDialog currentStatus={app.status} preset={statusDialog} onClose={() => setStatusDialog(null)} onSubmit={submitStatus} saving={saving} />}
+            {siteMapOpen && <SiteMapPrint open={siteMapOpen} onClose={() => setSiteMapOpen(false)} form={app} parcelMapData={parcelMapData} preparedBy={userName} />}
+            {showExportModal && <ExportPermitModal app={app} userName={userName} onClose={() => setShowExportModal(false)} />}
         </>
     );
 }

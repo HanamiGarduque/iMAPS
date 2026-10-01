@@ -303,16 +303,15 @@ export default function TrendsPanel({
                     )}
                     {intakeResult?.summary && (
                         <dl className="grid grid-cols-3 gap-2 text-[11px] pt-1">
-                            {[
-                                ['Q3 2026', intakeResult.summary.q3_2026_total],
-                                ['Q4 2026', intakeResult.summary.q4_2026_total],
-                                ['Combined', intakeResult.summary.combined_total],
-                            ].map(([k, v]) => (
-                                <div key={k}>
-                                    <dt className="text-slate-500">{k}</dt>
-                                    <dd className="font-semibold tabular-nums text-slate-900">{v ?? '—'}</dd>
-                                </div>
-                            ))}
+                            {Object.entries(intakeResult.summary).map(([k, v]) => {
+                                const label = k.replace(/_total$/, '').replace('_', ' ').toUpperCase();
+                                return (
+                                    <div key={k}>
+                                        <dt className="text-slate-500">{label}</dt>
+                                        <dd className="font-semibold tabular-nums text-slate-900">{v ?? '—'}</dd>
+                                    </div>
+                                );
+                            })}
                         </dl>
                     )}
                 </div>

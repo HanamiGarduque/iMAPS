@@ -101,11 +101,16 @@ class ApplicationController extends Controller
             ->pluck('total', 'status')
             ->toArray();
 
+        $draftsCount = DB::table('application_drafts')
+            ->where('user_id', Auth::id())
+            ->count();
+
         return Inertia::render('Applications/Index', [
             'applications'  => $applications,
             'filters'       => (object) $request->only(['barangay', 'status', 'application_type', 'date_from', 'date_to', 'search']),
             'inspectors'    => $inspectors,
             'status_counts' => $statusCounts,
+            'drafts_count'  => $draftsCount,
         ]);
     }
 // ─────────────────────────────────────────────────────────────────────────
