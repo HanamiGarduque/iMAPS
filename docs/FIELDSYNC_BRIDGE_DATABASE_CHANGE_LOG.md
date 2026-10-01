@@ -1290,6 +1290,10 @@ no ledger change. Only the unapplied forward SQL, the unapplied dry run, the
 ## 2026-10-02 - PREPARED CORRECTIVE FOLLOW-UP: SURVIVING STANDALONE UNIQUE INDEX ON `field_job_reviews` — **NOT YET APPLIED**
 
 **Status: PREPARED. Remote apply NOT AUTHORIZED. No remote write executed in this pass.**
+**SUPERSEDED 2026-10-02 - the corrective was subsequently applied and verified;
+see the later entry "CORRECTIVE APPLIED: STANDALONE BARE UNIQUE INDEX ON
+`field_job_reviews` REMOVED - APPLIED / VERIFIED". This entry is preserved
+unaltered below as the plan as written.**
 
 ### 1. What was found
 
@@ -1436,3 +1440,248 @@ approval and a fresh precheck, exactly like every prior remote change.
 No remote SQL executed. Teshow not repaired. No `.env` change. No queue worker
 started. `php artisan up` not left in effect (maintenance restored ON). No
 FieldSync change. No master merge, sync, rebase or push. `.env` not committed.
+
+---
+
+## 2026-10-02 - CORRECTIVE APPLIED: STANDALONE BARE UNIQUE INDEX ON `field_job_reviews` REMOVED - **APPLIED / VERIFIED**
+
+**Status: APPLIED / VERIFIED. This supersedes the status of the PREPARED entry
+above; that entry is preserved unaltered above as the plan as written.**
+
+### 1. Date/time and scope
+
+2026-10-02. Exactly one object was removed from the shared Supabase FieldSync
+project (`laapipjyprmmaylunxib`). Nothing else was written, in this pass or in
+the Teshow pass that follows it on the same date.
+
+### 2. Exact operation
+
+`database/sql/2026_10_02_drop_field_job_reviews_bare_unique_index_after_namespace.sql`,
+executed as committed through native `psql` with `-v ON_ERROR_STOP=1`. **psql exit
+0.** The artifact was not stripped of its psql commands, not inlined, not
+rewritten, and not substituted with a Management API SQL statement.
+
+The single mutation, verbatim:
+
+```sql
+DROP INDEX public.field_job_reviews_technical_review_id_key;
+```
+
+### 3. What was removed, and how it is proved to be that object
+
+**Exactly one** standalone bare `UNIQUE` index was removed:
+`public.field_job_reviews_technical_review_id_key`, a valid single-column
+`UNIQUE` on `technical_review_id` with **no owning `pg_constraint`** - the fact
+that made the original drop inside the namespace forward SQL a silent no-op.
+All eight preconditions were asserted before the drop, and the six
+postconditions inside the same transaction, all of which passed.
+
+### 4. What was preserved
+
+- The composite `UNIQUE (bridge_source_id, technical_review_id)` is intact and
+  valid, as `field_job_reviews_bridge_source_id_technical_review_id_key`. It
+  owns exactly one `pg_constraint` row.
+- The primary key `field_job_reviews_pkey` and the `field_job_id` foreign key
+  are intact.
+- `field_job_reviews` row count remained **0** throughout. The table has never
+  held a row, so the drop could not have destroyed data.
+- **No other table was touched.** The artifact contains no `DELETE`, no
+  `TRUNCATE`, no `DROP TABLE` and no `DROP COLUMN`.
+
+### 5. Post-apply read-back, re-queried independently after the apply
+
+`pg_indexes` on `public.field_job_reviews` returns exactly three indexes, and
+the bare unique's relname is absent from `pg_class` entirely:
+
+| index | definition | owning `pg_constraint` |
+| --- | --- | --- |
+| `field_job_reviews_bridge_source_id_technical_review_id_key` | `UNIQUE (bridge_source_id, technical_review_id)` | 1 |
+| `field_job_reviews_field_job_id_index` | `(field_job_id)` | 0 |
+| `field_job_reviews_pkey` | `UNIQUE (id)` | 1 |
+
+### 6. Consequence for the bridge contract
+
+The namespace is now structurally complete. `technical_review_id` is no longer
+uniquely constrained on its own anywhere, so a second iMAPS environment can
+hold a review for the same Supabase `technical_review_id` without colliding,
+while the composite still guarantees one review per
+`(bridge_source_id, technical_review_id)` **within** each environment. This is
+the whole point of the Phase 1 namespace fix, and the surviving bare unique was
+the last place where the pre-fix assumption still lived in the live schema.
+
+### 7. What remains outstanding
+
+- **Teshow Round 2 recovery is PENDING.** The corrective removed a schema
+  obstacle; it did not repair a single row. The mapping repair on
+  `a761b17a-3fad-44ed-b451-7f0af0e41183` is prepared and validated but **not
+  applied**; it is recorded in the entry that follows this one.
+- Loop 10 remains **PARTIAL - FIELD ACCEPTANCE PENDING**. CP7-CP13 are unproven
+  and cannot be claimed from a database-side change. This entry changes no
+  Loop 10 status.
+
+### 8. Deliberately not done
+
+No repair SQL executed. No queue worker started. `php artisan up` not left in
+effect - maintenance mode remains ON. No FieldSync change. No master merge,
+sync, rebase or push. `.env` and `.env.testing` not read, modified, staged or
+committed. No credential, token, handshake key or database password recorded.
+
+---
+
+## 2026-10-02 - TESHOW ROUND 2 GUARDED MAPPING REPAIR - **PREPARED / VALIDATED / NOT APPLIED**
+
+**Status: PREPARED AND VALIDATED. NOT APPLIED. No remote write performed in this
+entry. Loop 10 status is unchanged: PARTIAL - FIELD ACCEPTANCE PENDING.**
+
+### 1. Date/time and scope
+
+2026-10-02. Branch `fix/bridge-source-namespace-collision`, head
+`bbe483abe5ffc000b0eb0b3c897d7d32edf2cebd` at the start of this pass. Locked
+bridge source `rosario-imaps-local-0921-a`. Maintenance mode ON, queue worker
+NONE, throughout.
+
+### 2. The artifact
+
+`database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql`
+
+One transaction. One `UPDATE`, against one primary key:
+
+```
+a761b17a-3fad-44ed-b451-7f0af0e41183     (local_inspection_id = 37)
+```
+
+### 3. Seven columns written, and nothing else
+
+| column | corrupt value found | value written |
+| --- | --- | --- |
+| `bridge_source_id` | `NULL` | `rosario-imaps-local-0921-a` |
+| `supabase_application_id` | `7a87a08d-...` (other env) | `eaf432ea-8f26-4266-bf4b-ca88887ac470` |
+| `supabase_parcel_id` | `2676c039-...` (other env) | `69bfaafb-a5e2-4871-b9d0-830ea0599b3f` |
+| `assigned_inspector_id` | `c4e22f50-...` (other env) | `ddcebeac-2217-41c5-a6e2-d7f873db9af2` |
+| `scheduled_date` | `2026-10-01` | `2026-09-23` |
+| `deadline_date` | `2026-10-03` | `2026-10-23` |
+| `assignment_instructions` | `ddd` | `Loop 4 Round 2 reinspection E2E.` |
+
+`id`, `local_inspection_id`, `created_at`, `status`, `current_step`,
+`started_at`, `assigned_by_imaps_user_id` and `assigned_by_name` are **not**
+assigned, and neither is any lifecycle, GPS, checklist, photo or evidence
+column. `updated_at` is **not** assigned either - the enabled
+`trg_field_jobs_set_updated_at` trigger stamps it, because this is a genuine
+data change and suppressing the timestamp would falsify the record of when the
+mapping was corrected.
+
+### 4. The restored values are corroborated, not assumed
+
+Each "after" value was read back from the **local canonical database** and each
+remote UUID was confirmed to exist on Supabase, read-only:
+
+- local `site_inspections` **37** -> `zoning_application_id` **132** =
+  `APP-2026-00026` -> `eaf432ea-...` exists
+- `parcel_id` **64** = **Mavalor** -> `69bfaafb-...` exists
+- `inspector_id` **6** = **Renato Dimaculangan**, `dimaculanganr@gmail.com` ->
+  `ddcebeac-...`
+- `scheduled_date` `2026-09-23`, `deadline_date` `2026-10-23`,
+  `assigned_notes` `Loop 4 Round 2 reinspection E2E.`
+- local status `assigned`, `confirmed_latitude`/`confirmed_longitude` `NULL`,
+  `completed_at` `NULL` - consistent with the remote row's preserved
+  `in_progress` / `current_step = 1`.
+
+The decisive cross-check is **Mavalor**. The surviving `activity_log` row
+records Renato completing "Step 1: Site verification" at **Mavalor** on
+2026-09-26, and restored parcel 64 **is** Mavalor. The corrupted mapping
+pointed real completed work at a different site; the restored mapping points it
+back at the site the inspector actually visited. FieldSync's own log and the
+local record agree with each other.
+
+### 5. All twenty preconditions re-verified against the live remote, read-only
+
+`id`; `bridge_source_id IS NULL`; `local_inspection_id = 37`;
+`status = in_progress`; `current_step = 1`;
+`started_at = 2026-09-26T18:05:46.831173+00`;
+`created_at = 2026-09-22T13:48:04.35162+00`;
+`updated_at = 2026-10-01T02:45:13.120729+00` (the hijack timestamp);
+`supabase_application_id = 7a87a08d-...`; `supabase_parcel_id = 2676c039-...`;
+`assigned_inspector_id = c4e22f50-...`; `scheduled_date = 2026-10-01`;
+`deadline_date = 2026-10-03`; `assignment_instructions = 'ddd'`;
+`assigned_by_imaps_user_id = 4`; `assigned_by_name = 'Jyerine Desunia'`;
+`field_job_photos` **0**; `field_job_reviews` **0**; `activity_log` **1**;
+`local_inspection_id = 37` present on exactly **1** row in the whole table.
+
+Loop 10 guard, also verified read-only: job `1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999`,
+`bridge_source_id = rosario-imaps-local-0921-a`, `status = in_progress`,
+`current_step = 1`, `started_at = 2026-10-01T03:39:49.20847+00`,
+`updated_at = 2026-10-01T03:39:49.349537+00`.
+
+### 6. The preservation contract, and how it is enforced
+
+The whole row is snapshotted before the write. After the write, `to_jsonb` of the
+after-row minus **only** the seven mapping columns and `updated_at` must equal
+the same projection of the before-row. Two further checks close the loopholes a
+per-key comparison would leave: the two key sets must be identical, and the two
+whole projected documents must be equal as text. `field_job_photos`,
+`field_job_reviews` and `activity_log` are compared by count **and** by
+`md5(string_agg(t::text, ',' ORDER BY t.id))`. The Loop 10 job is compared
+byte-for-byte, `updated_at` included, because this repair does not target it and
+so must not move it at all.
+
+### 7. Behavioural validation, in throwaway databases, never the real bridge
+
+The artifact's own statements were executed against a scratch PostgreSQL
+database that reproduces the real table shapes, the real `set_updated_at_utc()`
+trigger, and the exact audited row in its exact corrupt state - with only the
+schema qualifier changed. The real bridge was never referenced.
+
+- **Positive run: applied and committed, `psql` exit 0.** Every postcondition
+  held: preservation byte-identical, `updated_at` advanced through the trigger,
+  dependent evidence unchanged (`photos=0, reviews=0, activity_log=1`), Loop 10
+  job byte-identical, and exactly **1** row resolving for
+  `(rosario-imaps-local-0921-a, 37)`. An independent read-back in a fresh psql
+  session confirmed the repaired mapping persisted.
+- **Drift run: refused, `psql` exit 3.** The identical fixture was re-created
+  and then written once more by "the other environment" before the repair ran.
+  The `updated_at` precondition refused it, and a read-back proved the row was
+  left exactly as the drift left it - `bridge_source_id` still `NULL`, the
+  drifted values intact. This is the guard doing its job: the audited
+  corruption is a point in time, and a second hijack invalidates the plan.
+
+Both scratch databases were dropped and confirmed absent.
+
+### 8. Three defects this validation caught in the artifact itself
+
+Recorded because they would each have aborted a correct apply against the real
+bridge, and because a text-only review had passed all three:
+
+1. `RAISE NOTICE '...', v_n;` with no `%` placeholder is a PL/pgSQL error
+   (`too many parameters specified for RAISE`). Under `ON_ERROR_STOP` this
+   aborted the transaction immediately after a successful write.
+2. `GET DIAGNOSTICS v_n = ROW_COUNT;` in a `DO` block *separate* from the
+   `UPDATE` always reads `0`, because `ROW_COUNT` is scoped to the statement's
+   own context. The artifact would have reported `the UPDATE affected 0 row(s)`
+   and rolled back a correct repair. The `UPDATE` now lives inside the same
+   `DO` block, so it is still exactly one statement against exactly one key.
+3. The preservation join used `USING (key)` against `jsonb_each(...) AS b(k, v)`.
+   The column-list alias renames the columns, so `USING (key)` fails with
+   `column "key" specified in USING clause does not exist in left table`. Now
+   `ON b.k = a.k`.
+
+A fourth issue was corrected as a design fault rather than a crash: the
+"nothing created or deleted" postcondition hardcoded `field_jobs` to 16 rows.
+That would abort a valid repair if an unrelated job were created between the
+audit and the apply. It now compares against the count snapshotted at the start
+of the same run, which is the property that actually matters.
+
+### 9. Status
+
+**PREPARED AND VALIDATED, NOT APPLIED.** Manual native-`psql` apply still
+required, with a fresh precheck, exactly as for every prior remote change.
+`database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql` is
+ready to run; it is not authorised to run by this entry.
+
+### 10. Deliberately not done
+
+Repair SQL **not** executed. No queue worker started. `php artisan up` not left
+in effect - maintenance mode remains ON. No FieldSync change. No master merge,
+sync, rebase or push. No `.env` or `.env.testing` modification, staging or
+commit. No credential, token, handshake key or database password recorded. No
+GPS value faked, no FieldSync proximity rule bypassed, no completion
+manufactured, no inspection progress edited directly.

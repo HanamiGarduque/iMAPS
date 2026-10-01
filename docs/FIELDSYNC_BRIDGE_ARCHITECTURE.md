@@ -5550,7 +5550,9 @@ exercising that same bridge.
 |---|---|
 | Classification | **BLOCKING HOTFIX, inside the Loop 10 period** |
 | Branch | `fix/bridge-source-namespace-collision` |
-| Remote apply | **NOT AUTHORIZED / NOT APPLIED** |
+| Namespace structural fix (remote) | **APPLIED / VERIFIED** |
+| Corrective: surviving bare unique on `field_job_reviews` (remote) | **APPLIED / VERIFIED** |
+| Teshow Round 2 mapping repair | **PENDING — prepared and validated, not applied** |
 | Relation to Loop 10 | Independent. Loop 10's own E2E rows do not depend on it, and Loop 10 acceptance is unaffected by its absence. |
 
 Incident: the shared Supabase mirror tables key iMAPS rows by **bare local integer
@@ -5572,18 +5574,22 @@ rationale, the frozen legacy backfill classification and the nine dry-run proofs
   parent source's id reproduces the original collision, because bare local
   integer ids are unique only within one database.
 - This logical source's id is **`rosario-imaps-local-0921-a`**. It is recorded in
-  `.env.example` and documentation only; **it has NOT been written into any `.env`**,
-  and writing requires explicit approval.
+  `.env.example` and documentation, and it **has** been written to the local
+  **untracked** `.env` so that the running application resolves it;
+  `BridgeSourceIdentity::id()` returns exactly that string. `.env` is untracked
+  and is never staged or committed.
 - `reference_number` is **not** bridge identity. No `UNIQUE(reference_number)` is
   added, and no proven iMAPS reader identifies or correlates an application mirror
   row by it.
 
-### Prepared remote artifacts (not applied)
+### Remote artifacts and their current state
 
-| Artifact | Purpose |
-|---|---|
-| `database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql` | Forward SQL: incompatible-schema guard, frozen backfill lists, catalog-based `UNIQUE` swap, post-apply assertions, full rollback. |
-| `database/sql/2026_10_01_bridge_source_namespace_dryrun.sql` | Throwaway-schema validation against real PostgreSQL; never references a real bridge table. |
+| Artifact | Purpose | State |
+|---|---|---|
+| `database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql` | Forward SQL: incompatible-schema guard, frozen backfill lists, catalog-based `UNIQUE` swap, post-apply assertions, full rollback. | **APPLIED / VERIFIED** |
+| `database/sql/2026_10_01_bridge_source_namespace_dryrun.sql` | Throwaway-schema validation against real PostgreSQL; never references a real bridge table. | Consumed; throwaway schema dropped. |
+| `database/sql/2026_10_02_drop_field_job_reviews_bare_unique_index_after_namespace.sql` | Corrective: removes the one standalone bare `UNIQUE (technical_review_id)` the forward SQL's catalog-based drop could not remove. | **APPLIED / VERIFIED** |
+| `database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql` | Guarded one-row mapping repair for `a761b17a-3fad-44ed-b451-7f0af0e41183`. | **PENDING — prepared and validated, not applied.** |
 
 Only ONE supporting index is created,
 `field_jobs_bridge_source_id_status_index`, because
@@ -5592,8 +5598,10 @@ not the leading column of the composite `UNIQUE`. Three speculative indexes
 (`assigned_inspector_id`, `reference_number`, `property_index_number`) were
 **removed** during the pre-apply gate: no proven iMAPS reader needs them, and
 FieldSync's inspector query does not filter by `bridge_source_id` at all, so the
-composite index would not have served it. **No existing live index is removed by
-this artifact.**
+composite index would not have served it. **The forward SQL artifact itself removes
+no existing live index.** The one exception is the later corrective recorded
+above, which removed exactly the single standalone bare `UNIQUE` on
+`field_job_reviews` that survived the forward apply.
 
 ### Open separate — not fixed in Loop 10
 
