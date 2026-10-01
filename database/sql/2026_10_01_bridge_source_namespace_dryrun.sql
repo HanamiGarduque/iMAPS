@@ -660,13 +660,17 @@ SELECT status, current_step, submitted_at, step_timestamps, updated_at,
 \echo '  pinned state captured'
 
 -- 10b. The trigger must exist and be enabled before anything is disabled.
+--
+-- 10h (below) proves the pg_catalog TYPE behaviour this depends on: tgenabled
+-- is "char", so it must be COMPARED ('O'), never assigned into a boolean. That
+-- was a live 22P02 defect in the forward SQL, so the dry run now pins it.
 DO $$
-DECLARE v_ten text;
+DECLARE v_ten boolean; v_raw "char";
 BEGIN
-    SELECT tgenabled INTO v_ten FROM pg_trigger
+    SELECT (tgenabled = 'O'), tgenabled INTO v_ten, v_raw FROM pg_trigger
     WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
-    IF v_ten IS DISTINCT FROM 'O' THEN
-        RAISE EXCEPTION 'TEST SETUP FAIL: trg_field_jobs_set_updated_at not enabled (tgenabled=%)', v_ten;
+    IF v_ten IS NOT TRUE THEN
+        RAISE EXCEPTION 'TEST SETUP FAIL: trg_field_jobs_set_updated_at not enabled (tgenabled=%)', v_raw;
     END IF;
 END $$;
 \echo '  10b PASS: trg_field_jobs_set_updated_at exists and is enabled'
@@ -675,18 +679,18 @@ END $$;
 ALTER TABLE field_jobs DISABLE TRIGGER trg_field_jobs_set_updated_at;
 
 DO $$
-DECLARE v_guard text; v_ts text;
+DECLARE v_guard boolean; v_ts boolean;
 BEGIN
-    SELECT tgenabled INTO v_ts FROM pg_trigger
+    SELECT (tgenabled = 'D') INTO v_ts FROM pg_trigger
     WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
-    SELECT tgenabled INTO v_guard FROM pg_trigger
+    SELECT (tgenabled = 'O') INTO v_guard FROM pg_trigger
     WHERE tgname = 'trg_preserve_completed_field_job_lifecycle' AND NOT tgisinternal;
 
-    IF v_ts IS DISTINCT FROM 'D' THEN
-        RAISE EXCEPTION 'TEST FAIL: timestamp trigger not disabled (tgenabled=%)', v_ts;
+    IF v_ts IS NOT TRUE THEN
+        RAISE EXCEPTION 'TEST FAIL: timestamp trigger not disabled';
     END IF;
-    IF v_guard IS DISTINCT FROM 'O' THEN
-        RAISE EXCEPTION 'TEST FAIL: the lifecycle guard was disturbed by naming only one trigger (tgenabled=%)', v_guard;
+    IF v_guard IS NOT TRUE THEN
+        RAISE EXCEPTION 'TEST FAIL: the lifecycle guard was disturbed by naming only one trigger';
     END IF;
 END $$;
 \echo '  10c PASS: only the timestamp trigger is disabled; the lifecycle guard is still enabled'
@@ -733,15 +737,59 @@ END $$;
 ALTER TABLE field_jobs ENABLE TRIGGER trg_field_jobs_set_updated_at;
 
 DO $$
-DECLARE v_ten text;
+DECLARE v_ten boolean; v_raw "char";
 BEGIN
-    SELECT tgenabled INTO v_ten FROM pg_trigger
+    SELECT (tgenabled = 'O'), tgenabled INTO v_ten, v_raw FROM pg_trigger
     WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
-    IF v_ten IS DISTINCT FROM 'O' THEN
-        RAISE EXCEPTION 'TEST FAIL: timestamp trigger not re-enabled (tgenabled=%)', v_ten;
+    IF v_ten IS NOT TRUE THEN
+        RAISE EXCEPTION 'TEST FAIL: timestamp trigger not re-enabled (tgenabled=%)', v_raw;
     END IF;
 END $$;
 \echo '  10e PASS: trigger re-enabled and verified'
+
+-- 10h. pg_trigger.tgenabled is "char", NOT boolean.
+--
+-- The forward SQL originally did `SELECT tgenabled INTO <boolean>` and failed
+-- live with 22P02 invalid input syntax for type boolean: "O". This proof pins
+-- that catalog behaviour so the artifact's comparison cannot regress to a cast,
+-- and so nobody "simplifies" (tgenabled = 'O') back into a bare assignment.
+DO $$
+DECLARE
+    v_bad    boolean;
+    v_ok     boolean;
+    v_raw    "char";
+    v_broken boolean;
+BEGIN
+    SELECT tgenabled INTO v_raw FROM pg_trigger
+    WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
+
+    -- The catalog really is one character of text.
+    IF length(v_raw) <> 1 THEN
+        RAISE EXCEPTION 'TEST FAIL: tgenabled is % chars, expected a single "char"', length(v_raw);
+    END IF;
+
+    -- Comparing yields a boolean.
+    SELECT (tgenabled = 'O') INTO v_ok FROM pg_trigger
+    WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
+    IF v_ok IS DISTINCT FROM true THEN
+        RAISE EXCEPTION 'TEST FAIL: (tgenabled = ''O'') did not yield true';
+    END IF;
+
+    -- And assigning it into a boolean is exactly the failure that was fixed.
+    -- plpgsql has no nested DECLARE, so v_broken is declared at the top.
+    BEGIN
+        SELECT tgenabled INTO v_broken FROM pg_trigger
+        WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
+        RAISE EXCEPTION 'TEST FAIL: assigning tgenabled into a boolean did NOT raise, so the 22P02 risk has returned';
+    EXCEPTION
+        WHEN others THEN
+            IF SQLERRM LIKE 'TEST FAIL:%' THEN
+                RAISE;   -- rethrow our own failure, not the expected cast error
+            END IF;
+            RAISE NOTICE '  confirmed: direct assignment raises SQLSTATE %', SQLSTATE;
+    END;
+END $$;
+\echo '  10h PASS: tgenabled is "char"; comparison works and direct assignment raises 22P02'
 
 -- 10f. After re-enabling, an ordinary update MUST move updated_at again.
 CREATE TEMP TABLE ns_before_reenabled AS

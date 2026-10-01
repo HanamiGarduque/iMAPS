@@ -531,6 +531,11 @@ ORDER BY p.local_parcel_id;
 -- environment whose trigger is not the expected one must not be silently
 -- stamped by this script.
 --
+-- NOTE ON THE CATALOG TYPE (live defect, fixed 2026-10-02): pg_trigger.tgenabled
+-- is "char", not boolean. Selecting it straight into a boolean variable fails
+-- with 22P02 invalid input syntax for type boolean: "O". Both guards therefore
+-- select the boolean EXPRESSION (t.tgenabled = 'O') and test that.
+--
 -- The mirror tables (application, parcel, review) have no such trigger and need
 -- no handling.
 -- =====================================================================
@@ -540,6 +545,9 @@ DECLARE
     v_n      integer;
     v_tname  text;
     v_ten    boolean;
+    -- The raw catalog "char" value, kept ONLY so the RAISE messages can report
+    -- what was actually seen ('O', 'D', 'R', 'A') instead of a boolean.
+    v_tgenabled "char";
     v_before integer;
     v_after  integer;
 BEGIN
@@ -576,8 +584,16 @@ BEGIN
 
     -- ---------------------------------------------------------------------
     -- 5b. Assert the exact trigger exists and is enabled.
+    --
+    -- pg_trigger.tgenabled is PostgreSQL type "char" (one character), NOT a
+    -- boolean: 'O' = origin/enabled, 'D' = disabled, 'R' = replica, 'A' = always.
+    -- Assigning it straight into a boolean variable fails at runtime with
+    --     22P02 invalid input syntax for type boolean: "O"
+    -- which is what the first live apply attempt hit. The catalog value must be
+    -- COMPARED, not cast: this selects the boolean EXPRESSION (tgenabled = 'O')
+    -- into a boolean variable. Comparing later is then a plain boolean test.
     -- ---------------------------------------------------------------------
-    SELECT t.tgname, t.tgenabled
+    SELECT t.tgname, (t.tgenabled = 'O')
       INTO v_tname, v_ten
       FROM pg_trigger t
       JOIN pg_class c ON c.oid = t.tgrelid
@@ -591,8 +607,8 @@ BEGIN
         RAISE EXCEPTION 'ABORT: trigger public.field_jobs.trg_field_jobs_set_updated_at is MISSING. Expected a BEFORE UPDATE trigger calling public.set_updated_at_utc(). Refusing to run: without that guard this script cannot reason about updated_at. Re-audit before applying.';
     END IF;
 
-    IF v_ten <> 'O' THEN
-        RAISE EXCEPTION 'ABORT: trigger trg_field_jobs_set_updated_at is present but NOT enabled (tgenabled = %). Refusing to run: the live trigger state differs from the audited one. Re-audit before applying.', v_ten;
+    IF v_ten IS NOT TRUE THEN
+        RAISE EXCEPTION 'ABORT: trigger trg_field_jobs_set_updated_at is present but NOT enabled (tgenabled = ''%''). Refusing to run: the live trigger state differs from the audited one. Re-audit before applying.', v_tgenabled;
     END IF;
 
     RAISE NOTICE 'field_jobs: confirmed trigger % exists and is enabled', v_tname;
@@ -622,7 +638,9 @@ BEGIN
     -- ---------------------------------------------------------------------
     ALTER TABLE public.field_jobs ENABLE TRIGGER trg_field_jobs_set_updated_at;
 
-    SELECT t.tgenabled INTO v_ten
+    -- Same "char" comparison as 5b: tgenabled is never assigned into the boolean
+    -- variable directly.
+    SELECT t.tgenabled, (t.tgenabled = 'O') INTO v_tgenabled, v_ten
       FROM pg_trigger t
       JOIN pg_class c ON c.oid = t.tgrelid
       JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -631,8 +649,8 @@ BEGIN
        AND t.tgname = 'trg_field_jobs_set_updated_at'
        AND NOT t.tgisinternal;
 
-    IF v_ten IS DISTINCT FROM 'O' THEN
-        RAISE EXCEPTION 'ABORT: trigger trg_field_jobs_set_updated_at was not re-enabled (tgenabled = %). Rolling back the whole transaction.', v_ten;
+    IF v_ten IS NOT TRUE THEN
+        RAISE EXCEPTION 'ABORT: trigger trg_field_jobs_set_updated_at was not re-enabled (tgenabled = ''%''). Rolling back the whole transaction.', v_tgenabled;
     END IF;
 
     RAISE NOTICE 'field_jobs: trigger % re-enabled and verified', v_tname;

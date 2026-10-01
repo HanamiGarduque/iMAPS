@@ -581,12 +581,62 @@ class BridgeNamespaceSqlContractTest extends TestCase
         // BEFORE: must prove it exists AND is enabled, or abort before writing.
         $this->assertStringContainsString('is MISSING', $sql);
         $this->assertStringContainsString('is present but NOT enabled', $sql);
-        $this->assertStringContainsString('tgenabled', $sql);
-        $this->assertStringContainsString("IS DISTINCT FROM 'O'", $sql);
 
         // AFTER: must prove it is enabled again.
         $this->assertStringContainsString('was not re-enabled', $sql);
         $this->assertStringContainsString('Rolling back the whole transaction', $sql);
+    }
+
+    /**
+     * LIVE DEFECT, 2026-10-02: pg_trigger.tgenabled is type "char", not boolean.
+     *
+     * The forward SQL originally selected it straight into a boolean variable and
+     * the first live apply failed with
+     *     22P02 invalid input syntax for type boolean: "O"
+     * Both guards must select the boolean EXPRESSION (t.tgenabled = 'O') instead,
+     * and test that with a plain boolean comparison. This test fails if anyone
+     * "simplifies" the comparison back into a cast or a bare assignment.
+     */
+    public function test_tgenabled_is_never_assigned_into_a_boolean_variable(): void
+    {
+        $sql = $this->forward();
+
+        // The boolean variable must receive the EXPRESSION, never the raw column.
+        $this->assertStringContainsString(
+            "(t.tgenabled = 'O')",
+            $sql,
+            'The guards must select the boolean expression (tgenabled = O).',
+        );
+
+        $this->assertStringNotContainsString(
+            'SELECT t.tgname, t.tgenabled',
+            $sql,
+            'Assigning tgenabled directly into the boolean variable is the 22P02 defect.',
+        );
+        $this->assertStringNotContainsString(
+            'SELECT t.tgenabled INTO v_ten',
+            $sql,
+            'Assigning tgenabled directly into the boolean variable is the 22P02 defect.',
+        );
+
+        // The raw value is kept in a "char" variable purely for the error message.
+        $this->assertStringContainsString(
+            'v_tgenabled "char"',
+            $sql,
+            'The raw catalog value must be held in a "char" variable for reporting.',
+        );
+
+        // The comparisons must be boolean tests, not string tests against 'O'.
+        $this->assertStringContainsString('IF v_ten IS NOT TRUE THEN', $sql);
+        $this->assertStringNotContainsString("v_ten <> 'O'", $sql);
+        $this->assertStringNotContainsString("v_ten IS DISTINCT FROM 'O'", $sql);
+
+        // And the reason must be documented where an operator will read it.
+        $this->assertStringContainsString(
+            'is PostgreSQL type "char" (one character), NOT a',
+            $sql,
+        );
+        $this->assertStringContainsString('invalid input syntax for type boolean', $sql);
     }
 
     public function test_the_forward_sql_snapshots_and_verifies_the_preserved_columns(): void
@@ -645,6 +695,21 @@ class BridgeNamespaceSqlContractTest extends TestCase
         $this->assertStringContainsString('10e PASS', $sql);
         $this->assertStringContainsString('10f PASS', $sql);
         $this->assertStringContainsString('10g PASS', $sql);
+
+        // 10h pins the pg_catalog TYPE behaviour behind the guard fix: tgenabled
+        // is "char", so comparing is required and direct assignment raises 22P02.
+        $this->assertStringContainsString('10h PASS', $sql);
+        $this->assertStringContainsString(
+            'did NOT raise, so the 22P02 risk has returned',
+            $sql,
+            'The dry run must FAIL if a direct boolean assignment ever starts working again.',
+        );
+        $this->assertStringContainsString('confirmed: direct assignment raises SQLSTATE', $sql);
+        $this->assertStringContainsString('length(v_raw) <> 1', $sql);
+
+        // The dry run must also hold the raw catalog value in a "char" variable,
+        // so the reporting path cannot regress to a boolean cast either.
+        $this->assertStringContainsString('v_raw    "char"', $sql);
 
         $this->assertStringContainsString(
             'the namespace backfill changed updated_at',
