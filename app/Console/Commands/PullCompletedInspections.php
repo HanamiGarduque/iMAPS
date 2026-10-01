@@ -44,7 +44,14 @@ class PullCompletedInspections extends Command
             'gps_confirmed_at',
         ]);
 
-        $filters = ['status' => 'eq.completed'];
+        // NAMESPACED READ. This command matches remote jobs to local
+        // site_inspections by the bare `local_inspection_id` integer. That
+        // integer is unique only inside one iMAPS database, while this Supabase
+        // project is shared, so an unscoped pull can copy another
+        // environment's completion, findings, checklist and GPS onto a local
+        // row that merely shares the number. The scope is this deployment's
+        // configured bridge source identity, and it fails closed without one.
+        $filters = $supabase->scopedFilters(['status' => 'eq.completed']);
         if ($localInspectionId !== null) {
             $filters['local_inspection_id'] = 'eq.'.(int) $localInspectionId;
         }

@@ -282,10 +282,13 @@ class Loop9bWriterCorrelationCorrectionTest extends TestCase
     {
         $src = $this->jobSource();
 
+        // The three remote identities are unchanged IN MEANING but namespaced:
+        // a bare local integer is not globally unique on a shared bridge
+        // project, which is the proven 2026-10-01 collision.
         foreach ([
-            'on_conflict=local_application_id',
-            'on_conflict=local_parcel_id',
-            'on_conflict=local_inspection_id',
+            'on_conflict=bridge_source_id,local_application_id',
+            'on_conflict=bridge_source_id,local_parcel_id',
+            'on_conflict=bridge_source_id,local_inspection_id',
             "'status'                  => \$existingJob['status'] ?? 'assigned'",
         ] as $token) {
             $this->assertStringContainsString($token, $src);

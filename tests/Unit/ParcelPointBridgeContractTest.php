@@ -236,9 +236,9 @@ class ParcelPointBridgeContractTest extends TestCase
         $code = $this->code();
 
         $this->assertStringContainsString(
-            '?on_conflict=local_parcel_id',
+            '?on_conflict=bridge_source_id,local_parcel_id',
             $code,
-            'The upsert key must remain: a re-push must update, not duplicate, the parcel mirror row.',
+            'The upsert key must remain, namespaced: a re-push must update this environment\'s parcel mirror row, not duplicate it and not touch another environment\'s.',
         );
 
         $this->assertStringContainsString(

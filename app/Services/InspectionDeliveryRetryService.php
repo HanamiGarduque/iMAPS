@@ -272,6 +272,13 @@ final class InspectionDeliveryRetryService
             // ---------------------------------------------------------------
             // 3. Re-queue the ONE existing bridge writer. Inside this
             //    transaction, so the `jobs` row commits with 1 and 2.
+            //
+            // The retry reuses this ONE writer rather than adding a second path,
+            // so it inherits the same namespace contract: the writer resolves
+            // this deployment's bridge source identity and upserts on
+            // (bridge_source_id, local_inspection_id). A retry therefore updates
+            // THIS environment's row, converges on it, and can never overwrite
+            // another environment's job that happens to share the local id.
             // ---------------------------------------------------------------
             PushInspectionToSupabase::dispatch($inspection, self::DELIVERY_SOURCE);
 

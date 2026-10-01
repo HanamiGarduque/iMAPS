@@ -5035,3 +5035,439 @@ change.
 
 **Next activity: TEAM LEADER HANDOFF / MASTER INTEGRATION REVIEW - not another
 Loop 9 feature.**
+
+---
+
+## CROSS-ENVIRONMENT BRIDGE NAMESPACE (INCIDENT OF 2026-10-01)
+
+**Status: PREPARED — NOT YET APPLIED REMOTELY.**
+
+This section is the canonical record of the cross-environment bridge identity
+defect, the namespace contract that replaces it, and the prepared recovery plan.
+No remote SQL has been executed.
+
+### The incident
+
+On 2026-10-01, application `APP-2026-00026` (local application `132`, parcel
+`64`, applicant Teshow Promsakha Sakonnakhon, Mavalor) had its Round 2 FieldSync
+job corrupted by a different iMAPS environment.
+
+| | |
+|---|---|
+| Remote job | `a761b17a-3fad-44ed-b451-7f0af0e41183` |
+| Local round | `site_inspections.id = 37` (Loop 4 Round 2 reinspection) |
+| Round 1 | inspection `36`, job `76d79ab8-e38e-4682-ada2-a67ac84dde00`, completed, still intact |
+
+Round 2 was assigned locally to Renato (local user `6`, handshake
+`B7vKx9Pq2w…`) which resolves to remote profile `ddcebeac-2217-41c5-a6e2-d7f873db9af2`.
+Renato started it in Mavalor on 2026-09-26 and completed Step 1. That evidence is
+still on the row:
+
+- `status = in_progress`
+- `current_step = 1`
+- `started_at = 2026-09-26T18:05:46.831173+00:00`
+- `step_timestamps = {"1": "2026-09-26T17:50:46.146511Z"}`
+- `activity_log`: `2026-09-26T17:50:46.982345+00:00`, inspector
+  `ddcebeac…`, `step_completed`, "Completed Step 1: Site verification", Mavalor
+
+At `2026-10-01T02:45:13.120729+00:00` a second iMAPS environment pushed its own
+`local_inspection_id = 37`. Because the writer used
+`ON CONFLICT (local_inspection_id)`, it resolved to **this** row and overwrote
+every writer-owned mapping column:
+
+| Column | Before (TESHOW) | After (hijacked) |
+|---|---|---|
+| `supabase_application_id` | `eaf432ea…` (APP-2026-00026 / local app 132) | `7a87a08d…` (APP-2026-00032 / Boy Abunda / local app 138) |
+| `supabase_parcel_id` | `69bfaafb…` (local parcel 64, Jose Dimayuga, Mavalor) | `2676c039…` (local parcel 70, Antonio Macatangay, Alupay) |
+| `assigned_inspector_id` | `ddcebeac…` (Renato) | `c4e22f50…` (Juan Dela Cruz) |
+| `scheduled_date` | `2026-09-23` | `2026-10-01` |
+| `deadline_date` | `2026-10-23` | `2026-10-03` |
+| `assignment_instructions` | `Loop 4 Round 2 reinspection` | `ddd` |
+
+The lifecycle columns were **not** overwritten, which is why the row still looked
+plausible: the task existed, Renato's completed Step 1 existed, and the job
+pointed at a completely different site and a different inspector.
+
+### Root cause
+
+`field_jobs.local_inspection_id` (and its siblings) is a bare iMAPS-local
+integer. It is unique inside **one** iMAPS database. The Supabase FieldSync
+bridge project is shared by **more than one** iMAPS environment. Bare local
+integers are therefore not an identity on that project at all.
+
+The bare integers proved load-bearing in four places:
+
+- `field_jobs.local_inspection_id` — `UNIQUE`
+- `supabase_zoning_applications.local_application_id` — `UNIQUE`
+- `supabase_parcels.local_parcel_id` — `UNIQUE`
+- `field_job_reviews.technical_review_id` — `UNIQUE`
+
+The third one is easy to miss. `technical_review_id` is an iMAPS
+`technical_reviews.id`, so the Planning Review transport had the identical
+defect even though its column is not named `local_*`.
+
+### Bridge source namespace (the contract)
+
+Every iMAPS deployment that writes to the shared bridge now carries a stable,
+explicit, non-secret **bridge source identity**.
+
+| | |
+|---|---|
+| Environment variable | `IMAPS_BRIDGE_SOURCE_ID` |
+| Application config | `config('bridge.source_id')`, defined in `config/bridge.php` |
+| Authority | `App\Services\BridgeSourceIdentity` |
+| Remote column | `bridge_source_id` (text) on all four mirrored tables |
+| Shape | 2–63 characters: letters, digits, `.`, `_`, `-` |
+| Rejected | `default`, `none`, `null`, `nil`, `undefined`, `changeme`, `todo`, `fixme`, `localhost`, `example`, `placeholder`, `your-bridge-source-id` |
+
+Rules, in order of importance:
+
+1. **Explicit.** Only `IMAPS_BRIDGE_SOURCE_ID` is read. Nothing derives it —
+   not the hostname, not `APP_ENV`, not the database name, not a UUID.
+2. **Stable.** Identical across restart, deploy, clone and rollback. It is
+   configuration, not runtime state.
+3. **Unique.** One distinct value per iMAPS database/environment sharing this
+   Supabase project. This is an operational obligation of whoever sets it; the
+   application cannot verify it across deployments, so it is documented rather
+   than guessed.
+4. **Non-secret.** It is an environment label. It appears in logs and in the
+   remote table, so it must never be a credential.
+5. **Fail closed.** A write that needs bridge identity and does not have a
+   usable value raises before any HTTP request is made. There is no `default`,
+   no `production` fallback, no hostname, no database name.
+
+`production` is deliberately **not** on the rejected list. An environment
+genuinely named "production" is an explicit choice; the contract forbids a
+*silent* fallback to it, not an explicit value.
+
+### Audited scope: what is namespaced and what is not
+
+The audit used the live PostgREST schema, the live OpenAPI document, deliberate
+invalid-value probes to confirm column types, and read-only inspection of both
+databases. Tables were namespaced only where a bare local integer is genuinely
+part of the row identity.
+
+| Remote table | Local-id column(s) | Bare `UNIQUE` before | Writer | Reader(s) | Namespaced |
+|---|---|---|---|---|---|
+| `field_jobs` | `local_inspection_id` (integer, nullable) | yes, `(local_inspection_id)` | `PushInspectionToSupabase`, `SupabaseService::createFieldJob` | `findFieldJobIdByLocalInspectionId`, `fieldJobTransferStates`, `getInspectionWithSignedPhotos`, `PullCompletedInspections`; FK target of `field_job_photos` and `field_job_reviews` | **YES** |
+| `supabase_zoning_applications` | `local_application_id` (integer, nullable) | yes, `(local_application_id)` | `PushInspectionToSupabase`, `SupabaseService::pushZoningApplication` | none by local id | **YES** |
+| `supabase_parcels` | `local_parcel_id` (integer, nullable) | yes, `(local_parcel_id)` | `PushInspectionToSupabase`, `SupabaseService::pushParcel` | none by local id (read by remote uuid for GPS context) | **YES** |
+| `field_job_reviews` | `technical_review_id` (bigint), `reviewed_site_inspection_id` (integer) | yes, `(technical_review_id)` | `PushPlanningReviewToSupabase` -> `SupabaseService::upsertFieldJobReview` | none in iMAPS; FieldSync embeds by `field_job_id` | **YES** |
+| `field_job_photos` | none | — | none in iMAPS | `SupabaseService::getInspectionWithSignedPhotos`, by `field_job_id` | **NO** — identity is a remote uuid FK; there is no local integer to collide |
+| `local_inspections` | none in use | — | none in iMAPS | none | **NO** — 0 rows |
+| `profiles`, `activity_log`, `diagnostic_reports`, `application_status_tracks`, `notification_subscriptions`, `inspector_devices`, `inspector_device_subscriptions`, `push_device_subscriptions` | none | — | — | — | **NO** — no local-id identity |
+
+Column type evidence: `field_jobs.local_inspection_id`,
+`supabase_zoning_applications.local_application_id` and
+`supabase_parcels.local_parcel_id` all return
+`22P02 invalid input syntax for type integer` for a non-numeric filter, so they
+are `integer`, not `text`. `field_job_reviews.technical_review_id` returns the
+same for `bigint`.
+
+`field_job_reviews` is the case the "expected" list does not name. The audit
+proved it keys on a bare iMAPS-local integer with a bare `UNIQUE`, so it is
+namespaced too. Leaving it would have left the identical collision one click
+away.
+
+### Updated writers
+
+Existing writers were updated in place. No parallel writer was introduced.
+
+| Writer | Change |
+|---|---|
+| `App\Jobs\PushInspectionToSupabase` | resolves `BridgeSourceIdentity::id()` first (before any HTTP request); application mirror `on_conflict=bridge_source_id,local_application_id`; parcel mirror `on_conflict=bridge_source_id,local_parcel_id`; existing-job status pre-read filters `bridge_source_id = eq.<id>`; field job `on_conflict=bridge_source_id,local_inspection_id`; `bridge_source_id` added to both mirror payloads and the job payload |
+| `App\Services\SupabaseService::pushZoningApplication` | `namespaced()` payload + composite `ON CONFLICT` |
+| `App\Services\SupabaseService::pushParcel` | `namespaced()` payload + composite `ON CONFLICT` |
+| `App\Services\SupabaseService::createFieldJob` | `namespaced()` payload + composite `ON CONFLICT` |
+| `App\Services\SupabaseService::upsertFieldJobReview` | `namespaced()` payload + `on_conflict=bridge_source_id,technical_review_id` |
+| `App\Services\InspectionDeliveryRetryService` | unchanged code: it re-queues the same one writer, so it inherits the namespace. Documented explicitly so the retry path is not mistaken for a second writer |
+| `App\Http\Controllers\WorkReassignmentController` | unchanged code: it dispatches the same one writer. Comment updated to state that the namespace is what makes "the same job" mean *this environment's* job |
+
+### Updated readers
+
+Any server-side lookup whose meaning is "find **my** environment's local
+inspection / application / parcel" now filters on the namespace.
+
+| Reader | Change |
+|---|---|
+| `SupabaseService::findFieldJobIdByLocalInspectionId` | `scopedFilters([...])`; a Planning Review can no longer attach to another environment's round that shares the integer |
+| `SupabaseService::fieldJobTransferStates` | `scopedFilters([...])`; the reassignment guard can no longer be satisfied by another environment's job state |
+| `SupabaseService::getInspectionWithSignedPhotos` | `bridge_source_id = eq.<id>`; without it this endpoint could show another environment's findings, checklist and **signed private photos** to a Planning Officer |
+| `PullCompletedInspections` | `scopedFilters(['status' => 'eq.completed'])`; an unscoped pull could copy another environment's completion, findings, checklist and GPS onto a local row that merely shares the number |
+
+**Explicitly NOT changed:** FieldSync's inspector-visibility query
+(`assigned_inspector_id = auth.uid()`). That filter is correct — it is scoped to
+the authenticated Supabase Auth user, which *is* globally unique. The defect was
+never there. `FieldSyncInspectorVisibilityContractTest` asserts that no iMAPS
+bridge read filters by `assigned_inspector_id`, so the collision cannot later be
+"fixed" in the wrong place.
+
+### Old-deployment behaviour (deterministic, proven)
+
+Once the bare `UNIQUE(local_inspection_id)` is dropped, an old deployment still
+sending `ON CONFLICT (local_inspection_id)` receives:
+
+```
+ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
+SQLSTATE 42P10
+```
+
+PostgREST returns HTTP 409 with `"code":"42P10"`. The writer's existing
+`!successful()` branch classifies it and marks the delivery attempt failed. The
+old writer **stops**. It cannot overwrite another environment, because the
+constraint it names no longer exists.
+
+This is the preferred fail-safe: an old deployment loses the ability to corrupt
+the bridge rather than quietly keeping it. It was proven against real PostgreSQL
+in the dry run, not assumed.
+
+**Required coordination:** every active iMAPS deployment writing to this Supabase
+project must be upgraded to the namespaced contract **before** the forward SQL is
+applied, or its deliveries fail with `42P10` until it is. No compatibility shim
+is provided, on purpose: preserving a bare-local-id conflict target preserves the
+vulnerability.
+
+### Forward SQL (prepared, not applied)
+
+`database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql`
+
+```bash
+pg_dump   # first, as with every prior remote change
+psql -v ON_ERROR_STOP=1 \
+     -v bridge_source_id='<the value configured as IMAPS_BRIDGE_SOURCE_ID here>' \
+     -f database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql
+```
+
+It refuses to run without the variable, runs in a single transaction, and:
+
+- checks an incompatible schema **before** any DDL (missing tables, retyped
+  local-id columns, a pre-existing non-text `bridge_source_id`);
+- adds `bridge_source_id text` to the four mirrored tables, nullable;
+- backfills **only** frozen, proven Class-A UUID lists;
+- finds and drops the four bare unique constraints **by catalog lookup**, so it
+  does not depend on constraint names that were never exported;
+- installs `UNIQUE (bridge_source_id, local_*_id)` on all four tables;
+- adds supporting indexes for the readers that filter on a non-leading column;
+- asserts afterwards that no row carries a foreign namespace, that all four
+  composite constraints exist, that primary keys and foreign keys are intact, and
+  that no row count changed.
+
+It contains no `DELETE`, no `TRUNCATE`, no `DROP TABLE`, no `DROP COLUMN`, and no
+write to any FieldSync-owned lifecycle column.
+
+### Legacy and backfill strategy
+
+Rows that predate `bridge_source_id` are classified into three groups and are
+never guessed.
+
+**A — PROVEN CURRENT ENVIRONMENT: 55 rows.** Assigned this deployment's
+`bridge_source_id`. Each one satisfied, independently:
+
+1. the local id exists in this iMAPS database;
+2. the remote application mirror's `reference_number` **and** `applicant_name`
+   equal the local application row's;
+3. the remote parcel mirror's `property_index_number` **and** `owner_name` equal
+   the local parcel row's, and its application relationship matches the local
+   parcel's application;
+4. the remote `assigned_inspector_id` resolves, through this deployment's own
+   `users.handshake_key` -> `profiles.handshake_key` mapping, to the local
+   `site_inspections.inspector_id`.
+
+| Table | Claimed | Total | Unclaimed |
+|---|---|---|---|
+| `field_jobs` | 15 | 16 | 1 (Teshow, Class C) |
+| `supabase_zoning_applications` | 21 | 24 | 3 |
+| `supabase_parcels` | 19 | 20 | 1 |
+| `field_job_reviews` | 0 | 0 | 0 |
+
+**B — PROVEN OTHER ENVIRONMENT: 4 rows.** These are excluded from the claimed
+list and left `NULL`:
+
+| Remote uuid | Local id | Evidence |
+|---|---|---|
+| `7a87a08d-6e8a-4943-8f4b-0a2ae242e09f` | application `138` | APP-2026-00032 / Boy Abunda; no local application `138` exists in this database |
+| `4afe8a3d-9e4f-435a-833e-8bda17c264d6` | application `136` | APP-2026-00030 / Iris A. Napoles; no local application `136` |
+| `b23e89d7-4864-45cc-b07e-8f8cdecf2ba5` | application `137` | APP-2026-00031 / Hshhsfhsd Dfd; no local application `137` |
+| `2676c039-3a3a-4ad5-8ed9-c44208e0b9d7` | parcel `70` | created `2026-10-01T02:45:12Z`, one second before the hijack; no local parcel `70` |
+
+They are left `NULL` rather than given an invented identity. That is safe:
+PostgreSQL treats `NULL` as distinct inside a `UNIQUE` constraint, so an unclaimed
+row cannot collide with either namespace. Their owning environment must set its
+OWN `IMAPS_BRIDGE_SOURCE_ID` and claim them with its own writer.
+
+**C — UNRESOLVED LEGACY: 1 row.** `a761b17a-3fad-44ed-b451-7f0af0e41183`
+(`local_inspection_id 37`). Its current mapping does not match this
+environment's local record for inspection `37` (it points at APP-2026-00032,
+parcel `70`, Juan Dela Cruz), while its lifecycle and `activity_log` prove
+Teshow. Classifying it "current" would assert ownership the mirror columns cannot
+support; classifying it "other" would hand a live Teshow task to another
+environment. It stays `NULL` until the recovery procedure below repairs the
+mapping and only then claims the row.
+
+A **related finding**, recorded rather than fixed: `reference_number` also
+collides across environments. Remote applications `4afe8a3d` (local 136,
+APP-2026-00030 / Iris A. Napoles) and `b108513f` (local 145, APP-2026-00030 /
+Ratiphat Luengvoraphan) both carry `APP-2026-00030`. There is no unique
+constraint on `reference_number`, so this causes no overwrite today, but a
+reference-number lookup can return another environment's application. Out of
+scope here; it needs its own decision.
+
+### Teshow recovery procedure (prepared, NOT executed in Pass 1)
+
+Preferred outcome: the existing job uuid `a761b17a-3fad-44ed-b451-7f0af0e41183`
+**remains Teshow Round 2**, because keeping that row preserves its lifecycle and
+all of its evidence relations.
+
+Step 1 — pre-flight, read only:
+
+```sql
+SELECT id, status, current_step, started_at, step_timestamps,
+       rework_started_at, submitted_at, gps_confirmed_at,
+       confirmed_latitude, confirmed_longitude, gps_accuracy_m,
+       checklist_completed_count, checklist_total_count, checklist_data,
+       photo_count, photo_paths, inspection_result, is_compliant,
+       findings, observations, discrepancies, recommendations, inspector_notes,
+       supabase_application_id, supabase_parcel_id, assigned_inspector_id,
+       scheduled_date, deadline_date, assignment_instructions,
+       assigned_by_imaps_user_id, assigned_by_name, created_at, updated_at
+FROM public.field_jobs WHERE id = 'a761b17a-3fad-44ed-b451-7f0af0e41183';
+```
+
+Take a `pg_dump` first. Record the full row so the preserved set is provable
+afterwards.
+
+Step 2 — resolve the canonical target from THIS environment's local record
+(inspection `37` -> application `132` -> parcel `64`, inspector Renato):
+
+```
+bridge_source_id           <this deployment's IMAPS_BRIDGE_SOURCE_ID>
+local_inspection_id        37
+supabase_application_id    eaf432ea-8f26-4266-bf4b-ca88887ac470   (APP-2026-00026 / local app 132)
+supabase_parcel_id         69bfaafb-a5e2-4871-b9d0-830ea0599b3f   (local parcel 64)
+assigned_inspector_id      ddcebeac-2217-41c5-a6e2-d7f873db9af2   (Renato)
+scheduled_date             2026-09-23   (local site_inspections.scheduled_date)
+deadline_date              2026-10-23   (local site_inspections.deadline_date)
+assignment_instructions    from local site_inspections.assigned_notes
+```
+
+Step 3 — repair the mapping ONLY, in one transaction, against that one uuid,
+writing **only** the columns in Step 2. Never `DELETE` the row, never create a
+replacement, never touch `status`, `current_step`, `started_at`,
+`step_timestamps`, `rework_started_at`, `submitted_at`, `checklist_*`, `photo_*`,
+GPS, `findings`, `observations`, `discrepancies`, `recommendations`,
+`inspection_result`, `is_compliant` or `inspector_notes`.
+
+Step 4 — assert the preserved set is byte-identical to Step 1 for every column
+not in Step 2, and that `activity_log`, `field_job_photos` and
+`field_job_reviews` rows for this uuid are unchanged.
+
+Step 5 — only after Step 3 and Step 4 succeed, set
+`bridge_source_id = '<this deployment's id>'` on this row.
+
+**PRESERVE EXACTLY:** remote job uuid, `status`, `current_step`, `started_at`,
+`step_timestamps`, `rework_started_at`, GPS (`gps_confirmed_at`,
+`confirmed_latitude`, `confirmed_longitude`, `gps_accuracy_m`), checklist
+progress and `checklist_data`, `photo_count` / `photo_paths` and every
+`field_job_photos` row, and every `activity_log` row. **Do not reset the task.**
+
+### Other-environment preservation plan
+
+Before any repair, the hijacked row's post-hijack activity was audited. Result:
+
+| Evidence | Value |
+|---|---|
+| `field_jobs.updated_at` | `2026-10-01T02:45:13.120729+00:00` — identical to the hijack write, so **no remote write to that row after the hijack** |
+| `activity_log` rows for the job | 1 total; **0 after** `2026-10-01T02:45:13Z` |
+| `activity_log` rows by Juan Dela Cruz, ever | **0** |
+| `field_job_photos` rows for the job | **0** |
+| `field_job_reviews` rows for the job | **0** |
+| `current_step` | still `1` |
+| `submitted_at` | still `NULL` |
+| `checklist_completed_count` / `checklist_total_count` | still `0` / `0` |
+| `gps_confirmed_at`, `confirmed_latitude`, `confirmed_longitude` | all `NULL` |
+| `rework_started_at` | `NULL` |
+| `diagnostic_reports` by Juan, ever | **0** |
+| `diagnostic_reports` by anyone after the hijack | **0** |
+| remote `local_inspections` rows | **0** |
+| `field_jobs` assigned to Juan anywhere | **1** — only `a761b17a…`, never written after the hijack |
+
+**Classification: NO POST-HIJACK WORK.**
+
+Consequences:
+
+- The other environment has not used the row it hijacked. There is no evidence
+  to split, so a row/evidence split is not required and must not be invented.
+- After it deploys its own namespaced writer, that environment recreates **its
+  own** `field_jobs` row for its own local inspection `37` under **its own**
+  `bridge_source_id`. That row will be new and distinct from Teshow's.
+- Its four unclaimed mirror rows (3 applications, 1 parcel) stay `NULL` until it
+  claims them with its own identity. Its local application `136`, `137`, `138`
+  and local parcel `70` will then resolve to its own namespaced rows.
+- **Coordinate before applying.** Identify the other environment's owner and its
+  source id before the forward SQL runs, so both deployments are upgraded in the
+  same window. If that environment cannot be identified, still apply: the
+  namespace protects us either way, and its rows stay unclaimed.
+
+### Fresh deployment handling
+
+A brand-new iMAPS database joining an already-namespaced bridge:
+
+1. set a `IMAPS_BRIDGE_SOURCE_ID` that has never been used on this project;
+2. run `php artisan config:clear` / `config:cache` so the new config is read;
+3. deploy. The first push creates that environment's rows under its own
+   namespace. It will not collide with any existing environment, and it will not
+   claim a single existing row, because it only ever matches on its own
+   `bridge_source_id`.
+
+There is no migration for the local iMAPS database: the namespace lives in the
+shared remote mirror tables, not in iMAPS. `php artisan migrate` is neither
+required nor appropriate, and is not run.
+
+### Verification commands
+
+```bash
+# 1. Config is present and usable
+php artisan tinker --execute="echo \App\Services\BridgeSourceIdentity::isConfigured() ? 'ok' : 'MISSING';"
+php artisan config:clear && php artisan config:cache
+
+# 2. Nothing writes or reads the bridge without the namespace
+grep -rn "on_conflict=local_" app/            # must return nothing
+grep -rn "'local_inspection_id' => \"eq\." app/ | grep -v bridge_source_id
+
+# 3. Focused tests
+php vendor/bin/phpunit --testsuite Unit --filter BridgeSourceNamespaceCollisionTest
+php vendor/bin/phpunit --testsuite Unit --filter BridgeNamespaceSqlContractTest
+php vendor/bin/phpunit --testsuite Unit --filter FieldSyncInspectorVisibilityContractTest
+
+# 4. Real-PostgreSQL proof of the namespace behaviour (throwaway schema)
+createdb bridge_ns_dryrun
+psql -d bridge_ns_dryrun -v ON_ERROR_STOP=1 \
+     -f database/sql/2026_10_01_bridge_source_namespace_dryrun.sql
+dropdb bridge_ns_dryrun
+
+# 5. Whole unit suite and build
+php vendor/bin/phpunit --testsuite Unit
+npm run build
+git diff --check
+
+# 6. After the remote apply is approved and run
+psql -c "SELECT bridge_source_id, count(*) FROM field_jobs GROUP BY 1 ORDER BY 1;"
+psql -c "SELECT local_inspection_id, count(*) FROM field_jobs GROUP BY 1 HAVING count(*) > 1;"
+psql -c "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint WHERE contype='u' AND conrelid = 'field_jobs'::regclass;"
+```
+
+### Rollback / recovery
+
+Phase 1 is revertible, and the rollback is written out in full at the foot of
+the forward SQL: drop the four composite constraints, drop the four supporting
+indexes, drop the four `bridge_source_id` columns, and restore the four original
+bare `UNIQUE` constraints.
+
+Reverting **restores the collision vulnerability**. It is an emergency measure
+only, and every already-deployed namespaced writer must be reverted at the same
+time or its `ON CONFLICT` targets will fail with `42P10`.
+
+If a namespace value is later found to be duplicated between two environments,
+the fix is to give one of them a new `IMAPS_BRIDGE_SOURCE_ID` and re-push its own
+rows under it. Existing rows are not rewritten in place; that would be the
+hijack all over again.

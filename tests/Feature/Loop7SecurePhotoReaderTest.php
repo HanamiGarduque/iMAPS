@@ -18,6 +18,11 @@ class Loop7SecurePhotoReaderTest extends TestCase
             'services.supabase.anon_key' => 'anon-test-key',
             'services.supabase.service_key' => 'service-test-key',
             'services.supabase.inspection_photo_signed_url_ttl' => 300,
+            // The reader resolves its job by (bridge_source_id,
+            // local_inspection_id) and FAILS CLOSED without a configured
+            // namespace, so an unconfigured deployment cannot fall back to an
+            // unscoped lookup that could return another environment's job.
+            'bridge.source_id' => 'imaps-test-namespace',
         ]);
     }
 
@@ -167,6 +172,42 @@ class Loop7SecurePhotoReaderTest extends TestCase
             ->get('/api/inspections/36/supabase-data')
             ->assertOk()
             ->assertJsonPath('field_job_photos', []);
+    }
+
+    public function test_the_job_read_is_scoped_to_this_environments_bridge_namespace(): void
+    {
+        $this->fakeInspection([]);
+
+        $this->actingAs($this->user('Admin'))
+            ->get('/api/inspections/36/supabase-data')
+            ->assertOk();
+
+        $jobRead = Http::recorded()
+            ->filter(fn ($pair) => str_contains($pair[0]->url(), '/rest/v1/field_jobs'))
+            ->first();
+
+        $this->assertNotNull($jobRead, 'The reader must read field_jobs.');
+
+        parse_str((string) parse_url($jobRead[0]->url(), PHP_URL_QUERY), $query);
+
+        $this->assertSame(
+            'eq.imaps-test-namespace',
+            $query['bridge_source_id'] ?? null,
+            'A bare local_inspection_id lookup could return another environment\'s job and its signed photos.',
+        );
+        $this->assertSame('eq.36', $query['local_inspection_id'] ?? null);
+    }
+
+    public function test_an_unconfigured_namespace_refuses_the_read_instead_of_scanning_unscoped(): void
+    {
+        config(['bridge.source_id' => null]);
+        $this->fakeInspection([]);
+
+        $this->actingAs($this->user('Admin'))
+            ->get('/api/inspections/36/supabase-data')
+            ->assertStatus(503);
+
+        Http::assertNothingSent();
     }
 
     private function user(string $role): User

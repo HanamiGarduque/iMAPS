@@ -1290,3 +1290,163 @@ that the post-apply smoke proved wrong. Both corrections are in 22.5.
   default is `NULLS FIRST`. See 22.5.
 - **Correct as written:** the table contract, the index set, the guard design,
   the 0921-vs-fresh split, and the decision not to touch the ledger.
+---
+
+## 23. CROSS-ENVIRONMENT BRIDGE NAMESPACE (REMOTE / SUPABASE) - PREPARED, NOT APPLIED
+
+**Status: PREPARED — NOT YET APPLIED REMOTELY.** Recorded here because the remote
+FieldSync bridge tables are part of the system's durable contract, even though
+they are not part of the local iMAPS database and have no migration in this
+repository.
+
+### 23.1 Why this is documented here at all
+
+`CANONICAL_DATABASE_SCHEMA.md` is the authority for what the database guarantees.
+On 2026-10-01 the bridge guarantee turned out to be wrong in a way no local
+migration could fix: the mirror tables on the shared Supabase project identified
+iMAPS rows by **bare local integers**, which are unique only inside ONE iMAPS
+database while the Supabase project is shared by more than one. Two environments
+therefore resolved the same local id onto the same remote row and overwrote each
+other's assignment.
+
+### 23.2 Remote tables affected
+
+Four tables, each PROVEN to key on a bare iMAPS-local integer. Proven from the
+live schema, not from documentation.
+
+| Remote table | Local-id identity column | Type | Constraint before | Constraint after (prepared) |
+|---|---|---|---|---|
+| `public.field_jobs` | `local_inspection_id` | `integer`, nullable | `UNIQUE (local_inspection_id)` | `UNIQUE (bridge_source_id, local_inspection_id)` named `field_jobs_bridge_source_id_local_inspection_id_key` |
+| `public.supabase_zoning_applications` | `local_application_id` | `integer`, nullable | `UNIQUE (local_application_id)` | `UNIQUE (bridge_source_id, local_application_id)` named `supabase_zoning_applications_bridge_local_application_id_key` |
+| `public.supabase_parcels` | `local_parcel_id` | `integer`, nullable | `UNIQUE (local_parcel_id)` | `UNIQUE (bridge_source_id, local_parcel_id)` named `supabase_parcels_bridge_source_id_local_parcel_id_key` |
+| `public.field_job_reviews` | `technical_review_id` | `bigint` | `UNIQUE (technical_review_id)` | `UNIQUE (bridge_source_id, technical_review_id)` named `field_job_reviews_bridge_source_id_technical_review_id_key` |
+
+The `supabase_zoning_applications` constraint name is 58 characters on purpose.
+PostgreSQL truncates identifiers at 63, and a silently truncated name would make
+the post-apply verification and the documented rollback refer to an object that
+does not exist. (The original 74-character name was caught by the dry run, which
+is exactly why the dry run exists.)
+
+### 23.3 New column
+
+`bridge_source_id text`, **nullable**, added to all four tables. Each column is
+commented in the database with the reason it exists.
+
+Nullable in phase 1 is a deliberate choice, not an oversight:
+
+- rows with PROVEN provenance are backfilled with the deployment's identity;
+- rows whose real owner is not yet known are left `NULL`, and PostgreSQL treats
+  `NULL` as distinct inside a `UNIQUE` constraint, so an unclaimed row cannot
+  collide with either namespace;
+- `SET NOT NULL` is Phase 2 and requires its own approval after every
+  environment on the project has deployed the namespaced writer.
+
+### 23.4 Preserved objects
+
+| Object | Treatment |
+|---|---|
+| `id uuid` primary keys on all four tables | **PRESERVED.** Replacing a `UNIQUE` constraint does not touch a primary key. |
+| `field_job_photos.field_job_id` -> `field_jobs(id)` | **PRESERVED.** Proved in the dry run by inserting a photo and resolving it back through the uuid. |
+| `field_job_reviews.field_job_id` -> `field_jobs(id)` | **PRESERVED.** |
+| `supabase_parcels.supabase_application_id` | **PRESERVED.** |
+| All FieldSync-owned lifecycle columns | **NOT WRITTEN.** `status`, `current_step`, `started_at`, `step_timestamps`, `rework_started_at`, `submitted_at`, `checklist_*`, `photo_*`, GPS, `findings`, `observations`, `discrepancies`, `recommendations`, `inspection_result`, `is_compliant`, `inspector_notes`. |
+| Row counts | **UNCHANGED.** Asserted in the script: 16 / 24 / 20, with no `DELETE`, `TRUNCATE`, `DROP TABLE` or `DROP COLUMN` anywhere in it. |
+| Supporting indexes | Added for readers that filter on a non-leading column: `(bridge_source_id, status)` for `sync:pull-inspections`, `(bridge_source_id, assigned_inspector_id)` for FieldSync's **unchanged** `assigned_inspector_id = auth.uid()` query, and `(bridge_source_id, reference_number)` / `(bridge_source_id, property_index_number)` for mirror display reads. |
+
+### 23.5 Supporting indexes added (prepared)
+
+```sql
+CREATE INDEX IF NOT EXISTS field_jobs_bridge_source_id_status_index
+    ON public.field_jobs (bridge_source_id, status);
+
+CREATE INDEX IF NOT EXISTS field_jobs_bridge_source_id_assigned_inspector_id_index
+    ON public.field_jobs (bridge_source_id, assigned_inspector_id);
+
+CREATE INDEX IF NOT EXISTS supabase_zoning_applications_bridge_source_id_reference_number_index
+    ON public.supabase_zoning_applications (bridge_source_id, reference_number);
+
+CREATE INDEX IF NOT EXISTS supabase_parcels_bridge_source_id_property_index_number_index
+    ON public.supabase_parcels (bridge_source_id, property_index_number);
+```
+
+The composite `UNIQUE` constraints already serve every
+`bridge_source_id = eq.X AND local_*_id = eq.N` lookup as a leftmost-prefix
+equality scan, so those need no extra index.
+
+### 23.6 iMAPS-side configuration
+
+| Item | Value |
+|---|---|
+| Environment variable | `IMAPS_BRIDGE_SOURCE_ID` |
+| Config file | `config/bridge.php` |
+| Config key | `config('bridge.source_id')` |
+| Authority class | `App\Services\BridgeSourceIdentity` |
+| Template | `.env.example` (new, non-secret, contains no credential) |
+| Accepted shape | `^[A-Za-z0-9][A-Za-z0-9._-]{1,62}$` |
+| Rejected values | `default`, `none`, `null`, `nil`, `undefined`, `changeme`, `todo`, `fixme`, `localhost`, `example`, `placeholder`, `your-bridge-source-id` |
+| Missing value | **FAIL CLOSED** before any HTTP request. No default, no `production` fallback, no hostname, no database name. |
+
+**No local migration.** The namespace lives in the shared remote mirror tables.
+The local iMAPS schema is unchanged, so `php artisan migrate` is neither
+required nor appropriate, and is not run.
+
+### 23.7 Legacy backfill, frozen at audit time
+
+| Table | Claimed (Class A) | Total | Left `NULL` |
+|---|---|---|---|
+| `field_jobs` | 15 | 16 | 1 (Teshow job `a761b17a…`, Class C, unresolved) |
+| `supabase_zoning_applications` | 21 | 24 | 3 (Class B, proven other environment) |
+| `supabase_parcels` | 19 | 20 | 1 (Class B, proven other environment) |
+| `field_job_reviews` | 0 | 0 | 0 |
+| **Total** | **55** | **60** | **5** |
+
+Class A rows were proven by four independent checks (local row exists; remote
+application `reference_number` **and** `applicant_name` match; remote parcel
+`property_index_number` **and** `owner_name` match with a consistent application
+relationship; remote `assigned_inspector_id` resolves through this deployment's
+own `handshake_key` mapping to the local inspector). Class B rows have no local
+counterpart at all. Class C is the single row whose mapping and whose lifecycle
+evidence disagree.
+
+The UUID lists are **frozen literals inside the script**, joined on the primary
+key. The backfill `UPDATE`s cannot match a row outside those lists even if the
+lists were edited incorrectly.
+
+### 23.8 Old-deployment behaviour after the apply
+
+An old iMAPS deployment still sending `ON CONFLICT (local_inspection_id)` receives
+`SQLSTATE 42P10`, surfaced by PostgREST as HTTP 409, and its delivery attempt is
+marked failed by the writer's existing non-2xx branch. It **fails closed** rather
+than corrupting another environment. Every active iMAPS deployment sharing this
+Supabase project must be upgraded to the namespaced contract before the apply.
+No compatibility shim is provided, because preserving the bare-local-id conflict
+target preserves the vulnerability.
+
+### 23.9 Artifacts
+
+| Artifact | Purpose |
+|---|---|
+| `database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql` | The forward SQL. **Not applied.** Includes the incompatible-schema guard, the frozen backfill lists, the catalog-based constraint swap, the supporting indexes, the post-apply assertions and the full rollback. |
+| `database/sql/2026_10_01_bridge_source_namespace_dryrun.sql` | Throwaway-schema validation against real PostgreSQL. Never references a real bridge table. |
+
+### 23.10 Dry-run result
+
+Nine proofs, all PASS, all against real PostgreSQL in a scratch database inside a
+throwaway schema that the script drops before finishing:
+
+1. The pre-fix defect reproduces - a bare `UNIQUE(local_inspection_id)` rejects the second writer.
+2. `(source_a, 37)` and `(source_b, 37)` coexist as two distinct `field_jobs` rows.
+3. A source_a retry converges on the source_a row and leaves FieldSync lifecycle untouched.
+4. The same retry does not touch the source_b row.
+5. A source_b write cannot overwrite the source_a mapping - the incident, replayed and neutralised.
+6. An old bare-local-id writer is rejected with SQLSTATE 42P10.
+7. Repeated identical writes stay one row per namespace.
+8. An unclaimed (`NULL`) legacy row coexists with both namespaces.
+9. Application mirrors, parcel mirrors and review mirrors all coexist per namespace, and a photo still resolves to its job through the uuid primary key.
+
+### 23.11 Rollback
+
+Full rollback is written out at the foot of the forward SQL. Reverting restores
+the collision vulnerability, so it is an emergency measure only, and every
+already-deployed namespaced writer must be reverted at the same time or its
+`ON CONFLICT` targets will fail with 42P10.

@@ -25,6 +25,16 @@ use Illuminate\Support\Facades\Log;
  *  - failure is explicit and auditable: an unresolvable round or a failed write
  *    is logged with the review identity and is never retried silently as a
  *    different target.
+ *
+ * Cross-environment namespace (this writer resolves mirror rows through local
+ * ids, so both its lookup and its write are namespaced):
+ *  - the job is resolved as (bridge_source_id, local_inspection_id), so a
+ *    review cannot attach to another environment's round that shares the
+ *    integer;
+ *  - `field_job_reviews` is upserted on (bridge_source_id,
+ *    technical_review_id), so two environments holding the same local review id
+ *    cannot overwrite each other's review;
+ *  - both fail closed when IMAPS_BRIDGE_SOURCE_ID is unset.
  */
 class PushPlanningReviewToSupabase implements ShouldQueue
 {

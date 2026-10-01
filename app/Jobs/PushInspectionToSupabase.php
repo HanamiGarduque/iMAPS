@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\InspectionDeliveryAttempt;
 use App\Models\SiteInspection;
+use App\Services\BridgeSourceIdentity;
 use App\Services\InspectionDeliveryRecorder;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -80,6 +81,21 @@ class PushInspectionToSupabase implements ShouldQueue
         $typedCategory = null;
 
         try {
+            // -----------------------------------------------------------------
+            // CROSS-ENVIRONMENT BRIDGE NAMESPACE (fail closed).
+            //
+            // The remote mirror tables are shared with every other iMAPS
+            // environment on this Supabase project, and their local-id columns
+            // are bare integers that are only unique inside ONE iMAPS
+            // database. Resolving the bridge identity FIRST means an
+            // unconfigured deployment fails here, loudly, instead of writing
+            // into whatever namespace happens to hold a matching local id.
+            //
+            // It is deliberately resolved before any remote request so a
+            // missing source id can never leave a half-written remote set.
+            // -----------------------------------------------------------------
+            $bridgeSourceId = BridgeSourceIdentity::id();
+
             // 1. Eager load the required relationships
             $this->inspection->load(['zoningApplication', 'zoningApplication.parcels' => function($query) {
                 $query->where('id', $this->inspection->parcel_id);
@@ -110,8 +126,13 @@ class PushInspectionToSupabase implements ShouldQueue
             // ==========================================
             // 3. Push to supabase_zoning_applications
             // ==========================================
-            // ADDED: ?on_conflict=local_application_id
-            $appResponse = $http->post("{$supabaseUrl}/rest/v1/supabase_zoning_applications?on_conflict=local_application_id", [
+            // NAMESPACED identity: on_conflict=bridge_source_id,local_application_id.
+            // The bare local_application_id target is NOT globally unique: another
+            // iMAPS environment on this Supabase project may hold its own local
+            // application with the same integer id, and would have its row
+            // overwritten here.
+            $appResponse = $http->post("{$supabaseUrl}/rest/v1/supabase_zoning_applications?on_conflict=bridge_source_id,local_application_id", [
+                'bridge_source_id'      => $bridgeSourceId,
                 'local_application_id' => $application->id,
                 'reference_number'     => $application->reference_number,
                 'application_type'     => $application->application_type,
@@ -182,8 +203,9 @@ class PushInspectionToSupabase implements ShouldQueue
                 ? "POINT({$parcel->longitude} {$parcel->latitude})"
                 : null;
 
-            // ADDED: ?on_conflict=local_parcel_id
-            $parcelResponse = $http->post("{$supabaseUrl}/rest/v1/supabase_parcels?on_conflict=local_parcel_id", [
+            // NAMESPACED identity: on_conflict=bridge_source_id,local_parcel_id.
+            $parcelResponse = $http->post("{$supabaseUrl}/rest/v1/supabase_parcels?on_conflict=bridge_source_id,local_parcel_id", [
+                'bridge_source_id'        => $bridgeSourceId,
                 'local_parcel_id'         => $parcel->id,
                 'supabase_application_id' => $supabaseAppId,
                 'parcel_code'             => $parcel->parcel_code,
@@ -212,8 +234,13 @@ class PushInspectionToSupabase implements ShouldQueue
             // ==========================================
             // 5. Push to field_jobs
             // ==========================================
+            // NAMESPACED lookup: this environment's job for THIS round only.
+            // A bare `local_inspection_id` filter can read another environment's
+            // row and then preserve that row's lifecycle status into our upsert.
+            //
             // Preserve the current FieldSync lifecycle state when this job is retried.
             $existingJobResponse = $http->get("{$supabaseUrl}/rest/v1/field_jobs", [
+                'bridge_source_id'   => "eq.{$bridgeSourceId}",
                 'local_inspection_id' => "eq.{$this->inspection->id}",
                 'select' => 'status',
                 'limit' => 1,
@@ -226,9 +253,16 @@ class PushInspectionToSupabase implements ShouldQueue
 
             $existingJob = $existingJobResponse->json()[0] ?? null;
 
-            // ADDED: ?on_conflict=local_inspection_id
+            // NAMESPACED identity: on_conflict=bridge_source_id,local_inspection_id.
+            // This is the incident's exact defect: with a conflict target of the
+            // bare local integer, a second environment pushing its own local
+            // inspection 37 resolved to THIS row and overwrote
+            // supabase_application_id, supabase_parcel_id, assigned_inspector_id,
+            // scheduled_date, deadline_date and assignment_instructions while
+            // leaving the Teshow lifecycle columns intact.
             $jobPayload = self::withAssigningOfficerProvenance(
                 [
+                    'bridge_source_id'         => $bridgeSourceId,
                     'local_inspection_id'     => $this->inspection->id,
                     'supabase_application_id' => $supabaseAppId,
                     'supabase_parcel_id'      => $supabaseParcelId,
@@ -242,7 +276,7 @@ class PushInspectionToSupabase implements ShouldQueue
                 $this->inspection->assigned_by_name,
             );
 
-            $jobResponse = $http->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=local_inspection_id", $jobPayload);
+            $jobResponse = $http->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=bridge_source_id,local_inspection_id", $jobPayload);
 
             if (!$jobResponse->successful()) {
                 $typedCategory = $recorder->classifyFromResponse($jobResponse);
