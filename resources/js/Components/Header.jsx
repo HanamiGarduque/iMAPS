@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import Swal from 'sweetalert2';
+import { promptParcelApplication } from '@/utils/parcelHandoff.jsx';
+import { getZoneInfo } from '@/utils/clupZones';
 
 import { performLogout } from '@/utils/auth';
 
 // ── Predictive Highlight Helper ──
 const HighlightMatch = ({ text, query }) => {
     if (!query || !text) return <span>{text}</span>;
-    const parts = text.split(new RegExp(`(${query})`, 'gi'));
+    // Escaped so a query like "T-(12" can't throw on an invalid pattern.
+    const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
     return (
         <span>
             {parts.map((part, i) => 
@@ -29,6 +32,7 @@ export default function Header({
     sidebarOpen = false, 
     setSidebarOpen,
     onSelectLocation,
+    onSelectParcel,
     showSearch = false,
     activePage,
 }) {
@@ -115,6 +119,8 @@ export default function Header({
 
     const [suggestions, setSuggestions] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
+    // A TCT, Tax Dec or PIN match from the cadastral map, listed above the other results.
+    const [parcelHit, setParcelHit] = useState(null);
 
     // Fetch Notifications for Header
     const fetchNotifications = () => {
@@ -145,12 +151,23 @@ export default function Header({
     useEffect(() => {
         if (!searchQuery.trim()) {
             setSuggestions([]);
+            setParcelHit(null);
             return;
         }
 
         const timer = setTimeout(() => {
             setIsSearching(true);
-            fetch(`/api/global-search?q=${searchQuery}`)
+            // Parcel numbers always carry digits, so plain words skip the lookup.
+            const code = searchQuery.replace(/[^A-Za-z0-9]/g, '');
+            if (/\d/.test(code) && code.length >= 5) {
+                fetch(`/api/parcels/verify?code=${encodeURIComponent(searchQuery.trim())}`, { headers: { Accept: 'application/json' } })
+                    .then((res) => (res.ok ? res.json() : null))
+                    .then((data) => setParcelHit(data?.found ? data : null))
+                    .catch(() => setParcelHit(null));
+            } else {
+                setParcelHit(null);
+            }
+            fetch(`/api/global-search?q=${encodeURIComponent(searchQuery)}`)
                 .then(async (response) => {
                     if (!response.ok) {
                         throw new Error(`Server error: ${response.status}`);
@@ -169,6 +186,16 @@ export default function Header({
 
         return () => clearTimeout(timer);
     }, [searchQuery]);
+
+    const handleParcelClick = async () => {
+        const hit = parcelHit;
+        setSearchQuery('');
+        setSearchFocused(false);
+        setParcelHit(null);
+        if (!hit) return;
+        onSelectParcel?.(hit);
+        await promptParcelApplication(hit);
+    };
 
     const handleSuggestionClick = (item) => {
         setSearchQuery('');
@@ -392,7 +419,7 @@ export default function Header({
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onFocus={() => setSearchFocused(true)}
-                            placeholder="Search barangay, parcel, zoning..."
+                            placeholder="Search barangay, TCT, Tax Dec or PIN…"
                             className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-xs text-slate-800 placeholder-slate-400 pl-9 pr-14 py-1.5 rounded-xl border border-slate-200/80 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none shadow-2xs"
                         />
 
@@ -428,7 +455,30 @@ export default function Header({
                                 </span>
                             </div>
                             <div className="py-1 space-y-0.5">
-                                {suggestions.length === 0 && !isSearching ? (
+                                {parcelHit && (() => {
+                                    const p = parcelHit.parcel;
+                                    const zone = getZoneInfo(p.clup_zone_code || p.land_use_class);
+                                    return (
+                                        <button
+                                            type="button"
+                                            onClick={handleParcelClick}
+                                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left hover:bg-slate-50 border-b border-slate-100"
+                                        >
+                                            <span className="w-3.5 h-3.5 rounded-[2px] shrink-0 border border-black/20" style={{ backgroundColor: zone.fill }} aria-hidden="true" />
+                                            <span className="min-w-0 flex-1">
+                                                <span className="block text-xs font-semibold text-slate-800 truncate">
+                                                    {p.tct_number || p.tax_dec_number || p.property_index_number}
+                                                    {p.lot_number ? ` · Lot ${p.lot_number}` : ''}
+                                                </span>
+                                                <span className="block text-[10.5px] text-slate-500 truncate">
+                                                    {p.barangay} · {zone.code ? zone.label : 'Not mapped in CLUP'} · Start an application
+                                                </span>
+                                            </span>
+                                            <span className="text-[10px] font-semibold text-[#0b2a5b] bg-[#eaf0f8] px-2 py-0.5 rounded shrink-0">Parcel</span>
+                                        </button>
+                                    );
+                                })()}
+                                {suggestions.length === 0 && !parcelHit && !isSearching ? (
                                     <div className="px-2.5 py-4 text-center text-xs text-slate-400">
                                         No results found for "{searchQuery}"
                                     </div>
@@ -729,17 +779,17 @@ export default function Header({
                             </div>
 
                             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                                <span className="text-slate-800 font-semibold">Switch Map Layers</span>
+                                <span className="text-slate-800 font-semibold">Tracking · Forecast · Diversity · CLUP overlay</span>
                                 <div className="flex gap-1 font-mono font-bold text-[11px]">
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Applications">1</kbd>
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Zoning">2</kbd>
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Land Use">3</kbd>
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Risk">4</kbd>
+                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Application Tracking">1</kbd>
+                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="LC Demand Forecast">2</kbd>
+                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Diversity Index">3</kbd>
+                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Toggle CLUP 2030 overlay">4</kbd>
                                 </div>
                             </div>
 
                             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                                <span className="text-slate-800 font-semibold">Toggle Intelligence Drawer</span>
+                                <span className="text-slate-800 font-semibold">Toggle Analysis Panel</span>
                                 <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs font-mono font-bold text-[11px]">I</kbd>
                             </div>
 

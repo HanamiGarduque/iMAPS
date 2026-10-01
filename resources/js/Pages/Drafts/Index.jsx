@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
@@ -17,223 +17,42 @@ const STATUS_CONFIG = {
 };
 
 const STATUSES = ["Auto-saved", "Incomplete"];
-const APP_TYPES = ["Locational Clearance", "Zoning Certificate", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)"];
+const KNOWN_TYPES = ["Locational Clearance", "Zoning Certificate", "Development Permit", "Petition for Rezoning", "Preliminary Approval and Locational Clearance (PALC)"];
 
-const SAMPLE_DRAFTS = [
-    {
-        id: 201,
-        temp_reference_number: "TMP-88A92F10B",
-        applicant_name: "Marasigan Commercial Ventures",
-        application_type: "Locational Clearance",
-        barangay: "Poblacion A",
-        updated_at: "2026-08-30T13:45:00Z",
-        status: "Auto-saved",
-    },
-    {
-        id: 202,
-        temp_reference_number: "TMP-41BC09E83",
-        applicant_name: "Rosario Solar Farm Dev.",
-        application_type: "Preliminary Approval and Locational Clearance (PALC)",
-        barangay: "Bulihan",
-        updated_at: "2026-08-30T10:15:00Z",
-        status: "Incomplete",
-    },
-    {
-        id: 203,
-        temp_reference_number: "TMP-901FE872A",
-        applicant_name: "Green Horizon Agro Estate",
-        application_type: "Development Permit",
-        barangay: "San Jose",
-        updated_at: "2026-08-29T16:20:00Z",
-        status: "Auto-saved",
-    },
-    {
-        id: 204,
-        temp_reference_number: "TMP-33D72091C",
-        applicant_name: "Engr. Roberto Mendoza",
-        application_type: "Zoning Certificate",
-        barangay: "Itlugan",
-        updated_at: "2026-08-28T11:05:00Z",
-        status: "Auto-saved",
-    },
-];
+const swalClasses = {
+    popup: "!rounded-md !p-0 !w-[400px] max-w-[calc(100vw-2rem)] overflow-hidden",
+    title: "!text-[15px] !font-semibold !text-slate-900 !text-left !px-5 !pt-4 !pb-0 !m-0",
+    htmlContainer: "!text-left !m-0 !px-5 !pt-2 !pb-4 !text-[13px] !text-slate-600",
+    actions: "!flex !justify-end !gap-2 !w-full !m-0 !px-5 !py-3 !bg-slate-50 !border-t !border-slate-200",
+    confirmButton: "px-4 py-2 rounded-md bg-red-700 hover:bg-red-800 text-white text-[12.5px] font-semibold cursor-pointer",
+    cancelButton: "px-4 py-2 rounded-md bg-white hover:bg-slate-50 text-slate-700 text-[12.5px] font-semibold border border-slate-300 cursor-pointer",
+};
 
-function StatusBadge({ status }) {
-    const cfg = STATUS_CONFIG[status] || { bg: "bg-slate-100 text-slate-700 border-slate-200", dot: "bg-slate-400" };
-    return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${cfg.bg}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} shrink-0`} />
-            {status || "Auto-saved"}
-        </span>
-    );
+// "3 min ago", "2 h ago", "Yesterday", or a date.
+function relativeTime(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    const mins = Math.round((Date.now() - date.getTime()) / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins} min ago`;
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return `${hours} h ago`;
+    if (hours < 48) return "Yesterday";
+    return date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
 }
 
-// ── Searchable Combobox Component (Minimizes Scrolling) ──
-function SearchableSelect({
-    value,
-    onChange,
-    options = [],
-    placeholder = "Select...",
-    searchPlaceholder = "Type to search...",
-    allLabel = "All",
-    prefix = "",
-}) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [searchQuery, setSearchQuery] = useState("");
-    const dropdownRef = useRef(null);
-    const inputRef = useRef(null);
-
-    useEffect(() => {
-        const handleClickOutside = (e) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    useEffect(() => {
-        if (isOpen && inputRef.current) {
-            inputRef.current.focus();
-        }
-        if (!isOpen) {
-            setSearchQuery("");
-        }
-    }, [isOpen]);
-
-    const filteredOptions = useMemo(() => {
-        if (!searchQuery.trim()) return options;
-        const q = searchQuery.toLowerCase();
-        return options.filter((opt) => opt.toLowerCase().includes(q));
-    }, [options, searchQuery]);
-
-    const selectedLabel = value ? (prefix ? `${prefix} ${value}` : value) : allLabel;
-
-    return (
-        <div className="relative w-full" ref={dropdownRef}>
-            <button
-                type="button"
-                onClick={() => setIsOpen(!isOpen)}
-                className={`w-full text-xs font-medium px-3 py-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 shadow-sm ${
-                    isOpen
-                        ? "border-blue-500 ring-2 ring-blue-500/20 bg-white text-slate-900"
-                        : value
-                        ? "border-blue-300 bg-blue-50/50 text-blue-900 font-semibold hover:border-blue-400"
-                        : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:border-slate-300"
-                }`}
-            >
-                <span className="truncate">{selectedLabel}</span>
-                <svg
-                    className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-150 ${isOpen ? "rotate-180 text-blue-600" : ""}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                </svg>
-            </button>
-
-            {isOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white rounded-2xl shadow-xl border border-slate-200/90 p-2 min-w-[200px] max-w-sm animate-in fade-in zoom-in-95 duration-150">
-                    <div className="relative mb-1.5">
-                        <svg
-                            className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                        >
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                        </svg>
-                        <input
-                            ref={inputRef}
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder={searchPlaceholder}
-                            className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg outline-none focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-800 placeholder:text-slate-400 font-medium"
-                        />
-                        {searchQuery && (
-                            <button
-                                type="button"
-                                onClick={() => setSearchQuery("")}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                            >
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="max-h-48 overflow-y-auto space-y-0.5">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                onChange("");
-                                setIsOpen(false);
-                            }}
-                            className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg flex items-center justify-between transition-colors ${
-                                !value ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-700 hover:bg-slate-50 font-medium"
-                            }`}
-                        >
-                            <span>{allLabel}</span>
-                            {!value && (
-                                <svg className="w-3.5 h-3.5 text-blue-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                </svg>
-                            )}
-                        </button>
-
-                        {filteredOptions.length === 0 ? (
-                            <div className="py-3 text-center text-xs text-slate-400 font-medium">
-                                No matching options found
-                            </div>
-                        ) : (
-                            filteredOptions.map((opt) => {
-                                const isSelected = value === opt;
-                                return (
-                                    <button
-                                        key={opt}
-                                        type="button"
-                                        onClick={() => {
-                                            onChange(opt);
-                                            setIsOpen(false);
-                                        }}
-                                        className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg flex items-center justify-between transition-colors ${
-                                            isSelected ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-700 hover:bg-slate-50 font-medium"
-                                        }`}
-                                    >
-                                        <span className="truncate">{prefix ? `${prefix} ${opt}` : opt}</span>
-                                        {isSelected && (
-                                            <svg className="w-3.5 h-3.5 text-blue-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                            </svg>
-                                        )}
-                                    </button>
-                                );
-                            })
-                        )}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
+const fullDate = (value) =>
+    value ? new Date(value).toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 
 export default function DraftsIndex({ drafts, filters = {}, auth }) {
     const [clock, setClock] = useState("");
-    const [search, setSearch] = useState(filters?.search || "");
-    const [selectedCategory, setSelectedCategory] = useState(filters?.application_type || "");
-    const [statusFilter, setStatusFilter] = useState(filters?.status || "");
-    const [pageSize, setPageSize] = useState(5);
-    const [currentPage, setCurrentPage] = useState(1);
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [search, setSearch] = useState(filters?.search || "");
 
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
+    const rows = drafts?.data || [];
+    const total = drafts?.total ?? rows.length;
 
     useEffect(() => {
         const tick = () => {
@@ -245,63 +64,36 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
             );
         };
         tick();
-        const id = setInterval(tick, 1000);
+        const id = setInterval(tick, 30000);
         return () => clearInterval(id);
     }, []);
 
-    const [brgyMapData, setBrgyMapData] = useState(null);
-    useEffect(() => {
-        fetch("/api/map/barangay_boundary")
-            .then((res) => res.json())
-            .then((data) => setBrgyMapData(data))
-            .catch(() => {});
-    }, []);
-
-    const isUsingPlaceholders = !drafts || !drafts.data || drafts.data.length === 0;
+    // Every filter goes to the server, which owns filtering and pagination.
+    const applyFilters = (next) => {
+        const params = { ...filters, search, ...next };
+        Object.keys(params).forEach((k) => (params[k] === "" || params[k] == null) && delete params[k]);
+        router.get("/applications/drafts", params, { preserveState: true, preserveScroll: true, replace: true });
+    };
 
     useEffect(() => {
-        const t = setTimeout(() => {
-            if (!isUsingPlaceholders && search !== (filters?.search || "")) {
-                router.get("/applications/drafts", { ...filters, search, application_type: selectedCategory, page: 1 }, { preserveState: true, replace: true });
-            }
-        }, 350);
+        if (search === (filters?.search || "")) return;
+        const t = setTimeout(() => applyFilters({ search, page: undefined }), 350);
         return () => clearTimeout(t);
     }, [search]);
 
-    const applyFilter = (newFilters) => {
-        if (newFilters.status !== undefined) setStatusFilter(newFilters.status);
-        if (!isUsingPlaceholders) {
-            router.get("/applications/drafts", { ...filters, ...newFilters, application_type: selectedCategory, page: 1 }, { preserveState: true, replace: true });
-        } else {
-            setCurrentPage(1);
-        }
-    };
+    const typeOptions = useMemo(
+        () => [...new Set([...KNOWN_TYPES, ...rows.map((d) => d.application_type).filter(Boolean), filters?.application_type].filter(Boolean))],
+        [rows, filters?.application_type]
+    );
 
-    const clearFilters = () => {
-        setSearch("");
-        setSelectedCategory("");
-        setStatusFilter("");
-        setCurrentPage(1);
-        if (!isUsingPlaceholders) {
-            router.get("/applications/drafts", {}, { preserveState: true, replace: true });
-        }
-    };
-
-    const formatDateTime = (d) => {
-        if (!d) return "—";
-        const date = new Date(d);
-        return `${date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })} · ${date.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}`;
-    };
-
-    const hasFilters = Boolean(search || filters?.status || selectedCategory);
+    const hasFilters = Boolean(filters?.search || filters?.status || filters?.application_type);
 
     const handleLogout = () => {
         Swal.fire({
-            title: "Sign Out?",
+            title: "Sign out?",
             text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
             showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
+            confirmButtonText: "Sign out",
             cancelButtonText: "Cancel",
             buttonsStyling: false,
             customClass: {
@@ -319,331 +111,227 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
         });
     };
 
-    const handleResumeDraft = (id, e) => {
-        e.stopPropagation();
-        router.get(`/applications/encode?draft_id=${id}`);
+    const resume = (id) => router.get(`/applications/encode?draft_id=${id}`);
+
+    const discard = (draft) => {
+        Swal.fire({
+            title: "Discard this draft?",
+            text: `${draft.applicant_name || "This draft"} (${draft.temp_reference_number || `DRAFT-${draft.id}`}) will be deleted. This cannot be undone.`,
+            showCancelButton: true,
+            confirmButtonText: "Discard draft",
+            cancelButtonText: "Keep",
+            buttonsStyling: false,
+            focusCancel: true,
+            customClass: swalClasses,
+        }).then((r) => {
+            if (r.isConfirmed) router.delete(`/applications/drafts/${draft.id}`, { preserveScroll: true });
+        });
     };
 
-    const handleDiscardDraft = (id, e) => {
-        e.stopPropagation();
-        if (confirm("Are you sure you want to discard this draft? This action cannot be undone.")) {
-            router.delete(`/applications/drafts/${id}`);
-        }
-    };
-
-    const filteredList = useMemo(() => {
-        let list = isUsingPlaceholders ? [...SAMPLE_DRAFTS] : [...drafts.data];
-
-        if (statusFilter) {
-            list = list.filter((item) => item.status === statusFilter);
-        }
-
-        if (selectedCategory) {
-            list = list.filter((item) => item.application_type === selectedCategory);
-        }
-
-        if (search) {
-            const q = search.toLowerCase();
-            list = list.filter((item) => {
-                const matchRef = item.temp_reference_number?.toLowerCase().includes(q);
-                const matchName = item.applicant_name?.toLowerCase().includes(q);
-                const matchBrgy = item.barangay?.toLowerCase().includes(q);
-                return matchRef || matchName || matchBrgy;
-            });
-        }
-
-        return list;
-    }, [drafts, isUsingPlaceholders, statusFilter, selectedCategory, search]);
-
-    const totalPages = Math.max(1, Math.ceil(filteredList.length / pageSize));
-    const paginatedRecords = useMemo(() => {
-        if (!isUsingPlaceholders) return drafts.data;
-        const start = (currentPage - 1) * pageSize;
-        return filteredList.slice(start, start + pageSize);
-    }, [filteredList, currentPage, pageSize, isUsingPlaceholders, drafts]);
-
-    const startIndex = (currentPage - 1) * pageSize + 1;
-    const endIndex = Math.min(currentPage * pageSize, filteredList.length);
+    const field = "h-9 px-3 text-[13px] bg-white border border-slate-300 rounded-md text-slate-800 focus:outline-none focus:border-[#0b2a5b] focus:ring-2 focus:ring-[#0b2a5b]/15";
 
     return (
         <>
-            <Head title="Drafts Workspace | iMAPS" />
+            <Head title="Drafts | iMAPS" />
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-                
-                #dashboard-root {
-                    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                }
-                .font-mono {
-                    font-family: 'JetBrains Mono', monospace !important;
-                }
-
-                ::-webkit-scrollbar { width: 6px; height: 6px; }
-                ::-webkit-scrollbar-track { background: transparent; }
-                ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
-                ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-                .leaflet-container { width: 100%; height: 100%; z-index: 0; }
+                #dashboard-root { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                #dashboard-root .font-mono { font-family: 'JetBrains Mono', monospace !important; }
             `}</style>
+            <div id="dashboard-root" className="h-screen flex flex-col overflow-hidden bg-[#f4f5f7] text-slate-800">
+                <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
-            <div id="dashboard-root" className="bg-slate-100/60 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
-                <Header 
-                    userName={userName} 
-                    userRole={userRole} 
-                    clock={clock} 
-                    onLogout={handleLogout} 
-                    sidebarOpen={sidebarOpen} 
-                    setSidebarOpen={setSidebarOpen} 
-                />
+                <div className="flex-1 relative overflow-hidden flex">
+                    <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="drafts" />
+                    {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/20 z-[750]" aria-hidden="true" />}
 
-                <div className="flex-1 overflow-hidden relative flex flex-col lg:flex-row min-w-0">
-                    <Sidebar 
-                        userName={userName} 
-                        userRole={userRole} 
-                        sidebarOpen={sidebarOpen} 
-                        setSidebarOpen={setSidebarOpen} 
-                        onLogout={handleLogout} 
-                        activePage="drafts" 
-                    />
+                    <main className="flex-1 min-w-0 overflow-y-auto">
+                        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
+                            {/* Page header */}
+                            <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
+                                <div className="flex items-center gap-3">
+                                    <Link
+                                        href="/applications"
+                                        className="w-8 h-8 flex items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                                        aria-label="Back to applications"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                                    </Link>
+                                    <div>
+                                        <h1 className="text-[20px] font-semibold text-slate-900 leading-tight">Drafts</h1>
+                                        <p className="text-[12.5px] text-slate-500">
+                                            {total} unfinished application{total === 1 ? "" : "s"} · saved automatically as you encode
+                                        </p>
+                                    </div>
+                                </div>
+                                {userRole === "Planning Officer" && (
+                                    <Link
+                                        href="/applications/encode"
+                                        className="inline-flex items-center gap-1.5 h-9 px-4 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[13px] font-semibold"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                                        New application
+                                    </Link>
+                                )}
+                            </div>
 
-                    {sidebarOpen && (
-                        <div
-                            onClick={() => setSidebarOpen(false)}
-                            className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] z-[750] transition-opacity duration-300 lg:hidden"
-                        />
-                    )}
-
-                    <main className="flex-1 w-full h-full flex flex-col bg-white overflow-hidden relative">
-                {/* ── HEADER (Top Bar) ── */}
-                <div className="bg-slate-100/60 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-[0_4px_20px_-12px_rgba(0,0,0,0.1)] z-20">
-                    <div className="flex items-center gap-4">
-                        <Link href="/applications" className="flex items-center justify-center w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-sm" title="Back to Registry">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                            </svg>
-                        </Link>
-                        <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight flex items-center gap-3">
-                            Application Drafts
-                            {isUsingPlaceholders && (
-                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-200/60 shadow-sm">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                                    Preview
-                                </span>
-                            )}
-                        </h2>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                        {userRole === "Planning Officer" && (
-                            <Link
-                                href="/applications/encode"
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700 transition-all shadow-sm active:scale-95"
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                </svg>
-                                <span>New Draft</span>
-                            </Link>
-                        )}
-                    </div>
-                </div>
-
-                {/* ── WORKSPACE ── */}
-                <div className="flex-1 w-full h-full flex flex-col bg-slate-50 overflow-hidden relative">
-                    {/* Background: Subtle Blurred Map */}
-                    <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
-                        <div className="absolute inset-0 filter blur-[1.5px] opacity-40 scale-105">
-                            <MapContainer 
-                                center={rosarioCenter} 
-                                zoom={12} 
-                                zoomControl={false} 
-                                scrollWheelZoom={false} 
-                                dragging={false} 
-                                doubleClickZoom={false} 
-                                touchZoom={false}
-                                attributionControl={false}
-                            >
-                                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
-                            </MapContainer>
-                        </div>
-                        <div className="absolute inset-0 bg-gradient-to-b from-slate-100/40 via-slate-50/60 to-slate-100/75" />
-                    </div>
-
-                    {/* Foreground: Centered Master Elevated Floating Modal */}
-                    <div className="relative z-10 flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 lg:p-6 overflow-hidden">
-                        <div className="w-full max-w-6xl h-[calc(100vh-8.5rem)] max-h-[750px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/90 overflow-hidden flex flex-col shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
-                                    
-                                    {/* Filters & Search Toolbar */}
-                                    <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between bg-slate-50/30">
-                                        
-                                        {/* Premium Segmented Control */}
-                                        <div className="inline-flex items-center bg-slate-100/80 p-1 rounded-xl shrink-0 overflow-x-auto no-scrollbar shadow-inner border border-slate-200/60">
-                                            {["", ...STATUSES].map((s) => {
-                                                const isSelected = (statusFilter || "") === s;
-                                                return (
-                                                    <button
-                                                        key={s || "all"}
-                                                        onClick={() => applyFilter({ status: s })}
-                                                        className={`text-[13px] font-semibold px-4 py-2 rounded-lg transition-all whitespace-nowrap ${
-                                                            isSelected
-                                                                ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5"
-                                                                : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
-                                                        }`}
-                                                    >
-                                                        {s || "All Drafts"}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-
-                                        {/* Right Side: Dropdown & Search */}
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-48 sm:w-56">
-                                                <SearchableSelect
-                                                    value={selectedCategory}
-                                                    onChange={(val) => {
-                                                        setSelectedCategory(val);
-                                                        setCurrentPage(1);
-                                                    }}
-                                                    options={APP_TYPES}
-                                                    allLabel="All Categories"
-                                                    searchPlaceholder="Search category..."
-                                                />
-                                            </div>
-
-                                            <div className="relative w-full sm:w-72">
-                                                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                                                </svg>
-                                                <input
-                                                    type="text"
-                                                    value={search}
-                                                    onChange={(e) => setSearch(e.target.value)}
-                                                    placeholder="Search drafts, applicants..."
-                                                    className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-2.5 text-xs font-semibold text-slate-800 transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-sm placeholder:text-slate-400 placeholder:font-medium"
-                                                />
-                                                {search && (
-                                                    <button
-                                                        onClick={() => setSearch("")}
-                                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 p-1 rounded-full transition-colors"
-                                                    >
-                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                        </svg>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
+                            <section className="bg-white border border-slate-200 rounded-lg shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                                {/* Toolbar */}
+                                <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-slate-200">
+                                    <div className="inline-flex rounded-md border border-slate-300 overflow-hidden" role="group" aria-label="Filter by status">
+                                        {["", ...STATUSES].map((s, i) => {
+                                            const on = (filters?.status || "") === s;
+                                            return (
+                                                <button
+                                                    key={s || "all"}
+                                                    type="button"
+                                                    aria-pressed={on}
+                                                    onClick={() => applyFilters({ status: s, page: undefined })}
+                                                    className={`h-9 px-3.5 text-[13px] cursor-pointer ${i ? "border-l border-slate-300" : ""} ${
+                                                        on ? "bg-[#0b2a5b] text-white font-semibold" : "bg-white text-slate-600 hover:bg-slate-50"
+                                                    }`}
+                                                >
+                                                    {s || "All"}
+                                                </button>
+                                            );
+                                        })}
                                     </div>
 
-                                    {/* Data Table */}
-                                    {filteredList.length === 0 ? (
-                                        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-slate-50/30">
-                                            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center border border-slate-200 mb-4 shadow-sm ring-4 ring-slate-50">
-                                                <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                                </svg>
-                                            </div>
-                                            <h3 className="text-sm font-bold text-slate-900">No drafts found</h3>
-                                            <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                                                {hasFilters
-                                                    ? "No records match your search filters."
-                                                    : "You don't have any unfinished drafts at the moment."}
-                                            </p>
-                                            {hasFilters && (
-                                                <button
-                                                    onClick={clearFilters}
-                                                    className="mt-5 px-5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-sm transition-all"
-                                                >
-                                                    Clear Filters
-                                                </button>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="flex-1 overflow-auto">
-                                            <table className="w-full text-left border-collapse whitespace-nowrap">
-                                                <thead className="sticky top-0 bg-slate-50/90 backdrop-blur-md z-10">
-                                                    <tr>
-                                                        {["Draft Identifier", "Applicant", "Application Type", "Barangay", "Last Modified", "Status", ""].map((h, i) => (
-                                                            <th key={i} className="px-6 py-4 text-[11px] font-extrabold text-slate-500 uppercase tracking-widest border-b border-slate-200/80">
-                                                                {h}
-                                                            </th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 bg-white">
-                                                    {filteredList.map((draft) => (
-                                                        <tr 
-                                                            key={draft.id} 
-                                                            onClick={(e) => handleResumeDraft(draft.id, e)}
-                                                            className="group cursor-pointer hover:bg-slate-50/50 transition-colors"
-                                                        >
-                                                            <td className="px-6 py-4">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                                                        </svg>
-                                                                    </div>
-                                                                    <div>
-                                                                        <div className="text-[13px] font-mono font-bold text-slate-700 group-hover:text-blue-600 transition-colors">
-                                                                            {draft.temp_reference_number || `DRAFT-${draft.id}`}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
+                                    <label className="sr-only" htmlFor="draft-type">Application type</label>
+                                    <select
+                                        id="draft-type"
+                                        value={filters?.application_type || ""}
+                                        onChange={(e) => applyFilters({ application_type: e.target.value, page: undefined })}
+                                        className={`${field} pr-8 py-0`}
+                                    >
+                                        <option value="">All application types</option>
+                                        {typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+
+                                    <div className="relative ml-auto w-full sm:w-72">
+                                        <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.2-5.2m0 0A7.5 7.5 0 105.2 5.2a7.5 7.5 0 0010.6 10.6z" /></svg>
+                                        <label className="sr-only" htmlFor="draft-search">Search drafts</label>
+                                        <input
+                                            id="draft-search"
+                                            type="search"
+                                            value={search}
+                                            onChange={(e) => setSearch(e.target.value)}
+                                            placeholder="Search applicant or reference"
+                                            className={`${field} w-full pl-9`}
+                                        />
+                                    </div>
+                                </div>
+
+                                {rows.length === 0 ? (
+                                    <div className="px-6 py-16 text-center">
+                                        <p className="text-[14px] font-semibold text-slate-800">{hasFilters ? "No drafts match these filters" : "No drafts"}</p>
+                                        <p className="text-[12.5px] text-slate-500 mt-1">
+                                            {hasFilters ? "Try a different search or clear the filters." : "Applications you start encoding are saved here until submitted."}
+                                        </p>
+                                        {hasFilters && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setSearch("");
+                                                    router.get("/applications/drafts", {}, { preserveState: true, replace: true });
+                                                }}
+                                                className="mt-4 h-9 px-4 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-[13px] font-semibold text-slate-700 cursor-pointer"
+                                            >
+                                                Clear filters
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left">
+                                            <thead>
+                                                <tr className="text-[11.5px] text-slate-500 border-b border-slate-200 bg-slate-50/70">
+                                                    <th className="px-4 py-2.5 font-medium">Applicant</th>
+                                                    <th className="px-4 py-2.5 font-medium">Application type</th>
+                                                    <th className="px-4 py-2.5 font-medium">Barangay</th>
+                                                    <th className="px-4 py-2.5 font-medium">Last edited</th>
+                                                    <th className="px-4 py-2.5 font-medium">Status</th>
+                                                    <th className="px-4 py-2.5"><span className="sr-only">Actions</span></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {rows.map((draft) => {
+                                                    const incomplete = draft.status === "Incomplete";
+                                                    return (
+                                                        <tr key={draft.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
+                                                            <td className="px-4 py-3">
+                                                                <button type="button" onClick={() => resume(draft.id)} className="text-left cursor-pointer group">
+                                                                    <span className="block text-[13.5px] font-semibold text-slate-900 group-hover:text-[#0b2a5b] group-hover:underline underline-offset-2">
+                                                                        {draft.applicant_name || "Unnamed applicant"}
+                                                                    </span>
+                                                                    <span className="block text-[11.5px] font-mono text-slate-400">{draft.temp_reference_number || `DRAFT-${draft.id}`}</span>
+                                                                </button>
                                                             </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="text-[14px] font-semibold text-slate-800">
-                                                                    {draft.applicant_name || "Unspecified"}
-                                                                </div>
+                                                            <td className="px-4 py-3 text-[13px] text-slate-700">{draft.application_type || <span className="text-slate-400">Not chosen yet</span>}</td>
+                                                            <td className="px-4 py-3 text-[13px] text-slate-700">{draft.barangay || <span className="text-slate-400">—</span>}</td>
+                                                            <td className="px-4 py-3 text-[13px] text-slate-600 whitespace-nowrap" title={fullDate(draft.updated_at)}>{relativeTime(draft.updated_at)}</td>
+                                                            <td className="px-4 py-3">
+                                                                <span className={`inline-flex items-center gap-1.5 text-[12px] ${incomplete ? "text-amber-700" : "text-slate-600"}`}>
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${incomplete ? "bg-amber-500" : "bg-slate-400"}`} aria-hidden="true" />
+                                                                    {draft.status || "Auto-saved"}
+                                                                </span>
                                                             </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-[12px] font-medium">
-                                                                    {draft.application_type || "Unspecified Category"}
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 text-[13px] text-slate-600 font-medium">
-                                                                {draft.barangay || "—"}
-                                                            </td>
-                                                            <td className="px-6 py-4 text-[12px] text-slate-500 font-medium">
-                                                                {formatDateTime(draft.updated_at)}
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <StatusBadge status={draft.status || "Auto-saved"} />
-                                                            </td>
-                                                            <td className="px-6 py-4 text-right">
-                                                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                                                    <button 
+                                                            <td className="px-4 py-3">
+                                                                <div className="flex items-center justify-end gap-1.5">
+                                                                    <button
                                                                         type="button"
-                                                                        title="Resume Draft"
-                                                                        onClick={(e) => handleResumeDraft(draft.id, e)}
-                                                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                                        onClick={() => resume(draft.id)}
+                                                                        className="h-8 px-3 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-[12.5px] font-semibold text-slate-800 cursor-pointer"
                                                                     >
-                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-                                                                        </svg>
+                                                                        Resume
                                                                     </button>
-                                                                    <button 
+                                                                    <button
                                                                         type="button"
-                                                                        title="Discard Draft"
-                                                                        onClick={(e) => handleDiscardDraft(draft.id, e)}
-                                                                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                                                        onClick={() => discard(draft)}
+                                                                        aria-label={`Discard draft for ${draft.applicant_name || "unnamed applicant"}`}
+                                                                        title="Discard draft"
+                                                                        className="w-8 h-8 flex items-center justify-center rounded-md text-slate-400 hover:text-red-700 hover:bg-red-50 cursor-pointer"
                                                                     >
-                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.35 9m-4.78 0L9.26 9m9.97-3.21c.34.05.68.11 1.02.17m-1.02-.17L18.16 19.67A2.25 2.25 0 0115.92 21.75H8.08a2.25 2.25 0 01-2.24-2.08L4.77 5.79m14.46 0a48.1 48.1 0 00-3.48-.4m-12 .57c.34-.06.68-.11 1.02-.17m0 0a48.1 48.1 0 013.48-.4m7.5 0v-.91c0-1.18-.91-2.16-2.09-2.2a52 52 0 00-3.32 0c-1.18.04-2.09 1.02-2.09 2.2v.91m7.5 0a48.7 48.7 0 00-7.5 0" />
                                                                         </svg>
                                                                     </button>
                                                                 </div>
                                                             </td>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
+                                                    );
+                                                })}
+                                            </tbody>
                                         </table>
                                     </div>
                                 )}
-                            </div>
+
+                                {drafts?.last_page > 1 && (
+                                    <nav className="flex items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 text-[12.5px] text-slate-600" aria-label="Pagination">
+                                        <span>
+                                            {drafts.from}–{drafts.to} of {drafts.total}
+                                        </span>
+                                        <div className="flex gap-1.5">
+                                            {[
+                                                { label: "Previous", url: drafts.prev_page_url },
+                                                { label: "Next", url: drafts.next_page_url },
+                                            ].map((p) => (
+                                                <button
+                                                    key={p.label}
+                                                    type="button"
+                                                    disabled={!p.url}
+                                                    onClick={() => p.url && router.get(p.url, {}, { preserveState: true, preserveScroll: false })}
+                                                    className="h-8 px-3 rounded-md border border-slate-300 bg-white hover:bg-slate-50 font-semibold text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                                >
+                                                    {p.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </nav>
+                                )}
+                            </section>
                         </div>
-                    </div>
-                </main>
+                    </main>
                 </div>
             </div>
         </>

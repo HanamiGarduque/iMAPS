@@ -417,6 +417,33 @@ class DashboardController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
+        // Lot outline for each application parcel, matched to the cadastral
+        // tax map by PIN or TCT, so the map can draw the actual lot. Parcels
+        // with no match simply get no outline.
+        $parcelIds = $recent->pluck('parcels')->flatten()->pluck('id')->filter()->values()->all();
+        if (!empty($parcelIds)) {
+            $placeholders = implode(',', array_fill(0, count($parcelIds), '?'));
+            $outlines = collect(DB::select(
+                "SELECT DISTINCT ON (p.id) p.id, ST_AsGeoJSON(lp.geom, 7) AS geom
+                 FROM parcels p
+                 JOIN public.land_parcels lp ON (
+                        (p.property_index_number IS NOT NULL AND p.property_index_number <> ''
+                         AND UPPER(REGEXP_REPLACE(lp.property_index_number, '[^A-Za-z0-9]', '', 'g')) = UPPER(REGEXP_REPLACE(p.property_index_number, '[^A-Za-z0-9]', '', 'g')))
+                     OR (p.tct_number IS NOT NULL AND p.tct_number <> ''
+                         AND UPPER(REGEXP_REPLACE(lp.tct_number, '[^A-Za-z0-9]', '', 'g')) = UPPER(REGEXP_REPLACE(p.tct_number, '[^A-Za-z0-9]', '', 'g'))))
+                 WHERE p.id IN ($placeholders) AND lp.geom IS NOT NULL
+                 ORDER BY p.id",
+                $parcelIds
+            ))->keyBy('id');
+
+            $recent->each(function ($app) use ($outlines) {
+                $app->parcels->each(function ($parcel) use ($outlines) {
+                    $row = $outlines->get($parcel->id);
+                    $parcel->setAttribute('outline', $row ? json_decode($row->geom, true) : null);
+                });
+            });
+        }
+
         return Inertia::render('Dashboard', [
             'userName'  => Auth::user()->name ?? 'Staff',
             'userRole'  => Auth::user()->role ?? 'User',
@@ -427,7 +454,7 @@ class DashboardController extends Controller
             'bgyStats'  => $bgyStats,
             'overallDiversity' => $overallDiversity,
             'urbanGrowthData'  => $urbanGrowthData,
-            'filters'   => ['application_type' => $appType ?? 'Zoning Certificate'],
+            'filters'   => ['application_type' => $appType ?? 'All'],
         ]);
     }
 }

@@ -1,5 +1,5 @@
 // resources/js/Pages/Applications/Show.jsx
-// Application record: map of the lots (left) and Overview / Parcels & evaluation / History (right).
+// Application record: a view-only map of the lots (left) and Summary / Lots / History (right).
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Link, Head, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
@@ -7,7 +7,7 @@ import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { performLogout } from "@/utils/auth";
 import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
-import { getZoningCheck, CHECK_COLORS, AreaComparison, Attr } from "@/Components/MapKit";
+import { getZoningCheck, CHECK_COLORS, AreaComparison } from "@/Components/MapKit";
 import { getZoneInfo } from "@/utils/clupZones";
 import { loadBarangayBoundaries } from "@/utils/mapData";
 import ApplicationMap from "./Components/ApplicationMap";
@@ -69,58 +69,93 @@ const peso = (v) => `₱ ${Number(v || 0).toLocaleString("en-PH", { minimumFract
 const dash = (v) => (v !== null && v !== undefined && String(v).trim() !== "" ? v : "—");
 const today = () => new Date().toISOString().split("T")[0];
 
+
+const NAVY = "#0b2a5b";
+
 function StatusPill({ status }) {
     return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold whitespace-nowrap">
-            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status] || "bg-slate-400"}`} aria-hidden="true" />
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium whitespace-nowrap">
+            <span className={`w-2 h-2 rounded-[2px] ${STATUS_DOT[status] || "bg-slate-400"}`} aria-hidden="true" />
             {status || "—"}
         </span>
     );
 }
 
+// Five-step stepper for the permit's journey; the current stage is filled.
 function StageProgress({ status }) {
     const current = STAGES.indexOf(status);
     const denied = status === "Denied";
     return (
-        <ol className="hidden xl:flex items-center gap-1 text-[11px]" aria-label="Application stage">
+        <ol className="flex items-center w-full" aria-label="Application stage">
             {STAGES.map((s, i) => {
-                const done = !denied && current > i;
-                const isCurrent = !denied && current === i;
+                const done = !denied && (current > i || status === "Released");
+                const isCurrent = !denied && current === i && status !== "Released";
                 return (
-                    <li key={s} className="flex items-center gap-1" aria-current={isCurrent ? "step" : undefined}>
-                        {i > 0 && <span className={`w-4 h-px ${done || isCurrent ? "bg-slate-500" : "bg-slate-300"}`} aria-hidden="true" />}
+                    <li key={s} className="flex-1 flex flex-col items-center gap-1 relative" aria-current={isCurrent ? "step" : undefined}>
+                        {i > 0 && (
+                            <span
+                                className={`absolute top-[7px] right-1/2 w-full h-[2px] ${done || isCurrent ? "bg-[#0b2a5b]" : "bg-slate-200"}`}
+                                aria-hidden="true"
+                            />
+                        )}
                         <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${
-                                isCurrent ? "bg-slate-800 text-white font-semibold" : done ? "text-slate-700 font-medium" : "text-slate-400"
+                            className={`relative z-[1] w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                                done ? "bg-[#0b2a5b] border-[#0b2a5b]" : isCurrent ? "bg-white border-[#0b2a5b]" : "bg-white border-slate-300"
                             }`}
+                            aria-hidden="true"
                         >
-                            {done && "✓ "}
+                            {done && (
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            )}
+                            {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-[#0b2a5b]" />}
+                        </span>
+                        <span className={`text-[10.5px] text-center leading-tight ${isCurrent ? "font-semibold text-slate-900" : done ? "text-slate-600" : "text-slate-400"}`}>
                             {STAGE_SHORT[s] || s}
                         </span>
                     </li>
                 );
             })}
             {denied && (
-                <li className="flex items-center gap-1">
-                    <span className="w-4 h-px bg-rose-300" aria-hidden="true" />
-                    <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-semibold">Denied</span>
+                <li className="flex flex-col items-center gap-1 pl-2">
+                    <span className="w-4 h-4 rounded-full bg-rose-700 flex items-center justify-center" aria-hidden="true">
+                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4"><path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" /></svg>
+                    </span>
+                    <span className="text-[10.5px] font-semibold text-rose-700">Denied</span>
                 </li>
             )}
         </ol>
     );
 }
 
-function Section({ title, children, action }) {
+// Label / value row used across the record.
+function Row({ label, children, mono = false }) {
+    const empty = children === null || children === undefined || children === "" || children === false;
     return (
-        <section className="rounded-xl border border-slate-200 bg-white">
-            <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{title}</h3>
-                {action}
-            </div>
-            <dl className="px-4 py-1 text-xs">{children}</dl>
-        </section>
+        <div className="grid grid-cols-[128px_1fr] gap-3 py-2 border-b border-slate-100 last:border-b-0">
+            <dt className="text-[12px] text-slate-500">{label}</dt>
+            <dd className={`text-[12.5px] text-slate-900 break-words ${mono ? "font-mono text-[12px]" : ""}`}>{empty ? <span className="text-slate-400">—</span> : children}</dd>
+        </div>
     );
 }
+
+// Collapsed group for secondary details, so the record opens on what matters.
+function More({ title, children, open = false }) {
+    return (
+        <details className="group border-t border-slate-200" open={open || undefined}>
+            <summary className="flex items-center justify-between py-2.5 cursor-pointer list-none text-[12.5px] font-semibold text-slate-700 hover:text-slate-900">
+                {title}
+                <svg className="w-4 h-4 text-slate-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+            </summary>
+            <dl className="pb-2">{children}</dl>
+        </details>
+    );
+}
+
+const FIELD = "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] text-slate-800 focus:outline-none focus:border-[#0b2a5b] focus:ring-2 focus:ring-[#0b2a5b]/15";
 
 // Only the transitions the server accepts: the next stage, or Denied
 function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving }) {
@@ -138,19 +173,19 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving }
 
     return (
         <div className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-950/40" role="dialog" aria-modal="true" aria-labelledby="status-dialog-title">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-100">
-                    <h3 id="status-dialog-title" className="text-base font-bold text-slate-900">Update application status</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Currently {currentStatus}. Applications move one stage at a time, or can be denied.</p>
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md border border-slate-200 overflow-hidden">
+                <div className="px-5 pt-4 pb-3">
+                    <h3 id="status-dialog-title" className="text-[15px] font-semibold text-slate-900">Update application status</h3>
+                    <p className="text-[12.5px] text-slate-500 mt-0.5">Currently {currentStatus}. Applications move one stage at a time, or can be denied.</p>
                 </div>
-                <div className="p-5 space-y-4">
+                <div className="px-5 pb-4 space-y-4">
                     <fieldset>
-                        <legend className="text-xs font-semibold text-slate-700 mb-1.5">New status</legend>
-                        <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-slate-100">
-                            {options.map((s) => (
-                                <label key={s} className="relative">
+                        <legend className="text-[12px] font-semibold text-slate-700 mb-1.5">New status</legend>
+                        <div className="grid grid-cols-2 border border-slate-300 rounded-md overflow-hidden">
+                            {options.map((s, i) => (
+                                <label key={s} className={`relative ${i ? "border-l border-slate-300" : ""}`}>
                                     <input type="radio" name="new-status" value={s} checked={newStatus === s} onChange={() => setNewStatus(s)} className="peer sr-only" />
-                                    <span className="flex justify-center py-1.5 rounded-full text-xs font-semibold text-slate-500 cursor-pointer peer-checked:bg-white peer-checked:text-slate-900 peer-checked:shadow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500">
+                                    <span className="flex justify-center py-2 text-[12.5px] font-semibold text-slate-600 cursor-pointer peer-checked:bg-[#0b2a5b] peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-inset peer-focus-visible:ring-[#0b2a5b]">
                                         {s === "Under Sangguniang Bayan" ? "Sangguniang Bayan" : s}
                                     </span>
                                 </label>
@@ -158,8 +193,8 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving }
                         </div>
                     </fieldset>
                     <div>
-                        <label htmlFor="status-remarks" className="text-xs font-semibold text-slate-700">
-                            {needsReason ? "Reason for denial" : "Remarks (optional)"} {needsReason && <span className="text-rose-500">*</span>}
+                        <label htmlFor="status-remarks" className="text-[12px] font-semibold text-slate-700">
+                            {needsReason ? "Reason for denial" : "Remarks (optional)"} {needsReason && <span className="text-rose-600">*</span>}
                         </label>
                         <textarea
                             id="status-remarks"
@@ -167,20 +202,20 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving }
                             value={remarks}
                             onChange={(e) => setRemarks(e.target.value)}
                             placeholder={needsReason ? "Regulatory basis for denying this application…" : "Notes recorded in the history…"}
-                            className="mt-1.5 w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-xs text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 resize-none"
+                            className={`mt-1.5 resize-none ${FIELD}`}
                         />
                     </div>
                 </div>
-                <div className="px-5 py-3.5 border-t border-slate-100 flex justify-end gap-2">
-                    <button type="button" onClick={onClose} className="px-4 py-2 rounded-full border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
+                <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+                    <button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-slate-300 bg-white text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
                         Cancel
                     </button>
                     <button
                         type="button"
                         onClick={() => onSubmit({ new_status: newStatus, remarks })}
                         disabled={saving || !newStatus || (needsReason && !remarks.trim())}
-                        className={`px-5 py-2 rounded-full text-white text-xs font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed ${
-                            needsReason ? "bg-rose-600 hover:bg-rose-700" : "bg-blue-600 hover:bg-blue-700"
+                        className={`px-4 py-2 rounded-md text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed ${
+                            needsReason ? "bg-rose-700 hover:bg-rose-800" : "bg-[#0b2a5b] hover:bg-[#0e3574]"
                         }`}
                     >
                         {saving ? "Saving…" : needsReason ? "Deny application" : `Move to ${newStatus === "Under Sangguniang Bayan" ? "SB" : newStatus}`}
@@ -429,55 +464,107 @@ function ShowInner({
 
     const selectedLot = lots[selectedIndex];
 
+    const nextStep =
+        app.status === "Technical Review"
+            ? pendingInspections.length
+                ? "Waiting on site inspection"
+                : undecided.length
+                ? "Record the evaluation"
+                : "Submit the evaluation"
+            : app.status === "Received"
+            ? "Start the technical review"
+            : app.status === "Under Sangguniang Bayan"
+            ? "Awaiting Sangguniang Bayan action"
+            : app.status === "For Release"
+            ? "Ready for release"
+            : app.status === "Released"
+            ? "Released to the applicant"
+            : app.status === "Denied"
+            ? "Application denied"
+            : "—";
+
+    const nextDetail = (() => {
+        if (app.status === "Technical Review" && pendingInspections.length) {
+            return pendingInspections
+                .map((l) => {
+                    const si = l.parcel.site_inspection;
+                    const late = si?.deadline_date && String(si.deadline_date).split("T")[0] < today();
+                    return `${l.code}: ${inspectorName(si.inspector_id)}, due ${fmtDate(si.deadline_date)}${late ? " (overdue)" : ""}`;
+                })
+                .join(" · ");
+        }
+        if (app.status === "Technical Review" && undecided.length) return `Decide on ${undecided.map((l) => l.code).join(", ")} in the Lots tab.`;
+        if (app.status === "Under Sangguniang Bayan" && isAmendment) return "Record the SB ordinance number once the petition is approved.";
+        if (app.status === "For Release") return `Release mode: ${dash(app.preferred_release_mode)}`;
+        if (app.status === "Denied" && deniedReasons.length) return deniedReasons.map((r) => `${lotCodeById[r.parcel_id]}: ${r.decision_reason}`).join(" · ");
+        return null;
+    })();
+
+    const fees = [
+        ["Zoning certificate", app.zoning_certificate_fee],
+        ["Locational clearance", app.locational_clearance_fee],
+        ["Development permit", app.development_permit_fee],
+        ["Other fees", app.other_fees],
+        ["Penalty", app.penalty_fee],
+    ].filter(([, v]) => Number(v) > 0);
+
+    const tabs = [
+        { id: "overview", label: "Summary" },
+        { id: "parcels", label: `Lots (${lots.length})` },
+        { id: "history", label: "History" },
+    ];
+
     return (
         <>
             <Head title={`${app.reference_number || "Application"} | iMAPS`} />
+
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-                #record-root { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-                .font-mono { font-family: 'JetBrains Mono', monospace !important; }
+                #dashboard-root { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                #dashboard-root .font-mono { font-family: 'JetBrains Mono', monospace !important; }
                 .leaflet-container { width: 100%; height: 100%; z-index: 0; }
             `}</style>
-
-            <div id="record-root" className="bg-slate-50 text-slate-800 h-screen flex flex-col overflow-hidden">
+            <div id="dashboard-root" className="bg-[#f4f5f7] text-slate-800 h-screen flex flex-col overflow-hidden">
                 <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
                 <div className="flex-1 overflow-hidden relative flex flex-col min-w-0">
                     <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="applications" />
-                    {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/20 z-[750]" />}
+                    {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/20 z-[750]" aria-hidden="true" />}
 
-                    {/* Top bar */}
-                    <div className="h-12 bg-white border-b border-slate-200 px-4 flex items-center justify-between gap-3 shrink-0 z-10">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                            <Link href="/applications" className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:bg-slate-100">
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                    {/* Record bar: where you are and what you can do */}
+                    <div className="h-14 bg-white border-b border-slate-200 px-4 flex items-center justify-between gap-3 shrink-0 z-10">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <Link
+                                href="/applications"
+                                className="w-8 h-8 flex items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 shrink-0"
+                                aria-label="Back to applications"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                                 </svg>
-                                All records
                             </Link>
-                            <span className="text-slate-300" aria-hidden="true">/</span>
-                            <span className="font-mono text-xs font-semibold text-slate-800">{app.reference_number || `APP-${app.id}`}</span>
+                            <div className="min-w-0">
+                                <p className="text-[11.5px] text-slate-500 leading-tight">
+                                    Applications / <span className="font-mono text-slate-700">{app.reference_number || `APP-${app.id}`}</span>
+                                </p>
+                                <h1 className="text-[15px] font-semibold text-slate-900 leading-tight truncate">{app.corporation_name || app.applicant_name || "—"}</h1>
+                            </div>
                             <StatusPill status={app.status} />
-                            <span className="h-4 w-px bg-slate-200 mx-1 hidden xl:block" aria-hidden="true" />
-                            <StageProgress status={app.status} />
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                             <button
                                 type="button"
                                 onClick={() => setSiteMapOpen(true)}
                                 disabled={!lots.some((l) => l.feature)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="h-9 px-3 rounded-md border border-slate-300 bg-white text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 9V3h10v6M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 14h10v7H7z" />
-                                </svg>
-                                <span className="hidden sm:inline">Site map</span>
+                                Print site map
                             </button>
                             {!isFinal && app.status !== "Technical Review" && (
                                 <button
                                     type="button"
                                     onClick={() => setStatusDialog("Denied")}
-                                    className="px-3 py-1.5 rounded-full border border-slate-200 text-xs font-semibold text-rose-700 hover:bg-rose-50 cursor-pointer"
+                                    className="h-9 px-3 rounded-md border border-slate-300 bg-white text-[12.5px] font-semibold text-rose-700 hover:bg-rose-50 cursor-pointer"
                                 >
                                     Deny
                                 </button>
@@ -488,7 +575,7 @@ function ShowInner({
                                     onClick={primaryAction.onClick}
                                     disabled={primaryAction.disabled}
                                     title={primaryAction.title || undefined}
-                                    className="px-4 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
+                                    className="h-9 px-4 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
                                 >
                                     {primaryAction.label}
                                 </button>
@@ -497,19 +584,19 @@ function ShowInner({
                     </div>
 
                     {toast && (
-                        <div className="absolute top-16 right-4 z-[999]" role="status">
-                            <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm ${toast.type === "error" ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-slate-900 text-white border-slate-800"}`}>
-                                <p className="font-semibold text-xs flex-1">{toast.msg}</p>
+                        <div className="absolute top-[68px] right-4 z-[999]" role="status">
+                            <div className={`flex items-center gap-3 px-4 py-2.5 rounded-md border shadow-lg max-w-sm ${toast.type === "error" ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-slate-900 text-white border-slate-800"}`}>
+                                <p className="text-[12.5px] font-medium flex-1">{toast.msg}</p>
                                 <button type="button" onClick={() => setToast(null)} aria-label="Dismiss" className="opacity-60 hover:opacity-100 cursor-pointer">
-                                    ✕
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" /></svg>
                                 </button>
                             </div>
                         </div>
                     )}
 
                     <main className="flex-1 flex flex-col lg:flex-row min-h-0">
-                        {/* Map */}
-                        <div className="h-72 lg:h-auto lg:w-[55%] border-b lg:border-b-0 lg:border-r border-slate-300 shrink-0">
+                        {/* Map (view only) */}
+                        <div className="h-72 lg:h-auto lg:flex-1 border-b lg:border-b-0 lg:border-r border-slate-300 shrink-0 min-w-0">
                             <ApplicationMap
                                 lots={lots}
                                 parcelMapData={parcelMapData}
@@ -524,172 +611,111 @@ function ShowInner({
                             />
                         </div>
 
-                        {/* Record panel */}
-                        <div className="flex-1 min-w-0 flex flex-col bg-white">
-                            <div className="px-5 pt-4 pb-3 border-b border-slate-100 shrink-0">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <h1 className="text-lg font-bold text-slate-900 leading-tight truncate">{app.corporation_name || app.applicant_name || "—"}</h1>
-                                        <p className="text-xs text-slate-500 mt-0.5">
-                                            {dash(app.application_type)} · Brgy. {dash(app.barangay)}
-                                        </p>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                        <p className="text-[10px] uppercase tracking-wider text-slate-400">Assessment fee</p>
-                                        <p className="font-mono text-sm font-bold text-slate-900">{peso(app.assessment_fee)}</p>
-                                    </div>
+                        {/* Record */}
+                        <div className="lg:w-[440px] xl:w-[480px] shrink-0 min-h-0 flex flex-col bg-white">
+                            <div className="shrink-0 px-5 pt-4 pb-3 border-b border-slate-200">
+                                <p className="text-[12.5px] text-slate-600">
+                                    {dash(app.application_type)} · Brgy. {dash(app.barangay)}
+                                </p>
+                                <div className="mt-3">
+                                    <StageProgress status={app.status} />
                                 </div>
-                                <div className="mt-3 grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-full" role="tablist" aria-label="Record sections">
+                                <dl className="mt-3 grid grid-cols-3 border border-slate-200 rounded-md divide-x divide-slate-200">
                                     {[
-                                        { id: "overview", label: "Overview" },
-                                        { id: "parcels", label: `Parcels & evaluation (${lots.length})` },
-                                        { id: "history", label: "History" },
-                                    ].map((t) => (
-                                        <button
-                                            key={t.id}
-                                            type="button"
-                                            role="tab"
-                                            aria-selected={tab === t.id}
-                                            onClick={() => setTab(t.id)}
-                                            className={`py-1.5 rounded-full text-xs font-semibold cursor-pointer ${tab === t.id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-                                        >
-                                            {t.label}
-                                        </button>
+                                        ["Filed", fmtDate(app.created_at)],
+                                        ["In this stage", isFinal ? "—" : daysInStage != null ? `${daysInStage} working day${daysInStage === 1 ? "" : "s"}` : "—"],
+                                        ["Assessment fee", peso(app.assessment_fee)],
+                                    ].map(([k, v]) => (
+                                        <div key={k} className="px-3 py-2 min-w-0">
+                                            <dt className="text-[11px] text-slate-500">{k}</dt>
+                                            <dd className="text-[12.5px] font-semibold text-slate-900 truncate tabular-nums">{v}</dd>
+                                        </div>
                                     ))}
-                                </div>
+                                </dl>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                            {/* Next step */}
+                            <div className={`shrink-0 px-5 py-3 border-b border-slate-200 ${overARTA ? "bg-amber-50" : "bg-[#f7f9fc]"}`}>
+                                <p className="text-[11px] text-slate-500">Next step</p>
+                                <p className="text-[13px] font-semibold text-slate-900">{nextStep}</p>
+                                {nextDetail && <p className="text-[12px] text-slate-600 mt-0.5">{nextDetail}</p>}
+                                {overARTA && (
+                                    <p className="text-[12px] font-medium text-amber-800 mt-1">
+                                        {daysSinceFiling} working days since filing, beyond the {ARTA_WORKING_DAYS}-day processing time for highly technical applications (RA 11032).
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Tabs */}
+                            <div className="shrink-0 flex gap-5 px-5 border-b border-slate-200" role="tablist" aria-label="Record sections">
+                                {tabs.map((t) => (
+                                    <button
+                                        key={t.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={tab === t.id}
+                                        onClick={() => setTab(t.id)}
+                                        className={`py-2.5 -mb-px border-b-2 text-[13px] cursor-pointer ${
+                                            tab === t.id ? "border-[#0b2a5b] text-slate-900 font-semibold" : "border-transparent text-slate-500 hover:text-slate-800"
+                                        }`}
+                                    >
+                                        {t.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto px-5 py-3" role="tabpanel">
                                 {tab === "overview" && (
                                     <>
-                                        {/* What's next */}
-                                        <section className={`rounded-xl border p-4 ${overARTA ? "border-amber-300 bg-amber-50/40" : "border-slate-200 bg-slate-50"}`}>
-                                            <div className="flex items-start justify-between gap-3">
-                                                <div>
-                                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">What's next</p>
-                                                    <p className="text-sm font-bold text-slate-900 mt-0.5">
-                                                        {app.status === "Technical Review"
-                                                            ? pendingInspections.length
-                                                                ? "Waiting on site inspection"
-                                                                : "Record the evaluation"
-                                                            : app.status === "Received"
-                                                            ? "Start the technical review"
-                                                            : app.status === "Under Sangguniang Bayan"
-                                                            ? "Awaiting Sangguniang Bayan action"
-                                                            : app.status === "For Release"
-                                                            ? "Ready for release"
-                                                            : app.status === "Released"
-                                                            ? "Released to the applicant"
-                                                            : app.status === "Denied"
-                                                            ? "Application denied"
-                                                            : "—"}
-                                                    </p>
-                                                </div>
-                                                {!isFinal && (
-                                                    <div className="text-right shrink-0">
-                                                        <p className="text-lg font-bold text-slate-900 leading-none">{daysInStage ?? "—"}</p>
-                                                        <p className="text-[10px] text-slate-500">working days in stage</p>
-                                                    </div>
+                                        <dl>
+                                            <Row label="Applicant">{app.applicant_name}</Row>
+                                            {app.corporation_name && <Row label="Corporation">{app.corporation_name}</Row>}
+                                            <Row label="Contact">
+                                                {(app.contact_number || app.email) && (
+                                                    <span className="flex flex-col">
+                                                        {app.contact_number && (
+                                                            <a href={`tel:+63${String(app.contact_number).replace(/^0/, "")}`} className="hover:underline underline-offset-2">
+                                                                +63 {app.contact_number}
+                                                            </a>
+                                                        )}
+                                                        {app.email && (
+                                                            <a href={`mailto:${app.email}`} className="hover:underline underline-offset-2 break-all">
+                                                                {app.email}
+                                                            </a>
+                                                        )}
+                                                    </span>
                                                 )}
-                                            </div>
-                                            <ul className="mt-2.5 space-y-1 text-xs text-slate-700">
-                                                {app.status === "Technical Review" &&
-                                                    pendingInspections.map((l) => {
-                                                        const si = l.parcel.site_inspection;
-                                                        const overdue = si?.deadline_date && String(si.deadline_date).split("T")[0] < today();
-                                                        return (
-                                                            <li key={l.code}>
-                                                                <b>{l.code}</b>: inspection by {inspectorName(si.inspector_id)}, due {fmtDate(si.deadline_date)}
-                                                                {overdue && <span className="ml-1 font-semibold text-rose-700">· overdue</span>}
-                                                            </li>
-                                                        );
-                                                    })}
-                                                {app.status === "Technical Review" && !pendingInspections.length && undecided.length > 0 && (
-                                                    <li>
-                                                        Choose a decision for {undecided.map((l) => l.code).join(", ")} in <b>Parcels & evaluation</b>, then <b>Submit evaluation</b>.
-                                                    </li>
-                                                )}
-                                                {app.status === "Under Sangguniang Bayan" && isAmendment && <li>Record the SB ordinance number below once the petition is approved.</li>}
-                                                {app.status === "For Release" && <li>Release mode: {dash(app.preferred_release_mode)}</li>}
-                                                {app.status === "Denied" &&
-                                                    deniedReasons.map((r) => (
-                                                        <li key={r.id}>
-                                                            <b>{lotCodeById[r.parcel_id]}</b>: {r.decision_reason}
-                                                        </li>
-                                                    ))}
-                                                <li className="text-slate-500">
-                                                    Filed {fmtDate(app.created_at)}
-                                                    {daysSinceFiling !== null && ` · ${daysSinceFiling} working days ago`}
-                                                    {overARTA && (
-                                                        <span className="block font-semibold text-amber-800 mt-0.5">
-                                                            Beyond the {ARTA_WORKING_DAYS}-working-day processing time for highly technical applications (RA 11032).
-                                                        </span>
-                                                    )}
-                                                </li>
-                                            </ul>
-                                        </section>
-
-                                        <Section title="Applicant">
-                                            <Attr label="Name">{app.applicant_name}</Attr>
-                                            {app.corporation_name && <Attr label="Corporation">{app.corporation_name}</Attr>}
-                                            <Attr label="Phone">
-                                                {app.contact_number && (
-                                                    <a href={`tel:+63${String(app.contact_number).replace(/^0/, "")}`} className="font-mono underline underline-offset-2 hover:text-blue-700">
-                                                        +63 {app.contact_number}
-                                                    </a>
-                                                )}
-                                            </Attr>
-                                            <Attr label="Email">
-                                                {app.email && (
-                                                    <a href={`mailto:${app.email}`} className="underline underline-offset-2 hover:text-blue-700 break-all">
-                                                        {app.email}
-                                                    </a>
-                                                )}
-                                            </Attr>
-                                            <Attr label="Right over land">{app.right_over_land}</Attr>
+                                            </Row>
                                             {app.representative_name && (
-                                                <Attr label="Representative">
+                                                <Row label="Representative">
                                                     {app.representative_name}
                                                     {(app.representative_contact || app.representative_address) && (
-                                                        <span className="block text-[11px] font-normal text-slate-500">
+                                                        <span className="block text-[12px] text-slate-500">
                                                             {[app.representative_contact && `+63 ${app.representative_contact}`, app.representative_address].filter(Boolean).join(" · ")}
                                                         </span>
                                                     )}
-                                                </Attr>
+                                                </Row>
                                             )}
-                                        </Section>
-
-                                        <Section title="Application">
-                                            <Attr label="Category">{app.application_type}</Attr>
-                                            <Attr label="Track">{isAmendment ? "Legislative amendment (Track B)" : "Standard clearance (Track A)"}</Attr>
-                                            {isAmendment && (
-                                                <Attr label="Target zoning">
-                                                    {app.target_land_use_class && (
-                                                        <span>
-                                                            {app.target_land_use_class}
-                                                            <span className="block text-[11px] font-normal text-slate-400">{getZoneInfo(app.target_land_use_class).label}</span>
-                                                        </span>
-                                                    )}
-                                                </Attr>
+                                            <Row label="Track">{isAmendment ? "Legislative amendment (Track B)" : "Standard clearance (Track A)"}</Row>
+                                            {isAmendment && app.target_land_use_class && (
+                                                <Row label="Target zoning">
+                                                    {app.target_land_use_class}
+                                                    <span className="block text-[12px] text-slate-500">{getZoneInfo(app.target_land_use_class).label}</span>
+                                                </Row>
                                             )}
-                                            <Attr label="Form no." mono>{app.form_number}</Attr>
-                                            <Attr label="Purpose">{app.purpose}</Attr>
-                                        </Section>
+                                            <Row label="Purpose">{app.purpose}</Row>
+                                        </dl>
 
                                         {isAmendment && (
-                                            <section className="rounded-xl border border-slate-200 bg-white">
-                                                <div className="px-4 py-2.5 border-b border-slate-100">
-                                                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Sangguniang Bayan / DAR</h3>
-                                                </div>
-                                                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div className="mt-4 mb-2 p-3 rounded-md border border-slate-200 bg-slate-50">
+                                                <p className="text-[12.5px] font-semibold text-slate-800 mb-2">Sangguniang Bayan / DAR references</p>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                                     {[
                                                         ["sb_ordinance_number", "SB ordinance no.", "e.g. Ord. No. 2026-014"],
                                                         ["dar_clearance_ref", "DAR clearance ref.", "e.g. DAR-CC-2026-0021"],
                                                     ].map(([field, label, placeholder]) => (
                                                         <div key={field}>
-                                                            <label htmlFor={field} className="text-xs font-semibold text-slate-700">
-                                                                {label}
-                                                            </label>
+                                                            <label htmlFor={field} className="text-[12px] text-slate-600">{label}</label>
                                                             <input
                                                                 id={field}
                                                                 type="text"
@@ -697,73 +723,61 @@ function ShowInner({
                                                                 value={refs[field]}
                                                                 onChange={(e) => setRefs((r) => ({ ...r, [field]: e.target.value }))}
                                                                 placeholder={placeholder}
-                                                                className="mt-1 w-full rounded-full border border-slate-200 px-4 py-2 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+                                                                className={`mt-1 font-mono ${FIELD}`}
                                                             />
                                                         </div>
                                                     ))}
-                                                    <div className="sm:col-span-2 flex justify-end">
-                                                        <button
-                                                            type="button"
-                                                            onClick={saveRefs}
-                                                            disabled={saving || (refs.sb_ordinance_number === (app.sb_ordinance_number || "") && refs.dar_clearance_ref === (app.dar_clearance_ref || ""))}
-                                                            className="px-4 py-1.5 rounded-full bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
-                                                        >
-                                                            Save references
-                                                        </button>
-                                                    </div>
                                                 </div>
-                                            </section>
+                                                <div className="flex justify-end mt-2.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={saveRefs}
+                                                        disabled={saving || (refs.sb_ordinance_number === (app.sb_ordinance_number || "") && refs.dar_clearance_ref === (app.dar_clearance_ref || ""))}
+                                                        className="h-8 px-3.5 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
+                                                    >
+                                                        Save references
+                                                    </button>
+                                                </div>
+                                            </div>
                                         )}
 
-                                        <Section title="Project">
-                                            <Attr label="Project / business">{app.project_type_business_name}</Attr>
-                                            <Attr label="Building area">{app.building_area && `${Number(app.building_area).toLocaleString()} sq.m`}</Attr>
-                                            <Attr label="Area to develop">{app.area_to_develop && `${Number(app.area_to_develop).toLocaleString()} sq.m`}</Attr>
-                                            {app.number_of_saleable_lots != null && <Attr label="Saleable lots">{String(app.number_of_saleable_lots)}</Attr>}
-                                            <Attr label="Project cost">{app.project_cost && peso(app.project_cost)}</Attr>
-                                            <Attr label="Tenure">{app.project_tenure}</Attr>
-                                        </Section>
-
-                                        <Section title="Fees & receipt">
-                                            {[
-                                                ["Zoning certificate", app.zoning_certificate_fee],
-                                                ["Locational clearance", app.locational_clearance_fee],
-                                                ["Development permit", app.development_permit_fee],
-                                                ["Other fees", app.other_fees],
-                                                ["Penalty", app.penalty_fee],
-                                            ]
-                                                .filter(([, v]) => Number(v) > 0)
-                                                .map(([label, v]) => (
-                                                    <Attr key={label} label={label} mono>
-                                                        {peso(v)}
-                                                    </Attr>
+                                        <div className="mt-3">
+                                            <More title="Project details">
+                                                <Row label="Project / business">{app.project_type_business_name}</Row>
+                                                <Row label="Building area">{app.building_area && `${Number(app.building_area).toLocaleString()} m²`}</Row>
+                                                <Row label="Area to develop">{app.area_to_develop && `${Number(app.area_to_develop).toLocaleString()} m²`}</Row>
+                                                {app.number_of_saleable_lots != null && <Row label="Saleable lots">{String(app.number_of_saleable_lots)}</Row>}
+                                                <Row label="Project cost">{app.project_cost && peso(app.project_cost)}</Row>
+                                                <Row label="Tenure">{app.project_tenure}</Row>
+                                                <Row label="Right over land">{app.right_over_land}</Row>
+                                            </More>
+                                            <More title="Fees & receipt">
+                                                {fees.map(([label, v]) => (
+                                                    <Row key={label} label={label} mono>{peso(v)}</Row>
                                                 ))}
-                                            <Attr label="Total" mono>
-                                                {peso(app.assessment_fee)}
-                                            </Attr>
-                                            <Attr label="OR no." mono>
-                                                {app.or_number}
-                                            </Attr>
-                                            <Attr label="Date of receipt">{app.date_of_receipt && fmtDate(app.date_of_receipt)}</Attr>
-                                            <Attr label="Release mode">{app.preferred_release_mode}</Attr>
-                                        </Section>
-
-                                        <Section title="Record">
-                                            <Attr label="Encoded by">{app.encoded_by_name}</Attr>
-                                            <Attr label="Filed">{fmtDate(app.created_at, true)}</Attr>
-                                            <Attr label="Remarks">{app.remarks}</Attr>
-                                        </Section>
+                                                <Row label="Total" mono>{peso(app.assessment_fee)}</Row>
+                                                <Row label="OR no." mono>{app.or_number}</Row>
+                                                <Row label="Date of receipt">{app.date_of_receipt && fmtDate(app.date_of_receipt)}</Row>
+                                                <Row label="Release mode">{app.preferred_release_mode}</Row>
+                                            </More>
+                                            <More title="Record">
+                                                <Row label="Form no." mono>{app.form_number}</Row>
+                                                <Row label="Encoded by">{app.encoded_by_name}</Row>
+                                                <Row label="Filed">{fmtDate(app.created_at, true)}</Row>
+                                                <Row label="Remarks">{app.remarks}</Row>
+                                            </More>
+                                        </div>
                                     </>
                                 )}
 
                                 {tab === "parcels" && (
                                     <>
                                         {app.status === "Technical Review" && !canSubmitEvaluation && (
-                                            <p className="text-xs text-slate-600 pl-3 border-l-2 border-amber-400">
+                                            <p className="mb-3 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-[12px] text-amber-900">
                                                 Decisions are locked for lots with an open site inspection. The evaluation can be submitted once every inspection report is in.
                                             </p>
                                         )}
-                                        <ul className="rounded-xl border border-slate-200 divide-y divide-slate-200 overflow-hidden">
+                                        <ul className="space-y-2">
                                             {lots.map((l) => {
                                                 const p = l.parcel;
                                                 const isOpen = selectedIndex === l.index;
@@ -774,71 +788,78 @@ function ShowInner({
                                                 const shownDecision = app.status === "Technical Review" ? review.decision : latest?.decision;
                                                 const decisionDot = DECISIONS.find((d) => d.value === shownDecision)?.dot || "bg-slate-300";
                                                 return (
-                                                    <li key={p.id} className={isOpen ? "bg-white" : "bg-slate-50/60"}>
+                                                    <li key={p.id} className={`rounded-md border ${isOpen ? "border-[#0b2a5b]/40 shadow-sm" : "border-slate-200"}`}>
                                                         <button
                                                             type="button"
                                                             onClick={() => setSelectedIndex(l.index)}
                                                             aria-expanded={isOpen}
-                                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer hover:bg-slate-50"
+                                                            className="w-full flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer hover:bg-slate-50 rounded-md"
                                                         >
-                                                            <span className={`text-[11px] font-bold w-9 shrink-0 ${isOpen ? "text-slate-900" : "text-slate-500"}`}>{l.code}</span>
-                                                            <span className="font-mono text-[11px] text-slate-700 truncate">{l.pin || "No PIN"}</span>
-                                                            <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-600 shrink-0">
-                                                                <span className="w-1.5 h-1.5 rounded-full" style={{ background: l.color }} aria-hidden="true" />
-                                                                {l.check.label}
+                                                            <span className={`text-[12px] font-semibold px-1.5 py-0.5 rounded ${isOpen ? "bg-[#0b2a5b] text-white" : "bg-slate-100 text-slate-700"}`}>{l.code}</span>
+                                                            <span className="flex-1 min-w-0">
+                                                                <span className="block font-mono text-[12px] text-slate-800 truncate">{l.pin || "No PIN"}</span>
+                                                                <span className="flex items-center gap-3 text-[11.5px] text-slate-500">
+                                                                    <span className="inline-flex items-center gap-1.5">
+                                                                        <span className="w-2 h-2 rounded-[2px]" style={{ background: l.color }} aria-hidden="true" />
+                                                                        {l.check.label}
+                                                                    </span>
+                                                                    <span className="inline-flex items-center gap-1.5">
+                                                                        <span className={`w-2 h-2 rounded-full ${decisionDot}`} aria-hidden="true" />
+                                                                        {locked ? "Inspection open" : shownDecision || "No decision"}
+                                                                    </span>
+                                                                </span>
                                                             </span>
-                                                            <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 shrink-0">
-                                                                <span className={`w-1.5 h-1.5 rounded-full ${decisionDot}`} aria-hidden="true" />
-                                                                {locked ? "Inspection open" : shownDecision || "No decision"}
-                                                            </span>
+                                                            <svg className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                                            </svg>
                                                         </button>
 
                                                         {isOpen && (
-                                                            <div className="px-4 pb-4 space-y-4">
-                                                                <div>
-                                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Attributes</p>
-                                                                    <dl className="text-xs rounded-lg border border-slate-200 px-3">
-                                                                        <Attr label="Owner">{p.owner_name}</Attr>
-                                                                        <Attr label="Lot / Survey" mono>
-                                                                            {[p.lot_number, p.survey_number].filter(Boolean).join(" · ")}
-                                                                        </Attr>
-                                                                        <Attr label="ARP / TD / TCT" mono>
-                                                                            {[p.arp_number, p.tax_dec_number, p.tct_number].filter(Boolean).join(" · ")}
-                                                                        </Attr>
-                                                                        <Attr label="Address">{p.location_address}</Attr>
-                                                                        <Attr label="Lot area">
-                                                                            <AreaComparison declared={p.lot_area_sqm} feature={l.feature} />
-                                                                        </Attr>
-                                                                        <Attr label="Assessor class">{l.assessor}</Attr>
-                                                                        <Attr label="CLUP zone">
-                                                                            {p.land_use_class && (
-                                                                                <span>
-                                                                                    {p.land_use_class}
-                                                                                    {getZoneInfo(p.land_use_class).label !== p.land_use_class && (
-                                                                                        <span className="block text-slate-400 font-normal">{getZoneInfo(p.land_use_class).label}</span>
-                                                                                    )}
-                                                                                </span>
-                                                                            )}
-                                                                        </Attr>
-                                                                        <Attr label="Zoning check">
-                                                                            <span className="inline-flex items-center gap-1.5">
-                                                                                <span className="w-1.5 h-1.5 rounded-full" style={{ background: l.color }} aria-hidden="true" />
-                                                                                {l.feature ? l.check.label : "Lot not on the tax map"}
-                                                                            </span>
-                                                                        </Attr>
-                                                                    </dl>
-                                                                </div>
+                                                            <div className="px-3 pb-3 border-t border-slate-100">
+                                                                <dl className="pt-1">
+                                                                    <Row label="Owner">{p.owner_name}</Row>
+                                                                    <Row label="Lot no." mono>{p.lot_number}</Row>
+                                                                    <Row label="TCT / Tax Dec." mono>{[p.tct_number, p.tax_dec_number].filter(Boolean).join(" · ")}</Row>
+                                                                    <Row label="Lot area">
+                                                                        <AreaComparison declared={p.lot_area_sqm} feature={l.feature} />
+                                                                    </Row>
+                                                                    <Row label="CLUP zone">
+                                                                        {p.land_use_class && (
+                                                                            <>
+                                                                                {p.land_use_class}
+                                                                                {getZoneInfo(p.land_use_class).label !== p.land_use_class && (
+                                                                                    <span className="block text-[12px] text-slate-500">{getZoneInfo(p.land_use_class).label}</span>
+                                                                                )}
+                                                                            </>
+                                                                        )}
+                                                                    </Row>
+                                                                    <Row label="Zoning check">
+                                                                        <span className="inline-flex items-center gap-1.5">
+                                                                            <span className="w-2 h-2 rounded-[2px]" style={{ background: l.color }} aria-hidden="true" />
+                                                                            {l.feature ? l.check.label : "Lot not on the tax map"}
+                                                                        </span>
+                                                                    </Row>
+                                                                </dl>
+                                                                <More title="More lot details">
+                                                                    <Row label="PIN" mono>{l.pin}</Row>
+                                                                    <Row label="Survey no." mono>{p.survey_number}</Row>
+                                                                    <Row label="ARP no." mono>{p.arp_number}</Row>
+                                                                    <Row label="Address">{p.location_address}</Row>
+                                                                    <Row label="Assessor class">{l.assessor}</Row>
+                                                                </More>
 
                                                                 {p.site_inspection?.id && (
-                                                                    <ParcelInspectionStatus inspectionId={p.site_inspection.id} onStatusFetched={onInspectionStatus(p.id)} />
+                                                                    <div className="mt-2">
+                                                                        <ParcelInspectionStatus inspectionId={p.site_inspection.id} onStatusFetched={onInspectionStatus(p.id)} />
+                                                                    </div>
                                                                 )}
 
                                                                 {editable ? (
-                                                                    <div className="space-y-3">
-                                                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Evaluation decision</p>
-                                                                        <div role="radiogroup" aria-label={`Evaluation decision for ${l.code}`} className="grid grid-cols-3 gap-1 p-1 rounded-full bg-slate-100">
-                                                                            {DECISIONS.map((d) => (
-                                                                                <label key={d.value} className="relative">
+                                                                    <div className="mt-3 pt-3 border-t border-slate-200 space-y-3">
+                                                                        <p className="text-[12.5px] font-semibold text-slate-800">Evaluation decision</p>
+                                                                        <div role="radiogroup" aria-label={`Evaluation decision for ${l.code}`} className="grid grid-cols-3 border border-slate-300 rounded-md overflow-hidden">
+                                                                            {DECISIONS.map((d, di) => (
+                                                                                <label key={d.value} className={`relative ${di ? "border-l border-slate-300" : ""}`}>
                                                                                     <input
                                                                                         type="radio"
                                                                                         name={`decision-${p.id}`}
@@ -847,8 +868,8 @@ function ShowInner({
                                                                                         onChange={() => setReview(p.id, "decision", d.value)}
                                                                                         className="peer sr-only"
                                                                                     />
-                                                                                    <span className="flex items-center justify-center gap-1.5 py-1.5 rounded-full text-[11px] font-semibold text-slate-500 cursor-pointer hover:text-slate-800 peer-checked:bg-white peer-checked:text-slate-900 peer-checked:shadow-sm peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500">
-                                                                                        <span className={`w-1.5 h-1.5 rounded-full ${d.dot}`} aria-hidden="true" />
+                                                                                    <span className="flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-slate-600 cursor-pointer hover:bg-slate-50 peer-checked:bg-[#0b2a5b] peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-inset peer-focus-visible:ring-[#0b2a5b]">
+                                                                                        <span className={`w-2 h-2 rounded-full ${d.dot}`} aria-hidden="true" />
                                                                                         {d.value === "Needs Site Inspection" && DONE_INSPECTION.includes(inspectionStatusOf(p)) ? "Re-inspect" : d.label}
                                                                                     </span>
                                                                                 </label>
@@ -857,8 +878,8 @@ function ShowInner({
 
                                                                         {review.decision === "Declined" && (
                                                                             <div>
-                                                                                <label htmlFor={`reason-${p.id}`} className="text-xs font-semibold text-slate-700">
-                                                                                    Reason for declining <span className="text-rose-500">*</span>
+                                                                                <label htmlFor={`reason-${p.id}`} className="text-[12px] font-semibold text-slate-700">
+                                                                                    Reason for declining <span className="text-rose-600">*</span>
                                                                                 </label>
                                                                                 <textarea
                                                                                     id={`reason-${p.id}`}
@@ -866,7 +887,7 @@ function ShowInner({
                                                                                     value={review.decision_reason}
                                                                                     onChange={(e) => setReview(p.id, "decision_reason", e.target.value)}
                                                                                     placeholder="Regulatory basis for declining this lot…"
-                                                                                    className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 resize-none"
+                                                                                    className={`mt-1 resize-none ${FIELD}`}
                                                                                 />
                                                                             </div>
                                                                         )}
@@ -874,92 +895,52 @@ function ShowInner({
                                                                         {review.decision === "Needs Site Inspection" && (
                                                                             <div className="grid grid-cols-2 gap-2.5">
                                                                                 <div className="col-span-2">
-                                                                                    <label htmlFor={`inspector-${p.id}`} className="text-xs font-semibold text-slate-700">
-                                                                                        Inspector <span className="text-rose-500">*</span>
+                                                                                    <label htmlFor={`inspector-${p.id}`} className="text-[12px] font-semibold text-slate-700">
+                                                                                        Inspector <span className="text-rose-600">*</span>
                                                                                     </label>
-                                                                                    <select
-                                                                                        id={`inspector-${p.id}`}
-                                                                                        value={review.inspector_id}
-                                                                                        onChange={(e) => setReview(p.id, "inspector_id", e.target.value)}
-                                                                                        className="mt-1 w-full rounded-full border border-slate-200 px-4 py-2 text-xs bg-white outline-none focus:border-blue-500"
-                                                                                    >
+                                                                                    <select id={`inspector-${p.id}`} value={review.inspector_id} onChange={(e) => setReview(p.id, "inspector_id", e.target.value)} className={`mt-1 ${FIELD}`}>
                                                                                         <option value="">Choose inspector</option>
                                                                                         {inspectors.map((i) => (
-                                                                                            <option key={i.id} value={i.id}>
-                                                                                                {i.name}
-                                                                                            </option>
+                                                                                            <option key={i.id} value={i.id}>{i.name}</option>
                                                                                         ))}
                                                                                     </select>
                                                                                 </div>
                                                                                 <div>
-                                                                                    <label htmlFor={`sched-${p.id}`} className="text-xs font-semibold text-slate-700">
-                                                                                        Inspection date <span className="text-rose-500">*</span>
+                                                                                    <label htmlFor={`sched-${p.id}`} className="text-[12px] font-semibold text-slate-700">
+                                                                                        Inspection date <span className="text-rose-600">*</span>
                                                                                     </label>
-                                                                                    <input
-                                                                                        id={`sched-${p.id}`}
-                                                                                        type="date"
-                                                                                        min={today()}
-                                                                                        value={review.scheduled_date}
-                                                                                        onChange={(e) => setReview(p.id, "scheduled_date", e.target.value)}
-                                                                                        className="mt-1 w-full rounded-full border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500"
-                                                                                    />
+                                                                                    <input id={`sched-${p.id}`} type="date" min={today()} value={review.scheduled_date} onChange={(e) => setReview(p.id, "scheduled_date", e.target.value)} className={`mt-1 ${FIELD}`} />
                                                                                 </div>
                                                                                 <div>
-                                                                                    <label htmlFor={`deadline-${p.id}`} className="text-xs font-semibold text-slate-700">
-                                                                                        Deadline <span className="text-rose-500">*</span>
+                                                                                    <label htmlFor={`deadline-${p.id}`} className="text-[12px] font-semibold text-slate-700">
+                                                                                        Deadline <span className="text-rose-600">*</span>
                                                                                     </label>
-                                                                                    <input
-                                                                                        id={`deadline-${p.id}`}
-                                                                                        type="date"
-                                                                                        min={review.scheduled_date || today()}
-                                                                                        value={review.deadline_date}
-                                                                                        onChange={(e) => setReview(p.id, "deadline_date", e.target.value)}
-                                                                                        className="mt-1 w-full rounded-full border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500"
-                                                                                    />
+                                                                                    <input id={`deadline-${p.id}`} type="date" min={review.scheduled_date || today()} value={review.deadline_date} onChange={(e) => setReview(p.id, "deadline_date", e.target.value)} className={`mt-1 ${FIELD}`} />
                                                                                 </div>
                                                                                 <div className="col-span-2">
-                                                                                    <label htmlFor={`notes-${p.id}`} className="text-xs font-semibold text-slate-700">
-                                                                                        Instructions for the inspector
-                                                                                    </label>
-                                                                                    <textarea
-                                                                                        id={`notes-${p.id}`}
-                                                                                        rows={2}
-                                                                                        value={review.assigned_notes}
-                                                                                        onChange={(e) => setReview(p.id, "assigned_notes", e.target.value)}
-                                                                                        placeholder="What to verify on site…"
-                                                                                        className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500 resize-none"
-                                                                                    />
+                                                                                    <label htmlFor={`notes-${p.id}`} className="text-[12px] font-semibold text-slate-700">Instructions for the inspector</label>
+                                                                                    <textarea id={`notes-${p.id}`} rows={2} value={review.assigned_notes} onChange={(e) => setReview(p.id, "assigned_notes", e.target.value)} placeholder="What to verify on site…" className={`mt-1 resize-none ${FIELD}`} />
                                                                                 </div>
                                                                             </div>
                                                                         )}
 
                                                                         <div>
-                                                                            <label htmlFor={`findings-${p.id}`} className="text-xs font-semibold text-slate-700">
-                                                                                Evaluation notes (optional)
-                                                                            </label>
-                                                                            <textarea
-                                                                                id={`findings-${p.id}`}
-                                                                                rows={2}
-                                                                                value={review.findings}
-                                                                                onChange={(e) => setReview(p.id, "findings", e.target.value)}
-                                                                                placeholder="Findings recorded with the decision…"
-                                                                                className="mt-1 w-full rounded-2xl border border-slate-200 px-4 py-2 text-xs outline-none focus:border-blue-500 resize-none"
-                                                                            />
+                                                                            <label htmlFor={`findings-${p.id}`} className="text-[12px] font-semibold text-slate-700">Evaluation notes (optional)</label>
+                                                                            <textarea id={`findings-${p.id}`} rows={2} value={review.findings} onChange={(e) => setReview(p.id, "findings", e.target.value)} placeholder="Findings recorded with the decision…" className={`mt-1 resize-none ${FIELD}`} />
                                                                         </div>
                                                                     </div>
                                                                 ) : (
                                                                     latest && (
-                                                                        <div className="rounded-lg border border-slate-200 px-3 py-2 text-xs">
-                                                                            <p className="font-semibold text-slate-800">
+                                                                        <div className="mt-3 px-3 py-2 rounded-md bg-slate-50 border border-slate-200">
+                                                                            <p className="text-[12.5px] font-semibold text-slate-900">
                                                                                 {latest.decision}
                                                                                 <span className="font-normal text-slate-500">
-                                                                                    {" "}
-                                                                                    · {dash(latest.reviewed_by_name)} · {fmtDate(latest.reviewed_at)}
+                                                                                    {" "}· {dash(latest.reviewed_by_name)} · {fmtDate(latest.reviewed_at)}
                                                                                     {latest.review_round > 1 && ` · round ${latest.review_round}`}
                                                                                 </span>
                                                                             </p>
-                                                                            {latest.decision_reason && <p className="text-slate-600 mt-0.5">{latest.decision_reason}</p>}
-                                                                            {latest.findings && <p className="text-slate-600 mt-0.5">{latest.findings}</p>}
+                                                                            {latest.decision_reason && <p className="text-[12px] text-slate-600 mt-0.5">{latest.decision_reason}</p>}
+                                                                            {latest.findings && <p className="text-[12px] text-slate-600 mt-0.5">{latest.findings}</p>}
                                                                         </div>
                                                                     )
                                                                 )}
@@ -971,15 +952,13 @@ function ShowInner({
                                         </ul>
 
                                         {app.status === "Technical Review" && (
-                                            <div className="flex items-center justify-end gap-3">
-                                                <span className="text-[11px] text-slate-500">
-                                                    {lots.length - undecided.length} of {lots.length} decided
-                                                </span>
+                                            <div className="sticky bottom-0 -mx-5 mt-3 px-5 py-2.5 bg-white border-t border-slate-200 flex items-center justify-end gap-3">
+                                                <span className="text-[12px] text-slate-500">{lots.length - undecided.length} of {lots.length} decided</span>
                                                 <button
                                                     type="button"
                                                     onClick={submitEvaluation}
                                                     disabled={saving || !canSubmitEvaluation}
-                                                    className="px-5 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
+                                                    className="h-9 px-4 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
                                                 >
                                                     {saving ? "Submitting…" : "Submit evaluation"}
                                                 </button>
@@ -991,23 +970,23 @@ function ShowInner({
                                 {tab === "history" && (
                                     <>
                                         {history.length === 0 ? (
-                                            <p className="text-xs text-slate-500">No recorded activity yet.</p>
+                                            <p className="text-[12.5px] text-slate-500 py-2">No recorded activity yet.</p>
                                         ) : (
-                                            <ol className="relative border-l border-slate-200 ml-2 space-y-4">
+                                            <ol className="relative border-l border-slate-200 ml-1.5 mt-1 space-y-4">
                                                 {history.map((h, i) => (
                                                     <li key={i} className="ml-4">
                                                         <span
-                                                            className={`absolute -left-[5px] mt-1 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                                                            className={`absolute -left-[5px] mt-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
                                                                 h.kind === "review" ? DECISIONS.find((d) => d.value === h.decision)?.dot || "bg-slate-400" : "bg-slate-400"
                                                             }`}
                                                             aria-hidden="true"
                                                         />
-                                                        <p className="text-xs font-semibold text-slate-900 first-letter:uppercase">{h.title}</p>
-                                                        <p className="text-[11px] text-slate-500">
+                                                        <p className="text-[12.5px] font-semibold text-slate-900 first-letter:uppercase">{h.title}</p>
+                                                        <p className="text-[11.5px] text-slate-500">
                                                             {fmtDate(h.at, true)}
                                                             {h.who && ` · ${h.who}`}
                                                         </p>
-                                                        {h.note && <p className="text-[11px] text-slate-600 mt-0.5 whitespace-pre-line">{h.note}</p>}
+                                                        {h.note && <p className="text-[12px] text-slate-600 mt-0.5 whitespace-pre-line">{h.note}</p>}
                                                     </li>
                                                 ))}
                                             </ol>
@@ -1270,18 +1249,10 @@ class ShowErrorBoundary extends React.Component {
         if (this.state.hasError) {
             return (
                 <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-                    <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-6 text-center">
-                        <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4">
-                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                        </div>
-                        <h2 className="text-base font-bold text-slate-900 mb-1">Failed to load application record</h2>
-                        <p className="text-xs text-slate-500 mb-4">{this.state.error?.message || "An unexpected error occurred while rendering this application."}</p>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors cursor-pointer"
-                        >
+                    <div className="max-w-md w-full bg-white rounded-lg shadow-lg border border-slate-200 p-6 text-center">
+                        <h2 className="text-[15px] font-semibold text-slate-900 mb-1">Failed to load application record</h2>
+                        <p className="text-[12.5px] text-slate-500 mb-4">{this.state.error?.message || "An unexpected error occurred while rendering this application."}</p>
+                        <button onClick={() => window.location.reload()} className="px-4 py-2 rounded-md bg-[#0b2a5b] text-white text-[12.5px] font-semibold hover:bg-[#0e3574] cursor-pointer">
                             Reload page
                         </button>
                     </div>

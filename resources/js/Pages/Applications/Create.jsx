@@ -526,7 +526,7 @@ function RoutingSlipModal({ open, data, onClose, onPrint }) {
     );
 }
 
-export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null }) {
+export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null, inspectors = [] }) {
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
 
@@ -618,7 +618,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                             location_address: prefill.location_address || "",
                             lot_area_sqm: prefill.lot_area_sqm || "",
                             property_index_number: prefill.property_index_number || "",
-                            land_use_class: prefill.target_land_use_class || "",
+                            lot_number: prefill.lot_number || "",
+                            // The parcel's own CLUP zone, as Step 1's spatial lookup records it.
+                            land_use_class: prefill.clup_zone_code || prefill.target_land_use_class || "",
+                            cadastral_zone: prefill.cadastral_zone || "",
+                            is_verified: Boolean(prefill.property_index_number),
+                            coordinates: prefill.coordinates || "",
                         },
                     ],
                 };
@@ -1331,6 +1336,21 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             if (form.application_stream !== "amendment" && hasZoningMismatch(form.parcels)) {
                 newErrors.application_stream = "A lot's zoning doesn't match the CLUP, so this must be a legislative amendment (Track B)";
             }
+
+            // Parcel evaluation decision, as in the earlier Evaluation step
+            (form.parcels || []).forEach((parcel, index) => {
+                if (!parcel.decision) {
+                    newErrors[`parcels.${index}.decision`] = "Evaluation decision is required";
+                }
+                if (parcel.decision === "Needs Site Inspection") {
+                    if (!parcel.inspector_id) newErrors[`parcels.${index}.inspector_id`] = "Required";
+                    if (!parcel.scheduled_date) newErrors[`parcels.${index}.scheduled_date`] = "Required";
+                    if (!parcel.deadline_date) newErrors[`parcels.${index}.deadline_date`] = "Required";
+                }
+                if (parcel.decision === "Declined" && !parcel.decision_reason?.trim()) {
+                    newErrors[`parcels.${index}.decision_reason`] = "Required for declined parcels";
+                }
+            });
         }
 
         if (step === STEP.APPLICANT) {
@@ -1402,11 +1422,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         setSubmissionFinalized(true);
         setSubmitting(true);
 
-        // Evaluation decisions belong to Technical Review, not intake. Strip any left in older drafts,
-        // otherwise the backend would record a review and change status on submission.
         const payload = {
             ...form,
-            parcels: (form.parcels || []).map(({ decision, decision_reason, inspector_id, scheduled_date, deadline_date, assigned_notes, findings, ...parcel }) => parcel),
             draft_id: tempDraftId,
         };
         router.post("/applications/encode", payload, {
@@ -1446,7 +1463,10 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                 const errKeys = Object.keys(errs);
                 let targetStep = STEP.REVIEW;
-                if (errKeys.some((k) => k === "barangay" || k.startsWith("parcels"))) {
+                const isDecisionError = (k) => /^parcels\.\d+\.(decision|decision_reason|inspector_id|scheduled_date|deadline_date|assigned_notes)$/.test(k);
+                if (errKeys.some(isDecisionError)) {
+                    targetStep = STEP.APPLICATION;
+                } else if (errKeys.some((k) => k === "barangay" || k.startsWith("parcels"))) {
                     targetStep = STEP.PROPERTY;
                 } else if (errKeys.some((k) => STEP_ERROR_FIELDS[STEP.APPLICATION].includes(k))) {
                     targetStep = STEP.APPLICATION;
@@ -1938,6 +1958,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                             LAND_USE_CLASSES={LAND_USE_CLASSES}
                                                             zoningMismatch={hasZoningMismatch(form.parcels)}
                                                             goToProperty={() => setCurrentStep(STEP.PROPERTY)}
+                                                            setParcelField={setParcelField}
+                                                            inspectors={inspectors}
                                                         />
                                                     </>
                                                 )}

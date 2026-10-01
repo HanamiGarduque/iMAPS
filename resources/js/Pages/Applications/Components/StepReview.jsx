@@ -152,6 +152,7 @@ export default function StepReview({
                                                 <p className="text-[9px] text-slate-400 uppercase tracking-wider mt-0.5">
                                                     {parcel.cadastral_zone || "—"} / CLUP {parcel.land_use_class || "—"}
                                                 </p>
+                                                <p className="text-[10px] font-semibold text-slate-700 mt-0.5">{parcel.decision || "No decision"}</p>
                                             </div>
                                         </div>
                                     ))
