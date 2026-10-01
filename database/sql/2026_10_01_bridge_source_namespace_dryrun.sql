@@ -72,14 +72,22 @@ CREATE TABLE field_job_photos (
     photo_url    text NOT NULL
 );
 
+-- field_job_reviews: its bare unique is created as a STANDALONE INDEX, not a
+-- table constraint. This is the EXACT shape found on the live project, where
+-- the forward SQL's `DROP CONSTRAINT IF EXISTS` silently did nothing and left
+-- the survivor in place. Reproducing the shape here is what makes the test
+-- meaningful: a `UNIQUE (...)` inside CREATE TABLE would not exercise the
+-- object-type detection at all.
 CREATE TABLE field_job_reviews (
     id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     field_job_id              uuid REFERENCES field_jobs(id) ON DELETE CASCADE,
     technical_review_id       bigint NOT NULL,
     reviewed_site_inspection_id integer,
-    decision                  text,
-    UNIQUE (technical_review_id)   -- also a bare local integer
+    decision                  text
 );
+
+CREATE UNIQUE INDEX field_job_reviews_technical_review_id_key
+    ON field_job_reviews (technical_review_id);   -- also a bare local integer
 
 CREATE TABLE supabase_zoning_applications (
     id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -130,52 +138,64 @@ ALTER TABLE supabase_zoning_applications  ADD COLUMN bridge_source_id text;
 ALTER TABLE supabase_parcels              ADD COLUMN bridge_source_id text;
 ALTER TABLE field_job_reviews             ADD COLUMN bridge_source_id text;
 
--- Drop the bare constraints by catalog, exactly as the forward SQL does.
+-- Drop the bare uniques by catalog, DETECTING THE OBJECT TYPE per survivor,
+-- exactly as the corrected forward SQL does.
+--
+-- This table set deliberately contains BOTH shapes:
+--   field_jobs / supabase_zoning_applications / supabase_parcels  -> CONSTRAINT
+--   field_job_reviews                                            -> standalone INDEX
+--
+-- A DROP CONSTRAINT IF EXISTS against the standalone index is a silent no-op,
+-- which is the exact defect found live. If this dry run dropped everything with
+-- DROP CONSTRAINT, the field_job_reviews survivor would remain and test 9 would
+-- fail - which is the point.
 DO $$
-DECLARE v text;
+DECLARE
+    v_idx   text;
+    v_table text;
+    v_col   text;
+    v_is_constraint boolean;
+    v_left  integer;
 BEGIN
-    FOR v IN SELECT c.relname FROM pg_index i
-              JOIN pg_class c ON c.oid = i.indexrelid
-              JOIN pg_class t ON t.oid = i.indrelid
-              JOIN pg_namespace n ON n.oid = t.relnamespace
-              JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = 'local_inspection_id'
-              WHERE n.nspname = 'bridge_ns_dryrun' AND t.relname = 'field_jobs'
-                AND i.indisunique AND i.indnatts = 1 AND i.indkey[0] = a.attnum
+    -- plpgsql FOREACH cannot iterate two variables over a 2-D array, so the
+    -- (table, column) pairs come from a VALUES list through a query instead.
+    FOR v_table, v_col IN
+        SELECT * FROM (VALUES
+            ('field_jobs',                   'local_inspection_id'),
+            ('supabase_zoning_applications', 'local_application_id'),
+            ('supabase_parcels',             'local_parcel_id'),
+            ('field_job_reviews',            'technical_review_id')
+        ) AS pairs(tbl, col)
     LOOP
-        EXECUTE format('ALTER TABLE field_jobs DROP CONSTRAINT IF EXISTS %I', v);
-    END LOOP;
+        FOR v_idx, v_is_constraint IN
+            SELECT c.relname, (k.oid IS NOT NULL)
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_class t ON t.oid = i.indrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = v_col
+            LEFT JOIN pg_constraint k ON k.conrelid = t.oid AND k.conname = c.relname
+            WHERE n.nspname = 'bridge_ns_dryrun' AND t.relname = v_table
+              AND i.indisunique AND i.indnatts = 1 AND i.indkey[0] = a.attnum
+              AND NOT i.indisprimary
+        LOOP
+            IF v_is_constraint THEN
+                EXECUTE format('ALTER TABLE %I.%I DROP CONSTRAINT %I', 'bridge_ns_dryrun', v_table, v_idx);
+                RAISE NOTICE '%: dropped bare UNIQUE CONSTRAINT %', v_table, v_idx;
+            ELSE
+                EXECUTE format('DROP INDEX %I.%I', 'bridge_ns_dryrun', v_idx);
+                RAISE NOTICE '%: dropped bare UNIQUE INDEX %', v_table, v_idx;
+            END IF;
 
-    FOR v IN SELECT c.relname FROM pg_index i
-              JOIN pg_class c ON c.oid = i.indexrelid
-              JOIN pg_class t ON t.oid = i.indrelid
-              JOIN pg_namespace n ON n.oid = t.relnamespace
-              JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = 'local_application_id'
-              WHERE n.nspname = 'bridge_ns_dryrun' AND t.relname = 'supabase_zoning_applications'
-                AND i.indisunique AND i.indnatts = 1 AND i.indkey[0] = a.attnum
-    LOOP
-        EXECUTE format('ALTER TABLE supabase_zoning_applications DROP CONSTRAINT IF EXISTS %I', v);
-    END LOOP;
+            SELECT count(*) INTO v_left
+            FROM pg_class c2
+            JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
+            WHERE n2.nspname = 'bridge_ns_dryrun' AND c2.relname = v_idx;
 
-    FOR v IN SELECT c.relname FROM pg_index i
-              JOIN pg_class c ON c.oid = i.indexrelid
-              JOIN pg_class t ON t.oid = i.indrelid
-              JOIN pg_namespace n ON n.oid = t.relnamespace
-              JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = 'local_parcel_id'
-              WHERE n.nspname = 'bridge_ns_dryrun' AND t.relname = 'supabase_parcels'
-                AND i.indisunique AND i.indnatts = 1 AND i.indkey[0] = a.attnum
-    LOOP
-        EXECUTE format('ALTER TABLE supabase_parcels DROP CONSTRAINT IF EXISTS %I', v);
-    END LOOP;
-
-    FOR v IN SELECT c.relname FROM pg_index i
-              JOIN pg_class c ON c.oid = i.indexrelid
-              JOIN pg_class t ON t.oid = i.indrelid
-              JOIN pg_namespace n ON n.oid = t.relnamespace
-              JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = 'technical_review_id'
-              WHERE n.nspname = 'bridge_ns_dryrun' AND t.relname = 'field_job_reviews'
-                AND i.indisunique AND i.indnatts = 1 AND i.indkey[0] = a.attnum
-    LOOP
-        EXECUTE format('ALTER TABLE field_job_reviews DROP CONSTRAINT IF EXISTS %I', v);
+            IF v_left > 0 THEN
+                RAISE EXCEPTION 'DRY RUN FAIL: % still exists on % after the drop', v_idx, v_table;
+            END IF;
+        END LOOP;
     END LOOP;
 END
 $$;

@@ -1284,3 +1284,155 @@ half-apply. **The repair has NOT been executed.**
 **NONE.** No local iMAPS table, column, constraint or index changes; no migration;
 no ledger change. Only the unapplied forward SQL, the unapplied dry run, the
 `FieldSyncInspectorVisibilityContractTest` invariants and documentation.
+
+---
+
+## 2026-10-02 - PREPARED CORRECTIVE FOLLOW-UP: SURVIVING STANDALONE UNIQUE INDEX ON `field_job_reviews` — **NOT YET APPLIED**
+
+**Status: PREPARED. Remote apply NOT AUTHORIZED. No remote write executed in this pass.**
+
+### 1. What was found
+
+The Phase 1 namespace apply succeeded on the four composite identities and the
+15/21/19/0 backfill, but **one bare uniqueness object survived** on
+`field_job_reviews`:
+
+```
+field_job_reviews_technical_review_id_key   UNIQUE btree (technical_review_id)
+```
+
+Verified live as a **standalone index**, not a constraint: its owning
+`pg_constraint` row is `NULL`. The three other tables' bare uniques were removed
+correctly.
+
+### 2. Root cause
+
+`2026_10_01_bridge_source_namespace_collision_fix_forward.sql` Section 6 dropped
+every survivor with:
+
+```sql
+ALTER TABLE public.field_job_reviews DROP CONSTRAINT IF EXISTS <name>
+```
+
+A PostgreSQL `UNIQUE` may be either
+
+- a **constraint-backed** object — present in `pg_constraint`, dropped by `DROP CONSTRAINT`; or
+- a **standalone unique index** — absent from `pg_constraint`, dropped only by `DROP INDEX`.
+
+On this table it was the second shape. `IF EXISTS` suppressed the error and
+`DROP CONSTRAINT` did nothing at all. The drop was **silently a no-op** — which is
+why the apply reported success and a post-apply assertion did not catch it.
+
+### 3. Consequence
+
+The composite that was added beside it can never admit a second row for the same
+`technical_review_id`, because the bare index forbids it first. Two iMAPS
+environments still cannot both write `local technical_review_id = N`. That is
+precisely the collision class the namespace exists to remove, so
+**`field_job_reviews` is only half namespaced.**
+
+The table holds **0 rows**, so nothing is blocked today and no delivery is
+affected: this is a **latent** defect, not an active one.
+
+### 4. Why the post-apply verification missed it
+
+The forward SQL's Section 8 asserted that each *composite* constraint existed and
+valid. It never asserted that the *bare* object was **absent**, because Section 6
+reported a drop as a `NOTICE` and treated `DROP CONSTRAINT IF EXISTS` as
+sufficient. The dry run could not catch it either: it created the bare unique as a
+table-level `UNIQUE (...)`, i.e. always the **constraint** shape, so the
+standalone shape was never exercised.
+
+### 5. Correction to the forward artifact (for the future)
+
+Section 6 now **catalog-detects the object type per survivor** rather than
+assuming it:
+
+```sql
+LEFT JOIN pg_constraint k ON k.conrelid = t.oid AND k.conname = c.relname
+...
+IF v_is_constraint THEN ALTER TABLE ... DROP CONSTRAINT ...
+ELSE                     DROP INDEX ... END IF;
+```
+
+and then **verifies the object is gone, raising if it survives**. A drop that
+cannot be verified is now a hard failure, not a notice. The same applies to all
+four tables, and `NOT i.indisprimary` keeps primary keys out of scope.
+
+Everything else is unchanged: same transaction, same backfill lists, same
+composite names, same trigger handling, same source-id rules, same preservation
+assertions.
+
+### 6. Dry-run correction — both shapes now reproduced
+
+The dry run's `field_job_reviews` bare unique is now created as a
+**standalone index**, matching the live shape, while the other three remain
+table-level constraints. Its Section 6 equivalent performs the same
+type detection. One run now proves both paths:
+
+```
+field_jobs:                     dropped bare UNIQUE CONSTRAINT field_jobs_local_inspection_id_key
+supabase_zoning_applications:   dropped bare UNIQUE CONSTRAINT supabase_zoning_applications_local_application_id_key
+supabase_parcels:               dropped bare UNIQUE CONSTRAINT supabase_parcels_local_parcel_id_key
+field_job_reviews:              dropped bare UNIQUE INDEX    field_job_reviews_technical_review_id_key
+```
+
+Had the dry run kept using `DROP CONSTRAINT IF EXISTS` everywhere, the fourth
+line would be missing and the review-coexistence proof would fail. That is now a
+real regression test rather than an assumption.
+
+### 7. Corrective artifact prepared
+
+`database/sql/2026_10_02_drop_field_job_reviews_bare_unique_index_after_namespace.sql`
+
+Single transaction. Preconditions asserted before any change:
+
+1. `public.field_job_reviews` exists;
+2. `bridge_source_id` exists and is `text` (proving the apply ran first);
+3. row count is exactly `0`;
+4. the composite `UNIQUE (bridge_source_id, technical_review_id)` exists and is **valid**;
+5. the survivor's `pg_get_indexdef` matches the exact expected string;
+6. it is a valid single-column `UNIQUE` on `technical_review_id`;
+7. it has **no owning `pg_constraint`** — the fact that made the original drop a no-op;
+8. it is not the primary key.
+
+Any mismatch `RAISE`s and rolls back. The only mutation is:
+
+```sql
+DROP INDEX public.field_job_reviews_technical_review_id_key;
+```
+
+Postconditions verified inside the same transaction: survivor gone; **no** bare
+`UNIQUE` on `technical_review_id` under **any** name; composite intact and valid;
+primary key intact; `field_job_id` foreign key intact; row count still `0`. No
+other table is touched and nothing is written.
+
+### 8. Verification
+
+- Dry run exit `0`; all eight `updated_at` proofs PASS; both uniqueness shapes
+  proved removed; scratch database confirmed dropped.
+- `BridgeReviewUniqueIndexGapTest` **13 tests / 88 assertions** — new. Pins the
+  object-type detection, the "survivor must be gone" failure mode, the
+  `NOT i.indisprimary` scope guard, the dry run's standalone shape, and every
+  precondition and postcondition of the corrective artifact.
+- `BridgeNamespaceSqlContractTest` 41/217, `BridgeSourceNamespaceCollisionTest`
+  21/115, `FieldSyncInspectorVisibilityContractTest` 6/31.
+- Full Unit **748 passed / 4183 assertions / 0 failures / 9 skipped** (the 9 are
+  the known `pdo_sqlite` gap). `npm run build` PASS. Whitespace check clean.
+- Maintenance-mode note: three `Loop9c2RetryActionContractTest` cases assert 403/302
+  from real routes and fail while the application is in maintenance mode, because
+  Laravel returns 503 before routing. **Proved to be the sole cause** — lifting
+  maintenance gives 748/748, and maintenance was restored immediately. This is a
+  consequence of the Pass 2A freeze, not of these changes.
+
+### 9. Status
+
+**PREPARED corrective follow-up, NOT YET APPLIED.** The architecture document is
+deliberately **not** marked fully verified. Remote apply requires explicit
+approval and a fresh precheck, exactly like every prior remote change.
+
+### 10. Deliberately not done
+
+No remote SQL executed. Teshow not repaired. No `.env` change. No queue worker
+started. `php artisan up` not left in effect (maintenance restored ON). No
+FieldSync change. No master merge, sync, rebase or push. `.env` not committed.

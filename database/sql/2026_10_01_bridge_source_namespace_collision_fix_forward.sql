@@ -719,35 +719,77 @@ $$;
 
 
 -- =====================================================================
+-- =====================================================================
 -- SECTION 6 - REPLACE BARE UNIQUE WITH COMPOSITE UNIQUE
 -- =====================================================================
--- The old constraints are found by CATALOG, not by a hard-coded name, because
--- the live names were never exported. Each is dropped only if it is exactly a
+-- The old objects are found by CATALOG, not by a hard-coded name, because the
+-- live names were never exported. Each is dropped only if it is exactly a
 -- single-column unique index on the audited local-id column, and the
 -- replacement is created in the same transaction.
 --
 -- Replacing a UNIQUE constraint does not touch the primary key, so the remote
 -- uuid remains the canonical row id and every FK into these tables keeps
 -- resolving to the same row.
+--
+-- OBJECT TYPE MUST BE DETECTED, NOT ASSUMED (live defect, fixed 2026-10-02).
+-- The original version of this section dropped every survivor with
+--     ALTER TABLE ... DROP CONSTRAINT IF EXISTS <name>
+-- A UNIQUE can be EITHER a constraint-backed object (it appears in pg_constraint
+-- and is dropped by DROP CONSTRAINT) OR a STANDALONE unique index (it is
+-- absent from pg_constraint and must be dropped by DROP INDEX).
+-- DROP CONSTRAINT IF EXISTS against a standalone index silently does NOTHING -
+-- IF EXISTS suppresses the error. On the live project that left
+--     field_job_reviews_technical_review_id_key  UNIQUE (technical_review_id)
+-- in place while the composite was added next to it. The composite then cannot
+-- admit a second row for the same technical_review_id, so the table stayed
+-- collision-prone: the exact defect this script exists to remove.
+--
+-- Each drop below therefore reads pg_constraint for the object name and issues
+-- DROP CONSTRAINT or DROP INDEX accordingly, then RAISEs if the object is
+-- still present. A survivor that could not be removed is a hard failure, not a
+-- notice.
 -- =====================================================================
 
 -- field_jobs: drop UNIQUE (local_inspection_id)
 DO $$
 DECLARE
-    v_idx text;
+    v_idx   text;
+    v_table text := 'field_jobs';
+    v_col   text := 'local_inspection_id';
+    v_is_constraint boolean;
+    v_still_there  integer;
 BEGIN
-    FOR v_idx IN
-        SELECT c.relname
+    FOR v_idx, v_is_constraint IN
+        SELECT c.relname,
+               (k.oid IS NOT NULL)
         FROM pg_index i
         JOIN pg_class c ON c.oid = i.indexrelid
         JOIN pg_class t ON t.oid = i.indrelid
         JOIN pg_namespace n ON n.oid = t.relnamespace
-        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = 'local_inspection_id'
-        WHERE n.nspname = 'public' AND t.relname = 'field_jobs'
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = v_col
+        LEFT JOIN pg_constraint k ON k.conrelid = t.oid AND k.conname = c.relname
+        WHERE n.nspname = 'public' AND t.relname = v_table
           AND i.indisunique AND i.indnatts = 1 AND i.indkey[0] = a.attnum
+          AND NOT i.indisprimary
     LOOP
-        EXECUTE format('ALTER TABLE public.field_jobs DROP CONSTRAINT IF EXISTS %I', v_idx);
-        RAISE NOTICE 'field_jobs: dropped bare UNIQUE constraint %', v_idx;
+        IF v_is_constraint THEN
+            EXECUTE format('ALTER TABLE public.%I DROP CONSTRAINT %I', v_table, v_idx);
+            RAISE NOTICE '%: dropped bare UNIQUE CONSTRAINT %', v_table, v_idx;
+        ELSE
+            EXECUTE format('DROP INDEX public.%I', v_idx);
+            RAISE NOTICE '%: dropped bare UNIQUE INDEX %', v_table, v_idx;
+        END IF;
+
+        -- Prove it is gone. A silent no-op here is precisely the defect that
+        -- shipped, so it must be a hard failure rather than a notice.
+        SELECT count(*) INTO v_still_there
+        FROM pg_class c2
+        JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
+        WHERE n2.nspname = 'public' AND c2.relname = v_idx;
+
+        IF v_still_there > 0 THEN
+            RAISE EXCEPTION 'ABORT: bare unique object % on public.% still exists after the drop. The namespacing would be incomplete.', v_idx, v_table;
+        END IF;
     END LOOP;
 END
 $$;
@@ -759,20 +801,41 @@ ALTER TABLE public.field_jobs
 -- supabase_zoning_applications: drop UNIQUE (local_application_id)
 DO $$
 DECLARE
-    v_idx text;
+    v_idx   text;
+    v_table text := 'supabase_zoning_applications';
+    v_col   text := 'local_application_id';
+    v_is_constraint boolean;
+    v_still_there  integer;
 BEGIN
-    FOR v_idx IN
-        SELECT c.relname
+    FOR v_idx, v_is_constraint IN
+        SELECT c.relname,
+               (k.oid IS NOT NULL)
         FROM pg_index i
         JOIN pg_class c ON c.oid = i.indexrelid
         JOIN pg_class t ON t.oid = i.indrelid
         JOIN pg_namespace n ON n.oid = t.relnamespace
-        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = 'local_application_id'
-        WHERE n.nspname = 'public' AND t.relname = 'supabase_zoning_applications'
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = v_col
+        LEFT JOIN pg_constraint k ON k.conrelid = t.oid AND k.conname = c.relname
+        WHERE n.nspname = 'public' AND t.relname = v_table
           AND i.indisunique AND i.indnatts = 1 AND i.indkey[0] = a.attnum
+          AND NOT i.indisprimary
     LOOP
-        EXECUTE format('ALTER TABLE public.supabase_zoning_applications DROP CONSTRAINT IF EXISTS %I', v_idx);
-        RAISE NOTICE 'supabase_zoning_applications: dropped bare UNIQUE constraint %', v_idx;
+        IF v_is_constraint THEN
+            EXECUTE format('ALTER TABLE public.%I DROP CONSTRAINT %I', v_table, v_idx);
+            RAISE NOTICE '%: dropped bare UNIQUE CONSTRAINT %', v_table, v_idx;
+        ELSE
+            EXECUTE format('DROP INDEX public.%I', v_idx);
+            RAISE NOTICE '%: dropped bare UNIQUE INDEX %', v_table, v_idx;
+        END IF;
+
+        SELECT count(*) INTO v_still_there
+        FROM pg_class c2
+        JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
+        WHERE n2.nspname = 'public' AND c2.relname = v_idx;
+
+        IF v_still_there > 0 THEN
+            RAISE EXCEPTION 'ABORT: bare unique object % on public.% still exists after the drop. The namespacing would be incomplete.', v_idx, v_table;
+        END IF;
     END LOOP;
 END
 $$;
@@ -787,20 +850,41 @@ ALTER TABLE public.supabase_zoning_applications
 -- supabase_parcels: drop UNIQUE (local_parcel_id)
 DO $$
 DECLARE
-    v_idx text;
+    v_idx   text;
+    v_table text := 'supabase_parcels';
+    v_col   text := 'local_parcel_id';
+    v_is_constraint boolean;
+    v_still_there  integer;
 BEGIN
-    FOR v_idx IN
-        SELECT c.relname
+    FOR v_idx, v_is_constraint IN
+        SELECT c.relname,
+               (k.oid IS NOT NULL)
         FROM pg_index i
         JOIN pg_class c ON c.oid = i.indexrelid
         JOIN pg_class t ON t.oid = i.indrelid
         JOIN pg_namespace n ON n.oid = t.relnamespace
-        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = 'local_parcel_id'
-        WHERE n.nspname = 'public' AND t.relname = 'supabase_parcels'
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = v_col
+        LEFT JOIN pg_constraint k ON k.conrelid = t.oid AND k.conname = c.relname
+        WHERE n.nspname = 'public' AND t.relname = v_table
           AND i.indisunique AND i.indnatts = 1 AND i.indkey[0] = a.attnum
+          AND NOT i.indisprimary
     LOOP
-        EXECUTE format('ALTER TABLE public.supabase_parcels DROP CONSTRAINT IF EXISTS %I', v_idx);
-        RAISE NOTICE 'supabase_parcels: dropped bare UNIQUE constraint %', v_idx;
+        IF v_is_constraint THEN
+            EXECUTE format('ALTER TABLE public.%I DROP CONSTRAINT %I', v_table, v_idx);
+            RAISE NOTICE '%: dropped bare UNIQUE CONSTRAINT %', v_table, v_idx;
+        ELSE
+            EXECUTE format('DROP INDEX public.%I', v_idx);
+            RAISE NOTICE '%: dropped bare UNIQUE INDEX %', v_table, v_idx;
+        END IF;
+
+        SELECT count(*) INTO v_still_there
+        FROM pg_class c2
+        JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
+        WHERE n2.nspname = 'public' AND c2.relname = v_idx;
+
+        IF v_still_there > 0 THEN
+            RAISE EXCEPTION 'ABORT: bare unique object % on public.% still exists after the drop. The namespacing would be incomplete.', v_idx, v_table;
+        END IF;
     END LOOP;
 END
 $$;
@@ -810,22 +894,47 @@ ALTER TABLE public.supabase_parcels
     UNIQUE (bridge_source_id, local_parcel_id);
 
 -- field_job_reviews: drop UNIQUE (technical_review_id)
+-- field_job_reviews: drop UNIQUE (technical_review_id)
+-- THIS IS THE TABLE WHERE THE LIVE DEFECT OCCURRED. Its bare unique was a
+-- STANDALONE INDEX (absent from pg_constraint), so `DROP CONSTRAINT IF EXISTS`
+-- silently did nothing and the survivor survived next to the new composite.
 DO $$
 DECLARE
-    v_idx text;
+    v_idx   text;
+    v_table text := 'field_job_reviews';
+    v_col   text := 'technical_review_id';
+    v_is_constraint boolean;
+    v_still_there  integer;
 BEGIN
-    FOR v_idx IN
-        SELECT c.relname
+    FOR v_idx, v_is_constraint IN
+        SELECT c.relname,
+               (k.oid IS NOT NULL)
         FROM pg_index i
         JOIN pg_class c ON c.oid = i.indexrelid
         JOIN pg_class t ON t.oid = i.indrelid
         JOIN pg_namespace n ON n.oid = t.relnamespace
-        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = 'technical_review_id'
-        WHERE n.nspname = 'public' AND t.relname = 'field_job_reviews'
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = v_col
+        LEFT JOIN pg_constraint k ON k.conrelid = t.oid AND k.conname = c.relname
+        WHERE n.nspname = 'public' AND t.relname = v_table
           AND i.indisunique AND i.indnatts = 1 AND i.indkey[0] = a.attnum
+          AND NOT i.indisprimary
     LOOP
-        EXECUTE format('ALTER TABLE public.field_job_reviews DROP CONSTRAINT IF EXISTS %I', v_idx);
-        RAISE NOTICE 'field_job_reviews: dropped bare UNIQUE constraint %', v_idx;
+        IF v_is_constraint THEN
+            EXECUTE format('ALTER TABLE public.%I DROP CONSTRAINT %I', v_table, v_idx);
+            RAISE NOTICE '%: dropped bare UNIQUE CONSTRAINT %', v_table, v_idx;
+        ELSE
+            EXECUTE format('DROP INDEX public.%I', v_idx);
+            RAISE NOTICE '%: dropped bare UNIQUE INDEX %', v_table, v_idx;
+        END IF;
+
+        SELECT count(*) INTO v_still_there
+        FROM pg_class c2
+        JOIN pg_namespace n2 ON n2.oid = c2.relnamespace
+        WHERE n2.nspname = 'public' AND c2.relname = v_idx;
+
+        IF v_still_there > 0 THEN
+            RAISE EXCEPTION 'ABORT: bare unique object % on public.% still exists after the drop. The namespacing would be incomplete.', v_idx, v_table;
+        END IF;
     END LOOP;
 END
 $$;
