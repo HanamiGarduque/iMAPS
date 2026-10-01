@@ -1162,3 +1162,125 @@ all over again.
 No ledger change. The only iMAPS-side changes are
 `BridgeSourceIdentity` documentation, the `.env.example` example, the two
 unapplied SQL artifacts, the corrected test premise, and documentation.
+
+---
+
+## 2026-10-02 - PRE-APPLY CORRECTION: `updated_at` TRIGGER SIDE-EFFECT ON THE `field_jobs` BACKFILL
+
+**Status: PRE-APPLY CORRECTION. Still PREPARED, still NOT applied. No remote SQL executed. No `.env` modified.**
+
+### 1. The defect this correction fixes
+
+`public.field_jobs` carries an **enabled `BEFORE UPDATE` trigger
+`trg_field_jobs_set_updated_at` executing `public.set_updated_at_utc()`** — a fact
+established by a live read-only catalog query recorded earlier in this log, and
+corroborated by the current data: 9 of 16 jobs carry an `updated_at` that differs
+from `created_at`, which is what a firing `BEFORE UPDATE` trigger produces.
+
+The prepared Phase 1 backfill was
+`UPDATE public.field_jobs SET bridge_source_id = v_source WHERE ...`. That is an
+`UPDATE`, so the trigger fired and stamped a fresh `updated_at` onto **all 15
+Class-A rows**, including **two COMPLETED rounds** whose write times are
+historical evidence. The intended change is `bridge_source_id` and nothing else,
+so the original plan silently rewrote the observable write-time of every real
+inspection job.
+
+**Note on verification:** `pg_trigger` is not reachable through PostgREST, so the
+trigger's existence cannot be confirmed from the iMAPS application. It is
+therefore asserted **inside the forward SQL transaction itself**, which is the
+correct place for the guard regardless: an environment whose trigger is missing,
+renamed or already disabled must abort before a single row is touched.
+
+### 2. The correction
+
+`database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql`
+Section 5 now, for `field_jobs` only:
+
+1. **5a — BEFORE snapshot** into a temp table (`ON COMMIT DROP`) of `id`,
+   `updated_at`, `status`, `current_step`, `started_at`, `submitted_at`,
+   `step_timestamps`, `assigned_inspector_id`, `supabase_application_id`,
+   `supabase_parcel_id` for every frozen Class-A uuid. An empty snapshot RAISEs:
+   if the frozen list matched nothing, the backfill would claim nothing and the
+   verification would be vacuous.
+2. **5b — assert** `trg_field_jobs_set_updated_at` **exists and is enabled**
+   (`tgenabled = 'O'`). Missing, renamed or already-disabled → `RAISE`, aborting
+   the transaction **before any row is written**.
+3. **5c — disable that one trigger by exact name**:
+   `ALTER TABLE public.field_jobs DISABLE TRIGGER trg_field_jobs_set_updated_at`.
+4. **5d — run the frozen Class-A backfill**, setting `bridge_source_id` only.
+5. **5e — re-enable immediately** and **assert** it is enabled again.
+6. **5f — verify** that `bridge_source_id` equals the requested source id and that
+   every other snapshotted column is identical. Any mismatch → `RAISE`, rolling
+   back the whole transaction.
+
+What is **NOT** done:
+
+- the trigger **function** is never modified;
+- the trigger is **never dropped**;
+- **`DISABLE TRIGGER USER` is never used** — that would also suppress
+  `trg_field_jobs_protect_completed_lifecycle`, the FieldSync-side guard on
+  finished rounds;
+- the completed-lifecycle trigger is never disabled;
+- the mirror tables (`supabase_zoning_applications`, `supabase_parcels`,
+  `field_job_reviews`) have no such trigger and need no handling.
+
+Everything stays inside the script's single existing transaction, so a failure
+rolls the re-enable back together with everything else. `ALTER TABLE ... DISABLE
+TRIGGER` is transactional in PostgreSQL.
+
+All comparisons use `IS DISTINCT FROM`, so a `NULL` is treated as a real
+difference rather than an unknown that silently matches nothing.
+
+### 3. Dry-run proof (real PostgreSQL, throwaway database)
+
+The dry run now creates **both** live triggers and adds a tenth test. Executed
+against a scratch database that was dropped afterwards; the real Supabase project
+was never contacted.
+
+| Step | Proof | Result |
+|---|---|---|
+| 10a | an ordinary `UPDATE` changes `updated_at` | **PASS** |
+| 10b | the timestamp trigger exists and is enabled before anything is disabled | **PASS** |
+| 10c | disabling by exact name leaves `trg_field_jobs_protect_completed_lifecycle` **enabled** | **PASS** |
+| 10d | the namespace backfill sets `bridge_source_id` and preserves `updated_at` byte-identically, plus `status`, `current_step`, `submitted_at`, `step_timestamps`, `assignment_instructions` | **PASS** |
+| 10e | the trigger is re-enabled and verified | **PASS** |
+| 10f | an ordinary `UPDATE` changes `updated_at` again after re-enable | **PASS** |
+| 10g | the completed-lifecycle guard still rejects a status change on a completed row | **PASS** |
+
+Dry run exit code `0`; the scratch database was confirmed gone (`0` matching rows
+in `pg_database`) afterwards.
+
+Two real defects surfaced while building this proof and were fixed: the scratch
+`field_jobs` table had no `created_at`/`updated_at` columns at all, so the trigger
+function had nothing to assign; and three temp tables were declared
+`ON COMMIT DROP`, which under `psql` autocommit are destroyed by their own
+creating transaction and were therefore missing when the later verification read
+them. The teardown `DROP SCHEMA ... CASCADE` already cleans them up.
+
+### 4. Teshow recovery contract CORRECTED
+
+The documented Pass 2 procedure previously claimed the Teshow row's `updated_at`
+stays byte-identical. **That claim was wrong** and is now corrected.
+
+Unlike the Class-A backfill — which changes nothing but `bridge_source_id` — the
+Teshow repair is a **genuine data change**, so the enabled `updated_at` trigger
+**must** stamp a new value. Suppressing it there would falsify the record of when
+the mapping was corrected.
+
+| | |
+|---|---|
+| **PRESERVE EXACTLY** | job uuid, `created_at`, `status`, `current_step`, `started_at`, `step_timestamps`, `rework_started_at`, `submitted_at`, GPS evidence, checklist progress and `checklist_data`, photo evidence and every `field_job_photos` row, inspection result and evidence text, every `activity_log` row |
+| **EXPECTED TO CHANGE** | the mapping columns being repaired (`supabase_application_id`, `supabase_parcel_id`, `assigned_inspector_id`, `scheduled_date`, `deadline_date`, `assignment_instructions`), `bridge_source_id`, and `updated_at` — the last **exactly because the real enabled trigger records the repair** |
+
+The repair is now specified as **ONE guarded `UPDATE`** against the single uuid
+`a761b17a-3fad-44ed-b451-7f0af0e41183`, setting all six mapping columns **and**
+`bridge_source_id` in the same statement, inside one transaction with a BEFORE
+snapshot, AFTER assertions and rollback on any preservation failure. The previous
+five-step procedure deferred `bridge_source_id` to a second write, which could
+half-apply. **The repair has NOT been executed.**
+
+### 5. Local impact
+
+**NONE.** No local iMAPS table, column, constraint or index changes; no migration;
+no ledger change. Only the unapplied forward SQL, the unapplied dry run, the
+`FieldSyncInspectorVisibilityContractTest` invariants and documentation.

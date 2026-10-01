@@ -166,6 +166,43 @@ class FieldSyncInspectorVisibilityContractTest extends TestCase
         );
     }
 
+    /**
+     * The completed-lifecycle guard and the timestamp trigger are separate
+     * triggers, and this work must touch only the timestamp one.
+     *
+     * `DISABLE TRIGGER USER` would suppress BOTH, plus every other user trigger,
+     * which is how finished rounds lose their protection. Naming the exact trigger
+     * is the only safe form.
+     */
+    public function test_the_completed_lifecycle_guard_is_never_disabled(): void
+    {
+        $sql = $this->source(self::FORWARD);
+
+        // The forward SQL deliberately NAMES both `DISABLE TRIGGER USER` and the
+        // lifecycle trigger in comments, to explain what it avoids. Only
+        // executable statements count, so strip the `--` commentary first.
+        $code = '';
+        foreach (explode("\n", $sql) as $line) {
+            $code .= preg_replace('#//.*$#', '', preg_replace('/^\s*--.*$/', '', $line))."\n";
+        }
+
+        $this->assertStringNotContainsStringIgnoringCase(
+            'DISABLE TRIGGER USER',
+            $code,
+            'DISABLE TRIGGER USER would suppress the completed-lifecycle guard too.',
+        );
+        $this->assertStringNotContainsString(
+            'DISABLE TRIGGER trg_field_jobs_protect_completed_lifecycle',
+            $code,
+            'The completed-lifecycle guard must never be disabled by this artifact.',
+        );
+        $this->assertStringNotContainsString(
+            'DROP TRIGGER',
+            $code,
+            'No trigger may be dropped by this artifact.',
+        );
+    }
+
     private function between(string $haystack, string $startNeedle, string $endNeedle): string
     {
         $start = strpos($haystack, $startNeedle);

@@ -59,6 +59,10 @@ CREATE TABLE field_jobs (
     started_at             timestamptz,
     step_timestamps        jsonb,
     activity_log_note      text,
+    submitted_at           timestamptz,
+    -- present on the real table and stamped by trg_field_jobs_set_updated_at
+    created_at             timestamptz,
+    updated_at             timestamptz,
     UNIQUE (local_inspection_id)          -- THE DEFECT, reproduced exactly
 );
 
@@ -201,6 +205,47 @@ ALTER TABLE field_job_reviews
 -- data rather than bridge identity.
 CREATE INDEX field_jobs_bridge_source_id_status_index
     ON field_jobs (bridge_source_id, status);
+
+
+-- =====================================================================
+-- SETUP - REALISTIC BEFORE UPDATE updated_at TRIGGERS
+-- =====================================================================
+-- The live bridge's job table has a BEFORE UPDATE trigger that stamps updated_at.
+-- (Named here as "the job table" rather than with its real schema-qualified name:
+-- this script asserts it never mentions the real bridge schema, and a comment
+-- carrying that name would make that assertion fail for no real reason.)
+-- The namespace backfill must not stamp it, so the dry run reproduces BOTH
+-- triggers that exist live:
+--
+--   trg_field_jobs_set_updated_at           BEFORE UPDATE -> set_updated_at_utc()
+--   trg_field_jobs_protect_completed_lifecycle  BEFORE UPDATE, guards completed rows
+--
+-- The second one exists so the proof can also demonstrate that disabling the
+-- timestamp trigger by EXACT NAME leaves the lifecycle guard active.
+-- =====================================================================
+CREATE OR REPLACE FUNCTION set_updated_at_utc() RETURNS trigger AS $$
+BEGIN
+    NEW.updated_at := now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION protect_completed_lifecycle() RETURNS trigger AS $$
+BEGIN
+    IF OLD.status = 'completed' AND NEW.status IS DISTINCT FROM OLD.status THEN
+        RAISE EXCEPTION 'completed lifecycle is immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_field_jobs_set_updated_at
+    BEFORE UPDATE ON field_jobs
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at_utc();
+
+CREATE TRIGGER trg_field_jobs_protect_completed_lifecycle
+    BEFORE UPDATE ON field_jobs
+    FOR EACH ROW EXECUTE FUNCTION protect_completed_lifecycle();
 
 
 -- =====================================================================
@@ -547,6 +592,196 @@ ORDER BY conname;
 
 
 -- =====================================================================
+-- TEST 10 - updated_at TRIGGER SIDE-EFFECT: DISABLE ONE, PRESERVE, RE-ENABLE
+-- =====================================================================
+-- The namespace backfill on the real bridge would stamp updated_at on every
+-- Class-A row unless the timestamp trigger is suspended for it. This test proves
+-- the whole disable / backfill / re-enable sequence against a real trigger, and
+-- proves the lifecycle guard was never disturbed.
+\echo ''
+\echo '=== TEST 10: updated_at trigger suspended ONLY for the namespace backfill ==='
+
+-- A completed row, because the preservation claim matters most for finished work.
+INSERT INTO field_jobs (bridge_source_id, local_inspection_id, status, current_step,
+                        submitted_at, step_timestamps, assignment_instructions)
+VALUES (NULL, 999, 'completed', 5, '2026-09-27T11:38:54',
+        '{"1": "2026-09-26T17:50:46.146511Z"}', 'original instructions');
+
+-- Pin updated_at so any change is unambiguous, even if the test runs fast.
+UPDATE field_jobs SET updated_at = '2020-01-01 00:00:00+00' WHERE local_inspection_id = 999;
+\echo '  seeded updated_at pinned to 2020-01-01'
+
+-- 10a. An ORDINARY update MUST move updated_at. If this did not move it, the
+--      trigger is not firing and the rest of the test would prove nothing.
+--
+--      The comparison is done in SQL, not with \if on \gset variables: psql's
+--      \if cannot evaluate two timestamp literals as a boolean, and a plpgsql
+--      record variable cannot be read outside its own DO block.
+CREATE TEMP TABLE ns_before_ordinary AS
+SELECT updated_at FROM field_jobs WHERE local_inspection_id = 999;
+
+UPDATE field_jobs SET assignment_instructions = 'edited by an ordinary writer'
+ WHERE local_inspection_id = 999;
+
+DO $$
+DECLARE
+    v_before timestamptz;
+    v_after  timestamptz;
+BEGIN
+    SELECT updated_at INTO v_before FROM ns_before_ordinary;
+    SELECT updated_at INTO v_after  FROM field_jobs WHERE local_inspection_id = 999;
+
+    IF v_before IS NOT DISTINCT FROM v_after THEN
+        RAISE EXCEPTION 'TEST FAIL: an ordinary UPDATE did not change updated_at';
+    END IF;
+    RAISE NOTICE '  updated_at moved from % to %', v_before, v_after;
+END $$;
+\echo '  10a PASS: ordinary UPDATE changed updated_at'
+
+-- Reset to the pinned value for the next step.
+UPDATE field_jobs SET updated_at = '2020-01-01 00:00:00+00',
+                     assignment_instructions = 'original instructions'
+ WHERE local_inspection_id = 999;
+
+-- Re-pin AFTER the reset, because the reset itself fired the trigger.
+UPDATE field_jobs SET updated_at = '2020-01-01 00:00:00+00' WHERE local_inspection_id = 999;
+
+-- Capture the pinned state into a temp table. A plpgsql record cannot be read
+-- outside its own DO block, so the comparison has to go through a relation.
+--
+-- No ON COMMIT DROP: psql autocommits each statement, so a temp table declared
+-- ON COMMIT DROP is destroyed by its own creating transaction and is missing by
+-- the time the later DO block reads it. The schema is dropped at teardown
+-- anyway, which is what actually cleans these up.
+CREATE TEMP TABLE ns_pinned AS
+SELECT status, current_step, submitted_at, step_timestamps, updated_at,
+       assignment_instructions
+  FROM field_jobs WHERE local_inspection_id = 999;
+\echo '  pinned state captured'
+
+-- 10b. The trigger must exist and be enabled before anything is disabled.
+DO $$
+DECLARE v_ten text;
+BEGIN
+    SELECT tgenabled INTO v_ten FROM pg_trigger
+    WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
+    IF v_ten IS DISTINCT FROM 'O' THEN
+        RAISE EXCEPTION 'TEST SETUP FAIL: trg_field_jobs_set_updated_at not enabled (tgenabled=%)', v_ten;
+    END IF;
+END $$;
+\echo '  10b PASS: trg_field_jobs_set_updated_at exists and is enabled'
+
+-- 10c. Disable THAT trigger only. The lifecycle guard stays enabled throughout.
+ALTER TABLE field_jobs DISABLE TRIGGER trg_field_jobs_set_updated_at;
+
+DO $$
+DECLARE v_guard text; v_ts text;
+BEGIN
+    SELECT tgenabled INTO v_ts FROM pg_trigger
+    WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
+    SELECT tgenabled INTO v_guard FROM pg_trigger
+    WHERE tgname = 'trg_field_jobs_protect_completed_lifecycle' AND NOT tgisinternal;
+
+    IF v_ts IS DISTINCT FROM 'D' THEN
+        RAISE EXCEPTION 'TEST FAIL: timestamp trigger not disabled (tgenabled=%)', v_ts;
+    END IF;
+    IF v_guard IS DISTINCT FROM 'O' THEN
+        RAISE EXCEPTION 'TEST FAIL: the lifecycle guard was disturbed by naming only one trigger (tgenabled=%)', v_guard;
+    END IF;
+END $$;
+\echo '  10c PASS: only the timestamp trigger is disabled; the lifecycle guard is still enabled'
+
+-- 10d. The namespace backfill itself, with the trigger suspended.
+UPDATE field_jobs SET bridge_source_id = 'source_a' WHERE local_inspection_id = 999;
+
+DO $$
+DECLARE
+    r record;
+    p record;
+BEGIN
+    SELECT status, current_step, submitted_at, step_timestamps, updated_at,
+           assignment_instructions, bridge_source_id
+      INTO r FROM field_jobs WHERE local_inspection_id = 999;
+
+    SELECT status, current_step, submitted_at, step_timestamps, updated_at,
+           assignment_instructions
+      INTO p FROM ns_pinned;
+
+    -- IS DISTINCT FROM, not <>, so a NULL is a real difference rather than an
+    -- unknown that silently compares false.
+    IF r.bridge_source_id IS DISTINCT FROM 'source_a' THEN
+        RAISE EXCEPTION 'TEST FAIL: bridge_source_id was not set';
+    END IF;
+    IF r.updated_at::text <> p.updated_at::text THEN
+        RAISE EXCEPTION 'TEST FAIL: the namespace backfill changed updated_at (was %, now %)',
+            p.updated_at, r.updated_at;
+    END IF;
+    IF r.status IS DISTINCT FROM p.status THEN
+        RAISE EXCEPTION 'TEST FAIL: status changed'; END IF;
+    IF r.current_step IS DISTINCT FROM p.current_step THEN
+        RAISE EXCEPTION 'TEST FAIL: current_step changed'; END IF;
+    IF r.submitted_at IS DISTINCT FROM p.submitted_at THEN
+        RAISE EXCEPTION 'TEST FAIL: submitted_at changed'; END IF;
+    IF r.step_timestamps::text <> p.step_timestamps::text THEN
+        RAISE EXCEPTION 'TEST FAIL: step_timestamps changed'; END IF;
+    IF r.assignment_instructions IS DISTINCT FROM p.assignment_instructions THEN
+        RAISE EXCEPTION 'TEST FAIL: assignment_instructions changed'; END IF;
+END $$;
+\echo '  10d PASS: namespace backfill set bridge_source_id and preserved updated_at byte-identically'
+
+-- 10e. Re-enable immediately.
+ALTER TABLE field_jobs ENABLE TRIGGER trg_field_jobs_set_updated_at;
+
+DO $$
+DECLARE v_ten text;
+BEGIN
+    SELECT tgenabled INTO v_ten FROM pg_trigger
+    WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
+    IF v_ten IS DISTINCT FROM 'O' THEN
+        RAISE EXCEPTION 'TEST FAIL: timestamp trigger not re-enabled (tgenabled=%)', v_ten;
+    END IF;
+END $$;
+\echo '  10e PASS: trigger re-enabled and verified'
+
+-- 10f. After re-enabling, an ordinary update MUST move updated_at again.
+CREATE TEMP TABLE ns_before_reenabled AS
+SELECT updated_at FROM field_jobs WHERE local_inspection_id = 999;
+
+UPDATE field_jobs SET assignment_instructions = 'edited again after re-enable'
+ WHERE local_inspection_id = 999;
+
+DO $$
+DECLARE
+    v_before timestamptz;
+    v_after  timestamptz;
+BEGIN
+    SELECT updated_at INTO v_before FROM ns_before_reenabled;
+    SELECT updated_at INTO v_after  FROM field_jobs WHERE local_inspection_id = 999;
+
+    IF v_before IS NOT DISTINCT FROM v_after THEN
+        RAISE EXCEPTION 'TEST FAIL: updated_at did not move after the trigger was re-enabled';
+    END IF;
+    RAISE NOTICE '  updated_at moved from % to %', v_before, v_after;
+END $$;
+\echo '  10f PASS: a normal UPDATE changes updated_at again after re-enable'
+
+-- 10g. The lifecycle guard still works, proving it was never actually disabled.
+DO $$
+BEGIN
+    BEGIN
+        UPDATE field_jobs SET status = 'in_progress' WHERE local_inspection_id = 999;
+        RAISE EXCEPTION 'TEST FAIL: the completed-lifecycle guard did not fire';
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLERRM = 'TEST FAIL: the completed-lifecycle guard did not fire' THEN
+                RAISE;
+            END IF;
+    END;
+END $$;
+\echo '  10g PASS: the completed-lifecycle guard still rejects the change'
+
+
+-- =====================================================================
 -- TEARDOWN
 -- =====================================================================
 \echo ''
@@ -562,5 +797,7 @@ DROP SCHEMA bridge_ns_dryrun CASCADE;
 \echo '  - an old bare-local-id writer fails with 42P10 instead of corrupting'
 \echo '  - unclaimed legacy rows cannot collide with any namespace'
 \echo '  - uuid primary keys, foreign keys and relationships are preserved'
+\echo '  - the updated_at trigger is suspended for the namespace backfill only,'
+\echo '    and re-enabled and verified immediately afterwards'
 \echo ''
 \echo 'The real Supabase project was NOT contacted by this script.'

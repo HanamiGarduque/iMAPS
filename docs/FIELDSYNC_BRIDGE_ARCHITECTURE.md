@@ -5355,25 +5355,57 @@ deadline_date              2026-10-23   (local site_inspections.deadline_date)
 assignment_instructions    from local site_inspections.assigned_notes
 ```
 
-Step 3 — repair the mapping ONLY, in one transaction, against that one uuid,
-writing **only** the columns in Step 2. Never `DELETE` the row, never create a
-replacement, never touch `status`, `current_step`, `started_at`,
-`step_timestamps`, `rework_started_at`, `submitted_at`, `checklist_*`, `photo_*`,
-GPS, `findings`, `observations`, `discrepancies`, `recommendations`,
-`inspection_result`, `is_compliant` or `inspector_notes`.
+Step 3 — **ONE guarded UPDATE**, in one transaction, against that one uuid,
+writing **only** the columns in Step 2, with `bridge_source_id` in the SAME
+statement rather than a later second write:
 
-Step 4 — assert the preserved set is byte-identical to Step 1 for every column
-not in Step 2, and that `activity_log`, `field_job_photos` and
-`field_job_reviews` rows for this uuid are unchanged.
+```sql
+UPDATE public.field_jobs
+   SET supabase_application_id = 'eaf432ea-8f26-4266-bf4b-ca88887ac470',
+       supabase_parcel_id      = '69bfaafb-a5e2-4871-b9d0-830ea0599b3f',
+       assigned_inspector_id   = 'ddcebeac-2217-41c5-a6e2-d7f873db9af2',
+       scheduled_date          = '2026-09-23',
+       deadline_date           = '2026-10-23',
+       assignment_instructions = <local site_inspections.assigned_notes>,
+       bridge_source_id        = '<this deployment''s id>'
+ WHERE id = 'a761b17a-3fad-44ed-b451-7f0af0e41183';
+```
 
-Step 5 — only after Step 3 and Step 4 succeed, set
-`bridge_source_id = '<this deployment's id>'` on this row.
+One statement, one transaction, so the repair cannot half-apply. Never `DELETE`
+the row, never create a replacement. Never touch `status`, `current_step`,
+`started_at`, `step_timestamps`, `rework_started_at`, `submitted_at`,
+`checklist_*`, `photo_*`, GPS, `findings`, `observations`, `discrepancies`,
+`recommendations`, `inspection_result`, `is_compliant` or `inspector_notes`.
 
-**PRESERVE EXACTLY:** remote job uuid, `status`, `current_step`, `started_at`,
-`step_timestamps`, `rework_started_at`, GPS (`gps_confirmed_at`,
-`confirmed_latitude`, `confirmed_longitude`, `gps_accuracy_m`), checklist
-progress and `checklist_data`, `photo_count` / `photo_paths` and every
-`field_job_photos` row, and every `activity_log` row. **Do not reset the task.**
+Step 4 — assert the PRESERVED set is identical to Step 1 for every column not
+written in Step 3, and that `activity_log`, `field_job_photos` and
+`field_job_reviews` rows for this uuid are unchanged. **Roll the transaction back
+on any preservation failure.**
+
+**`updated_at` IS EXPECTED TO CHANGE — it is NOT preserved evidence.**
+
+The live `field_jobs` table has an enabled `BEFORE UPDATE` trigger
+`trg_field_jobs_set_updated_at` calling `public.set_updated_at_utc()`. This repair
+is a genuine write, so that trigger **must** stamp `updated_at`; suppressing it
+here would falsify the record of when the mapping was corrected. Unlike the
+Class-A namespace backfill — which touches nothing but `bridge_source_id` and
+therefore suspends the trigger — the Teshow repair is a real data change and its
+timestamp is supposed to move.
+
+**PRESERVE EXACTLY:** remote job uuid, `created_at`, `status`, `current_step`,
+`started_at`, `step_timestamps`, `rework_started_at`, `submitted_at`, GPS
+(`gps_confirmed_at`, `confirmed_latitude`, `confirmed_longitude`,
+`gps_accuracy_m`), checklist progress and `checklist_data`, `photo_count` /
+`photo_paths` and every `field_job_photos` row, inspection result and evidence
+text (`inspection_result`, `is_compliant`, `findings`, `observations`,
+`discrepancies`, `recommendations`, `inspector_notes`), and every `activity_log`
+row. **Do not reset the task.**
+
+**EXPECTED TO CHANGE:** the mapping columns being repaired
+(`supabase_application_id`, `supabase_parcel_id`, `assigned_inspector_id`,
+`scheduled_date`, `deadline_date`, `assignment_instructions`),
+`bridge_source_id`, and `updated_at` — the last **exactly because the real,
+enabled `updated_at` trigger records the repair**.
 
 ### Other-environment preservation plan
 
@@ -5569,3 +5601,51 @@ The remote `field_job` for historical round 35 (`c7315702-…`) is `completed`
 (`submitted_at 2026-09-21T12:11:00Z`) while its local `site_inspections` row is
 still `assigned`. It satisfies the `status=eq.completed` filter in
 `PullCompletedInspections` and simply has not been pulled. Predates Loop 10.
+
+### PRE-APPLY CORRECTION (2026-10-02) — `updated_at` trigger side-effect
+
+The Phase 1 `field_jobs` backfill sets `bridge_source_id` and nothing else, but a
+plain `UPDATE` on `public.field_jobs` fires its enabled `BEFORE UPDATE` trigger
+`trg_field_jobs_set_updated_at` (`public.set_updated_at_utc()`), which would stamp
+a fresh `updated_at` onto all 15 Class-A rows — including two **completed** rounds
+whose write times are historical evidence.
+
+Section 5 of the forward SQL therefore suspends **that one trigger, by exact
+name**, for the duration of the backfill only:
+
+1. snapshot `updated_at`, `status`, `current_step`, `started_at`, `submitted_at`,
+   `step_timestamps`, `assigned_inspector_id`, `supabase_application_id`,
+   `supabase_parcel_id` for every frozen Class-A uuid;
+2. assert the trigger **exists and is enabled** — missing, renamed or already
+   disabled aborts the transaction **before any row is written**;
+3. `DISABLE TRIGGER trg_field_jobs_set_updated_at` (never `DISABLE TRIGGER USER`,
+   which would also suppress `trg_field_jobs_protect_completed_lifecycle`);
+4. run the backfill;
+5. re-enable immediately and assert it is enabled again;
+6. verify `bridge_source_id` is set and every other snapshotted column is
+   identical — any mismatch rolls the whole transaction back.
+
+All of it stays inside the script's single transaction, so a failure rolls the
+re-enable back with everything else. The trigger function is never modified and
+the trigger is never dropped. The mirror tables have no such trigger and need no
+handling.
+
+Proven in the dry run against real PostgreSQL: an ordinary `UPDATE` does move
+`updated_at`; the backfill with only that trigger suspended preserves it
+byte-identically; the trigger is re-enabled and a later ordinary `UPDATE` moves it
+again; and the completed-lifecycle guard still rejects a status change, proving it
+was never actually disabled.
+
+**Teshow recovery contract, corrected:** the Pass 2 repair **expects
+`updated_at` to change**, because it is a genuine write and the real trigger
+records it. Unlike the namespace backfill, the repair must not suppress the
+timestamp. `updated_at` is therefore classified as expected-to-change, not as
+preserved evidence. The repair is specified as ONE guarded `UPDATE` setting all
+six mapping columns plus `bridge_source_id` in a single statement inside one
+transaction with a BEFORE snapshot, AFTER assertions and rollback on any
+preservation failure. **Not executed.**
+
+`pg_trigger` is not reachable over PostgREST, so the trigger's existence is
+asserted inside the forward SQL transaction rather than from the application. An
+environment whose trigger differs from the audited one now aborts instead of being
+silently stamped.

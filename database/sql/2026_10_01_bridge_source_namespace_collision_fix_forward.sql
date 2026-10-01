@@ -505,14 +505,110 @@ ORDER BY p.local_parcel_id;
 -- Only the frozen Class-A UUID lists are touched. Every UPDATE joins on the
 -- primary key, so it cannot match a row outside those lists even if the lists
 -- were edited incorrectly.
+--
+-- THE field_jobs BACKFILL MUST PRESERVE updated_at.
+--
+-- `public.field_jobs` carries a BEFORE UPDATE trigger
+-- `trg_field_jobs_set_updated_at` executing `public.set_updated_at_utc()`.
+-- A plain `UPDATE ... SET bridge_source_id = ...` is an UPDATE, so that trigger
+-- would fire and stamp a fresh `updated_at` onto all 15 Class-A rows. That
+-- silently rewrites the observable write-time of every real inspection job,
+-- including two COMPLETED rounds whose historical timestamps are evidence.
+-- The intended change is `bridge_source_id` and nothing else.
+--
+-- The trigger is therefore DISABLED FOR THE DURATION OF THIS BACKFILL ONLY:
+--   * the trigger function itself is never modified;
+--   * the trigger is never dropped;
+--   * `DISABLE TRIGGER USER` is never used - it would also suppress the
+--     completed-lifecycle trigger that protects finished rounds;
+--   * only `trg_field_jobs_set_updated_at` is named, by exact name;
+--   * everything stays inside this script's single transaction, so a failure
+--     rolls the re-enable back with everything else.
+--
+-- The trigger is asserted to exist and to be enabled BEFORE it is disabled, and
+-- asserted enabled again AFTER. A missing, renamed or already-disabled trigger
+-- RAISEs, which aborts the whole transaction BEFORE any row is touched: an
+-- environment whose trigger is not the expected one must not be silently
+-- stamped by this script.
+--
+-- The mirror tables (application, parcel, review) have no such trigger and need
+-- no handling.
 -- =====================================================================
 DO $$
 DECLARE
     v_source text;
     v_n      integer;
+    v_tname  text;
+    v_ten    boolean;
+    v_before integer;
+    v_after  integer;
 BEGIN
     SELECT requested_source_id INTO v_source FROM bridge_ns_request;
 
+    -- ---------------------------------------------------------------------
+    -- 5a. SNAPSHOT every value the field_jobs backfill must not disturb.
+    --
+    -- A BEFORE snapshot of the whole preservation set, so Section 5f can prove
+    -- equality rather than assert it. Temporary table, ON COMMIT DROP, so it
+    -- disappears with the transaction either way.
+    -- ---------------------------------------------------------------------
+    DROP TABLE IF EXISTS bridge_ns_field_jobs_before;
+    CREATE TEMP TABLE bridge_ns_field_jobs_before ON COMMIT DROP AS
+    SELECT j.id,
+           j.updated_at,
+           j.status,
+           j.current_step,
+           j.started_at,
+           j.submitted_at,
+           j.step_timestamps,
+           j.assigned_inspector_id,
+           j.supabase_application_id,
+           j.supabase_parcel_id
+      FROM public.field_jobs j
+      JOIN bridge_ns_field_jobs_a a ON a.id = j.id;
+
+    GET DIAGNOSTICS v_before = ROW_COUNT;
+    RAISE NOTICE 'field_jobs: snapshotted % proven row(s) before the backfill', v_before;
+
+    IF v_before = 0 THEN
+        RAISE EXCEPTION 'ABORT: no field_jobs snapshot rows. The frozen Class-A list matched nothing, so the backfill would claim nothing.';
+    END IF;
+
+    -- ---------------------------------------------------------------------
+    -- 5b. Assert the exact trigger exists and is enabled.
+    -- ---------------------------------------------------------------------
+    SELECT t.tgname, t.tgenabled
+      INTO v_tname, v_ten
+      FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public'
+       AND c.relname = 'field_jobs'
+       AND t.tgname = 'trg_field_jobs_set_updated_at'
+       AND NOT t.tgisinternal;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ABORT: trigger public.field_jobs.trg_field_jobs_set_updated_at is MISSING. Expected a BEFORE UPDATE trigger calling public.set_updated_at_utc(). Refusing to run: without that guard this script cannot reason about updated_at. Re-audit before applying.';
+    END IF;
+
+    IF v_ten <> 'O' THEN
+        RAISE EXCEPTION 'ABORT: trigger trg_field_jobs_set_updated_at is present but NOT enabled (tgenabled = %). Refusing to run: the live trigger state differs from the audited one. Re-audit before applying.', v_ten;
+    END IF;
+
+    RAISE NOTICE 'field_jobs: confirmed trigger % exists and is enabled', v_tname;
+
+    -- ---------------------------------------------------------------------
+    -- 5c. Disable THAT trigger only, by exact name.
+    --
+    -- Not `DISABLE TRIGGER USER`, which would also suppress
+    -- trg_field_jobs_protect_completed_lifecycle and every other user trigger,
+    -- including the FieldSync-side guards on finished rounds.
+    -- ---------------------------------------------------------------------
+    ALTER TABLE public.field_jobs DISABLE TRIGGER trg_field_jobs_set_updated_at;
+
+    -- ---------------------------------------------------------------------
+    -- 5d. The frozen Class-A backfill. bridge_source_id ONLY.
+    -- ---------------------------------------------------------------------
     UPDATE public.field_jobs j
        SET bridge_source_id = v_source
       FROM bridge_ns_field_jobs_a a
@@ -521,6 +617,59 @@ BEGIN
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RAISE NOTICE 'field_jobs: % proven rows claimed', v_n;
 
+    -- ---------------------------------------------------------------------
+    -- 5e. Re-enable immediately, then assert it.
+    -- ---------------------------------------------------------------------
+    ALTER TABLE public.field_jobs ENABLE TRIGGER trg_field_jobs_set_updated_at;
+
+    SELECT t.tgenabled INTO v_ten
+      FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public'
+       AND c.relname = 'field_jobs'
+       AND t.tgname = 'trg_field_jobs_set_updated_at'
+       AND NOT t.tgisinternal;
+
+    IF v_ten IS DISTINCT FROM 'O' THEN
+        RAISE EXCEPTION 'ABORT: trigger trg_field_jobs_set_updated_at was not re-enabled (tgenabled = %). Rolling back the whole transaction.', v_ten;
+    END IF;
+
+    RAISE NOTICE 'field_jobs: trigger % re-enabled and verified', v_tname;
+
+    -- ---------------------------------------------------------------------
+    -- 5f. PROVE nothing but bridge_source_id moved.
+    --
+    -- IS DISTINCT FROM is used throughout so a NULL comparison is a real
+    -- difference rather than an unknown that silently matches nothing.
+    -- Any mismatch RAISEs and rolls the entire transaction back.
+    -- ---------------------------------------------------------------------
+    SELECT count(*) INTO v_after
+      FROM bridge_ns_field_jobs_before b
+      JOIN public.field_jobs j ON j.id = b.id
+     WHERE j.bridge_source_id IS DISTINCT FROM v_source
+        OR j.updated_at              IS DISTINCT FROM b.updated_at
+        OR j.status                  IS DISTINCT FROM b.status
+        OR j.current_step            IS DISTINCT FROM b.current_step
+        OR j.started_at              IS DISTINCT FROM b.started_at
+        OR j.submitted_at            IS DISTINCT FROM b.submitted_at
+        OR j.step_timestamps         IS DISTINCT FROM b.step_timestamps
+        OR j.assigned_inspector_id   IS DISTINCT FROM b.assigned_inspector_id
+        OR j.supabase_application_id IS DISTINCT FROM b.supabase_application_id
+        OR j.supabase_parcel_id      IS DISTINCT FROM b.supabase_parcel_id;
+
+    IF v_after > 0 THEN
+        RAISE EXCEPTION 'ABORT: % of % field_jobs row(s) failed the post-backfill preservation check. bridge_source_id must be set and EVERY other captured value byte-identical. Rolling back.', v_after, v_before;
+    END IF;
+
+    RAISE NOTICE 'field_jobs: % row(s) verified - bridge_source_id set, updated_at and all lifecycle/evidence columns unchanged', v_before;
+
+    DROP TABLE IF EXISTS bridge_ns_field_jobs_before;
+
+    -- ---------------------------------------------------------------------
+    -- Mirror tables: no updated_at trigger exists on these, so they need no
+    -- disable/re-enable handling and no snapshot.
+    -- ---------------------------------------------------------------------
     UPDATE public.supabase_zoning_applications t
        SET bridge_source_id = v_source
       FROM bridge_ns_sza_a a

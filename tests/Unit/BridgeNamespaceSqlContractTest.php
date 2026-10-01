@@ -160,20 +160,45 @@ class BridgeNamespaceSqlContractTest extends TestCase
         preg_match_all('/UPDATE\s+public\.\w+/i', $sql, $updates);
         $this->assertCount(4, $updates[0], 'Exactly the four namespaced tables may be updated.');
 
+        // Each UPDATE may carry an ELEMENT alias (`UPDATE public.field_jobs j`), which
+        // was added with the updated_at trigger correction, so the table name is
+        // matched without requiring end-of-token.
         foreach ($updates[0] as $update) {
             $this->assertMatchesRegularExpression(
-                '/UPDATE\s+public\.(field_jobs|supabase_zoning_applications|supabase_parcels|field_job_reviews)$/i',
+                '/^UPDATE\s+public\.(field_jobs|supabase_zoning_applications|supabase_parcels|field_job_reviews)\b/i',
                 trim($update),
             );
         }
 
         // Every backfill UPDATE writes bridge_source_id and nothing else.
+        //
+        // Three of the four join a frozen Class-A UUID list. The FOURTH is the
+        // field_job_reviews UPDATE, which is deliberately
+        // `WHERE bridge_source_id IS NULL AND false` - it writes zero rows
+        // because no reviewed round was ever proven for this environment, but the
+        // table must still be namespaced so its composite ON CONFLICT target is
+        // honoured from the first write. It is asserted separately rather than
+        // folded into the count, so the zero-row intent cannot be lost.
         preg_match_all(
             '/SET\s+bridge_source_id\s*=\s*v_source\s+FROM\s+bridge_ns_\w+\s+a/i',
             $sql,
             $backfills,
         );
-        $this->assertCount(3, $backfills[0], 'Only frozen Class-A UUID lists may be backfilled.');
+        $this->assertCount(
+            3,
+            $backfills[0],
+            'Exactly three backfills may join a frozen Class-A UUID list '
+            .'(field_jobs, supabase_zoning_applications, supabase_parcels).',
+        );
+
+        $this->assertMatchesRegularExpression(
+            // The comparison is whitespace-tolerant: the statement is laid out
+            // across lines, so a literal single-space pattern would not match it.
+            // The predicate is qualified `t.bridge_source_id`, not bare.
+            '/UPDATE\s+public\.field_job_reviews\s+t\s+SET\s+bridge_source_id\s*=\s*v_source\s+WHERE\s+t\.bridge_source_id\s+IS\s+NULL\s+AND\s+false/is',
+            $sql,
+            'field_job_reviews must be namespaced but never claimed: no reviewed round was proven here.',
+        );
     }
 
     public function test_the_forward_sql_never_touches_fieldsync_owned_lifecycle_columns(): void
@@ -419,7 +444,15 @@ class BridgeNamespaceSqlContractTest extends TestCase
 
         $body = preg_replace('/EXECUTE\s+format\([^;]*?\);/is', 'EXECUTE format(1);', $withoutMeta) ?? $withoutMeta;
 
-        return $body;
+        // `DROP TABLE IF EXISTS <scratch temp table>` is the artifact cleaning up
+        // the preservation snapshot it created itself, in the same transaction.
+        // Blanking the TEMP snapshots keeps the "never drops a table" invariant
+        // about the REAL bridge tables, which is what that assertion protects.
+        return preg_replace(
+            '/DROP\s+TABLE\s+IF\s+EXISTS\s+bridge_ns_\w+\s*;/i',
+            'DROP TEMP SNAPSHOT;',
+            $body
+        ) ?? $body;
     }
 
     /**
@@ -440,6 +473,188 @@ class BridgeNamespaceSqlContractTest extends TestCase
         return preg_match_all(
             '/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i',
             $this->listBody($sql, $table),
+        );
+    }
+
+    // ==================================================================
+    // updated_at TRIGGER SIDE-EFFECT (PRE-APPLY CORRECTION 2026-10-02)
+    // ==================================================================
+    //
+    // public.field_jobs has an enabled BEFORE UPDATE trigger that stamps
+    // updated_at. The namespace backfill is a plain UPDATE, so it would rewrite
+    // updated_at on all 15 Class-A rows, including two completed rounds whose
+    // write times are evidence. The correction suspends THAT ONE trigger by exact
+    // name for the backfill only.
+
+    private const TIMESTAMP_TRIGGER = 'trg_field_jobs_set_updated_at';
+
+    private const LIFECYCLE_TRIGGER = 'trg_field_jobs_protect_completed_lifecycle';
+
+    public function test_the_forward_sql_names_the_exact_updated_at_trigger(): void
+    {
+        $sql = $this->forward();
+
+        $this->assertStringContainsString(self::TIMESTAMP_TRIGGER, $sql);
+        $this->assertStringContainsString('set_updated_at_utc', $sql);
+
+        // It must disable that trigger by EXACT name, not by pattern.
+        $this->assertStringContainsString(
+            'ALTER TABLE public.field_jobs DISABLE TRIGGER ' . self::TIMESTAMP_TRIGGER,
+            $sql,
+            'The timestamp trigger must be disabled by its exact name so nothing else is affected.',
+        );
+        $this->assertStringContainsString(
+            'ALTER TABLE public.field_jobs ENABLE TRIGGER ' . self::TIMESTAMP_TRIGGER,
+            $sql,
+            'The timestamp trigger must be re-enabled immediately after the backfill.',
+        );
+    }
+
+    public function test_the_forward_sql_never_uses_disable_trigger_user(): void
+    {
+        $sql = $this->forward();
+
+        // Scanned on EXECUTABLE statements only: the artifact deliberately NAMES
+        // `DISABLE TRIGGER USER` in comments to explain why it is never used, so
+        // a raw scan would flag correct documentation.
+        $code = $this->executableSql($sql);
+
+        $this->assertStringNotContainsStringIgnoringCase(
+            'DISABLE TRIGGER USER',
+            $code,
+            'DISABLE TRIGGER USER would also suppress every other user trigger, including the '
+            .'completed-lifecycle guard on finished rounds.',
+        );
+        $this->assertStringNotContainsStringIgnoringCase(
+            'ENABLE TRIGGER USER',
+            $code,
+        );
+    }
+
+    public function test_the_completed_lifecycle_trigger_is_never_disabled(): void
+    {
+        $sql = $this->forward();
+
+        // Only EXECUTABLE statements are scanned. The artifact deliberately NAMES
+        // the lifecycle trigger in comments to explain why it is left alone, so
+        // a raw substring scan would flag correct documentation. Comments are
+        // stripped, and only a statement that actually toggles or drops a
+        // trigger counts as a violation.
+        $code = $this->executableSql($sql);
+
+        $this->assertStringNotContainsString(
+            'DISABLE TRIGGER ' . self::LIFECYCLE_TRIGGER,
+            $code,
+            'The completed-lifecycle guard must never be disabled.',
+        );
+        $this->assertStringNotContainsString(
+            'ENABLE TRIGGER ' . self::LIFECYCLE_TRIGGER,
+            $code,
+        );
+        $this->assertStringNotContainsString(
+            'DROP TRIGGER ' . self::LIFECYCLE_TRIGGER,
+            $code,
+        );
+
+        // And the artifact must never drop or redefine the timestamp trigger's
+        // FUNCTION either; only the trigger itself is toggled.
+        $this->assertStringNotContainsString(
+            'DROP TRIGGER ' . self::TIMESTAMP_TRIGGER,
+            $code,
+            'The trigger must be disabled and re-enabled, never dropped.',
+        );
+        $this->assertStringNotContainsString(
+            'CREATE OR REPLACE FUNCTION set_updated_at_utc',
+            $code,
+            'The forward SQL must never modify the live trigger function.',
+        );
+        $this->assertStringNotContainsString(
+            'DROP FUNCTION set_updated_at_utc',
+            $code,
+        );
+    }
+
+    public function test_the_forward_sql_asserts_the_trigger_state_around_the_backfill(): void
+    {
+        $sql = $this->forward();
+
+        // BEFORE: must prove it exists AND is enabled, or abort before writing.
+        $this->assertStringContainsString('is MISSING', $sql);
+        $this->assertStringContainsString('is present but NOT enabled', $sql);
+        $this->assertStringContainsString('tgenabled', $sql);
+        $this->assertStringContainsString("IS DISTINCT FROM 'O'", $sql);
+
+        // AFTER: must prove it is enabled again.
+        $this->assertStringContainsString('was not re-enabled', $sql);
+        $this->assertStringContainsString('Rolling back the whole transaction', $sql);
+    }
+
+    public function test_the_forward_sql_snapshots_and_verifies_the_preserved_columns(): void
+    {
+        $sql = $this->forward();
+
+        $this->assertStringContainsString('bridge_ns_field_jobs_before', $sql);
+
+        // Every column whose preservation is claimed must appear in the snapshot
+        // AND in the post-backfill comparison.
+        foreach ([
+            'updated_at',
+            'status',
+            'current_step',
+            'started_at',
+            'submitted_at',
+            'step_timestamps',
+            'assigned_inspector_id',
+            'supabase_application_id',
+            'supabase_parcel_id',
+        ] as $column) {
+            $this->assertStringContainsString(
+                'j.' . $column,
+                $sql,
+                "The snapshot/verification must cover {$column}.",
+            );
+        }
+
+        $this->assertStringContainsString('failed the post-backfill preservation check', $sql);
+        $this->assertStringContainsString('bridge_source_id IS DISTINCT FROM v_source', $sql);
+
+        // An empty snapshot must abort: otherwise the verification is vacuous.
+        $this->assertStringContainsString('no field_jobs snapshot rows', $sql);
+    }
+
+    public function test_the_dry_run_proves_the_trigger_is_suspended_and_restored(): void
+    {
+        $sql = $this->dryrun();
+
+        // The dry run must build a realistic trigger, not assert in the abstract.
+        $this->assertStringContainsString(
+            'CREATE TRIGGER ' . self::TIMESTAMP_TRIGGER,
+            $sql,
+        );
+        $this->assertStringContainsString('EXECUTE FUNCTION set_updated_at_utc()', $sql);
+
+        // And it must create the lifecycle guard too, so it can prove the guard
+        // survives the disable.
+        $this->assertStringContainsString(
+            'CREATE TRIGGER ' . self::LIFECYCLE_TRIGGER,
+            $sql,
+        );
+
+        $this->assertStringContainsString('10a PASS', $sql);
+        $this->assertStringContainsString('10d PASS', $sql);
+        $this->assertStringContainsString('10e PASS', $sql);
+        $this->assertStringContainsString('10f PASS', $sql);
+        $this->assertStringContainsString('10g PASS', $sql);
+
+        $this->assertStringContainsString(
+            'the namespace backfill changed updated_at',
+            $sql,
+            'The dry run must FAIL if the backfill moves updated_at.',
+        );
+        $this->assertStringContainsString(
+            'did not move after the trigger was re-enabled',
+            $sql,
+            'The dry run must FAIL if the trigger was not restored.',
         );
     }
 }
