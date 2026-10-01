@@ -601,7 +601,7 @@ BEGIN
     -- 5c. Disable THAT trigger only, by exact name.
     --
     -- Not `DISABLE TRIGGER USER`, which would also suppress
-    -- trg_field_jobs_protect_completed_lifecycle and every other user trigger,
+    -- trg_preserve_completed_field_job_lifecycle and every other user trigger,
     -- including the FieldSync-side guards on finished rounds.
     -- ---------------------------------------------------------------------
     ALTER TABLE public.field_jobs DISABLE TRIGGER trg_field_jobs_set_updated_at;

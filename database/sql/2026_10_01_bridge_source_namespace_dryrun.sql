@@ -218,7 +218,7 @@ CREATE INDEX field_jobs_bridge_source_id_status_index
 -- triggers that exist live:
 --
 --   trg_field_jobs_set_updated_at           BEFORE UPDATE -> set_updated_at_utc()
---   trg_field_jobs_protect_completed_lifecycle  BEFORE UPDATE, guards completed rows
+--   trg_preserve_completed_field_job_lifecycle  BEFORE UPDATE, guards completed rows
 --
 -- The second one exists so the proof can also demonstrate that disabling the
 -- timestamp trigger by EXACT NAME leaves the lifecycle guard active.
@@ -243,7 +243,7 @@ CREATE TRIGGER trg_field_jobs_set_updated_at
     BEFORE UPDATE ON field_jobs
     FOR EACH ROW EXECUTE FUNCTION set_updated_at_utc();
 
-CREATE TRIGGER trg_field_jobs_protect_completed_lifecycle
+CREATE TRIGGER trg_preserve_completed_field_job_lifecycle
     BEFORE UPDATE ON field_jobs
     FOR EACH ROW EXECUTE FUNCTION protect_completed_lifecycle();
 
@@ -680,7 +680,7 @@ BEGIN
     SELECT tgenabled INTO v_ts FROM pg_trigger
     WHERE tgname = 'trg_field_jobs_set_updated_at' AND NOT tgisinternal;
     SELECT tgenabled INTO v_guard FROM pg_trigger
-    WHERE tgname = 'trg_field_jobs_protect_completed_lifecycle' AND NOT tgisinternal;
+    WHERE tgname = 'trg_preserve_completed_field_job_lifecycle' AND NOT tgisinternal;
 
     IF v_ts IS DISTINCT FROM 'D' THEN
         RAISE EXCEPTION 'TEST FAIL: timestamp trigger not disabled (tgenabled=%)', v_ts;

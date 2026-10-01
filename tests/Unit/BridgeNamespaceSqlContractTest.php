@@ -488,7 +488,7 @@ class BridgeNamespaceSqlContractTest extends TestCase
 
     private const TIMESTAMP_TRIGGER = 'trg_field_jobs_set_updated_at';
 
-    private const LIFECYCLE_TRIGGER = 'trg_field_jobs_protect_completed_lifecycle';
+    private const LIFECYCLE_TRIGGER = 'trg_preserve_completed_field_job_lifecycle';
 
     public function test_the_forward_sql_names_the_exact_updated_at_trigger(): void
     {

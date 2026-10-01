@@ -192,7 +192,7 @@ class FieldSyncInspectorVisibilityContractTest extends TestCase
             'DISABLE TRIGGER USER would suppress the completed-lifecycle guard too.',
         );
         $this->assertStringNotContainsString(
-            'DISABLE TRIGGER trg_field_jobs_protect_completed_lifecycle',
+            'DISABLE TRIGGER trg_preserve_completed_field_job_lifecycle',
             $code,
             'The completed-lifecycle guard must never be disabled by this artifact.',
         );

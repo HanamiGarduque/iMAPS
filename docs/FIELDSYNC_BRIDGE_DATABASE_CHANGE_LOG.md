@@ -1218,7 +1218,7 @@ What is **NOT** done:
 - the trigger **function** is never modified;
 - the trigger is **never dropped**;
 - **`DISABLE TRIGGER USER` is never used** — that would also suppress
-  `trg_field_jobs_protect_completed_lifecycle`, the FieldSync-side guard on
+  `trg_preserve_completed_field_job_lifecycle`, the FieldSync-side guard on
   finished rounds;
 - the completed-lifecycle trigger is never disabled;
 - the mirror tables (`supabase_zoning_applications`, `supabase_parcels`,
@@ -1241,7 +1241,7 @@ was never contacted.
 |---|---|---|
 | 10a | an ordinary `UPDATE` changes `updated_at` | **PASS** |
 | 10b | the timestamp trigger exists and is enabled before anything is disabled | **PASS** |
-| 10c | disabling by exact name leaves `trg_field_jobs_protect_completed_lifecycle` **enabled** | **PASS** |
+| 10c | disabling by exact name leaves `trg_preserve_completed_field_job_lifecycle` **enabled** | **PASS** |
 | 10d | the namespace backfill sets `bridge_source_id` and preserves `updated_at` byte-identically, plus `status`, `current_step`, `submitted_at`, `step_timestamps`, `assignment_instructions` | **PASS** |
 | 10e | the trigger is re-enabled and verified | **PASS** |
 | 10f | an ordinary `UPDATE` changes `updated_at` again after re-enable | **PASS** |

@@ -5619,7 +5619,7 @@ name**, for the duration of the backfill only:
 2. assert the trigger **exists and is enabled** — missing, renamed or already
    disabled aborts the transaction **before any row is written**;
 3. `DISABLE TRIGGER trg_field_jobs_set_updated_at` (never `DISABLE TRIGGER USER`,
-   which would also suppress `trg_field_jobs_protect_completed_lifecycle`);
+   which would also suppress `trg_preserve_completed_field_job_lifecycle`);
 4. run the backfill;
 5. re-enable immediately and assert it is enabled again;
 6. verify `bridge_source_id` is set and every other snapshotted column is
