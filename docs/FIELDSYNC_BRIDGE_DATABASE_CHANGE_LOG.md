@@ -1438,7 +1438,10 @@ approval and a fresh precheck, exactly like every prior remote change.
 ### 10. Deliberately not done
 
 No remote SQL executed. Teshow not repaired. No `.env` change. No queue worker
-started. `php artisan up` not left in effect (maintenance restored ON). No
+started. `php artisan up` not left in effect (maintenance restored ON).
+**PASS-SCOPED, SUPERSEDED:** this describes THIS pass only and is not current
+state. Maintenance is now OFF and `php artisan queue:work` is RUNNING as PID 48352, the
+project's own known expected dev worker. See the readiness reconciliation entry. No
 FieldSync change. No master merge, sync, rebase or push. `.env` not committed.
 
 ---
@@ -1703,8 +1706,10 @@ re-execute the repair or any other remote SQL.
 
 ### 11. Operational boundary
 
-No queue worker was started. No FieldSync change. No master merge, sync, rebase
-or push. No `.env` or `.env.testing` staging or commit. No credential, token,
+No queue worker was started **in this pass** (pass-scoped, not current state:
+`php artisan queue:work` is RUNNING as PID 48352, the project's own known expected dev
+worker, already verified during the Teshow recovery closure). No FieldSync change. No
+master merge, sync, rebase or push. No `.env` or `.env.testing` staging or commit. No credential, token,
 handshake key or database password recorded. No GPS value faked, no proximity
 rule bypassed, no completion manufactured, and no inspection progress edited
 directly.
@@ -1832,3 +1837,92 @@ and never a write target. Frozen, not cleaned up.
 No FieldSync source edited, no finding fixed, no Codex branch touched, no
 report untracked, no `flutter test` run, no fixture alteration, no `master`
 merge/sync/rebase/push, no branch merged, no `.env` or `.env.testing` change.
+
+---
+
+## 2026-10-02 - FINAL READINESS STATE RECONCILIATION - **MAINTENANCE OFF, KNOWN DEV WORKER RUNNING, FIXTURE FROZEN**
+
+**Status: reconciled. Loop 10 unchanged: PARTIAL - FIELD ACCEPTANCE PENDING.
+No source change, no database change, no Supabase write.**
+
+### 1. Queue worker - KNOWN EXPECTED, NOT AN UNEXPLAINED PROCESS
+
+The single `queue:work` process is **PID 48352**, started `11:45:41`, and it is
+**RUNNING / KNOWN EXPECTED**. It was already verified during the earlier Teshow
+recovery closure, where it was established as the project's own single dev
+worker, spawned by the project's existing dev runner alongside
+`php artisan serve`. It is the same command as the project's `npm run dev:queue`.
+
+| | |
+|---|---|
+| Worker PID | **48352** (unchanged; not stopped, not replaced) |
+| `queue:work` process count | **exactly 1** |
+| Second worker started | **NO** - none started in this pass |
+| `queue:restart` | **NOT RUN** - deliberately, to avoid signalling the live worker |
+| Supervisor / service / watchdog | **NONE** introduced |
+
+Any earlier note reading "queue worker: NONE" is **pass-scoped, not current
+state**, and has been annotated as superseded rather than silently deleted. The
+historical claim that *that* pass started no worker remains true; only its use
+as a description of the present was wrong.
+
+### 2. Maintenance mode - OFF
+
+`php artisan up` was run (exit `0`). `storage/framework/maintenance.php` no
+longer exists. There is no active database maintenance. A real read-only HTTP
+`GET` to the running server returned **HTTP 200** on both `/` and `/login`, and
+`php artisan route:list` returned exit `0` with **77 routes**, so the
+application is genuinely serving rather than merely un-flagged.
+
+### 3. Pending jobs unchanged - a lift of maintenance wrote nothing
+
+| | Before | After |
+|---|---|---|
+| `jobs` (pending) | **0** | **0** |
+| `failed_jobs` | **14** | **14** |
+
+A zero-length queue means nothing could be dispatched, and the live worker is
+idle in its wait loop. No job was dispatched, queued or retried in this pass.
+
+### 4. Remote data - byte-for-byte unchanged
+
+| Check | Fingerprint | Result |
+|---|---|---|
+| All 16 `field_jobs` rows | `9d5d0bc2ac09fde40283a10dddc72ee5` before and after | **UNCHANGED** |
+| Loop 10 pair (`1f9df2ac-...`, `a761b17a-...`) | `619cba4e60a4bd46fd3e53a777611cbd` before and after | **UNCHANGED** |
+| Teshow `a761b17a-...` | `updated_at 2026-10-02 03:02:20.971649+00`, `bridge_source_id rosario-imaps-local-0921-a`, `assignment_instructions 'Loop 4 Round 2 reinspection E2E.'` | **UNCHANGED** |
+
+Every Supabase interaction in this pass was a read-only `SELECT`. The Loop 10
+resume baseline `APP-2026-00030` / application 145 / round 41 / job
+`1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999` remains frozen and ready for CP7.
+
+### 5. `loop8_types_tmp.php` - MISSING UNTRACKED TEMP, NON-BLOCKING
+
+The file is **gone from the working tree**. It was never tracked by git, so its
+contents are **not recoverable from history** and have **not** been recreated or
+inferred. Classified **NON-BLOCKING MISSING TEMP/EVIDENCE ARTIFACT**.
+
+Runtime-dependency check performed, and the finding is **NONE**:
+
+- no reference in any `.php`, `.json`, `.js`, `.mjs`, `.md`, `.yml`, `.yaml` or
+  `.env` file outside `vendor/`, `node_modules/`, `build/`, `.git/` and
+  `storage/`;
+- no reference in `composer.json`, `phpunit.xml`, `package.json` or `artisan`;
+- no stale entry in `vendor/composer/autoload_classmap.php`.
+
+Nothing in any source, test, doc or runtime path depends on it. The **32**
+remaining untracked evidence files are preserved and untouched.
+
+### 6. Loop 10 status - UNCHANGED
+
+**LOOP 10 REMAINS PARTIAL / FIELD ACCEPTANCE PENDING.** CP1-CP6 remain PASS;
+CP7-CP13 and the Round 1 -> 2 retention proof remain unproven and still require
+physical presence within 30 m of the San Carlos parcel. Nothing in this
+reconciliation advanced a checkpoint.
+
+### 7. Deliberately not done
+
+No Supabase write. No job dispatched. No FieldSync modification. No iMAPS source
+modification. `loop8_types_tmp.php` not recreated. `master` not touched, nothing
+merged. Existing worker PID 48352 left running and unsignalled; no second worker
+started.
