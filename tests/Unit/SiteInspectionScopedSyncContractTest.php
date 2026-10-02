@@ -385,9 +385,38 @@ class SiteInspectionScopedSyncContractTest extends TestCase
     {
         $show = $this->read(self::DETAIL_VIEW);
 
-        $this->assertStringContainsString('window.confirm(', $show);
+        // UPDATED: this used to assert `window.confirm(`. The native dialog is
+        // browser chrome, so the confirmation now goes through the shared Modal
+        // component. The contract being protected is unchanged - the Admin must
+        // confirm, and the confirmation must state the single-round scope and
+        // the absence of PO authority.
+        //
+        // Asserted against comment-stripped source: the page carries a note
+        // explaining that the native dialog was removed, and that prose names
+        // `window.confirm(` without calling it.
+        $this->assertStringNotContainsString(
+            'window.confirm(',
+            $this->stripJsComments($show),
+            'The scoped sync must not use the browser-native confirmation dialog.'
+        );
+
+        $this->assertStringContainsString(
+            '<Modal show={syncConfirmOpen}',
+            $show,
+            'The confirmation must be rendered with the shared Modal component.'
+        );
+
+        // The request is issued from the confirm control only, so cancelling
+        // cannot write.
         $this->assertMatchesRegularExpression(
-            '/Only this inspection round can be changed/',
+            '/onClick=\{runScopedSync\}/',
+            $show,
+            'Only the confirm control may issue the scoped sync request.'
+        );
+
+        // \s* because the JSX text wraps mid-sentence.
+        $this->assertMatchesRegularExpression(
+            '/Only this inspection round can be\s+(updated|changed)/',
             $show,
             'The confirmation must state the single-round scope.'
         );
@@ -397,10 +426,33 @@ class SiteInspectionScopedSyncContractTest extends TestCase
     {
         $show = $this->read(self::DETAIL_VIEW);
 
-        // The shared flash prop is global, but this page did not render it, so
-        // the honest outcome would have been invisible without this.
-        $this->assertStringContainsString('usePage().props?.flash', $show);
-        $this->assertMatchesRegularExpression('/\{flash\?\.message && \(/', $show);
+        // UPDATED: the banner used to be derived from `usePage().props.flash`
+        // during render, which made the outcome a side effect of a re-render
+        // rather than a consequence of the request that caused it - so a
+        // completed run could leave the Admin with no visible answer. The
+        // outcome is now set from the request's own success/error callback.
+        $this->assertMatchesRegularExpression(
+            '/onSuccess:\s*\(page\)\s*=>/',
+            $show,
+            'The scoped sync must read its outcome from the request itself.'
+        );
+
+        $this->assertStringContainsString(
+            'page?.props?.flash',
+            $show,
+            'The wording must still come from the flash the controller set, so the '
+            .'server remains the single source of truth for the outcome.'
+        );
+
+        $this->assertMatchesRegularExpression('/\{syncOutcome && \(/', $show);
+
+        // An unrecognised result and a failed request must both report
+        // themselves rather than finishing silently.
+        $this->assertMatchesRegularExpression(
+            '/onError:\s*\(\)\s*=>/',
+            $show,
+            'A failed run must still produce visible feedback.'
+        );
     }
 
     // ==================================================================
@@ -475,5 +527,20 @@ class SiteInspectionScopedSyncContractTest extends TestCase
         $this->assertNotSame('', $contents, 'Empty file: ' . $relative);
 
         return $contents;
+    }
+
+    /**
+     * Blank comment bodies so an explanatory note cannot satisfy an assertion.
+     *
+     * Several of these contracts assert on the ABSENCE of something (a native
+     * dialog, a busy latch). A note documenting that the thing was removed
+     * names it in prose, so an unstripped source would make the page look like
+     * it still contains it.
+     */
+    private function stripJsComments(string $source): string
+    {
+        $stripped = preg_replace('#/\*[\s\S]*?\*/#', '', $source) ?? $source;
+
+        return preg_replace('#^\s*//.*$#m', '', $stripped) ?? $stripped;
     }
 }

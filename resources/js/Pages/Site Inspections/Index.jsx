@@ -1,21 +1,3 @@
-                                {/* PHASE 2B1: page-level counters. Each is derived ONLY from
-                                    locally provable state, supplied by
-                                    InspectionOperationsSummary::counters(). "Awaiting PO Review" is
-                                    deliberately absent: with reviewed_site_inspection_id NULL on every
-                                    existing review, "no decision yet" cannot be distinguished from
-                                    "never linked", so any such count would be a guess. */}
-                                {counters && (
-                                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                                        {[["Under Inspection", counters.under_inspection, "bg-blue-50 text-blue-700"],
-                                            ["Completed", counters.completed, "bg-emerald-50 text-emerald-700"],
-                                            ["Reinspection", counters.reinspections, "bg-violet-50 text-violet-700"],
-                                            ["Delivery Issues", counters.delivery_issues, "bg-rose-50 text-rose-700"]].map(([label, value, tone]) => (
-                                            <span key={label} className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded ${tone}`}>
-                                                {label} {value ?? 0}
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
 import React, { useState, useEffect } from "react";
 import { Head, usePage, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
@@ -372,6 +354,24 @@ export default function SiteInspectionsIndex() {
                                     <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Site Inspections</h1>
                                     <p className="text-xs text-slate-500 mt-1">
                                         Manage and review site inspections conducted from iMAPS-FieldSync.
+                                        {/* PHASE 2B1: page-level counters. Each is derived ONLY from
+                                            locally provable state, supplied by
+                                            InspectionOperationsSummary::counters(). "Awaiting PO Review" is
+                                            deliberately absent: with reviewed_site_inspection_id NULL on every
+                                            existing review, "no decision yet" cannot be distinguished from
+                                            "never linked", so any count would be a guess. */}
+                                        {counters && (
+                                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                {[["Under Inspection", counters.under_inspection, "bg-blue-50 text-blue-700"],
+                                                    ["Completed", counters.completed, "bg-emerald-50 text-emerald-700"],
+                                                    ["Reinspection", counters.reinspections, "bg-violet-50 text-violet-700"],
+                                                    ["Delivery Issues", counters.delivery_issues, "bg-rose-50 text-rose-700"]].map(([label, value, tone]) => (
+                                                    <span key={label} className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded ${tone}`}>
+                                                        {label} {value ?? 0}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
                                     </p>
                                 </div>
 

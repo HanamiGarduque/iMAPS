@@ -4,6 +4,7 @@ import { Link, Head, router, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import Modal from "@/Components/Modal";
 import { resolveBackTarget, readRegistryQuery } from "@/Components/folderOrigin";
 import PhotoLightbox from "@/Components/PhotoLightbox";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
@@ -105,6 +106,33 @@ function MapController({ brgyData, activeParcelFeature }) {
     return null;
 }
 
+// ── Sync outcome tone ──
+/**
+ * Pick the banner tone for a scoped-sync outcome message.
+ *
+ * The controller reports every completed run through the SUCCESS flash key,
+ * because the ACTION succeeded. That is not the same as the DATA changing:
+ * "no completed FieldSync result available" and "already up to date" both mean
+ * nothing was imported, and showing those in a green success banner would
+ * claim a change that did not happen.
+ *
+ * Classified on the message the server sent, so this stays in step with
+ * describeSyncOutcome() instead of restating the outcome vocabulary here.
+ */
+function outcomeTone(message) {
+    const m = String(message || "").toLowerCase();
+    if (m.includes("could not") || m.includes("failed")) return "error";
+    if (
+        m.includes("nothing was changed") ||
+        m.includes("no local change") ||
+        m.includes("no change was confirmed") ||
+        m.includes("could not be interpreted")
+    ) {
+        return "info";
+    }
+    return "ok";
+}
+
 // ── Info Row Helper ──
 function InfoRow({ label, value, mono = false }) {
     return (
@@ -124,14 +152,6 @@ export default function Show({ auth, inspection }) {
 
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
-
-    // PHASE 2A: the shared Inertia flash is how the scoped support action
-    // returns its honest outcome. The shared `flash` prop is global, but this
-    // page did not previously render it, so it is derived here explicitly.
-    const pageFlash = usePage().props?.flash;
-    const flash = pageFlash
-        ? { message: pageFlash.error || pageFlash.success, ok: !pageFlash.error }
-        : null;
 
     // Round identity for this inspection, scoped to its own application.
     //
@@ -212,7 +232,20 @@ export default function Show({ auth, inspection }) {
 
     const [inspectionPhotos, setInspectionPhotos] = useState([]);
     const [loadingPhotos, setLoadingPhotos] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+    const [syncing, setSyncing] = useState(false);
+
+    // Scoped sync confirmation + outcome feedback.
+    //
+    // The confirmation is an in-app Modal, not window.confirm(). The native
+    // dialog is browser chrome: it ignores the application design, cannot show
+    // the supporting note about what this action does and does not do, and
+    // cannot express a processing state.
+    const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
+
+    // Outcome banner state. `info` is the neutral tone: NO_REMOTE_RESULT and
+    // NO_CHANGE mean "nothing was changed", which is not a success, so they are
+    // deliberately not green.
+    const [syncOutcome, setSyncOutcome] = useState(null);
 
     // Full-size viewer state, plus per-thumbnail load failures so a dead image
     // reports itself instead of rendering as a browser broken-image icon.
@@ -279,6 +312,58 @@ export default function Show({ auth, inspection }) {
                 sessionStorage.removeItem("hasShownWelcome");
                 router.post("/logout");
             }
+        });
+    };
+
+    /**
+     * Issue the scoped sync and surface the outcome.
+     *
+     * Every completion path must leave the Admin with a visible answer:
+     * a request that finishes silently reads as "still running" or "nothing
+     * happened", which is exactly the confusion this replaces.
+     *
+     * The outcome is read from the flash the controller already sets, so the
+     * server stays the single source of truth for the wording and this page
+     * never invents a result. `onFinish` clears the busy state on success AND
+     * on failure; `onError` covers a refusal or a network failure, where no
+     * flash exists at all.
+     */
+    const runScopedSync = () => {
+        setSyncConfirmOpen(false);
+        setSyncing(true);
+        setSyncOutcome(null);
+
+        router.post(`/site-inspections/${ins.id}/sync-from-fieldsync`, {}, {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                const f = page?.props?.flash;
+                const message = f?.error || f?.success;
+                if (message) {
+                    // The controller reports "nothing was changed" through the
+                    // SUCCESS key, because the action completed correctly. The
+                    // wording still has to read as neutral, not as a win.
+                    setSyncOutcome({
+                        tone: f?.error ? "error" : outcomeTone(message),
+                        message,
+                    });
+                } else {
+                    // Completed, but the server sent no outcome at all. That is
+                    // not a success and must not be presented as one.
+                    setSyncOutcome({
+                        tone: "warn",
+                        message:
+                            "Sync ran but no outcome was reported. Nothing was changed.",
+                    });
+                }
+            },
+            onError: () => {
+                setSyncOutcome({
+                    tone: "error",
+                    message:
+                        "Sync from FieldSync could not be completed. Nothing was changed.",
+                });
+            },
+            onFinish: () => setSyncing(false),
         });
     };
 
@@ -488,16 +573,39 @@ export default function Show({ auth, inspection }) {
                                 </div>
 
 
-                                {/* PHASE 2A: the controller returns honest, specific
-                                    feedback (changed / already current / no remote result /
-                                    failure) via the shared Inertia flash. This page did not
-                                    previously render flash at all, so without this banner the
-                                    outcome of a support action would be invisible. */}
-                                {flash?.message && (
+                                {/* Scoped sync OUTCOME. Set from the flash the controller already returns,
+                                    so the server stays the single source of truth for the
+                                    wording. The previous implementation derived this from
+                                    `usePage().props.flash` during render, which meant the
+                                    banner could only ever appear as a side effect of a
+                                    re-render and could not be tied to the request that
+                                    caused it; a run that finished without a re-render left
+                                    the Admin with no visible answer at all. */}
+                                {syncOutcome && (
                                     <div
-                                        className={`px-6 py-2.5 text-xs font-medium border-b ${flash.ok ? "bg-emerald-50 text-emerald-900 border-emerald-200" : "bg-rose-50 text-rose-900 border-rose-200"}`}
+                                        role="status"
+                                        aria-live="polite"
+                                        className={`px-6 py-2.5 text-xs font-medium border-b flex items-start gap-2 shrink-0 ${
+                                            syncOutcome.tone === "ok"
+                                                ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                                                : syncOutcome.tone === "warn"
+                                                  ? "bg-amber-50 text-amber-900 border-amber-200"
+                                                  : syncOutcome.tone === "info"
+                                                    ? "bg-slate-50 text-slate-700 border-slate-200"
+                                                    : "bg-rose-50 text-rose-900 border-rose-200"
+                                        }`}
                                     >
-                                        {flash.message}
+                                        <span className="flex-1">{syncOutcome.message}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSyncOutcome(null)}
+                                            aria-label="Dismiss sync result"
+                                            className="opacity-60 hover:opacity-100 cursor-pointer shrink-0"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                                <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+                                            </svg>
+                                        </button>
                                     </div>
                                 )}
                                 {/* PHASE 2A - ADMIN SUPPORT / OPERATIONS AREA.
@@ -529,21 +637,7 @@ export default function Show({ auth, inspection }) {
                                         <button
                                             type="button"
                                             disabled={syncing}
-                                            onClick={() => {
-                                                if (
-                                                    !window.confirm(
-                                                        `Import the latest completed FieldSync result for Inspection ${ins.id}?\n\n` +
-                                                            "Only this inspection round can be changed. This is a " +
-                                                            "synchronization action, not an approval.",
-                                                    )
-                                                ) {
-                                                    return;
-                                                }
-                                                setSyncing(true);
-                                                router.post(
-                                                    `/site-inspections/${ins.id}/sync-from-fieldsync`,
-                                                );
-                                            }}
+                                            onClick={() => setSyncConfirmOpen(true)}
                                             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 text-xs font-semibold hover:bg-amber-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
                                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -859,7 +953,87 @@ export default function Show({ auth, inspection }) {
                 </div>
             </div>
 
-            {lightboxIndex !== null && (
+            {/* ── Scoped sync confirmation ──
+                    Uses the shared Modal component (the Headless UI Dialog
+                    wrapper that ships with this app) with the same visual
+                    language as the reassignment modal: white panel, slate
+                    header, Cancel then a primary action on the right.
+
+                    Deliberately NOT styled as destructive/red. This is a support
+                    synchronisation action that imports data FieldSync has
+                    already submitted; it is not an approval and cannot refuse
+                    anything. */}
+                <Modal show={syncConfirmOpen} onClose={() => setSyncConfirmOpen(false)} maxWidth="md">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+                        <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex justify-between items-start">
+                            <h3 className="text-base font-bold text-slate-900">
+                                Sync from FieldSync?
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setSyncConfirmOpen(false)}
+                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                                aria-label="Close"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-3">
+                            <p className="text-xs font-semibold text-slate-800 leading-relaxed">
+                                Import the latest completed FieldSync result for Inspection{" "}
+                                {ins.id}?
+                            </p>
+                            {/* Plain helper text with an information icon, not a
+                                card or an input-looking panel: nothing here is
+                                editable and nothing is sent. */}
+                            <p className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-500">
+                                <svg
+                                    className="w-3.5 h-3.5 mt-px shrink-0 text-slate-400"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                    />
+                                </svg>
+                                <span>
+                                    Only this inspection round can be updated. This action
+                                    imports data already submitted from FieldSync. It does not
+                                    approve, decline, request reinspection, assign an
+                                    inspector, or make a Planning Officer decision.
+                                </span>
+                            </p>
+                        </div>
+
+                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2.5 bg-slate-50/80">
+                            <button
+                                type="button"
+                                onClick={() => setSyncConfirmOpen(false)}
+                                disabled={syncing}
+                                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-50 transition-all shadow-xs disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={runScopedSync}
+                                disabled={syncing}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {syncing ? "Syncing…" : "Sync from FieldSync"}
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+
+                {lightboxIndex !== null && (
                 <PhotoLightbox
                     photos={inspectionPhotos.map((p, i) => ({
                         ...p,
