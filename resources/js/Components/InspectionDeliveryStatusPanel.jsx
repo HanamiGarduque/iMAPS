@@ -155,7 +155,11 @@ function RetryDeliveryButton({ inspectionId, round, queueing, onRetry }) {
             onClick={() => onRetry(inspectionId)}
             disabled={queueing}
             aria-busy={queueing}
-            aria-label={`Retry FieldSync delivery for Inspection Round ${round}`}
+            aria-label={`Retry FieldSync delivery for ${
+                round == null
+                    ? "this historical inspection round"
+                    : `Inspection Round ${round}`
+            }`}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 min-h-[28px] rounded-[6px] text-[10px] font-bold uppercase tracking-wider border transition-colors disabled:opacity-60 disabled:cursor-not-allowed border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-700 disabled:hover:border-slate-300 disabled:hover:text-slate-600"
         >
             {queueing ? (
@@ -210,7 +214,13 @@ function DeliveryRoundRow({ inspection, queueingId, onRetry, isAdmin, onToggleHi
         <li className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 space-y-1.5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <p className="text-[12px] font-bold text-slate-700">
-                    Inspection Round {inspection.round}
+                    {/* PHASE 2B2B: `round` is the canonical position in this
+                        round's own (application, parcel) chain, resolved on the
+                        server. It is null for a historical row with no recorded
+                        parcel, which is labelled rather than given a number. */}
+                    {inspection.round == null
+                        ? `${inspection.round_kind || "Historical Inspection"}${inspection.round_note ? ` · ${inspection.round_note}` : ""}`
+                        : `Inspection Round ${inspection.round}`}
                 </p>
                 <div className="flex items-center gap-2 shrink-0">
                     {isSuperseded && (

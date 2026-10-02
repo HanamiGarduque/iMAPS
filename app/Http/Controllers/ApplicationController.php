@@ -23,6 +23,7 @@ use App\Services\SupabaseService;
 use App\Services\WorkAssignmentService;
 use App\Support\InspectionDeliveryStatus;
 use App\Support\InspectionSummary;
+use App\Support\InspectionRoundNumbering;
 use App\Support\InspectorTransferGuard;
 use App\Support\ReassignmentReasons;
 use Illuminate\Http\Request;
@@ -155,11 +156,41 @@ class ApplicationController extends Controller
         $applications->getCollection()->transform(function ($application) use ($isAdminMonitoring) {
             $line = null;
 
+            // PHASE 2B2B: the round number is now resolved from the canonical
+            // (application, parcel) chain rather than from
+            // `$parcel->site_inspections_count`.
+            //
+            // That count is the TOTAL number of inspections the parcel has ever
+            // had, which is a different quantity: it is not the position of a
+            // specific round within that parcel's chain, and it silently
+            // disagrees with the round number shown on /site-inspections for the
+            // same row. The total is still used, unchanged, for the aggregate
+            // counters further down; only its use AS A ROUND IDENTITY is gone.
+            $candidateInspections = $application->parcels
+                ->map(fn ($parcel) => $parcel->siteInspection)
+                ->filter();
+
+            $rounds = $candidateInspections->isEmpty()
+                ? []
+                : InspectionRoundNumbering::forInspections($candidateInspections);
+
             foreach ($application->parcels as $parcel) {
+                $inspection = $parcel->siteInspection;
+
+                if ($inspection === null) {
+                    continue;
+                }
+
+                $round = $rounds[(int) $inspection->id] ?? null;
+
                 $candidate = InspectionSummary::line(
-                    $parcel->siteInspection,
-                    $parcel->siteInspection?->inspector?->name,
-                    (int) ($parcel->site_inspections_count ?? 0),
+                    $inspection,
+                    $inspection->inspector?->name,
+                    // Only a parcel-bearing row has a position in a chain. A
+                    // parcel-unknown historical row passes 0, which
+                    // InspectionSummary renders without any round wording rather
+                    // than inventing "Round 1".
+                    $round === null ? 0 : (int) $round['round_number'],
                 );
 
                 if ($candidate !== null) {
@@ -857,14 +888,16 @@ class ApplicationController extends Controller
                 $openRounds->map(fn ($inspection) => (int) $inspection->id)->all()
             );
 
-        // Round number per inspection id, taken from the PARCEL that owns the
-        // round. Reading it off the inspection's own parcel relation would lazy
-        // load one parcel per round and would not carry the withCount attribute.
-        $roundNumberByInspection = $application->parcels
-            ->filter(fn ($parcel) => $parcel->siteInspection)
-            ->mapWithKeys(fn ($parcel) => [
-                (int) $parcel->siteInspection->id => (int) ($parcel->site_inspections_count ?? 1),
-            ]);
+        // PHASE 2B2B: round number per inspection id, resolved from the canonical
+        // (application, parcel) chain.
+        //
+        // It used to be read off the owning parcel's `site_inspections_count`,
+        // which is that parcel's TOTAL inspection count rather than the position
+        // of this round within the parcel's chain, and therefore disagreed with
+        // the round number the same row shows on /site-inspections. The eager
+        // load is unchanged, so this still costs no extra query per round.
+        $roundNumberByInspection = InspectionRoundNumbering::forInspections($openRounds)
+            ->map(fn (array $round) => $round['round_number']);
 
         $inspectorRoundState = $openRounds->mapWithKeys(function ($inspection) use ($remoteStates, $roundNumberByInspection) {
             $remote = $remoteStates[(int) $inspection->id] ?? [];
@@ -878,13 +911,26 @@ class ApplicationController extends Controller
                 'photo_count'               => $remote['photo_count'] ?? 0,
             ]);
 
-            // The round number is the 1-based position of this round within its
-            // own application, which is the same numbering the parcel panel shows.
-            $roundNumber = $roundNumberByInspection[(int) $inspection->id] ?? 1;
+            // PHASE 2B2B: the 1-based position of this round within its own
+            // (application, parcel) chain - the same numbering the parcel panel
+            // and /site-inspections show.
+            //
+            // Null for a historical row with no recorded parcel. It is NOT
+            // defaulted to 1: defaulting here is what let an unrelated round be
+            // presented as this parcel's first visit.
+            $roundNumber = $roundNumberByInspection[(int) $inspection->id] ?? null;
 
             return [(int) $inspection->id => [
                 'inspection_id'   => (int) $inspection->id,
                 'round_number'   => $roundNumber,
+                'round_kind'     => $roundNumber === null
+                    ? InspectionRoundNumbering::KIND_HISTORICAL
+                    : ($roundNumber === 1
+                        ? InspectionRoundNumbering::KIND_ORIGINAL
+                        : InspectionRoundNumbering::KIND_REINSPECTION),
+                'round_note'     => $roundNumber === null
+                    ? InspectionRoundNumbering::HISTORICAL_NOTE
+                    : null,
                 'inspector_id'   => $inspection->inspector_id,
                 'inspector_name' => $inspection->inspector?->name,
                 'allowed'        => $decision['allowed'],

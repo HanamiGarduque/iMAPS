@@ -61,7 +61,13 @@ class InspectionOperationsSummary
         // point: absence is real information, not a gap to be filled in.
         $decisions = $this->linkableDecisions($rows->pluck('id')->filter()->all());
 
-        return $rows->map(function (SiteInspection $inspection) use ($decisions) {
+        // PHASE 2B2B: resolved from the canonical source here too, so the
+        // overview's round identity is the same value the list and detail pages
+        // render even if a caller forgets to enrich the models.
+        $rounds = InspectionRoundNumbering::forInspections($rows);
+
+        return $rows->map(function (SiteInspection $inspection) use ($decisions, $rounds) {
+            $round = $rounds[(int) $inspection->id] ?? null;
             $deliveryState = \App\Support\InspectionDeliveryStatus::state(
                 $inspection->delivery_status
             );
@@ -80,6 +86,13 @@ class InspectionOperationsSummary
                 'delivery_is_failure' => \App\Support\InspectionDeliveryStatus::isFailure(
                     $inspection->delivery_status
                 ),
+                // Canonical round identity. `round_number` is null for a
+                // parcel-unknown historical row, which is reported as such
+                // rather than being defaulted to 1.
+                'round_number' => $round['round_number'] ?? null,
+                'round_kind' => $round['round_kind']
+                    ?? InspectionRoundNumbering::KIND_HISTORICAL,
+                'round_note' => $round['note'] ?? InspectionRoundNumbering::HISTORICAL_NOTE,
                 // Null whenever the database cannot prove a decision for THIS
                 // round. The view must render nothing in that case.
                 'po_decision' => $review['decision'] ?? null,
@@ -112,11 +125,44 @@ class InspectionOperationsSummary
                 fn ($i) => in_array($i->status, ['assigned', 'pending', 'in-progress'], true)
             )->count(),
             'completed' => $rows->filter(fn ($i) => $i->status === 'completed')->count(),
-            'reinspections' => $rows->filter(fn ($i) => ((int) ($i->round_number ?? 1)) > 1)->count(),
+            // PHASE 2B2B: resolved from InspectionRoundNumbering, never from an
+            // attribute a caller may or may not have injected. Reading
+            // `$i->round_number` here made this method return 0
+            // reinspections when called outside SiteInspectionController::index()
+            // while returning 14 through it - the same class, two answers.
+            //
+            // Only a parcel-bearing row whose position in its own chain exceeds 1
+            // is a reinspection. A historical parcel-unknown row belongs to no
+            // chain, so it is never counted as a repeat visit.
+            'reinspections' => $this->countReinspections($rows),
             'delivery_issues' => $rows->filter(
                 fn ($i) => \App\Support\InspectionDeliveryStatus::isFailure($i->delivery_status)
             )->count(),
         ];
+    }
+
+    /**
+     * Reinspections under the canonical (application, parcel) round contract.
+     *
+     * Resolved here rather than read off the models, so this count is correct
+     * however the method is called: standalone, from the controller, or from a
+     * future consumer that has not enriched anything.
+     *
+     * @param  \Illuminate\Support\Collection<int, SiteInspection>  $rows
+     */
+    private function countReinspections($rows): int
+    {
+        if ($rows->isEmpty()) {
+            return 0;
+        }
+
+        $rounds = InspectionRoundNumbering::forInspections($rows);
+
+        return $rows->filter(function (SiteInspection $inspection) use ($rounds) {
+            $round = $rounds[(int) $inspection->id] ?? null;
+
+            return $round !== null && InspectionRoundNumbering::isReinspection($round);
+        })->count();
     }
 
     /**

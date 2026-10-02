@@ -670,10 +670,23 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
 
     public function test_round_index_is_derived_and_stable_identity_is_the_inspection_id(): void
     {
+        // PHASE 2B2B: `round` is no longer a positional counter over whatever set
+        // of rounds the caller passed in. It is the canonical position in the
+        // round's own (application, parcel) chain, which makes the same round read
+        // the same however the list was loaded.
         $controller = $this->code($this->controllerSource());
 
         $this->assertStringContainsString("'inspection_id'", $controller);
-        $this->assertStringContainsString("'round' => \$index", $controller);
+        $this->assertStringContainsString('InspectionRoundNumbering::forInspections($rounds)', $controller);
+        $this->assertMatchesRegularExpression(
+            "/'round'\s*=>\s*\\\$identity === null \? null : \\\$identity\['round_number'\]/",
+            $controller,
+            'the displayed round must come from the canonical helper, and be null when the '
+            .'row has no recorded parcel rather than a fabricated number'
+        );
+
+        // The caller-dependent positional counter is gone.
+        $this->assertStringNotContainsString('$index++;', $controller);
     }
 
     // ══════════════════════════════════════════════════════════════

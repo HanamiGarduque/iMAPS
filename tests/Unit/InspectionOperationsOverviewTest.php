@@ -37,6 +37,8 @@ class InspectionOperationsOverviewTest extends TestCase
 
     private const CONTROLLER = 'app/Http/Controllers/SiteInspectionController.php';
 
+    private const ROUND_NUMBERING = 'app/Support/InspectionRoundNumbering.php';
+
     private const LIST_VIEW = 'resources/js/Pages/Site Inspections/Index.jsx';
 
     // ==================================================================
@@ -45,24 +47,71 @@ class InspectionOperationsOverviewTest extends TestCase
 
     public function test_original_inspection_is_labelled_from_the_canonical_derivation(): void
     {
-        // Round identity stays the existing per-application derivation. No new
-        // round_number column is introduced, and round_kind is already derived
-        // from that canonical round number.
+        // PHASE 2B2B: round identity is delegated to the shared helper, which
+        // scopes a round to one PARCEL's visit sequence rather than the whole
+        // application. Round 1 of a parcel is still the original inspection.
         $controller = $this->read(self::CONTROLLER);
+        $helper = $this->read(self::ROUND_NUMBERING);
 
-        $this->assertStringContainsString('roundNumbersByApplication', $controller);
+        $this->assertStringContainsString('InspectionRoundNumbering::forInspections', $controller);
         $this->assertStringContainsString(
-            "\$inspection->round_kind = \$round === 1 ? 'Original Inspection' : 'Reinspection'",
-            $controller,
-            'Round 1 must read Original Inspection and later rounds Reinspection.'
+            '$chain === 1 ? self::KIND_ORIGINAL : self::KIND_REINSPECTION',
+            $helper,
+            'Round 1 of a parcel must read Original Inspection and later rounds Reinspection.'
         );
     }
 
     public function test_no_new_round_number_column_is_introduced(): void
     {
-        // round_number is a derived, in-memory attribute, never a column.
-        $this->assertStringNotContainsString("'round_number'", $this->php(self::SUMMARY));
-        $this->assertStringNotContainsString('->round_number =', $this->php(self::SUMMARY));
+        // PHASE 2B2B: round identity is DERIVED inside the summary rather than
+        // read off an injected attribute, so the summary no longer ASSIGNS
+        // `->round_number` to a model at all. Reading the key out of the
+        // helper's return value is fine and is what the payload now carries;
+        // what must never happen is writing it onto a model, or storing it.
+        $summary = $this->php(self::SUMMARY);
+
+        $this->assertStringNotContainsString('->round_number =', $summary);
+        $this->assertStringNotContainsString(
+            '$inspection->round_number',
+            $summary,
+            'the summary must not inject round state onto a model'
+        );
+
+        // It comes from the canonical helper.
+        $this->assertStringContainsString(
+            'InspectionRoundNumbering::forInspections',
+            $summary,
+            'the summary must resolve round identity from the canonical helper'
+        );
+    }
+
+    /**
+     * PHASE 2B2B: the latent data-flow defect. `counters()` used to read
+     * `$i->round_number`, an in-memory attribute only the controller attached, so
+     * the same method returned 14 through the controller and 0 when called
+     * directly. It must now resolve rounds itself.
+     */
+    public function test_reinspection_counter_no_longer_depends_on_an_injected_attribute(): void
+    {
+        $summary = $this->php(self::SUMMARY);
+
+        $this->assertStringNotContainsString(
+            '$i->round_number',
+            $summary,
+            'the counter must not read an attribute a caller may not have set'
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/\'reinspections\'\s*=>\s*\$this->countReinspections\(\$rows\)/',
+            $summary,
+            'the reinspection counter must delegate to the canonical resolution'
+        );
+
+        $this->assertStringContainsString(
+            'InspectionRoundNumbering::isReinspection',
+            $summary,
+            'only a parcel-bearing row past Round 1 may count as a reinspection'
+        );
     }
 
     // ==================================================================

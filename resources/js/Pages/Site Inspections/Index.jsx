@@ -685,11 +685,17 @@ export default function SiteInspectionsIndex() {
                                                                     <span className="text-[13px] font-bold text-slate-800 leading-snug break-words group-hover:text-blue-700 transition-colors">
                                                                         {item.display_reference || `Application #${item.zoning_application_id}`}
                                                                     </span>
-                                                                    {/* Round identity is scoped to the application, not the
-                                                                        applicant and not the raw id, and the status wording
-                                                                        is limited to what the local row can prove. */}
+                                                                    {/* PHASE 2B2B: round identity is one PARCEL's visit sequence, resolved by
+                                                                        the server. A historical row whose parcel was never
+                                                                        recorded carries no round_number at all and says so,
+                                                                        rather than being given a fabricated "Round 1".
+                                                                        Everything else about the record stays visible. */}
                                                                     <span className="text-[11px] font-semibold text-slate-600 leading-tight">
-                                                                        {item.round_number ? `Round ${item.round_number} · ` : ""}{item.round_kind || "Inspection"}
+                                                                        {item.round_number
+                                                                            ? `Round ${item.round_number} · ${item.round_kind || "Inspection"}`
+                                                                            : item.round_kind === "Historical Inspection"
+                                                                              ? `${item.round_kind} · ${item.round_note || "Parcel not recorded"}`
+                                                                              : item.round_kind || "Inspection"}
                                                                     </span>
                                                                     {/* PHASE 2B1: applicant and parcel, so a group is
                                                                         identifiable without opening the application. */}

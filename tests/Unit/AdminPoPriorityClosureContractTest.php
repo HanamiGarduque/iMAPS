@@ -593,19 +593,61 @@ class AdminPoPriorityClosureContractTest extends TestCase
      * must come from the per-application sequence, never from the applicant or
      * the raw id.
      */
-    public function test_round_identity_is_scoped_to_the_application(): void
+    public function test_round_identity_is_scoped_to_the_application_and_parcel(): void
     {
+        // PHASE 2B2B: this used to pin a per-APPLICATION derivation inside the
+        // controller. Round identity is now delegated to one shared helper and is
+        // scoped to the (application, parcel) chain, which is what the writer path
+        // and the delivery supersession rule already did.
+        //
+        // The intent is preserved: identity must come from the database, must be
+        // scoped so two applications never share a sequence, and Round 1 must be
+        // the original inspection.
         $controller = $this->codeOf('app/Http/Controllers/SiteInspectionController.php');
+        $helper = $this->codeOf('app/Support/InspectionRoundNumbering.php');
 
-        $this->assertStringContainsString('roundNumbersByApplication', $controller);
-        $this->assertStringContainsString("->whereIn('zoning_application_id', \$applicationIds)", $controller);
-        $this->assertStringContainsString("->orderBy('zoning_application_id')", $controller);
-        $this->assertStringContainsString("->orderBy('id')", $controller);
+        // The controller delegates rather than deriving.
+        $this->assertStringContainsString('InspectionRoundNumbering::forInspections', $controller);
+        $this->assertStringNotContainsString('roundNumbersByApplication', $controller);
 
-        // The first round of its OWN application is the original inspection.
+        // The chain is read from the database, scoped by application, and ordered.
+        $this->assertStringContainsString("->whereIn('zoning_application_id', \$applicationIds)", $helper);
+        $this->assertStringContainsString("->orderBy('id')", $helper);
+
+        // Scoped to application AND parcel: two parcels each start at Round 1.
+        $this->assertStringContainsString("->whereNotNull('parcel_id')", $helper);
+        $this->assertMatchesRegularExpression(
+            '/\$row->zoning_application_id\s*\.\s*\'\:\'\s*\.\s*\$parcelId/',
+            $helper,
+            'The chain key must combine the application AND the parcel, so two parcels '
+            .'of one application each start at Round 1.'
+        );
+
+        // The first visit to a parcel is the original inspection.
         $this->assertStringContainsString(
-            "\$round === 1 ? 'Original Inspection' : 'Reinspection'",
-            $controller
+            '$chain === 1 ? self::KIND_ORIGINAL : self::KIND_REINSPECTION',
+            $helper
+        );
+    }
+
+    /**
+     * A row with no recorded parcel must never receive a round number.
+     */
+    public function test_a_parcel_unknown_row_is_never_given_a_round(): void
+    {
+        $helper = $this->codeOf('app/Support/InspectionRoundNumbering.php');
+
+        $this->assertStringContainsString('KIND_HISTORICAL', $helper);
+        $this->assertStringContainsString("HISTORICAL_NOTE = 'Parcel not recorded'", $helper);
+        $this->assertStringContainsString('HISTORICAL_NOTE', $helper);
+
+        // No default of 1 for a missing round anywhere in the helper.
+        $stripped = preg_replace('#/\*[\s\S]*?\*/#', '', $helper) ?? $helper;
+        $stripped = preg_replace('#^\s*//.*$#m', '', $stripped) ?? $stripped;
+        $this->assertDoesNotMatchRegularExpression(
+            '/round_number\'\s*=>\s*1\b/',
+            $stripped,
+            'A parcel-unknown row must have a NULL round number, never a fabricated 1.'
         );
     }
 
@@ -617,8 +659,13 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $show = $this->codeOf('resources/js/Pages/Site Inspections/Show.jsx');
 
         $this->assertStringContainsString('{app.reference_number}', $show);
-        $this->assertStringContainsString('Round ${ins.round_number}', $show);
-        $this->assertStringContainsString('INS-{ins.id || "—"}', $show);
+        // PHASE 2B2B: the round is read from the controller and only rendered
+        // when it actually exists, so a parcel-unknown row is labelled instead of
+        // being given a number.
+        $this->assertStringContainsString('roundNumber', $show);
+        $this->assertStringContainsString('Round ${roundNumber}', $show);
+        $this->assertStringContainsString('isHistoricalRound', $show);
+        $this->assertStringContainsString('INS-{ins.id || "-"}', $show);
     }
 
     /**
@@ -632,11 +679,19 @@ class AdminPoPriorityClosureContractTest extends TestCase
      */
     public function test_round_map_is_not_built_with_key_collapsing_collection_helpers(): void
     {
-        $controller = $this->codeOf('app/Http/Controllers/SiteInspectionController.php');
+        // PHASE 2B2B: the hand-built loop that used to live in the controller has
+        // moved into the shared helper, where it is keyed by chain and then by
+        // inspection id. The original defect - key collapsing turning inspection
+        // ids into positional indexes - must not reappear in the new home.
+        $helper = $this->codeOf('app/Support/InspectionRoundNumbering.php');
 
-        $this->assertStringNotContainsString('mapWithKeys(', $controller);
-        $this->assertStringNotContainsString('->flatMap(', $controller);
-        $this->assertStringContainsString('$rounds[$row->id] = ++$round;', $controller);
+        $this->assertStringNotContainsString('mapWithKeys(', $helper);
+        $this->assertStringNotContainsString('->flatMap(', $helper);
+        $this->assertStringNotContainsString('->collapse(', $helper);
+
+        // Positions are accumulated per chain and stored keyed by inspection id.
+        $this->assertStringContainsString("\$seen[\$row['chain']] = (\$seen[\$row['chain']] ?? 0) + 1;", $helper);
+        $this->assertStringContainsString("\$positions[\$row['id']] = \$seen[\$row['chain']];", $helper);
     }
 
     // ── Drafts status filter must not survive "All Drafts" ──

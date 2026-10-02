@@ -153,18 +153,19 @@ export default function Show({ auth, inspection }) {
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
 
-    // Round identity for this inspection, scoped to its own application.
+    // PHASE 2B2B: round identity comes from the server, which resolves it as one
+    // PARCEL's visit sequence via InspectionRoundNumbering.
     //
-    // The controller supplies round_number / round_kind for the LIST page. This
-    // detail page receives a single inspection, so the same rule is applied
-    // here: the first inspection recorded for an application is the original,
-    // and anything after it is a reinspection. When the application has no
-    // other rounds the label falls back to a neutral "Inspection" rather than
-    // inventing a number, and it is never derived from the raw id on its own.
+    // This page deliberately computes NOTHING about the round. It previously
+    // re-derived "first round for the application" from a single row, which was
+    // both a second definition and wrong for a multi-parcel application.
+    //
+    // `round_number` is null for a historical row whose parcel was never
+    // recorded: no round is displayed, and the record says so instead.
     const roundNumber = ins.round_number ?? null;
-    const roundLabel =
-        ins.round_kind ||
-        (roundNumber && roundNumber > 1 ? "Reinspection" : "Inspection");
+    const roundLabel = ins.round_kind || "Inspection";
+    const roundNote = ins.round_note || null;
+    const isHistoricalRound = roundNumber === null && roundLabel === "Historical Inspection";
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
@@ -490,8 +491,21 @@ export default function Show({ auth, inspection }) {
                                     Application #{ins.zoning_application_id}
                                 </span>
                             )}
-                            <span className="hidden sm:inline text-xs text-slate-600 font-semibold">
-                                {roundLabel ? `Round ${ins.round_number} · ${roundLabel}` : roundLabel}
+                            {/* `whitespace-nowrap` is load-bearing, not cosmetic. This breadcrumb row is
+                                a tight flex line and the label span had no wrap control, so at
+                                narrower widths the browser consumed the space inside
+                                "Historical Inspection" as a line-break opportunity and the
+                                two words read as "HistoricalInspection". The string was
+                                always correct - the space was being eaten by layout. The
+                                card list was unaffected because it has room to wrap. */}
+                            <span className="hidden sm:inline text-xs text-slate-600 font-semibold whitespace-nowrap">
+                                {/* No fabricated "Round N" for a historical row:
+                                    it is labelled and explained instead. */}
+                                {roundNumber
+                                    ? `Round ${roundNumber} · ${roundLabel}`
+                                    : isHistoricalRound
+                                      ? `${roundLabel} · ${roundNote || "Parcel not recorded"}`
+                                      : roundLabel}
                             </span>
                             <span
                                 className="hidden md:inline text-[10px] font-mono text-slate-400"

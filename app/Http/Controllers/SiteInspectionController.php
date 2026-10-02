@@ -6,9 +6,9 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\SiteInspection;
 use App\Support\InspectionOperationsSummary;
+use App\Support\InspectionRoundNumbering;
 use App\Models\AppNotification;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 
 class SiteInspectionController extends Controller
 {
@@ -56,21 +56,14 @@ class SiteInspectionController extends Controller
             ->get();
 
         $all = $pendingInspections->concat($completedInspections);
-        $rounds = $this->roundNumbersByApplication($all);
 
-        foreach ($all as $inspection) {
-            $round = $rounds[$inspection->id] ?? 1;
-
-            // Presentation-safe, locally provable identity. The status wording is
-            // deliberately limited to what the LOCAL row can prove: a locally
-            // `assigned` inspection is "Assigned", never "Ongoing" or "In
-            // Progress", because iMAPS cannot see field progress.
-            $inspection->round_number = $round;
-            $inspection->round_kind = $round === 1 ? 'Original Inspection' : 'Reinspection';
-            $inspection->display_status = $this->displayStatus((string) $inspection->status);
-            $inspection->display_reference = $inspection->zoningApplication?->reference_number
-                ?: ('Application #' . $inspection->zoning_application_id);
-        }
+        // PHASE 2B2B: round identity comes from the one canonical source, keyed
+        // by (application, parcel) rather than by application alone. The status
+        // wording stays deliberately limited to what the LOCAL row can prove: a
+        // locally `assigned` inspection is "Assigned", never "Ongoing" or "In
+        // Progress", because iMAPS cannot see field progress.
+        $this->attachRoundIdentity($all);
+        $this->attachDisplayIdentity($all);
 
         $all = $pendingInspections->concat($completedInspections);
 
@@ -100,58 +93,65 @@ class SiteInspectionController extends Controller
      */
     private function enrichForOperationsOverview($inspections): array
     {
-        // round_number / round_kind / display_status / display_reference are
-        // already attached by index() and show() using the canonical per-
-        // application round derivation, so the overview reads the same identity.
+        // Round identity is resolved by InspectionRoundNumbering here, so the
+        // overview reads exactly the same round the list and detail pages show.
+        // The summary no longer depends on an attribute having been injected by
+        // this controller, so it produces the same answer when called directly.
         return collect($this->summary->summarize($inspections))
             ->keyBy('id')
             ->all();
     }
+
     /**
-     * Map every inspection id to its 1-based round number WITHIN its own
-     * application, ordered by id.
+     * Attach canonical round identity to each row, for presentation.
      *
-     * This is the true inspection sequence for that application, read from the
-     * database rather than from the rows that happen to be on screen, so a
-     * round number can never be derived from an unrelated list, from the
-     * applicant, or from the inspection id alone. Scoping to
-     * `zoning_application_id` is what makes this safe: an applicant with five
-     * applications still gets Round 1 for each of them.
+     * PHASE 2B2B: this delegates to {@see InspectionRoundNumbering}, which
+     * groups by (zoning_application_id, parcel_id). The previous per-application
+     * derivation lived here and disagreed with the writer path, the delivery
+     * supersession rule and itself between two display sites.
+     *
+     * A row with no recorded parcel is given `round_number = null` and the
+     * `Historical Inspection` kind. It is NOT defaulted to 1: doing so is exactly
+     * how a parcel-unknown row came to be displayed as a real round.
+     *
+     * @param  \Illuminate\Support\Collection<int, SiteInspection>  $inspections
      */
-    private function roundNumbersByApplication($inspections): array
+    private function attachRoundIdentity($inspections): void
     {
-        $applicationIds = $inspections
-            ->pluck('zoning_application_id')
-            ->filter()
-            ->unique()
-            ->values();
+        $rounds = InspectionRoundNumbering::forInspections($inspections);
 
-        if ($applicationIds->isEmpty()) {
-            return [];
-        }
+        foreach ($inspections as $inspection) {
+            $round = $rounds[(int) $inspection->id] ?? null;
 
-        $rows = DB::table('site_inspections')
-            ->select('id', 'zoning_application_id')
-            ->whereIn('zoning_application_id', $applicationIds)
-            ->orderBy('zoning_application_id')
-            ->orderBy('id')
-            ->get();
+            if ($round === null) {
+                // No chain and no parcel: label it honestly and carry no number.
+                $inspection->round_number = null;
+                $inspection->round_kind = InspectionRoundNumbering::KIND_HISTORICAL;
+                $inspection->round_note = InspectionRoundNumbering::HISTORICAL_NOTE;
 
-        // Built with an explicit loop on purpose. Collecting this with
-        // flatMap()/collapse() renumbers integer keys, which silently replaced
-        // every inspection id with a positional index and gave two different
-        // inspections of the same application the same round number.
-        $rounds = [];
-
-        foreach ($rows->groupBy('zoning_application_id') as $group) {
-            $round = 0;
-
-            foreach ($group as $row) {
-                $rounds[$row->id] = ++$round;
+                continue;
             }
-        }
 
-        return $rounds;
+            $inspection->round_number = $round['round_number'];
+            $inspection->round_kind = $round['round_kind'];
+            $inspection->round_note = $round['note'];
+        }
+    }
+
+    /**
+     * Attach the locally provable display identity (status wording and the
+     * application reference). Split out of round identity so the two concerns
+     * cannot drift, and so round handling has exactly one entry point.
+     *
+     * @param  \Illuminate\Support\Collection<int, SiteInspection>  $inspections
+     */
+    private function attachDisplayIdentity($inspections): void
+    {
+        foreach ($inspections as $inspection) {
+            $inspection->display_status = $this->displayStatus((string) $inspection->status);
+            $inspection->display_reference = $inspection->zoningApplication?->reference_number
+                ?: ('Application #' . $inspection->zoning_application_id);
+        }
     }
 
     /**
@@ -270,16 +270,12 @@ class SiteInspectionController extends Controller
             'parcel',
         ])->findOrFail($id);
 
-        // Same per-application round identity as the list, so the detail page
-        // never has to infer it from the raw inspection id.
-        $rounds = $this->roundNumbersByApplication(collect([$inspection]));
-        $round = $rounds[$inspection->id] ?? 1;
-
-        $inspection->round_number = $round;
-        $inspection->round_kind = $round === 1 ? 'Original Inspection' : 'Reinspection';
-        $inspection->display_status = $this->displayStatus((string) $inspection->status);
-        $inspection->display_reference = $inspection->zoningApplication?->reference_number
-            ?: ('Application #' . $inspection->zoning_application_id);
+        // PHASE 2B2B: identical round identity to the list page. The helper
+        // re-reads the whole (application, parcel) chain from the database, so
+        // resolving a single row still yields its true position rather than
+        // always reporting Round 1.
+        $this->attachRoundIdentity(collect([$inspection]));
+        $this->attachDisplayIdentity(collect([$inspection]));
 
         return Inertia::render('Site Inspections/Show', [
             'inspection' => $inspection,
