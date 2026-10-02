@@ -58,19 +58,27 @@ class PullCompletedInspections extends Command
 
         $response = $supabase->select('field_jobs', $fields, $filters);
 
+        $response = $supabase->select('field_jobs', $fields, $filters);
+
         if ($response->failed()) {
             $this->error("Failed to connect to Supabase.");
-            return;
+            $this->line('SYNC_RESULT=FAILED');
+            return self::FAILURE;
         }
 
         $completedJobs = $response->json();
-        
+
         if (empty($completedJobs)) {
             $this->info("No new completed inspections found.");
-            return;
+            // Distinguishes "the bridge has no completed result for this round" from
+            // "the round was already current". A support action must be able to
+            // tell the operator which of the two actually happened.
+            $this->line('SYNC_RESULT=NO_REMOTE_RESULT');
+            return self::SUCCESS;
         }
 
         $syncedCount = 0;
+        $scannedCount = 0;
 
         foreach ($completedJobs as $job) {
             $localInspectionId = $job['local_inspection_id'] ?? null;
@@ -81,7 +89,7 @@ class PullCompletedInspections extends Command
             }
 
             // 2. Wrap local database updates in a transaction to prevent partial saves.
-            DB::transaction(function () use ($job, $localInspectionId, &$syncedCount) {
+            DB::transaction(function () use ($job, $localInspectionId, &$syncedCount, &$scannedCount) {
                 $localInspection = SiteInspection::find($localInspectionId);
 
                 if ($localInspection) {
@@ -109,18 +117,30 @@ class PullCompletedInspections extends Command
                         'completed_at'        => $localInspection->completed_at ?? now(),
                     ]);
 
+                    $scannedCount++;
+
+                    // HONESTY FIX: the old code incremented the synced count for every
+                    // row it merely SCANNED, whether or not anything was written, and
+                    // then reported "Successfully synced N inspections". A support
+                    // action that reports a change it did not make is worse than no
+                    // report at all. The count now reflects real writes only, and a
+                    // scan that changed nothing is reported as NO_CHANGE.
                     if ($localInspection->isDirty()) {
                         $localInspection->save();
+                        $syncedCount++;
                     }
-
-                    // Retain the completed Supabase records for FieldSync history and safe retries.
-                    $syncedCount++;
                 } else {
                     Log::warning("Supabase sync issue: Local inspection ID {$localInspectionId} not found.");
                 }
             });
         }
 
-        $this->info("Successfully synced {$syncedCount} inspections back to local database.");
+        $this->info("Successfully synced {$syncedCount} inspection(s) back to local database.");
+
+        $this->line(
+            $syncedCount > 0 ? 'SYNC_RESULT=CHANGED' : 'SYNC_RESULT=NO_CHANGE'
+        );
+
+        return self::SUCCESS;
     }
 }

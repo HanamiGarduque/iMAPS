@@ -125,6 +125,14 @@ export default function Show({ auth, inspection }) {
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
 
+    // PHASE 2A: the shared Inertia flash is how the scoped support action
+    // returns its honest outcome. The shared `flash` prop is global, but this
+    // page did not previously render it, so it is derived here explicitly.
+    const pageFlash = usePage().props?.flash;
+    const flash = pageFlash
+        ? { message: pageFlash.error || pageFlash.success, ok: !pageFlash.error }
+        : null;
+
     // Round identity for this inspection, scoped to its own application.
     //
     // The controller supplies round_number / round_kind for the LIST page. This
@@ -204,6 +212,7 @@ export default function Show({ auth, inspection }) {
 
     const [inspectionPhotos, setInspectionPhotos] = useState([]);
     const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
     // Full-size viewer state, plus per-thumbnail load failures so a dead image
     // reports itself instead of rendering as a browser broken-image icon.
@@ -478,6 +487,74 @@ export default function Show({ auth, inspection }) {
                                     </div>
                                 </div>
 
+
+                                {/* PHASE 2A: the controller returns honest, specific
+                                    feedback (changed / already current / no remote result /
+                                    failure) via the shared Inertia flash. This page did not
+                                    previously render flash at all, so without this banner the
+                                    outcome of a support action would be invisible. */}
+                                {flash?.message && (
+                                    <div
+                                        className={`px-6 py-2.5 text-xs font-medium border-b ${flash.ok ? "bg-emerald-50 text-emerald-900 border-emerald-200" : "bg-rose-50 text-rose-900 border-rose-200"}`}
+                                    >
+                                        {flash.message}
+                                    </div>
+                                )}
+                                {/* PHASE 2A - ADMIN SUPPORT / OPERATIONS AREA.
+                                    This is a SUPPORT action, not a business decision:
+                                    it imports a FieldSync result that already exists for
+                                    THIS ONE inspection round. It is deliberately placed
+                                    outside the Inspection Details tab so it cannot be
+                                    mistaken for ordinary record content, and it is
+                                    deliberately NOT labelled like a page refresh.
+                                    It cannot approve, decline, request a reinspection,
+                                    assign an inspector, schedule or create a round, or
+                                    edit findings - those remain Planning Officer /
+                                    FieldSync responsibilities. */}
+                                <div className="bg-slate-50/80 border-b border-slate-200/80 px-6 py-3 shrink-0">
+                                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                                        <div className="min-w-0">
+                                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                                Admin Support Actions
+                                            </p>
+                                            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed max-w-2xl">
+                                                Imports the latest <span className="font-semibold">completed</span> FieldSync
+                                                result for <span className="font-semibold">this inspection round only</span>{" "}
+                                                (INS-{ins.id || "-"}). It changes only this round, and only with
+                                                data FieldSync has already submitted. It does not approve,
+                                                decline, request a reinspection, reassign an inspector,
+                                                schedule a round, or edit findings.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            disabled={syncing}
+                                            onClick={() => {
+                                                if (
+                                                    !window.confirm(
+                                                        `Import the latest completed FieldSync result for Inspection ${ins.id}?\n\n` +
+                                                            "Only this inspection round can be changed. This is a " +
+                                                            "synchronization action, not an approval.",
+                                                    )
+                                                ) {
+                                                    return;
+                                                }
+                                                setSyncing(true);
+                                                router.post(
+                                                    `/site-inspections/${ins.id}/sync-from-fieldsync`,
+                                                );
+                                            }}
+                                            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-900 text-xs font-semibold hover:bg-amber-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
+                                            </svg>
+                                            <span>
+                                                {syncing ? "Syncing from FieldSync…" : "Sync from FieldSync"}
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
                                 <div className="flex-1 flex flex-col overflow-hidden">
                                     {/* ── Chrome-style Tab Bar ── */}
                                     <div className="bg-slate-50/80 border-b border-slate-200/80 px-5 pt-2 flex gap-1 shrink-0">

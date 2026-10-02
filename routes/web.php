@@ -104,8 +104,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/site-inspections', [\App\Http\Controllers\SiteInspectionController::class, 'index'])
         ->name('site-inspections.index')
         ->middleware('role:Admin');
-    Route::post('/site-inspections/sync', [\App\Http\Controllers\SiteInspectionController::class, 'forceSync'])
-        ->name('site-inspections.sync')
+    // PHASE 2A: the previous global `POST /site-inspections/sync` is REMOVED.
+    // It invoked `sync:pull-inspections` with no `--local-inspection-id`, so one
+    // click from the list could write EVERY completed inspection in the namespace,
+    // while its "Refresh Data" label implied a read. Manual support sync is now
+    // scoped to exactly one explicitly chosen inspection round and lives on the
+    // DETAIL page, beside the record it acts on.
+    Route::post('/site-inspections/{inspection}/sync-from-fieldsync', [\App\Http\Controllers\SiteInspectionController::class, 'syncOneFromFieldSync'])
+        ->name('site-inspections.sync-from-fieldsync')
         ->middleware('role:Admin');
     Route::get('/site-inspections/{id}', [\App\Http\Controllers\SiteInspectionController::class, 'show'])
         ->name('site-inspections.show')

@@ -357,18 +357,14 @@ export default function SiteInspectionsIndex() {
                                     </p>
                                 </div>
 
-                                <div className="flex items-center gap-2.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => router.post('/site-inspections/sync')}
-                                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-98 cursor-pointer"
-                                    >
-                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-                                        </svg>
-                                        <span>Refresh Data</span>
-                                    </button>
-                                </div>
+                                {/* PHASE 2A: the former global "Refresh Data" button is
+                                    REMOVED. It posted to an unscoped bulk reverse sync
+                                    (no --local-inspection-id) and its label implied a
+                                    read, so one click could write every completed
+                                    inspection in the namespace. Nothing on this list
+                                    performs a reverse sync now. Manual support sync is
+                                    scoped to a single round and lives on that round's
+                                    DETAIL page, beside the record it acts on. */}
                             </div>
 
                             {/* ── TABS & DATA CONTAINER ── */}
