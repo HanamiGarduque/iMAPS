@@ -167,6 +167,12 @@ export default function Show({ auth, inspection }) {
     const roundNote = ins.round_note || null;
     const isHistoricalRound = roundNumber === null && roundLabel === "Historical Inspection";
 
+    // PHASE 2B2C: server-resolved Planning Officer review visibility for THIS
+    // round. Read, never derived here - the browser cannot tell a decision that
+    // reviewed_site_inspection_id proves from parcel-level context, and must
+    // never imply one.
+    const review = usePage().props?.poReview || null;
+
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
 
@@ -586,6 +592,110 @@ export default function Show({ auth, inspection }) {
                                     </div>
                                 </div>
 
+
+                                {/* ── PLANNING OFFICER REVIEW ──
+                                    PHASE 2B2C, read-only visibility.
+                                    Deliberately a SEPARATE band above the field
+                                    record, never merged into the Field Inspection
+                                    Result: a Planning Officer decision and a field
+                                    finding are different workflow stages, and
+                                    merging them would imply an authority the Admin
+                                    does not have.
+
+                                    Two distinct things, never conflated:
+                                    - a DECISION FOR THIS INSPECTION, shown only
+                                      where reviewed_site_inspection_id proves this
+                                      exact round was judged. It is NULL on every
+                                      historical review, so today this renders
+                                      nothing - which is honest, not a gap.
+                                    - LATEST PARCEL REVIEW, which is context about
+                                      the LOT rather than a verdict on this round,
+                                      and says so.
+                                    Nothing here is an action: there is no
+                                    approve, decline, reinspect, assign or schedule
+                                    control, because those remain the Planning
+                                    Officer's. */}
+                                {review && (review.po_decision || review.parcel_review || review.round_decision_anomaly) && (
+                                    <div className="bg-white border-b border-slate-200/80 px-6 py-3 shrink-0">
+                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                            Planning Officer Review
+                                        </p>
+
+                                        {review.po_decision ? (
+                                            <div className="mt-2">
+                                                <p className="text-[10px] font-medium text-slate-500">
+                                                    Decision for this inspection
+                                                </p>
+                                                <p className="text-xs font-bold text-violet-800 mt-0.5">
+                                                    {review.po_decision}
+                                                </p>
+                                                <div className="flex flex-wrap gap-x-5 gap-y-1 mt-1.5">
+                                                    {review.po_decision_reviewer && (
+                                                        <p className="text-[11px] text-slate-600">
+                                                            <span className="text-slate-400 font-medium">Reviewed by:</span>{" "}
+                                                            {review.po_decision_reviewer}
+                                                        </p>
+                                                    )}
+                                                    {review.po_decision_date && (
+                                                        <p className="text-[11px] text-slate-600">
+                                                            <span className="text-slate-400 font-medium">Date:</span>{" "}
+                                                            {review.po_decision_date}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="mt-2">
+                                                <p className="text-[10px] font-medium text-slate-500">
+                                                    Latest Parcel Review
+                                                </p>
+                                                <p className="text-xs font-bold text-slate-800 mt-0.5">
+                                                    {review.parcel_review?.label}
+                                                </p>
+                                                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                    {review.parcel_review?.context}
+                                                </p>
+                                                <div className="flex flex-wrap gap-x-5 gap-y-1 mt-1.5">
+                                                    {review.parcel_review?.reviewer && (
+                                                        <p className="text-[11px] text-slate-600">
+                                                            <span className="text-slate-400 font-medium">Reviewed by:</span>{" "}
+                                                            {review.parcel_review.reviewer}
+                                                        </p>
+                                                    )}
+                                                    {review.parcel_review?.reviewed_at && (
+                                                        <p className="text-[11px] text-slate-600">
+                                                            <span className="text-slate-400 font-medium">Date:</span>{" "}
+                                                            {review.parcel_review.reviewed_at}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {review.round_decision_anomaly && (
+                                            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                                                <p className="text-[11px] font-semibold text-amber-900">
+                                                    Review linkage needs attention
+                                                </p>
+                                                <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                                                    {review.round_decision_anomaly.message}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                {review?.is_parcel_unknown && (
+                                    <div className="bg-white border-b border-slate-200/80 px-6 py-3 shrink-0">
+                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                            Planning Officer Review
+                                        </p>
+                                        <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                                            Not available. This inspection has no recorded parcel, so
+                                            there is no parcel whose Planning Officer review could be
+                                            shown. No review has been inferred for it.
+                                        </p>
+                                    </div>
+                                )}
 
                                 {/* Scoped sync OUTCOME. Set from the flash the controller already returns,
                                     so the server stays the single source of truth for the

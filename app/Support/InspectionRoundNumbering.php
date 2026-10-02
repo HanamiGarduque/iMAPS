@@ -209,6 +209,62 @@ final class InspectionRoundNumbering
     }
 
     /**
+     * The newest inspection id in each (application, parcel) chain, as
+     * `"{application}:{parcel}" => inspection id`.
+     *
+     * An inspection is the CURRENT round of its parcel exactly when it is that
+     * chain's head. This is what lets a page show compact per-parcel context
+     * once, on the newest card, instead of repeating it on every historical
+     * round of the same lot - repetition would read as though one decision
+     * applied to all of them.
+     *
+     * Reads the same chain as {@see forInspections()} and never includes a
+     * parcel-unknown row, because such a row belongs to no chain.
+     *
+     * @param  iterable<Model>  $inspections
+     * @param  (callable(array<int,int>): iterable)|null  $chainReader
+     * @return array<string, int>
+     */
+    public static function latestInspectionIdsByChain(
+        iterable $inspections,
+        ?callable $chainReader = null
+    ): array {
+        $applicationIds = [];
+
+        foreach ($inspections as $inspection) {
+            $applicationId = $inspection->zoning_application_id ?? null;
+
+            if ($applicationId !== null) {
+                $applicationIds[(int) $applicationId] = true;
+            }
+        }
+
+        if ($applicationIds === []) {
+            return [];
+        }
+
+        $reader = $chainReader ?? self::readChainFromDatabase(...);
+        $heads = [];
+
+        foreach ($reader(array_keys($applicationIds)) as $row) {
+            $parcelId = $row->parcel_id ?? null;
+
+            if ($parcelId === null) {
+                continue;
+            }
+
+            $key = $row->zoning_application_id . ':' . $parcelId;
+            $id = (int) $row->id;
+
+            if (! isset($heads[$key]) || $id > $heads[$key]) {
+                $heads[$key] = $id;
+            }
+        }
+
+        return $heads;
+    }
+
+    /**
      * Read every chain row for the given applications.
      *
      * NULL-parcel rows are excluded by the query itself, so the database - not

@@ -7,6 +7,7 @@ use Inertia\Inertia;
 use App\Models\SiteInspection;
 use App\Support\InspectionOperationsSummary;
 use App\Support\InspectionRoundNumbering;
+use App\Support\InspectionReviewVisibility;
 use App\Models\AppNotification;
 use Illuminate\Support\Facades\Artisan;
 
@@ -70,6 +71,11 @@ class SiteInspectionController extends Controller
         return Inertia::render('Site Inspections/Index', [
             'pendingInspections' => $pendingInspections,
             'completedInspections' => $completedInspections,
+            // PHASE 2B2C: read-only Planning Officer review visibility, resolved
+            // in bulk. A round-specific decision appears only where
+            // reviewed_site_inspection_id proves it; parcel-level context is
+            // shown once per parcel chain, on the newest round only.
+            'poReview' => InspectionReviewVisibility::summarize($all),
             // PHASE 2B1: read-only operations enrichment + page counters.
             'operations' => $this->enrichForOperationsOverview($all),
             'counters' => $this->summary->counters($all),
@@ -277,8 +283,12 @@ class SiteInspectionController extends Controller
         $this->attachRoundIdentity(collect([$inspection]));
         $this->attachDisplayIdentity(collect([$inspection]));
 
+        // PHASE 2B2C: read-only Planning Officer review visibility for THIS round.
+        $poReview = InspectionReviewVisibility::summarize(collect([$inspection]));
+
         return Inertia::render('Site Inspections/Show', [
             'inspection' => $inspection,
+            'poReview' => $poReview[(int) $inspection->id] ?? null,
         ]);
     }
 }

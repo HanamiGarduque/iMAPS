@@ -8,12 +8,12 @@ import { detailUrlFromFolder } from "@/Components/folderOrigin";
 
 
 const ROSARIO_BARANGAYS = [
-    "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
-    "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", 
-    "Macalamcam A", "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", 
-    "Mayuro", "Namuco", "Namunga", "Natu", "Nasi", "Palacpac", "Pinagsibaan", "Poblacion A", 
-    "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", 
-    "San Carlos", "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan", 
+    "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam",
+    "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga",
+    "Macalamcam A", "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor",
+    "Mayuro", "Namuco", "Namunga", "Natu", "Nasi", "Palacpac", "Pinagsibaan", "Poblacion A",
+    "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao",
+    "San Carlos", "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan",
     "Tiquiwan", "Tulos"
 ];
 
@@ -39,7 +39,7 @@ const STATUS_OPTIONS = [
 ];
 
 export default function SiteInspectionsIndex() {
-    const { auth, pendingInspections = [], completedInspections = [], operations = {}, counters = null, flash = {} } = usePage().props;
+    const { auth, pendingInspections = [], completedInspections = [], operations = {}, poReview = {}, counters = null, flash = {} } = usePage().props;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
     // The open applicant folder is read from the URL, not held only in state, so
@@ -68,13 +68,13 @@ export default function SiteInspectionsIndex() {
     const [searchInput, setSearchInput] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
-    
+
     const [selectedStatus, setSelectedStatus] = useState("");
     const [selectedCategory, setSelectedCategory] = useState(""); // Keeping this just in case, user snippet has it
     const [selectedLandUse, setSelectedLandUse] = useState(""); // Keeping this just in case, user snippet has it
     const [selectedBarangay, setSelectedBarangay] = useState("");
     const [selectedSort, setSelectedSort] = useState("newest");
-    
+
     const [dateFilterOpen, setDateFilterOpen] = useState(false);
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
@@ -91,7 +91,7 @@ export default function SiteInspectionsIndex() {
     }, [searchInput]);
 
     const hasActiveFilters = Boolean(
-        debouncedSearch || selectedStatus || selectedCategory || selectedLandUse || selectedBarangay || 
+        debouncedSearch || selectedStatus || selectedCategory || selectedLandUse || selectedBarangay ||
         selectedSort !== "newest" || dateFrom || dateTo || dateRangePreset !== "all"
     );
 
@@ -139,7 +139,7 @@ export default function SiteInspectionsIndex() {
                 break;
         }
     };
-    
+
     const formatDate = (dateString) => {
         if (!dateString) return "";
         return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -156,7 +156,7 @@ export default function SiteInspectionsIndex() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    
+
     useEffect(() => {
         if (flash?.success) {
             Swal.fire({
@@ -227,18 +227,18 @@ export default function SiteInspectionsIndex() {
 
     const filteredInspections = React.useMemo(() => {
         let items = allInspections;
-        
+
         if (selectedStatus) {
             items = items.filter(i => String(i.status || "").toLowerCase() === selectedStatus.toLowerCase());
         }
-        
+
         if (selectedBarangay) {
             items = items.filter(i => {
                 const brgy = (i.zoning_application?.project_location || i.zoning_application?.barangay || i.barangay || "");
                 return String(brgy).toLowerCase().includes(selectedBarangay.toLowerCase());
             });
         }
-        
+
         if (debouncedSearch) {
             const q = debouncedSearch.toLowerCase();
             items = items.filter(i => {
@@ -249,7 +249,7 @@ export default function SiteInspectionsIndex() {
                 return matchName || matchCorp || matchRef;
             });
         }
-        
+
         if (dateFrom) {
              items = items.filter(i => {
                  const itemDate = new Date(i.created_at).toISOString().split("T")[0];
@@ -303,7 +303,7 @@ export default function SiteInspectionsIndex() {
 
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-                
+
                 #site-inspections-page-root {
                     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
                 }
@@ -318,12 +318,12 @@ export default function SiteInspectionsIndex() {
             `}</style>
 
             <div id="site-inspections-page-root" className="bg-slate-50/75 text-slate-800 h-screen flex flex-col overflow-hidden antialiased">
-                <Header 
-                    userName={auth?.user?.name || 'Staff Member'} 
-                    userRole={auth?.user?.role || 'Planning Officer'} 
-                    clock={clock} 
+                <Header
+                    userName={auth?.user?.name || 'Staff Member'}
+                    userRole={auth?.user?.role || 'Planning Officer'}
+                    clock={clock}
                     sidebarOpen={sidebarOpen}
-                    setSidebarOpen={setSidebarOpen} 
+                    setSidebarOpen={setSidebarOpen}
                     onLogout={handleLogout}
                     activePage="Site Inspections"
                 />
@@ -599,21 +599,21 @@ export default function SiteInspectionsIndex() {
                                         </div>
                                     )}
                                 </div>
-                                
 
-                                
+
+
 
                                 {/* ── DATA SECTION ── */}
                                 <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden flex flex-col flex-1 min-h-0 relative z-0">
-                                    
+
                                     <div className="flex-1 overflow-y-auto relative bg-slate-50/40">
                                         <div className="absolute inset-0 opacity-[0.025] bg-[radial-gradient(#000_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none"></div>
                                         <div className="p-6 sm:p-8 relative z-10 h-full flex flex-col">
                                             {selectedFolder ? (
                                                 <>
                                                     <div className="flex items-center gap-3 mb-8">
-                                                        <button 
-                                                            type="button" 
+                                                        <button
+                                                            type="button"
                                                             onClick={() => setSelectedFolder(null)}
                                                             className="flex items-center justify-center w-8 h-8 bg-white border border-slate-200/80 rounded-full hover:bg-slate-50 text-slate-500 hover:text-blue-600 shadow-sm transition-all ring-1 ring-black/[0.02]"
                                                         >
@@ -636,7 +636,13 @@ export default function SiteInspectionsIndex() {
                                         status promoted to a real badge, and the INS id given
                                         a legible size. Decorative gradients are unchanged. */}
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                                        {(folderGroups[selectedFolder] || []).map((item, idx) => (
+                                                        {(folderGroups[selectedFolder] || []).map((item, idx) => {
+                                                            // PHASE 2B2C: server-resolved review visibility for this
+                                                            // round. Read, never computed here - the browser cannot
+                                                            // tell a round decision from parcel-level context.
+                                                            const review = poReview?.[item.id] || null;
+
+                                                            return (
                                                             <div
                                                                 key={idx}
                                                                 className="group flex items-start gap-3 p-3 rounded-xl transition-all cursor-pointer bg-white/70 hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-200/70 hover:border-blue-200"
@@ -724,16 +730,34 @@ export default function SiteInspectionsIndex() {
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                    {/* PO decision appears ONLY when the database proves
-                                                                        this round is the one that was reviewed. With
-                                                                        reviewed_site_inspection_id NULL on the existing
-                                                                        reviews, this renders nothing - which is
-                                                                        honest, not a gap. */}
-                                                                    {operations?.[item.id]?.po_decision && (
-                                                                        <span className="text-[10px] font-semibold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded">
-                                                                            PO: {operations?.[item.id]?.po_decision}
+                                                                    {/* PHASE 2B2C - Planning Officer review visibility.
+                                                                        A ROUND-SPECIFIC decision appears only where
+                                                                        reviewed_site_inspection_id proves this exact
+                                                                        round was judged. That column is NULL on
+                                                                        every existing review, so this renders nothing
+                                                                        today - honest, not a gap.
+
+                                                                        PARCEL-LEVEL context is labelled as such and
+                                                                        shown only on the NEWEST round of the parcel's
+                                                                        chain, so one review is never repeated across
+                                                                        every historical card of the same lot - which
+                                                                        would read as though it applied to all. */}
+                                                                    {review?.po_decision && (
+                                                                        <span className="text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded">
+                                                                            PO Decision: {review.po_decision}
                                                                         </span>
                                                                     )}
+                                                                    {!review?.po_decision
+                                                                        && review?.is_current_round
+                                                                        && review?.parcel_review && (
+                                                                            <span
+                                                                                className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded"
+                                                                                title={review.parcel_review.context}
+                                                                            >
+                                                                                Latest Parcel Review:{" "}
+                                                                                {review.parcel_review.label}
+                                                                            </span>
+                                                                        )}
                                                                     <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
                                                                         <span className="text-[11px] text-slate-500 font-medium">
                                                                             {(() => {
@@ -762,7 +786,8 @@ export default function SiteInspectionsIndex() {
                                                                     </div>
                                                                 </div>
                                                                 </div>
-                                                        ))}
+                                                        );
+                                                        })}
                                                     </div>
                                                 </>
                                             ) : (
@@ -809,9 +834,9 @@ export default function SiteInspectionsIndex() {
                                             )}
                                         </div>
                                     </div>
-                                
-                            
-                        
+
+
+
 </div>
 </div>
 </div>
