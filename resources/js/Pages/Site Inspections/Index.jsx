@@ -610,11 +610,22 @@ export default function SiteInspectionsIndex() {
                                                             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">{(folderGroups[selectedFolder] || []).length} Inspection{(folderGroups[selectedFolder] || []).length !== 1 ? 's' : ''}</p>
                                                         </div>
                                                     </div>
-                                                    <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
+                                                    {/* INSPECTION ENTRIES INSIDE AN OPEN FOLDER.
+                                                        These were an 8-column icon-first grid at large
+                                                        viewports, which left roughly 110px of content
+                                                        width beside a 72px drop-shadowed icon and forced
+                                                        `line-clamp-1` onto the application reference, so
+                                        APP-2026-00030 rendered as "APP-2026-…". Identity data
+                                                        was also smaller and lighter than the decoration.
+                                        Now a left-aligned info-card: fewer, wider columns, a
+                                        proportionally smaller icon, the reference allowed to wrap,
+                                        status promoted to a real badge, and the INS id given
+                                        a legible size. Decorative gradients are unchanged. */}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                                         {(folderGroups[selectedFolder] || []).map((item, idx) => (
                                                             <div
                                                                 key={idx}
-                                                                className="group flex flex-col items-center p-3 rounded-2xl transition-all cursor-pointer hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 border border-transparent hover:border-slate-200/60"
+                                                                className="group flex items-start gap-3 p-3 rounded-xl transition-all cursor-pointer bg-white/70 hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-200/70 hover:border-blue-200"
                                                                 onClick={() => {
                                                                     router.visit(
                                                                         detailUrlFromFolder(
@@ -626,8 +637,8 @@ export default function SiteInspectionsIndex() {
                                                                     );
                                                                 }}
                                                             >
-                                                                <div className="relative mb-3 transition-transform duration-300 text-slate-300 group-hover:text-blue-500">
-                                                                    <svg width="72" height="72" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-md text-blue-500 group-hover:drop-shadow-lg transition-all duration-300">
+                                                                <div className="relative shrink-0 text-slate-300 group-hover:text-blue-500">
+                                                                    <svg width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm transition-all duration-300">
                                                                         <path d="M22 14C22 10.6863 24.6863 8 28 8H60L82 30V86C82 89.3137 79.3137 92 76 92H28C24.6863 92 22 89.3137 22 86V14Z" fill="url(#doc-base)"/>
                                                                         <path d="M60 8V24C60 27.3137 62.6863 30 66 30H82L60 8Z" fill="url(#doc-fold)"/>
                                                                         <rect x="34" y="44" width="32" height="5" rx="2.5" fill="#CBD5E1"/>
@@ -651,31 +662,41 @@ export default function SiteInspectionsIndex() {
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                <span className="text-[12px] font-bold text-slate-700 leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
-                                                                    {item.display_reference || `Application #${item.zoning_application_id}`}
-                                                                </span>
-                                                                {/* Round identity is scoped to the application, not the
-                                                                    applicant and not the raw id, and the status wording
-                                                                    is limited to what the local row can prove. */}
-                                                                <span className="text-[10px] font-semibold text-slate-600 mt-1 leading-tight">
-                                                                    {item.round_number ? `Round ${item.round_number} · ` : ""}{item.round_kind || "Inspection"}
-                                                                </span>
-                                                                <span className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${item.display_status === "Completed" ? "text-emerald-600" : "text-amber-600"}`}>
-                                                                    {item.display_status || "Assigned"}
-                                                                </span>
-                                                                <span className="text-[10px] text-slate-400 font-medium mt-1">
-                                                                    {(() => {
-                                                                        // Locally provable dates only: when the inspection
-                                                                        // came back, otherwise when it was scheduled.
-                                                                        const stamp = item.submitted_at || item.completed_at || item.scheduled_date;
-                                                                        return stamp
-                                                                            ? new Date(stamp).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})
-                                                                            : "—";
-                                                                    })()}
-                                                                </span>
-                                                                {/* The internal record id stays available, but only as a
-                                                                    quiet secondary reference rather than the identity. */}
-                                                                <span className="text-[9px] font-mono text-slate-300 mt-0.5">INS-{item.id}</span>
+                                                                {/* Identity is left-aligned and allowed to wrap. The
+                                                                    reference is the primary identifier, so it is
+                                                                    never clamped: a truncated application
+                                                                    reference is not an acceptable rendering of
+                                                                    a unique key. */}
+                                                                <div className="min-w-0 flex-1 flex flex-col items-start gap-0.5">
+                                                                    <span className="text-[13px] font-bold text-slate-800 leading-snug break-words group-hover:text-blue-700 transition-colors">
+                                                                        {item.display_reference || `Application #${item.zoning_application_id}`}
+                                                                    </span>
+                                                                    {/* Round identity is scoped to the application, not the
+                                                                        applicant and not the raw id, and the status wording
+                                                                        is limited to what the local row can prove. */}
+                                                                    <span className="text-[11px] font-semibold text-slate-600 leading-tight">
+                                                                        {item.round_number ? `Round ${item.round_number} · ` : ""}{item.round_kind || "Inspection"}
+                                                                    </span>
+                                                                    <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${item.display_status === "Completed" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                                                                        {item.display_status || "Assigned"}
+                                                                    </span>
+                                                                    <div className="flex items-baseline gap-2 mt-0.5">
+                                                                        <span className="text-[11px] text-slate-500 font-medium">
+                                                                            {(() => {
+                                                                                // Locally provable dates only: when the inspection
+                                                                                // came back, otherwise when it was scheduled.
+                                                                                const stamp = item.submitted_at || item.completed_at || item.scheduled_date;
+                                                                                return stamp
+                                                                                    ? new Date(stamp).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})
+                                                                                    : "—";
+                                                                            })()}
+                                                                        </span>
+                                                                        {/* The internal record id stays available as a quiet
+                                                                            secondary reference, but it must remain
+                                                                            legible rather than near-invisible. */}
+                                                                        <span className="text-[10px] font-mono text-slate-400">INS-{item.id}</span>
+                                                                    </div>
+                                                                </div>
                                                             </div>
                                                         ))}
                                                     </div>
