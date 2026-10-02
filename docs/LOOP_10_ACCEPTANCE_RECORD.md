@@ -526,164 +526,229 @@ precondition for acceptance, never a substitute for it.
 
 ---
 
-## 2. CHECKPOINT NUMBERING â€” CONFLICT FLAGGED, NOT SILENTLY RESOLVED
+## 2. CHECKPOINT NUMBERING — LOCKED TO THE HISTORICAL CANONICAL SEQUENCE
 
-**The numbering in this handoff differs from the earlier acceptance record, and
-that difference must be ratified before anyone works from a printout.**
+**CP1–CP13 are historical acceptance identifiers and they are canonical. They are
+not renumbered.** A FieldSync workflow step is a *different kind of thing* from a
+Loop 10 checkpoint, and conflating the two is the specific error this section
+exists to prevent.
 
-| Step in FieldSync | This handoff | Earlier record (`LOOP_10_ACCEPTANCE_RECORD.md` STATUS table) |
-|---|---|---|
-| GPS verification | **CP7** | CP7 confirmed GPS |
-| offline / reconnect | **CP8** | CP8 offline continuation + reconnect |
-| Photos | **CP9** | *not a separate checkpoint* |
-| Checklist | **CP10** | *not a separate checkpoint* |
-| Findings | **CP11** | *not a separate checkpoint* |
-| Review & submit | **CP12** | **CP9** Final Submit |
-| iMAPS reverse sync | *(between CP12 and CP13)* | **CP10** reverse sync into iMAPS |
-| PO technical review | *(between CP12 and CP13)* | *not a separate checkpoint* |
-| Requires Reinspection â†’ new round â†’ delivery â†’ visibility | **CP13** | **CP11** decision / **CP12** Round 2 assignment / **CP13** Round 2 delivery |
+### The two concepts
 
-This handoff follows the sequence given for this freeze, because it matches
-FieldSync's actual six-step flow â€” **Site verification, GPS verification,
-Photos, Checklist, Findings, Review & submit** â€” and keeps photos, checklist and
-findings as separately provable checkpoints instead of folding them into a single
-submit.
+- A **FieldSync Step** is one screen in the app's six-step inspection workflow.
+- A **Loop 10 CP** is a historical acceptance identifier, fixed when the loop was
+  written, and stable thereafter.
 
-**The older labels remain the ones printed in the record's STATUS table.** A team
-reading "CP9" from the old table would look for Final Submit; under this handoff
-CP9 is Photos. **Confirm which numbering the onsite printout uses before
-starting.** Nothing below is renumbered in place in the record, so the two
-coexist and the discrepancy is visible rather than buried.
+One acceptance checkpoint may contain several FieldSync steps, and one FieldSync
+step may be a precondition of a checkpoint rather than the checkpoint itself. So
+**FieldSync Step 3 = Photos does not mean Loop 10 CP9 = Photos.** FieldSync
+Steps 3, 4, 5 and 6 are all **subchecks of CP8**, not CP9 through CP12.
+
+### CROSSWALK — app workflow versus Loop 10 acceptance
+
+| APP WORKFLOW | LOOP 10 ACCEPTANCE |
+|---|---|
+| GPS Verification | **CP7** |
+| Offline / resume | **CP8** |
+| Photos | **CP8 subcheck** (FieldSync Step 3) |
+| Checklist | **CP8 subcheck** (FieldSync Step 4) |
+| Findings | **CP8 subcheck** (FieldSync Step 5) |
+| Review screen | **CP8 subcheck** (FieldSync Step 6) |
+| Final Submit | **CP9** |
+| Reverse Sync | **CP10** |
+| Requires Reinspection | **CP11** |
+| Round 2 Assignment | **CP12** |
+| Round 2 Delivery | **CP13** |
+
+### Locked labels
+
+| CP | Label |
+|---|---|
+| CP7 | Successful onsite GPS / proximity acceptance |
+| CP8 | Field execution + offline/reconnect acceptance |
+| CP9 | Final Submit |
+| CP10 | Reverse Sync to iMAPS |
+| CP11 | Planning Officer — Requires Reinspection |
+| CP12 | Round 2 Assignment |
+| CP13 | Round 2 Delivery / FieldSync visibility |
+
+*Historical note: an earlier draft of this handoff promoted FieldSync Steps 3–6
+into CP9–CP12. That was rejected and corrected before onsite use. The canonical
+STATUS table above was never renumbered.*
 
 ---
 
 ## 3. ONSITE EXECUTION ORDER
 
-**Do not collapse checkpoints.** Each one is verified in three systems before the
-next begins. FieldSync owns steps 1â€“6; the PO technical review happens in iMAPS.
+**Do not collapse checkpoints.** Each is verified in all three systems before the
+next begins. FieldSync owns Steps 1–6; the Planning Officer acts in iMAPS.
 
-### CP7 â€” GPS verification succeeds inside the real allowed radius
+**Step 0 — Reconfirm the frozen fixture.** Before any device action, confirm the
+section 1 baseline still holds: `APP-2026-00030`, inspection **41**, job
+`1f9df2ac-…`, `status in_progress`, `current_step 1`, all four GPS columns NULL,
+`submitted_at` NULL. Create nothing. If any of it has moved, **STOP** and escalate
+rather than continuing on a drifted fixture.
 
-- **User action:** On site at San Carlos, open the task, reach Step 2 *GPS
-  verification*, and confirm the location.
-- **FieldSync:** button becomes enabled; reading shows distance well under 30 m;
-  after confirm, the step completes and the app advances.
-- **Supabase:** `field_jobs` for `1f9df2ac-â€¦` gains non-NULL
+### CP7 — Successful onsite GPS / proximity acceptance
+
+- **User action:** On site at San Carlos parcel 77, open the task, reach
+  *GPS verification* and confirm the location.
+- **FieldSync:** the control enables only inside the radius; after confirming the
+  step completes and the app advances.
+- **Supabase:** `field_jobs` for `1f9df2ac-…` gains non-NULL
   `confirmed_latitude`, `confirmed_longitude`, `gps_accuracy_m`,
-  `gps_confirmed_at`; `step_timestamps` gains key `"2"`; `status` still
-  `in_progress`; `submitted_at` still `NULL`.
-- **iMAPS:** **unchanged.** GPS is a FieldSync-owned property; local
-  `site_inspections` 41 keeps all four GPS columns `NULL` until a completed round
-  is pulled.
-- **Evidence:** screenshot of the reading showing distance **and** accuracy;
-  screenshot of the post-confirm state; the four remote values with timestamps.
-- **STOP before CP8** unless: distance genuinely under 30 m, the four GPS
-  columns are non-NULL, `current_step` advanced, and `submitted_at` is still NULL.
+  `gps_confirmed_at`; `step_timestamps` gains key `"2"`; `status` stays
+  `in_progress`; `submitted_at` stays `NULL`.
+- **iMAPS:** unchanged — GPS is FieldSync-owned and the local round keeps all four
+  columns NULL until a completed round is pulled.
+- **Evidence:** screenshot showing **distance and accuracy**; post-confirm screen;
+  the four remote values with timestamps.
+- **STOP before CP8** unless: distance genuinely under 30 m, all four GPS columns
+  non-NULL, `current_step` advanced, `submitted_at` still NULL.
 
-### CP8 â€” offline continuation and reconnect
+### CP8 — Field execution + offline/reconnect acceptance
 
-- **User action:** enable airplane mode mid-inspection, continue working through
-  Steps 3â€“5, then restore connectivity and let the outbox drain.
-- **FieldSync:** steps continue to complete offline with no data loss; a queued /
-  pending-sync indicator is visible; after reconnect the indicator clears.
-- **Supabase:** nothing required *during* the offline window. After reconnect the
-  outbox applies the queued work; `field_jobs` reflects completed steps.
-- **iMAPS:** unchanged.
-- **Evidence:** screenshot of the offline/pending state; screenshot of the
-  post-reconnect cleared state; proof that a value typed offline survived.
-- **STOP before CP9** unless: work done offline is still present after reconnect,
-  and the pending indicator cleared without a manual refresh trick.
+CP8 is **one** checkpoint covering field execution, and it carries four
+subchecks. **These are FieldSync Steps, not CP numbers.** Each subcheck keeps its
+own evidence and its own stop condition.
 
-### CP9 â€” real photographic evidence
+#### CP8 subcheck A — FieldSync Step 3, Photographic Evidence
 
-- **User action:** complete Step 3 *Photos* with genuine on-site photographs.
+- **User action:** complete *Photos* with genuine on-site photographs.
 - **FieldSync:** photos attach to **this** job only; count rises from 0.
-- **Supabase:** `field_jobs.photo_count` > 0, `photo_paths` populated;
-  `field_job_photos` rows exist for `1f9df2ac-â€¦` with real coordinates.
+- **Supabase:** `photo_count` > 0, `photo_paths` populated, `field_job_photos`
+  rows exist for `1f9df2ac-…` with real coordinates.
 - **iMAPS:** unchanged.
-- **Evidence:** screenshot of the photo grid; confirmation of photo count.
-  **Do not photograph any screen containing a token, PIN, credential or key.**
-- **STOP before CP10** unless: photo count > 0 remotely and the photos belong to
-  this job.
+- **Evidence:** photo grid screenshot; photo count; confirmation the photos
+  belong to this job. **Never photograph a screen containing a token, PIN,
+  credential or key.**
+- **Subcheck stop:** photo count > 0 remotely, and no photo belongs to another
+  task.
 
-### CP10 â€” checklist
+#### CP8 subcheck B — FieldSync Step 4, Checklist
 
-- **User action:** complete Step 4 *Checklist* item by item.
-- **FieldSync:** every checklist item toggles and persists; no item resets on
-  navigating away and back.
-- **Supabase:** `checklist_completed_count` / `checklist_total_count` reflect
-  real progress; `checklist_data` present and matching what was ticked.
+- **User action:** complete *Checklist* item by item.
+- **FieldSync:** every item toggles and persists; nothing resets on navigating
+  away and back.
+- **Supabase:** checklist counts reflect real progress and `checklist_data`
+  matches what was ticked.
 - **iMAPS:** unchanged.
-- **Evidence:** screenshot of a partially completed checklist **and** of the
-  completed checklist; remote counts alongside.
-- **STOP before CP11** unless: counts are consistent and no item silently
-  reverted.
+- **Evidence:** partially completed checklist **and** completed checklist;
+  remote counts alongside.
+- **Subcheck stop:** counts consistent, no item silently reverted, and no
+  cross-contamination from another task.
 
-### CP11 â€” field findings
+#### CP8 subcheck C — FieldSync Step 5, Findings
 
-- **User action:** complete Step 5 *Findings* â€” findings, observations,
-  discrepancies, recommendations, inspector notes, and the compliance verdict.
+- **User action:** complete *Findings* — findings, observations, discrepancies,
+  recommendations, inspector notes and the compliance verdict.
 - **FieldSync:** entries persist per step; nothing bleeds into another step or
   another task.
-- **Supabase:** `field_job.findings`, `observations`, `discrepancies`,
-  `recommendations`, `inspector_notes`, `is_compliant` populated with exactly
-  what was entered.
+- **Supabase:** `findings`, `observations`, `discrepancies`, `recommendations`,
+  `inspector_notes`, `is_compliant` populated with exactly what was entered.
 - **iMAPS:** unchanged.
-- **Evidence:** screenshots of the findings entries before and after navigating
-  away and back; remote values.
-- **STOP before CP12** unless: every entered field round-trips unchanged.
+- **Evidence:** findings entries before and after navigating away and back;
+  remote values.
+- **Subcheck stop:** every entered field round-trips unchanged.
 
-### CP12 â€” Review & submit
+#### CP8 subcheck D — FieldSync Step 6, Review screen / pre-submit validation
 
-- **User action:** review on Step 6 *Review & submit* and submit.
-- **FieldSync:** submission is accepted; the task reads Completed.
-- **Supabase:** `status` â†’ `completed`, `current_step` â†’ `6`, `submitted_at` set
-  to a real timestamp. **All prior evidence must still be present** â€” photos,
+- **User action:** review on the final step and confirm the pre-submit summary is
+  complete and correct. **Do not submit yet** — submission is CP9.
+- **FieldSync:** the review screen shows every prior step's captured value, with
+  nothing missing or blank.
+- **Supabase:** unchanged by the review screen itself.
+- **iMAPS:** unchanged.
+- **Evidence:** screenshot of the complete review summary, one shot per
+  sub-section so each is legible.
+- **Subcheck stop:** the review screen shows all of photos, checklist, findings
+  and GPS as present. If anything is missing, **stop here** — do not submit a
+  partial inspection.
+
+#### CP8 offline / reconnect behaviour
+
+- **User action:** enable airplane mode partway through field execution, continue
+  working, then restore connectivity and let the outbox drain.
+- **FieldSync:** work continues offline with no data loss; a pending-sync
+  indicator is visible; after reconnect it clears.
+- **Supabase:** nothing required during the offline window; after reconnect the
+  outbox applies the queued work.
+- **iMAPS:** unchanged.
+- **Evidence:** offline/pending indicator; a value typed while offline, still
+  present afterwards; post-reconnect cleared indicator.
+- **STOP before CP9** unless: all four subchecks passed **and** offline work
+  survived the reconnect.
+
+### CP9 — Final Submit
+
+- **User action:** submit the completed inspection.
+- **FieldSync:** submission accepted; the task reads **Completed**.
+- **Supabase:** `status` → `completed`, `current_step` → `6`, `submitted_at` set
+  to a real timestamp, and **all prior evidence still present** — photos,
   checklist, findings, GPS, `step_timestamps`.
-- **iMAPS:** **not yet** â€” the local round stays as-is until the reverse sync.
-- **Evidence:** screenshot of the Completed state showing step 6/6; the remote
-  `status` / `current_step` / `submitted_at`; a re-read of every evidence column.
-- **STOP before the reverse sync** unless: `status = completed`,
-  `current_step = 6`, `submitted_at` non-NULL, and **no evidence column was
-  cleared**. `trg_preserve_completed_field_job_lifecycle` should make Completed
-  non-revertible.
+- **iMAPS:** not yet — the local round stays as-is until CP10.
+- **Evidence:** Completed state showing step 6/6; remote `status`,
+  `current_step`, `submitted_at`; a re-read of every evidence column.
+- **STOP before CP10** unless: `status = completed`, `current_step = 6`,
+  `submitted_at` non-NULL, and **no evidence column was cleared**. Completed must
+  remain Completed.
 
-### Between CP12 and CP13 â€” iMAPS reverse sync, then PO technical review
+### CP10 — Reverse Sync to iMAPS
 
-- **User action:** Planning Officer runs the reverse sync **scoped to this
-  inspection**, then opens the application and files a technical review.
-- **iMAPS after sync:** `site_inspections` **41** alone reflects completion â€”
-  status completed, `completed_at` and `submitted_at` populated, findings and
-  results carried across, `delivery_status` unchanged. **No other round moves.**
+- **User action:** Planning Officer runs the reverse sync, scoped to this
+  inspection.
+- **iMAPS:** `site_inspections` **41 alone** reflects completion — status
+  completed, `completed_at` and `submitted_at` populated, findings carried across,
+  `delivery_status` unchanged. **No other inspection mutated.**
 - **FieldSync / Supabase:** unchanged by the sync.
-- **Review decision:** the PO records a technical review. `Requires Reinspection`
-  must **create a new round** and leave the completed Round 1 intact.
-- **Evidence:** the sync command output showing the scoped target; before/after
-  state of inspection 41; a count of rounds for application 145 before and after
-  the decision; the review row with its `review_round`.
-- **STOP before CP13** unless: sync touched inspection 41 and nothing else, and
-  Round 1 is still intact and still Completed.
+- **Evidence:** sync output showing the scoped target; inspection 41 before and
+  after; explicit confirmation no other round moved.
+- **STOP before CP11** unless: the sync touched inspection 41 and nothing else,
+  and Round 1 is still intact.
 
-### CP13 â€” Requires Reinspection: new round, assignment, delivery, visibility
+### CP11 — Planning Officer selects Requires Reinspection
 
-- **User action:** PO files *Requires Reinspection* with assignment instructions,
-  scheduled and deadline dates, and the inspector; the resulting task must appear
-  on the inspector's device.
+- **User action:** the PO files a technical review with the *Requires Reinspection*
+  decision, with assignment instructions and dates.
 - **iMAPS:** a **new** `site_inspections` row for application 145 with
-  `id != 41`, `status assigned`, `reviewed_site_inspection_id = 41`, a fresh
-  `delivery_status`; Round 1 unchanged and still completed.
-- **Supabase:** a **new** `field_jobs` row for the new round with a **new UUID**,
-  `bridge_source_id = rosario-imaps-local-0921-a`, its own
-  `local_inspection_id`, `assigned_inspector_id` = the newly chosen inspector,
-  `status` `assigned` / not in progress, all GPS columns NULL, `submitted_at`
-  NULL. **Total `field_jobs` goes 16 â†’ 17**, and 17 distinct local ids.
-- **FieldSync:** the new task is visible **on the new inspector's device only**,
-  showing the right application, round and instructions.
-- **Evidence:** new inspection id **and its UUID**; both `field_jobs` rows
-  side by side proving distinct UUIDs; FieldSync dashboard for the new
-  inspector; confirmation Round 1 is still Completed.
-- **STOP immediately** unless: the new round exists, Round 1 was not modified,
-  no duplicate job appeared, and the new task is on the right device.
+  `id != 41`, `reviewed_site_inspection_id = 41`, `status assigned`. The completed
+  Round 1 is **preserved and unmodified**.
+- **FieldSync / Supabase:** unchanged at this instant — the new round is not
+  assigned or delivered yet.
+- **Evidence:** the review row with its `review_round`; the new inspection id;
+  explicit proof Round 1 is untouched and still Completed.
+- **STOP before CP12** unless: a new round exists, `reviewed_site_inspection_id`
+  points at 41, and Round 1 was not modified.
+
+### CP12 — Round 2 Assignment
+
+- **User action:** the PO assigns the **new** Round 2 inspection to an inspector.
+- **iMAPS:** the new inspection gains its inspector and provenance — an initial
+  assignment, **not** a transfer, so no handover reason. Round 1 unchanged.
+- **FieldSync / Supabase:** not yet delivered; CP13 covers that.
+- **Evidence:** the new inspection id, its inspector, and the provenance row
+  (`assignment_type = initial`, `from_planning_officer_id` NULL,
+  `reason` NULL); Round 1 still Completed.
+- **STOP before CP13** unless: the new round has a correct inspector and
+  provenance, and Round 1 is untouched.
+
+### CP13 — Round 2 Delivery / FieldSync visibility
+
+- **User action:** the delivery runs through the bridge to FieldSync; the assigned
+  inspector opens the app.
+- **Supabase:** a **new** `field_jobs` row with a **new UUID**,
+  `bridge_source_id = rosario-imaps-local-0921-a`, its **own**
+  `local_inspection_id`, `assigned_inspector_id` equal to the newly chosen
+  inspector, status not in progress, all GPS columns NULL, `submitted_at` NULL.
+  **Total `field_jobs` goes 16 → 17**, with 17 distinct local ids.
+- **FieldSync:** the new task is visible **on the newly assigned inspector's
+  device only**, with the right application, round and instructions.
+- **iMAPS:** both rounds present — Round 1 Completed, Round 2 open and assigned.
+- **Evidence:** new inspection id **and its UUID**; both `field_jobs` rows side
+  by side proving distinct UUIDs; the FieldSync dashboard on the assigned
+  inspector's device; confirmation Round 1 is still Completed.
+- **STOP immediately** unless: a new round exists, Round 1 was not modified, no
+  duplicate job appeared, and the task is on the right device.
 
 ---
 
@@ -776,13 +841,16 @@ state.
 | CP | Capture |
 |---|---|
 | CP7 | GPS reading with **distance and accuracy**; post-confirm screen; remote `confirmed_latitude` / `confirmed_longitude` / `gps_accuracy_m` / `gps_confirmed_at` |
-| CP8 | offline/pending-sync indicator; a value typed while offline; post-reconnect cleared indicator |
-| CP9 | photo grid; photo count; confirmation photos belong to this job |
-| CP10 | partially completed checklist; completed checklist; remote checklist counts |
-| CP11 | findings entries before and after navigating away and back; remote values |
-| CP12 | Completed state showing step 6/6; remote `status` / `current_step` / `submitted_at`; evidence columns still intact |
-| sync | sync output showing the scoped target; inspection 41 before/after; **no other round moved** |
-| CP13 | new inspection id **and UUID**; both `field_jobs` rows side by side; FieldSync dashboard on the new inspector's device; Round 1 still Completed |
+| CP8 · Step 3 Photos | photo grid; photo count; confirmation photos belong to this job |
+| CP8 · Step 4 Checklist | partially completed checklist; completed checklist; remote checklist counts |
+| CP8 · Step 5 Findings | findings entries before and after navigating away and back; remote values |
+| CP8 · Step 6 Review | complete pre-submit summary, one legible shot per sub-section, **before** submitting |
+| CP8 · offline | offline/pending-sync indicator; a value typed while offline, still present after; post-reconnect cleared indicator |
+| CP9 | Completed state showing step 6/6; remote `status` / `current_step` / `submitted_at`; evidence columns still intact |
+| CP10 | sync output showing the scoped target; inspection 41 before/after; **no other round moved** |
+| CP11 | review row with its `review_round`; the new inspection id; proof Round 1 is untouched and still Completed |
+| CP12 | new inspection id, its inspector, and the provenance row (`initial`, from NULL, reason NULL); Round 1 unchanged |
+| CP13 | new inspection id **and UUID**; both `field_jobs` rows side by side; FieldSync dashboard on the assigned inspector's device; Round 1 still Completed |
 
 **Never capture:** any screen showing a token, API key, bearer credential,
 handshake key, database password, session cookie, or another person's PIN. If a
@@ -841,7 +909,8 @@ checkpoint.
 1. Do **not** create anything. Confirm the frozen baseline in section 1 still
    matches: `APP-2026-00030`, inspection 41, job `1f9df2ac-â€¦`, `in_progress`,
    `current_step 1`, all four GPS columns NULL, `submitted_at` NULL.
-2. Confirm the numbering question in section 2 is settled, so the printout's
-   "CP9" means the same thing to everyone.
+2. Use the locked numbering in section 2: **CP9 is Final Submit**, and Photos,
+   Checklist, Findings and the Review screen are **CP8 subchecks**, not
+   CP9-CP12.
 3. Open the task on the Gemini device **at San Carlos parcel 77** and begin
    **CP7**.
