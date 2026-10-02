@@ -5553,7 +5553,7 @@ exercising that same bridge.
 | Namespace structural fix (remote) | **APPLIED / VERIFIED** |
 | Corrective: surviving bare unique on `field_job_reviews` (remote) | **APPLIED / VERIFIED** |
 | Teshow Round 2 mapping repair | **APPLIED / VERIFIED — BACKEND RECOVERY COMPLETE** |
-| Teshow device confirmation | **PENDING** |
+| Teshow device confirmation | **PASS (2026-10-02)** |
 | Relation to Loop 10 | Independent. Loop 10 remains **PARTIAL / FIELD ACCEPTANCE PENDING**; its own E2E row is unchanged. |
 
 Incident: the shared Supabase mirror tables key iMAPS rows by **bare local integer
@@ -5594,7 +5594,7 @@ actual post-apply facts.
 | `database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql` | Forward SQL: incompatible-schema guard, frozen backfill lists, catalog-based `UNIQUE` swap, post-apply assertions, full rollback. | **APPLIED / VERIFIED** |
 | `database/sql/2026_10_01_bridge_source_namespace_dryrun.sql` | Throwaway-schema validation against real PostgreSQL; never references a real bridge table. | Consumed; throwaway schema dropped. |
 | `database/sql/2026_10_02_drop_field_job_reviews_bare_unique_index_after_namespace.sql` | Corrective: removes the one standalone bare `UNIQUE (technical_review_id)` the forward SQL's catalog-based drop could not remove. | **APPLIED / VERIFIED** |
-| `database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql` | Guarded one-row mapping repair for `a761b17a-3fad-44ed-b451-7f0af0e41183`. | **APPLIED / VERIFIED — backend recovery complete; device confirmation pending.** |
+| `database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql` | Guarded one-row mapping repair for `a761b17a-3fad-44ed-b451-7f0af0e41183`. | **APPLIED / VERIFIED — backend recovery complete; device confirmation PASS (2026-10-02).** |
 
 Only ONE supporting index is created,
 `field_jobs_bridge_source_id_status_index`, because
@@ -5666,3 +5666,89 @@ Teshow backend recovery is **COMPLETE**; device confirmation is **PENDING**.
 asserted inside the forward SQL transaction rather than from the application. An
 environment whose trigger differs from the audited one now aborts instead of being
 silently stamped.
+
+### Teshow device confirmation — PASS (2026-10-02)
+
+| | |
+|---|---|
+| Device confirmation | **PASS** |
+| Backend recovery | **PASS** (read-only post-apply verification, prior entry) |
+| Remote job | `a761b17a-3fad-44ed-b451-7f0af0e41183`, `local_inspection_id = 37`, `bridge_source_id = rosario-imaps-local-0921-a` |
+| Mapping | `supabase_application_id = eaf432ea-8f26-4266-bf4b-ca88887ac470` (APP-2026-00026 / Teshow), `supabase_parcel_id = 69bfaafb-a5e2-4871-b9d0-830ea0599b3f` (local parcel 64, Jose Dimayuga, Mavalor), `assigned_inspector_id = ddcebeac-2217-41c5-a6e2-d7f873db9af2` (Renato / Hubbie) |
+| Lifecycle preserved | `status = in_progress`, `current_step = 1`, `started_at = 2026-09-26T18:05:46.831173+00:00`, `step_timestamps = {"1": "2026-09-26T17:50:46.146511Z"}`, Renato `activity_log` in Mavalor |
+
+**Teshow recovery is CLOSED. Both the backend row and the FieldSync device now
+show the same round, on the same site, for the same inspector.**
+
+### Historical limitation — no Planning Review card for `APP-2026-00026` (EXPECTED, NOT A DEFECT)
+
+Recorded so it is never re-investigated as a transport bug, and so nobody
+"fixes" it by inventing data.
+
+| | |
+|---|---|
+| Local review rows | `technical_reviews` **75** (`review_round 1`, `Needs Site Inspection`, `site_inspection_task_id 36`) and **76** (`review_round 2`, `Requires Reinspection`, `site_inspection_task_id 37`), both `zoning_application_id 132`, `parcel_id 64`, `reviewed_by 4` |
+| `reviewed_site_inspection_id` | **NULL on both** |
+| Reason | Both rows were written **2026-09-22**. The column, `resolveReviewedInspectionId()` and the `PushPlanningReviewToSupabase` transport arrived with **Loop 8 on 2026-09-27** — five days later. |
+| Transport rows | `field_job_reviews` = **0** |
+| Transport failures | **NONE.** 0 of the 14 `failed_jobs` rows name `PushPlanningReviewToSupabase`; all 14 are `PushInspectionToSupabase` on unrelated rounds. The `jobs` queue held 0 pending rows. |
+| Consequence | The FieldSync **Planning Review card is legitimately absent** for `APP-2026-00026`. |
+| Decision | **DO NOT backfill. DO NOT infer. DO NOT hand-create a `field_job_reviews` row.** |
+
+Why the NULL is the honest answer rather than a gap to close: Loop 8's own
+contract states that a NULL `reviewed_site_inspection_id` "is the honest answer
+when no completed round exists — no link is invented, and no historical row is
+backfilled", and that `site_inspection_task_id` (the NEW round a decision
+creates) is explicitly **NOT** a synonym of the reviewed round. Inferring `36`
+for review 76 from its `review_round = 2` would be exactly that forbidden
+inference.
+
+Two independent reasons reinforce this for these two rows specifically:
+
+- Review **75**'s decision is `Needs Site Inspection`, which is deliberately
+  excluded from `TRANSPORTABLE_DECISIONS` (`Approved`, `Declined`,
+  `Requires Reinspection`) because it is the initial scheduling decision with no
+  reviewed round. It could never have transported, link or no link.
+- Both dispatch sites guard on `if ($reviewedSiteInspectionId !== null)`, so
+  with the column NULL neither row ever built a transport. There is nothing to
+  replay.
+
+**Expected future behaviour:** a Planning Review card appears normally, through
+the canonical writer, the first time a **valid post-Loop 8** review is recorded
+for this or any application. For this application, a new `Requires Reinspection`
+on parcel 64 would resolve `resolveReviewedInspectionId()` to the latest
+*completed* round — `36` while `37` is still `assigned`.
+
+**iMAPS web UI is unaffected.** `ApplicationController::show` selects
+`technical_reviews.*` for `zoning_application_id = 132` and passes
+`technicalReviews` to `Applications/Show`, which renders both reviews in the
+per-parcel review panel and in the History timeline. The reviews were always
+visible in iMAPS; only the FieldSync card is absent, for the documented reason
+above.
+
+### Queue worker state at closure (2026-10-02)
+
+| | |
+|---|---|
+| Maintenance mode | **OFF** — no `storage/framework/down` |
+| Worker | `php artisan queue:work` — the project's existing command, identical to `npm run dev:queue`, spawned by the project's existing dev runner alongside `php artisan serve` |
+| Live worker | **PID 48352**, started 11:45:41, idle at 0 s CPU delta over a 3 s sample, i.e. waiting on an empty queue |
+| Duplicate avoided | Exactly ONE `queue:work` process is running. A second worker was started during this check and immediately stopped again, so the steady state is the project's own single worker. No supervisor, service, watchdog or new process model was introduced. |
+| `queue:restart` | **NOT RUN** — deliberately, to avoid signalling the live worker |
+| Pending jobs before starting | **0** — starting the worker was therefore provably a no-op and could not write to Supabase |
+| `failed_jobs` | 14, unchanged. `queue:work` does not auto-retry these. |
+| Remote effect of running the worker | **NONE.** Byte-for-byte snapshot diff across `field_jobs`, `supabase_zoning_applications`, `supabase_parcels`, `field_job_photos`, `activity_log` and `field_job_reviews`: all UNCHANGED. Teshow `a761b17a…` and the Loop 10 fixture `1f9df2ac…` byte-identical. 16 distinct `local_inspection_id` values, 16 rows, **0 duplicates**. `field_job_reviews` still **0**. |
+
+### Loop 10 status — UNCHANGED
+
+**LOOP 10 REMAINS PARTIAL / FIELD ACCEPTANCE PENDING.** Nothing in this closure
+advanced a Loop 10 checkpoint. CP1–CP6 stay PASS; CP7–CP13 stay **FIELD
+ACCEPTANCE PENDING**, because FieldSync enforces a real 30 m proximity rule
+against the assigned parcel and no device session has taken place on site.
+
+**Next: resume Loop 10 at CP7.** The frozen resume baseline
+(`APP-2026-00030` / application 145 / round 41 / job
+`1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999`) was re-verified unchanged at closure:
+`bridge_source_id = rosario-imaps-local-0921-a`, `status = in_progress`,
+`current_step = 1`, application `b108513f-…`, parcel `cf974dc9-…`, inspector
+`7abb9a75-…` (Gemini), `updated_at = 2026-10-01T03:39:49.349537+00:00`.
