@@ -5552,18 +5552,23 @@ exercising that same bridge.
 | Branch | `fix/bridge-source-namespace-collision` |
 | Namespace structural fix (remote) | **APPLIED / VERIFIED** |
 | Corrective: surviving bare unique on `field_job_reviews` (remote) | **APPLIED / VERIFIED** |
-| Teshow Round 2 mapping repair | **PENDING — prepared and validated, not applied** |
-| Relation to Loop 10 | Independent. Loop 10's own E2E rows do not depend on it, and Loop 10 acceptance is unaffected by its absence. |
+| Teshow Round 2 mapping repair | **APPLIED / VERIFIED — BACKEND RECOVERY COMPLETE** |
+| Teshow device confirmation | **PENDING** |
+| Relation to Loop 10 | Independent. Loop 10 remains **PARTIAL / FIELD ACCEPTANCE PENDING**; its own E2E row is unchanged. |
 
 Incident: the shared Supabase mirror tables key iMAPS rows by **bare local integer
 ids**, unique only inside ONE iMAPS database. Two writable environments therefore
 resolved the same local id onto the same remote row and overwrote each other
 (observed on `APP-2026-00026` / inspection 37 / job `a761b17a-…`).
 
-Resolution in preparation: bridge identity becomes the composite
+Resolution applied and verified: bridge identity is the composite
 `(bridge_source_id, local_*_id)`, with `bridge_source_id` supplied explicitly per
-logical source. See `FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md` for the full
-rationale, the frozen legacy backfill classification and the nine dry-run proofs.
+logical source. The namespace structural hotfix, the corrective review-index SQL,
+and the guarded Teshow mapping repair are all **APPLIED / VERIFIED**. Read-only
+post-apply verification confirms backend recovery and inspector visibility; only
+device confirmation remains pending. See `FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md`
+for the full rationale, frozen legacy backfill classification, dry-run proofs, and
+actual post-apply facts.
 
 ### Source identity rule (authoritative)
 
@@ -5589,7 +5594,7 @@ rationale, the frozen legacy backfill classification and the nine dry-run proofs
 | `database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql` | Forward SQL: incompatible-schema guard, frozen backfill lists, catalog-based `UNIQUE` swap, post-apply assertions, full rollback. | **APPLIED / VERIFIED** |
 | `database/sql/2026_10_01_bridge_source_namespace_dryrun.sql` | Throwaway-schema validation against real PostgreSQL; never references a real bridge table. | Consumed; throwaway schema dropped. |
 | `database/sql/2026_10_02_drop_field_job_reviews_bare_unique_index_after_namespace.sql` | Corrective: removes the one standalone bare `UNIQUE (technical_review_id)` the forward SQL's catalog-based drop could not remove. | **APPLIED / VERIFIED** |
-| `database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql` | Guarded one-row mapping repair for `a761b17a-3fad-44ed-b451-7f0af0e41183`. | **PENDING — prepared and validated, not applied.** |
+| `database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql` | Guarded one-row mapping repair for `a761b17a-3fad-44ed-b451-7f0af0e41183`. | **APPLIED / VERIFIED — backend recovery complete; device confirmation pending.** |
 
 Only ONE supporting index is created,
 `field_jobs_bridge_source_id_status_index`, because
@@ -5646,12 +5651,16 @@ was never actually disabled.
 
 **Teshow recovery contract, corrected:** the Pass 2 repair **expects
 `updated_at` to change**, because it is a genuine write and the real trigger
-records it. Unlike the namespace backfill, the repair must not suppress the
-timestamp. `updated_at` is therefore classified as expected-to-change, not as
-preserved evidence. The repair is specified as ONE guarded `UPDATE` setting all
-six mapping columns plus `bridge_source_id` in a single statement inside one
-transaction with a BEFORE snapshot, AFTER assertions and rollback on any
-preservation failure. **Not executed.**
+records it. Unlike the namespace backfill, the repair did not suppress the
+timestamp. `updated_at` was therefore expected to change, not preserved evidence.
+The repair used ONE guarded `UPDATE` setting all six mapping columns plus
+`bridge_source_id` in one transaction with a BEFORE snapshot, AFTER assertions
+and rollback on any preservation failure. **APPLIED / VERIFIED:** the row now has
+`updated_at = 2026-10-02T03:02:20.971649+00:00`; lifecycle remains
+`in_progress` / step `1`; dependent evidence remains `0 / 0 / 1`; the exact
+inspector filter returns Teshow once; Round 1 / local inspection `36` remains
+`completed` / step `6`; and the Loop 10 row remains `in_progress` / step `1`.
+Teshow backend recovery is **COMPLETE**; device confirmation is **PENDING**.
 
 `pg_trigger` is not reachable over PostgREST, so the trigger's existence is
 asserted inside the forward SQL transaction rather than from the application. An

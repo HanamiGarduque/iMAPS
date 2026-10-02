@@ -1528,10 +1528,12 @@ committed. No credential, token, handshake key or database password recorded.
 
 ---
 
-## 2026-10-02 - TESHOW ROUND 2 GUARDED MAPPING REPAIR - **PREPARED / VALIDATED / NOT APPLIED**
+## 2026-10-02 - TESHOW ROUND 2 GUARDED MAPPING REPAIR - **APPLIED / VERIFIED**
 
-**Status: PREPARED AND VALIDATED. NOT APPLIED. No remote write performed in this
-entry. Loop 10 status is unchanged: PARTIAL - FIELD ACCEPTANCE PENDING.**
+**Status: APPLIED / VERIFIED by an authorized operator, then independently
+reverified read-only from the backend. Backend recovery and visibility PASS.
+Device confirmation remains PENDING. Loop 10 remains PARTIAL - FIELD ACCEPTANCE
+PENDING. No remote write was performed during this finalization pass.**
 
 ### 1. Date/time and scope
 
@@ -1672,16 +1674,37 @@ of the same run, which is the property that actually matters.
 
 ### 9. Status
 
-**PREPARED AND VALIDATED, NOT APPLIED.** Manual native-`psql` apply still
-required, with a fresh precheck, exactly as for every prior remote change.
-`database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql` is
-ready to run; it is not authorised to run by this entry.
+**APPLIED / VERIFIED.** An authorized operator applied and committed
+`database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql`.
+The finalization pass then performed only read-only backend queries; it did not
+re-execute the repair or any other remote SQL.
 
-### 10. Deliberately not done
+### 10. Read-only post-apply verification
 
-Repair SQL **not** executed. No queue worker started. `php artisan up` not left
-in effect - maintenance mode remains ON. No FieldSync change. No master merge,
-sync, rebase or push. No `.env` or `.env.testing` modification, staging or
-commit. No credential, token, handshake key or database password recorded. No
-GPS value faked, no FieldSync proximity rule bypassed, no completion
-manufactured, no inspection progress edited directly.
+- Teshow resolves exactly once by UUID and exactly once by
+  `(bridge_source_id, local_inspection_id) = (rosario-imaps-local-0921-a, 37)`.
+- The verified row is UUID `a761b17a-3fad-44ed-b451-7f0af0e41183`, application
+  `eaf432ea-8f26-4266-bf4b-ca88887ac470`, parcel
+  `69bfaafb-a5e2-4871-b9d0-830ea0599b3f`, and inspector
+  `ddcebeac-2217-41c5-a6e2-d7f873db9af2` (Renato).
+- FieldSync lifecycle remains `in_progress` / step `1`; trigger-managed
+  `updated_at` is `2026-10-02T03:02:20.971649+00:00`.
+- Dependent evidence remains `photos=0`, `reviews=0`, `activity_log=1`.
+- The backend equivalent of FieldSync's inspector filter,
+  `assigned_inspector_id = ddcebeac-2217-41c5-a6e2-d7f873db9af2`, returns the
+  Teshow UUID exactly once: **BACKEND VISIBILITY PASS**.
+- Round 1 / local inspection `36` remains exactly one row, UUID
+  `76d79ab8-e38e-4682-ada2-a67ac84dde00`, `completed` / step `6`, on the same
+  application, parcel, source and inspector.
+- Loop 10 UUID `1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999` remains on source
+  `rosario-imaps-local-0921-a`, `in_progress` / step `1`; Loop 10 remains
+  **PARTIAL / FIELD ACCEPTANCE PENDING**.
+- Device confirmation is still **PENDING**. No FieldSync source was changed.
+
+### 11. Operational boundary
+
+No queue worker was started. No FieldSync change. No master merge, sync, rebase
+or push. No `.env` or `.env.testing` staging or commit. No credential, token,
+handshake key or database password recorded. No GPS value faked, no proximity
+rule bypassed, no completion manufactured, and no inspection progress edited
+directly.
