@@ -5,12 +5,33 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\SiteInspection;
+use App\Support\InspectionOperationsSummary;
 use App\Models\AppNotification;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 
 class SiteInspectionController extends Controller
 {
+    /**
+     * PHASE 2B1 runtime fix: the operations summary is injected rather than
+     * constructed ad hoc.
+     *
+     * enrichForOperationsOverview() is a separate method and therefore has no
+     * access to a local variable created inside index(). An earlier revision
+     * instantiated the service in index() and referenced $summary inside the
+     * helper, which raised Undefined variable  and returned HTTP 500
+     * on GET /site-inspections.
+     *
+     * Constructor property promotion matches the existing controller pattern in
+     * this codebase (DiagnosticReportController, PublicPortalController,
+     * WorkReassignmentController), keeps InspectionOperationsSummary as the single
+     * source of summary logic, introduces no static/global state, and leaves the
+     * dependency mockable for tests.
+     */
+    public function __construct(private readonly InspectionOperationsSummary $summary)
+    {
+    }
+
     /**
      * Display a listing of the site inspections.
      *
@@ -51,12 +72,41 @@ class SiteInspectionController extends Controller
                 ?: ('Application #' . $inspection->zoning_application_id);
         }
 
+        $all = $pendingInspections->concat($completedInspections);
+
         return Inertia::render('Site Inspections/Index', [
             'pendingInspections' => $pendingInspections,
             'completedInspections' => $completedInspections,
+            // PHASE 2B1: read-only operations enrichment + page counters.
+            'operations' => $this->enrichForOperationsOverview($all),
+            'counters' => $this->summary->counters($all),
         ]);
     }
 
+
+    /**
+     * PHASE 2B1 - read-only enrichment for the Admin operations overview.
+     *
+     * Every field added here is locally provable. Two things are deliberately
+     * NOT added:
+     *
+     *  - the live FieldSync `status` / `current_step`. iMAPS cannot see field
+     *    progress, so a local `assigned` round renders "Assigned" and never
+     *    "Ongoing". Inferring live progress here would be inventing data.
+     *
+     *  - a per-round diagnostic. The remote `diagnostic_reports` table has no
+     *    `local_inspection_id` and no `parcel_id`, so no per-round diagnostic is
+     *    derivable and none is displayed.
+     */
+    private function enrichForOperationsOverview($inspections): array
+    {
+        // round_number / round_kind / display_status / display_reference are
+        // already attached by index() and show() using the canonical per-
+        // application round derivation, so the overview reads the same identity.
+        return collect($this->summary->summarize($inspections))
+            ->keyBy('id')
+            ->all();
+    }
     /**
      * Map every inspection id to its 1-based round number WITHIN its own
      * application, ordered by id.

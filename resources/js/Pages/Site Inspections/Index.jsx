@@ -1,3 +1,21 @@
+                                {/* PHASE 2B1: page-level counters. Each is derived ONLY from
+                                    locally provable state, supplied by
+                                    InspectionOperationsSummary::counters(). "Awaiting PO Review" is
+                                    deliberately absent: with reviewed_site_inspection_id NULL on every
+                                    existing review, "no decision yet" cannot be distinguished from
+                                    "never linked", so any such count would be a guess. */}
+                                {counters && (
+                                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                                        {[["Under Inspection", counters.under_inspection, "bg-blue-50 text-blue-700"],
+                                            ["Completed", counters.completed, "bg-emerald-50 text-emerald-700"],
+                                            ["Reinspection", counters.reinspections, "bg-violet-50 text-violet-700"],
+                                            ["Delivery Issues", counters.delivery_issues, "bg-rose-50 text-rose-700"]].map(([label, value, tone]) => (
+                                            <span key={label} className={`text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded ${tone}`}>
+                                                {label} {value ?? 0}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
 import React, { useState, useEffect } from "react";
 import { Head, usePage, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
@@ -39,7 +57,7 @@ const STATUS_OPTIONS = [
 ];
 
 export default function SiteInspectionsIndex() {
-        const { auth, pendingInspections = [], completedInspections = [], flash = {} } = usePage().props;
+    const { auth, pendingInspections = [], completedInspections = [], operations = {}, counters = null, flash = {} } = usePage().props;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
     // The open applicant folder is read from the URL, not held only in state, so
@@ -663,7 +681,7 @@ export default function SiteInspectionsIndex() {
                                                                     never clamped: a truncated application
                                                                     reference is not an acceptable rendering of
                                                                     a unique key. */}
-                                                                <div className="min-w-0 flex-1 flex flex-col items-start gap-0.5">
+                                                                <div className="min-w-0 flex-1 flex flex-col items-start gap-1">
                                                                     <span className="text-[13px] font-bold text-slate-800 leading-snug break-words group-hover:text-blue-700 transition-colors">
                                                                         {item.display_reference || `Application #${item.zoning_application_id}`}
                                                                     </span>
@@ -673,10 +691,44 @@ export default function SiteInspectionsIndex() {
                                                                     <span className="text-[11px] font-semibold text-slate-600 leading-tight">
                                                                         {item.round_number ? `Round ${item.round_number} · ` : ""}{item.round_kind || "Inspection"}
                                                                     </span>
-                                                                    <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${item.display_status === "Completed" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                                                                        {item.display_status || "Assigned"}
-                                                                    </span>
-                                                                    <div className="flex items-baseline gap-2 mt-0.5">
+                                                                    {/* PHASE 2B1: applicant and parcel, so a group is
+                                                                        identifiable without opening the application. */}
+                                                                    {(operations?.[item.id]?.applicant_name || operations?.[item.id]?.parcel_label) && (
+                                                                        <span className="text-[11px] text-slate-600 leading-tight break-words">
+                                                                            {[operations?.[item.id]?.applicant_name, operations?.[item.id]?.parcel_label].filter(Boolean).join(" · ")}
+                                                                        </span>
+                                                                    )}
+                                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                                        <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${item.display_status === "Completed" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                                                                            {item.display_status || "Assigned"}
+                                                                        </span>
+                                                                        {/* Delivery is the canonical Loop 9 vocabulary, per
+                                                                            round. NULL is "No Delivery Record" and is
+                                                                            deliberately NOT styled or labelled as a
+                                                                            failure. */}
+                                                                        {operations?.[item.id]?.delivery_label && (
+                                                                            <span
+                                                                                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                                                                                    operations?.[item.id]?.delivery_is_failure
+                                                                                        ? "bg-rose-50 text-rose-700"
+                                                                                        : "bg-slate-100 text-slate-600"
+                                                                                }`}
+                                                                            >
+                                                                                {operations?.[item.id]?.delivery_label}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {/* PO decision appears ONLY when the database proves
+                                                                        this round is the one that was reviewed. With
+                                                                        reviewed_site_inspection_id NULL on the existing
+                                                                        reviews, this renders nothing - which is
+                                                                        honest, not a gap. */}
+                                                                    {operations?.[item.id]?.po_decision && (
+                                                                        <span className="text-[10px] font-semibold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded">
+                                                                            PO: {operations?.[item.id]?.po_decision}
+                                                                        </span>
+                                                                    )}
+                                                                    <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
                                                                         <span className="text-[11px] text-slate-500 font-medium">
                                                                             {(() => {
                                                                                 // Locally provable dates only: when the inspection
@@ -687,13 +739,23 @@ export default function SiteInspectionsIndex() {
                                                                                     : "—";
                                                                             })()}
                                                                         </span>
+                                                                        {operations?.[item.id]?.scheduled_date && (
+                                                                            <span className="text-[10px] text-slate-500">
+                                                                                Sched {operations?.[item.id]?.scheduled_date}
+                                                                            </span>
+                                                                        )}
+                                                                        {operations?.[item.id]?.inspector_name && (
+                                                                            <span className="text-[10px] text-slate-500">
+                                                                                {operations?.[item.id]?.inspector_name}
+                                                                            </span>
+                                                                        )}
                                                                         {/* The internal record id stays available as a quiet
                                                                             secondary reference, but it must remain
                                                                             legible rather than near-invisible. */}
                                                                         <span className="text-[10px] font-mono text-slate-400">INS-{item.id}</span>
                                                                     </div>
                                                                 </div>
-                                                            </div>
+                                                                </div>
                                                         ))}
                                                     </div>
                                                 </>
