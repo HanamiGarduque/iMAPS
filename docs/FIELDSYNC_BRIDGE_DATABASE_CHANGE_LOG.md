@@ -1731,3 +1731,104 @@ directly.
 18. **Validation:** documentation-only change. Full Unit suite 735 / 4028 PASS with the 16 pre-existing deprecations and 9 pre-existing skips unchanged; `npm run build` PASS; `php -l` clean; `git diff --check` clean. No source file was modified, so no behaviour changed and no focused test needed updating.
 19. **Still outstanding, unchanged from the prior entries:** Loop 10 CP7–CP13 field acceptance; the historical round-35 reverse-sync gap (open separate, predates Loop 10); and the `reference_number` cross-environment collision, still recorded and deliberately unfixed.
 20. **Not done:** no Supabase write, no iMAPS write, no `field_job_reviews` creation, no technical-review backfill or inference, no FieldSync change, no queue dispatch of any pending job, no new worker/supervisor setup, no master change.
+
+---
+
+## 2026-10-02 - READINESS PROVENANCE: ISOLATED FIELD APK BUILD - **NO SUPABASE WRITE IN THE BUILD WINDOW**
+
+**Status: build PASS. Loop 10 unchanged: PARTIAL - FIELD ACCEPTANCE PENDING.
+This entry records provenance only. No repair, re-apply or cleanup was
+performed.**
+
+### 1. The distinction that must not be collapsed
+
+Two separate events were briefly conflated. Both are real; they are separated
+here by timestamp, and the ordering is what resolves it.
+
+**HISTORICAL PRE-BUILD WRITE - AUTHORIZED, TESHOW REPAIR.**
+`2026-10-02 03:02:20 UTC` (`11:02:20` local). This is the authorized manual
+apply of the guarded repair artifact against
+`a761b17a-3fad-44ed-b451-7f0af0e41183`, using the same artifact whose twenty
+preconditions and postconditions were proven before delivery. It is
+**COMPLETE**, it is **not** an incident, and no investigation is warranted.
+Teshow remains closed at the backend level; device confirmation is recorded
+separately in the acceptance record.
+
+**ISOLATED APK BUILD WINDOW - NO SUPABASE WRITE OBSERVED.**
+`04:41:53` - `04:47:14 UTC` (`12:41:53` - `12:47:14` local). Every Supabase
+interaction in this window was a read-only `SELECT`. No `INSERT`, `UPDATE`,
+`DELETE`, DDL or Management API write occurred. The authorized repair
+**preceded this window by 1 h 39 m**, so the build neither produced nor
+repeated it.
+
+### 2. Corrected scope of the fingerprint evidence
+
+The before/after fixture hash
+`619cba4e60a4bd46fd3e53a777611cbd` is valid evidence for one narrow claim only:
+**the Loop 10 fixture was unchanged DURING the build window.** It is not
+evidence about the earlier authorized repair, because the "before" sample was
+taken after that repair had already committed. Stability across a window is
+silent about everything before it. Citing it as proof that no write had ever
+occurred would have been a false negative; the narrow claim is the correct one.
+
+### 3. Isolated debug APK build - PASS
+
+From the authoritative checkout `imaps_fieldsync_main` (`origin`
+`imaps-fieldsync`, branch `fix/home-active-assignments`, HEAD `be7b7a3`). The
+smaller/stub FieldSync checkout is not the acceptance gate and was not used.
+
+`flutter clean` exit 0; `flutter pub get` exit 0; `flutter build apk --debug -v`
+exit 0, `BUILD SUCCESSFUL in 5m 11s`. APK
+`app-debug.apk`, 194,564,241 bytes, SHA-256 `DA2EDF06...`. Zero error
+signatures across 7,774 verbose lines. `pubspec.lock` preserved byte-identical
+(`210930DC...`); `pubspec.yaml` unchanged. All 128 git-tracked files under
+`lib/`, `android/` and `test/` byte-identical; HEAD and the 38 pre-existing
+dirty entries unchanged. No test runner was active and no `flutter test` was
+run.
+
+### 4. FieldSync findings - CLASSIFIED CODEX-OWNED, NOT FIXED
+
+Recorded with evidence, changed nothing. **Codex Task 01** (Home Active
+Assignments logic + render/layout, and the `home_active_assignments_test.dart`
+assertion) was excluded from Cline entirely.
+
+- **A** `pre_loop3_cleanup_contract_test.dart` scheduling lifecycle separation.
+- **B** `home_active_assignments_test.dart` render/layout - **Codex Task 01**.
+- **C** CP7 GPS: code gates `distance <= 30.0` while the UI says "In Zone
+  (< 30 m)"; **no accuracy or staleness gate exists in the GPS path**.
+- **D** checklist rework reset gap: `hydrateForRework` restores prior answers and
+  resets nothing, while per-step `_reworkStep(1..6)` is ignored because
+  `hydrateForRework` hardcodes `_currentStep = 1`.
+- **E** Android readiness: `applicationId` and `namespace` are both
+  `com.example.imaps_fieldsync`, label `imaps_fieldsync`, and all three SDK
+  levels delegate to `flutter.*` and are therefore **unpinned**.
+- **F** `webhook_test.dart:104` performs a live `client.from('field_jobs')
+  .insert({...})` with no tag, skip or group guard, so it is eligible to run in
+  a normal regression suite against the **shared live** database.
+
+Item C was **not** "fixed" by loosening the on-screen text, and the genuine
+30 m proximity rule was not bypassed or weakened. Running no `flutter test` at
+all is what kept item F from writing to the live bridge.
+
+### 5. Generated tracked artifact - RECORDED ONLY, NOT FIXED
+
+`android/build/reports/problems/problems-report.html` is a Gradle-generated
+report that is tracked in git, and the build rewrote it, so it now differs from
+`HEAD` (deprecation count `15` -> `30`, and `"requestedTasks"` now
+`assembleDebug`). Per instruction it was **not** untracked, removed, reverted or
+committed. Repository hygiene finding for Codex: a machine-generated report
+should not be version controlled, and it will keep producing a spurious diff on
+every build. The doubled count is the same deprecation evaluated in two paths,
+not a doubling of real problems.
+
+### 6. Fixture preserved
+
+Remote `619cba4e...` and local `01ebebc0...` both stable; 16 jobs total; Loop 10
+job `1f9df2ac-...` byte-identical at `updated_at 2026-10-01T03:39:49.349537+00`
+and never a write target. Frozen, not cleaned up.
+
+### 7. Deliberately not done
+
+No FieldSync source edited, no finding fixed, no Codex branch touched, no
+report untracked, no `flutter test` run, no fixture alteration, no `master`
+merge/sync/rebase/push, no branch merged, no `.env` or `.env.testing` change.

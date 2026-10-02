@@ -285,3 +285,169 @@ recreating anything**:
 5. Assert `ROUND_2_INSPECTION_ID != 41` and the final duplicate counts.
 
 Do not create another application. Do not reuse `APP-2026-00029`.
+---
+
+## READINESS PROVENANCE CORRECTION (2026-10-02) - ISOLATED FIELD APK BUILD
+
+Recorded by Cline. Loop 10 sequence, bridge integrity, iMAPS and cross-system
+verification only. **No FieldSync source file was modified, no FieldSync audit
+finding was fixed, and the Codex Active Assignments branch was not touched.**
+
+### 1. Why this entry exists
+
+A readiness check compared the Loop 10 fixture fingerprint before and after an
+isolated FieldSync debug APK build and found it unchanged. A second check of
+the same row showed `bridge_source_id` populated and the mapping repaired,
+which does not match the pre-build snapshot taken earlier in the same session.
+
+That apparent contradiction is resolved by **when** each write happened, not by
+whether one happened. Both facts are true and must be recorded separately,
+because conflating them would either invent an incident or hide a real one.
+
+### 2. Two distinct events - do not merge them
+
+| | |
+|---|---|
+| **HISTORICAL PRE-BUILD WRITE** | **AUTHORIZED - Teshow Round 2 repair** |
+| Timestamp | `2026-10-02 03:02:20 UTC` = `2026-10-02 11:02:20` local |
+| Nature | The authorized manual apply of the prepared guarded repair artifact `database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql`, against `a761b17a-3fad-44ed-b451-7f0af0e41183` |
+| Authority | Applied intentionally by an authorized operator, using the artifact whose twenty preconditions and postconditions had already been proven |
+| Status | **COMPLETE.** Backend recovery PASS. Not an incident, and no incident investigation is warranted |
+
+| | |
+|---|---|
+| **ISOLATED APK BUILD WINDOW** | **NO SUPABASE WRITE OBSERVED** |
+| Window | `2026-10-02 04:41:53` - `04:47:14 UTC` (12:41:53 - 12:47:14 local) |
+| Activity | `flutter clean` -> `flutter pub get` -> `flutter build apk --debug -v`, from the authoritative FieldSync checkout `imaps_fieldsync_main` |
+| Supabase contact | **None.** Every Supabase interaction in this window was a read-only `SELECT` against `field_jobs`. No `INSERT`, `UPDATE`, `DELETE`, DDL or Management API write occurred |
+| Ordering proof | The authorized Teshow write at 03:02:20 UTC **preceded the build window start by 1 h 39 m**. The build cannot have produced or repeated it |
+
+The ordering is the decisive fact: the repair was already committed to the
+remote **before** the first build command ran, and the remote fixture hash
+`619cba4e60a4bd46fd3e53a777611cbd` was identical when sampled on both sides of
+the build window.
+
+### 3. Correct scope of the fingerprint comparison - stated precisely
+
+The before/after MD5 comparison is valid evidence for exactly one claim:
+
+> **The Loop 10 fixture was unchanged DURING the isolated APK build window.**
+
+It is **not** evidence about the earlier authorized Teshow repair, and must
+never be cited as such. The "before" sample for that comparison was taken
+*after* the authorized 03:02:20 UTC apply had already committed, so the two
+samples bracket only the build. A hash that is stable across a window is
+evidence of stability in that window and is silent about everything before it.
+Reporting it as proof that no write had ever occurred would have been a false
+negative, and the honest form of the claim is the narrow one above.
+
+Note on the recorded branch name: the build ran against `fix/home-active-assignments`
+at HEAD `be7b7a3`, which is the state it was in at that time. The checkout has since
+moved to `fix/profile-header-name-layout` by Codex's own work, still at the same
+commit. Neither change was made by Cline, and the build did not depend on which of
+those branches the checkout was parked on.
+### 4. Isolated debug APK build - PASS
+
+Executed from the authoritative checkout `imaps_fieldsync_main`
+(`origin` `imaps-fieldsync`, branch `fix/home-active-assignments`, HEAD
+`be7b7a342d80d1aa46df215890781cad29b0c3bc`). The smaller/stub FieldSync
+checkout is not the acceptance gate and was not used.
+
+| Step | Result |
+|---|---|
+| `flutter clean` | exit `0` |
+| `flutter pub get` | exit `0` |
+| `flutter build apk --debug -v` | exit `0`, `BUILD SUCCESSFUL in 5m 11s` |
+
+Artifact: `build/app/outputs/flutter-apk/app-debug.apk`,
+194,564,241 bytes, SHA-256 `DA2EDF0606F6AF05884DA63C1DC00A969DA2F7E15E804B1D56E0572951A610C2`.
+
+Isolation and safety evidence:
+
+- **No test runner was active.** The Dart processes present were editor tooling
+  (language server, tooling daemon, devtools, MCP server), none of them a
+  `flutter test`. No `flutter test` was started, and the operator's editor
+  processes were deliberately left alone.
+- **`pubspec.lock` preserved byte-identical** across `pub get`:
+  SHA-256 `210930DC0133D05B8E12E0608B906C8FE225B4A79AF17C3A6CB123FD8016FF8F`, 45,509 bytes.
+- **No dependency changes.** `pubspec.yaml` SHA-256 unchanged
+  (`E6FAE8F39A433F9AD0F52F8613C1065B26E0C2FE0D74CF56E8611E225E7A52D4`).
+- **No source edits.** All 128 git-tracked files under `lib/`, `android/` and
+  `test/` are byte-identical to their pre-build hashes. HEAD unchanged at
+  `be7b7a3`; the checkout's dirty-entry count is unchanged at 38, all of them
+  pre-existing and none introduced by this pass.
+- **No error signature in 7,774 lines of verbose output:** zero hits for
+  `FAILURE:`, `BUILD FAILED`, `error:`, `Execution failed`,
+  `A problem occurred`, `Exception`.
+- **`flutter test` was not run, so no live remote `field_jobs` INSERT occurred.**
+  See finding F below for why that matters.
+
+### 5. FieldSync audit findings - CLASSIFIED, NOT FIXED
+
+All six are **Codex-owned**. Cline recorded evidence and changed nothing. The
+`Active Assignments` Home logic and render/layout work is **Codex Task 01** and
+was excluded from Cline entirely.
+
+| # | Finding | Evidence recorded | Status |
+|---|---|---|---|
+| A | `pre_loop3_cleanup_contract_test.dart` scheduling lifecycle separation defect | Pins `scheduled_date` + `is_self_scheduled` on the writer, forbids `remarks` and `status` there, and separates assignment deadline from notes | **CODEX-OWNED. NOT FIXED** |
+| B | `home_active_assignments_test.dart` render/layout assertion | **Overlaps Codex Task 01** | **CODEX-OWNED. NOT FIXED** |
+| C | CP7 GPS gate | `gps_verification_screen.dart:54` gates on `_distance! <= siteVerificationDistanceThresholdMeters` (30.0) while the UI renders **"In Zone (< 30 m)"** - a reading of exactly 30.0 m passes a gate the copy describes as strictly less than. **No accuracy or staleness gate exists anywhere in the GPS path.** `inspection_constants.dart:1` defines the shared 30.0 constant; `site_map_screen.dart:100` repeats the same `<=` | **CODEX-OWNED. NOT FIXED** |
+| D | Latent checklist rework reset gap | `hydrateForRework` (`inspection_provider.dart:296`) repopulates `_siteCondition` / `_zoningObservations` from prior answers and deliberately resets nothing, while `completed_inspection_detail_screen.dart` offers per-step rework via `_reworkStep(1..6)` that `hydrateForRework` ignores by hardcoding `_currentStep = 1` | **CODEX-OWNED. NOT FIXED** |
+| E | Android readiness not release-grade | `applicationId` and `namespace` are both **`com.example.imaps_fieldsync`**; `android:label="imaps_fieldsync"`; and `compileSdk` / `minSdk` / `targetSdk` all delegate to `flutter.*`, so the SDK levels are whatever the *installed Flutter* supplies and are **unpinned by the project** | **CODEX-OWNED. NOT FIXED** |
+| F | `webhook_test.dart` performs a live remote INSERT | `test/webhook_test.dart:104` calls `client.from('field_jobs').insert({...})` with no `@Tags`, `skip:` or `group:` guard, so it is eligible to run in a normal regression suite against the **shared live** database | **CODEX-OWNED. NOT FIXED** |
+
+Item C is a real boundary defect, not a wording preference: the rule is
+`distance <= 30.0` in code and `< 30 m` on screen. It was not "corrected" by
+loosening the text, and the genuine FieldSync 30 m proximity rule was not
+bypassed or weakened by any action in this pass.
+
+Item F is why this pass ran **no** `flutter test` at all. The instruction to
+build in isolation was honoured strictly, which also removed any risk of that
+test writing to the live bridge.
+
+### 6. Generated tracked artifact - hygiene finding, RECORDED ONLY
+
+`android/build/reports/problems/problems-report.html` is a **Gradle-generated
+report that is tracked in git** - the only file under `android/build/` that is.
+The isolated build rewrote it, so it now differs from `HEAD`. The Groovy
+space-assignment deprecation count in it moved `15` -> `30` because the report
+now records `"requestedTasks":"assembleDebug"` rather than an empty task list.
+
+**This was deliberately NOT fixed.** The file was not untracked, not removed,
+not reverted and not committed, per instruction. Recorded as a repository
+hygiene finding for Codex: a machine-generated report should not be version
+controlled, and it will keep showing as a spurious diff on every build. Note
+that the doubled warning count is a reporting artifact of the same deprecation
+being evaluated in both the configuration-cache and normal paths, not a doubling
+of real problems.
+
+### 7. Loop 10 fixture - preserved exactly
+
+| | |
+|---|---|
+| Remote fingerprint | `619cba4e60a4bd46fd3e53a777611cbd` over both Loop 10 jobs, identical on both sides of the build window |
+| Local canonical fingerprint | `01ebebc059e57f17bbc80f974e3fc01b` for `site_inspections` id 41, unchanged |
+| Total `field_jobs` | 16 - no job created or deleted |
+| Loop 10 job `1f9df2ac-â€¦` | `bridge_source_id = rosario-imaps-local-0921-a`, `in_progress`, `current_step = 1`, `started_at 2026-10-01T03:39:49.20847+00`, `updated_at 2026-10-01T03:39:49.349537+00` - byte-identical, never a target of any write |
+| Fixture status | **Frozen. Not cleaned up, not altered, not re-created.** Ready for onsite resume against `APP-2026-00030` |
+
+No GPS value was faked, no FieldSync proximity rule bypassed, no completion
+manufactured, and no inspection progress modified at any point in this pass.
+
+### 8. Loop 10 status - UNCHANGED
+
+Loop 10 remains **PARTIAL - FIELD ACCEPTANCE PENDING**. CP1-CP6 PASS, CP7-CP13
+and the Round 1 -> 2 retention proof remain unproven and still require physical
+presence within 30 m of the San Carlos parcel. The backend-side readiness work
+in this entry does not advance a single checkpoint, and nothing here is a
+regression.
+
+### 9. Deliberately not done
+
+No FieldSync source edited. No FieldSync audit finding fixed. No Codex Active
+Assignments branch touched. `problems-report.html` not untracked or reverted.
+No `flutter test` executed, so no live remote INSERT. No fixture alteration. No
+`master` merge, sync, rebase or push. No branch merged. No `.env` or
+`.env.testing` modification, staging or commit. No credential, token, handshake
+key or database password recorded.

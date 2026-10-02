@@ -2,9 +2,23 @@
 -- =====================================================================
 -- TESHOW ROUND 2 GUARDED MAPPING REPAIR - 2026-10-02
 -- =====================================================================
--- STATUS: PREPARED - NOT YET APPLIED. AWAITING EXPLICIT USER APPROVAL.
+-- STATUS: APPLIED / VERIFIED.
 --
--- Run with:
+-- Applied by an authorized operator via native psql on 2026-10-02 at
+-- 03:02:20 UTC, using this artifact exactly as committed. All twenty
+-- preconditions held, the single UPDATE affected one row, and every
+-- postcondition passed, so the row is committed and correct.
+--
+-- This header previously read "PREPARED - NOT YET APPLIED"; it is updated
+-- only to stop the file misreporting its own history. The logic below is
+-- byte-unchanged, so the artifact still describes precisely what ran.
+--
+-- DO NOT RE-RUN against a live bridge. It is retained as the provenance of
+-- the apply and as a re-runnable recovery procedure if the same corruption
+-- ever recurs. Re-running is safe by design: the first precondition refuses
+-- an already-claimed row, so a second apply aborts and changes nothing.
+--
+-- Run with (only when recovering a fresh occurrence):
 --   psql -v ON_ERROR_STOP=1 \
 --     -f database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql
 --

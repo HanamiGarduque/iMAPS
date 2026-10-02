@@ -632,17 +632,49 @@ class TeshowRound2GuardedRepairTest extends TestCase
     }
 
     // ==================================================================
-    // TASK 11 - the repair is not yet applied
+    // TASK 11 - the artifact reports its own true applied state
     // ==================================================================
 
-    public function test_artifact_is_marked_not_yet_applied(): void
+    public function test_artifact_header_reports_the_true_applied_state(): void
+    {
+        $sql = $this->read();
+
+        // The repair was authorized and applied on 2026-10-02 at 03:02:20 UTC.
+        // A header still claiming "PREPARED - NOT YET APPLIED" would make the
+        // file misreport its own history and invite an operator to re-apply it.
+        $this->assertStringContainsString(
+            'STATUS: APPLIED / VERIFIED',
+            $sql,
+            'The header must state that this repair has been applied.'
+        );
+    }
+
+    public function test_artifact_records_how_and_when_it_was_applied(): void
     {
         $sql = $this->read();
 
         $this->assertStringContainsString(
-            'NOT YET APPLIED',
+            '03:02:20 UTC',
             $sql,
-            'The artifact must still declare itself unapplied. Applying it by hand does not change this file.'
+            'The apply timestamp is the provenance of this artifact and must be recorded.'
+        );
+        $this->assertStringContainsString('psql', $sql, 'The apply path must be recorded as native psql.');
+    }
+
+    public function test_artifact_warns_against_a_blind_re_run(): void
+    {
+        $sql = $this->read();
+
+        // Re-running is safe only because the first precondition refuses an
+        // already-claimed row. That property is what makes a stray re-run a
+        // no-op instead of a second write, so it is pinned here.
+        $this->assertStringContainsString('DO NOT RE-RUN', $sql);
+        $this->assertStringContainsString('already-claimed row', $sql);
+
+        $this->assertStringContainsString(
+            'r.bridge_source_id IS NOT NULL',
+            $this->executableSql($sql),
+            'The refusal of an already-claimed row is what makes re-running safe.'
         );
     }
 
