@@ -293,29 +293,17 @@ class SiteInspectionController extends Controller
         // PHASE 2B2D: the read-only operations context that lets the Admin stay
         // on this page - delivery condition and this parcel's round history.
         //
-        // THERE IS NO DIAGNOSTIC READ HERE, AND THAT IS DELIBERATE.
-        //
-        // PHASE 2B2D shipped a GLOBAL Technical Issue count here, with a read of
-        // `diagnostic_reports` on every inspection detail view. It has been
-        // removed. `diagnostic_reports` carries no application, inspection or
-        // parcel identity - only `inspector_id` - so a system-wide count has no
-        // application-specific meaning on one lot's record, and no disclosure
-        // wording can make it meaningful.
-        //
-        // The cost of keeping it was also real: one remote round trip per page
-        // view, to compute a number this page must not display.
-        //
-        // What belongs on this page instead is an APPLICATION SUPPORT block:
-        // reports linked to this inspection's application by a stored
-        // `field_job_id`, never a global count and never a round inference. That
-        // requires the shared reporting schema, so it is not here yet. When it
-        // arrives it must be application-scoped and namespace-safe.
+        // Application Support is resolved separately by exact namespaced mirror
+        // identity. Technical Issues and global report counts never enter this payload.
 
         return Inertia::render('Site Inspections/Show', [
             'inspection' => $inspection,
             'poReview' => $poReview[(int) $inspection->id] ?? null,
             'delivery' => InspectionOperationsContext::delivery($inspection),
             'roundHistory' => InspectionOperationsContext::roundHistory($inspection),
+            'applicationSupport' => app(\App\Support\ReportingVisibility::class)->applicationSummary(
+                request()->user(), (int) $inspection->zoning_application_id
+            ),
         ]);
     }
 }

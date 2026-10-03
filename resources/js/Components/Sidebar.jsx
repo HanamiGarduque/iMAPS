@@ -82,7 +82,7 @@ export default function Sidebar({
             // This file is a known upstream-contested merge point, so the entry
             // is a single self-contained object appended after an existing one.
             href: '/diagnostics',
-            label: 'Diagnostic Reports',
+            label: 'Reports & Support',
             badge: null,
             // POST-LOOP-9 SMOKE FIX: a Planning Officer now has READ access to
             // diagnostic reports, because they are the role that resolves

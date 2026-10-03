@@ -54,7 +54,7 @@ class DiagnosticTextSanitizer
      * Accepts anything, including null, arrays and scalars, because the input is
      * whatever a remote JSON document happened to contain. Returns a string.
      */
-    public static function sanitize(mixed $value): string
+    public static function sanitize(mixed $value, ?array $knownSecrets = null): string
     {
         if ($value === null) {
             return '';
@@ -101,7 +101,7 @@ class DiagnosticTextSanitizer
         // ORDER MATTERS. A signed URL already contains a JWT in its query string,
         // so the URL rules must run first; otherwise the JWT rule would replace
         // only the token and leave a usable-looking link behind.
-        $text = self::redactKnownCredentialValues($text);
+        $text = self::redactKnownCredentialValues($text, $knownSecrets);
         $text = self::redactUrls($text);
         $text = self::redactBearerAndAuthorization($text);
         $text = self::redactJwtShaped($text);
@@ -186,7 +186,14 @@ class DiagnosticTextSanitizer
      * The comparison is done with a plain substring check against a value that is
      * only ever used for comparison. It is never stored, returned or logged.
      */
-    private static function redactKnownCredentialValues(string $text): string
+    /** One credential read per shaping batch, with no static/cross-request cache. */
+    public static function forBatch(): \Closure
+    {
+        $secrets = self::knownCredentialValues();
+        return static fn (mixed $value): string => self::sanitize($value, $secrets);
+    }
+
+    private static function knownCredentialValues(): array
     {
         $secrets = [];
 
@@ -218,7 +225,12 @@ class DiagnosticTextSanitizer
             // The shape-based rules below still apply.
         }
 
-        foreach (array_keys($secrets) as $secret) {
+        return array_keys($secrets);
+    }
+
+    private static function redactKnownCredentialValues(string $text, ?array $knownSecrets = null): string
+    {
+        foreach ($knownSecrets ?? self::knownCredentialValues() as $secret) {
             $text = str_replace($secret, self::MARKER_CREDENTIAL, $text);
         }
 

@@ -399,7 +399,7 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
         }
 
         $this->assertStringContainsString(
-            'DiagnosticTextSanitizer::sanitize',
+            'DiagnosticTextSanitizer::forBatch',
             $source,
             'Free text must pass through the sanitizer.'
         );
@@ -741,7 +741,7 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
 
         // The notice text comes from the dedicated sanitizer-only builder, not
         // from an ad-hoc interpolation at the call site.
-        $this->assertStringContainsString('DiagnosticNotice::send(', $controller);
+        $this->assertStringContainsString('app(DiagnosticNotice::class)->send(', $controller);
     }
 
     public function test_sanitized_text_is_never_reparsed_as_markup(): void
@@ -757,12 +757,9 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
                 "Diagnostics/{$page}.jsx must never inject remote text as markup."
             );
 
-            // Sanitized text must be rendered as an inert text node.
-            $this->assertStringContainsString(
-                'whitespace-pre-wrap',
-                $code,
-                "Diagnostics/{$page}.jsx must render sanitized prose as plain text."
-            );
+            $shared = $this->executable($this->read('resources/js/Pages/Diagnostics/ReportUi.jsx'));
+            $this->assertStringNotContainsString('dangerouslySetInnerHTML', $shared);
+            $this->assertStringContainsString('whitespace-pre-wrap', $shared);
         }
     }
 }

@@ -247,7 +247,7 @@ class DiagnosticsRouteAuthorityTest extends TestCase
         // The controller re-reads the role, so it stays safe if reached another way.
         $controller = (string) file_get_contents(base_path('app/Http/Controllers/DiagnosticReportController.php'));
         $this->assertMatchesRegularExpression(
-            "/\\\$request->user\(\)\?->role \?\? null\) !== 'Admin'/",
+            "/\\\$request->user\(\)\?->role \?\? null\) === 'Admin'/",
             $controller,
             'The controller must re-check the role before notifying.'
         );
@@ -294,16 +294,35 @@ class DiagnosticsRouteAuthorityTest extends TestCase
     }
 
     /**
-     * The Admin-only escalation area must stay Admin-only. It is adjacent to
-     * this work and must not be widened by accident.
+     * REPORTS & SUPPORT: the development/support contact section is no longer
+     * part of the locked hierarchy and is REMOVED, not gated.
+     *
+     * This assertion therefore pins its absence in BOTH the rendered view and
+     * the controller that used to produce the prop. Gating it would have left a
+     * permanently empty Admin-only block, which is the state the browser
+     * acceptance rejected.
      */
-    public function test_the_escalation_area_remains_admin_only(): void
+    public function test_the_development_support_contact_section_is_removed_entirely(): void
     {
         $show = (string) file_get_contents(base_path('resources/js/Pages/Diagnostics/Show.jsx'));
-        $this->assertMatchesRegularExpression(
-            '/\{isAdmin && \(/',
+        $this->assertStringNotContainsString(
+            'Development / support contact',
             $show,
-            'The escalation block must remain gated on the Admin role.'
+            'The section must be gone from the detail page.'
+        );
+
+        // Executable code only: this controller deliberately NAMES the removed
+        // block in a comment to record why it is gone, so raw-text matching
+        // would invert the meaning of the rule.
+        $controller = (string) preg_replace(
+            ['#/\*.*?\*/#s', '#^\s*(//|\*).*$#m'],
+            '',
+            (string) file_get_contents(base_path('app/Http/Controllers/DiagnosticReportController.php'))
+        );
+        $this->assertStringNotContainsString(
+            'escalation',
+            $controller,
+            'No escalation prop may be produced. A removed section must not still be assembled server-side.'
         );
     }
 }

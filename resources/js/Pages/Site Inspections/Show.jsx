@@ -144,7 +144,7 @@ function InfoRow({ label, value, mono = false }) {
 }
 
 // ── Main Page Component ──
-export default function Show({ auth, inspection }) {
+export default function Show({ auth, inspection, applicationSupport = null }) {
     const ins = inspection || {};
     const app = ins.zoning_application || {};
     const inspector = ins.inspector || {};
@@ -1241,6 +1241,19 @@ export default function Show({ auth, inspection }) {
                                                 </button>
                                             </div>
                                         )}
+                                        <section aria-label="Application Support" className="border-b border-slate-200 bg-white px-6 py-4">
+                                            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Application Support</h2>
+                                            {!applicationSupport?.ok ? <p role="alert" className="mt-2 text-sm text-amber-800">{applicationSupport?.message || "Application support could not be loaded."}</p> : applicationSupport.total === 0 ? <p className="mt-2 text-sm text-slate-500">No support reports for this application.</p> : <>
+                                                <p className="mt-2 text-sm font-semibold">{applicationSupport.total} support request(s)</p>
+                                                <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                                                    <div><dt className="text-slate-500">Latest category</dt><dd>{applicationSupport.latest.support_category_label}</dd></div>
+                                                    <div><dt className="text-slate-500">Reported by</dt><dd>{applicationSupport.latest.inspector?.label || "Unresolved inspector"}</dd></div>
+                                                    <div><dt className="text-slate-500">Status</dt><dd>{({ submitted: "Submitted", in_review: "In review", resolved: "Resolved", wont_fix: "Won’t fix" })[applicationSupport.latest.status] || "Unknown"}</dd></div>
+                                                    <div><dt className="text-slate-500">Current Planning Officer</dt><dd>{applicationSupport.latest.context?.owner?.name || "Not assigned"}</dd></div>
+                                                </dl>
+                                            </>}
+                                            {applicationSupport?.ok && applicationSupport.total > 0 && <Link href={applicationSupport.url} className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">View Application Support</Link>}
+                                        </section>
                                         {/* PHASE 2A - ADMIN SUPPORT / OPERATIONS AREA.
                                             This is a SUPPORT action, not a business decision:
                                             it imports a FieldSync result that already exists for

@@ -531,9 +531,9 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
 
         // The detail page offers it, and only behind an Admin check.
         $show = $this->code('resources/js/Pages/Diagnostics/Show.jsx');
-        $this->assertStringContainsString('Notify Planning Officers', $show);
+        $this->assertStringContainsString('Notify ${context.owner.name}', $show);
         $this->assertMatchesRegularExpression(
-            '/\{isAdmin && report\.id && \(/',
+            '/\{isAdmin && canNotify && context\.owner && /',
             $show,
             'The notice button must be rendered only for an Admin.'
         );
@@ -554,7 +554,8 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
 
     public function test_diagnostics_index_uses_the_shared_authenticated_shell(): void
     {
-        $index = $this->code('resources/js/Pages/Diagnostics/Index.jsx');
+        $this->assertStringContainsString('<ReportShell>', $this->code('resources/js/Pages/Diagnostics/Index.jsx'));
+        $index = $this->code('resources/js/Pages/Diagnostics/ReportUi.jsx');
 
         $this->assertStringContainsString('import Header from "@/Components/Header";', $index);
         $this->assertStringContainsString('import Sidebar from "@/Components/Sidebar";', $index);
@@ -566,24 +567,17 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
         // Both Header and Sidebar take activePage, so it must be marked on BOTH
         // components exactly once each. Marking only one would leave the shell
         // half-highlighted.
-        $this->assertSame(
-            2,
-            preg_match_all('/activePage="diagnostics"/', $index),
-            'The shell must be marked as the diagnostics section on both Header and Sidebar.'
-        );
-
-        // The read gate must follow the server, not Admin-only.
-        $this->assertMatchesRegularExpression(
-            '/const canRead = isAdmin \|\| userRoleValue === "Planning Officer";/',
-            $index,
-            'The list must be readable by a Planning Officer, matching the route boundary.'
-        );
+        $this->assertStringContainsString('activePage: "diagnostics"', $index);
+        $this->assertStringContainsString('<Header {...shell}', $index);
+        $this->assertStringContainsString('<Sidebar {...shell}', $index);
+        // The server supplies allowedTypes; React never grants read authority.
+        $this->assertStringContainsString('allowedTypes.length > 1', $this->code('resources/js/Pages/Diagnostics/Index.jsx'));
     }
 
     public function test_diagnostic_show_uses_the_shared_authenticated_shell(): void
     {
-        $show = $this->code('resources/js/Pages/Diagnostics/Show.jsx');
-
+        $this->assertStringContainsString('<ReportShell', $this->code('resources/js/Pages/Diagnostics/Show.jsx'));
+        $show = $this->code('resources/js/Pages/Diagnostics/ReportUi.jsx');
         $this->assertStringContainsString('import Header from "@/Components/Header";', $show);
         $this->assertStringContainsString('import Sidebar from "@/Components/Sidebar";', $show);
         $this->assertMatchesRegularExpression('/<Header\b/', $show);
@@ -596,93 +590,65 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
         $show = $this->code('resources/js/Pages/Diagnostics/Show.jsx');
 
         $this->assertMatchesRegularExpression(
-            '/<Link\s+href="\/diagnostics"/',
+            '/<Link\s+href=\{`\/diagnostics\?type=/',
             $show,
             'The detail page must link back to the report list.'
         );
         $this->assertStringContainsString(
-            'Back to Diagnostic Reports',
+            'Back to Reports &amp; Support',
             $show,
             'The back control must be labelled so its destination is unambiguous.'
         );
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // ESCALATION (Admin only, configuration-backed, nothing invented)
+    // ESCALATION — REMOVED under the Reports & Support contract.
+    //
+    // These three tests previously pinned an Admin-only "Development / support
+    // contact" section. Browser acceptance rejected it: it was not part of the
+    // locked product hierarchy and, in a deployment with no contact configured,
+    // it rendered a permanently empty block. The section is now removed, so the
+    // contract is inverted: the section and its prop must both be ABSENT.
+    //
+    // `config/imaps.php` is deliberately left in place. It is environment-backed
+    // and harmless, and deleting an unrelated config file is out of scope for
+    // this repair.
     // ─────────────────────────────────────────────────────────────────────
 
-    public function test_the_escalation_area_is_admin_only(): void
+    public function test_the_escalation_area_no_longer_exists(): void
     {
         $show = $this->code('resources/js/Pages/Diagnostics/Show.jsx');
 
-        $this->assertMatchesRegularExpression(
-            '/\{isAdmin && \(/',
+        $this->assertStringNotContainsString(
+            'Development / support contact',
             $show,
-            'The escalation block must be gated on the Admin role.'
+            'The section must be removed, not gated.'
         );
-        $this->assertStringContainsString('Unable to resolve within MPDO?', $show);
-    }
-
-    public function test_the_escalation_contact_is_configuration_backed_and_never_invented(): void
-    {
-        $this->assertFileExists(__DIR__ . '/../../config/imaps.php');
-
-        $config = $this->code('config/imaps.php');
-
-        // Every value must come from configuration, with no hardcoded default.
-        foreach (['name', 'email', 'channel', 'instructions'] as $key) {
-            $this->assertMatchesRegularExpression(
-                "/'{$key}'\s*=>\s*env\(/",
-                $config,
-                "config('imaps.contact.{$key}') must be environment-backed with no hardcoded default."
-            );
-        }
-
-        // No credential may be read into this config block.
-        $this->assertDoesNotMatchRegularExpression(
-            '/env\(\s*[\'"][^\'"]*(KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)/i',
-            $config,
-            'The escalation config must never read a credential environment variable.'
-        );
-
-        // And the page must degrade honestly rather than showing a fake contact.
-        $show = $this->code('resources/js/Pages/Diagnostics/Show.jsx');
-        $this->assertStringContainsString(
+        $this->assertStringNotContainsString(
             'has not been configured',
             $show,
-            'An unconfigured deployment must say so instead of showing an invented contact.'
+            'The placeholder text must be removed with it, not replaced.'
         );
     }
 
-    public function test_the_escalation_contact_is_withheld_from_non_admin_roles(): void
+    public function test_no_escalation_prop_is_produced_server_side(): void
     {
         $controller = $this->code('app/Http/Controllers/DiagnosticReportController.php');
 
-        $this->assertMatchesRegularExpression(
-            '/private function escalationFor\(Request \$request\)/',
+        $this->assertStringNotContainsString(
+            'escalation',
             $controller,
-            'Escalation must be resolved server-side per request.'
+            'A removed section must not still be assembled server-side.'
         );
-        $this->assertMatchesRegularExpression(
-            '/\$isAdmin = \(\$request->user\(\)\?->role \?\? null\) === \'Admin\';/',
+        $this->assertStringNotContainsString(
+            'imaps.contact',
             $controller,
-            'Escalation must be decided from the authenticated role, not from a prop the client chose.'
+            'No support-contact configuration may be read on the report path.'
         );
-
-        // The contact must be a safe, allow-listed field set, and every field
-        // must be withheld unless the authenticated role is Admin.
-        foreach (['name', 'email', 'channel', 'instructions'] as $key) {
-            $this->assertMatchesRegularExpression(
-                "/'{$key}' => \\\$isAdmin \? \(\\\$configured\['{$key}'\]/",
-                $controller,
-                "The contact {$key} must be withheld unless the role is Admin."
-            );
-        }
-
         $this->assertDoesNotMatchRegularExpression(
             '/(service_key|anon_key|api_key|password|token)/i',
             $controller,
-            'The escalation block must never carry a credential field.'
+            'The report controller must never carry a credential field.'
         );
     }
 }

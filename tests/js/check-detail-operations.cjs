@@ -289,8 +289,11 @@ check(
 check(/border-t-2 border-slate-300/.test(code),
     'the supplemental block must be visually separated from the primary record');
 
-check(!/Application Support/i.test(code),
-    'Application Support must NOT appear until the shared reporting schema exists');
+check(/applicationSupport/.test(code),
+    'Application Support now consumes the exact application-scoped server summary');
+const iSupport = code.indexOf('aria-label="Application Support"');
+check(iHistory < iSupport && iSupport < iAdmin,
+    'Application Support follows Round History and precedes Admin Support Actions');
 
 // ---------------------------------------------------------------- STRUCTURE
 

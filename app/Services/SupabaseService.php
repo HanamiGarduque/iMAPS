@@ -100,11 +100,21 @@ class SupabaseService
 
     /**
      * Fetch records matching specific PostgREST criteria.
+     *
+     * The optional timeout is a per-call bound, so a read on a user-facing page
+     * fails in seconds with an honest error instead of holding the browser open
+     * for the framework default. It shortens the worst case; it never lengthens
+     * a wait to hide a failure.
      */
-    public function select(string $table, string $query = '*', array $params = []): Response
+    public function select(string $table, string $query = '*', array $params = [], ?int $timeout = null): Response
     {
-        return Http::withHeaders($this->serviceHeaders())
-            ->get("{$this->url}/rest/v1/{$table}?select={$query}", $params);
+        $request = Http::withHeaders($this->serviceHeaders());
+
+        if ($timeout !== null) {
+            $request = $request->timeout($timeout);
+        }
+
+        return $request->get("{$this->url}/rest/v1/{$table}", array_merge($params, ['select' => $query]));
     }
 
     /**

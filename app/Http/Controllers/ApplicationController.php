@@ -896,8 +896,14 @@ class ApplicationController extends Controller
         // of this round within the parcel's chain, and therefore disagreed with
         // the round number the same row shows on /site-inspections. The eager
         // load is unchanged, so this still costs no extra query per round.
-        $roundNumberByInspection = InspectionRoundNumbering::forInspections($openRounds)
-            ->map(fn (array $round) => $round['round_number']);
+        // InspectionRoundNumbering::forInspections() returns an array keyed by
+        // inspection id. `collect()` is applied here, at this one caller, because
+        // the helper's canonical contract is a plain array (every other caller
+        // indexes it as one), so the collection call is what was wrong, not the
+        // helper. Round identity, ordering and semantics are unchanged.
+        $roundNumberByInspection = collect(
+            InspectionRoundNumbering::forInspections($openRounds)
+        )->map(fn (array $round) => $round['round_number']);
 
         $inspectorRoundState = $openRounds->mapWithKeys(function ($inspection) use ($remoteStates, $roundNumberByInspection) {
             $remote = $remoteStates[(int) $inspection->id] ?? [];
