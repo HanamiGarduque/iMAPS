@@ -13,6 +13,14 @@ abstract class ReportingTestCase extends TestCase
     protected array $remote = [];
     protected array $calls = [];
     protected bool $remoteFails = false;
+    /**
+     * Optional per-table remote failure, e.g. ['profiles'].
+     *
+     * Additive and inert by default, so a suite that wants ONE remote table to
+     * answer 503 can ask for it without a second Http::fake - which Laravel
+     * would place BEHIND the setUp fake, making it unreachable.
+     */
+    protected array $remoteTableFails = [];
     protected User $admin;
     protected User $po;
     protected User $other;
@@ -63,6 +71,9 @@ abstract class ReportingTestCase extends TestCase
             $table = basename(parse_url($request->url(), PHP_URL_PATH));
             parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $params);
             $this->calls[] = [$table, $params];
+            if (in_array($table, $this->remoteTableFails, true)) {
+                return Http::response([], 503);
+            }
             $rows = $this->remote[$table] ?? [];
             foreach ($params as $key => $value) {
                 if (str_starts_with($value, 'eq.')) {

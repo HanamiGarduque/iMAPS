@@ -5847,3 +5847,110 @@ against the assigned parcel and no device session has taken place on site.
 `bridge_source_id = rosario-imaps-local-0921-a`, `status = in_progress`,
 `current_step = 1`, application `b108513f-â€¦`, parcel `cf974dc9-â€¦`, inspector
 `7abb9a75-â€¦` (Gemini), `updated_at = 2026-10-01T03:39:49.349537+00:00`.
+
+---
+
+## REPORTS & SUPPORT — RESPONSE AND STATUS LIFECYCLE INVARIANTS (2026-10-04)
+
+**These are LOCKED INVARIANTS, not a record of finished work.** The database
+foundation is applied and verified. The Admin/PO handling workflow that will act on
+these invariants is **NOT implemented yet** — no response endpoint, no status
+endpoint, no FieldSync response rendering. Nothing below should be read as a shipped
+feature.
+
+### 1. WHO MAY ACT
+
+| Report type | Responder for response and status |
+|---|---|
+| Technical Issue | **Admin** |
+| Application Support | the **current** Planning Officer |
+| Application Support with **no** current PO (`assigned_planning_officer_id IS NULL`) | **Admin** may only move `submitted -> in_review` |
+
+PO authority is re-resolved at the moment of the action under `lockForUpdate`. It is
+never taken from request input and never cached from an earlier read, because the
+current PO can change between filing and response. There is **no** Technical Issue PO
+path.
+
+### 2. STATUS MACHINE
+
+```
+submitted -> in_review            (optional; Admin only, and only when unowned)
+submitted -> resolved | wont_fix  (terminal may be reached directly)
+in_review  -> resolved | wont_fix
+```
+
+- Terminal statuses are exactly `resolved` and `wont_fix`.
+- **No reopen.** Once terminal, always terminal.
+- The terminal official response is **immutable** — no writer, including
+  `service_role`, can replace or remove it.
+- The database enforces this independently of the application, via a BEFORE UPDATE
+  guard plus a status-aware coherence constraint.
+
+### 3. THE TWO DATABASE SURFACES
+
+**Remote, inspector-facing projection** — `public.diagnostic_reports`:
+`response_message`, `responded_by_name`, `responded_at`. Deliberately only the safe
+projection. **No** `responded_by` or local actor id exists remotely, because
+FieldSync wildcard-selects this table and every added column reaches the inspector
+client.
+
+**Local, canonical actor identity** — `public.report_action_audit.performed_by`,
+FK `users(id)` `ON DELETE RESTRICT`. `responded_by_name` is a **display snapshot**,
+not identity: the authoritative actor is the FK, and recovery of true identity
+requires operator evidence, not the snapshot.
+
+Response length ceiling is 2000 characters, enforced in the database and again in
+application validation.
+
+### 4. CROSS-DATABASE WRITE ORDER
+
+```
+1. remote CAS succeeds   (id = eq.<uuid> AND status = eq.<expected previous status>)
+2. local audit INSERT commits
+```
+
+**There is no distributed transaction.** The remote write is the authoritative state
+change; the local audit row is the local evidence of *who* acted. If step 2 fails, the
+remote state is already committed — which is why the audit insert is idempotent
+rather than merely retried.
+
+The CAS previous status is exactly what supplies the terminal audit row's
+`from_status`: no `report_review_started` row means the CAS said `submitted`; a
+`report_review_started` row exists means it said `in_review`. That value comes from
+the **successful CAS**, never from browser input.
+
+### 5. AUDIT IDEMPOTENCY — TWO DIFFERENT 23505s
+
+Both uniqueness protections raise `23505`, and they mean opposite things. The handler
+branches on the **constraint name**, never on the SQLSTATE alone.
+
+| Raised by | Meaning | Required handling |
+|---|---|---|
+| `report_action_audit_report_id_action_unique` | this exact `(report_id, action)` already exists — the lost-acknowledgement retry | re-read by `report_id` + `action`, compare `report_id`, `action`, `from_status`, `to_status`, `performed_by`, `performed_by_name`. All six match -> **already successful**. Any differs -> **audit conflict + CRITICAL** |
+| `report_action_audit_one_terminal_unique` | the **opposite** terminal already exists | **never** idempotent. Return conflict/inconsistency + CRITICAL |
+
+`performed_at` is deliberately **not** compared: the original committed timestamp is
+authoritative and a retry computes a fresh `now()` by construction.
+
+**A report may never be both Resolved and Won't fix.** The partial unique index makes
+that unrepresentable even for a manual or operator INSERT.
+
+Maximum two audit events per report: `submitted -> terminal` is one,
+`submitted -> in_review -> terminal` is two. Three is unrepresentable.
+
+### 6. ROLLBACK POSTURE
+
+Remote rollback **refuses** once any official response exists. Local `down()`
+**refuses** once any audit row exists, and takes `ACCESS EXCLUSIVE` before counting
+so no insert can land between the emptiness check and the drop. Neither has a force
+mode, and neither is used reflexively.
+
+### 7. EXPLICITLY NOT PART OF THIS LIFECYCLE
+
+- **Development Support escalation** — separate lifecycle, not started.
+- **Push notification** on a response — not enabled here. The existing shared-device
+  token collision is unresolved.
+- **FieldSync response rendering** — not started. The inspector client does not yet
+  display a response.
+- **The Inertia/plain-JSON auth-transition defect** — a separate, pre-existing issue,
+  untouched and not fixed by this work.

@@ -2196,3 +2196,195 @@ deletes a report or a report-bearing application mirror. It does not reset
 
 A successful rollback restores the audited baseline grants, which are broader than
 the post-apply grants, so it is itself an explicit security decision.
+
+---
+
+## 2026-10-04 - Reports & Support response/status contract - **APPLIED / VERIFIED**
+
+Marker: `reports-and-support-response-v1`.
+
+**Why:** official Reports & Support response/status lifecycle. The V2 apply gave
+inspectors a way to *file* a report and gave Admin/PO visibility, but the database
+had no contract for **In Review -> official MPDO response -> Resolved / Won't fix**,
+no responder attribution, and nothing for FieldSync to consume. This change creates
+the database foundation for that lifecycle only.
+
+Applied to two surfaces under one explicit user approval.
+
+### 1. SCOPE
+
+| Surface | Database | What it received |
+|---|---|---|
+| Shared bridge | Supabase `laapipjyprmmaylunxib`, `public.diagnostic_reports` | safe inspector-facing response projection + lifecycle/security protection |
+| Local iMAPS | `imaps_db_0921`, `public.report_action_audit` | authoritative local evidence of who acted, what transition, when |
+
+**The product handling workflow is NOT implemented by this change.** No response
+endpoint, no status endpoint, no UI. Schema and audit foundation only.
+
+### 2. NEW REMOTE COLUMNS
+
+| Column | Type | Note |
+|---|---|---|
+| `response_message` | `text` NULL | the official response; only the safe projection reaches the inspector client |
+| `responded_by_name` | `character varying(255)` NULL | display snapshot, bounded by local `users.name varchar(255)` |
+| `responded_at` | `timestamptz` NULL | when the official response was issued |
+
+All three are nullable with no DEFAULT and no backfill, so all 4 existing reports
+read `NULL` and no historical response is fabricated.
+
+No `responded_by` and no local actor id were added: FieldSync wildcard-selects this
+table, so every added column reaches the inspector client. Canonical responder
+identity lives locally in `report_action_audit.performed_by`.
+
+### 3. SECURITY CHANGES
+
+- **status/response coherence** — `dr_response_coherence_ck`. `submitted`/`in_review`
+  require all three response fields NULL; `resolved`/`wont_fix` require all three
+  present with `response_message` and `responded_by_name` each containing at least
+  one non-whitespace character.
+- **2000-char response limit** — `dr_response_message_length_ck`,
+  `char_length(response_message) <= 2000`, enforced again in application validation
+  and not surfaced as UI clutter.
+- **terminal lifecycle trigger** — `dr_guard_response_transition` BEFORE UPDATE FOR
+  EACH ROW. Terminal is final: no reopen, and the official response cannot be
+  replaced by any writer. Narrow enough that an unrelated UPDATE is untouched.
+- **12-arg inspector filing validator** — `dr_support_filing_is_valid` extended from
+  9 to 12 arguments so that filing requires all three response fields NULL, closing
+  a gap the new columns would otherwise have opened: an authenticated inspector could
+  otherwise have filed their own report already carrying a fabricated response. The
+  superseded 9-arg overload is dropped; exactly one validator remains.
+- **deterministic function ACL** — applied as `REVOKE` from
+  `PUBLIC, anon, authenticated, service_role`, then grant back only the intent. This
+  is required because live `pg_default_acl` for functions in `public` grants EXECUTE
+  to `anon`, `authenticated` **and** `service_role` directly. Verified result:
+  validator `{postgres=X/postgres,authenticated=X/postgres}`, transition function
+  `{postgres=X/postgres}`. `service_role` provably never calls either
+  (`rolbypassrls = true`, so the RESTRICTIVE INSERT policy is never evaluated for it;
+  and a trigger function is never authorised at fire time).
+
+**`btrim()` was rejected as the non-blank test.** It strips ordinary spaces only, so
+tab-only, newline-only, carriage-return-only, form-feed-only, vertical-tab-only and
+mixed-whitespace-only responses all satisfied it. Six of seven whitespace-only inputs
+would have been accepted as an official response. The deployed test is
+`x ~ '[^[:space:]]'`.
+
+### 4. AUTHENTICATED PERMISSIONS — UNCHANGED
+
+| Role | SELECT | INSERT | UPDATE | DELETE |
+|---|---|---|---|---|
+| `authenticated` | yes | yes | **NO** | **NO** |
+| `anon` | no | no | no | no |
+| `service_role` | yes | yes | yes | yes |
+
+RLS enabled, not forced, 3 policies, **zero** UPDATE policies and **zero** DELETE
+policies. Status vocabulary unchanged at exactly four values. Five indexes unchanged.
+
+### 5. LOCAL iMAPS MIGRATION
+
+`database/migrations/2026_10_04_000000_create_report_action_audit_table.php`
+
+Purpose: authoritative local actor/action audit. Append-only; no `created_at` /
+`updated_at`. `report_id` is the remote UUID and deliberately has no foreign key
+because it lives in another database.
+
+Applied with
+`php artisan migrate --path=database/migrations/2026_10_04_000000_create_report_action_audit_table.php`
+— exact path, so no unrelated pending migration was pulled in.
+
+Resulting catalog, read back live:
+
+- 8 columns: `id`, `report_id`, `action`, `from_status`, `to_status`, `performed_by`,
+  `performed_by_name`, `performed_at`
+- 4 CHECK constraints: `_action_ck`, `_from_status_ck`, `_to_status_ck`,
+  `_transition_ck`
+- FK `performed_by -> users(id)` `ON DELETE RESTRICT`
+- **4 indexes**: `report_action_audit_pkey`,
+  `report_action_audit_report_id_performed_at_index` (ordered history),
+  `report_action_audit_report_id_action_unique` (retry idempotency),
+  `report_action_audit_one_terminal_unique` (one terminal outcome per report).
+  Aggregate `unique = 3`, `non_unique = 1`.
+- Deliberately **no** index on `performed_by`. Laravel's `constrained()` emits none,
+  PostgreSQL does not auto-index a referencing column, and no planned query needs it.
+  Verified live: 12 of 21 FKs in this schema have no supporting index, including the
+  two identical actor-`RESTRICT` precedents.
+
+Maximum two audit rows per report: `submitted -> terminal` is one,
+`submitted -> in_review -> terminal` is two, and three is unrepresentable.
+
+### 6. ARTIFACT SHA-256
+
+| Artifact | SHA-256 |
+|---|---|
+| Candidate A (remote forward SQL) | `50476673468C1CD9E6BBBB7BB47B22D20135F2955E6E07F1B6D4269F69EB69D7` |
+| Remote verification SQL | `3D14458478A141A15A0270235312C73724ECDD30C7A44F59824BBD06A63C5E0C` |
+| Remote guarded rollback SQL | `36E92ED57F459CF0496BAD82FC34B4380E10BE0A336EDD65E01E7B04CD157DC0` |
+| Candidate B (local migration) | `8EBF310835ABD03EF88CD31B09A71341A93619D3FB44D29141263FE3E5A25DB9` |
+
+All four re-verified immediately before execution; the repository copy of Candidate B
+re-verified after copying.
+
+### 7. VERIFICATION RESULTS
+
+Remote, executed via the approved read-only artifact, exit 0:
+
+| Check | Result |
+|---|---|
+| columns | 29 (was 26) |
+| `response_message` / `responded_by_name` / `responded_at` | `text` NULL / `varchar(255)` NULL / `timestamptz` NULL |
+| constraints | 10 (5 CHECK / 3 FK / 1 PK / 1 UNIQUE) |
+| coherence rule | contains `~ '[^[:space:]]'` for both fields; **no** `btrim` |
+| triggers | 3, all enabled |
+| validator | exactly 1, `pronargs = 12`; `pronargs = 9` returns zero rows |
+| function ACLs | exact match on both functions |
+| table grants / RLS / policies | unchanged; 0 UPDATE, 0 DELETE policies |
+| indexes | 5, unchanged |
+| status vocabulary | 4, unchanged |
+| existing report rows | 4, unchanged, all `submitted` |
+| response content | 0 rows carry any response field; 0 terminal rows |
+| whitespace truth table | 15/15 correct; 6 inputs `btrim()` wrongly accepted are now rejected |
+| multiline real-text response | accepted by the expression |
+
+`DR-2026-0003`: `application_support` / `submitted`, `local_application_id` 131, all
+three response columns `NULL`. **Not mutated.**
+
+Local: table created with **0 rows**, migration recorded at batch 17 (was 16),
+`php -l` clean.
+
+### 8. INITIAL STATE — NOTHING FABRICATED
+
+Remote: 4 reports, 0 with response content, 0 terminal.
+Local: 0 audit rows.
+
+No fabricated response, no fabricated responder, no fabricated audit row, no
+application reassignment, no PO assignment, no report status mutation.
+
+### 9. ROLLBACK
+
+**Guarded, on both surfaces. Never used reflexively.**
+
+- **Remote** — refuses once any official response exists, because dropping the
+  columns would destroy inspector-facing records that cannot be reconstructed. The
+  guard and the destructive DDL run in one transaction after
+  `LOCK TABLE ... ACCESS EXCLUSIVE`, so no response can be created between the check
+  and the drop. Restores the exact pre-apply 9-argument function ACL, including the
+  pre-existing direct `service_role` EXECUTE grant.
+- **Local `down()`** — refuses when audit rows exist, because the corresponding
+  remote reports are already terminal with an immutable official response, so the
+  local evidence can never be regenerated. Returns if the table is absent, takes
+  `ACCESS EXCLUSIVE` **before** counting so no insert can land between the emptiness
+  check and the drop, throws if any row exists, drops only when empty. No force mode,
+  no truncate, no row deletion.
+
+Destructive/behavioural rollback tests (74-77, 79, 81) were deliberately **not**
+executed against the working database; the live check was structural/source-contract
+only, per the approved plan.
+
+### 10. KNOWN DEFECT FOUND DURING VERIFICATION
+
+The locked remote verification artifact's **V17b `expectation` column** has an
+inverted boolean branch and labels correctly-rejected rows `FAIL`. The applied schema
+is **not** implicated: its sibling `constraint_verdict` column is correct on all 10
+cases, and an independently written check with corrected logic returns `OK` on all 10.
+
+The locked artifact was **not** modified (SHA `3D144584…` preserved). Correcting the
+`expectation` expression needs a separate decision.

@@ -1502,3 +1502,363 @@ COMMIT;
 <!-- END CANONICAL SQL: reports-and-support-v2 -->
 
 ---
+
+---
+
+## 24. Reports & Support response/status contract - 2026-10-04 (APPLIED)
+
+Two database surfaces, applied under one explicit user approval:
+
+| Surface | Database | Marker |
+|---|---|---|
+| Inspector-facing response projection | **remote** shared FieldSync/Supabase bridge project `laapipjyprmmaylunxib` | `reports-and-support-response-v1` |
+| Authoritative actor/action audit | **local** canonical iMAPS `imaps_db_0921` | Laravel migration `2026_10_04_000000_create_report_action_audit_table` |
+
+The remote project is reached only through iMAPS' bridge readers/writer; the local
+`migrations` ledger is touched only by the local migration. Section 23 above
+covered a remote-only change; this section covers both surfaces, following the
+convention already established by section 22, which documents the **local**
+`notifications` table in this same file.
+
+**STATUS: BOTH APPLIED 2026-10-04 with explicit user approval.**
+
+Remote artifact SHA-256 `50476673468C1CD9E6BBBB7BB47B22D20135F2955E6E07F1B6D4269F69EB69D7`,
+executed via `supabase db query --linked --file`, exit 0. The SQL-only block below is
+the executable statement set of that artifact, extracted byte-for-byte rather than
+retyped, and it is one transaction.
+
+Local artifact SHA-256 `8EBF310835ABD03EF88CD31B09A71341A93619D3FB44D29141263FE3E5A25DB9`,
+`php -l` clean, applied with
+`php artisan migrate --path=database/migrations/2026_10_04_000000_create_report_action_audit_table.php`,
+`DONE` in 732.36ms. Ledger advanced 16 -> 17 with exactly one entry. Table created with
+0 rows.
+
+The product handling workflow (Admin/PO response endpoints, status transitions in the
+UI) is **NOT** implemented by this change. This section records schema only.
+
+### 24.1 Remote objects added (`laapipjyprmmaylunxib`)
+
+| Object | Kind | Note |
+|---|---|---|
+| `diagnostic_reports.response_message` | NEW column | `text`, nullable; the only safe inspector-facing projection of the official response |
+| `diagnostic_reports.responded_by_name` | NEW column | `character varying(255)`, nullable; display snapshot, bounded by local `users.name` |
+| `diagnostic_reports.responded_at` | NEW column | `timestamptz`, nullable |
+| `dr_response_coherence_ck` | NEW constraint | status-aware coherence; non-blank tested with `~ '[^[:space:]]'`, **not** `btrim()` |
+| `dr_response_message_length_ck` | NEW constraint | `char_length(response_message) <= 2000` |
+| `dr_guard_response_transition()` | NEW function | `SECURITY INVOKER`, `search_path` pinned empty; BEFORE UPDATE lifecycle guard |
+| `dr_guard_response_transition` | NEW trigger | `BEFORE UPDATE ON public.diagnostic_reports FOR EACH ROW` |
+| `dr_support_filing_is_valid(...)` | REPLACED | arity 9 -> 12; now also requires all three response fields NULL at filing |
+| `dr_support_filing_valid` | REPLACED | recreated to call the 12-argument validator |
+| `dr_support_filing_is_valid(9 args)` | DROPPED | superseded overload removed so no stale validator stays executable |
+
+Deliberately **not** added: `responded_by` or any local actor id, any role snapshot,
+any escalation column, any new status value, any `authenticated` UPDATE/DELETE
+privilege, any UPDATE/DELETE RLS policy, and any index. There is no `responded_by`
+because FieldSync wildcard-selects this table, so every added column reaches the
+inspector client; canonical responder identity lives locally in
+`report_action_audit.performed_by`.
+
+`btrim()` was rejected as the non-blank test after live proof on the target database:
+it strips ordinary spaces only, so tab-only, newline-only, carriage-return-only,
+form-feed-only, vertical-tab-only and mixed-whitespace-only responses all satisfied
+`btrim(x) <> ''`. Six of seven whitespace-only inputs would have been accepted as an
+official response. `~ '[^[:space:]]'` rejects all of them.
+
+Function ACLs are applied deterministically (`REVOKE` from `PUBLIC, anon,
+authenticated, service_role`, then grant back only the intent) because this database's
+`pg_default_acl` for functions in `public` grants EXECUTE to `anon`, `authenticated`
+**and** `service_role` directly. Verified result: validator
+`{postgres=X/postgres,authenticated=X/postgres}`, transition function
+`{postgres=X/postgres}`.
+
+Table privileges are unchanged from section 23: `authenticated` holds `SELECT, INSERT`
+only, `anon` none, `service_role` unchanged. RLS on, not forced, three policies, no
+UPDATE or DELETE policy. Five indexes unchanged. `diagnostic_reports_status_check`
+unchanged at exactly four values.
+
+### 24.2 Local objects added (`imaps_db_0921`)
+
+| Object | Kind | Note |
+|---|---|---|
+| `report_action_audit` | NEW table | append-only authoritative record of who acted, what transition, when |
+| `report_action_audit_action_ck` | NEW constraint | closed three-value action vocabulary |
+| `report_action_audit_from_status_ck` | NEW constraint | `submitted`, `in_review` |
+| `report_action_audit_to_status_ck` | NEW constraint | `in_review`, `resolved`, `wont_fix` |
+| `report_action_audit_transition_ck` | NEW constraint | the only three legal `(action, from_status, to_status)` triples |
+| `report_action_audit_performed_by_foreign` | NEW constraint | `users(id)` `ON DELETE RESTRICT` |
+| `report_action_audit_report_id_action_unique` | NEW index | `UNIQUE (report_id, action)`; local retry idempotency |
+| `report_action_audit_one_terminal_unique` | NEW index | partial `UNIQUE (report_id)` on terminal actions only |
+
+Exactly **four** indexes exist: the primary key, `(report_id, performed_at)` ordered
+history, `report_action_audit_report_id_action_unique`, and the partial terminal index.
+Aggregate `unique = 3`, `non-unique = 1`. There is deliberately **no** index on
+`performed_by`: Laravel's `constrained()` emits no index, PostgreSQL does not
+auto-index a referencing column, and no planned query filters or sorts by it. This was
+verified live — 12 of 21 foreign keys in this schema have no supporting index,
+including the two identical actor-`RESTRICT` precedents `technical_reviews.reviewed_by`
+and `application_po_assignments.reassigned_by`.
+
+Maximum two audit rows per report. `submitted -> terminal` is one row;
+`submitted -> in_review -> terminal` is two. Three rows is unrepresentable.
+
+`down()` refuses to drop a populated table: it returns if the table is absent, takes
+`ACCESS EXCLUSIVE` before counting so no insert can land between the emptiness check
+and the `DROP`, throws if any row exists, and drops only when empty. No force mode,
+no truncate, no row deletion.
+
+<!-- BEGIN CANONICAL SQL: reports-and-support-response-v1 -->
+-- ============================================================
+-- REMOTE (shared FieldSync/Supabase bridge project laapipjyprmmaylunxib)
+-- public.diagnostic_reports -- one transaction.
+-- Extracted byte-for-byte from the approved Candidate A artifact.
+-- ============================================================
+BEGIN;
+
+-- A. ADDITIVE COLUMNS. No backfill: every existing row keeps NULL and therefore
+-- still satisfies the coherence CHECK, so no historical response is fabricated.
+ALTER TABLE public.diagnostic_reports
+ ADD COLUMN response_message  text,
+ ADD COLUMN responded_by_name character varying(255),
+ ADD COLUMN responded_at      timestamptz;
+
+-- B. STATUS-AWARE RESPONSE COHERENCE.
+-- Non-blank is tested with a POSIX class, not btrim(): btrim() strips ordinary
+-- spaces only and accepted tab/newline/CR/FF/VT/mixed whitespace-only responses.
+-- The IS NOT NULL conjuncts are load-bearing: a CHECK rejects only on FALSE, and
+-- NULL ~ regex is NULL, so without them a resolved report with no response would
+-- be accepted.
+ALTER TABLE public.diagnostic_reports
+ ADD CONSTRAINT dr_response_coherence_ck CHECK (
+      (
+        status IN ('submitted', 'in_review')
+        AND response_message  IS NULL
+        AND responded_by_name IS NULL
+        AND responded_at      IS NULL
+      )
+   OR (
+        status IN ('resolved', 'wont_fix')
+        AND response_message  IS NOT NULL
+        AND response_message  ~ '[^[:space:]]'
+        AND responded_by_name IS NOT NULL
+        AND responded_by_name ~ '[^[:space:]]'
+        AND responded_at      IS NOT NULL
+      )
+ );
+
+-- C. RESPONSE LENGTH CEILING. Database is the authority; also enforced in
+-- application validation, and not surfaced as UI clutter.
+ALTER TABLE public.diagnostic_reports
+ ADD CONSTRAINT dr_response_message_length_ck CHECK (
+      response_message IS NULL
+   OR char_length(response_message) <= 2000
+ );
+
+-- D. LIFECYCLE TRANSITION GUARD. Narrow: returns immediately unless a lifecycle
+-- column actually changes, so unrelated UPDATEs are untouched. Disjoint from
+-- touch_diagnostic_report (which only assigns updated_at), and fires first
+-- alphabetically.
+CREATE OR REPLACE FUNCTION public.dr_guard_response_transition()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $function$
+BEGIN
+  IF (NEW.status, NEW.response_message, NEW.responded_by_name, NEW.responded_at)
+     IS NOT DISTINCT FROM
+     (OLD.status, OLD.response_message, OLD.responded_by_name, OLD.responded_at)
+  THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.status IN ('resolved', 'wont_fix') THEN
+    RAISE EXCEPTION USING ERRCODE = '23514',
+      MESSAGE = 'Report lifecycle: status ''' || OLD.status || ''' is final. '
+                || 'A resolved or wont-fix report cannot be reopened and its '
+                || 'official response cannot be changed. File a new report.';
+  END IF;
+
+  IF NOT (
+       (OLD.status = 'submitted' AND NEW.status IN ('in_review', 'resolved', 'wont_fix'))
+    OR (OLD.status = 'in_review'  AND NEW.status IN ('resolved', 'wont_fix'))
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '23514',
+      MESSAGE = 'Report lifecycle: transition ' || OLD.status || ' -> '
+                || NEW.status || ' is not allowed.';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+-- A trigger function is never called on a role's behalf to authorise: PostgreSQL
+-- does not check EXECUTE on it at fire time. Revoke from every role that could
+-- hold EXECUTE, including service_role, which pg_default_acl would otherwise
+-- grant directly.
+REVOKE ALL ON FUNCTION public.dr_guard_response_transition() FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER dr_guard_response_transition
+ BEFORE UPDATE ON public.diagnostic_reports
+ FOR EACH ROW EXECUTE FUNCTION public.dr_guard_response_transition();
+
+-- E. INSPECTOR INSERT HARDENING. Required once the response columns exist: the
+-- nine-argument validator ignored them, so an authenticated inspector could have
+-- filed their own report already carrying a fabricated response. New 12-argument
+-- overload requires all three response fields NULL at filing.
+CREATE OR REPLACE FUNCTION public.dr_support_filing_is_valid(
+  p_job uuid,
+  p_app uuid,
+  p_bridge text,
+  p_type text,
+  p_status text,
+  p_technical_description text,
+  p_affected_file text,
+  p_recommended_action text,
+  p_category text,
+  p_response_message text,
+  p_responded_by_name character varying(255),
+  p_responded_at timestamptz
+)
+RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $function$
+ SELECT coalesce(
+   auth.uid() IS NOT NULL
+   AND p_status='submitted'
+   AND p_technical_description IS NULL
+   AND p_affected_file IS NULL
+   AND p_recommended_action IS NULL
+   AND p_response_message IS NULL
+   AND p_responded_by_name IS NULL
+   AND p_responded_at IS NULL
+   AND CASE
+    WHEN p_type='technical_issue' THEN
+     p_job IS NULL AND p_app IS NULL AND p_bridge IS NULL AND p_category IS NULL
+    WHEN p_type='application_support' THEN
+     p_job IS NOT NULL AND p_app IS NOT NULL AND p_bridge IS NOT NULL
+     AND p_category IS NOT NULL
+     AND p_category IN ('incorrect_information','missing_information',
+      'additional_site_information','clarification_request','correction_request','other')
+     AND EXISTS (
+      SELECT 1 FROM public.field_jobs j
+      JOIN public.supabase_zoning_applications a ON a.id=j.supabase_application_id
+      WHERE j.id=p_job AND j.assigned_inspector_id=auth.uid()
+       AND j.supabase_application_id=p_app AND j.bridge_source_id=p_bridge
+       AND a.id=p_app AND a.bridge_source_id=p_bridge
+     )
+    ELSE false
+   END, false);
+$function$;
+
+-- Deterministic ACL: revoke from every role that could hold EXECUTE, then grant
+-- back only authenticated. service_role is named in the REVOKE because
+-- pg_default_acl grants it directly and it never calls this function
+-- (service_role has BYPASSRLS, so the RESTRICTIVE policy is never evaluated for it).
+REVOKE ALL ON FUNCTION public.dr_support_filing_is_valid(uuid,uuid,text,text,text,text,text,text,text,text,character varying,timestamptz) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.dr_support_filing_is_valid(uuid,uuid,text,text,text,text,text,text,text,text,character varying,timestamptz) TO authenticated;
+
+-- The restrictive policy must call the new arity. Recreated under the SAME name,
+-- in the SAME transaction, so there is no instant at which the table has response
+-- columns and a validator that ignores them.
+DROP POLICY dr_support_filing_valid ON public.diagnostic_reports;
+CREATE POLICY dr_support_filing_valid ON public.diagnostic_reports
+ AS RESTRICTIVE FOR INSERT TO authenticated
+ WITH CHECK (
+  inspector_id=auth.uid()
+  AND public.dr_support_filing_is_valid(
+   field_job_id,supabase_application_id,bridge_source_id,report_type,status,
+   technical_description,affected_file,recommended_action,support_category,
+   response_message,responded_by_name,responded_at));
+
+-- Drop the superseded nine-argument overload: no policy references it, and
+-- leaving it would keep authenticated EXECUTE on a validator that ignores the
+-- response columns.
+DROP FUNCTION IF EXISTS public.dr_support_filing_is_valid(uuid,uuid,text,text,text,text,text,text,text);
+
+COMMIT;
+
+-- ============================================================
+-- LOCAL (canonical iMAPS imaps_db_0921) -- as produced by Laravel migration
+-- 2026_10_04_000000_create_report_action_audit_table.php.
+-- Recorded from the live catalog, not retyped.
+-- ============================================================
+
+-- F. LOCAL AUDIT TABLE. Append-only; no created_at/updated_at because Eloquent
+-- would rewrite updated_at on every save. report_id is the REMOTE uuid and is
+-- deliberately NOT a foreign key: it lives in another database.
+CREATE TABLE public.report_action_audit (
+    id bigint DEFAULT nextval('report_action_audit_id_seq'::regclass) NOT NULL,
+    report_id uuid NOT NULL,
+    action character varying(60) NOT NULL,
+    from_status character varying(20) NOT NULL,
+    to_status character varying(20) NOT NULL,
+    performed_by bigint NOT NULL,
+    performed_by_name character varying(255) NOT NULL,
+    performed_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL);
+
+-- G. PRIMARY KEY and the actor FK with ON DELETE RESTRICT: the actor must never
+-- vanish from an authoritative record of who acted.
+ALTER TABLE public.report_action_audit
+ ADD CONSTRAINT report_action_audit_pkey PRIMARY KEY (id);
+
+ALTER TABLE public.report_action_audit
+ ADD CONSTRAINT report_action_audit_performed_by_foreign
+ FOREIGN KEY (performed_by) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+-- H. AUDIT VOCABULARY AND COHERENCE. Only three (action, from_status,
+-- to_status) triples are representable, which makes reopen and every
+-- action/status mismatch unrepresentable.
+ALTER TABLE public.report_action_audit
+ ADD CONSTRAINT report_action_audit_action_ck
+ CHECK (action IN ('report_review_started','report_resolved','report_wont_fix'));
+
+ALTER TABLE public.report_action_audit
+ ADD CONSTRAINT report_action_audit_from_status_ck
+ CHECK (from_status IN ('submitted','in_review'));
+
+ALTER TABLE public.report_action_audit
+ ADD CONSTRAINT report_action_audit_to_status_ck
+ CHECK (to_status IN ('in_review','resolved','wont_fix'));
+
+ALTER TABLE public.report_action_audit
+ ADD CONSTRAINT report_action_audit_transition_ck
+ CHECK (
+      (action = 'report_review_started' AND from_status = 'submitted'   AND to_status = 'in_review')
+   OR (action = 'report_resolved'       AND from_status IN ('submitted','in_review') AND to_status = 'resolved')
+   OR (action = 'report_wont_fix'       AND from_status IN ('submitted','in_review') AND to_status = 'wont_fix')
+ );
+
+-- I. LOCAL AUDIT INDEXES -- three functional indexes plus the primary key.
+-- (report_id, performed_at)   ordered history for the per-report read and the
+--                             two-source reconciliation scan.
+-- UNIQUE (report_id, action)  local retry idempotency: a retry after a lost
+--                             acknowledgement must not create a second
+--                             authoritative-looking row.
+-- partial UNIQUE (report_id)  one terminal outcome per report, so a report can
+--                             never be both Resolved and Won't fix even via a
+--                             manual INSERT.
+-- Deliberately NO index on performed_by -- see section 24.2.
+CREATE INDEX report_action_audit_report_id_performed_at_index
+ ON public.report_action_audit (report_id, performed_at);
+
+ALTER TABLE public.report_action_audit
+ ADD CONSTRAINT report_action_audit_report_id_action_unique
+ UNIQUE (report_id, action);
+
+CREATE UNIQUE INDEX report_action_audit_one_terminal_unique
+ ON public.report_action_audit (report_id)
+ WHERE action IN ('report_resolved','report_wont_fix');
+<!-- END CANONICAL SQL: reports-and-support-response-v1 -->
+
+### 24.3 Post-apply verified state
+
+Remote `diagnostic_reports`: 29 columns, 10 constraints (5 CHECK / 3 FK / 1 PK / 1
+UNIQUE), 3 triggers all enabled, exactly one `dr_support_filing_is_valid` at
+`pronargs = 12`, zero rows at `pronargs = 9`, 5 indexes, 3 RLS policies and zero
+UPDATE/DELETE policies, `authenticated` = `SELECT, INSERT` only. All 4 existing
+reports remain `submitted` with all three response columns `NULL`; there are 0
+terminal rows. `DR-2026-0003` is `application_support` / `submitted` with
+`local_application_id` 131 and all response columns `NULL`, and was not mutated.
+
+Local `report_action_audit`: 8 columns, 4 CHECK constraints, 1 FK, 4 indexes
+(`unique = 3`, `non_unique = 1`), 0 rows, migration recorded at batch 17.
+
+Rollback is a separately approved guarded operation and is deliberately NOT part of
+this canonical block. The remote rollback refuses once any official response exists;
+the local `down()` refuses once any audit row exists.

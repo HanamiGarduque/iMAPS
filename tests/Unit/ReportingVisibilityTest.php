@@ -63,7 +63,13 @@ class ReportingVisibilityTest extends ReportingTestCase
         // continues once, and the 25-row short page correctly ends it: 125 rows
         // in total, with no wasted third round trip and no early truncation.
         $this->assertSame([0, 100], array_map(fn ($c) => (int) ($c[1]['offset'] ?? 0), $reportCalls));
-        $this->assertSame(['field_jobs' => 1, 'supabase_zoning_applications' => 1], array_count_values(array_diff(array_column($this->calls, 0), ['diagnostic_reports'])));
+        $this->assertSame(['profiles' => 1, 'field_jobs' => 1, 'supabase_zoning_applications' => 1], array_count_values(array_diff(array_column($this->calls, 0), ['diagnostic_reports'])));
+        // 'profiles' is the reporter-identity batch read added in Phase 1: ONE
+        // read for the whole 125-report page, proving reporter resolution does
+        // not grow per report either. It is one call for 125 reports, not 125.
+        $profileCalls = array_values(array_filter($this->calls, fn ($c) => $c[0] === 'profiles'));
+        $this->assertCount(1, $profileCalls);
+        $this->assertCount(1, array_unique(array_column($profileCalls, 0)));
     }
 
     public function test_reader_sanitizes_every_new_free_text_field_and_allowlists_output(): void

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Support\DiagnosticTextSanitizer;
+use App\Support\ReporterIdentity;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -23,7 +24,7 @@ class DiagnosticReportReader
         'correction_request' => 'Correction Request', 'other' => 'Other',
     ];
 
-    public function __construct(private SupabaseService $supabase) {}
+    public function __construct(private SupabaseService $supabase, private ReporterIdentity $reporters) {}
 
     /**
      * The ordered page size REQUESTED from the remote.
@@ -54,7 +55,7 @@ class DiagnosticReportReader
             }
         }
         try {
-            $reports = [];
+            $raw = [];
             $sanitize = DiagnosticTextSanitizer::forBatch();
             $offset = 0;
             // The page size the server ACTUALLY returned, learned from the first
@@ -77,7 +78,7 @@ class DiagnosticReportReader
                     if (! is_array($row) || ! Str::isUuid($row['id'] ?? '')) {
                         throw new \RuntimeException('Invalid report response.');
                     }
-                    $reports[] = $this->shape($row, false, $sanitize);
+                    $raw[] = $row;
                 }
                 $pageSize ??= count($rows);
                 $offset += count($rows);
@@ -85,6 +86,10 @@ class DiagnosticReportReader
                 // page. Continuing past it buys an extra remote round trip that
                 // returns nothing.
             } while ($pageSize > 0 && count($rows) === $pageSize);
+            // Reporter identity is resolved ONCE for the whole result set, after
+            // the scan, so the cost stays bounded instead of per report.
+            $reporters = $this->reporters->mapFor($raw);
+            $reports = array_map(fn ($row) => $this->shape($row, false, $sanitize, $reporters), $raw);
             return ['ok' => true, 'reports' => $reports, 'message' => null];
         } catch (Throwable) {
             return ['ok' => false, 'reports' => [], 'message' => 'Reports & Support could not be loaded. Please try again.'];
@@ -108,7 +113,8 @@ class DiagnosticReportReader
             if (($rows[0]['id'] ?? null) !== $uuid) {
                 throw new \RuntimeException('Invalid report response.');
             }
-            return ['ok' => true, 'report' => $this->shape($rows[0], true, DiagnosticTextSanitizer::forBatch()), 'message' => null];
+            return ['ok' => true, 'report' => $this->shape($rows[0], true,
+                DiagnosticTextSanitizer::forBatch(), $this->reporters->mapFor([$rows[0]])), 'message' => null];
         } catch (Throwable) {
             return ['ok' => false, 'report' => null, 'message' => 'The report could not be loaded. Please try again.'];
         }
@@ -120,7 +126,16 @@ class DiagnosticReportReader
         return ['total' => count($visibleReports), 'latest' => $visibleReports[0] ?? null];
     }
 
-    private function shape(array $row, bool $detail, \Closure $sanitize): array
+    /**
+     * Shape one remote row for the browser.
+     *
+     * $reporters is the batch map produced by {@see ReporterIdentity::mapFor()}
+     * for the whole page. When a report's reporter resolved, the payload carries
+     * only the local name and role: no handshake key, no raw Auth UUID, no remote
+     * profile name. When it did not, the existing safe fallback is preserved
+     * unchanged, so an unresolvable reporter can never be mistaken for a person.
+     */
+    private function shape(array $row, bool $detail, \Closure $sanitize, array $reporters = []): array
     {
         $payload = [];
         foreach (array_merge(self::SAFE_COLUMNS, $detail ? self::FREE_TEXT_COLUMNS : []) as $key) {
@@ -136,9 +151,22 @@ class DiagnosticReportReader
         }
         $payload['support_category_label'] = self::CATEGORIES[$row['support_category'] ?? ''] ?? 'Not provided';
         $uuid = Str::isUuid($row['inspector_id'] ?? '') ? $row['inspector_id'] : null;
-        // Do not guess a local person from an unresolved remote Auth UUID.
-        $payload['inspector'] = ['resolved' => false, 'label' => self::UNRESOLVED_INSPECTOR_LABEL,
-            'uuid' => $uuid, 'short_uuid' => $uuid ? substr($uuid, 0, 8) : null];
+        $resolved = $uuid === null ? null : ($reporters[$uuid] ?? null);
+        if ($resolved !== null && ($resolved['resolved'] ?? false) === true) {
+            // The local iMAPS name is the display authority; it is passed through
+            // the same sanitizer as every other string, so it can never carry a
+            // credential or a handshake value into a prop.
+            $payload['inspector'] = [
+                'resolved' => true,
+                'name' => $sanitize($resolved['name']),
+                'role' => $sanitize($resolved['role']),
+                'label' => $sanitize($resolved['name']),
+            ];
+        } else {
+            // Do not guess a local person from an unresolved remote Auth UUID.
+            $payload['inspector'] = ['resolved' => false, 'label' => self::UNRESOLVED_INSPECTOR_LABEL,
+                'uuid' => $uuid, 'short_uuid' => $uuid ? substr($uuid, 0, 8) : null];
+        }
         unset($payload['inspector_id']);
         return $payload;
     }
