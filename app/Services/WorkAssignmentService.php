@@ -10,6 +10,7 @@ use App\Models\ZoningApplication;
 use App\Support\InspectorTransferGuard;
 use App\Support\ReassignmentReasons;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -83,6 +84,12 @@ class WorkAssignmentService
         string $reason,
         ?string $reasonNote = null,
     ): ApplicationPoAssignment {
+        if (! Schema::hasTable('application_po_assignments')) {
+            throw ValidationException::withMessages([
+                'to_planning_officer_id' => 'Assignment history is not available because the application ownership table has not been created yet.',
+            ]);
+        }
+
         $target = $this->resolveActivePlanningOfficer($toPlanningOfficerId);
 
         $fromId = $application->assigned_planning_officer_id
@@ -166,6 +173,10 @@ class WorkAssignmentService
         ZoningApplication $application,
         ?User $creator,
     ): bool {
+        if (! Schema::hasTable('application_po_assignments')) {
+            return false;
+        }
+
         if (! $creator || ! self::canReceiveInitialOwnership($creator->role, (bool) $creator->is_active)) {
             return false;
         }
@@ -233,6 +244,12 @@ class WorkAssignmentService
         ?string $reasonNote = null,
         array $remoteState = [],
     ): SiteInspectionAssignment {
+        if (! Schema::hasTable('site_inspection_assignments')) {
+            throw ValidationException::withMessages([
+                'to_inspector_id' => 'Assignment history is not available because the inspection ownership table has not been created yet.',
+            ]);
+        }
+
         $target = $this->resolveActiveSiteInspector($toInspectorId);
 
         $fromId = $inspection->inspector_id ? (int) $inspection->inspector_id : null;
@@ -328,6 +345,10 @@ class WorkAssignmentService
         SiteInspection $inspection,
         User $actor,
     ): void {
+        if (! Schema::hasTable('site_inspection_assignments')) {
+            return;
+        }
+
         SiteInspectionAssignment::firstOrCreate(
             [
                 'site_inspection_id' => $inspection->id,

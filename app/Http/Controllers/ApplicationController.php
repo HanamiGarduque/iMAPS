@@ -29,6 +29,7 @@ use App\Support\ReassignmentReasons;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 
@@ -79,7 +80,13 @@ class ApplicationController extends Controller
                 // only, and loading it per list row is the N+1 this must not
                 // introduce.
                 $q->with([
-                    'siteInspection' => fn ($sq) => $sq->with('inspector')->withCount('deliveryAttempts'),
+                    'siteInspection' => function ($sq) {
+                        $sq->with('inspector');
+
+                        if (Schema::hasTable('inspection_delivery_attempts')) {
+                            $sq->withCount('deliveryAttempts');
+                        }
+                    },
                 ])->withCount('siteInspections');
             }])
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
@@ -591,11 +598,6 @@ class ApplicationController extends Controller
                 note: sprintf('Application encoded by staff with %d parcel(s).', count($validated['parcels']))
             );
 
-            $adminIds = User::where('role', 'Admin')->pluck('id')->all();
-            $recipientIds = array_merge($adminIds, [Auth::id()]);
-
-            AppNotification::notifyUsers(
-                $recipientIds,
             // ── Master integration (Loop 9 merge) ──────────────────────────
             // These are TWO INDEPENDENT operations that happen to sit in one
             // conflict region. Both survive; neither replaces the other, and the
@@ -895,7 +897,7 @@ class ApplicationController extends Controller
             ]];
         });
 
-        $inspectionHistory = $openRounds->isEmpty()
+        $inspectionHistory = $openRounds->isEmpty() || ! Schema::hasTable('site_inspection_assignments')
             ? collect()
             : SiteInspectionAssignment::with(['fromInspector:id,name', 'toInspector:id,name', 'actor:id,name'])
                 ->whereIn('site_inspection_id', $openRounds->map(fn ($i) => (int) $i->id))
@@ -904,7 +906,9 @@ class ApplicationController extends Controller
                 ->get()
                 ->groupBy('site_inspection_id');
 
-        $poHistory = ApplicationPoAssignment::with([
+        $poHistory = ! Schema::hasTable('application_po_assignments')
+            ? collect()
+            : ApplicationPoAssignment::with([
                 'fromPlanningOfficer:id,name',
                 'toPlanningOfficer:id,name',
                 'actor:id,name',
@@ -933,7 +937,8 @@ class ApplicationController extends Controller
             // been established. The current business flow has no step that
             // assigns an application to an officer, so historical rows are left
             // unowned rather than backfilled with a guess.
-            'assignedPlanningOfficer' => $application->assigned_planning_officer_id
+            'assignedPlanningOfficer' => Schema::hasColumn('zoning_applications', 'assigned_planning_officer_id')
+                && $application->assigned_planning_officer_id
                 ? User::find($application->assigned_planning_officer_id)?->only(['id', 'name'])
                 : null,
             'planningOfficers'        => $assignments->activePlanningOfficers(),

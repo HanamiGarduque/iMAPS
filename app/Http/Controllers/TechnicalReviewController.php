@@ -475,7 +475,6 @@ class TechnicalReviewController extends Controller
                     $application->status = 'For Release';
                 }
             }
-            }
 
             $application->save(); // Save the status change immediately
 

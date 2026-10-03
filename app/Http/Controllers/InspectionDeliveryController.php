@@ -14,6 +14,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
@@ -85,7 +86,9 @@ class InspectionDeliveryController extends Controller
 
         $rounds = $application->siteInspections()
             ->with(['inspector' => fn ($query) => $query->select('id', 'name', 'role', 'is_active', 'handshake_key')])
-            ->withCount('deliveryAttempts')
+            ->when(Schema::hasTable('inspection_delivery_attempts'), function ($query) {
+                $query->withCount('deliveryAttempts');
+            })
             // Deterministic and canonical. `site_inspections` stores no round
             // number, so the primary key IS the round chronology - the same one
             // the existing `latestOfMany()` relation already relies on. Ordering
