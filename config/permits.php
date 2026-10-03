@@ -28,7 +28,14 @@ return [
     'list_sheet' => 'LIST',
     'allowed_uses_sheet' => 'ALLOWED USES LIST',
 
-    // LibreOffice binary used for the xlsx → pdf conversion
+    // How the filled .xlsx is turned into a PDF (see App\Services\PermitPdfConverter):
+    //   auto        → LibreOffice if installed, else Microsoft Excel (Windows), else dompdf
+    //   libreoffice → always LibreOffice        excel  → always Microsoft Excel (Windows only)
+    //   dompdf      → no external software, rougher layout (draft quality)
+    'pdf_driver' => env('PERMIT_PDF_DRIVER', 'auto'),
+
+    // LibreOffice binary. Leave as "soffice" to auto-detect (PATH + usual install folders),
+    // or set a full path, e.g. "C:\Program Files\LibreOffice\program\soffice.exe"
     'soffice' => env('PERMIT_SOFFICE_BIN', 'soffice'),
 
     // Defaults for the signatories (editable in the Generate Permit modal)

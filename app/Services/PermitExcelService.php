@@ -25,12 +25,22 @@ use RuntimeException;
  *   2. apply the configured cell overrides, freeze every formula to its value
  *   3. replace every ${TAG} with the application data + modal input
  *   4. drop every other sheet, set paper size / print area
- *   5. convert to PDF with LibreOffice (headless)
+ *   5. convert to PDF (LibreOffice, Microsoft Excel or dompdf — see PermitPdfConverter)
  */
 class PermitExcelService
 {
     private const TAG_PATTERN = '/(\$?)\{\s*([A-Za-z0-9_ ]+?)\s*\}/';
     private const CHECK = '√';
+
+    public function __construct(private PermitPdfConverter $pdf)
+    {
+    }
+
+    /** Which converter produced the last PDF (libreoffice | excel | dompdf). */
+    public function lastPdfDriver(): ?string
+    {
+        return $this->pdf->lastDriver;
+    }
 
     // ─────────────────────────────────────────────────────────────────────
     // Public API
@@ -404,36 +414,24 @@ class PermitExcelService
         $setup = $sheet->getPageSetup();
         $setup->setPaperSize($doc['paper'] === 'FOLIO' ? PageSetup::PAPERSIZE_FOLIO : PageSetup::PAPERSIZE_A4);
         $setup->setOrientation(PageSetup::ORIENTATION_PORTRAIT);
-        $setup->setPrintArea($doc['print_area']);
+        if (!empty($doc['print_area'])) {
+            $setup->setPrintArea($doc['print_area']);
+        }
+        $setup->setFitToPage(true);
         $setup->setFitToWidth(1);
         $setup->setFitToHeight($doc['fit_height'] ?? 0);
         $setup->setHorizontalCentered(true);
+
+        $margins = $sheet->getPageMargins();
+        $margins->setTop(0.5);
+        $margins->setBottom(0.5);
+        $margins->setLeft(0.9);
+        $margins->setRight(0.9);
     }
 
     private function convertToPdf(string $xlsxPath, string $outDir): string
     {
-        // Separate LibreOffice profile per call so concurrent requests don't collide
-        $profile = sys_get_temp_dir() . '/imaps_lo_' . Str::random(8);
-
-        $result = Process::timeout(120)
-            ->env(['HOME' => sys_get_temp_dir()])
-            ->run([
-                config('permits.soffice'),
-                '-env:UserInstallation=file://' . $profile,
-                '--headless', '--norestore', '--nolockcheck',
-                '--convert-to', 'pdf',
-                '--outdir', $outDir,
-                $xlsxPath,
-            ]);
-
-        Process::run(['rm', '-rf', $profile]);
-
-        $pdfPath = preg_replace('/\.xlsx$/', '.pdf', $xlsxPath);
-        if (!$result->successful() || !file_exists($pdfPath)) {
-            throw new RuntimeException('PDF conversion failed. Is LibreOffice installed? ' . trim($result->errorOutput()));
-        }
-
-        return $pdfPath;
+        return $this->pdf->convert($xlsxPath, $outDir);
     }
 
     // ─────────────────────────────────────────────────────────────────────

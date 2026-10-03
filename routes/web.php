@@ -149,6 +149,19 @@ Route::middleware('auth')->group(function () {
         ->whereNumber('id')
         ->name('applications.export-document');
 
+    // ── Saved Permits Management ──
+    Route::get('/applications/{id}/saved-permits', [ApplicationController::class, 'savedPermits'])
+        ->whereNumber('id')
+        ->name('applications.saved-permits');
+    Route::get('/applications/{id}/saved-permits/{permitId}/download', [ApplicationController::class, 'downloadSavedPermit'])
+        ->whereNumber('id')
+        ->whereNumber('permitId')
+        ->name('applications.saved-permits.download');
+    Route::delete('/applications/{id}/saved-permits/{permitId}', [ApplicationController::class, 'deleteSavedPermit'])
+        ->whereNumber('id')
+        ->whereNumber('permitId')
+        ->name('applications.saved-permits.delete');
+
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])
         ->name('applications.show')
         ->middleware('role:Admin,Planning Officer');

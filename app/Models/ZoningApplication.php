@@ -96,6 +96,11 @@ class ZoningApplication extends Model
         return $this->hasMany(Parcel::class, 'zoning_application_id');
     }
 
+    public function generatedPermits(): HasMany
+    {
+        return $this->hasMany(GeneratedPermit::class, 'zoning_application_id')->latest();
+    }
+
     public function technicalReviews(): HasMany
     {
         return $this->hasMany(TechnicalReview::class, 'zoning_application_id');

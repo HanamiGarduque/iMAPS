@@ -3,6 +3,7 @@
 // and get a PDF filled into the office's own Excel layout (config/permits.php on the server).
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import axios from "axios";
+import Swal from "sweetalert2";
 
 export const PERMITS = [
     { type: "ze", label: "Zoning Evaluation", paper: "A4", icon: "📋" },
@@ -27,50 +28,226 @@ const readJson = (k) => {
 };
 
 export function defaultPermitFor(app = {}) {
+    // Zoning Evaluation is default regardless of application type
+    return "ze";
+}
+
+export function getRecommendedPermitForApp(app = {}) {
     const t = (app.application_type || "").toLowerCase();
-    if (t.includes("development")) return "dp";
-    if (t.includes("zoning cert")) return "zc";
+    if (t.includes("development") || t.includes("palc")) return "dp";
+    if (t.includes("zoning cert") || t.includes("rezoning") || t.includes("reclassification")) return "zc";
     return "lc";
+}
+
+export function getAvailablePermitsForApp(app = {}) {
+    const t = (app.application_type || "").toLowerCase();
+    const allowed = ["ze"];
+
+    if (t.includes("development")) {
+        allowed.push("dp");
+        allowed.push("lc");
+    } else if (t.includes("zoning cert") || t.includes("rezoning") || t.includes("reclassification")) {
+        allowed.push("zc");
+    } else if (t.includes("palc")) {
+        allowed.push("dp");
+        allowed.push("lc");
+    } else {
+        allowed.push("lc");
+    }
+
+    return PERMITS.filter((p) => allowed.includes(p.type));
 }
 
 // ── Tab content: list of permits, each opens the modal ──
 export function PermitExportPanel({ app }) {
     const [open, setOpen] = useState(null);
-    const suggested = defaultPermitFor(app);
+    const [savedPermits, setSavedPermits] = useState(app?.generated_permits || app?.generatedPermits || []);
+    const defaultPermit = defaultPermitFor(app);
+    const recommendedPermit = getRecommendedPermitForApp(app);
+
+    const fetchSavedPermits = async () => {
+        try {
+            const { data } = await axios.get(`/applications/${app.id}/saved-permits`);
+            if (data?.permits) setSavedPermits(data.permits);
+        } catch (e) {
+            console.error("Failed to fetch saved permits:", e);
+        }
+    };
+
+    useEffect(() => {
+        if (app?.id) fetchSavedPermits();
+    }, [app?.id]);
+
+    const handleDeleteSavedPermit = (item) => {
+        const permitId = typeof item === "object" ? item?.id : item;
+        const permitName = typeof item === "object" ? item?.permit_name || "this permit document" : "this permit document";
+
+        Swal.fire({
+            title: "Delete stored permit?",
+            text: `Are you sure you want to delete "${permitName}"? This action cannot be undone.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Delete Permit",
+            cancelButtonText: "Cancel",
+            buttonsStyling: false,
+            focusCancel: true,
+            customClass: {
+                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
+                title: "text-base font-bold text-slate-900",
+                htmlContainer: "text-xs text-slate-500 mt-1",
+                actions: "flex items-center justify-end gap-2.5 mt-5",
+                confirmButton:
+                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
+                cancelButton:
+                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
+            },
+        }).then(async (result) => {
+            if (result.isConfirmed) {
+                try {
+                    await axios.delete(`/applications/${app.id}/saved-permits/${permitId}`);
+                    fetchSavedPermits();
+                    Swal.fire({
+                        toast: true,
+                        position: "top-end",
+                        icon: "success",
+                        title: "Permit document deleted",
+                        showConfirmButton: false,
+                        timer: 2000,
+                    });
+                } catch (e) {
+                    Swal.fire({
+                        icon: "error",
+                        title: "Delete Failed",
+                        text: e.response?.data?.message || "Could not delete stored permit.",
+                        customClass: {
+                            popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white",
+                            confirmButton: "px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold cursor-pointer",
+                        },
+                    });
+                }
+            }
+        });
+    };
 
     return (
-        <div className="space-y-3 pb-4">
+        <div className="space-y-4 pb-4">
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                <h3 className="text-xs font-bold text-slate-900">Generate permit</h3>
-                <p className="text-[11.5px] text-slate-500">
-                    Printed on the office's official Excel layout. You'll be asked for the details the encode form doesn't capture (decision numbers,
-                    setback, resolutions, signatories, checklist).
+                <h3 className="text-xs font-bold text-slate-900">Generate permit & evaluation</h3>
+                <p className="text-[11.5px] text-slate-500 mt-0.5">
+                    Permit formats are tailored to the application type. Zoning Evaluation is default for all applications.
+                    All generated permits are automatically stored permanently under this application.
                 </p>
             </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {PERMITS.map((p) => (
-                    <button
-                        key={p.type}
-                        type="button"
-                        onClick={() => setOpen(p.type)}
-                        className={`text-left p-3 rounded-xl border transition-all cursor-pointer hover:shadow-sm ${
-                            p.type === suggested ? "border-[#0b2a5b] bg-blue-50/60" : "border-slate-200 bg-white hover:bg-slate-50"
-                        }`}
-                    >
-                        <div className="flex items-center gap-2">
-                            <span className="text-lg">{p.icon}</span>
-                            <div className="min-w-0">
-                                <p className="text-[12.5px] font-bold text-slate-900">{p.label}</p>
-                                <p className="text-[11px] text-slate-500">
-                                    PDF · {p.paper}
-                                    {p.type === suggested && " · matches this application"}
-                                </p>
+                {getAvailablePermitsForApp(app).map((p) => {
+                    const isDefault = p.type === defaultPermit;
+                    const isRecommended = p.type === recommendedPermit;
+
+                    return (
+                        <button
+                            key={p.type}
+                            type="button"
+                            onClick={() => setOpen(p.type)}
+                            className={`text-left p-3 rounded-xl border transition-all cursor-pointer hover:shadow-sm ${
+                                isRecommended
+                                    ? "border-[#0b2a5b] bg-blue-50/60 ring-1 ring-blue-900/10"
+                                    : isDefault
+                                    ? "border-emerald-300 bg-emerald-50/30"
+                                    : "border-slate-200 bg-white hover:bg-slate-50"
+                            }`}
+                        >
+                            <div className="flex items-center gap-2.5">
+                                <span className="text-xl">{p.icon}</span>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <p className="text-[12.5px] font-bold text-slate-900">{p.label}</p>
+                                        {isDefault && (
+                                            <span className="text-[9.5px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md">
+                                                Default
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                        PDF · {p.paper}
+                                    </p>
+                                </div>
                             </div>
-                        </div>
-                    </button>
-                ))}
+                        </button>
+                    );
+                })}
             </div>
-            {open && <GeneratePermitModal app={app} initialType={open} onClose={() => setOpen(null)} />}
+
+            {/* Saved Permits & Issued Documents List */}
+            <div className="mt-5 border-t border-slate-200 pt-4">
+                <div className="flex items-center justify-between mb-2.5">
+                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <span>📁</span> Saved Permits & Stored Documents ({savedPermits.length})
+                    </h4>
+                    <button
+                        type="button"
+                        onClick={fetchSavedPermits}
+                        className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                    >
+                        Refresh
+                    </button>
+                </div>
+
+                {savedPermits.length === 0 ? (
+                    <div className="p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-center text-xs text-slate-400">
+                        No stored permits for this application yet. Generated permits will be automatically stored here.
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {savedPermits.map((item) => (
+                            <div key={item.id} className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-3 shadow-2xs">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-slate-900 truncate">{item.permit_name}</span>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${item.file_format === 'pdf' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                            {item.file_format}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                        Saved {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                        {item.formatted_file_size && ` · ${item.formatted_file_size}`}
+                                        {item.generated_by?.name && ` · by ${item.generated_by.name}`}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <a
+                                        href={`/applications/${app.id}/saved-permits/${item.id}/download`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                                    >
+                                        <span>📥</span> {item.file_format === 'pdf' ? 'View PDF' : 'Download'}
+                                    </a>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDeleteSavedPermit(item)}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                                        title="Delete stored permit"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {open && (
+                <GeneratePermitModal
+                    app={app}
+                    initialType={open}
+                    onClose={() => {
+                        setOpen(null);
+                        fetchSavedPermits();
+                    }}
+                />
+            )}
         </div>
     );
 }
@@ -86,6 +263,7 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
     const [previewUrl, setPreviewUrl] = useState(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewError, setPreviewError] = useState(null);
+    const [previewDriver, setPreviewDriver] = useState(null); // libreoffice | excel | dompdf
     const abortController = useRef(null);
 
     useEffect(() => {
@@ -165,23 +343,31 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
             setPreviewLoading(true);
             setPreviewError(null);
             try {
-                const defaults = Object.fromEntries(schema.fields.map((f) => [f.key, f.default]));
-                const cleanValues = Object.fromEntries(Object.entries(values).filter(([k, v]) => String(v ?? "") !== String(defaults[k] ?? "")));
-                const payload = { fields: { ...cleanValues, ...cells }, format: "pdf" };
-                
-                const res = await fetch(`/applications/${app.id}/export-preview/${type}`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "X-CSRF-TOKEN": document.querySelector('meta[name="csrf-token"]')?.content },
-                    body: JSON.stringify(payload),
-                    signal: controller.signal,
-                });
-                if (!res.ok) throw new Error("Preview generation failed");
-                const blob = await res.blob();
-                setPreviewUrl(URL.createObjectURL(blob));
+                // Use axios (not fetch): the CSRF <meta> tag was removed in Loop 6, and axios
+                // sends the X-XSRF-TOKEN header from Laravel's cookie automatically. With fetch
+                // the request got a 419 → redirect → the dashboard HTML ended up in the iframe.
+                const res = await axios.post(
+                    `/applications/${app.id}/export-preview/${type}`,
+                    { fields: values, cells, format: "pdf" },
+                    { responseType: "blob", signal: controller.signal }
+                );
+                if (!String(res.headers["content-type"] || "").includes("pdf")) {
+                    throw new Error("Preview generation failed");
+                }
+                setPreviewDriver(res.headers["x-permit-pdf-driver"] || null);
+                setPreviewUrl(URL.createObjectURL(res.data));
             } catch (err) {
-                if (err.name !== "AbortError") {
+                if (!axios.isCancel(err) && err.name !== "CanceledError" && err.name !== "AbortError") {
                     console.error(err);
-                    setPreviewError(err.message);
+                    let msg = err.message || "Preview generation failed";
+                    if (err.response?.data instanceof Blob) {
+                        try {
+                            msg = JSON.parse(await err.response.data.text()).message || msg;
+                        } catch {
+                            /* keep default */
+                        }
+                    }
+                    setPreviewError(msg);
                 }
             } finally {
                 setPreviewLoading(false);
@@ -262,20 +448,32 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
 
                 {/* Permit picker */}
                 <div className="px-5 py-2.5 border-b border-slate-200 flex gap-2 overflow-x-auto shrink-0">
-                    {PERMITS.map((p) => (
-                        <button
-                            key={p.type}
-                            type="button"
-                            disabled={!!busy}
-                            onClick={() => setType(p.type)}
-                            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                                type === p.type ? "bg-[#0b2a5b] border-[#0b2a5b] text-white" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                            }`}
-                        >
-                            <span>{p.icon}</span>
-                            {p.label}
-                        </button>
-                    ))}
+                    {getAvailablePermitsForApp(app).map((p) => {
+                        const isDefault = p.type === defaultPermitFor(app);
+                        const isActive = type === p.type;
+
+                        return (
+                            <button
+                                key={p.type}
+                                type="button"
+                                disabled={!!busy}
+                                onClick={() => setType(p.type)}
+                                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                    isActive
+                                        ? "bg-[#0b2a5b] border-[#0b2a5b] text-white"
+                                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                                }`}
+                            >
+                                <span>{p.icon}</span>
+                                {p.label}
+                                {isDefault && (
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${isActive ? "bg-emerald-500 text-white" : "bg-emerald-100 text-emerald-800"}`}>
+                                        Default
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 {/* Body */}
@@ -350,14 +548,6 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
                         <button
                             type="button"
                             disabled={loading || !!busy || !schema}
-                            onClick={() => generate("xlsx")}
-                            className="px-3.5 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
-                        >
-                            {busy === "xlsx" ? "Preparing…" : "Excel copy"}
-                        </button>
-                        <button
-                            type="button"
-                            disabled={loading || !!busy || !schema}
                             onClick={() => generate("pdf")}
                             className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:bg-slate-300 cursor-pointer"
                         >
@@ -372,11 +562,27 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
                 <div className="hidden lg:flex flex-col w-[600px] bg-slate-100 shrink-0 relative">
                     <div className="px-5 py-3 border-b border-slate-200 bg-white flex items-center justify-between shadow-sm z-10">
                         <h3 className="text-[13px] font-bold text-slate-700">Live Preview</h3>
-                        {previewLoading && <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full animate-pulse">Updating...</span>}
+                        <div className="flex items-center gap-2">
+                            {previewLoading && <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full animate-pulse">Updating...</span>}
+                            {previewDriver && (
+                                <span
+                                    className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${
+                                        previewDriver === "dompdf" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"
+                                    }`}
+                                    title={
+                                        previewDriver === "dompdf"
+                                            ? "Neither LibreOffice nor Microsoft Excel was found, so this is a simplified layout. Install either one for the exact office layout."
+                                            : `PDF made with ${previewDriver === "excel" ? "Microsoft Excel" : "LibreOffice"}`
+                                    }
+                                >
+                                    {previewDriver === "dompdf" ? "Draft quality" : previewDriver === "excel" ? "via Excel" : "via LibreOffice"}
+                                </span>
+                            )}
+                        </div>
                     </div>
                     <div className="flex-1 overflow-auto p-6 flex justify-center bg-[#525659]">
                         {previewUrl ? (
-                            <div className={`w-full bg-white shadow-xl ${type === 'DP' ? 'aspect-[8.5/13]' : 'aspect-[1/1.414]'} relative`}>
+                            <div className={`w-full bg-white shadow-xl ${type === 'dp' ? 'aspect-[8.5/13]' : 'aspect-[1/1.414]'} relative`}>
                                 <iframe src={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`} className="absolute inset-0 w-full h-full border-0" />
                             </div>
                         ) : previewError ? (

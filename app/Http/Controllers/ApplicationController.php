@@ -19,9 +19,11 @@ use App\Services\SmsNotifier;
 // owns the delivery/inspection/reassignment support classes below. Neither side
 // replaces the other.
 use App\Models\AppNotification;
+use App\Models\GeneratedPermit;
 use App\Services\PermitExcelService;
 use App\Services\SupabaseService;
 use App\Services\WorkAssignmentService;
+use Illuminate\Support\Facades\Storage;
 use App\Support\InspectionDeliveryStatus;
 use App\Support\InspectionSummary;
 use App\Support\InspectorTransferGuard;
@@ -811,6 +813,7 @@ class ApplicationController extends Controller
                     ->with(['siteInspection.inspector'])
                     ->withCount('siteInspections');
             }]) // <-- Eager load and order parcels
+            ->with(['generatedPermits.generatedBy:id,name'])
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->select('zoning_applications.*', 'users.name as encoded_by_name')
             ->where('zoning_applications.id', $id)
@@ -1359,6 +1362,8 @@ class ApplicationController extends Controller
         $validated = $request->validate([
             "fields"   => "nullable|array",
             "fields.*" => "nullable",
+            "cells"    => "nullable|array",
+            "cells.*"  => "nullable|string|max:500",
             "format"   => "nullable|in:pdf",
         ]);
 
@@ -1371,6 +1376,7 @@ class ApplicationController extends Controller
         return response()->file($path, [
             "Content-Type"        => "application/pdf",
             "Content-Disposition" => "inline; filename='preview.pdf'",
+            "X-Permit-Pdf-Driver" => (string) $permits->lastPdfDriver(),
         ])->deleteFileAfterSend(true);
     }
 
@@ -1394,21 +1400,105 @@ class ApplicationController extends Controller
             return response()->json(['message' => 'Failed to generate permit: ' . $e->getMessage()], 422);
         }
 
+        // Store a persistent copy of the generated permit for this application
+        $storageDir = "permits/{$application->id}";
+        $label = config("permits.documents.{$type}.label", strtoupper($type));
+        $fileName = sprintf('%s_%s_%s.%s', \Illuminate\Support\Str::slug($label, '_'), preg_replace('/[^A-Za-z0-9_\-]/', '_', (string) $application->reference_number), \Illuminate\Support\Str::random(6), $format);
+        $storagePath = "{$storageDir}/{$fileName}";
+
+        Storage::disk('public')->makeDirectory($storageDir);
+        Storage::disk('public')->put($storagePath, file_get_contents($path));
+
+        $savedPermit = GeneratedPermit::create([
+            'zoning_application_id' => $application->id,
+            'permit_type'           => $type,
+            'permit_name'           => $label,
+            'file_name'             => $fileName,
+            'file_path'             => $storagePath,
+            'file_format'           => $format,
+            'file_size'             => filesize($path),
+            'input_data'            => $validated['fields'] ?? [],
+            'generated_by'          => Auth::id(),
+        ]);
+
         AuditLogger::log(
             applicationId: $application->id,
             action: 'PERMIT_GENERATED',
             performedBy: Auth::id(),
-            note: sprintf('%s generated (%s).', config("permits.documents.{$type}.label", strtoupper($type)), strtoupper($format))
+            note: sprintf(
+                '%s generated & stored (%s%s).',
+                $label,
+                strtoupper($format),
+                $format === 'pdf' && $permits->lastPdfDriver() ? ' via ' . $permits->lastPdfDriver() : ''
+            )
         );
 
         $mime = $format === 'pdf'
             ? 'application/pdf'
             : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-        return response()->file($path, [
+        $fullStoragePath = Storage::disk('public')->path($storagePath);
+
+        // Remove temporary generated file
+        @unlink($path);
+
+        return response()->file($fullStoragePath, [
             'Content-Type'        => $mime,
-            'Content-Disposition' => ($format === 'pdf' ? 'inline' : 'attachment') . '; filename="' . basename($path) . '"',
-        ])->deleteFileAfterSend(true);
+            'Content-Disposition' => ($format === 'pdf' ? 'inline' : 'attachment') . '; filename="' . $fileName . '"',
+            'X-Saved-Permit-Id'   => (string) $savedPermit->id,
+        ]);
+    }
+
+    public function savedPermits(int $id)
+    {
+        $application = ZoningApplication::findOrFail($id);
+        $permits = $application->generatedPermits()->with('generatedBy:id,name')->get();
+
+        return response()->json([
+            'permits' => $permits,
+        ]);
+    }
+
+    public function downloadSavedPermit(int $id, int $permitId)
+    {
+        $application = ZoningApplication::findOrFail($id);
+        $permit = GeneratedPermit::where('zoning_application_id', $application->id)->findOrFail($permitId);
+
+        if (!Storage::disk('public')->exists($permit->file_path)) {
+            abort(404, 'Stored permit file not found.');
+        }
+
+        $fullPath = Storage::disk('public')->path($permit->file_path);
+        $mime = $permit->file_format === 'pdf'
+            ? 'application/pdf'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+        return response()->file($fullPath, [
+            'Content-Type'        => $mime,
+            'Content-Disposition' => ($permit->file_format === 'pdf' ? 'inline' : 'attachment') . '; filename="' . $permit->file_name . '"',
+        ]);
+    }
+
+    public function deleteSavedPermit(int $id, int $permitId)
+    {
+        $application = ZoningApplication::findOrFail($id);
+        $permit = GeneratedPermit::where('zoning_application_id', $application->id)->findOrFail($permitId);
+
+        if (Storage::disk('public')->exists($permit->file_path)) {
+            Storage::disk('public')->delete($permit->file_path);
+        }
+
+        $permitName = $permit->permit_name;
+        $permit->delete();
+
+        AuditLogger::log(
+            applicationId: $application->id,
+            action: 'PERMIT_DELETED',
+            performedBy: Auth::id(),
+            note: sprintf('Stored permit %s (%s) deleted.', $permitName, $permit->file_name)
+        );
+
+        return response()->json(['message' => 'Saved permit deleted successfully.']);
     }
 }
 
