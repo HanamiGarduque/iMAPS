@@ -700,6 +700,100 @@ This support path is separate from inspection approval and Planning Officer Tech
 
 The provided RLS evidence shows inspectors can create and view their own diagnostic reports. No explicit authenticated Admin read/update policy was shown in that export. Therefore an Admin diagnostic UI/access path is **CONTRACT/ACCESS WORK REQUIRED**; do not claim it already works in iMAPS.
 
+## 11.4 Reports & Support write boundary and durable application identity
+
+`diagnostic_reports` is a **shared** surface. One table carries two report types
+that mean different things to different roles, and the write boundary between them
+is part of the architecture, not a UI preference.
+
+### 11.4.1 The two report types
+
+**Technical Issue** — a problem with the FieldSync app itself.
+
+1. Inspector-authored.
+2. Carries **no** job, application, namespace or support-category linkage. A
+   technical row with dormant application linkage is invalid, not merely unused.
+3. Handled by Admin/support triage.
+4. Never generates a Planning Officer notification.
+
+**Application Support** — a request about one specific application.
+
+5. Inspector-authored.
+6. Carries the **exact** `field_job_id` at the moment of filing.
+7. Carries the durable `supabase_application_id` and the required
+   `bridge_source_id`.
+8. Carries a `support_category` from a controlled vocabulary.
+
+### 11.4.2 Filing coherence
+
+9. At filing, the job, application and namespace must agree, and the job must
+   belong to `auth.uid()`. A report may not pair the caller's own job with another
+   application's UUID.
+10. Inspector report INSERT requires `inspector_id = auth.uid()` and initial
+    `status = submitted`.
+11. `technical_description`, `affected_file` and `recommended_action` are
+    Admin/support review fields and **cannot** be supplied by an ordinary inspector
+    INSERT.
+12. `repro_steps` **remains inspector-authored.** It is not an Admin-only field and
+    must not be redefined as one.
+13. Ownership of the application is **not** a prerequisite for filing. An unowned
+    application may still file a valid support report.
+
+### 11.4.3 Namespace-safe resolution
+
+14. Current iMAPS application resolution **MUST** prove all of the following before
+    any local integer identity is used:
+
+    report.bridge_source_id
+      == field_job.bridge_source_id
+      == remote application mirror.bridge_source_id
+      == BridgeSourceIdentity::id()
+
+    Fail closed on any disagreement or NULL. Never resolve `local_inspection_id` or
+    `local_application_id` without first proving the current source namespace. A
+    reference number is never used to recover a namespace.
+
+### 11.4.4 Retention lifecycle
+
+15. `field_job_id` is `ON DELETE SET NULL`. A job may be deleted without being
+    blocked by a report, and the report survives.
+16. `supabase_application_id` is `ON DELETE RESTRICT`. It is the durable anchor, so
+    it is never nulled and never cascades.
+17. After job deletion the application context **survives**, but the originating
+    inspection and round are **unavailable and never inferred**. The UI states this
+    explicitly rather than showing a blank or a guess.
+18. Generic mirror cleanup must **skip** any application mirror referenced by a
+    retained Application Support report. Deliberate disposal of report-bearing
+    synthetic data requires separate, explicit authorization.
+
+### 11.4.5 Bridge identity is not client-writable
+
+19. Ordinary authenticated clients may **not** rewrite `field_jobs` identity:
+    `id`, `local_inspection_id`, `supabase_application_id`, `supabase_parcel_id`,
+    `bridge_source_id`. This is enforced in the database, because RLS alone cannot
+    distinguish an operational update from an identity rewrite.
+20. Trusted `service_role` bridge operations and ordinary operational FieldSync
+    updates remain allowed.
+
+### 11.4.6 Read authority
+
+21. Planning Officer visibility is Application Support on **currently owned**
+    applications only. There is no general Technical Issue access, and no disabled
+    or empty Technical Issue tab is shown, because it invites the reader toward a
+    forbidden surface.
+22. An Admin reads both types. A Site Inspector has no iMAPS web read path and sees
+    only their own submitted reports inside FieldSync.
+
+### 11.4.7 Notification boundary
+
+23. Technical Issue: **no** Planning Officer notification, and no hidden or
+    broadcast alternative.
+24. Application Support: an Admin may notify **exactly one** current Planning
+    Officer, resolved server-side at click time so a changed owner receives it
+    rather than a stale client id.
+25. No owner means no notification and no button. There is never a broadcast
+    fallback.
+
 ## 12. Development rules
 
 1. Never reset FieldSync lifecycle state during an iMAPS bridge retry.
@@ -713,6 +807,7 @@ The provided RLS evidence shows inspectors can create and view their own diagnos
 9. Do not treat the migration ledger or a supplied export alone as proof of the actual deployed schema.
 10. Do not edit unrelated UI or features during bridge work.
 11. Before **any Controller modification**, the Team Leader must be notified and approval must be received.
+12. Reporting is a shared surface: never resolve an application, inspection, or report without proving the current bridge source namespace first.
 
 ## 13. Phase history — LEGACY planning context
 

@@ -1926,3 +1926,273 @@ No Supabase write. No job dispatched. No FieldSync modification. No iMAPS source
 modification. `loop8_types_tmp.php` not recreated. `master` not touched, nothing
 merged. Existing worker PID 48352 left running and unsignalled; no second worker
 started.
+
+---
+
+## 2026-10-03 - Reports & Support V2 shared reporting schema - **APPLIED / VERIFIED**
+
+<!-- reports-and-support-v2:apply -->
+
+**APPLY STATUS: APPLIED / VERIFIED**
+
+Applied in one transaction and verified read-only against the live project. This
+entry supersedes its own earlier `APPLYING / PENDING VERIFICATION` state, which was
+recorded before execution and left the VERIFICATION section deliberately pending.
+
+### 1. WHY
+
+- One shared model for **Technical Issue** and **Application Support**, so a
+  FieldSync-inspector-authored report can be either an app-level problem or a
+  request about one specific application, without a second table or a second
+  reference format.
+- **Durable application identity.** A support report must keep resolving to its
+  application, and therefore to its current Planning Officer, after the FieldSync
+  task that produced it is archived.
+- **Bridge namespace safety.** Report-to-application resolution must never use a
+  bare local integer id, because those are only unique inside one iMAPS database
+  and this Supabase project is shared.
+- **FieldSync report filing hardening.** The existing permissive INSERT policy
+  checked only `auth.uid() = inspector_id`, and the existing `field_jobs` UPDATE
+  policy let an assigned inspector rewrite the very identity fields a filing check
+  must trust.
+- **Least-privilege DB boundary.** `anon` and `authenticated` held eight
+  privileges each on three shared tables; RLS was the only thing preventing
+  misuse.
+
+### 2. WHEN
+
+| | |
+|---|---|
+| Approval | 2026-10-03, user / HEAD DB approval GRANTED |
+| Apply date | 2026-10-03 |
+| Project | `laapipjyprmmaylunxib` |
+| Bridge source identity | `rosario-imaps-local-0921-a` |
+| Identity resolution | `App\Services\BridgeSourceIdentity::id()` -> `config('bridge.source_id')` -> `IMAPS_BRIDGE_SOURCE_ID` |
+| Approved artifact SHA-256 | `D542242BEB5F7CFDD7DC1DFA3CF512E236ECF817E9EC00070FEFAAEB4F2616BC` |
+| Form | one transaction, sections B-I |
+
+### 3. CHANGE
+
+**`diagnostic_reports` — 13 new columns**
+
+`report_type` (`NOT NULL DEFAULT 'technical_issue'`), `field_job_id`,
+`supabase_application_id`, `bridge_source_id`, `support_category`,
+`affected_field`, `requested_change`, `expected_behavior`, `blocks_field_work`,
+`occurred_at`, `connectivity_state`, `app_version`, `os_version`.
+
+No `UPDATE` and no backfill: existing rows read as Technical Issues through the
+column default.
+
+**New foreign keys**
+
+| Constraint | Target | Delete |
+|---|---|---|
+| `dr_field_job_fk` | `field_jobs(id)` | `ON DELETE SET NULL` |
+| `dr_application_fk` | `supabase_zoning_applications(id)` | `ON DELETE RESTRICT` |
+
+**New CHECK constraints**
+
+`dr_report_type_ck` (closed `report_type` vocabulary) and `dr_report_identity_ck`
+(at-rest identity and controlled support-category coherence). No at-rest
+restriction on `status` or on the review fields, so trusted Admin/support review
+remains possible after initial filing.
+
+**New `field_jobs` identity protection**
+
+`dr_protect_field_job_identity()` plus the `dr_guard_field_job_identity`
+`BEFORE UPDATE` trigger. Ordinary authenticated callers cannot alter `id`,
+`local_inspection_id`, `supabase_application_id`, `supabase_parcel_id` or
+`bridge_source_id`. Ordinary operational updates and trusted `service_role`
+bridge operations remain allowed.
+
+**New report filing policy**
+
+`dr_support_filing_is_valid(...)` (`SECURITY INVOKER`) plus the
+`dr_support_filing_valid` **`AS RESTRICTIVE FOR INSERT TO authenticated`** policy.
+Both existing permissive own-report policies are preserved unchanged.
+
+**Grant hardening**
+
+| Object | `authenticated` | `anon` |
+|---|---|---|
+| `diagnostic_reports` | `SELECT, INSERT` | none |
+| `field_jobs` | `SELECT, UPDATE` | none |
+| `supabase_zoning_applications` | `SELECT` | none |
+| `diagnostic_report_seq` | `USAGE` | none |
+
+`service_role` grants are untouched. The existing authenticated Admin job INSERT
+policy is preserved as a policy but no longer has a table privilege to act on,
+because no product consumer creates jobs as an authenticated client.
+
+**New indexes**
+
+`dr_reports_type_status_created_idx`, `dr_reports_support_app_idx`,
+`dr_reports_field_job_idx`.
+
+**Preserved unchanged**
+
+`set_diagnostic_reference`, `touch_diagnostic_report`,
+`generate_diagnostic_reference()`, `public.diagnostic_report_seq`,
+`diagnostic_reports_status_check`, both existing own-report policies, every
+`field_jobs` and mirror policy, the legacy report row, and all `service_role`
+grants. No second reference generator and no second reference format was
+introduced.
+
+### 4. VERIFICATION
+
+**4.1 Apply execution**
+
+| | |
+|---|---|
+| Started (UTC) | `2026-10-03 01:20:46` |
+| Completed (UTC) | `2026-10-03 01:20:47` |
+| Duration | 1.49 s |
+| Transport | Supabase Management API, project `laapipjyprmmaylunxib` |
+| HTTP status | **201** |
+| Transaction | **COMMITTED** |
+| Error | **NONE** |
+| Statement text SHA-256 | `0592CB79BE838B15C5E394C0DA02B92D0A71B46A3C3AE6219613188D280AED83` |
+
+The statement text is the artifact's own apply region, artifact lines 49-201,
+**extracted rather than retyped**: the `-- BEGIN APPLY` marker, `BEGIN;`, sections
+B through I, and `COMMIT;`. The artifact was re-hashed immediately before
+execution and still matched
+`D542242BEB5F7CFDD7DC1DFA3CF512E236ECF817E9EC00070FEFAAEB4F2616BC`.
+
+**4.2 Pre-apply drift gate**
+
+18 structural fingerprints were compared with the frozen V2.2/V2.3 baseline; a
+19th confirmed that none of the V2 objects existed.
+
+| Gate | Result |
+|---|---|
+| SCHEMA DRIFT | **NO** |
+| POLICY DRIFT | **NO** |
+| TRIGGER DRIFT | **NO** |
+| ACL DRIFT | **NO** |
+| Partial apply detected | **NO** |
+
+**4.3 Objects created**
+
+13 columns on `diagnostic_reports`; `dr_field_job_fk`; `dr_application_fk`;
+`dr_report_type_ck`; `dr_report_identity_ck`; `dr_protect_field_job_identity()`;
+`dr_guard_field_job_identity`; `dr_support_filing_is_valid(uuid,uuid,text,text,text,text,text,text,text)`;
+`dr_support_filing_valid`; `dr_reports_type_status_created_idx`;
+`dr_reports_support_app_idx`; `dr_reports_field_job_idx`.
+
+**4.4 Live definition equivalence**
+
+Both new function bodies exist **verbatim** in the approved artifact. Both are
+`SECURITY INVOKER` with `search_path` pinned empty. Neither the function bodies nor
+the policy hardcode a deployment source id.
+
+**4.5 Post-apply state, read-only**
+
+- New columns: all 13 present at ordinal positions 14-26 with the expected types,
+  nullability and defaults; `report_type` is `text NOT NULL DEFAULT 'technical_issue'`.
+- Constraints: `dr_field_job_fk` is `ON UPDATE RESTRICT ON DELETE SET NULL`;
+  `dr_application_fk` is `ON UPDATE RESTRICT ON DELETE RESTRICT`; both CHECKs match
+  the approved definitions; `diagnostic_reports_status_check`,
+  `diagnostic_reports_inspector_id_fkey` (still `ON DELETE CASCADE`), the primary
+  key and the `reference_code` unique key are unchanged.
+- Policies: `Inspectors create own reports` and `Inspectors view own reports`
+  preserved unchanged; `dr_support_filing_valid` created as
+  `RESTRICTIVE / INSERT / authenticated`; **0** report `UPDATE` or `DELETE`
+  policies exist; all `field_jobs` and mirror policies unchanged.
+- Job guard: `dr_guard_field_job_identity` is enabled (`tgenabled = 'O'`),
+  `BEFORE UPDATE ... FOR EACH ROW`. `authenticated` and `anon` hold **no** EXECUTE
+  on `dr_protect_field_job_identity()`; only `postgres` and `service_role` do.
+- Reference mechanism: `set_diagnostic_reference`, `generate_diagnostic_reference()`
+  and `touch_diagnostic_report` are intact and enabled; `diagnostic_report_seq`
+  still has `last_value = 1, is_called = true`, so **no** reference code was
+  consumed; exactly **one** function in `public` generates `reference_code`, so no
+  second generator exists.
+- Grants, confirmed by `has_table_privilege` / `has_sequence_privilege` /
+  `has_function_privilege`:
+
+  | Check | Result |
+  |---|---|
+  | `anon` on all three tables, and on the sequence | **false** for every privilege |
+  | `authenticated` `diagnostic_reports` SELECT / INSERT | true / true |
+  | `authenticated` `diagnostic_reports` UPDATE | false |
+  | `authenticated` `field_jobs` SELECT / UPDATE | true / true |
+  | `authenticated` `field_jobs` INSERT | false |
+  | `authenticated` mirror SELECT | true |
+  | `authenticated` mirror UPDATE | false |
+  | `authenticated` sequence USAGE / UPDATE | true / false |
+  | `anon` EXECUTE on the filing helper | false |
+  | `authenticated` EXECUTE on the filing helper | true |
+  | `authenticated` EXECUTE on the trigger function | false |
+  | `service_role` `field_jobs` INSERT and mirror UPDATE | true (trusted access preserved) |
+
+- Counts, before and after: `diagnostic_reports` 1 -> 1; `field_jobs` 16 -> 16;
+  `supabase_zoning_applications` 24 -> 24; `supabase_parcels` 20 -> 20;
+  `diagnostic_report_seq` unchanged. **Business rows deleted: 0.**
+
+**4.6 Legacy report**
+
+`DR-2026-0001` is byte-identical to its pre-apply fingerprint.
+
+| Field | Pre-apply | Post-apply |
+|---|---|---|
+| `id` | `0dcbfec0-2400-4c7f-af66-c4e4a8eb0d3d` | identical |
+| `reference_code` | `DR-2026-0001` | identical |
+| `inspector_id` | `ddcebeac-2217-41c5-a6e2-d7f873db9af2` | identical |
+| `title` / `module` / `status` | `error` / `sync center` / `submitted` | identical |
+| `created_at` / `updated_at` | `2026-09-07 11:02:05.01888+00` | identical |
+| `summary` length / SHA-256 | 3473 / `53230e9d...` | identical |
+| `report_type` | (column did not exist) | `technical_issue` |
+| `field_job_id`, `supabase_application_id`, `bridge_source_id`, `support_category` | (did not exist) | all NULL |
+
+The live `summary` contains a signed Supabase Storage URL, so it was never returned
+as text: only its length and a SHA-256 digest were compared.
+
+**4.7 Isolated executable security suite**
+
+Re-run after the apply, against the same approved artifact:
+
+```
+TOTAL 85 PASS     (74 PostgreSQL engine checks + 11 application-contract checks)
+0 FAIL
+```
+
+Engine: PGlite 0.3.16 / PostgreSQL 17.5, in memory, disposable. No production row
+was mutated to prove any negative case; the live project was verified structurally
+and read-only.
+
+**4.8 Namespace and protected fixtures**
+
+- `BridgeSourceIdentity::id()` = `rosario-imaps-local-0921-a`, confirmed through the
+  live runtime resolver.
+- Namespace coherence across all 16 jobs: 16 in this namespace, **16/16** with a
+  mirror namespace equal to the job namespace, **0** jobs pointing at a NULL-source
+  mirror.
+- Loop 10 job `1f9df2ac-...` (inspection 41): `in_progress`, step 1,
+  `updated_at 2026-10-01 03:39:49.349537+00`, unchanged. Local application 145 /
+  inspection 41 / parcel 77, unchanged.
+- Teshow job `a761b17a-...` (inspection 37): `in_progress`, step 1,
+  `updated_at 2026-10-02 03:02:20.971649+00`, matching its recorded fingerprint.
+- Local counts unchanged: 39 inspections, 80 technical reviews, 6 notifications,
+  74 applications, 10 delivery attempts.
+- Open-separate evidence deliberately **not** touched: 3 NULL-source mirrors
+  (local 136/137/138) and the duplicate `APP-2026-00030` mirror pair
+  (`4afe8a3d...` NULL-source vs `b108513f...` namespaced local 145) both still
+  present exactly as before.
+- Loop 10 remains **PARTIAL / FIELD ACCEPTANCE PENDING**; its 80 reviews still have
+  0 explicit `reviewed_site_inspection_id` links. This migration advanced no
+  Loop 10 checkpoint.
+
+### 5. ROLLBACK
+
+Rollback is a **separately approved** guarded operation and is never appended to
+an apply invocation. See the guarded rollback contract in the approved artifact,
+section K.
+
+It **refuses to discard retained support data**: if any Application Support report
+identity or any populated new field exists, the rollback aborts rather than
+deleting reports or nulling application identity to make itself succeed. It never
+deletes a report or a report-bearing application mirror. It does not reset
+`diagnostic_report_seq` or any reference code.
+
+A successful rollback restores the audited baseline grants, which are broader than
+the post-apply grants, so it is itself an explicit security decision.

@@ -1291,3 +1291,214 @@ that the post-apply smoke proved wrong. Both corrections are in 22.5.
 - **Correct as written:** the table contract, the index set, the guard design,
   the 0921-vs-fresh split, and the decision not to touch the ledger.
 ---
+
+## 23. Reports & Support V2 shared reporting schema - 2026-10-03 (APPLIED)
+
+Applies to the **remote shared FieldSync/Supabase bridge project**, not to the
+canonical iMAPS `localhost` database. The iMAPS `migrations` ledger is NOT touched
+and no Laravel migration was created: these objects live in a remote database that
+iMAPS reaches only through its bridge writer and readers.
+
+Project `laapipjyprmmaylunxib`. Locked bridge source `rosario-imaps-local-0921-a`,
+resolved at runtime through `App\Services\BridgeSourceIdentity::id()` ->
+`config('bridge.source_id')` -> `IMAPS_BRIDGE_SOURCE_ID`. No deployment-specific
+value is hardcoded in the SQL below.
+
+Approved artifact SHA-256:
+`D542242BEB5F7CFDD7DC1DFA3CF512E236ECF817E9EC00070FEFAAEB4F2616BC`. The SQL-only
+block is sections B-I of that artifact, extracted byte-for-byte rather than retyped,
+and it is one transaction.
+
+| Object | Kind | Note |
+|---|---|---|
+| `diagnostic_reports.report_type` | NEW column | `NOT NULL DEFAULT 'technical_issue'`; legacy rows are Technical Issues, with no backfill UPDATE |
+| `diagnostic_reports.field_job_id` | NEW column | nullable; may become NULL only through `ON DELETE SET NULL` |
+| `diagnostic_reports.supabase_application_id` | NEW column | durable application identity |
+| `diagnostic_reports.bridge_source_id` | NEW column | the namespace that makes that identity meaningful |
+| `diagnostic_reports.support_category` | NEW column | controlled vocabulary, Application Support only |
+| `dr_field_job_fk` | NEW constraint | `field_jobs(id)`, `ON UPDATE RESTRICT ON DELETE SET NULL` |
+| `dr_application_fk` | NEW constraint | `supabase_zoning_applications(id)`, `ON UPDATE RESTRICT ON DELETE RESTRICT` |
+| `dr_report_type_ck` | NEW constraint | closed `report_type` vocabulary |
+| `dr_report_identity_ck` | NEW constraint | at-rest identity and category coherence |
+| `dr_protect_field_job_identity()` | NEW function | `SECURITY INVOKER`, `search_path` pinned empty |
+| `dr_guard_field_job_identity` | NEW trigger | `BEFORE UPDATE ON public.field_jobs FOR EACH ROW` |
+| `dr_support_filing_is_valid(...)` | NEW function | `SECURITY INVOKER`, nine arguments |
+| `dr_support_filing_valid` | NEW policy | `AS RESTRICTIVE FOR INSERT TO authenticated` |
+| `dr_reports_type_status_created_idx` | NEW index | `(report_type, status, created_at DESC)` |
+| `dr_reports_support_app_idx` | NEW index | partial on Application Support, namespaced |
+| `dr_reports_field_job_idx` | NEW index | partial, supporting the FK `SET NULL` path |
+
+Preserved unchanged: the `set_diagnostic_reference` and `touch_diagnostic_report`
+triggers, `generate_diagnostic_reference()`, `public.diagnostic_report_seq`, the
+`diagnostic_reports_status_check` vocabulary, both existing permissive own-report
+policies, every `field_jobs` and mirror policy, the legacy report row, and every
+`service_role` grant.
+
+Post-apply privileges:
+
+| Object | `authenticated` | `anon` | `service_role` |
+|---|---|---|---|
+| `diagnostic_reports` | `SELECT, INSERT` | none | unchanged (trusted) |
+| `field_jobs` | `SELECT, UPDATE` | none | unchanged (trusted) |
+| `supabase_zoning_applications` | `SELECT` | none | unchanged (trusted) |
+| `diagnostic_report_seq` | `USAGE` | none | unchanged (trusted) |
+
+Rollback is a separately approved guarded operation and is deliberately NOT part of
+this canonical block. It refuses to discard retained Application Support data or any
+populated new field, and it never deletes a report or a report-bearing application
+mirror in order to succeed.
+
+<!-- BEGIN CANONICAL SQL: reports-and-support-v2 -->
+-- B. NEW COLUMNS. No UPDATE/backfill; existing rows read as technical_issue.
+ALTER TABLE public.diagnostic_reports
+ ADD COLUMN report_type text NOT NULL DEFAULT 'technical_issue',
+ ADD COLUMN field_job_id uuid,
+ ADD COLUMN supabase_application_id uuid,
+ ADD COLUMN bridge_source_id text,
+ ADD COLUMN support_category text,
+ ADD COLUMN affected_field text,
+ ADD COLUMN requested_change text,
+ ADD COLUMN expected_behavior text,
+ ADD COLUMN blocks_field_work boolean,
+ ADD COLUMN occurred_at timestamptz,
+ ADD COLUMN connectivity_state text,
+ ADD COLUMN app_version text,
+ ADD COLUMN os_version text;
+
+-- C. NEW FKs. Job deletion preserves the report via SET NULL.
+-- RESTRICT preserves the durable application anchor: generic cleanup must
+-- SKIP report-bearing mirrors, not delete reports or null the application.
+ALTER TABLE public.diagnostic_reports
+ ADD CONSTRAINT dr_field_job_fk FOREIGN KEY (field_job_id)
+  REFERENCES public.field_jobs(id) ON UPDATE RESTRICT ON DELETE SET NULL,
+ ADD CONSTRAINT dr_application_fk FOREIGN KEY (supabase_application_id)
+  REFERENCES public.supabase_zoning_applications(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+
+-- D. NEW AT-REST CHECKS. No status or review-field at-rest restriction:
+-- trusted Admin/support review must remain possible after initial filing.
+ALTER TABLE public.diagnostic_reports
+ ADD CONSTRAINT dr_report_type_ck CHECK (report_type IN ('technical_issue','application_support')),
+ ADD CONSTRAINT dr_report_identity_ck CHECK (
+  (report_type='technical_issue'
+   AND field_job_id IS NULL AND supabase_application_id IS NULL
+   AND bridge_source_id IS NULL AND support_category IS NULL)
+  OR
+  (report_type='application_support'
+   AND supabase_application_id IS NOT NULL AND bridge_source_id IS NOT NULL
+   AND support_category IS NOT NULL
+   AND support_category IN ('incorrect_information','missing_information',
+    'additional_site_information','clarification_request','correction_request','other'))
+ );
+
+-- E. NEW NARROW JOB IDENTITY GUARD.
+-- Without this, an inspector could rewrite their job's application/namespace
+-- before filing a report, defeating an otherwise-correct filing join.
+-- Database role is authoritative; JWT role is an additional restrictive signal,
+-- never a privilege grant. selected role/claim also cover a SECURITY DEFINER
+-- wrapper whose current_user becomes the function owner.
+CREATE FUNCTION public.dr_protect_field_job_identity()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $function$
+BEGIN
+ IF (
+   current_user = 'authenticated'
+   OR current_setting('role', true) = 'authenticated'
+   OR auth.role() = 'authenticated'
+ ) AND (
+   NEW.id IS DISTINCT FROM OLD.id
+   OR NEW.local_inspection_id IS DISTINCT FROM OLD.local_inspection_id
+   OR NEW.supabase_application_id IS DISTINCT FROM OLD.supabase_application_id
+   OR NEW.supabase_parcel_id IS DISTINCT FROM OLD.supabase_parcel_id
+   OR NEW.bridge_source_id IS DISTINCT FROM OLD.bridge_source_id
+ ) THEN
+   RAISE EXCEPTION USING ERRCODE='42501',
+    MESSAGE='FieldSync job identity is bridge-managed and cannot be changed by authenticated clients.';
+ END IF;
+ RETURN NEW;
+END;
+$function$;
+-- Supabase function defaults explicitly grant anon/authenticated EXECUTE.
+-- Revoke those named grants as well as PUBLIC; do not alter global defaults.
+REVOKE ALL ON FUNCTION public.dr_protect_field_job_identity() FROM PUBLIC, anon, authenticated;
+-- Trigger execution does not require granting callers direct EXECUTE.
+CREATE TRIGGER dr_guard_field_job_identity
+ BEFORE UPDATE ON public.field_jobs
+ FOR EACH ROW EXECUTE FUNCTION public.dr_protect_field_job_identity();
+
+-- F. NEW SECURITY INVOKER FILING VALIDATOR.
+-- Existing SELECT RLS exposes the caller's assigned job and application mirror.
+-- No SECURITY DEFINER, no hardcoded deployment source, no owner requirement.
+CREATE FUNCTION public.dr_support_filing_is_valid(
+ p_job uuid, p_app uuid, p_bridge text, p_type text,
+ p_status text, p_technical_description text, p_affected_file text,
+ p_recommended_action text, p_category text
+)
+RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER SET search_path = ''
+AS $function$
+ SELECT coalesce(
+  auth.uid() IS NOT NULL
+  AND p_status='submitted'
+  AND p_technical_description IS NULL
+  AND p_affected_file IS NULL
+  AND p_recommended_action IS NULL
+  AND CASE
+   WHEN p_type='technical_issue' THEN
+    p_job IS NULL AND p_app IS NULL AND p_bridge IS NULL AND p_category IS NULL
+   WHEN p_type='application_support' THEN
+    p_job IS NOT NULL AND p_app IS NOT NULL AND p_bridge IS NOT NULL
+    AND p_category IS NOT NULL
+    AND p_category IN ('incorrect_information','missing_information',
+     'additional_site_information','clarification_request','correction_request','other')
+    AND EXISTS (
+     SELECT 1 FROM public.field_jobs j
+     JOIN public.supabase_zoning_applications a ON a.id=j.supabase_application_id
+     WHERE j.id=p_job AND j.assigned_inspector_id=auth.uid()
+      AND j.supabase_application_id=p_app AND j.bridge_source_id=p_bridge
+      AND a.id=p_app AND a.bridge_source_id=p_bridge
+    )
+   ELSE false
+  END, false);
+$function$;
+REVOKE ALL ON FUNCTION public.dr_support_filing_is_valid(uuid,uuid,text,text,text,text,text,text,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.dr_support_filing_is_valid(uuid,uuid,text,text,text,text,text,text,text) TO authenticated;
+
+-- G. NEW RESTRICTIVE POLICY. Existing "Inspectors create own reports"
+-- remains permissive; the result is existing author check AND this policy.
+-- Existing "Inspectors view own reports" SELECT policy is unchanged.
+-- repro_steps is deliberately NOT an Admin-only field: inspectors may submit it.
+CREATE POLICY dr_support_filing_valid ON public.diagnostic_reports
+ AS RESTRICTIVE FOR INSERT TO authenticated
+ WITH CHECK (
+  inspector_id=auth.uid()
+  AND public.dr_support_filing_is_valid(
+   field_job_id,supabase_application_id,bridge_source_id,report_type,status,
+   technical_description,affected_file,recommended_action,support_category)
+ );
+
+-- H. CHANGED TABLE/SEQUENCE GRANTS. Trusted service_role grants are untouched.
+-- No audited anon consumer needs these tables or the reference sequence.
+-- No audited authenticated consumer creates jobs: iMAPS uses service_role.
+-- The existing authenticated Admin INSERT policy remains but loses table INSERT;
+-- local iMAPS Admin/server job creation continues through service_role.
+REVOKE ALL PRIVILEGES ON TABLE public.diagnostic_reports,
+ public.field_jobs, public.supabase_zoning_applications FROM anon, authenticated, PUBLIC;
+GRANT SELECT, INSERT ON TABLE public.diagnostic_reports TO authenticated;
+GRANT SELECT, UPDATE ON TABLE public.field_jobs TO authenticated;
+GRANT SELECT ON TABLE public.supabase_zoning_applications TO authenticated;
+-- nextval needs USAGE. Preserve the existing INVOKER reference generator.
+-- Remove UPDATE (setval) and unnecessary SELECT, and all anon/PUBLIC access.
+REVOKE ALL PRIVILEGES ON SEQUENCE public.diagnostic_report_seq FROM anon, authenticated, PUBLIC;
+GRANT USAGE ON SEQUENCE public.diagnostic_report_seq TO authenticated;
+
+-- I. NEW INDEXES: scoped reporting and FK SET NULL lookup.
+CREATE INDEX dr_reports_type_status_created_idx
+ ON public.diagnostic_reports(report_type,status,created_at DESC);
+CREATE INDEX dr_reports_support_app_idx
+ ON public.diagnostic_reports(bridge_source_id,supabase_application_id,created_at DESC)
+ WHERE report_type='application_support';
+CREATE INDEX dr_reports_field_job_idx ON public.diagnostic_reports(field_job_id)
+ WHERE field_job_id IS NOT NULL;
+COMMIT;
+<!-- END CANONICAL SQL: reports-and-support-v2 -->
+
+---
