@@ -280,8 +280,9 @@ export function IdentifyClick({ active, hitRef, onIdentify }) {
 export function MapResizeTrigger({ watch }) {
     const map = useMap();
     useEffect(() => {
-        map.invalidateSize();
-        const timers = [50, 200, 400].map((ms) => setTimeout(() => map.invalidateSize(), ms));
+        if (!map) return;
+        map.invalidateSize({ animate: false });
+        const timers = [50, 200, 400].map((ms) => setTimeout(() => map.invalidateSize({ animate: false }), ms));
         return () => timers.forEach(clearTimeout);
     }, [watch, map]);
     return null;

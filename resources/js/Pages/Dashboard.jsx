@@ -1,6 +1,7 @@
 import { Component, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import { Head, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
+import { performLogout } from "@/utils/auth";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import {
@@ -558,7 +559,9 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                 cancelButton: "inline-flex items-center justify-center px-4 py-2 rounded-[3px] bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-300 cursor-pointer",
             },
         }).then((r) => {
-            if (r.isConfirmed) { sessionStorage.removeItem("hasShownWelcome"); router.post("/logout"); }
+            if (r.isConfirmed) {
+                performLogout();
+            }
         });
     };
 

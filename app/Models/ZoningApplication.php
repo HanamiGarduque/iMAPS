@@ -27,6 +27,8 @@ class ZoningApplication extends Model
         'status',
         'purpose',
         'applicant_name',
+        'applicant_street',
+        'applicant_barangay',
         'contact_number',
         'email',
         'representative_name',

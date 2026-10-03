@@ -12,15 +12,24 @@ export default function StepFee({
     applySuggestedFees,
     errors = {},
 }) {
+    const selectedTypes = (form.application_type || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+    const showZoningFee = selectedTypes.some((t) => t === "Zoning Certificate" || t === "Zoning Clearance");
+    const showLocationalFee = selectedTypes.includes("Locational Clearance");
+    const showDevelopmentFee = selectedTypes.includes("Development Permit");
+
     const differsFromSchedule =
         feeSuggestion &&
         SCHEDULE_FIELDS.some((f) => Math.abs((parseFloat(form[f]) || 0) - (feeSuggestion.byField[f] || 0)) > 0.004);
 
-    // Automatically sum all inputs (including penalties) to update the total assessment fee in real-time
+    // Automatically sum all active itemized inputs (including penalties) to update the total assessment fee in real-time
     useEffect(() => {
-        const zc = parseFloat(form.zoning_certificate_fee) || 0;
-        const lc = parseFloat(form.locational_clearance_fee) || 0;
-        const dp = parseFloat(form.development_permit_fee) || 0;
+        const zc = showZoningFee ? (parseFloat(form.zoning_certificate_fee) || 0) : 0;
+        const lc = showLocationalFee ? (parseFloat(form.locational_clearance_fee) || 0) : 0;
+        const dp = showDevelopmentFee ? (parseFloat(form.development_permit_fee) || 0) : 0;
         const ot = parseFloat(form.other_fees) || 0;
         const pen = parseFloat(form.penalty_fee) || 0;
 
@@ -29,7 +38,16 @@ export default function StepFee({
         if (total.toFixed(2) !== form.assessment_fee) {
             set("assessment_fee")({ target: { value: total.toFixed(2) } });
         }
-    }, [form.zoning_certificate_fee, form.locational_clearance_fee, form.development_permit_fee, form.other_fees, form.penalty_fee]);
+    }, [
+        form.zoning_certificate_fee, 
+        form.locational_clearance_fee, 
+        form.development_permit_fee, 
+        form.other_fees, 
+        form.penalty_fee,
+        showZoningFee,
+        showLocationalFee,
+        showDevelopmentFee
+    ]);
 
     // Custom handler to block leading zeros (e.g. "05" -> "5", but allows "0.50")
     const handleFeeInput = (field) => (e) => {
@@ -102,53 +120,59 @@ export default function StepFee({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                    <Label>Zoning Certificate Fee (₱)</Label>
-                    <div className="relative">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-bold pointer-events-none">₱</span>
-                        <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={form.zoning_certificate_fee || ""}
-                            onChange={handleFeeInput("zoning_certificate_fee")}
-                            placeholder="0.00"
-                            className="pl-8 font-mono text-xs font-semibold bg-white"
-                        />
+                {showZoningFee && (
+                    <div>
+                        <Label>Zoning Certificate Fee (₱)</Label>
+                        <div className="relative">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-bold pointer-events-none">₱</span>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={form.zoning_certificate_fee || ""}
+                                onChange={handleFeeInput("zoning_certificate_fee")}
+                                placeholder="0.00"
+                                className="pl-8 font-mono text-xs font-semibold bg-white"
+                            />
+                        </div>
                     </div>
-                </div>
+                )}
 
-                <div>
-                    <Label>Locational Clearance Fee (₱)</Label>
-                    <div className="relative">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-bold pointer-events-none">₱</span>
-                        <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={form.locational_clearance_fee || ""}
-                            onChange={handleFeeInput("locational_clearance_fee")}
-                            placeholder="0.00"
-                            className="pl-8 font-mono text-xs font-semibold bg-white"
-                        />
+                {showLocationalFee && (
+                    <div>
+                        <Label>Locational Clearance Fee (₱)</Label>
+                        <div className="relative">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-bold pointer-events-none">₱</span>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={form.locational_clearance_fee || ""}
+                                onChange={handleFeeInput("locational_clearance_fee")}
+                                placeholder="0.00"
+                                className="pl-8 font-mono text-xs font-semibold bg-white"
+                            />
+                        </div>
                     </div>
-                </div>
+                )}
 
-                <div>
-                    <Label>Development Permit Fee (₱)</Label>
-                    <div className="relative">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-bold pointer-events-none">₱</span>
-                        <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={form.development_permit_fee || ""}
-                            onChange={handleFeeInput("development_permit_fee")}
-                            placeholder="0.00"
-                            className="pl-8 font-mono text-xs font-semibold bg-white"
-                        />
+                {showDevelopmentFee && (
+                    <div>
+                        <Label>Development Permit Fee (₱)</Label>
+                        <div className="relative">
+                            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-mono text-xs font-bold pointer-events-none">₱</span>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={form.development_permit_fee || ""}
+                                onChange={handleFeeInput("development_permit_fee")}
+                                placeholder="0.00"
+                                className="pl-8 font-mono text-xs font-semibold bg-white"
+                            />
+                        </div>
                     </div>
-                </div>
+                )}
 
                 <div>
                     <Label>Other Fees (₱)</Label>

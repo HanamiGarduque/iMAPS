@@ -55,6 +55,16 @@ const ZONING_SUB_CLASSES = [
     }
 ];
 
+const ROSARIO_BARANGAYS = [
+    "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
+    "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", 
+    "Macalamcam A", "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", 
+    "Mayuro", "Namuco", "Namunga", "Natu", "Nasi", "Palacpac", "Pinagsibaan", "Poblacion A", 
+    "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", 
+    "San Carlos", "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan", 
+    "Tiquiwan", "Tulos"
+];
+
 export default function StepCategory({
     form,
     set,
@@ -66,6 +76,8 @@ export default function StepCategory({
     zoningMismatch = false,
     goToProperty,
     setParcelField,
+    handlePinLookup,
+    pinLoading = {},
     inspectors = [],
 }) {
     const activeTypes = form.application_stream === "amendment" ? AMENDMENT_TYPES : APPLICATION_TYPES;
@@ -179,6 +191,8 @@ export default function StepCategory({
                 </div>
             </div>
 
+
+
             {/* 3. Application Category (multi-select) */}
             <div>
                 <Label required hasError={!!errors.application_type}>Application Category</Label>
@@ -277,10 +291,26 @@ export default function StepCategory({
             </div>
 
             {/* Project details (feed the fee computation) */}
-            <div className="pt-4 border-t border-slate-100">
+            <div className="pt-4 border-t border-slate-100 space-y-3">
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-800">Project Details</h4>
-                <p className="text-[11px] text-slate-500 mt-0.5 mb-3">Building coverage, development extent and cost. Project cost is used to compute the fee.</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <p className="text-[11px] text-slate-500 mt-0.5 mb-3">Registered parcel owner, building coverage, extent, and cost.</p>
+                
+                {/* Registered Parcel Owner */}
+                <div>
+                    <Label>Registered Parcel Owner</Label>
+                    <Input
+                        type="text"
+                        value={form.parcels?.[0]?.owner_name || ""}
+                        onChange={(e) => {
+                            if (typeof setParcelField === "function") {
+                                setParcelField(0, "owner_name")(e);
+                            }
+                        }}
+                        placeholder="e.g. Antonio Macatangay"
+                    />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                     {numberField("building_area", "Building Area (sq.m)", "e.g. 120.5")}
                     {numberField("area_to_develop", "Area to be Developed (sq.m)", "e.g. 500.00")}
                     {numberField("number_of_saleable_lots", "Number of Saleable Lots", "e.g. 10", "1")}

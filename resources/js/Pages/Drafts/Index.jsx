@@ -7,7 +7,7 @@ import { performLogout } from "@/utils/auth";
 import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
-const rosarioCenter = [13.8458, 121.2067];
+const rosarioCenter = [13.7850, 121.2500];
 const brgyStyle = { color: "#475569", weight: 1, opacity: 0.4, fillColor: "#e2e8f0", fillOpacity: 0.1, dashArray: "4" };
 
 // ── Status badge config for Drafts ──

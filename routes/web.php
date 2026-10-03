@@ -97,7 +97,13 @@ Route::middleware('auth')->group(function () {
         ->name('applications.applicantLookup')
         ->middleware('role:Planning Officer');
     // ── Single-View & Standard Status Transitions ──
-    Route::match(['get', 'post'], '/applications/{id}/export-document/{type}', [ApplicationController::class, 'exportDocument'])
+    Route::get('/applications/{id}/permit-schema/{type}', [ApplicationController::class, 'permitSchema'])
+        ->whereNumber('id')
+        ->name('applications.permit-schema');
+
+    Route::post('/applications/{id}/export-preview/{type}', [ApplicationController::class, 'exportPreview'])->whereNumber('id')->name('applications.export-preview');
+    Route::post('/applications/{id}/export-document/{type}', [ApplicationController::class, 'exportDocument'])
+        ->whereNumber('id')
         ->name('applications.export-document');
 
     Route::get('/applications/{id}', [ApplicationController::class, 'show'])

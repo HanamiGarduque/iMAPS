@@ -8,6 +8,7 @@ import { performLogout } from "@/utils/auth";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
 
 // ── Status Badge Configuration ──
 const STATUS_LABELS = {
@@ -134,7 +135,7 @@ export default function Show({ auth, inspection }) {
     const [landUseMapData, setLandUseMapData] = useState(null);
     const [activeParcelFeature, setActiveParcelFeature] = useState(null);
     const [pinLookupMap, setPinLookupMap] = useState({});
-    const rosarioCenter = [13.8450, 121.2063];
+    const rosarioCenter = [13.7850, 121.2500];
 
     useEffect(() => {
         fetch("/api/map/barangay_boundary")
@@ -360,7 +361,7 @@ export default function Show({ auth, inspection }) {
                             {/* ── LEFT SIDE: MAP ── */}
                             <div className="hidden lg:flex flex-col lg:w-5/12 bg-slate-50 border-r border-slate-200 relative">
                                 <div className="absolute inset-0 z-0">
-                                    <MapContainer center={rosarioCenter} zoom={12} zoomControl={false} scrollWheelZoom={true}>
+                                    <MapContainer center={rosarioCenter} zoom={11} minZoom={11} maxBounds={[[13.65, 121.12], [13.92, 121.36]]} maxBoundsViscosity={1.0} zoomControl={false} scrollWheelZoom={true}>
                                         <TileLayer
                                             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                                             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -370,6 +371,7 @@ export default function Show({ auth, inspection }) {
                                         {parcelMapData && <GeoJSON key={activeParcelFeature?.properties?.property_index_number || "parcels"} data={parcelMapData} style={getParcelStyle} />}
                                         <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />
                                     </MapContainer>
+                                    <MapSkeleton visible={!parcelMapData || !brgyMapData} label="Loading map resources…" tone="#f2f3f5" />
                                 </div>
 
                                 {/* Floating HUD — Inspected Parcel */}

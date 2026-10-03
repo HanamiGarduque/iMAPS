@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { MapContainer, TileLayer, GeoJSON, Polyline, Polygon, CircleMarker, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
 import { Input } from "./FormControls";
 import Swal from "sweetalert2";
 import { getZoneInfo, ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
@@ -23,6 +24,8 @@ import {
     formatAreaDiff,
 } from "@/utils/mapGeometry";
 import { PARCEL_FIELD_ALIASES, BARANGAY_LINE,PARCEL_MIN_ZOOM, ZONE_LINE_MIN_ZOOM, UNLABELLED_ZONES, NO_LABELS, CHECK_COLORS, buildMapTip, ScaleBar, MapLabels, getZoningCheck, MeasureLayer, IdentifyClick, MapResizeTrigger, MapStatusBar, ToolButton, LayerRow, AreaComparison, Attr } from "@/Components/MapKit";
+
+const ROSARIO_BOUNDS = [[13.65, 121.12], [13.92, 121.36]];
 
 
 // QGIS-style locator bar: search lots by PIN / lot no. / owner, or jump to a barangay. Ctrl+K focuses it.
@@ -189,7 +192,7 @@ export default function StepPropertyGIS({
     setActiveParcelFeature = () => {},
     brgyMapData = null,
     parcelMapData = null,
-    rosarioCenter = [13.8475, 121.2058],
+    rosarioCenter = [13.7850, 121.2500],
     getParcelStyle,
     handleSelectMapParcel,
     MapController,
@@ -359,9 +362,15 @@ export default function StepPropertyGIS({
             index = parcels.length;
         }
         setActiveParcelIndex(index);
-        if (payload.type === "pin") setParcelField(index, "property_index_number")({ target: { value: payload.pin } });
+        setPanelUnlocked(true);
         setLastLookupIndex(index);
-        setPendingEncode({ ...payload, index });
+        if (payload.type === "pin") {
+            setParcelField(index, "property_index_number")({ target: { value: payload.pin } });
+            setPendingEncode({ ...payload, index });
+        } else {
+            const p = payload.feature?.properties || {};
+            handleSelectMapParcel(p.property_index_number?.trim(), p.lot_number || p.lot_no, p.lot_area_sqm || p.area, p.barangay, payload.feature);
+        }
     };
 
     useEffect(() => {
@@ -698,7 +707,7 @@ export default function StepPropertyGIS({
                     <ToolButton label="Zoom out" onClick={() => map?.zoomOut()}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM13.5 10.5h-6" />
                     </ToolButton>
-                    <ToolButton label="Zoom full (municipality)" onClick={() => (brgyMapData ? fitGeoJSON(brgyMapData) : map?.setView(rosarioCenter, 12))}>
+                    <ToolButton label="Zoom full (municipality)" onClick={() => (brgyMapData ? fitGeoJSON(brgyMapData) : map?.setView(rosarioCenter, 11))}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
                     </ToolButton>
                     <ToolButton label="Zoom to selected lot" disabled={!activeParcelFeature} onClick={() => fitGeoJSON(activeParcelFeature, 60)}>
@@ -741,7 +750,10 @@ export default function StepPropertyGIS({
                         <MapContainer
                             ref={setMap}
                             center={rosarioCenter}
-                            zoom={12}
+                            zoom={11}
+                            minZoom={11}
+                            maxBounds={municipalBounds ? municipalBounds.pad(0.15) : ROSARIO_BOUNDS}
+                            maxBoundsViscosity={1.0}
                             maxZoom={MAP_MAX_ZOOM}
                             preferCanvas={true}
                             zoomControl={false}
@@ -856,6 +868,7 @@ export default function StepPropertyGIS({
                             {MapController && <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />}
                             <MapResizeTrigger watch={mapFull} />
                         </MapContainer>
+                        <MapSkeleton visible={!parcelMapData || !brgyMapData} label="Loading map resources & land parcels…" tone="#f2f3f5" />
                     </div>
 
                     {/* Layers panel (docked, like QGIS) */}

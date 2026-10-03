@@ -403,12 +403,13 @@ export default function LeafletMap({
             if (cancelled || !mapRef.current || mapInstanceRef.current) return;
 
             const map = L.map(mapRef.current, {
-                center: [13.845, 121.206],
-                zoom: 13,
+                center: [13.785, 121.25],
+                zoom: 11,
                 minZoom: 11,
                 maxZoom: 19,
+                maxBounds: [[13.65, 121.12], [13.92, 121.36]],
+                maxBoundsViscosity: 1.0,
                 zoomControl: false,
-                maxBoundsViscosity: 0.6,
             });
             mapInstanceRef.current = map;
 
@@ -461,7 +462,7 @@ export default function LeafletMap({
                     style: { color: "#1f2937", weight: 2.2, opacity: 0.9, fill: false },
                 }).addTo(map);
                 rosarioBoundsRef.current = municipalLayerRef.current.getBounds();
-                map.setMaxBounds(rosarioBoundsRef.current.pad(0.75));
+                map.setMaxBounds(rosarioBoundsRef.current.pad(0.15));
             });
 
             loadBarangayBoundaries()
@@ -596,7 +597,7 @@ export default function LeafletMap({
         const map = mapInstanceRef.current;
         if (!map || resetTrigger === 0) return;
         if (rosarioBoundsRef.current) map.fitBounds(rosarioBoundsRef.current, framePadding());
-        else map.setView([13.845, 121.206], 13);
+        else map.setView([13.785, 121.25], 11);
     }, [resetTrigger]);
 
     useEffect(() => {

@@ -123,7 +123,7 @@ const BARANGAY_COORDS = {
     "Antipolo": [13.8850, 121.2150],
     "Timbugan": [13.8310, 121.1920],
     "Namuco": [13.8580, 121.2270],
-    "Default": [13.8475, 121.2058],
+    "Default": [13.7850, 121.2500],
 };
 
 const SORT_OPTIONS = [

@@ -13,7 +13,7 @@ use App\Jobs\PushInspectionToSupabase;
 use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
 use App\Models\AppNotification;
-use App\Services\PermitDocumentService;
+use App\Services\PermitExcelService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -195,7 +195,9 @@ class ApplicationController extends Controller
             'land_use_class'        => ['nullable', 'in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational,R1-Z,R2-Z,MR2-SZ,BR2-SZ,C1-Z,C2-Z,C/MP-Z,I1-Z,I2-Z,I3-Z,AgIndZ,AgIndZ-PTR,AgIndZ-PGR,GI-Z,UTS-Z,CMRF,PR-Z,T-Z,ECT-Z'],
             'purpose'             => 'required|string',
             'applicant_name'      => 'required|string|max:255',
-            'contact_number'      => ['required', 'regex:/^(09|\+639|9)\d{9}$/'],
+            'applicant_street'    => 'nullable|string|max:255',
+            'applicant_barangay'  => 'nullable|string|max:255',
+            'contact_number'      => ['required', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
             'email'               => 'required|email',
             'representative_name' => 'nullable|string|max:255',
             'barangay'            => 'required|string',
@@ -203,8 +205,8 @@ class ApplicationController extends Controller
             'assessment_fee'      => 'required|numeric|min:0',
             'or_number'              => 'required|string|max:255',            
             'remarks'             => 'nullable|string',
-            'corporation_contact'    => ['nullable', 'regex:/^9\d{9}$/'],
-            'representative_contact' => ['nullable', 'regex:/^9\d{9}$/'],
+            'corporation_contact'    => ['nullable', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
+            'representative_contact' => ['nullable', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
             'preferred_release_mode' => 'required|string',
             'route_to_sb'             => 'nullable|boolean',
             'zoning_certificate_fee'   => 'nullable|numeric|min:0',
@@ -273,6 +275,8 @@ class ApplicationController extends Controller
                 'status'                     => 'Received',
                 'purpose'                    => $validated['purpose'],
                 'applicant_name'             => $validated['applicant_name'],
+                'applicant_street'           => $validated['applicant_street'] ?? null,
+                'applicant_barangay'         => $validated['applicant_barangay'] ?? null,
                 'contact_number'             => preg_replace('/\D/', '', $validated['contact_number']),
                 'email'                      => $validated['email'] ?? null,
                 'corporation_name'           => $validated['corporation_name'] ?? null,
@@ -316,8 +320,11 @@ class ApplicationController extends Controller
                 note: sprintf('Application encoded by staff with %d parcel(s).', count($validated['parcels']))
             );
 
-            AppNotification::notifyRoles(
-                ['Admin', 'Planning Officer'],
+            $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+            $recipientIds = array_merge($adminIds, [Auth::id()]);
+
+            AppNotification::notifyUsers(
+                $recipientIds,
                 'New Application Encoded',
                 "Application {$referenceNumber} for {$application->applicant_name} ({$application->barangay}) has been encoded.",
                 'application_created',
@@ -394,16 +401,16 @@ class ApplicationController extends Controller
                 }
             }
 
-            $routeToSb = $request->boolean('route_to_sb');
+            $routeToSb = $request->boolean('route_to_sb') || ($validated['application_stream'] === 'amendment');
 
             // 3. Roll up overall status dynamically based on "restrictive precedence"
             if (!empty($decisionsSeen)) {
                 if (in_array('Declined', $decisionsSeen, true)) {
                     $application->update(['status' => 'Denied']);
-                } elseif (in_array('Needs Site Inspection', $decisionsSeen, true)) {
-                    $application->update(['status' => 'Technical Review']);
                 } elseif ($routeToSb) {
                     $application->update(['status' => 'Under Sangguniang Bayan']);
+                } elseif (in_array('Needs Site Inspection', $decisionsSeen, true)) {
+                    $application->update(['status' => 'Technical Review']);
                 } else {
                     $application->update(['status' => 'For Release']);
                 }
@@ -1070,29 +1077,80 @@ class ApplicationController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // EXPORT PERMIT DOCUMENT (.docx)
+    // PERMIT GENERATION (Excel template → PDF) — see config/permits.php
     // ─────────────────────────────────────────────────────────────────────────
-    public function exportDocument(Request $request, int $id, string $type, PermitDocumentService $documentService)
+
+    /** Fields + dropdowns for the Generate Permit modal, prefilled from the record. */
+    public function permitSchema(int $id, string $type, PermitExcelService $permits)
     {
         $application = ZoningApplication::with(['parcels', 'encodedBy'])->findOrFail($id);
-        $customFields = $request->all();
 
         try {
-            $filePath = match (strtolower($type)) {
-                'locational-clearance', 'lc' => $documentService->generateLocationalClearance($application, $customFields),
-                'zoning-evaluation', 'ze'   => $documentService->generateZoningEvaluation($application, $customFields),
-                'development-permit', 'dp'   => $documentService->generateDevelopmentPermit($application, $customFields),
-                'zoning-certification', 'zc' => $documentService->generateZoningCertification($application, $customFields),
-                default                     => throw new \InvalidArgumentException("Invalid permit document type: {$type}"),
-            };
-
-            $fileName = basename($filePath);
-
-            return response()->download($filePath, $fileName, [
-                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            return response()->json([
+                'documents' => $permits->documents(),
+                'schema'    => $permits->schema($application, $type),
             ]);
-        } catch (\Exception $e) {
-            return back()->withErrors(['export' => 'Failed to generate document: ' . $e->getMessage()]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("permitSchema error: " . $e->getMessage()); return response()->json(['message' => $e->getMessage()], 422);
         }
+    }
+
+    public function exportPreview(Request $request, int $id, string $type, PermitExcelService $permits)
+    {
+        $application = ZoningApplication::with(["parcels", "encodedBy"])->findOrFail($id);
+        
+        $validated = $request->validate([
+            "fields"   => "nullable|array",
+            "fields.*" => "nullable",
+            "format"   => "nullable|in:pdf",
+        ]);
+
+        try {
+            $path = $permits->generate($application, $type, $validated, "pdf");
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Preview Error: " . $e->getMessage()); return response()->json(["message" => "Failed to generate preview: " . $e->getMessage()], 422);
+        }
+
+        return response()->file($path, [
+            "Content-Type"        => "application/pdf",
+            "Content-Disposition" => "inline; filename='preview.pdf'",
+        ])->deleteFileAfterSend(true);
+    }
+
+    public function exportDocument(Request $request, int $id, string $type, PermitExcelService $permits)
+    {
+        $application = ZoningApplication::with(['parcels', 'encodedBy'])->findOrFail($id);
+
+        $validated = $request->validate([
+            'fields'   => 'nullable|array',
+            'fields.*' => 'nullable',
+            'cells'    => 'nullable|array',
+            'cells.*'  => 'nullable|string|max:500',
+            'format'   => 'nullable|in:pdf,xlsx',
+        ]);
+        $format = $validated['format'] ?? 'pdf';
+
+        try {
+            $path = $permits->generate($application, $type, $validated, $format);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['message' => 'Failed to generate permit: ' . $e->getMessage()], 422);
+        }
+
+        AuditLogger::log(
+            applicationId: $application->id,
+            action: 'PERMIT_GENERATED',
+            performedBy: Auth::id(),
+            note: sprintf('%s generated (%s).', config("permits.documents.{$type}.label", strtoupper($type)), strtoupper($format))
+        );
+
+        $mime = $format === 'pdf'
+            ? 'application/pdf'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+        return response()->file($path, [
+            'Content-Type'        => $mime,
+            'Content-Disposition' => ($format === 'pdf' ? 'inline' : 'attachment') . '; filename="' . basename($path) . '"',
+        ])->deleteFileAfterSend(true);
     }
 }

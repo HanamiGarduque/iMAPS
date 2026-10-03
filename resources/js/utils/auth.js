@@ -14,15 +14,13 @@ export const performLogout = () => {
         console.warn("Storage clear error on logout:", err);
     }
 
+    const forceRedirectToLogin = () => {
+        window.location.href = '/login';
+    };
+
     router.post('/logout', {}, {
-        onError: () => {
-            window.location.href = '/login';
-        },
-        onSuccess: () => {
-            window.location.href = '/login';
-        },
-        onFinish: () => {
-            window.location.href = '/login';
-        }
+        onError: forceRedirectToLogin,
+        onSuccess: forceRedirectToLogin,
+        onFinish: forceRedirectToLogin,
     });
 };

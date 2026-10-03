@@ -63,26 +63,34 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
         [map]
     );
 
-    const framed = useRef(false);
+    const framedLots = useRef(false);
     useEffect(() => {
-        if (framed.current || !map) return;
-        if (mappedLots.length) {
-            framed.current = true;
-            fitTo(lotsCollection);
-        } else if (barangayOutline) {
-            framed.current = true;
+        if (!map) return;
+        if (mappedLots.length > 0 && !framedLots.current) {
+            framedLots.current = true;
+            const targetLot = lots.find((l) => l.index === selectedIndex && l.feature) || mappedLots[0];
+            if (targetLot?.feature) {
+                fitTo(targetLot.feature, 18);
+            } else if (lotsCollection) {
+                fitTo(lotsCollection, 18);
+            }
+        } else if (!framedLots.current && barangayOutline && mappedLots.length === 0) {
             fitTo(barangayOutline, 15);
         }
-    }, [map, lotsCollection, barangayOutline]);
+    }, [map, mappedLots, lotsCollection, barangayOutline, selectedIndex, fitTo, lots]);
 
-    // Picking a lot in the panel frames it (never zooming out).
-    const lastSelected = useRef(selectedIndex);
+    // Picking a lot in the panel frames it.
+    const lastSelected = useRef(null);
     useEffect(() => {
         if (!map || selectedIndex === lastSelected.current) return;
         lastSelected.current = selectedIndex;
-        const lot = lots.find((l) => l.index === selectedIndex);
-        if (lot?.feature) fitTo(lot.feature, Math.max(map.getZoom(), 18));
-    }, [selectedIndex, map]);
+        if (selectedIndex !== null && selectedIndex !== undefined) {
+            const lot = lots.find((l) => l.index === selectedIndex);
+            if (lot?.feature) fitTo(lot.feature, 18);
+        } else if (lotsCollection) {
+            fitTo(lotsCollection, 18);
+        }
+    }, [selectedIndex, map, fitTo, lots, lotsCollection]);
 
     const lotStyle = (f) => {
         const lot = lots.find((l) => l.index === f.properties.__index);
@@ -102,7 +110,7 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
                 .app-lot-label::before { display: none; }
             `}</style>
 
-            <MapContainer ref={setMap} center={[13.8475, 121.2058]} zoom={13} maxZoom={MAP_MAX_ZOOM} zoomControl={false} attributionControl={false} style={{ width: "100%", height: "100%" }}>
+            <MapContainer ref={setMap} center={[13.7850, 121.2500]} zoom={11} minZoom={11} maxBounds={[[13.65, 121.12], [13.92, 121.36]]} maxBoundsViscosity={1.0} maxZoom={MAP_MAX_ZOOM} zoomControl={false} attributionControl={false} style={{ width: "100%", height: "100%" }}>
                 <TileLayer key={basemap} url={BASEMAPS[basemap].url} subdomains="0123" maxZoom={MAP_MAX_ZOOM} maxNativeZoom={BASEMAPS[basemap].maxNativeZoom} keepBuffer={4} />
                 {showClup && (
                     <TileLayer url={CLUP_TILES.url} maxZoom={MAP_MAX_ZOOM} maxNativeZoom={CLUP_TILES.maxNativeZoom} opacity={0.55} zIndex={10} errorTileUrl={BLANK_TILE} />

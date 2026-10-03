@@ -16,6 +16,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
 
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->validateCsrfTokens(except: [
+            'logout',
+        ]);
 
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
