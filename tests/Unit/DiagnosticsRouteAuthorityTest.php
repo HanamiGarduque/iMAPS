@@ -56,6 +56,7 @@ class DiagnosticsRouteAuthorityTest extends TestCase
     private const EXPECTED = [
         'diagnostics.index' => 'Admin,Planning Officer',
         'diagnostics.show' => 'Admin,Planning Officer',
+        'diagnostics.handle' => 'Admin,Planning Officer',
         'diagnostics.notify-planning-officers' => 'Admin',
     ];
 
@@ -228,12 +229,11 @@ class DiagnosticsRouteAuthorityTest extends TestCase
 
         $web = (string) file_get_contents(base_path('routes/web.php'));
 
-        // Exactly one POST under diagnostics, and it is the notice action.
-        $this->assertSame(
-            1,
-            preg_match_all("#Route::post\('/diagnostics#i", $web),
-            'Exactly one diagnostics POST may exist.'
-        );
+        // Phase 2B permits exactly the scoped handling action and the unchanged notice.
+        $posts = collect($this->app->make(Router::class)->getRoutes()->getRoutes())
+            ->filter(fn ($route) => str_starts_with($route->uri(), 'diagnostics') && in_array('POST', $route->methods()))
+            ->map(fn ($route) => $route->uri())->sort()->values()->all();
+        $this->assertSame(['diagnostics/{report}/handle', 'diagnostics/{report}/notify-planning-officers'], $posts);
 
         // No report write verb, for anybody.
         foreach (['put', 'patch', 'delete'] as $verb) {

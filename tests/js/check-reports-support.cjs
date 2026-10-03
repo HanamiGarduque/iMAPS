@@ -20,6 +20,7 @@ function load(name) {
         if (id === '@inertiajs/react') return inertia;
         if (id.startsWith('@/Components/')) return () => null;
         if (id === 'sweetalert2') return {};
+        if (id === 'axios') return {};
         if (id === './ReportUi') return load('ReportUi');
         throw new Error('Unexpected import ' + id);
     } }, { filename });
@@ -51,6 +52,17 @@ check(!/escalation|imaps\.contact/.test(controller),
     'the escalation prop is not produced at all; the section is removed, not merely hidden');
 check(!/Diagnostics(?!&amp;)/.test(html), 'no stale visible DIAGNOSTICS branding on the detail page');
 
+html = render('Show', { report, handlingActions: ['in_review', 'resolved', 'wont_fix'] });
+check(html.includes('Mark In Review') && html.includes('Resolve') && html.includes('Won’t fix'), 'authorized submitted handler sees all three actions');
+check(html.includes('Official response') && html.includes('<textarea') && html.includes('required=""'), 'terminal actions require a labeled official-response field');
+check(html.includes('for="official-response"') && html.includes('aria-describedby="response-help response-error"'), 'response input has accessible label and error/help association');
+html = render('Show', { report: { ...report, status: 'in_review' }, handlingActions: ['resolved', 'wont_fix'] });
+check(!html.includes('Mark In Review') && html.includes('<textarea'), 'in-review handler sees terminal actions only');
+html = render('Show', { report: { ...report, status: 'resolved', response_message: '<b>Official plain text</b>', responded_by_name: 'Official Admin', responded_at: '2026-10-04T09:30:00Z' }, handlingActions: ['in_review', 'resolved', 'wont_fix'] });
+check(!html.includes('<textarea') && !html.includes('Mark In Review'), 'terminal status hides controls even if a stale capability is supplied');
+check(html.includes('&lt;b&gt;Official plain text&lt;/b&gt;') && html.includes('Official Admin') && html.includes('Responded at'), 'terminal response and attribution render as plain text');
+check(!html.includes('Reopen') && !html.includes('Edit response'), 'terminal lifecycle offers no editing');
+
 // The upper-left context chip derives its label from `activePage`, which is the
 // route-compatible value "diagnostics". The chip must still read REPORTS &
 // SUPPORT, on every resolution path the header can take.
@@ -68,10 +80,13 @@ check(!chipLabels.includes('DIAGNOSTICS'), 'the retired product name is never a 
 report.report_type = 'application_support';
 html = render('Show', { report, context, canNotify: true });
 check(html.includes('Notify Exact Current PO'), 'Button names exact current PO');
+check(!html.includes('<textarea') && !html.includes('Mark In Review'), 'Admin owned support remains monitor/notify only');
 check(html.includes(context.origin.label), 'Retained state wording survives rendering');
 check(html.includes('APP-2026-123456'), 'Full application reference visible');
 html = render('Show', { report, context: { ...context, owner: null }, canNotify: false });
 check(html.includes('No current Planning Officer assigned.') && !html.includes('Notify '), 'Unowned support has no notification control');
+html = render('Show', { report, context: { ...context, owner: null }, canNotify: false, handlingActions: ['in_review'] });
+check(html.includes('Mark In Review') && !html.includes('<textarea') && !html.includes('>Resolve<') && !html.includes('>Won’t fix<'), 'unowned Admin gets administrative review only');
 html = render('Show', { report, context: { resolved: false }, canNotify: false });
 check(html.includes('Application context unavailable.') && !html.includes('Notify '), 'Unresolved state is honest and non-notifiable');
 html = render('Index', { allowedTypes: ['technical_issue', 'application_support'], filters: { type: 'technical_issue' }, counts: { technical_issue: 1, application_support: 0 } });
@@ -83,6 +98,8 @@ check(!html.includes('Technical Issues') && !html.includes('technical_issue'), '
 check(!html.includes('aria-label="Report types"'), 'Single legal surface has no tab bar');
 html = render('Show', { report, context, canNotify: false });
 check(!html.includes('Notify ') && html.includes('Exact Current PO'), 'PO sees ownership but no Admin action');
+html = render('Show', { report, context, canNotify: false, handlingActions: ['in_review', 'resolved', 'wont_fix'] });
+check(html.includes('<textarea') && html.includes('Mark In Review') && !html.includes('Notify '), 'current PO gets handling without Notify');
 
 // Render the real Site Inspection support section, isolated from its map dependencies.
 const source = fs.readFileSync('resources/js/Pages/Site Inspections/Show.jsx', 'utf8');

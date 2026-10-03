@@ -14,6 +14,7 @@ class DiagnosticReportReader
         'id', 'reference_code', 'title', 'module', 'status', 'created_at', 'updated_at', 'inspector_id',
         'report_type', 'field_job_id', 'supabase_application_id', 'bridge_source_id', 'support_category',
         'blocks_field_work', 'occurred_at', 'connectivity_state', 'app_version', 'os_version',
+        'response_message', 'responded_by_name', 'responded_at',
     ];
     private const FREE_TEXT_COLUMNS = ['summary', 'technical_description', 'repro_steps', 'affected_file',
         'recommended_action', 'affected_field', 'requested_change', 'expected_behavior'];
@@ -142,7 +143,7 @@ class DiagnosticReportReader
             $value = $row[$key] ?? null;
             $payload[$key] = $value === null ? null : ($key === 'blocks_field_work' ? (is_bool($value) ? $value : null) : $sanitize($value));
         }
-        foreach (['created_at', 'updated_at', 'occurred_at'] as $key) {
+        foreach (['created_at', 'updated_at', 'occurred_at', 'responded_at'] as $key) {
             try {
                 $payload[$key] = empty($row[$key]) ? null : \Illuminate\Support\Carbon::parse($row[$key])->toIso8601String();
             } catch (Throwable) {

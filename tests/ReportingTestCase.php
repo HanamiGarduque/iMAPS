@@ -13,6 +13,8 @@ abstract class ReportingTestCase extends TestCase
     protected array $remote = [];
     protected array $calls = [];
     protected bool $remoteFails = false;
+    /** Only handling tests opt into a controlled write transport; reads stay strict. */
+    protected ?\Closure $remoteWrite = null;
     /**
      * Optional per-table remote failure, e.g. ['profiles'].
      *
@@ -64,6 +66,9 @@ abstract class ReportingTestCase extends TestCase
         ];
         Http::preventStrayRequests();
         Http::fake(function ($request) {
+            if ($request->method() !== 'GET' && $this->remoteWrite !== null) {
+                return ($this->remoteWrite)($request);
+            }
             $this->assertSame('GET', $request->method(), 'Reporting must never write remotely.');
             if ($this->remoteFails) {
                 return Http::response([], 503);

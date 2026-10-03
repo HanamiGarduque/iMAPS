@@ -44,6 +44,36 @@ class ReportingVisibility
             && ($context['owner'] ?? null) !== null;
     }
 
+    /** Role/ownership authority, independent of lifecycle validity. POST resolves context under lock. */
+    public function handlingStatuses($viewer, array $report, ?array $context): array
+    {
+        $all = ['in_review', 'resolved', 'wont_fix'];
+        if (($report['report_type'] ?? null) === 'technical_issue') {
+            return $viewer?->role === 'Admin' ? $all : [];
+        }
+        if (($report['report_type'] ?? null) !== 'application_support'
+            || ! \Illuminate\Support\Str::isUuid($report['field_job_id'] ?? '')
+            || ! ($context['resolved'] ?? false)) {
+            return [];
+        }
+        $ownerId = $context['application']['assigned_planning_officer_id'] ?? null;
+        if ($ownerId === null) {
+            return $viewer?->role === 'Admin' ? ['in_review'] : [];
+        }
+        return $viewer?->role === 'Planning Officer' && ($context['owner']['id'] ?? null) === $viewer->id
+            && (int) $ownerId === (int) $viewer->id ? $all : [];
+    }
+
+    public function handlingActions($viewer, array $report, ?array $context): array
+    {
+        $allowed = $this->handlingStatuses($viewer, $report, $context);
+        return match ($report['status'] ?? null) {
+            'submitted' => $allowed,
+            'in_review' => array_values(array_diff($allowed, ['in_review'])),
+            default => [],
+        };
+    }
+
     public function scopeVisibleReports($viewer, array $filters = []): array
     {
         $type = $this->authorizeRequestedType($viewer, $filters['type'] ?? null);

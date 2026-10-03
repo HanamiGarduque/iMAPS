@@ -327,16 +327,14 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
 //   GET  /diagnostics                       Admin, Planning Officer
 //   GET  /diagnostics/{report}              Admin, Planning Officer
 //   POST /diagnostics/{report}/notify-...   Admin ONLY
+//   POST /diagnostics/{report}/handle       Admin / current PO, report-specific authority
 //   Site Inspector: refused everywhere (they submit through FieldSync only)
 //
 // A Site Inspector still sees no navigation at all, and a guest is redirected
 // to login by `auth`.
 //
-// READ ONLY FOR BOTH READ ROLES. There is no PATCH or DELETE for a report and
-// no POST that addresses one, so the report's summary, technical description,
-// reproduction steps and submitted metadata stay immutable in iMAPS. The
-// controller exposes no store/update/destroy and performs no remote write; the
-// remote table's only writer remains the FieldSync client.
+// Filed content remains read-only. The dedicated handling POST changes only
+// lifecycle status and the official response through a server-authorized CAS.
 Route::middleware(['auth', 'role:Admin,Planning Officer'])->group(function () {
 
     Route::get('/diagnostics', [\App\Http\Controllers\DiagnosticReportController::class, 'index'])
@@ -345,11 +343,14 @@ Route::middleware(['auth', 'role:Admin,Planning Officer'])->group(function () {
     Route::get('/diagnostics/{report}', [\App\Http\Controllers\DiagnosticReportController::class, 'show'])
         ->name('diagnostics.show');
 
+    Route::post('/diagnostics/{report}/handle', [\App\Http\Controllers\DiagnosticReportController::class, 'handle'])
+        ->whereUuid('report')->name('diagnostics.handle');
+
 });
 
 // â”€â”€ Admin â†’ Notify Planning Officers (post-Loop 9 smoke fix) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
-// THE ONE DIAGNOSTICS POST, AND IT IS ADMIN-ONLY.
+// THE NOTIFICATION POST REMAINS ADMIN-ONLY.
 //
 // A Planning Officer resolves the FieldSync issue inside MPDO. When an Admin
 // sees a report exists, this is how the officers who can actually act on it find
@@ -362,10 +363,9 @@ Route::middleware(['auth', 'role:Admin,Planning Officer'])->group(function () {
 // * It writes an IN-APP NOTICE to the local `notifications` table. It does not
 //   touch the remote report: the report's status, summary, technical
 //   description, reproduction steps and submitted metadata stay immutable, so
-//   this remains the only POST under `diagnostics` and it cannot mutate a
-//   report.
+//   this notification action cannot mutate a report.
 // * It does NOT mark the report resolved. A notice is a reminder, and
-//   resolution is a FieldSync-side fact this application must not invent.
+//   resolution belongs to the separately authorized handling action.
 //
 // The notification links to `/diagnostics/{uuid}` - the SAME public detail GET
 // route an Admin uses, not an Admin-only alias - so a Planning Officer who

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\DiagnosticReportReader;
+use App\Services\DiagnosticReportHandling;
 use App\Support\DiagnosticNotice;
 use App\Support\ReportingVisibility;
 use App\Support\SupportReportResolution;
@@ -45,7 +46,15 @@ class DiagnosticReportController extends Controller
         // produced, and no configuration value is read on this path.
         return Inertia::render('Diagnostics/Show', ['report' => $row, 'context' => $context,
             'canNotify' => $this->visibility->canNotify($request->user(), $row, $context ?? []),
-            'readOnly' => true]);
+            'handlingActions' => $this->visibility->handlingActions($request->user(), $row, $context)]);
+    }
+
+    public function handle(Request $request, string $report, DiagnosticReportHandling $handling)
+    {
+        $result = $handling->handle($request->user(), strtolower($report), $request->only('status', 'response_message'));
+        $status = $result['http_status'];
+        unset($result['http_status']);
+        return response()->json($result, $status);
     }
 
     public function notifyPlanningOfficers(Request $request, string $report)

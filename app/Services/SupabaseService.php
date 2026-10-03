@@ -126,6 +126,24 @@ class SupabaseService
             ->patch("{$this->url}/rest/v1/{$table}?{$column}=eq.{$value}", $data);
     }
 
+    /** Exact report lifecycle CAS. Never retry this request: a lost reply may have committed. */
+    public function updateDiagnosticReportById(string $id, string $expectedStatus, array $data): Response
+    {
+        $terminal = in_array($data['status'] ?? null, ['resolved', 'wont_fix'], true);
+        $keys = $terminal ? ['status', 'response_message', 'responded_by_name', 'responded_at'] : ['status'];
+        if (! \Illuminate\Support\Str::isUuid($id)
+            || ! in_array($expectedStatus, ['submitted', 'in_review'], true)
+            || ! in_array($data['status'] ?? null, ['in_review', 'resolved', 'wont_fix'], true)
+            || ($data['status'] ?? null) === $expectedStatus
+            || array_diff(array_keys($data), $keys) || array_diff($keys, array_keys($data))) {
+            throw new \InvalidArgumentException('Invalid report lifecycle CAS.');
+        }
+
+        $query = http_build_query(['id' => 'eq.'.$id, 'status' => 'eq.'.$expectedStatus], '', '&', PHP_QUERY_RFC3986);
+        return Http::withHeaders($this->serviceHeaders(['Prefer' => 'return=representation']))
+            ->timeout(12)->patch("{$this->url}/rest/v1/diagnostic_reports?{$query}", $data);
+    }
+
     /**
      * Delete records matching specific conditions.
      */

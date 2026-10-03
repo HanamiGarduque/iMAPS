@@ -432,7 +432,7 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
         );
     }
 
-    public function test_the_diagnostic_report_remains_read_only_for_every_role(): void
+    public function test_filed_report_content_remains_read_only_with_only_scoped_handling(): void
     {
         $web = $this->code('routes/web.php');
 
@@ -451,9 +451,9 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
         // authorized POST and is excluded by name, because it writes a local
         // notification rather than anything on the report.
         $this->assertDoesNotMatchRegularExpression(
-            "#Route::post\('/diagnostics(?!/\{report\}/notify-planning-officers)#i",
+            "#Route::post\('/diagnostics(?!/\{report\}/(?:notify-planning-officers|handle)')#i",
             $web,
-            'No diagnostics POST may address the report itself; only the Admin notice action may exist.'
+            'Only the exact handling and unchanged Admin notice POSTs may exist.'
         );
 
         $controller = $this->code('app/Http/Controllers/DiagnosticReportController.php');
@@ -488,14 +488,14 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
      * diagnostics POST may exist, it must be the Admin notice action, and no
      * other page may post to it.
      */
-    public function test_exactly_one_diagnostics_post_exists_and_it_is_the_admin_notice(): void
+    public function test_scoped_handling_is_the_only_addition_to_the_admin_notice_post(): void
     {
         $web = $this->code('routes/web.php');
 
         $this->assertSame(
-            1,
+            2,
             preg_match_all("#Route::post\('/diagnostics#i", $web),
-            'Exactly one diagnostics POST may exist: the Admin notice action.'
+            'Exactly the scoped handling and unchanged Admin notice POSTs may exist.'
         );
 
         // The authority is read from the RESOLVED chain, because that is what

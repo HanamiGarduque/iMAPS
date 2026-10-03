@@ -537,10 +537,8 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
             );
         }
 
-        // Read access must not have become write access for anybody. The ONE
-        // authorized POST is the Admin "Notify Planning Officers" action, and it
-        // writes a local notification - never the remote report. Every other
-        // verb, and every other path, stays absent.
+        // Phase 2B adds only the authorized handling POST. Filed report content
+        // stays immutable; generic write/delete endpoints remain forbidden.
         foreach (['put', 'patch', 'delete'] as $verb) {
             $this->assertDoesNotMatchRegularExpression(
                 "#Route::{$verb}\('/diagnostics#i",
@@ -550,9 +548,9 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
         }
 
         $this->assertSame(
-            1,
+            2,
             preg_match_all("#Route::post\('/diagnostics#i", $web),
-            'Exactly one diagnostics POST may exist: the Admin notice action.'
+            'Exactly the handling and Admin notice POSTs may exist.'
         );
 
         // Read the notice action's authority from the RESOLVED chain, for the
@@ -578,11 +576,11 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
             'A Planning Officer must not be able to trigger the notice action.'
         );
 
-        // No POST may target a report's own data: the report has no write verb.
+        // No generic write endpoint: lifecycle handling is the sole new exception.
         $this->assertDoesNotMatchRegularExpression(
-            "#Route::post\('/diagnostics(?:/|')\s*(?!\{report\}/notify)#i",
+            "#Route::post\('/diagnostics(?!/\{report\}/(?:notify-planning-officers|handle)')#i",
             $web,
-            'No diagnostics POST may address the report itself; only the notice action may exist.'
+            'Only the exact handling and notice endpoints may mutate anything.'
         );
 
         // A Site Inspector must not gain the nav entry either.
@@ -662,7 +660,7 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
      * COMPENSATING ASSERTION: the only POST these pages may contain is the
      * shell's logout, so a future write cannot be added under this exemption.
      */
-    public function test_the_diagnostic_ui_has_no_write_control(): void
+    public function test_the_diagnostic_ui_has_only_scoped_handling_and_notice_controls(): void
     {
         foreach (['Index', 'Show'] as $page) {
             $source = (string) file_get_contents(base_path("resources/js/Pages/Diagnostics/{$page}.jsx"));
@@ -675,6 +673,12 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
                 $source,
                 "Diagnostics/{$page}.jsx must not issue a write against a diagnostic report."
             );
+
+            // The handling form uses JSON, not an Inertia mutation. No generic
+            // write or client-direct Supabase transport is permitted.
+            preg_match_all('#axios\.post\s*\(\s*[`"\']([^`"\']+)#i', $source, $handlingPosts);
+            $this->assertSame($page === 'Show' ? ['/diagnostics/${report.id}/handle'] : [], $handlingPosts[1]);
+            $this->assertStringNotContainsString('supabase', $source);
 
             // No Inertia options-bag verb, which is the other way to mutate.
             $this->assertStringNotContainsString(

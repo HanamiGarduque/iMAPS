@@ -26,7 +26,7 @@ export default function Index({ reports = [], counts = {}, allowedTypes = [], fi
         });
     };
     return <ReportShell><header><h1 className="text-2xl font-bold text-slate-900">Reports &amp; Support</h1>
-        <p className="mt-1 text-sm text-slate-500">Inspector-submitted reports from FieldSync. Report content and status are read only.</p></header>
+        <p className="mt-1 text-sm text-slate-500">Inspector-submitted reports from FieldSync. Open a report to review its details and available handling actions.</p></header>
         {allowedTypes.length > 1 ? <nav aria-label="Report types" className="flex flex-wrap gap-2">{allowedTypes.map(type => <button
             key={type}
             type="button"
