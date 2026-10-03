@@ -1,12 +1,14 @@
 // resources/js/Pages/Applications/Show.jsx
 // Application record: a view-only map of the lots (left) and Summary / Lots / History (right).
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Link, Head, router } from "@inertiajs/react";
+import { Link, Head, router, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { performLogout } from "@/utils/auth";
 import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
+import InspectionDeliveryStatusPanel from "@/Components/InspectionDeliveryStatusPanel";
+import { PlanningOfficerAssignment, InspectorRoundAssignment } from "@/Components/WorkAssignment";
 import { getZoningCheck, CHECK_COLORS, AreaComparison } from "@/Components/MapKit";
 import { getZoneInfo } from "@/utils/clupZones";
 import { loadBarangayBoundaries } from "@/utils/mapData";
@@ -30,6 +32,35 @@ const DECISIONS = [
     { value: "Declined", label: "Decline", dot: "bg-rose-500" },
 ];
 const DONE_INSPECTION = ["completed", "submitted"];
+
+// ── LOOP 4: "Requires Reinspection" restored by the master merge ───────────────
+// The canonical `technical_reviews.decision` CHECK constraint admits FOUR values
+// — Approved, Needs Site Inspection, Requires Reinspection, Declined — and the
+// branch ships migration
+// 2026_09_21_000000_allow_requires_reinspection_technical_review_decision to
+// establish that. Live canonical data already contains rows using it. A UI
+// offering only three options silently made a canonical business decision
+// unreachable, so the fourth is restored here rather than papered over.
+//
+// A completed inspection is what makes reinpection the correct next step: if the
+// lot has already been inspected, "Needs Site Inspection" is wrong and
+// "Requires Reinspection" is the canonical replacement.
+const REINSPECTION_DECISION = "Requires Reinspection";
+const decisionOptions = (hasCompletedInspection) =>
+    ["Approved", hasCompletedInspection ? REINSPECTION_DECISION : "Needs Site Inspection", "Declined"];
+const DECISION_DOT = {
+    Approved: "bg-emerald-500",
+    "Needs Site Inspection": "bg-amber-500",
+    [REINSPECTION_DECISION]: "bg-violet-500",
+    Declined: "bg-rose-500",
+};
+const decisionLabel = (d) => {
+    if (d === REINSPECTION_DECISION) return "Schedule Reinspection";
+    if (d === "Approved") return "Approve";
+    if (d === "Declined") return "Decline";
+    if (d === "Needs Site Inspection") return "Site inspection";
+    return d;
+};
 
 // Ease of Doing Business (RA 11032) processing time for highly technical applications, in working days.
 // Only stages the office controls count against it (SB deliberation is legislative).
@@ -235,6 +266,20 @@ function ShowInner({
     technicalReviews = [],
     auditTrail = [],
     statusHistory = [],
+    // ── Work assignment props (restored by the master merge, §5/§6) ─────────
+    // The backend has always sent these (ApplicationController@show) and the
+    // routes have always existed. Master's tab-based Show.jsx simply stopped
+    // passing them to the page, which orphaned WorkAssignment.jsx and made
+    // Admin/PO handover unreachable. They are accepted again here so the two
+    // established components can be re-mounted in master's layout.
+    assignedPlanningOfficer = null,
+    planningOfficers = [],
+    poAssignmentHistory = [],
+    inspectorRoundState = {},
+    inspectionHistory = {},
+    reassignmentReasons = [],
+    canReassignPlanningOfficer = false,
+    canReassignInspector = false,
     errors: serverErrors = {},
 }) {
     const app = initialApp || alternateApp || {};
@@ -318,11 +363,73 @@ function ShowInner({
     const inspectorName = (id) => inspectors.find((i) => String(i.id) === String(id))?.name || (id ? `Inspector #${id}` : "—");
     const inspectionStatusOf = (p) => (liveStatuses[p.id] || p.site_inspection?.status || "").toLowerCase();
     const inspectionOpen = (p) => Boolean(p.site_inspection) && !DONE_INSPECTION.includes(inspectionStatusOf(p));
+    // LOOP 4: a lot that has already been inspected is reinstpected rather than
+    // sent for a first site inspection, so this drives which decision is offered.
+    const hasCompletedInspection = (p) => Boolean(p.site_inspection) && DONE_INSPECTION.includes(inspectionStatusOf(p));
+
+    // ── RESTORED BY THE MASTER MERGE: PLANNING OFFICER DECISION AUTHORITY ────
+    // Technical-review decision controls are Planning-Officer-only actions. The
+    // backend has always refused them for every other role (the
+    // technical-review routes are `role:Planning Officer`), but the page
+    // used to render them to anyone who could open Application Detail, so an
+    // Admin saw officer controls and only discovered on submit that they were
+    // forbidden.
+    //
+    // This is a PRESENTATION gate, exactly like the server-side one: no
+    // middleware is weakened and the server remains authoritative. A read-only
+    // role still sees every recorded decision, reviewer, date and note; it simply
+    // is not offered controls it cannot use.
+    const canRecordPlanningDecision = userRole === "Planning Officer";
+
+    // ── RESTORED BY THE MASTER MERGE: ORIGIN-AWARE BACK NAVIGATION ─────────
+    // The Technical Review queue opens a record with `?from=technical-review`.
+    // Master read only the URL path, so that origin was silently dropped and the
+    // back control always claimed the registry — an officer working the review
+    // queue had no way back to the queue they came from.
+    //
+    // This restores the origin in the smallest possible way: read the query
+    // flag and point the existing back control and breadcrumb at the right
+    // module. Normal entry from the registry is unchanged.
+    const openedFromTechnicalReview = usePage().url?.split("?")[1]?.includes("from=technical-review");
+    const backHref = openedFromTechnicalReview ? "/technical-review" : "/applications";
+    const backLabel = openedFromTechnicalReview ? "Back to technical review" : "Back to applications";
+    const backCrumb = openedFromTechnicalReview ? "Technical Review" : "Applications";
 
     // Stable per-parcel callbacks: ParcelInspectionStatus refetches whenever its callback identity changes
     const statusCallbacks = useRef({});
     const onInspectionStatus = (parcelId) =>
         (statusCallbacks.current[parcelId] ||= (status) => setLiveStatuses((prev) => (prev[parcelId] === status ? prev : { ...prev, [parcelId]: status })));
+
+    // ── LOOP 7 CONFIRMED-COORDINATE CONTRACT (restored by the master merge) ──
+    //
+    // `ParcelInspectionStatus` hands back the merged local+remote inspection
+    // record, which carries the coordinates the inspector CONFIRMED in the
+    // field. Those are the only coordinates this page will focus the map on.
+    //
+    // The same strict validation the Loop 7 helper used is applied here, and
+    // before any value can reach Leaflet:
+    //   null / undefined / '' / NaN / non-finite / out of range  ->  null
+    // and a point is produced only when BOTH coordinates are valid.
+    // A half-valid pair yields no point at all, so the map is never handed a
+    // not-a-number pair or a half-coordinate.
+    const [liveInspectionData, setLiveInspectionData] = useState({});
+    const toValidCoordinate = (value, min, max) => {
+        if (value === null || value === undefined || value === "") return null;
+        const number = Number(value);
+        return Number.isFinite(number) && number >= min && number <= max ? number : null;
+    };
+    const toInspectionPoint = (inspection) => {
+        const latitude = toValidCoordinate(inspection?.confirmed_latitude, -90, 90);
+        const longitude = toValidCoordinate(inspection?.confirmed_longitude, -180, 180);
+        return latitude !== null && longitude !== null ? [latitude, longitude] : null;
+    };
+
+    const dataCallbacks = useRef({});
+    const onInspectionDataFetched = (parcelId) =>
+        (dataCallbacks.current[parcelId] ||= (data) =>
+            setLiveInspectionData((prev) =>
+                prev[parcelId] === data ? prev : { ...prev, [parcelId]: data }
+            ));
 
     // ── Evaluation (Technical Review) ──
     const [reviews, setReviews] = useState(() => {
@@ -343,7 +450,9 @@ function ShowInner({
         return init;
     });
     const setReview = (parcelId, field, value) => setReviews((prev) => ({ ...prev, [parcelId]: { ...prev[parcelId], [field]: value } }));
-    const canSubmitEvaluation = parcels.length > 0 && parcels.every((p) => !inspectionOpen(p));
+    // PO-only action, so the role is part of eligibility, not just of the
+    // per-lot radio visibility.
+    const canSubmitEvaluation = canRecordPlanningDecision && parcels.length > 0 && parcels.every((p) => !inspectionOpen(p));
 
     const submitEvaluation = () => {
         for (const [i, p] of parcels.entries()) {
@@ -353,8 +462,15 @@ function ShowInner({
                 ? `Choose an evaluation decision for ${code}.`
                 : r.decision === "Declined" && !r.decision_reason?.trim()
                 ? `Give the reason for declining ${code}.`
-                : r.decision === "Needs Site Inspection" && (!r.inspector_id || !r.scheduled_date || !r.deadline_date)
+                : // LOOP 4: scheduling a reinspection needs the same inspector
+                  // / date / deadline as a first inspection, AND explicit
+                  // instructions — otherwise the officer is sent back to a lot
+                  // with nothing to re-verify.
+                  [ "Needs Site Inspection", REINSPECTION_DECISION ].includes(r.decision)
+                  && (!r.inspector_id || !r.scheduled_date || !r.deadline_date)
                 ? `Choose the inspector, inspection date and deadline for ${code}.`
+                : r.decision === REINSPECTION_DECISION && !r.assigned_notes?.trim()
+                ? `Give instructions for the reinspection of ${code}.`
                 : null;
             if (problem) {
                 setTab("parcels");
@@ -464,6 +580,17 @@ function ShowInner({
 
     const selectedLot = lots[selectedIndex];
 
+    // The confirmed inspection point for the lot currently in view. Live remote
+    // data wins over the server-rendered copy so a just-confirmed position is
+    // picked up without a page reload; both are validated identically.
+    const selectedInspectionData = selectedLot
+        ? liveInspectionData[selectedLot.parcel?.id] || selectedLot.parcel?.site_inspection || null
+        : null;
+    const inspectionPoint = useMemo(
+        () => toInspectionPoint(selectedInspectionData),
+        [selectedInspectionData]
+    );
+
     const nextStep =
         app.status === "Technical Review"
             ? pendingInspections.length
@@ -538,9 +665,9 @@ function ShowInner({
                     <div className="h-14 bg-white border-b border-slate-200 px-4 flex items-center justify-between gap-3 shrink-0 z-10">
                         <div className="flex items-center gap-3 min-w-0">
                             <Link
-                                href="/applications"
+                                href={backHref}
                                 className="w-8 h-8 flex items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 shrink-0"
-                                aria-label="Back to applications"
+                                aria-label={backLabel}
                             >
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -548,7 +675,7 @@ function ShowInner({
                             </Link>
                             <div className="min-w-0">
                                 <p className="text-[11.5px] text-slate-500 leading-tight">
-                                    Applications / <span className="font-mono text-slate-700">{app.reference_number || `APP-${app.id}`}</span>
+                                    {backCrumb} / <span className="font-mono text-slate-700">{app.reference_number || `APP-${app.id}`}</span>
                                 </p>
                                 <h1 className="text-[15px] font-semibold text-slate-900 leading-tight truncate">{app.corporation_name || app.applicant_name || "—"}</h1>
                             </div>
@@ -606,6 +733,7 @@ function ShowInner({
                                 brgyMapData={brgyMapData}
                                 barangay={app.barangay}
                                 selectedIndex={selectedIndex}
+                inspectionPoint={inspectionPoint}
                                 onSelectLot={(i) => {
                                     setSelectedIndex(i);
                                     setTab("parcels");
@@ -770,12 +898,63 @@ function ShowInner({
                                                 <Row label="Remarks">{app.remarks}</Row>
                                             </More>
                                         </div>
+
+                                        {/* Loop 9C-2, Summary branch (master merge re-home).
+                                            The panel is application-level, not parcel-level: it
+                                            enumerates every inspection round from the 9C-1
+                                            reader, so it must not be nested under a parcel's
+                                            latest-only inspection surface.
+                                            Mounted INSIDE the Summary tab so it is mutually
+                                            exclusive with the Lots-branch mount below: these
+                                            tabs are exclusive, so exactly one renders and the
+                                            panel is never duplicated on a page.
+                                            Not gated on any Planning Officer decision control —
+                                            delivery status is shared read-only visibility for
+                                            Admin and Planning Officer alike. */}
+                                        {/* ── MASTER MERGE CORRECTION §5: APPLICATION-LEVEL
+                                            PLANNING OFFICER OWNERSHIP, re-homed into the Summary tab.
+
+                                            Admin-initiated application handover. It is APPLICATION
+                                            level, so it deliberately lives outside the parcel list
+                                            and outside any inspection-round context: PO ownership
+                                            of a record is not a property of a lot or a round.
+
+                                            `canReassignPlanningOfficer` is a SERVER fact (the viewer
+                                            is Admin), not a client role guess, and the component
+                                            enforces reason requirements itself. No assignment
+                                            logic is duplicated on this page. */}
+                                        <PlanningOfficerAssignment
+                                            current={assignedPlanningOfficer}
+                                            candidates={planningOfficers}
+                                            history={poAssignmentHistory}
+                                            reasons={reassignmentReasons}
+                                            canReassign={canReassignPlanningOfficer}
+                                            applicationId={app.id}
+                                        />
+
+                                        <div className="mt-4 p-5 rounded-md border border-slate-200 bg-white">
+                                            <InspectionDeliveryStatusPanel applicationId={app.id} />
+                                        </div>
                                     </>
                                 )}
 
                                 {tab === "parcels" && (
                                     <>
-                                        {app.status === "Technical Review" && !canSubmitEvaluation && (
+                                        {/* Loop 9C-2, Lots branch (master merge re-home).
+                                            The second mutually exclusive mount site. The two
+                                            branches are exclusive tabs, so only one can render
+                                            on a given page view, and the panel is passed the
+                                            Application model id already supplied to the page. */}
+                                        <div className="mb-3 p-5 rounded-md border border-slate-200 bg-white">
+                                            <InspectionDeliveryStatusPanel applicationId={app.id} />
+                                        </div>
+
+                                        {app.status === "Technical Review" && !canRecordPlanningDecision && (
+                                            <p className="mb-3 px-3 py-2 rounded-md bg-slate-50 border border-slate-200 text-[12px] text-slate-600">
+                                                Technical-review decisions are recorded by a Planning Officer. The recorded decisions below are read-only here.
+                                            </p>
+                                        )}
+                                        {app.status === "Technical Review" && canRecordPlanningDecision && !canSubmitEvaluation && (
                                             <p className="mb-3 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-[12px] text-amber-900">
                                                 Decisions are locked for lots with an open site inspection. The evaluation can be submitted once every inspection report is in.
                                             </p>
@@ -787,7 +966,10 @@ function ShowInner({
                                                 const review = reviews[p.id] || {};
                                                 const latest = latestReview[p.id];
                                                 const locked = inspectionOpen(p);
-                                                const editable = app.status === "Technical Review" && !locked;
+                                                // Role AND workflow must both permit a decision:
+                                                // a Planning Officer, on a Technical Review
+                                                // application, with no open site inspection.
+                                                const editable = canRecordPlanningDecision && app.status === "Technical Review" && !locked;
                                                 const shownDecision = app.status === "Technical Review" ? review.decision : latest?.decision;
                                                 const decisionDot = DECISIONS.find((d) => d.value === shownDecision)?.dot || "bg-slate-300";
                                                 return (
@@ -853,7 +1035,33 @@ function ShowInner({
 
                                                                 {p.site_inspection?.id && (
                                                                     <div className="mt-2">
-                                                                        <ParcelInspectionStatus inspectionId={p.site_inspection.id} onStatusFetched={onInspectionStatus(p.id)} />
+                                                                                                        <ParcelInspectionStatus
+                                                    inspectionId={p.site_inspection.id}
+                                                    onStatusFetched={onInspectionStatus(p.id)}
+                                                    onInspectionDataFetched={onInspectionDataFetched(p.id)}
+                                                />
+
+                                                                        {/* ── MASTER MERGE CORRECTION §6: SITE INSPECTOR ROUND
+                                                                            ASSIGNMENT, re-homed into master's expanded-lot layout.
+
+                                                                            This is the per-ROUND control: only a Planning Officer may
+                                                                            hand an inspection round to another Site Inspector, and only
+                                                                            while the server says the round is provably untouched. Every
+                                                                            one of those rules lives server-side (InspectorTransferGuard,
+                                                                            WorkReassignmentController, ReassignmentReasons); this page
+                                                                            only mounts the established component and passes the
+                                                                            server-authored facts.
+
+                                                                            Deliberately NOT at application level: PO handover belongs in
+                                                                            the round context beside the inspection status it governs. */}
+                                                                        <InspectorRoundAssignment
+                                                                            state={inspectorRoundState?.[p.site_inspection.id]}
+                                                                            history={inspectionHistory?.[p.site_inspection.id]}
+                                                                            candidates={inspectors}
+                                                                            reasons={reassignmentReasons}
+                                                                            canReassign={canReassignInspector}
+                                                                            applicationId={app.id}
+                                                                        />
                                                                     </div>
                                                                 )}
 
@@ -861,19 +1069,22 @@ function ShowInner({
                                                                     <div className="mt-3 pt-3 border-t border-slate-200 space-y-3">
                                                                         <p className="text-[12.5px] font-semibold text-slate-800">Evaluation decision</p>
                                                                         <div role="radiogroup" aria-label={`Evaluation decision for ${l.code}`} className="grid grid-cols-3 border border-slate-300 rounded-md overflow-hidden">
-                                                                            {DECISIONS.map((d, di) => (
-                                                                                <label key={d.value} className={`relative ${di ? "border-l border-slate-300" : ""}`}>
+                                                                            {/* LOOP 4: the canonical fourth decision, offered instead of
+                                                                                "Needs Site Inspection" once the lot has already been
+                                                                                inspected. Same three-cell layout master uses. */}
+                                                                            {decisionOptions(hasCompletedInspection(p)).map((d, di) => (
+                                                                                <label key={d} className={`relative ${di ? "border-l border-slate-300" : ""}`}>
                                                                                     <input
                                                                                         type="radio"
                                                                                         name={`decision-${p.id}`}
-                                                                                        value={d.value}
-                                                                                        checked={review.decision === d.value}
-                                                                                        onChange={() => setReview(p.id, "decision", d.value)}
+                                                                                        value={d}
+                                                                                        checked={review.decision === d}
+                                                                                        onChange={() => setReview(p.id, "decision", d)}
                                                                                         className="peer sr-only"
                                                                                     />
                                                                                     <span className="flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-slate-600 cursor-pointer hover:bg-slate-50 peer-checked:bg-[#0b2a5b] peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-inset peer-focus-visible:ring-[#0b2a5b]">
-                                                                                        <span className={`w-2 h-2 rounded-full ${d.dot}`} aria-hidden="true" />
-                                                                                        {d.value === "Needs Site Inspection" && DONE_INSPECTION.includes(inspectionStatusOf(p)) ? "Re-inspect" : d.label}
+                                                                                        <span className={`w-2 h-2 rounded-full ${DECISION_DOT[d] || "bg-slate-300"}`} aria-hidden="true" />
+                                                                                        {decisionLabel(d)}
                                                                                     </span>
                                                                                 </label>
                                                                             ))}
@@ -921,8 +1132,15 @@ function ShowInner({
                                                                                     <input id={`deadline-${p.id}`} type="date" min={review.scheduled_date || today()} value={review.deadline_date} onChange={(e) => setReview(p.id, "deadline_date", e.target.value)} className={`mt-1 ${FIELD}`} />
                                                                                 </div>
                                                                                 <div className="col-span-2">
-                                                                                    <label htmlFor={`notes-${p.id}`} className="text-[12px] font-semibold text-slate-700">Instructions for the inspector</label>
-                                                                                    <textarea id={`notes-${p.id}`} rows={2} value={review.assigned_notes} onChange={(e) => setReview(p.id, "assigned_notes", e.target.value)} placeholder="What to verify on site…" className={`mt-1 resize-none ${FIELD}`} />
+                                                                                    {/* LOOP 4: reinspection REQUIRES explicit instructions.
+                                                                                        Without them the officer is sent back to a lot
+                                                                                        with no idea what to re-verify, so the field is
+                                                                                        mandatory for this decision only. */}
+                                                                                    <label htmlFor={`notes-${p.id}`} className="text-[12px] font-semibold text-slate-700">
+                                                                                        Instructions for the inspector
+                                                                                        {review.decision === REINSPECTION_DECISION && <span className="text-rose-600">*</span>}
+                                                                                    </label>
+                                                                                    <textarea id={`notes-${p.id}`} rows={2} value={review.assigned_notes} onChange={(e) => setReview(p.id, "assigned_notes", e.target.value)} placeholder="What to verify on site…" className={`mt-1 resize-none ${FIELD}`} aria-required={review.decision === REINSPECTION_DECISION} />
                                                                                 </div>
                                                                             </div>
                                                                         )}

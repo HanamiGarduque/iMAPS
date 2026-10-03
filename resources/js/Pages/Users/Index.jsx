@@ -321,7 +321,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         setIsSavingProfile(true);
 
         try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+            // Loop 6: no manual CSRF header (Laravel XSRF-TOKEN cookie + Axios XSRF behavior).
             const response = await axios.post(
                 `/users/${editingUser.id}/update`,
                 {
@@ -331,7 +331,6 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                 },
                 {
                     headers: {
-                        "X-CSRF-TOKEN": csrfToken,
                         Accept: "application/json",
                         "X-Requested-With": "XMLHttpRequest",
                     },
@@ -390,7 +389,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         setPasswordResetError("");
 
         try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+            // Loop 6: no manual CSRF header (Laravel XSRF-TOKEN cookie + Axios XSRF behavior).
             const response = await axios.post(
                 "/users/reset-password",
                 {
@@ -399,7 +398,6 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                 },
                 {
                     headers: {
-                        "X-CSRF-TOKEN": csrfToken,
                         Accept: "application/json",
                         "X-Requested-With": "XMLHttpRequest",
                     },

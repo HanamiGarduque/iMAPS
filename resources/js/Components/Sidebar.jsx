@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 
 export default function Sidebar({
@@ -13,6 +13,19 @@ export default function Sidebar({
     const effectiveRole = page?.props?.auth?.user?.role || userRole;
     const isAdmin = effectiveRole === 'Admin';
     const isPlanningOfficer = effectiveRole === 'Planning Officer';
+    // Loop 6 / Loop 9 merge: Site Inspectors operate exclusively through
+    // FieldSync — they must never see internal operational navigation
+    // (frontend hygiene only; the server-side role middleware remains the
+    // security boundary).
+    //
+    // NOTE: the Loop 9 side of this conflict also declared `isAdmin` from the
+    // raw `userRole` prop. That is deliberately NOT taken: master already
+    // derives `isAdmin` above from `effectiveRole` (the server-provided
+    // Inertia prop), and declaring a second `isAdmin` in the same scope would
+    // be a redeclaration error. `effectiveRole` is the stricter and more
+    // correct source, and it is what the Admin-only `/diagnostics` entry below
+    // must be gated on.
+    const isSiteInspector = effectiveRole === 'Site Inspector';
     const currentPath = page?.url?.split('?')[0].split('#')[0] || (typeof window !== 'undefined' ? window.location.pathname : '');
     const menuRef = useRef(null);
     const [focusedIndex, setFocusedIndex] = useState(0);
@@ -46,10 +59,35 @@ export default function Sidebar({
             href: '/site-inspections',
             label: 'Site Inspections',
             badge: null,
+            // Loop 6 correction: routes/web.php protects every /site-inspections
+            // route with role:Admin. Align the nav visibility with the enforced
+            // route middleware.
             adminOnly: true,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+            ),
+        },
+        {
+            // LOOP 9E/9F. Admin triage of FieldSync inspector-submitted
+            // diagnostic reports. Read only.
+            //
+            // `adminOnly: true` is PRESENTATION ONLY, matching the comment on
+            // the Site Inspections item: the security boundary is the server-side
+            // `role:Admin` middleware on the route, not the visibility of this
+            // entry. Both routes are GET-only, so a Planning Officer following a
+            // direct link receives 403.
+            //
+            // This file is a known upstream-contested merge point, so the entry
+            // is a single self-contained object appended after an existing one.
+            href: '/diagnostics',
+            label: 'Diagnostic Reports',
+            badge: null,
+            adminOnly: true,
+            icon: (
+                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
                 </svg>
             ),
         },
@@ -89,17 +127,30 @@ export default function Sidebar({
         },
     ];
 
-    const visibleItems = navItems.filter(item => {
-        if (item.adminOnly && !isAdmin) return false;
-        if (item.href === '/site-inspections' && isPlanningOfficer) return false;
-        return true;
-    });
+    // Master integration (Loop 9 merge): BOTH role rules are preserved.
+    //   * master hides Admin-only items from non-Admins, and additionally hides
+    //     /site-inspections from a Planning Officer;
+    //   * Loop 9 gives a Site Inspector no internal navigation at all, and
+    //     renders the FieldSync guidance panel instead.
+    // Dropping either regresses a Loop 6 authorization contract.
+    const visibleItems = isSiteInspector
+        ? []
+        : navItems.filter(item => {
+              if (item.adminOnly && !isAdmin) return false;
+              if (item.href === '/site-inspections' && isPlanningOfficer) return false;
+              return true;
+          });
 
     const isActive = (href) => {
         if (activePage) {
             const normalized = activePage.toLowerCase();
+            // Master integration (Loop 9 merge): master folds the retired /maps
+            // page into the Dashboard active state, which matches the merged
+            // route that redirects /maps -> dashboard. Loop 9 additionally
+            // treated the Technical Review list as part of Applications, which
+            // is preserved because that route still exists.
             if (href === '/dashboard' && (normalized === 'dashboard' || normalized === 'maps')) return true;
-            if (href === '/applications' && (normalized === 'applications' || normalized === 'drafts')) return true;
+            if (href === '/applications' && (normalized === 'applications' || normalized === 'drafts' || normalized === 'technical-review')) return true;
             if (href === '/reports-and-forecasting' && (normalized === 'reports-and-forecasting' || normalized === 'analytics')) return true;
             if (href === '/settings' && normalized === 'settings') return true;
             if (href === '/users' && (normalized === 'users' || normalized === 'user-management' || normalized === 'audit' || normalized === 'audit-log')) return true;
@@ -131,6 +182,8 @@ export default function Sidebar({
                 if (setSidebarOpen) setSidebarOpen(false);
                 return;
             }
+
+            if (visibleItems.length === 0) return;
 
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -178,7 +231,20 @@ export default function Sidebar({
                 </span>
             </div>
 
-            {/* Nav Items List */}
+            {/* Nav Items List / FieldSync guidance for Site Inspectors */}
+            {isSiteInspector ? (
+                <div className="px-2.5 py-3">
+                    <div className="rounded-xl bg-amber-50 border border-amber-200/80 p-3">
+                        <p className="text-xs font-bold text-amber-800 mb-1">
+                            FieldSync Required
+                        </p>
+                        <p className="text-[11px] leading-relaxed text-amber-700">
+                            Site Inspectors use FieldSync for site inspection activities.
+                            Internal iMAPS web navigation is not available for this role.
+                        </p>
+                    </div>
+                </div>
+            ) : (
             <div className="space-y-0.5" role="menu">
                 {visibleItems.map((item, idx) => {
                     const active = isActive(item.href);
@@ -216,6 +282,18 @@ export default function Sidebar({
                         </Link>
                     );
                 })}
+            </div>
+            )}
+
+            {/* Micro Footer */}
+            <div className="mt-1 pt-2 border-t border-slate-100 px-2.5 flex items-center justify-between text-[11px]">
+                <div className="flex items-center gap-1.5 font-semibold text-slate-700">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Rosario Municipal GIS</span>
+                </div>
+                <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
+                    v1.0
+                </span>
             </div>
         </div>
     );

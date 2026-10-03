@@ -3,7 +3,7 @@
 // the encoder's GIS step; here the map only frames the lots and lets the
 // officer pick one.
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
+import { MapContainer, TileLayer, GeoJSON, CircleMarker } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
@@ -34,7 +34,32 @@ function Control({ label, onClick, disabled, children }) {
 /**
  * lots: [{ index, code, pin, feature, check: { key, label }, color }]
  */
-export default function ApplicationMap({ lots, parcelMapData, brgyMapData, barangay, selectedIndex, onSelectLot, onPrint }) {
+/**
+ * ── LOOP 7 CONFIRMED-COORDINATE CONTRACT (restored by the master merge) ──
+ *
+ * Application Detail may focus the map on the GPS position an inspector
+ * actually CONFIRMED in the field. That position is the only coordinate source
+ * trusted for this purpose, and it is validated before Leaflet ever sees it.
+ *
+ * These helpers are intentionally strict. An unvalidated coordinate must never
+ * reach the map layer: `null`, `undefined`, an empty string, `NaN`, any
+ * non-finite number, and any value outside its valid range all collapse to
+ * `null`, and a point is produced only when BOTH coordinates are individually
+ * valid. A half-valid pair is no point at all.
+ */
+const toValidCoordinate = (value, min, max) => {
+    if (value === null || value === undefined || value === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) && number >= min && number <= max ? number : null;
+};
+
+const toInspectionPoint = (inspection) => {
+    const latitude = toValidCoordinate(inspection?.confirmed_latitude, -90, 90);
+    const longitude = toValidCoordinate(inspection?.confirmed_longitude, -180, 180);
+    return latitude !== null && longitude !== null ? [latitude, longitude] : null;
+};
+
+export default function ApplicationMap({ lots, parcelMapData, brgyMapData, barangay, selectedIndex, inspectionPoint, onSelectLot, onPrint }) {
     const [map, setMap] = useState(null);
     const [basemap, setBasemap] = useState("satellite");
     const [showClup, setShowClup] = useState(false);
@@ -92,6 +117,24 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
         }
     }, [selectedIndex, map, fitTo, lots, lotsCollection]);
 
+    // ── LOOP 7: focus the CONFIRMED inspection point, at LOWEST priority ────
+    //
+    // Master's parcel/lot framing above always wins: if a lot has been picked,
+    // the map is already framed on it and must not be dragged away. Only when
+    // no lot is selected AND a validated confirmed point exists does the map
+    // fly to the inspected site. Otherwise the initial framing above stands.
+    //
+    // `inspectionPoint` is already validated by `toInspectionPoint` in the
+    // parent, so nothing unchecked reaches Leaflet here.
+    const focusedInspection = useRef(false);
+    useEffect(() => {
+        if (!map || !inspectionPoint) return;
+        if (selectedIndex !== null && selectedIndex !== undefined && lots.some((l) => l.index === selectedIndex)) return;
+        if (focusedInspection.current) return;
+        focusedInspection.current = true;
+        map.flyTo(inspectionPoint, 18, { duration: 1.2 });
+    }, [map, inspectionPoint, selectedIndex, lots]);
+
     const lotStyle = (f) => {
         const lot = lots.find((l) => l.index === f.properties.__index);
         const selected = lot?.index === selectedIndex;
@@ -135,6 +178,15 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
                             layer.on("mouseover", () => layer.setStyle({ weight: 3 }));
                             layer.on("mouseout", () => layer.setStyle(lotStyle(f)));
                         }}
+                    />
+                )}
+                {/* LOOP 7: the confirmed inspection site, marked only when both
+                    coordinates validated. */}
+                {inspectionPoint && (
+                    <CircleMarker
+                        center={inspectionPoint}
+                        radius={8}
+                        pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 0.9, weight: 2 }}
                     />
                 )}
                 <ScaleBar />

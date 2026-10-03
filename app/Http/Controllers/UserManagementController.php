@@ -92,7 +92,7 @@ class UserManagementController extends Controller
                                             'total_caseload' => $total,
                                             'status' => [
                                                 'pending' => $jobs->where('status', 'assigned')->count(),
-                                                'in_progress' => $jobs->where('status', 'in-progress')->count(),
+                                                'in_progress' => $jobs->where('status', 'in_progress')->count(),
                                                 'completed' => $jobs->where('status', 'completed')->count(),
                                             ],
                                             'initiative_rate' => round(($jobs->where('is_self_scheduled', true)->count() / $total) * 100),

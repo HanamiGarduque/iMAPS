@@ -32,6 +32,34 @@ class Loop2AssignmentInstructionsOwnershipTest extends TestCase
         );
     }
 
+    public function test_scheduler_has_a_dedicated_assignment_instructions_field_separate_from_findings(): void
+    {
+        $path = dirname(__DIR__, 2) . '/resources/js/Pages/Applications/Components/ParcelInspectionScheduler.jsx';
+        $source = file_get_contents($path);
+        $this->assertNotFalse($source, "Could not read $path");
+
+        // Semantic contract rather than exact markup. Upstream added
+        // hasError/error-display behavior to these controls and removed the
+        // former findings textarea from this scheduling block, so brittle
+        // string assertions no longer describe the real requirement.
+        // What must remain is the assignment-instructions field itself.
+        $this->assertStringContainsString('Assignment Instructions', $source);
+        $this->assertStringContainsString('value={parcel.assigned_notes || ""}', $source);
+        $this->assertStringContainsString('onChange={setParcelField(index, "assigned_notes")}', $source);
+
+        // Validation feedback coexists with the field.
+        $this->assertStringContainsString('parcels.${index}.assigned_notes', $source);
+
+        // Both scheduling decisions must reveal the assignment block, and the
+        // assignment fields stay with the inspector/deadline controls.
+        $this->assertStringContainsString(
+            '["Needs Site Inspection", "Requires Reinspection"].includes(decision)',
+            $source
+        );
+        $this->assertStringContainsString('parcel.inspector_id', $source);
+        $this->assertStringContainsString('parcel.deadline_date', $source);
+    }
+
     // ── 2. Payload does NOT write inspector_notes ──────────────────────────────
 
     public function test_payload_does_not_contain_inspector_notes_key(): void

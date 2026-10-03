@@ -56,7 +56,10 @@ class TaxMapLookupController extends Controller
 
         $parcel = DB::table('public.land_parcels')
             ->where(function ($query) use ($pin, $normalizedPin) {
-                $query->whereRaw('UPPER(REPLACE(REPLACE(REPLACE(property_index_number, ?, ""), ?, ""), ?, "")) = ?', ['-', ' ', '.', $normalizedPin])
+                $query->whereRaw(
+                    'UPPER(REPLACE(REPLACE(REPLACE(property_index_number, ?, ?), ?, ?), ?, ?)) = ?',
+                    ['-', '', ' ', '', '.', '', $normalizedPin],
+                )
                     ->orWhere('property_index_number', $pin)
                     ->orWhere('property_index_number', trim($pin));
             })

@@ -11,11 +11,18 @@ use Illuminate\Support\Facades\Log;
 
 class PullCompletedInspections extends Command
 {
-    protected $signature = 'sync:pull-inspections';
+    protected $signature = 'sync:pull-inspections {--local-inspection-id= : Only pull the completed job for this local inspection ID}';
     protected $description = 'Pulls completed site inspections from Supabase and syncs them locally';
 
     public function handle(SupabaseService $supabase)
     {
+        $localInspectionId = $this->option('local-inspection-id');
+        if ($localInspectionId !== null && (! ctype_digit((string) $localInspectionId) || (int) $localInspectionId <= 0)) {
+            $this->error('The --local-inspection-id option must be a positive integer.');
+
+            return self::INVALID;
+        }
+
         $this->info("Fetching completed jobs from Supabase...");
 
         // 1. Fetch only the completed-result fields persisted by the Phase 5A contract.
@@ -29,7 +36,6 @@ class PullCompletedInspections extends Command
             'observations',
             'discrepancies',
             'recommendations',
-            'remarks',
             'inspector_notes',
             'checklist_data',
             'confirmed_latitude',
@@ -38,7 +44,12 @@ class PullCompletedInspections extends Command
             'gps_confirmed_at',
         ]);
 
-        $response = $supabase->select('field_jobs', $fields, ['status' => 'eq.completed']);
+        $filters = ['status' => 'eq.completed'];
+        if ($localInspectionId !== null) {
+            $filters['local_inspection_id'] = 'eq.'.(int) $localInspectionId;
+        }
+
+        $response = $supabase->select('field_jobs', $fields, $filters);
 
         if ($response->failed()) {
             $this->error("Failed to connect to Supabase.");
@@ -73,15 +84,15 @@ class PullCompletedInspections extends Command
                         array_key_exists($key, $job) ? $job[$key] : $existing;
 
                     $localInspection->fill([
-                        'status'              => $remoteOrExisting('status', $localInspection->status),
-                        'submitted_at'        => $remoteOrExisting('submitted_at', $localInspection->submitted_at),
+                        'status'              => 'completed',
+                        'submitted_at'        => $localInspection->submitted_at
+                            ?? $remoteOrExisting('submitted_at', $localInspection->submitted_at),
                         'inspection_result'   => $remoteOrExisting('inspection_result', $localInspection->inspection_result),
                         'is_compliant'        => $remoteOrExisting('is_compliant', $localInspection->is_compliant),
                         'findings'            => $remoteOrExisting('findings', $localInspection->findings),
                         'observations'        => $remoteOrExisting('observations', $localInspection->observations),
                         'discrepancies'       => $remoteOrExisting('discrepancies', $localInspection->discrepancies),
                         'recommendations'     => $remoteOrExisting('recommendations', $localInspection->recommendations),
-                        'remarks'             => $remoteOrExisting('remarks', $localInspection->remarks),
                         'inspector_notes'     => $remoteOrExisting('inspector_notes', $localInspection->inspector_notes),
                         'checklist_data'      => $remoteOrExisting('checklist_data', $localInspection->checklist_data),
                         'confirmed_latitude'  => $remoteOrExisting('confirmed_latitude', $localInspection->confirmed_latitude),

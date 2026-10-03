@@ -8,12 +8,24 @@ use App\Models\User;
 use App\Models\TechnicalReview;
 use App\Services\AuditLogger;
 use App\Models\ApplicationDraft;
+use App\Models\ApplicationPoAssignment;
 use App\Models\SiteInspection;
+use App\Models\SiteInspectionAssignment;
 use App\Jobs\PushInspectionToSupabase; 
 use App\Services\ApplicationStatusTracker;
 use App\Services\SmsNotifier;
+// Master integration (Loop 9 merge): BOTH import sets are required.
+// Master owns AppNotification for its application-created notification; Loop 9
+// owns the delivery/inspection/reassignment support classes below. Neither side
+// replaces the other.
 use App\Models\AppNotification;
 use App\Services\PermitExcelService;
+use App\Services\SupabaseService;
+use App\Services\WorkAssignmentService;
+use App\Support\InspectionDeliveryStatus;
+use App\Support\InspectionSummary;
+use App\Support\InspectorTransferGuard;
+use App\Support\ReassignmentReasons;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -42,8 +54,34 @@ class ApplicationController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function index(Request $request)
     {
+        // LOOP 9D: Admin aggregate delivery monitoring.
+        //
+        // The monitoring block and its filter are Admin-only. A Planning Officer
+        // must not be able to reach a half state where the list is filtered by a
+        // control it cannot see, so the parameter is ignored for every other
+        // role rather than half-applied.
+        $isAdminMonitoring = (Auth::user()?->role ?? null) === 'Admin';
+
         $query = ZoningApplication::query()
-            ->with('parcels') // <-- Eager load parcels here
+            // Admin/PO audit: the list showed no inspection context at all, so a
+            // Planning Officer had to open every application to learn whether it
+            // had a field inspection. Load ONLY what the compact summary needs,
+            // entirely from local relations — no Supabase/FieldSync call, no new
+            // column:
+            //   siteInspection      -> latest round (status only)
+            //   siteInspection.inspector -> human-readable inspector name
+            //   site_inspections_count  -> round count (a 2nd row = reinspection)
+            ->with(['parcels' => function ($q) {
+                // LOOP 9D: the aggregate attempt count rides along as a
+                // sub-select on the already-loaded latest round, so delivery
+                // monitoring costs ZERO additional queries. Attempt ROWS are
+                // never loaded here: full history is on-demand, detail-level
+                // only, and loading it per list row is the N+1 this must not
+                // introduce.
+                $q->with([
+                    'siteInspection' => fn ($sq) => $sq->with('inspector')->withCount('deliveryAttempts'),
+                ])->withCount('siteInspections');
+            }])
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->withCount('parcels')
             ->select(
@@ -62,6 +100,198 @@ class ApplicationController extends Controller
                 'users.name as encoded_by_name'
             );
 
+        $this->applyRegistryFilters($query, $request);
+
+        $applications = $query
+            ->orderByDesc('zoning_applications.created_at')
+            ->orderByDesc('zoning_applications.id')
+            ->paginate(25)
+            ->withQueryString();
+
+        $inspectors = User::activeSiteInspectors()
+            ->select('id', 'name')
+            ->orderBy('name', 'asc')
+            ->get();
+
+        $statusCounts = ZoningApplication::select('status', DB::raw('count(*) as total'))
+            ->groupBy('status')
+            ->pluck('total', 'status')
+            ->toArray();
+
+        // Applicant-level counts for the folder view, using exactly the same
+        // filters as the paginated list above.
+        //
+        // The browser only ever receives one page of applications, so counting
+        // the loaded rows would label a PAGE-LOCAL number as if it were the
+        // applicant's total. This counts the applicant's real matching
+        // applications server-side instead, without loading them all.
+        //
+        // The query is built fresh from the shared filter helper rather than
+        // cloned from the list query: the list query carries eager loads and a
+        // withCount sub-select, and appending a GROUP BY aggregate to it produces
+        // a non-aggregated column that PostgreSQL rejects.
+        //
+        // The grouping key must be exactly what the browser can compute from the
+        // payload it receives. The list select does not include
+        // `corporation_name`, so the folder view groups by `applicant_name`;
+        // grouping by a corporation name here would key the counts by names the
+        // UI never uses, and those applicants would silently fall back to the
+        // page-local number.
+        $folderKey = "COALESCE(NULLIF(BTRIM(applicant_name), ''), 'Unknown Applicant')";
+
+        $applicantCountQuery = $this->applyRegistryFilters(ZoningApplication::query(), $request);
+
+        $applicantCounts = $applicantCountQuery
+            ->selectRaw("{$folderKey} as folder_key, COUNT(*) as folder_total")
+            ->groupByRaw($folderKey)
+            ->pluck('folder_total', 'folder_key')
+            ->map(fn ($value) => (int) $value)
+            ->all();
+
+        // Attach the Planning Officer inspection line. Returns null when the
+        // application has no inspection at all, and the UI then renders no line
+        // rather than a placeholder. Wording is owned by InspectionSummary so
+        // the "never claim field progress from a local assignment" rule is
+        // enforced in one testable place.
+        $applications->getCollection()->transform(function ($application) use ($isAdminMonitoring) {
+            $line = null;
+
+            foreach ($application->parcels as $parcel) {
+                $candidate = InspectionSummary::line(
+                    $parcel->siteInspection,
+                    $parcel->siteInspection?->inspector?->name,
+                    (int) ($parcel->site_inspections_count ?? 0),
+                );
+
+                if ($candidate !== null) {
+                    $line = $candidate;
+                    break;
+                }
+            }
+
+            $application->inspection_summary = $line;
+
+            // LOOP 9D. Present for Admin only, and NULL for every other role so
+            // the Planning Officer payload is byte-identical to what 9C shipped.
+            $application->delivery_monitoring = $isAdminMonitoring
+                ? $this->buildDeliveryMonitoring($application)
+                : null;
+
+            return $application;
+        });
+
+        return Inertia::render('Applications/Index', [
+            'applications'    => $applications,
+            'filters'         => (object) $request->only(['barangay', 'status', 'application_type', 'date_from', 'date_to', 'search']),
+            'inspectors'      => $inspectors,
+            'status_counts'   => $statusCounts,
+            'applicant_counts' => $applicantCounts,
+            // LOOP 9D. Lets the browser render the filter without inventing the
+            // vocabulary, and states that the feature is Admin-only.
+            'delivery_monitoring' => [
+                'enabled' => $isAdminMonitoring,
+                'selected' => $isAdminMonitoring ? (string) $request->query('delivery_status', 'all') : 'all',
+                'states' => [
+                    ['value' => 'all', 'label' => 'All delivery states'],
+                    ['value' => 'no_delivery_record', 'label' => 'No delivery record'],
+                    ['value' => 'pending_delivery', 'label' => 'Pending delivery'],
+                    ['value' => 'delivered', 'label' => 'Delivered'],
+                    ['value' => 'delivery_failed', 'label' => 'Delivery failed'],
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * LOOP 9D: the server-authored delivery monitoring line for one application.
+     *
+     * WHICH round this describes is a business decision, so it is made here and
+     * never in the browser: the application's MONITORING ROUND is the highest-id
+     * `site_inspections` row across all of its parcels. `site_inspections` stores
+     * no round number, so the primary key is the round chronology - the same fact
+     * `InspectionDeliveryRetryEligibility` and the existing `latestOfMany()`
+     * relation already use. The delivery filter below orders the identical way,
+     * so a row can never disagree with the filter that selected it.
+     *
+     * Entirely local PostgreSQL. No Supabase call, no FieldSync call, no device
+     * dependency, and no attempt rows are loaded.
+     */
+    private function buildDeliveryMonitoring($application): array
+    {
+        $round = null;
+
+        foreach ($application->parcels as $parcel) {
+            $candidate = $parcel->siteInspection;
+
+            if ($candidate !== null && ($round === null || (int) $candidate->id > (int) $round->id)) {
+                $round = $candidate;
+            }
+        }
+
+        // No round at all is a first-class monitoring answer, not a gap: the
+        // application has no delivery record because it was never inspected.
+        if ($round === null) {
+            return [
+                'inspection_id'    => null,
+                'parcel_id'        => null,
+                'state'            => InspectionDeliveryStatus::STATE_NO_RECORD,
+                'label'            => InspectionDeliveryStatus::label(InspectionDeliveryStatus::STATE_NO_RECORD),
+                'message'          => InspectionDeliveryStatus::message(InspectionDeliveryStatus::STATE_NO_RECORD),
+                'attempt_count'    => 0,
+                'last_attempt_at'  => null,
+                'delivered_at'     => null,
+                'failure_category' => null,
+                'failure_label'    => null,
+                'inspector'        => null,
+                'is_superseded'    => false,
+            ];
+        }
+
+        $state = InspectionDeliveryStatus::state($round->delivery_status);
+        $isFailed = $state === InspectionDeliveryStatus::STATE_FAILED;
+
+        return [
+            'inspection_id'    => (int) $round->id,
+            'parcel_id'        => $round->parcel_id === null ? null : (int) $round->parcel_id,
+            'state'            => $state,
+            'label'            => InspectionDeliveryStatus::label($state),
+            'message'          => InspectionDeliveryStatus::message($state),
+            'attempt_count'    => (int) ($round->delivery_attempts_count ?? 0),
+            'last_attempt_at'  => $round->last_delivery_attempt_at?->toIso8601String(),
+            'delivered_at'     => $round->delivered_at?->toIso8601String(),
+            // LOOP 9D authorizes Admin to see the closed category token. It is
+            // normalized and labelled server-side, so only a value from the
+            // fixed vocabulary can ever reach the browser.
+            'failure_category' => $isFailed
+                ? InspectionDeliveryStatus::failureCategory($round->last_delivery_failure_category)
+                : null,
+            'failure_label'    => $isFailed
+                ? InspectionDeliveryStatus::failureCategoryLabel($round->last_delivery_failure_category)
+                : null,
+            'inspector'        => $round->inspector === null
+                ? null
+                : ['id' => (int) $round->inspector->id, 'name' => $round->inspector->name],
+            // Always false HERE, and provably so rather than by omission: this is
+            // the highest-id round across every parcel of the application, so a
+            // newer round of the same parcel would itself be in `parcels` and
+            // would have won. The real supersession signal belongs on
+            // application detail, which enumerates EVERY round - see
+            // `InspectionDeliveryController::shapeRounds()`.
+            'is_superseded'    => false,
+        ];
+    }
+// ─────────────────────────────────────────────────────────────────────────
+    // CREATE — Show encode form
+    // ─────────────────────────────────────────────────────────────────────────
+    /**
+     * Apply the Applications registry filters to a query.
+     *
+     * Shared by the paginated list and the applicant-level count query so the
+     * folder counts can never mean something different from the rows being
+     * listed. Search and every filter are treated identically for both.
+     */
+    private function applyRegistryFilters($query, Request $request)
+    {
         if ($request->filled('barangay'))
             $query->where('zoning_applications.barangay', $request->barangay);
 
@@ -85,21 +315,26 @@ class ApplicationController extends Controller
             });
         }
 
-        $applications = $query
-            ->orderByDesc('zoning_applications.created_at')
-            ->orderByDesc('zoning_applications.id')
-            ->paginate(25)
-            ->withQueryString();
+        // LOOP 9D: Admin aggregate delivery monitoring filter.
+        //
+        // ADMIN ONLY. The control is not rendered for any other role, so the
+        // parameter is ignored for them rather than silently filtering a list
+        // that shows no delivery column.
+        if ((Auth::user()?->role ?? null) !== 'Admin') {
+            return $query;
+        }
 
-        $inspectors = User::where('role', 'Site Inspector')
-            ->select('id', 'name')
-            ->orderBy('name', 'asc')
-            ->get();
+        $requested = (string) $request->query('delivery_status', 'all');
 
-        $statusCounts = ZoningApplication::select('status', DB::raw('count(*) as total'))
-            ->groupBy('status')
-            ->pluck('total', 'status')
-            ->toArray();
+        // Closed vocabulary. An unrecognized value matches EVERYTHING rather than
+        // nothing, so a stale bookmark can never silently produce an empty
+        // registry that looks like "no delivery problems exist".
+        $filterable = [
+            InspectionDeliveryStatus::STATE_NO_RECORD,
+            InspectionDeliveryStatus::STATE_PENDING,
+            InspectionDeliveryStatus::STATE_DELIVERED,
+            InspectionDeliveryStatus::STATE_FAILED,
+        ];
 
         $draftsCount = DB::table('application_drafts')
             ->where('user_id', Auth::id())
@@ -112,10 +347,45 @@ class ApplicationController extends Controller
             'status_counts' => $statusCounts,
             'drafts_count'  => $draftsCount,
         ]);
+        if ($requested === 'all' || ! in_array($requested, $filterable, true)) {
+            return $query;
+        }
+
+        // THE MONITORING ROUND, in SQL. This is the identical rule the row data
+        // uses in `buildDeliveryMonitoring()`: the highest-id `site_inspections`
+        // row across the application's parcels. Ordering by the primary key is
+        // the same round chronology the rest of the codebase relies on, so the
+        // filter and the rendered row can never disagree about which round they
+        // are describing.
+        //
+        // A scalar subquery rather than a join: it needs no GROUP BY, so it does
+        // not collide with the eager loads and `withCount` sub-selects this list
+        // already carries, and it cannot multiply rows.
+        $monitoringRoundDelivery = <<<'SQL'
+            (SELECT si.delivery_status
+               FROM site_inspections si
+               JOIN parcels p ON p.id = si.parcel_id
+              WHERE p.zoning_application_id = zoning_applications.id
+              ORDER BY si.id DESC
+              LIMIT 1)
+            SQL;
+
+        if ($requested === InspectionDeliveryStatus::STATE_NO_RECORD) {
+            // ONE predicate covers both honest cases: the application has no
+            // inspection round at all (the subquery finds no row and yields
+            // NULL), or its newest round has never had delivery state recorded
+            // (the subquery yields NULL). Neither is "delivered", so neither may
+            // be presented as a delivery success.
+            $query->whereRaw("{$monitoringRoundDelivery} IS NULL");
+
+            return $query;
+        }
+
+        $query->whereRaw("{$monitoringRoundDelivery} = ?", [$requested]);
+
+        return $query;
     }
-// ─────────────────────────────────────────────────────────────────────────
-    // CREATE — Show encode form
-    // ─────────────────────────────────────────────────────────────────────────
+
     public function create(Request $request)
     {
         $draftPayload = null;
@@ -143,8 +413,9 @@ class ApplicationController extends Controller
             }
         }
 
-        // --- NEW: Fetch Site Inspectors ---
-        $inspectors = User::where('role', 'Site Inspector')
+        // --- Fetch Site Inspectors ---
+        // Active-account + FieldSync-account enforcement via the shared scope.
+        $inspectors = User::activeSiteInspectors()
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
@@ -325,11 +596,36 @@ class ApplicationController extends Controller
 
             AppNotification::notifyUsers(
                 $recipientIds,
+            // ── Master integration (Loop 9 merge) ──────────────────────────
+            // These are TWO INDEPENDENT operations that happen to sit in one
+            // conflict region. Both survive; neither replaces the other, and the
+            // notification fires first so the Planning Officers who may pick the
+            // work up are told about it before ownership is recorded.
+            AppNotification::notifyRoles(
+                ['Admin', 'Planning Officer'],
                 'New Application Encoded',
                 "Application {$referenceNumber} for {$application->applicant_name} ({$application->barangay}) has been encoded.",
                 'application_created',
                 "/applications/{$application->id}"
             );
+
+            // Approved initialization rule: an application created by an ACTIVE
+            // Planning Officer starts owned by that officer, recorded as an
+            // explicit INITIAL assignment.
+            //
+            // `encoded_by` above is untouched and keeps its own meaning. The two
+            // may hold the same user id here and still say different things:
+            // encoded_by is who typed the application up and never changes, while
+            // assigned_planning_officer_id is who currently owns the pending
+            // Planning Officer work and does change on handover.
+            //
+            // If the creator is not an eligible Planning Officer, ownership is
+            // deliberately LEFT NULL rather than guessed at, and the application
+            // honestly shows "Not yet assigned" until an Administrator assigns
+            // it. No historical row is touched: this only runs for an application
+            // being created right now.
+            app(WorkAssignmentService::class)
+                ->initializePoOwnershipForNewApplication($application, Auth::user());
 
             $decisionsSeen = [];
 
@@ -503,30 +799,31 @@ class ApplicationController extends Controller
     {
         $application = ZoningApplication::query()
             ->with(['parcels' => function ($query) {
-                $query->orderBy('parcel_code')->with('siteInspection');
+                // Admin/PO audit: the detail page exposed only a raw
+                // inspector_id, so a Planning Officer could not tell who was
+                // assigned. Eager-load the EXISTING users relation rather than
+                // duplicating the name into another column. withCount supplies
+                // the round count so the current round can be labelled
+                // "Round N" without loading full history.
+                $query->orderBy('parcel_code')
+                    ->with(['siteInspection.inspector'])
+                    ->withCount('siteInspections');
             }]) // <-- Eager load and order parcels
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->select('zoning_applications.*', 'users.name as encoded_by_name')
             ->where('zoning_applications.id', $id)
             ->first();
 
-        $inspectors = User::where('role', 'Site Inspector')
-            ->whereNotNull('handshake_key') // Ensure only inspectors with handshake_key are fetched
+        $inspectors = User::activeSiteInspectors()
             ->select('id', 'name')
             ->orderBy('name')
             ->get();
 
-        if (!$application) {
-            $sampleData = $this->getSampleApplicationData($id);
-            return Inertia::render('Applications/Show', [
-                'application'      => $sampleData,
-                'parcels'          => collect($sampleData->parcels ?? []),
-                'technicalReviews' => collect($sampleData->technical_reviews ?? []),
-                'auditTrail'       => collect($sampleData->audit_trail ?? []),
-                'inspectors'       => $inspectors,
-                'statusOrder'      => self::STATUS_ORDER,
-            ]);
-        }
+        // Admin/PO audit (P1): this used to fall back to getSampleApplicationData()
+        // and render a FABRICATED application dossier — invented applicant names,
+        // TCT and OR numbers — for any id that did not exist. Official records
+        // must never be invented, so an unknown id is now an ordinary 404.
+        abort_if($application === null, 404);
 
         $technicalReviews = TechnicalReview::query()
             ->leftJoin('users', 'users.id', '=', 'technical_reviews.reviewed_by')
@@ -542,12 +839,114 @@ class ApplicationController extends Controller
             ->orderByDesc('audit_trail.performed_at')
             ->get();
 
+        // ── Work assignment data (business continuity) ───────────────────────
+        $assignments = app(WorkAssignmentService::class);
+        $viewerRole = Auth::user()?->role;
+
+        // The CURRENT round on each parcel, i.e. the one the page is about to
+        // show. Ownership is a property of a round, never of the application.
+        $openRounds = $application->parcels
+            ->map(fn ($parcel) => $parcel->siteInspection)
+            ->filter()
+            ->values();
+
+        // ONE batched remote read for every round on this page. The guard needs
+        // the FieldSync state because local status cannot prove a round is
+        // unstarted: a round in progress in the field still reads locally as
+        // "assigned".
+        $remoteStates = $openRounds->isEmpty()
+            ? []
+            : app(SupabaseService::class)->fieldJobTransferStates(
+                $openRounds->map(fn ($inspection) => (int) $inspection->id)->all()
+            );
+
+        // Round number per inspection id, taken from the PARCEL that owns the
+        // round. Reading it off the inspection's own parcel relation would lazy
+        // load one parcel per round and would not carry the withCount attribute.
+        $roundNumberByInspection = $application->parcels
+            ->filter(fn ($parcel) => $parcel->siteInspection)
+            ->mapWithKeys(fn ($parcel) => [
+                (int) $parcel->siteInspection->id => (int) ($parcel->site_inspections_count ?? 1),
+            ]);
+
+        $inspectorRoundState = $openRounds->mapWithKeys(function ($inspection) use ($remoteStates, $roundNumberByInspection) {
+            $remote = $remoteStates[(int) $inspection->id] ?? [];
+
+            $decision = InspectorTransferGuard::evaluate([
+                'local_status'              => $inspection->status,
+                'remote_readable'           => $remote !== [],
+                'remote_status'             => $remote['status'] ?? null,
+                'gps_confirmed_at'          => $remote['gps_confirmed_at'] ?? null,
+                'checklist_completed_count' => $remote['checklist_completed_count'] ?? 0,
+                'photo_count'               => $remote['photo_count'] ?? 0,
+            ]);
+
+            // The round number is the 1-based position of this round within its
+            // own application, which is the same numbering the parcel panel shows.
+            $roundNumber = $roundNumberByInspection[(int) $inspection->id] ?? 1;
+
+            return [(int) $inspection->id => [
+                'inspection_id'   => (int) $inspection->id,
+                'round_number'   => $roundNumber,
+                'inspector_id'   => $inspection->inspector_id,
+                'inspector_name' => $inspection->inspector?->name,
+                'allowed'        => $decision['allowed'],
+                'blocked_reason' => $decision['reason'],
+            ]];
+        });
+
+        $inspectionHistory = $openRounds->isEmpty()
+            ? collect()
+            : SiteInspectionAssignment::with(['fromInspector:id,name', 'toInspector:id,name', 'actor:id,name'])
+                ->whereIn('site_inspection_id', $openRounds->map(fn ($i) => (int) $i->id))
+                ->orderBy('reassigned_at')
+                ->orderBy('id')
+                ->get()
+                ->groupBy('site_inspection_id');
+
+        $poHistory = ApplicationPoAssignment::with([
+                'fromPlanningOfficer:id,name',
+                'toPlanningOfficer:id,name',
+                'actor:id,name',
+            ])
+            ->where('zoning_application_id', $id)
+            ->orderBy('reassigned_at')
+            ->orderBy('id')
+            ->get();
+
         return Inertia::render('Applications/Show', [
             'application'      => $application,
             'parcels'          => $application->parcels,
             'technicalReviews' => $technicalReviews,
             'auditTrail'       => $auditTrail,
             'inspectors'       => $inspectors,
+
+            // ── Work assignment (business continuity) ────────────────────────
+            // Two SEPARATE responsibilities, presented separately:
+            //   * APPLICATION-level: who currently owns this application. Admin
+            //     may initiate a handover. Nobody inherits decision rights.
+            //   * ROUND-level: who currently holds each inspection round. Only a
+            //     Planning Officer may hand a round over, and only while it is
+            //     provably untouched in the field.
+            //
+            // `assignedPlanningOfficer` stays null until ownership has genuinely
+            // been established. The current business flow has no step that
+            // assigns an application to an officer, so historical rows are left
+            // unowned rather than backfilled with a guess.
+            'assignedPlanningOfficer' => $application->assigned_planning_officer_id
+                ? User::find($application->assigned_planning_officer_id)?->only(['id', 'name'])
+                : null,
+            'planningOfficers'        => $assignments->activePlanningOfficers(),
+            'poAssignmentHistory'     => $poHistory,
+            'inspectorRoundState'     => $inspectorRoundState,
+            'inspectionHistory'       => $inspectionHistory,
+            'reassignmentReasons'     => ReassignmentReasons::all(),
+
+            // Authority is stated by the server rather than inferred in the
+            // browser, so the UI can never offer a control the route would refuse.
+            'canReassignPlanningOfficer' => $viewerRole === 'Admin',
+            'canReassignInspector'       => $viewerRole === 'Planning Officer',
+
             'statusOrder'      => self::STATUS_ORDER,
             // When each stage began, for "days in stage" on the record page
             'statusHistory'    => DB::table('application_status_tracks')
@@ -596,159 +995,6 @@ class ApplicationController extends Controller
         return [
             'id' => $user->id,
             'name' => $user->name,
-        ];
-    }
-
-    private function getSampleApplicationData(int $id): object
-    {
-        $samples = [
-            101 => [
-                'id' => 101,
-                'reference_number' => 'LC-2026-0814',
-                'applicant_name' => 'Batangas Agro-Industrial Corp.',
-                'representative_name' => 'Atty. Eduardo Castillo',
-                'contact_number' => '0917-882-9012',
-                'email' => 'operations@batangasagro.ph',
-                'application_type' => 'Locational Clearance',
-                'purpose' => 'Cold storage facility & processing plant',
-                'land_use_class' => 'Agro-Industrial',
-                'barangay' => 'San Carlos',
-                'lot_number' => 'Lot 412-A',
-                'tct_number' => 'TCT-058-202400918',
-                'lot_area_sqm' => 4500.00,
-                'latitude' => 13.8480,
-                'longitude' => 121.2140,
-                'created_at' => '2026-08-28 09:30:00',
-                'assessment_fee' => '18500.00',
-                'or_number' => 'OR-7890123',
-                'remarks' => 'Environmental clearance certificate submitted. Endorsed for technical evaluation.',
-                'status' => 'Technical Review',
-                'encoded_by_name' => 'Planning Officer',
-                'parcels' => [
-                    [
-                        'id' => 1001,
-                        'zoning_application_id' => 101,
-                        'parcel_code' => 'PIN-04-031-018-004',
-                        'lot_number' => 'Lot 412-A',
-                        'barangay' => 'San Carlos',
-                        'area_sqm' => 4500.00,
-                        'clup_zone' => 'AgIndZ',
-                        'zoning_classification' => 'Agro-Industrial Zone',
-                        'is_compliant' => true,
-                        'compliance_notes' => 'Compliant with CLUP 2030 agro-Industrial zone overlay regulations.',
-                        'technical_review_status' => 'Pending Review',
-                        'site_inspection' => null,
-                    ]
-                ],
-                'technical_reviews' => [
-                    [
-                        'id' => 501,
-                        'zoning_application_id' => 101,
-                        'review_round' => 1,
-                        'reviewed_by_name' => 'Engr. Alex Reyes',
-                        'decision' => 'Needs Site Inspection',
-                        'findings' => 'Structural layout adheres to CLUP setback guidelines. Ground perimeter inspection recommended for Industrial drainage runoff.',
-                        'decision_reason' => null,
-                        'created_at' => '2026-08-28 11:45:00',
-                    ]
-                ],
-                'audit_trail' => [
-                    [
-                        'id' => 901,
-                        'action' => 'APPLICATION_ENCODED',
-                        'performed_by_name' => 'Planning Officer',
-                        'note' => 'Application encoded and assigned reference number LC-2026-0814.',
-                        'performed_at' => '2026-08-28 09:30:00',
-                    ]
-                ]
-            ],
-            102 => [
-                'id' => 102,
-                'reference_number' => 'ZC-2026-0932',
-                'applicant_name' => 'Rosario Heights Realty Dev.',
-                'representative_name' => 'Engr. Maria Santos',
-                'contact_number' => '0920-554-1920',
-                'email' => 'msantos@rosarioheights.com',
-                'application_type' => 'Zoning Certificate',
-                'purpose' => 'Medium-density residential subdivision phase 2',
-                'land_use_class' => 'Residential',
-                'barangay' => 'Poblacion C',
-                'lot_number' => 'Lot 108',
-                'tct_number' => 'TCT-058-202300451',
-                'lot_area_sqm' => 12500.00,
-                'latitude' => 13.8415,
-                'longitude' => 121.2055,
-                'created_at' => '2026-08-27 14:15:00',
-                'assessment_fee' => '12400.00',
-                'or_number' => 'OR-7890124',
-                'remarks' => 'Endorsed to Sangguniang Bayan committee on housing and land use.',
-                'status' => 'Under Sangguniang Bayan',
-                'encoded_by_name' => 'Planning Officer',
-                'parcels' => [
-                    [
-                        'id' => 1002,
-                        'zoning_application_id' => 102,
-                        'parcel_code' => 'PIN-04-031-003-012',
-                        'lot_number' => 'Lot 108',
-                        'barangay' => 'Poblacion C',
-                        'area_sqm' => 12500.00,
-                        'clup_zone' => 'R2-Z',
-                        'zoning_classification' => 'Medium Density Residential',
-                        'is_compliant' => true,
-                        'compliance_notes' => 'Compliant with R2-Z density requirements.',
-                        'technical_review_status' => 'Approved',
-                        'site_inspection' => null,
-                    ]
-                ],
-                'technical_reviews' => [],
-                'audit_trail' => []
-            ],
-        ];
-
-        if (isset($samples[$id])) {
-            return (object)$samples[$id];
-        }
-
-        return (object)[
-            'id' => $id,
-            'reference_number' => 'APP-2026-' . str_pad($id, 4, '0', STR_PAD_LEFT),
-            'applicant_name' => 'Sample Applicant Inc.',
-            'representative_name' => 'Engr. Juan Dela Cruz',
-            'contact_number' => '0917-000-0000',
-            'email' => 'contact@sample.ph',
-            'application_type' => 'Locational Clearance',
-            'purpose' => 'Commercial establishment & storage unit',
-            'land_use_class' => 'Commercial',
-            'barangay' => 'Namunga',
-            'lot_number' => 'Lot ' . $id,
-            'tct_number' => 'TCT-058-2026' . $id,
-            'lot_area_sqm' => 1500.00,
-            'latitude' => 13.8410,
-            'longitude' => 121.2062,
-            'created_at' => now()->toDateTimeString(),
-            'assessment_fee' => '15000.00',
-            'or_number' => 'OR-998877',
-            'remarks' => 'Preview application record.',
-            'status' => 'Technical Review',
-            'encoded_by_name' => 'Planning Officer',
-            'parcels' => [
-                [
-                    'id' => $id * 10,
-                    'zoning_application_id' => $id,
-                    'parcel_code' => 'PIN-04-031-001-' . str_pad($id, 3, '0', STR_PAD_LEFT),
-                    'lot_number' => 'Lot ' . $id,
-                    'barangay' => 'Namunga',
-                    'area_sqm' => 1500.00,
-                    'clup_zone' => 'C1-Z',
-                    'zoning_classification' => 'Commercial 1',
-                    'is_compliant' => true,
-                    'compliance_notes' => 'Zoning assessment verified.',
-                    'technical_review_status' => 'Pending Review',
-                    'site_inspection' => null,
-                ]
-            ],
-            'technical_reviews' => [],
-            'audit_trail' => []
         ];
     }
 
@@ -974,6 +1220,12 @@ class ApplicationController extends Controller
 
     private function getNextSequence(string $typeCode, string $year): int
     {
+        // Canonical reference sequencing (upstream strategy, retained after merge):
+        // derive the next number from zoning_applications under a row lock so the
+        // value is monotonic and duplicate-safe inside the caller's transaction.
+        // This retires the runtime dependency on the legacy application_sequences
+        // table. The table itself is retained in the database (LEGACY) and is NOT
+        // dropped; only this code path stops reading/writing it.
         $latest = DB::table('zoning_applications')
             ->where('reference_number', 'like', "{$typeCode}-{$year}-%")
             ->lockForUpdate()
@@ -1154,3 +1406,4 @@ class ApplicationController extends Controller
         ])->deleteFileAfterSend(true);
     }
 }
+

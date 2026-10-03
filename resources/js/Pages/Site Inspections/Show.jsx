@@ -1,10 +1,12 @@
 // resources/js/Pages/Site Inspections/Show.jsx
 import React, { useState, useEffect } from "react";
-import { Link, Head, router } from "@inertiajs/react";
+import { Link, Head, router, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { performLogout } from "@/utils/auth";
+import { resolveBackTarget, readRegistryQuery } from "@/Components/folderOrigin";
+import PhotoLightbox from "@/Components/PhotoLightbox";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -125,8 +127,33 @@ export default function Show({ auth, inspection }) {
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
 
+    // Round identity for this inspection, scoped to its own application.
+    //
+    // The controller supplies round_number / round_kind for the LIST page. This
+    // detail page receives a single inspection, so the same rule is applied
+    // here: the first inspection recorded for an application is the original,
+    // and anything after it is a reinspection. When the application has no
+    // other rounds the label falls back to a neutral "Inspection" rather than
+    // inventing a number, and it is never derived from the raw id on its own.
+    const roundNumber = ins.round_number ?? null;
+    const roundLabel =
+        ins.round_kind ||
+        (roundNumber && roundNumber > 1 ? "Reinspection" : "Inspection");
+
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
+
+    // Where this round was opened from, taken from the query string rather than
+    // inferred from browser history, so a refresh or a pasted link behaves the
+    // same as a click. A folder origin returns to THAT applicant folder; no origin
+    // falls back to the registry root and invents nothing.
+    const backTarget = resolveBackTarget({
+        search: usePage().url || "",
+        registryPath: "/site-inspections",
+        rootLabel: "All Inspections",
+        // Restore the registry filters and page, minus the origin markers.
+        registryQuery: readRegistryQuery(usePage().url || ""),
+    });
     const [activeTab, setActiveTab] = useState("inspection");
 
     // Geospatial States
@@ -180,6 +207,12 @@ export default function Show({ auth, inspection }) {
     const [inspectionPhotos, setInspectionPhotos] = useState([]);
     const [loadingPhotos, setLoadingPhotos] = useState(false);
 
+    // Full-size viewer state, plus per-thumbnail load failures so a dead image
+    // reports itself instead of rendering as a browser broken-image icon.
+    const [lightboxIndex, setLightboxIndex] = useState(null);
+    const [brokenPhotos, setBrokenPhotos] = useState({});
+    const markPhotoBroken = (idx) => setBrokenPhotos((prev) => ({ ...prev, [idx]: true }));
+
     useEffect(() => {
         if (!ins.id) return;
         setLoadingPhotos(true);
@@ -194,6 +227,7 @@ export default function Show({ auth, inspection }) {
                 } else {
                     setInspectionPhotos([]);
                 }
+                setBrokenPhotos({});
             })
             .catch((err) => {
                 console.error("Failed to fetch inspection photos:", err);
@@ -329,25 +363,49 @@ export default function Show({ auth, inspection }) {
                     {/* ── SUB-NAVBAR ── */}
                     <div className="h-12 bg-white border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between shrink-0 z-10 shadow-xs">
                         <div className="flex items-center gap-3">
-                            <Link 
-                                href="/site-inspections" 
+                            {/* The back control returns to the applicant folder this
+                                round was opened from, and says so. With no origin in
+                                the URL it falls back to the registry root, because a
+                                folder context that was never supplied must not be
+                                invented. */}
+                            <Link
+                                href={backTarget.href}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/90 text-slate-700 hover:text-slate-900 text-xs font-semibold border border-slate-200/80 transition-all shadow-2xs active:scale-95 group cursor-pointer"
-                                title="Return to All Inspections"
+                                title={
+                                    backTarget.folder
+                                        ? `Return to the ${backTarget.folder} folder`
+                                        : "Return to All Inspections"
+                                }
                             >
                                 <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
                                 </svg>
-                                <span>All Inspections</span>
+                                <span className="max-w-[190px] truncate">{backTarget.label}</span>
                             </Link>
                             <span className="text-slate-300">/</span>
-                            <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">
-                                INS-{ins.id || "—"}
-                            </span>
-                            {app.reference_number && (
-                                <span className="hidden sm:inline text-xs text-slate-500 font-medium">
-                                    · {app.reference_number}
+                            {/* Identity is the APPLICATION reference, which is what
+                                an officer actually recognises. The round and its
+                                kind provide the inspection context, and the
+                                internal inspection id is kept only as a quiet
+                                secondary reference for backend/debug workflows. */}
+                            {app.reference_number ? (
+                                <span className="font-mono text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">
+                                    {app.reference_number}
+                                </span>
+                            ) : (
+                                <span className="font-mono text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-md">
+                                    Application #{ins.zoning_application_id}
                                 </span>
                             )}
+                            <span className="hidden sm:inline text-xs text-slate-600 font-semibold">
+                                {roundLabel ? `Round ${ins.round_number} · ${roundLabel}` : roundLabel}
+                            </span>
+                            <span
+                                className="hidden md:inline text-[10px] font-mono text-slate-400"
+                                title="Internal inspection record id"
+                            >
+                                INS-{ins.id || "—"}
+                            </span>
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -587,17 +645,74 @@ export default function Show({ auth, inspection }) {
                                                         </div>
                                                     ) : inspectionPhotos && inspectionPhotos.length > 0 ? (
                                                         <div className="grid grid-cols-4 gap-4">
-                                                            {inspectionPhotos.map((photo, idx) => (
-                                                                <div key={photo.id || idx} className="relative aspect-square bg-slate-100 rounded-xl overflow-hidden border border-slate-200 group">
-                                                                    <img src={photo.photo_url} alt={`Inspection Photo ${idx + 1}`} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                                                                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                                                    {photo.captured_at && (
-                                                                        <span className="absolute bottom-2 left-2 right-2 text-[9px] text-white font-medium truncate opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md">
-                                                                            {new Date(photo.captured_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            ))}
+                                                            {inspectionPhotos.map((photo, idx) => {
+                                                                // The authorized contract is `signed_url`. The server
+                                                                // deliberately does NOT emit a raw path or a stored
+                                                                // public URL, so reading any other field here yields
+                                                                // undefined and the browser falls back to rendering the
+                                                                // alt text — which is exactly the broken thumbnail
+                                                                // this replaces. Privacy is unchanged: the image is
+                                                                // still fetched from a short-lived signed URL.
+                                                                const thumbUrl = photo.signed_url;
+                                                                const broken = brokenPhotos[idx];
+
+                                                                return (
+                                                                    <button
+                                                                        key={photo.id || idx}
+                                                                        type="button"
+                                                                        onClick={() => setLightboxIndex(idx)}
+                                                                        title={thumbUrl ? "Open full-size photo" : "This photo is unavailable"}
+                                                                        aria-label={thumbUrl ? `Open photo ${idx + 1} full size` : `Photo ${idx + 1} unavailable`}
+                                                                        className="relative aspect-square bg-slate-100 rounded-xl overflow-hidden border border-slate-200 group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 cursor-pointer"
+                                                                    >
+                                                                        {thumbUrl && !broken ? (
+                                                                            <img
+                                                                                src={thumbUrl}
+                                                                                alt={`Inspection Photo ${idx + 1}`}
+                                                                                onError={() => markPhotoBroken(idx)}
+                                                                                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                                                            />
+                                                                        ) : (
+                                                                            // A failed image reports itself honestly. It is never
+                                                                            // replaced with a stand-in photo, and the alt
+                                                                            // text is not left to stand in for the image.
+                                                                            <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-slate-400 p-2 text-center">
+                                                                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                                                                                    <path
+                                                                                        strokeLinecap="round"
+                                                                                        strokeLinejoin="round"
+                                                                                        d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                                                                                    />
+                                                                                </svg>
+                                                                                <span className="text-[10px] font-semibold leading-tight">
+                                                                                    Photo unavailable
+                                                                                </span>
+                                                                            </span>
+                                                                        )}
+
+                                                                        {/* Make it obvious the thumbnail opens something. */}
+                                                                        {thumbUrl && !broken && (
+                                                                            <span className="absolute inset-0 flex items-center justify-center bg-slate-900/0 group-hover:bg-slate-900/40 transition-colors">
+                                                                                <span className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity">
+                                                                                    <svg className="w-4 h-4 text-slate-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                                                        <path
+                                                                                            strokeLinecap="round"
+                                                                                            strokeLinejoin="round"
+                                                                                            d="M3.75 3.75v16.5h16.5V3.75H3.75zM8.25 15.75L12 12l3.75 3.75M14.25 9.75h.008v.008H14.25V9.75z"
+                                                                                        />
+                                                                                    </svg>
+                                                                                </span>
+                                                                            </span>
+                                                                        )}
+
+                                                                        {photo.captured_at && (
+                                                                            <span className="absolute bottom-2 left-2 right-2 text-[9px] text-white font-medium truncate opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md">
+                                                                                {new Date(photo.captured_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                                                            </span>
+                                                                        )}
+                                                                    </button>
+                                                                );
+                                                            })}
                                                         </div>
                                                     ) : (
                                                         <div className="text-center py-10">
@@ -668,6 +783,19 @@ export default function Show({ auth, inspection }) {
                     </main>
                 </div>
             </div>
+
+            {lightboxIndex !== null && (
+                <PhotoLightbox
+                    photos={inspectionPhotos.map((p, i) => ({
+                        ...p,
+                        inspectionId: ins.id,
+                        alt: `Inspection Photo ${i + 1}`,
+                    }))}
+                    index={lightboxIndex}
+                    onClose={() => setLightboxIndex(null)}
+                    onIndexChange={setLightboxIndex}
+                />
+            )}
         </>
     );
 }

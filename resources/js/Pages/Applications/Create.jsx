@@ -355,9 +355,38 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
-    const [currentStep, setCurrentStep] = useState(1);
+    // LOOP 9 (restored by the master merge): the wizard step is persisted with
+    // the draft and restored on load, so an officer who reloads or crashes
+    // returns to the step they were on instead of starting over at step 1.
+    // The stored value is validated against the real step range, so a corrupted
+    // or hand-edited value cannot put the wizard into a non-existent step.
+    const [currentStep, setCurrentStep] = useState(() => {
+        try {
+            const raw = localStorage.getItem(DRAFT_PAYLOAD_KEY);
+            const saved = raw ? JSON.parse(raw)?.__wizard_step : null;
+            const n = Number(saved);
+            return Number.isInteger(n) && n >= 1 && n <= 5 ? n : 1;
+        } catch (e) {
+            return 1;
+        }
+    });
     const [submitting, setSubmitting] = useState(false);
     const [submissionFinalized, setSubmissionFinalized] = useState(false);
+
+    // ── LOOP 9 SUBMISSION INTEGRITY (restored by the master merge) ──────────
+    // A/B. `submittingRef` is a SYNCHRONOUS lock, separate from the `submitting`
+    // state. React state does not update until the next render, so a rapid
+    // double click can read a stale `false` twice and fire two final
+    // submissions. The ref is set before any await/then boundary, so the second
+    // click is rejected in the same tick.
+    const submittingRef = useRef(false);
+    // A confirmed success is tracked explicitly so a FAILED submission can never
+    // be rendered as a success, and so autosave knows to stand down.
+    const [submissionSucceeded, setSubmissionSucceeded] = useState(false);
+    // C/D. One controller for the in-flight autosave. A new autosave aborts the
+    // previous one, and the signal is passed to axios so the browser actually
+    // drops the request rather than leaving it to resolve into a late write.
+    const autosaveControllerRef = useRef(null);
     const [flash, setFlash] = useState(null);
     const [errors, setErrors] = useState(serverErrors);
     const formRef = useRef(null);
@@ -618,48 +647,81 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         } catch (e) {}
     };
 
+    // E. Abort any outstanding autosave. Called BEFORE the final submission so a
+    // stale autosave cannot resolve afterwards and recreate/overwrite a draft
+    // that the server has already turned into an application.
+    const abortOutstandingAutosave = () => {
+        autosaveControllerRef.current?.abort();
+        autosaveControllerRef.current = null;
+    };
+
     // Auto-save sync effect
     useEffect(() => {
         if (submissionFinalized) return;
+        // O. While a final submission is in flight (or already succeeded) the
+        // autosave must stand down entirely.
+        if (submitting || submissionSucceeded) return;
 
         const handler = setTimeout(() => {
             const hasData = form.application_type || form.form_number || form.applicant_name || form.barangay;
             if (!hasData) return;
 
             setSyncStatus("Saving modifications...");
-            persistDraftState(tempDraftId, form);
+            // The wizard step is part of the saved draft: an officer who reloads
+            // or crashes must return to the step they were on, not to step 1.
+            persistDraftState(tempDraftId, { ...form, __wizard_step: currentStep });
+            setSyncStatus("Saving modifications...");
+            // The wizard step is part of the saved draft: an officer who reloads
+            // or crashes must return to the step they were on, not to step 1.
+            persistDraftState(tempDraftId, { ...form, __wizard_step: currentStep });
+            abortOutstandingAutosave();
+            const controller = new AbortController();
+            autosaveControllerRef.current = controller;
 
             axios.post("/applications/drafts/save", {
                 temp_id: tempDraftId,
                 payload: form,
-            })
+            }, { signal: controller.signal })
             .then(() => {
-                setSyncStatus("Auto-saved to drafts");
+                if (autosaveControllerRef.current === controller) {
+                    autosaveControllerRef.current = null;
+                    setSyncStatus("Auto-saved to drafts");
+                }
             })
-            .catch(() => {
+            .catch((error) => {
+                // F. An intentional abort is not a failure and must not tell the
+                // officer their draft could not be saved.
+                if (axios.isCancel(error)) return;
                 setSyncStatus("Saved locally");
             });
         }, 1200);
 
         return () => clearTimeout(handler);
-    }, [form, tempDraftId, submissionFinalized]);
+    }, [form, tempDraftId, submissionFinalized, submitting, submissionSucceeded]);
 
     const handleManualSave = () => {
-        if (submissionFinalized) return;
+        if (submissionFinalized || submitting || submissionSucceeded) return;
 
         setSyncStatus("Saving modifications...");
-        persistDraftState(tempDraftId, form);
+        persistDraftState(tempDraftId, { ...form, __wizard_step: currentStep });
+        abortOutstandingAutosave();
+        const controller = new AbortController();
+        autosaveControllerRef.current = controller;
         axios
             .post("/applications/drafts/save", {
                 temp_id: tempDraftId,
                 payload: form,
-            })
+            }, { signal: controller.signal })
             .then(() => {
-                setSyncStatus("Auto-saved to drafts");
+                if (autosaveControllerRef.current === controller) {
+                    autosaveControllerRef.current = null;
+                    setSyncStatus("Auto-saved to drafts");
+                }
                 setFlash({ type: "success", msg: `Draft synchronized (${tempDraftId}).` });
                 setTimeout(() => setFlash(null), 3000);
             })
-            .catch(() => {
+            .catch((error) => {
+                if (axios.isCancel(error)) return;
                 setSyncStatus("Saved locally");
                 setFlash({ type: "success", msg: "Draft stored to local storage." });
                 setTimeout(() => setFlash(null), 3000);
@@ -1250,7 +1312,10 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const handleSubmit = (e) => {
-        if (submitting || submissionFinalized) return;
+        // A. Synchronous lock FIRST, before any await/then boundary. A second
+        // click in the same tick is rejected here, so two final submissions can
+        // never be created for one application.
+        if (submittingRef.current || submitting || submissionFinalized || submissionSucceeded) return;
         if (e && e.preventDefault) e.preventDefault();
 
         // Every step is re-checked: drafts and step-jumping can skip earlier validation
@@ -1264,6 +1329,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
         setSubmissionFinalized(true);
         setSubmitting(true);
+        // A (cont). Claim the lock synchronously, before the request is issued.
+        submittingRef.current = true;
+        // E. Stop the autosave BEFORE the final submission, so a stale autosave
+        // cannot complete after the server has recorded the application and
+        // resurrect the draft it just consumed.
+        abortOutstandingAutosave();
 
         const payload = {
             ...form,
@@ -1272,13 +1343,47 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         };
         router.post("/applications/encode", payload, {
             onSuccess: (page) => {
+                const ref = page.props.flash?.reference_number;
                 const newAppId = page.props.flash?.application_id || null;
-                const ref = page.props.flash?.reference_number || "";
+
+                if (!ref) {
+                    setSubmissionFinalized(false);
+                    setSubmitting(false);
+                    submittingRef.current = false;
+                    setFlash({
+                        type: "error",
+                        msg: "The server did not confirm a reference number. Your application was not recorded — please submit again.",
+                    });
+                    setTimeout(() => setFlash(null), 8000);
+                    return;
+                }
+
+                setRoutingSlipData({
+                    reference_number: ref,
+                    date_of_application: new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
+                    encoded_by_name: userName,
+                    applicant_name: form.applicant_name,
+                    contact_number: form.contact_number,
+                    email: form.email,
+                    representative_name: form.representative_name,
+                    application_type: form.application_type,
+                    land_use_class: feeBasis.zoneCode || "—",
+                    purpose: form.purpose,
+                    barangay: form.barangay,
+                    street_address: form.street_address,
+                    parcels: form.parcels,
+                    total_area: totalLotArea,
+                    project_cost: form.project_cost,
+                    assessment_fee: form.assessment_fee,
+                    or_number: form.or_number,
+                });
+                setShowRoutingSlip(true);
 
                 clearDraftStateRecord();
                 setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
                 setSyncStatus("Submitted");
                 setSubmissionFinalized(true);
+                setSubmissionSucceeded(true);
 
                 const applicantName = form.applicant_name?.trim() || joinName(form.first_name, form.middle_name, form.last_name, form.suffix).trim() || "N/A";
                 const appType = form.application_type || (form.application_stream === "amendment" ? "Amendment Track" : "Standard Permit");
@@ -1336,6 +1441,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             },
             onError: (errs) => {
                 setSubmissionFinalized(false);
+                // A. Release the synchronous lock so the officer can correct and
+                // resubmit. `submissionSucceeded` deliberately stays false, so a
+                // failure can never render as success.
+                submittingRef.current = false;
+                // J. The form is NOT reset: the officer keeps everything they
+                // typed, and only the errors change.
                 setErrors(errs);
 
                 const errKeys = Object.keys(errs);
@@ -1366,9 +1477,73 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                 setTimeout(() => setFlash(null), 6000);
             },
-            onFinish: () => setSubmitting(false),
+            onFinish: () => {
+                setSubmitting(false);
+                // Only a CONFIRMED success keeps the lock. On any other outcome
+                // it is released here so the officer may resubmit.
+                if (!submissionSucceeded) submittingRef.current = false;
+            },
         });
     };
+
+    // ── I. SESSION / CSRF EXPIRY (419) AND TRANSPORT FAILURE ────────────────
+    // G/H. Inertia surfaces some failures as global events rather than through
+    // this component's onError. Without these listeners a 419 during submission
+    // fails silently: the button simply stops spinning and the officer believes
+    // nothing happened.
+    //
+    // They are SCOPED to a submission in flight, so an unrelated page-level 419
+    // does not overwrite a half-completed form, and both are removed on unmount
+    // because Inertia's router.on returns an unsubscribe function.
+    useEffect(() => {
+        if (!submitting && !submissionFinalized) return;
+
+        const isExpiredSession = (status) => status === 419 || status === 401;
+
+        const offInvalid = router.on("invalid", (event) => {
+            event.preventDefault();
+            if (isExpiredSession(event.detail?.status)) {
+                setSubmitting(false);
+                submittingRef.current = false;
+                setSubmissionFinalized(false);
+                setFlash({
+                    type: "error",
+                    msg: "Your session or CSRF token expired before the server confirmed this application. Nothing was recorded — please sign in again and submit again.",
+                });
+                setTimeout(() => setFlash(null), 10000);
+                return;
+            }
+            // A 5xx during submission is a server failure, not a validation
+            // problem; it must not be presented as a field error.
+            if (event.detail?.status >= 500) {
+                setSubmitting(false);
+                submittingRef.current = false;
+                setSubmissionFinalized(false);
+                setFlash({
+                    type: "error",
+                    msg: "The server failed before confirming this application. Your entries are preserved — please try again.",
+                });
+                setTimeout(() => setFlash(null), 10000);
+            }
+        });
+
+        const offException = router.on("exception", (event) => {
+            event.preventDefault();
+            setSubmitting(false);
+            submittingRef.current = false;
+            setSubmissionFinalized(false);
+            setFlash({
+                type: "error",
+                msg: "The request could not reach the server, so this application was not recorded. Your entries are preserved — please try again.",
+            });
+            setTimeout(() => setFlash(null), 10000);
+        });
+
+        return () => {
+            offInvalid?.();
+            offException?.();
+        };
+    }, [submitting, submissionFinalized]);
 
     const brgyStyle = {
         color: "#2563eb",
