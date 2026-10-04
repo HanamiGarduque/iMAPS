@@ -547,10 +547,15 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
             );
         }
 
+        // The Development Support batch adds three MORE Admin-only escalation POSTs.
+        // The count is widened deliberately, but the invariant underneath it is
+        // NOT relaxed: every one of the five must still resolve to exactly ONE
+        // authority, and none of them may name a Planning Officer. That is
+        // asserted per-route immediately below rather than left to the count.
         $this->assertSame(
-            2,
+            5,
             preg_match_all("#Route::post\('/diagnostics#i", $web),
-            'Exactly the handling and Admin notice POSTs may exist.'
+            'Exactly the handling, Admin notice and three Development Support escalation POSTs may exist.'
         );
 
         // Read the notice action's authority from the RESOLVED chain, for the
@@ -576,11 +581,47 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
             'A Planning Officer must not be able to trigger the notice action.'
         );
 
-        // No generic write endpoint: lifecycle handling is the sole new exception.
+        // Every escalation route is Admin-only and writes only the LOCAL escalation
+        // record - never the remote report. Read from the RESOLVED chain for the
+        // same inherited-group reason as the GET routes above, and asserted
+        // individually so adding a route can never quietly widen authority.
+        foreach ([
+            'diagnostics.escalations.store' => 'open',
+            'diagnostics.escalations.recommendation' => 'record a recommendation',
+            'diagnostics.escalations.close' => 'close',
+        ] as $name => $purpose) {
+            $route = \Illuminate\Support\Facades\Route::getRoutes()->getByName($name);
+            $this->assertNotNull($route, "Escalation route {$name} must be registered.");
+
+            $chain = array_values(array_filter(
+                app(\Illuminate\Routing\Router::class)->gatherRouteMiddleware($route),
+                fn ($p) => str_contains((string) $p, 'RoleMiddleware')
+            ));
+
+            $this->assertCount(1, $chain, "{$name} must resolve to exactly ONE authority.");
+            $this->assertStringEndsWith(
+                ':Admin',
+                (string) $chain[0],
+                "Escalation route {$name} ({$purpose}) must be Admin-only."
+            );
+            $this->assertStringNotContainsString(
+                'Planning Officer',
+                (string) $chain[0],
+                "A Planning Officer must never reach {$name}; internal escalation is Admin-mediated."
+            );
+            $this->assertSame(
+                ['POST'],
+                array_values(array_diff($route->methods(), ['HEAD'])),
+                "Escalation route {$name} must be a POST; there is no reopen, edit or delete verb."
+            );
+        }
+
+// No generic write endpoint: only the exact handling, notice and escalation
+        // endpoints may mutate anything.
         $this->assertDoesNotMatchRegularExpression(
-            "#Route::post\('/diagnostics(?!/\{report\}/(?:notify-planning-officers|handle)')#i",
+            "#Route::post\('/diagnostics(?!/\{report\}/(?:notify-planning-officers|handle|escalations(?:/\{escalation\}/(?:recommendation|close))?))#i",
             $web,
-            'Only the exact handling and notice endpoints may mutate anything.'
+            'Only the exact handling, notice and escalation endpoints may mutate anything.'
         );
 
         // A Site Inspector must not gain the nav entry either.

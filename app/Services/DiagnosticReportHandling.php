@@ -18,7 +18,7 @@ class DiagnosticReportHandling
 {
     public function __construct(private DiagnosticReportReader $reader, private SupabaseService $supabase,
         private ReportingVisibility $visibility, private SupportReportResolution $resolution, private ReportActionAudit $audit,
-        private InspectorReportNotice $notice) {}
+        private InspectorReportNotice $notice, private ReportLifecycleLock $lock) {}
 
     public function handle(User $viewer, string $id, array $input): array
     {
@@ -31,6 +31,10 @@ class DiagnosticReportHandling
                 abort_unless($read['ok'], 503, 'The report could not be loaded. Please refresh.');
                 abort_if($read['report'] === null, 404);
                 $report = $read['report'];
+                // Serializes this terminal CAS against any escalation episode on
+                // the same report. Taken before the remote write so an escalation
+                // committed first is already visible to the gate below.
+                $this->lock->acquire($id);
                 $actor = $viewer->fresh();
                 abort_unless($actor && $actor->is_active, 403);
                 $context = $report['report_type'] === 'application_support' ? $this->resolution->resolve($report, true) : null;
@@ -40,7 +44,17 @@ class DiagnosticReportHandling
                 abort_unless(in_array($status, $allowed, true), 403);
                 $from = $report['status'];
                 if (! in_array($status, $this->visibility->handlingActions($actor, $report, $context), true)) {
-                    return $this->outcome('conflict', 409, 'The report has changed or is already final. Refresh to see its current state.', false, false, $from);
+                    // handlingActions already removed the terminal action because
+                    // an escalation is open, so reaching here with a terminal status
+                    // the actor WOULD otherwise be allowed is the server's own proof
+                    // that the gate - not the page - is refusing. The same 409
+                    // outcome shape as any other lifecycle conflict is returned so
+                    // the browser keeps one uniform refusal contract and reloads.
+                    return $this->outcome('conflict', 409,
+                        $this->visibility->terminalEscalationBlocked($report)
+                            ? 'A Development Support escalation is open for this report. Record the recommendation and close the escalation before issuing the official response.'
+                            : 'The report has changed or is already final. Refresh to see its current state.',
+                        false, false, $from);
                 }
                 $data = ['status' => $status];
                 $name = (string) $actor->name;

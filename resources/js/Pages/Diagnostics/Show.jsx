@@ -2,8 +2,9 @@ import React, { useRef, useState } from "react";
 import axios from "axios";
 import { Link, router, usePage } from "@inertiajs/react";
 import { ReportShell, Section, Field, Status, Reporter, Blocks, stamp, control } from "./ReportUi";
+import DevelopmentSupport from "./DevelopmentSupport";
 
-export default function Show({ report, context = null, canNotify = false, handlingActions = [] }) {
+export default function Show({ report, context = null, canNotify = false, handlingActions = [], developmentSupport = null }) {
     const { auth } = usePage().props;
     const isAdmin = auth?.user?.role === "Admin";
     const support = report.report_type === "application_support";
@@ -69,6 +70,11 @@ export default function Show({ report, context = null, canNotify = false, handli
             <Section title="Problem"><Field label="Title" value={report.title} /><Field label="What happened / summary" value={report.summary} /><Field label="Expected behavior" value={report.expected_behavior} /><Field label="Reproduction steps (inspector-authored)" value={report.repro_steps} /></Section>
             <Section title="Technical review"><Field label="Technical description" value={report.technical_description} /><Field label="Affected file" value={report.affected_file} /><Field label="Recommended action" value={report.recommended_action} /></Section>
         </>}
+        {/* Internal only. The server sends this prop for an Admin viewing a
+            Technical Issue and null for every Planning Officer and every
+            Application Support report, so the section cannot exist elsewhere -
+            and it sits outside the inspector-facing "Official response" block. */}
+        {developmentSupport && <DevelopmentSupport report={report} panel={developmentSupport} />}
         {terminal && <Section title="Official response"><div className="sm:col-span-2"><Field label="Response" value={report.response_message} /></div><Field label="Responded by" value={report.responded_by_name} /><Field label="Responded at" value={stamp(report.responded_at)} /></Section>}
         {!terminal && handlingActions.length > 0 && <section aria-labelledby="handling-heading" className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
             <h2 id="handling-heading" className="mb-4 text-xs font-bold uppercase tracking-wider text-slate-500">Handling</h2>

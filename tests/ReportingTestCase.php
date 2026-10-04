@@ -54,6 +54,20 @@ abstract class ReportingTestCase extends TestCase
             $t->string('type'); $t->string('action_url')->nullable(); $t->boolean('is_read')->default(false);
             $t->timestamp('read_at')->nullable(); $t->timestamps();
         });
+        // Development Support escalation episodes. Created here, empty, because
+        // ReportingVisibility consults ReportEscalationGate on EVERY report, so
+        // every reporting suite needs the table to exist before it can assert
+        // anything about handling authority. The real CHECK constraints and the
+        // advisory lock live in tests/Integration/ReportEscalationsPostgresTest.php.
+        Schema::create('report_escalations', function ($t) {
+            $t->id(); $t->uuid('report_id'); $t->string('status', 20)->default('open');
+            $t->unsignedBigInteger('created_by'); $t->timestamp('created_at')->useCurrent();
+            $t->text('recommendation')->nullable(); $t->unsignedBigInteger('recommendation_recorded_by')->nullable();
+            $t->timestamp('recommendation_at')->nullable(); $t->unsignedBigInteger('closed_by')->nullable();
+            $t->timestamp('closed_at')->nullable(); $t->text('closure_note')->nullable();
+            $t->index(['report_id', 'created_at'], 'report_escalations_report_created_idx');
+        });
+        DB::statement('CREATE UNIQUE INDEX report_escalations_one_open_per_report ON report_escalations (report_id) WHERE status = \'open\'');
         $this->admin = $this->user('Admin', 'Admin');
         $this->po = $this->user('Planning Officer', 'Current PO');
         $this->other = $this->user('Planning Officer', 'Next PO');

@@ -447,13 +447,15 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
             );
         }
 
-        // No POST may target a report's own data. The notice action is the one
-        // authorized POST and is excluded by name, because it writes a local
-        // notification rather than anything on the report.
+        // No POST may target a report's own data. Three authorized families exist and
+        // each is excluded BY NAME: the handling action (writes the remote
+        // lifecycle through the scoped CAS), the Admin notice (writes a local
+        // notification), and the three escalation actions (write only the LOCAL
+        // `report_escalations` episode record). Nothing else may exist.
         $this->assertDoesNotMatchRegularExpression(
-            "#Route::post\('/diagnostics(?!/\{report\}/(?:notify-planning-officers|handle)')#i",
+            "#Route::post\('/diagnostics(?!/\{report\}/(?:notify-planning-officers|handle|escalations(?:/\{escalation\}/(?:recommendation|close))?))#i",
             $web,
-            'Only the exact handling and unchanged Admin notice POSTs may exist.'
+            'Only the exact handling, Admin notice and escalation POSTs may exist.'
         );
 
         $controller = $this->code('app/Http/Controllers/DiagnosticReportController.php');
@@ -492,10 +494,14 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
     {
         $web = $this->code('routes/web.php');
 
+        // Widened deliberately by the Development Support batch, which adds three
+        // Admin-only escalation POSTs. The invariant is not relaxed: each is
+        // asserted individually elsewhere in this file, against the RESOLVED
+        // authority chain, and none may name a Planning Officer.
         $this->assertSame(
-            2,
+            5,
             preg_match_all("#Route::post\('/diagnostics#i", $web),
-            'Exactly the scoped handling and unchanged Admin notice POSTs may exist.'
+            'Exactly the scoped handling, Admin notice and three escalation POSTs may exist.'
         );
 
         // The authority is read from the RESOLVED chain, because that is what
@@ -615,40 +621,67 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
     // this repair.
     // ─────────────────────────────────────────────────────────────────────
 
-    public function test_the_escalation_area_no_longer_exists(): void
+    /**
+     * The ORIGINAL unscoped escalation/contact area stays gone.
+     *
+     * Development Support escalation has since been authorized as Admin-mediated
+     * INTERNAL workflow, which is a different and far more tightly scoped thing.
+     * This assertion still pins the specific defect that browser acceptance
+     * rejected: an un-gated contact block rendered on the report page.
+     *
+     * The authorized panel's own scope - Admin only, Technical Issue only, prop
+     * absent rather than hidden everywhere else - is proven in
+     * tests/Feature/ReportEscalationTest.php.
+     */
+    public function test_the_unscoped_escalation_area_does_not_return(): void
     {
         $show = $this->code('resources/js/Pages/Diagnostics/Show.jsx');
 
         $this->assertStringNotContainsString(
             'Development / support contact',
             $show,
-            'The section must be removed, not gated.'
+            'The original unscoped section must stay removed.'
         );
         $this->assertStringNotContainsString(
             'has not been configured',
             $show,
-            'The placeholder text must be removed with it, not replaced.'
+            'The original placeholder text must stay removed with it.'
+        );
+        $this->assertMatchesRegularExpression(
+            '/\{developmentSupport\s*&&\s*<DevelopmentSupport/',
+            $show,
+            'Any escalation UI must be gated on the server-produced prop.'
         );
     }
 
-    public function test_no_escalation_prop_is_produced_server_side(): void
+    public function test_the_escalation_prop_is_scoped_and_reads_only_safe_contact_fields(): void
     {
         $controller = $this->code('app/Http/Controllers/DiagnosticReportController.php');
 
-        $this->assertStringNotContainsString(
-            'escalation',
+        // Only the four documented safe contact keys may ever be read, and only
+        // for an Admin viewing a Technical Issue. Anything else - especially a
+        // credential - must never reach the report path.
+        $this->assertMatchesRegularExpression(
+            "/foreach \(\['name', 'email', 'channel', 'instructions'\] as \\\$key\)/",
             $controller,
-            'A removed section must not still be assembled server-side.'
-        );
-        $this->assertStringNotContainsString(
-            'imaps.contact',
-            $controller,
-            'No support-contact configuration may be read on the report path.'
+            'Only the four documented safe contact fields may be read.'
         );
         $this->assertDoesNotMatchRegularExpression(
             '/(service_key|anon_key|api_key|password|token)/i',
             $controller,
             'The report controller must never carry a credential field.'
+        );
+
+        // The panel is Admin + Technical Issue only, and null otherwise.
+        $this->assertStringContainsString(
+            "'Admin'",
+            $controller,
+            'The escalation prop must require an Admin.'
+        );
+        $this->assertStringContainsString(
+            "'technical_issue'",
+            $controller,
+            'The escalation prop must require a Technical Issue.'
         );
     }
 }

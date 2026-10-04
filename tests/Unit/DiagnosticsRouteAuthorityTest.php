@@ -58,6 +58,14 @@ class DiagnosticsRouteAuthorityTest extends TestCase
         'diagnostics.show' => 'Admin,Planning Officer',
         'diagnostics.handle' => 'Admin,Planning Officer',
         'diagnostics.notify-planning-officers' => 'Admin',
+        // Development Support escalation is Admin-mediated internal workflow.
+        // It is asserted here alongside every other diagnostics route because the
+        // inherited-group defect this suite exists to catch applies to it exactly
+        // the same way: a second, stricter entry would run first and silently
+        // decide the outcome.
+        'diagnostics.escalations.store' => 'Admin',
+        'diagnostics.escalations.recommendation' => 'Admin',
+        'diagnostics.escalations.close' => 'Admin',
     ];
 
     /**
@@ -229,11 +237,19 @@ class DiagnosticsRouteAuthorityTest extends TestCase
 
         $web = (string) file_get_contents(base_path('routes/web.php'));
 
-        // Phase 2B permits exactly the scoped handling action and the unchanged notice.
+        // The scoped handling action, the unchanged notice, and the three
+        // Admin-only escalation actions. Listed exhaustively on purpose: a sixth
+        // diagnostics POST must fail this assertion rather than appear unnoticed.
         $posts = collect($this->app->make(Router::class)->getRoutes()->getRoutes())
             ->filter(fn ($route) => str_starts_with($route->uri(), 'diagnostics') && in_array('POST', $route->methods()))
             ->map(fn ($route) => $route->uri())->sort()->values()->all();
-        $this->assertSame(['diagnostics/{report}/handle', 'diagnostics/{report}/notify-planning-officers'], $posts);
+        $this->assertSame([
+            'diagnostics/{report}/escalations',
+            'diagnostics/{report}/escalations/{escalation}/close',
+            'diagnostics/{report}/escalations/{escalation}/recommendation',
+            'diagnostics/{report}/handle',
+            'diagnostics/{report}/notify-planning-officers',
+        ], $posts);
 
         // No report write verb, for anybody.
         foreach (['put', 'patch', 'delete'] as $verb) {
@@ -294,35 +310,50 @@ class DiagnosticsRouteAuthorityTest extends TestCase
     }
 
     /**
-     * REPORTS & SUPPORT: the development/support contact section is no longer
-     * part of the locked hierarchy and is REMOVED, not gated.
+     * REPORTS & SUPPORT: the ORIGINAL development/support contact block is gone.
      *
-     * This assertion therefore pins its absence in BOTH the rendered view and
-     * the controller that used to produce the prop. Gating it would have left a
-     * permanently empty Admin-only block, which is the state the browser
-     * acceptance rejected.
+     * What this pins is that the specific historical block is absent - the
+     * "Development / support contact" heading and the four contact fields that
+     * used to be rendered for every viewer of a report detail page.
+     *
+     * Development Support escalation was subsequently authorized as
+     * Admin-mediated INTERNAL workflow. That is a different thing and is scoped
+     * far more tightly than the block this assertion removed: the prop is
+     * produced only for an Admin viewing a Technical Issue, it is null - not
+     * merely hidden - for a Planning Officer and for an Application Support
+     * report, and it sits outside the inspector-facing official response. Its
+     * scope is proven by tests/Feature/ReportEscalationTest.php, which asserts
+     * `props.developmentSupport` is null in every forbidden case.
+     *
+     * What must never come back is the un-gated contact block that caused the
+     * original browser-acceptance rejection.
      */
-    public function test_the_development_support_contact_section_is_removed_entirely(): void
+    public function test_the_unscoped_development_support_contact_block_does_not_return(): void
     {
         $show = (string) file_get_contents(base_path('resources/js/Pages/Diagnostics/Show.jsx'));
         $this->assertStringNotContainsString(
             'Development / support contact',
             $show,
-            'The section must be gone from the detail page.'
+            'The original unscoped contact block must stay gone from the detail page.'
         );
 
-        // Executable code only: this controller deliberately NAMES the removed
-        // block in a comment to record why it is gone, so raw-text matching
-        // would invert the meaning of the rule.
-        $controller = (string) preg_replace(
-            ['#/\*.*?\*/#s', '#^\s*(//|\*).*$#m'],
-            '',
-            (string) file_get_contents(base_path('app/Http/Controllers/DiagnosticReportController.php'))
+        // The escalation panel must be reached only through the scoped prop, and
+        // never rendered unconditionally for every viewer of every report.
+        $this->assertMatchesRegularExpression(
+            '/\{developmentSupport\s*&&\s*<DevelopmentSupport/',
+            $show,
+            'The escalation panel must render only when the prop exists. An unconditional'
+            .' <DevelopmentSupport element is the defect this assertion exists to prevent.'
         );
-        $this->assertStringNotContainsString(
-            'escalation',
+
+        // The contact fields may only ever be read through the four documented
+        // safe keys. A new key in this loop is a new exposed field, so the loop
+        // itself is the contract.
+        $controller = (string) file_get_contents(base_path('app/Http/Controllers/DiagnosticReportController.php'));
+        $this->assertMatchesRegularExpression(
+            "/foreach \(\['name', 'email', 'channel', 'instructions'\] as \\\$key\)/",
             $controller,
-            'No escalation prop may be produced. A removed section must not still be assembled server-side.'
+            'Only the four documented safe contact fields may be read.'
         );
     }
 }

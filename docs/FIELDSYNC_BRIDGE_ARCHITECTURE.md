@@ -5954,3 +5954,88 @@ mode, and neither is used reflexively.
   display a response.
 - **The Inertia/plain-JSON auth-transition defect** — a separate, pre-existing issue,
   untouched and not fixed by this work.
+---
+
+## Development Support escalation - Admin-mediated internal support (local schema APPLIED 2026-10-05)
+
+### What it is
+
+A Site Inspector files a **Technical Issue**. When an Admin cannot resolve it alone,
+the Admin may open an internal escalation, consult Development Support through the
+configured external channel, record what came back, and close the escalation.
+Development Support itself has **no iMAPS account in v1**.
+
+### Workflow
+
+```
+Site Inspector files Technical Issue
+Admin views it
+Admin opens an escalation                      -> report_escalations row, status open
+Admin contacts Development Support externally
+Admin records the recommendation (optional)     -> recommendation + actor + timestamp
+Admin closes the escalation (explicit)          -> closed_by + closed_at, plus closure_note
+                                                 when there is no recommendation
+Admin may then Resolve or mark Won&apos;t fix    -> remote diagnostic_reports CAS
+```
+
+There is **no implicit auto-close**. A terminal response is impossible while an
+escalation is open, so a consultation cannot be silently abandoned by the report moving
+on without it.
+
+### Rules
+
+- **Technical Issue only.** An Application Support concern already has a business owner
+  (the current Planning Officer); a second internal authority would create competing
+  ownership.
+- **Nonterminal only.** `submitted` or `in_review`. A terminal report&apos;s official
+  response is immutable and its audit row is unique, so there is nothing left to consult
+  about.
+- **Admin only.** Every escalation route is `role:Admin` in its own route group, not the
+  shared `Admin,Planning Officer` diagnostics group. `ReportingVisibility`
+  independently refuses every Planning Officer on a Technical Issue.
+- **No fourth role.** `users_role_check`, `RoleMiddleware`, `RegisteredUserController`
+  and the navigation are untouched. Development Support is a party, not a role.
+- **One open episode, many historical ones.** Uniqueness is a *partial* index on
+  `report_id WHERE status = 'open'`, not `UNIQUE(report_id)`. A report may be escalated,
+  closed and escalated again while still nonterminal. Closed rows are immutable: no
+  reopen, no edit, no delete. A recommendation is written once; materially different
+  guidance means close-then-reopen-as-new.
+- **Internal, never inspector-facing.** The escalation panel and its prop are produced
+  only for an Admin viewing a Technical Issue, and are null - not merely hidden -
+  everywhere else. They sit outside the inspector-facing official response.
+
+### No Supabase escalation fields
+
+`report_escalations` is **local iMAPS only**. FieldSync reads `diagnostic_reports` with
+a wildcard `select()`, so any escalation column added to the remote table would be
+delivered to every inspector&apos;s device. No remote table gains a column, and
+`report_id` is a durable remote reference with no cross-database foreign key. Every
+mutation re-reads the authoritative remote report by exact UUID.
+
+### Lifecycle invariant: no "terminal report + open escalation"
+
+Three cooperating mechanisms, all required:
+
+1. `ReportLifecycleLock` takes a PostgreSQL transaction-scoped advisory lock keyed by
+   two deterministic int32 values derived from the report UUID&apos;s fixed-width hex.
+   The remote report is re-read while that lock is held. `lockForUpdate()` is the project
+   convention but needs a local row, and a Technical Issue has none.
+2. Escalation mutations revalidate the remote report inside the lock.
+3. `ReportEscalationGate::hasOpen()` is the single predicate consulted by BOTH the page
+   prop and the server-side authorization, so a forged POST is refused by the same rule
+   that hides the button.
+
+If the escalation commits first, the terminal transition sees the open episode and
+refuses with 409 before any remote write. If the terminal transition commits first, the
+escalation re-reads the remote status and refuses.
+
+### Deployment state
+
+The local `report_escalations` contract is **APPLIED** to `imaps_db_0921` on 2026-10-05
+with explicit user approval, created empty, and verified against the live database.
+None of the behaviour above is theoretical: the schema, its seven CHECK constraints, its
+partial unique index, its `users(id)` RESTRICT foreign keys and its guarded `down()` are
+all present and were exercised.
+
+Schema and evidence: `CANONICAL_DATABASE_SCHEMA.md` section 25. Change record:
+`FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md`.

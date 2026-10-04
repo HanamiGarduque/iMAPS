@@ -1862,3 +1862,107 @@ Local `report_action_audit`: 8 columns, 4 CHECK constraints, 1 FK, 4 indexes
 Rollback is a separately approved guarded operation and is deliberately NOT part of
 this canonical block. The remote rollback refuses once any official response exists;
 the local `down()` refuses once any audit row exists.
+---
+
+## 25. `report_escalations` - Development Support escalation episodes - 2026-10-05 (APPLIED)
+
+**APPLIED 2026-10-05** to local canonical iMAPS `imaps_db_0921` with explicit user approval.
+
+```
+php artisan migrate --path=database/migrations/2026_10_05_000000_create_report_escalations_table.php --force
+2026_10_05_000000_create_report_escalations_table ... 787.72ms DONE
+```
+
+Pre-apply schema-only recovery snapshot (`pg_dump --schema-only --no-owner`):
+SHA-256 `0D9D2E4D2A8BACD3411F558E65C16458D4722D3255B9A37DBF20B1250CA17694`, in which
+`report_escalations` is absent and `report_action_audit` is present.
+
+`migrations` ledger advanced **17 -> 18** with exactly one new entry at batch `18`.
+Table created with **0 rows**. No remote or Supabase statement was issued.
+
+**Surface:** LOCAL canonical iMAPS `imaps_db_0921` only. Not a Supabase table; adds no
+column to any remote table.
+
+### 25.1 Columns (verified live)
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `bigserial` | PK |
+| `report_id` | `uuid` NOT NULL | Remote `public.diagnostic_reports.id`. **NO local FK** |
+| `status` | `varchar(20)` NOT NULL default `'open'` | `open` or `closed` |
+| `created_by` | `bigint` NOT NULL | FK -> `users(id)` `ON DELETE RESTRICT` |
+| `created_at` | `timestamp` NOT NULL | No `updated_at` column |
+| `recommendation` | `text` NULL | |
+| `recommendation_recorded_by` | `bigint` NULL | FK -> `users(id)` `ON DELETE RESTRICT` |
+| `recommendation_at` | `timestamp` NULL | |
+| `closed_by` | `bigint` NULL | FK -> `users(id)` `ON DELETE RESTRICT` |
+| `closed_at` | `timestamp` NULL | |
+| `closure_note` | `text` NULL | |
+
+### 25.2 Indexes (verified live)
+
+| Index | Kind | Definition |
+|---|---|---|
+| `report_escalations_pkey` | UNIQUE | `(id)` |
+| `report_escalations_report_created_idx` | non-unique | `(report_id, created_at)` |
+| `report_escalations_one_open_per_report` | UNIQUE partial | `(report_id) WHERE status = 'open'` |
+
+No table-wide `UNIQUE(report_id)` exists: confirmed by query, not by omission.
+
+### 25.3 Constraints (verified live, canonical PostgreSQL form)
+
+| Name | Statement |
+|---|---|
+| `report_escalations_status_ck` | `CHECK (status IN ('open','closed'))` |
+| `report_escalations_open_ck` | `CHECK (status <> 'open' OR (closed_by IS NULL AND closed_at IS NULL AND closure_note IS NULL))` |
+| `report_escalations_closed_ck` | `CHECK (status <> 'closed' OR (closed_by IS NOT NULL AND closed_at IS NOT NULL))` |
+| `report_escalations_recommendation_actor_ck` | `CHECK ((recommendation IS NULL AND recommendation_recorded_by IS NULL AND recommendation_at IS NULL) OR (recommendation IS NOT NULL AND recommendation_recorded_by IS NOT NULL AND recommendation_at IS NOT NULL))` |
+| `report_escalations_recommendation_text_ck` | `CHECK (recommendation IS NULL OR (length(recommendation) <= 2000 AND btrim(regexp_replace(recommendation, '\s', '', 'g')) <> ''))` |
+| `report_escalations_closure_note_ck` | `CHECK (closure_note IS NULL OR (length(closure_note) <= 2000 AND btrim(regexp_replace(closure_note, '\s', '', 'g')) <> ''))` |
+| `report_escalations_closure_explained_ck` | `CHECK (status <> 'closed' OR recommendation IS NOT NULL OR closure_note IS NOT NULL)` |
+
+### 25.4 Foreign keys (verified live)
+
+| Name | References | On delete |
+|---|---|---|
+| `report_escalations_created_by_foreign` | `users(id)` | `RESTRICT` |
+| `report_escalations_recommendation_recorded_by_foreign` | `users(id)` | `RESTRICT` |
+| `report_escalations_closed_by_foreign` | `users(id)` | `RESTRICT` |
+
+`report_id` carries no foreign key: confirmed by querying `pg_constraint` for any FK
+whose definition mentions `report_id`, which returned zero rows.
+
+### 25.5 Enforcement proven against the live database
+
+Not inferred from the DDL: each rule was exercised and the resulting SQLSTATE recorded.
+Probes ran inside a transaction that was rolled back, so the table holds 0 rows.
+
+| Attempt | Result |
+|---|---|
+| open + `closure_note` | refused `23514` check_violation |
+| open + recommendation + `closure_note` | refused `23514` |
+| closed, no recommendation, no note | refused `23514` |
+| closed, no recommendation, blank note | refused `23514` |
+| whitespace-only recommendation | refused `23514` |
+| recommendation without actor or time | refused `23514` |
+| 2001-character recommendation | refused `23514` |
+| 2001-character closure note | refused `23514` |
+| closed without closer | refused `23514` |
+| status outside open/closed | refused `23514` |
+| second `open` episode while one is open | refused `23505` unique_violation |
+| closed + recommendation + null note | accepted |
+| closed + no recommendation + non-blank note | accepted |
+| exactly 2000 characters | accepted |
+| two `closed` episodes for one report | accepted |
+| `open` episode on a different report | accepted |
+
+### 25.6 Rollback
+
+`down()` takes `LOCK TABLE public.report_escalations IN ACCESS EXCLUSIVE MODE` before
+counting, returns a no-op when the table is absent, and raises when any row exists.
+Verified in source order (the lock precedes the count) and behaviourally against a
+disposable PostgreSQL cluster.
+
+Operational rationale, workflow, ownership and verification evidence are recorded in
+`FIELDSYNC_BRIDGE_ARCHITECTURE.md`; the change record is in
+`FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md`.

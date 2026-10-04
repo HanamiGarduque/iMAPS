@@ -7,7 +7,8 @@ use App\Services\DiagnosticReportReader;
 /** Shared list/count/detail/notification/inspection authority. Never cache current ownership. */
 class ReportingVisibility
 {
-    public function __construct(private DiagnosticReportReader $reader, private SupportReportResolution $resolution) {}
+    public function __construct(private DiagnosticReportReader $reader, private SupportReportResolution $resolution,
+        private ReportEscalationGate $escalations) {}
 
     public function allowedTypes($viewer): array
     {
@@ -67,11 +68,29 @@ class ReportingVisibility
     public function handlingActions($viewer, array $report, ?array $context): array
     {
         $allowed = $this->handlingStatuses($viewer, $report, $context);
-        return match ($report['status'] ?? null) {
+        $actions = match ($report['status'] ?? null) {
             'submitted' => $allowed,
             'in_review' => array_values(array_diff($allowed, ['in_review'])),
             default => [],
         };
+
+        // An OPEN internal escalation blocks the terminal answer only. Mark In
+        // Review stays available so triage can continue while Development Support
+        // is being consulted. This is the single predicate behind both the hidden
+        // buttons and the server-side refusal in DiagnosticReportHandling, so a
+        // forged POST is judged by exactly the rule the page used.
+        if ($this->terminalEscalationBlocked($report)) {
+            $actions = array_values(array_diff($actions, ['resolved', 'wont_fix']));
+        }
+
+        return $actions;
+    }
+
+    /** Whether an open Development Support escalation currently forbids a terminal answer. */
+    public function terminalEscalationBlocked(array $report): bool
+    {
+        return ($report['report_type'] ?? null) === 'technical_issue'
+            && $this->escalations->hasOpen((string) ($report['id'] ?? ''));
     }
 
     public function scopeVisibleReports($viewer, array $filters = []): array

@@ -375,6 +375,31 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::post('/diagnostics/{report}/notify-planning-officers', [\App\Http\Controllers\DiagnosticReportController::class, 'notifyPlanningOfficers'])
         ->name('diagnostics.notify-planning-officers');
 
+    // DEVELOPMENT SUPPORT ESCALATION - Admin-mediated internal support.
+    //
+    // Its own `role:Admin` group rather than the shared
+    // `role:Admin,Planning Officer` diagnostics group above, for the same reason
+    // Notify Current PO has one: reading a report detail page and running the
+    // internal support workflow are different authorities. A Planning Officer is
+    // refused here before the service runs, and ReportingVisibility independently
+    // refuses them every Technical Issue.
+    //
+    // It NEVER touches the remote report. Opening, recording a recommendation and
+    // closing an escalation only write the LOCAL `report_escalations` episode
+    // record. The report's status and official response are still owned solely by
+    // the separately authorized `diagnostics.handle` action - which additionally
+    // refuses a terminal transition while an escalation is open.
+    //
+    // There is no reopen, delete or edit route. A closed episode is immutable and
+    // a later consultation is a NEW row, which the partial unique index permits.
+    $escalation = [\App\Http\Controllers\DiagnosticReportEscalationController::class, 'recordRecommendation'];
+    Route::post('/diagnostics/{report}/escalations', [\App\Http\Controllers\DiagnosticReportEscalationController::class, 'store'])
+        ->whereUuid('report')->name('diagnostics.escalations.store');
+    Route::post('/diagnostics/{report}/escalations/{escalation}/recommendation', $escalation)
+        ->whereUuid('report')->whereNumber('escalation')->name('diagnostics.escalations.recommendation');
+    Route::post('/diagnostics/{report}/escalations/{escalation}/close', [\App\Http\Controllers\DiagnosticReportEscalationController::class, 'close'])
+        ->whereUuid('report')->whereNumber('escalation')->name('diagnostics.escalations.close');
+
 });
 
 // â”€â”€ Public Portal Access â”€â”€
