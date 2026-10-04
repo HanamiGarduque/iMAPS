@@ -5,6 +5,16 @@ import { splitFullName, normalizeName, joinName } from "@/utils/names";
 
 const CORPORATE = /\b(corp\.?|corporation|inc\.?|incorporated|co\.|company|cooperative|holdings|realty|development|enterprises?|ltd\.?)\b/i;
 
+const ROSARIO_BARANGAYS = [
+    "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
+    "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", 
+    "Macalamcam A", "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", 
+    "Mayuro", "Namuco", "Namunga", "Natu", "Nasi", "Palacpac", "Pinagsibaan", "Poblacion A", 
+    "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", 
+    "San Carlos", "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan", 
+    "Tiquiwan", "Tulos"
+];
+
 export default function StepApplicant({
     form,
     set,
@@ -107,6 +117,8 @@ export default function StepApplicant({
                 </div>
             )}
 
+
+
             {/* Applicant Legal Name: Last, First, Middle, Extension */}
             <div>
                 <Label required hasError={!!errors.last_name || !!errors.first_name || !!errors.applicant_name}>
@@ -164,18 +176,52 @@ export default function StepApplicant({
             </div>
             {errors.applicant_name && <p className="text-xs font-medium text-rose-500 mt-1">{errors.applicant_name}</p>}
 
+            {/* Address of the Applicant (Street and Barangay only) */}
+            <div>
+                <Label required hasError={!!errors.applicant_street || !!errors.applicant_barangay}>
+                    Address of the Applicant (Street and Barangay only)
+                </Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1.5">
+                    <div>
+                        <Label required hasError={!!errors.applicant_street}>Street Address</Label>
+                        <Input
+                            type="text"
+                            value={form.applicant_street || ""}
+                            onChange={set("applicant_street")}
+                            placeholder="e.g. 123 Main St. / Sitio 1"
+                            hasError={!!errors.applicant_street}
+                        />
+                        {errors.applicant_street && <p className="text-xs font-medium text-rose-500 mt-1">{errors.applicant_street}</p>}
+                    </div>
+                    <div>
+                        <Label required hasError={!!errors.applicant_barangay}>Barangay</Label>
+                        <Select
+                            value={form.applicant_barangay || ""}
+                            onChange={set("applicant_barangay")}
+                            hasError={!!errors.applicant_barangay}
+                        >
+                            <option value="">Select Barangay...</option>
+                            {ROSARIO_BARANGAYS.map((b) => (
+                                <option key={b} value={b}>{b}</option>
+                            ))}
+                        </Select>
+                        {errors.applicant_barangay && <p className="text-xs font-medium text-rose-500 mt-1">{errors.applicant_barangay}</p>}
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <Label required hasError={!!errors.contact_number}>Contact Phone Number</Label>
                     <div className="relative">
-                        <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+639</span>
+                        <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+63</span>
                         <Input 
                             type="tel" 
-                            value={form.contact_number ? form.contact_number.replace(/^9/, "") : ""} 
+                            value={form.contact_number || ""} 
                             onChange={handleContactInput} 
-                            maxLength={9} 
-                            placeholder="XX XXX XXXX" 
-                            className="pl-[4rem] font-mono" 
+                            maxLength={10} 
+                            placeholder="9XX XXX XXXX" 
+                            className="pl-[3.5rem] font-mono" 
                             hasError={!!errors.contact_number} 
                         />
                     </div>
@@ -233,31 +279,16 @@ export default function StepApplicant({
                         />
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
                             <div>
-                                <Label>Corporation Contact</Label>
-                                <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+639</span>
-                                    <Input
-                                        type="tel"
-                                        value={form.corporation_contact ? form.corporation_contact.replace(/^9/, "") : ""}
-                                        onChange={(e) => {
-                                            let val = e.target.value.replace(/\D/g, "");
-                                            if (val === "") {
-                                                set("corporation_contact")({ target: { value: "" } });
-                                                return;
-                                            }
-                                            if (val.startsWith("09")) val = val.slice(2);
-                                            else if (val.startsWith("9")) val = val.slice(1);
-                                            val = "9" + val;
-                                            if (val.length > 10) val = val.slice(0, 10);
-                                            set("corporation_contact")({ target: { value: val } });
-                                        }}
-                                        maxLength={9}
-                                        placeholder="XX XXX XXXX"
-                                        className="pl-[4rem] font-mono bg-white"
-                                        hasError={!!errors.corporation_contact}
-                                    />
-                                    {errors.corporation_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.corporation_contact}</p>}
-                                </div>
+                                <Label>Corporation Telephone</Label>
+                                <Input
+                                    type="text"
+                                    value={form.corporation_contact || ""}
+                                    onChange={set("corporation_contact")}
+                                    placeholder="e.g. (043) 774-1234 or 0917 123 4567"
+                                    className="bg-white font-mono"
+                                    hasError={!!errors.corporation_contact}
+                                />
+                                {errors.corporation_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.corporation_contact}</p>}
                             </div>
                             <div>
                                 <Label>Corporation Address</Label>
@@ -302,25 +333,20 @@ export default function StepApplicant({
                             <div>
                                 <Label>Representative Contact</Label>
                                 <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+639</span>
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400 font-mono text-xs font-semibold pointer-events-none">+63</span>
                                     <Input
                                         type="tel"
-                                        value={form.representative_contact ? form.representative_contact.replace(/^9/, "") : ""}
+                                        value={form.representative_contact || ""}
                                         onChange={(e) => {
                                             let val = e.target.value.replace(/\D/g, "");
-                                            if (val === "") {
-                                                set("representative_contact")({ target: { value: "" } });
-                                                return;
-                                            }
-                                            if (val.startsWith("09")) val = val.slice(2);
-                                            else if (val.startsWith("9")) val = val.slice(1);
-                                            val = "9" + val;
+                                            if (val.startsWith("63") && val.length > 10) val = val.slice(2);
+                                            if (val.startsWith("0") && val.length === 11) val = val.slice(1);
                                             if (val.length > 10) val = val.slice(0, 10);
                                             set("representative_contact")({ target: { value: val } });
                                         }}
-                                        maxLength={9}
-                                        placeholder="XX XXX XXXX"
-                                        className="pl-[4rem] font-mono bg-white"
+                                        maxLength={10}
+                                        placeholder="9XX XXX XXXX"
+                                        className="pl-[3.5rem] font-mono bg-white"
                                         hasError={!!errors.representative_contact}
                                     />
                                     {errors.representative_contact && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors.representative_contact}</p>}

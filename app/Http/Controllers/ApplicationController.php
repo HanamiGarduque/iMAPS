@@ -19,8 +19,11 @@ use App\Services\SmsNotifier;
 // owns the delivery/inspection/reassignment support classes below. Neither side
 // replaces the other.
 use App\Models\AppNotification;
+use App\Models\GeneratedPermit;
+use App\Services\PermitExcelService;
 use App\Services\SupabaseService;
 use App\Services\WorkAssignmentService;
+use Illuminate\Support\Facades\Storage;
 use App\Support\InspectionDeliveryStatus;
 use App\Support\InspectionSummary;
 use App\Support\InspectionRoundNumbering;
@@ -29,6 +32,7 @@ use App\Support\ReassignmentReasons;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 
@@ -79,7 +83,13 @@ class ApplicationController extends Controller
                 // only, and loading it per list row is the N+1 this must not
                 // introduce.
                 $q->with([
-                    'siteInspection' => fn ($sq) => $sq->with('inspector')->withCount('deliveryAttempts'),
+                    'siteInspection' => function ($sq) {
+                        $sq->with('inspector');
+
+                        if (Schema::hasTable('inspection_delivery_attempts')) {
+                            $sq->withCount('deliveryAttempts');
+                        }
+                    },
                 ])->withCount('siteInspections');
             }])
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
@@ -366,6 +376,17 @@ class ApplicationController extends Controller
             InspectionDeliveryStatus::STATE_FAILED,
         ];
 
+        $draftsCount = DB::table('application_drafts')
+            ->where('user_id', Auth::id())
+            ->count();
+
+        return Inertia::render('Applications/Index', [
+            'applications'  => $applications,
+            'filters'       => (object) $request->only(['barangay', 'status', 'application_type', 'date_from', 'date_to', 'search']),
+            'inspectors'    => $inspectors,
+            'status_counts' => $statusCounts,
+            'drafts_count'  => $draftsCount,
+        ]);
         if ($requested === 'all' || ! in_array($requested, $filterable, true)) {
             return $query;
         }
@@ -485,7 +506,9 @@ class ApplicationController extends Controller
             'land_use_class'        => ['nullable', 'in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational,R1-Z,R2-Z,MR2-SZ,BR2-SZ,C1-Z,C2-Z,C/MP-Z,I1-Z,I2-Z,I3-Z,AgIndZ,AgIndZ-PTR,AgIndZ-PGR,GI-Z,UTS-Z,CMRF,PR-Z,T-Z,ECT-Z'],
             'purpose'             => 'required|string',
             'applicant_name'      => 'required|string|max:255',
-            'contact_number'      => ['required', 'regex:/^(09|\+639|9)\d{9}$/'],
+            'applicant_street'    => 'nullable|string|max:255',
+            'applicant_barangay'  => 'nullable|string|max:255',
+            'contact_number'      => ['required', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
             'email'               => 'required|email',
             'representative_name' => 'nullable|string|max:255',
             'barangay'            => 'required|string',
@@ -493,9 +516,10 @@ class ApplicationController extends Controller
             'assessment_fee'      => 'required|numeric|min:0',
             'or_number'              => 'required|string|max:255',            
             'remarks'             => 'nullable|string',
-            'corporation_contact'    => ['nullable', 'regex:/^9\d{9}$/'],
-            'representative_contact' => ['nullable', 'regex:/^9\d{9}$/'],
+            'corporation_contact'    => ['nullable', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
+            'representative_contact' => ['nullable', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
             'preferred_release_mode' => 'required|string',
+            'route_to_sb'             => 'nullable|boolean',
             'zoning_certificate_fee'   => 'nullable|numeric|min:0',
             'locational_clearance_fee' => 'nullable|numeric|min:0',
             'development_permit_fee'   => 'nullable|numeric|min:0',
@@ -562,6 +586,8 @@ class ApplicationController extends Controller
                 'status'                     => 'Received',
                 'purpose'                    => $validated['purpose'],
                 'applicant_name'             => $validated['applicant_name'],
+                'applicant_street'           => $validated['applicant_street'] ?? null,
+                'applicant_barangay'         => $validated['applicant_barangay'] ?? null,
                 'contact_number'             => preg_replace('/\D/', '', $validated['contact_number']),
                 'email'                      => $validated['email'] ?? null,
                 'corporation_name'           => $validated['corporation_name'] ?? null,
@@ -729,15 +755,18 @@ class ApplicationController extends Controller
                 }
             }
 
+            $routeToSb = $request->boolean('route_to_sb') || ($validated['application_stream'] === 'amendment');
+
             // 3. Roll up overall status dynamically based on "restrictive precedence"
             if (!empty($decisionsSeen)) {
                 if (in_array('Declined', $decisionsSeen, true)) {
                     $application->update(['status' => 'Denied']);
-                } elseif (!in_array('Needs Site Inspection', $decisionsSeen, true)) {
-                    // All parcels evaluated as "Approved" without site inspections needed
+                } elseif ($routeToSb) {
                     $application->update(['status' => 'Under Sangguniang Bayan']);
-                } else {
+                } elseif (in_array('Needs Site Inspection', $decisionsSeen, true)) {
                     $application->update(['status' => 'Technical Review']);
+                } else {
+                    $application->update(['status' => 'For Release']);
                 }
 
                 ApplicationStatusTracker::log(
@@ -750,24 +779,24 @@ class ApplicationController extends Controller
                     applicationId: $application->id,
                     action: 'STATUS_UPDATE',
                     performedBy: Auth::id(),
-                    note: "Application automatically moved to {$application->status} based on initial encoded parcel evaluations."
+                    note: "Application automatically moved to {$application->status} based on encoded parcel evaluations."
                 );
 
             } else {
-                // Default transition if no evaluations were assigned during encoding
-                $application->update(['status' => 'Technical Review']);
+                $targetStatus = $routeToSb ? 'Under Sangguniang Bayan' : 'Technical Review';
+                $application->update(['status' => $targetStatus]);
                 
                 ApplicationStatusTracker::log(
                     $application->reference_number,
                     $application->applicant_name,
-                    'Technical Review'
+                    $targetStatus
                 );
 
                 AuditLogger::log(
                     applicationId: $application->id,
                     action: 'STATUS_UPDATE',
                     performedBy: Auth::id(),
-                    note: 'Application automatically moved from Received to Technical Review upon encoding.'
+                    note: "Application automatically moved from Received to {$targetStatus} upon encoding."
                 );
             }
 
@@ -781,7 +810,8 @@ class ApplicationController extends Controller
             DB::commit();
             return back()
                 ->with('success', "Application encoded successfully. Status: {$application->status}")
-                ->with('reference_number', $referenceNumber);
+                ->with('reference_number', $referenceNumber)
+                ->with('application_id', $application->id);
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['db' => 'Database error: ' . $e->getMessage()]);
@@ -837,6 +867,7 @@ class ApplicationController extends Controller
                     ->with(['siteInspection.inspector'])
                     ->withCount('siteInspections');
             }]) // <-- Eager load and order parcels
+            ->with(['generatedPermits.generatedBy:id,name'])
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->select('zoning_applications.*', 'users.name as encoded_by_name')
             ->where('zoning_applications.id', $id)
@@ -944,7 +975,7 @@ class ApplicationController extends Controller
             ]];
         });
 
-        $inspectionHistory = $openRounds->isEmpty()
+        $inspectionHistory = $openRounds->isEmpty() || ! Schema::hasTable('site_inspection_assignments')
             ? collect()
             : SiteInspectionAssignment::with(['fromInspector:id,name', 'toInspector:id,name', 'actor:id,name'])
                 ->whereIn('site_inspection_id', $openRounds->map(fn ($i) => (int) $i->id))
@@ -953,7 +984,9 @@ class ApplicationController extends Controller
                 ->get()
                 ->groupBy('site_inspection_id');
 
-        $poHistory = ApplicationPoAssignment::with([
+        $poHistory = ! Schema::hasTable('application_po_assignments')
+            ? collect()
+            : ApplicationPoAssignment::with([
                 'fromPlanningOfficer:id,name',
                 'toPlanningOfficer:id,name',
                 'actor:id,name',
@@ -982,7 +1015,8 @@ class ApplicationController extends Controller
             // been established. The current business flow has no step that
             // assigns an application to an officer, so historical rows are left
             // unowned rather than backfilled with a guess.
-            'assignedPlanningOfficer' => $application->assigned_planning_officer_id
+            'assignedPlanningOfficer' => Schema::hasColumn('zoning_applications', 'assigned_planning_officer_id')
+                && $application->assigned_planning_officer_id
                 ? User::find($application->assigned_planning_officer_id)?->only(['id', 'name'])
                 : null,
             'planningOfficers'        => $assignments->activePlanningOfficers(),
@@ -1117,11 +1151,15 @@ class ApplicationController extends Controller
             );
 
             if ($validated['decision'] === 'Approved') {
-                $application->update(['status' => 'Under Sangguniang Bayan']);
+                $targetStatus = ($application->status === 'Under Sangguniang Bayan' || $application->application_stream === 'amendment')
+                    ? 'Under Sangguniang Bayan'
+                    : 'For Release';
+
+                $application->update(['status' => $targetStatus]);
                 ApplicationStatusTracker::log(
                     $application->reference_number,
                     $application->applicant_name,
-                    'Under Sangguniang Bayan'
+                    $targetStatus
                 );
             } elseif ($validated['decision'] === 'Declined') {
                 $application->update([
@@ -1372,4 +1410,170 @@ class ApplicationController extends Controller
         // Fetches any complete drafts to attempt mass insertion, or returns back with instructions
         return back()->with('success', 'Local offline configurations synchronized successfully.');
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PERMIT GENERATION (Excel template → PDF) — see config/permits.php
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** Fields + dropdowns for the Generate Permit modal, prefilled from the record. */
+    public function permitSchema(int $id, string $type, PermitExcelService $permits)
+    {
+        $application = ZoningApplication::with(['parcels', 'encodedBy'])->findOrFail($id);
+
+        try {
+            return response()->json([
+                'documents' => $permits->documents(),
+                'schema'    => $permits->schema($application, $type),
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("permitSchema error: " . $e->getMessage()); return response()->json(['message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function exportPreview(Request $request, int $id, string $type, PermitExcelService $permits)
+    {
+        $application = ZoningApplication::with(["parcels", "encodedBy"])->findOrFail($id);
+        
+        $validated = $request->validate([
+            "fields"   => "nullable|array",
+            "fields.*" => "nullable",
+            "cells"    => "nullable|array",
+            "cells.*"  => "nullable|string|max:500",
+            "format"   => "nullable|in:pdf",
+        ]);
+
+        try {
+            $path = $permits->generate($application, $type, $validated, "pdf");
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Preview Error: " . $e->getMessage()); return response()->json(["message" => "Failed to generate preview: " . $e->getMessage()], 422);
+        }
+
+        return response()->file($path, [
+            "Content-Type"        => "application/pdf",
+            "Content-Disposition" => "inline; filename='preview.pdf'",
+            "X-Permit-Pdf-Driver" => (string) $permits->lastPdfDriver(),
+        ])->deleteFileAfterSend(true);
+    }
+
+    public function exportDocument(Request $request, int $id, string $type, PermitExcelService $permits)
+    {
+        $application = ZoningApplication::with(['parcels', 'encodedBy'])->findOrFail($id);
+
+        $validated = $request->validate([
+            'fields'   => 'nullable|array',
+            'fields.*' => 'nullable',
+            'cells'    => 'nullable|array',
+            'cells.*'  => 'nullable|string|max:500',
+            'format'   => 'nullable|in:pdf,xlsx',
+        ]);
+        $format = $validated['format'] ?? 'pdf';
+
+        try {
+            $path = $permits->generate($application, $type, $validated, $format);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['message' => 'Failed to generate permit: ' . $e->getMessage()], 422);
+        }
+
+        // Store a persistent copy of the generated permit for this application
+        $storageDir = "permits/{$application->id}";
+        $label = config("permits.documents.{$type}.label", strtoupper($type));
+        $fileName = sprintf('%s_%s_%s.%s', \Illuminate\Support\Str::slug($label, '_'), preg_replace('/[^A-Za-z0-9_\-]/', '_', (string) $application->reference_number), \Illuminate\Support\Str::random(6), $format);
+        $storagePath = "{$storageDir}/{$fileName}";
+
+        Storage::disk('public')->makeDirectory($storageDir);
+        Storage::disk('public')->put($storagePath, file_get_contents($path));
+
+        $savedPermit = GeneratedPermit::create([
+            'zoning_application_id' => $application->id,
+            'permit_type'           => $type,
+            'permit_name'           => $label,
+            'file_name'             => $fileName,
+            'file_path'             => $storagePath,
+            'file_format'           => $format,
+            'file_size'             => filesize($path),
+            'input_data'            => $validated['fields'] ?? [],
+            'generated_by'          => Auth::id(),
+        ]);
+
+        AuditLogger::log(
+            applicationId: $application->id,
+            action: 'PERMIT_GENERATED',
+            performedBy: Auth::id(),
+            note: sprintf(
+                '%s generated & stored (%s%s).',
+                $label,
+                strtoupper($format),
+                $format === 'pdf' && $permits->lastPdfDriver() ? ' via ' . $permits->lastPdfDriver() : ''
+            )
+        );
+
+        $mime = $format === 'pdf'
+            ? 'application/pdf'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+        $fullStoragePath = Storage::disk('public')->path($storagePath);
+
+        // Remove temporary generated file
+        @unlink($path);
+
+        return response()->file($fullStoragePath, [
+            'Content-Type'        => $mime,
+            'Content-Disposition' => ($format === 'pdf' ? 'inline' : 'attachment') . '; filename="' . $fileName . '"',
+            'X-Saved-Permit-Id'   => (string) $savedPermit->id,
+        ]);
+    }
+
+    public function savedPermits(int $id)
+    {
+        $application = ZoningApplication::findOrFail($id);
+        $permits = $application->generatedPermits()->with('generatedBy:id,name')->get();
+
+        return response()->json([
+            'permits' => $permits,
+        ]);
+    }
+
+    public function downloadSavedPermit(int $id, int $permitId)
+    {
+        $application = ZoningApplication::findOrFail($id);
+        $permit = GeneratedPermit::where('zoning_application_id', $application->id)->findOrFail($permitId);
+
+        if (!Storage::disk('public')->exists($permit->file_path)) {
+            abort(404, 'Stored permit file not found.');
+        }
+
+        $fullPath = Storage::disk('public')->path($permit->file_path);
+        $mime = $permit->file_format === 'pdf'
+            ? 'application/pdf'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+        return response()->file($fullPath, [
+            'Content-Type'        => $mime,
+            'Content-Disposition' => ($permit->file_format === 'pdf' ? 'inline' : 'attachment') . '; filename="' . $permit->file_name . '"',
+        ]);
+    }
+
+    public function deleteSavedPermit(int $id, int $permitId)
+    {
+        $application = ZoningApplication::findOrFail($id);
+        $permit = GeneratedPermit::where('zoning_application_id', $application->id)->findOrFail($permitId);
+
+        if (Storage::disk('public')->exists($permit->file_path)) {
+            Storage::disk('public')->delete($permit->file_path);
+        }
+
+        $permitName = $permit->permit_name;
+        $permit->delete();
+
+        AuditLogger::log(
+            applicationId: $application->id,
+            action: 'PERMIT_DELETED',
+            performedBy: Auth::id(),
+            note: sprintf('Stored permit %s (%s) deleted.', $permitName, $permit->file_name)
+        );
+
+        return response()->json(['message' => 'Saved permit deleted successfully.']);
+    }
 }
+

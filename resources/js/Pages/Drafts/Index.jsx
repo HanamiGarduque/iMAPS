@@ -3,6 +3,18 @@ import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
+import { MapContainer, TileLayer, GeoJSON } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+
+const rosarioCenter = [13.7850, 121.2500];
+const brgyStyle = { color: "#475569", weight: 1, opacity: 0.4, fillColor: "#e2e8f0", fillOpacity: 0.1, dashArray: "4" };
+
+// ── Status badge config for Drafts ──
+const STATUS_CONFIG = {
+    "Auto-saved": { bg: "bg-slate-50 text-slate-600 border-slate-200", dot: "bg-slate-400" },
+    "Incomplete": { bg: "bg-slate-50 text-slate-500 border-slate-200", dot: "bg-slate-300" },
+};
 
 const STATUSES = ["Auto-saved", "Incomplete"];
 const KNOWN_TYPES = ["Locational Clearance", "Zoning Certificate", "Development Permit", "Petition for Rezoning", "Preliminary Approval and Locational Clearance (PALC)"];
@@ -84,11 +96,17 @@ export default function DraftsIndex({ drafts, filters = {}, auth }) {
             confirmButtonText: "Sign out",
             cancelButtonText: "Cancel",
             buttonsStyling: false,
-            customClass: { ...swalClasses, confirmButton: "px-4 py-2 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12.5px] font-semibold cursor-pointer" },
-        }).then((r) => {
-            if (r.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+            customClass: {
+                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
+                title: "text-lg font-bold text-slate-900",
+                htmlContainer: "text-xs text-slate-500",
+                actions: "flex items-center justify-center gap-3 mt-5",
+                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
+                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
+            },
+        }).then((result) => {
+            if (result.isConfirmed) {
+                performLogout();
             }
         });
     };

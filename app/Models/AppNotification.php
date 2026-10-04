@@ -85,6 +85,17 @@ class AppNotification extends Model
     }
 
     /**
+     * Create notification for specific user IDs (deduplicated).
+     */
+    public static function notifyUsers(array $userIds, string $title, string $message, string $type = 'system_alert', ?string $actionUrl = null): void
+    {
+        $uniqueIds = array_values(array_unique(array_filter($userIds)));
+        foreach ($uniqueIds as $userId) {
+            self::notifyUser($userId, $title, $message, $type, $actionUrl);
+        }
+    }
+
+    /**
      * Create a global broadcast notification for all users.
      */
     public static function notifyAll(string $title, string $message, string $type = 'system_alert', ?string $actionUrl = null): self

@@ -1,8 +1,21 @@
 import { Component, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import { Head, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
+import { performLogout } from "@/utils/auth";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import {
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    Tooltip,
+    ResponsiveContainer,
+    Cell,
+    PieChart,
+    Pie,
+} from "recharts";
+
 import StatusPanel, { STATUS_MARKER_CONFIG, getStatusMarkerConfig, matchesAppFilters } from "@/Components/MapLayers/StatusPanel";
 import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
@@ -14,6 +27,7 @@ import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
 import { ApplicationDetails, BarangayCard } from "@/Components/Dashboard/IdentifyCards";
 import { getLens } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
+
 
 // The 3D view is split into its own chunk (it pulls in maplibre-gl). It loads
 // on first use and is warmed during idle time after first paint.
@@ -51,11 +65,34 @@ class MapsErrorBoundary extends Component {
 
 // Quarters the LC timeline can scrub through: 2021 Q1 up to the current
 // quarter (recorded), then the next two quarters (forecast).
-function buildTimelineQuarters() {
+function buildTimelineQuarters(urbanGrowthData) {
     const quarters = [];
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+    let currentYear, currentQuarter;
+
+    let maxDate = null;
+    if (urbanGrowthData?.historicalPins) {
+        Object.values(urbanGrowthData.historicalPins).forEach(pins => {
+            if (Array.isArray(pins)) {
+                pins.forEach(p => {
+                    if (p?.created_at) {
+                        const d = new Date(p.created_at);
+                        if (!isNaN(d.getTime())) {
+                            if (!maxDate || d > maxDate) maxDate = d;
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    if (maxDate) {
+        currentYear = maxDate.getFullYear();
+        currentQuarter = Math.floor(maxDate.getMonth() / 3) + 1;
+    } else {
+        const now = new Date();
+        currentYear = now.getFullYear();
+        currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+    }
 
     for (let y = 2021; y <= currentYear; y++) {
         for (let q = 1; q <= 4; q++) {
@@ -114,7 +151,7 @@ function ToolButton({ icon, label, onClick, pressed, disabled }) {
     );
 }
 
-const Divider = () => <span className="w-px h-5 bg-slate-300 mx-1" aria-hidden="true" />;
+const Divider = () => <span className="w-px h-5 bg-slate-300 mx-1" aria-hidden="true" />
 
 function DockHeader({ title, onClose, closeLabel }) {
     return (
@@ -162,7 +199,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
     const carryBgyRef = useRef(null);
 
     // ── LC demand timeline ──
-    const timelineQuarters = useMemo(() => buildTimelineQuarters(), []);
+    const timelineQuarters = useMemo(() => buildTimelineQuarters(urbanGrowthData), [urbanGrowthData]);
     const [activeQuarterIndex, setActiveQuarterIndex] = useState(() => {
         const idx = timelineQuarters.findIndex((q) => q.isForecast);
         return idx !== -1 ? idx : timelineQuarters.length - 1;
@@ -171,6 +208,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
     const activeQuarter = timelineQuarters[activeQuarterIndex] || timelineQuarters[timelineQuarters.length - 1];
 
     const [apiQuarterData, setApiQuarterData] = useState({ pins: [], metrics: null });
+    const [forecastQuarterMap, setForecastQuarterMap] = useState({});
     const [quarterLoading, setQuarterLoading] = useState(false);
     const [customForecastData, setCustomForecastData] = useState(() => {
         try {
@@ -188,6 +226,24 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         } catch (e) {}
     };
 
+    // Pre-fetch all forecast quarters so every forecast quarter in the timeline displays filled bars
+    useEffect(() => {
+        const forecastQuarters = timelineQuarters.filter((q) => q.isForecast);
+        forecastQuarters.forEach((q) => {
+            const key = `${q.year}-${q.quarter}`;
+            if (!forecastQuarterMap[key]) {
+                fetch(`/api/forecast/${q.year}/${q.quarter}`)
+                    .then((res) => res.json())
+                    .then((res) => {
+                        if (res.status === "success" && Array.isArray(res.data?.pins)) {
+                            setForecastQuarterMap((prev) => ({ ...prev, [key]: res.data.pins }));
+                        }
+                    })
+                    .catch(() => {});
+            }
+        });
+    }, [timelineQuarters]);
+
     useEffect(() => {
         if (!activeQuarter) return;
         let cancelled = false;
@@ -195,7 +251,13 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         fetch(`/api/forecast/${activeQuarter.year}/${activeQuarter.quarter}`)
             .then((res) => res.json())
             .then((res) => {
-                if (!cancelled) setApiQuarterData(res.status === "success" ? res.data : { pins: [], metrics: null });
+                if (!cancelled && res.status === "success") {
+                    setApiQuarterData(res.data);
+                    setForecastQuarterMap((prev) => ({
+                        ...prev,
+                        [`${activeQuarter.year}-${activeQuarter.quarter}`]: res.data?.pins || [],
+                    }));
+                }
             })
             .catch((err) => {
                 console.error("Forecast API error", err);
@@ -214,9 +276,11 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         if (activeQuarter.isForecast) {
             const custom = customForecastData?.pins;
             if (Array.isArray(custom) && custom.length > 0) {
-                const qPins = custom.filter((p) => !(p.year && p.quarter) || (p.year === activeQuarter.year && p.quarter === activeQuarter.quarter));
-                return qPins.length > 0 ? qPins : custom;
+                const qPins = custom.filter((p) => Number(p.year) === Number(activeQuarter.year) && Number(p.quarter) === Number(activeQuarter.quarter));
+                if (qPins.length > 0) return qPins;
             }
+            const mapped = forecastQuarterMap[`${activeQuarter.year}-${activeQuarter.quarter}`];
+            if (Array.isArray(mapped) && mapped.length > 0) return mapped;
             return apiQuarterData.pins || [];
         }
         const start = new Date(activeQuarter.year, (activeQuarter.quarter - 1) * 3, 1);
@@ -225,7 +289,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
             const d = p?.created_at ? new Date(p.created_at) : null;
             return d && !isNaN(d.getTime()) && d >= start && d <= end;
         });
-    }, [urbanGrowthData, activeQuarter, apiQuarterData, customForecastData]);
+    }, [urbanGrowthData, activeQuarter, apiQuarterData, customForecastData, forecastQuarterMap]);
 
     const quarterSeries = useMemo(() => {
         const recorded = {};
@@ -238,9 +302,9 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         return timelineQuarters.map((q, i) => {
             let pins = recorded[`${q.year}-${q.quarter}`] || [];
             if (q.isForecast) {
-                const own = custom.filter((p) => p.year === q.year && p.quarter === q.quarter);
-                // A forecast quarter with no cached output is only known once it is opened.
-                pins = own.length ? own : i === activeQuarterIndex ? activeHistoricalPins : null;
+                const own = custom.filter((p) => Number(p.year) === Number(q.year) && Number(p.quarter) === Number(q.quarter));
+                const mapped = forecastQuarterMap[`${q.year}-${q.quarter}`];
+                pins = own.length > 0 ? own : (mapped && mapped.length > 0 ? mapped : (i === activeQuarterIndex ? activeHistoricalPins : null));
             }
             const byBgy = {};
             (pins || []).forEach((p) => {
@@ -249,7 +313,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
             });
             return { ...q, total: pins ? pins.length : null, byBgy };
         });
-    }, [urbanGrowthData, customForecastData, timelineQuarters, activeQuarterIndex, activeHistoricalPins]);
+    }, [urbanGrowthData, customForecastData, timelineQuarters, activeQuarterIndex, activeHistoricalPins, forecastQuarterMap]);
 
     const forecastMetrics = useMemo(() => {
         if (customForecastData?.metrics) {
@@ -494,10 +558,9 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                 confirmButton: "inline-flex items-center justify-center px-4 py-2 rounded-[3px] bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-xs font-semibold cursor-pointer",
                 cancelButton: "inline-flex items-center justify-center px-4 py-2 rounded-[3px] bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-300 cursor-pointer",
             },
-        }).then((result) => {
-            if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+        }).then((r) => {
+            if (r.isConfirmed) {
+                performLogout();
             }
         });
     };

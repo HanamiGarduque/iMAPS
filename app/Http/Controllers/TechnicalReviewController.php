@@ -195,7 +195,9 @@ class TechnicalReviewController extends Controller
 
             // 1. Update main application status ONLY if it's a final decision
             if ($validated['decision'] === 'Approved') {
-                $application->status = 'Under Sangguniang Bayan';
+                $application->status = ($application->status === 'Under Sangguniang Bayan' || $application->application_stream === 'amendment')
+                    ? 'Under Sangguniang Bayan'
+                    : 'For Release';
             } elseif ($validated['decision'] === 'Declined') {
                 $application->status = 'Denied';
             }
@@ -462,10 +464,16 @@ class TechnicalReviewController extends Controller
             
             if (in_array('Declined', $decisionsSeen, true)) {
                 $application->status = 'Denied';
-            } elseif (!array_intersect(['Needs Site Inspection', 'Requires Reinspection'], $decisionsSeen)) {
-                // If no inspections are needed and nothing is declined, 
-                // we can advance to the next logical step.
-                $application->status = 'Under Sangguniang Bayan';
+            } elseif (array_intersect(['Needs Site Inspection', 'Requires Reinspection'], $decisionsSeen)) {
+                $application->status = 'Technical Review';
+            } else {
+                // If no inspections are needed and nothing is declined (all approved),
+                // check if the application was routed to Sangguniang Bayan or is an amendment stream.
+                if ($application->status === 'Under Sangguniang Bayan' || $application->application_stream === 'amendment') {
+                    $application->status = 'Under Sangguniang Bayan';
+                } else {
+                    $application->status = 'For Release';
+                }
             }
 
             $application->save(); // Save the status change immediately

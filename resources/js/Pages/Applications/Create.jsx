@@ -5,6 +5,7 @@ import axios from "axios";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -15,7 +16,6 @@ import StepPropertyGIS from "./Components/StepPropertyGIS";
 import StepReview from "./Components/StepReview";
 import StepFee from "./Components/StepFee";
 import SiteMapPrint from "./Components/SiteMapPrint";
-import QRCode from "qrcode";
 import { splitFullName, joinName } from "@/utils/names";
 import { getZoneInfo } from "@/utils/clupZones";
 const AMENDMENT_TYPES = [
@@ -70,7 +70,7 @@ const STEPS = [
 
 const STEP_ERROR_FIELDS = {
     [STEP.APPLICATION]: ["application_stream", "application_type", "form_number", "land_use_class", "purpose", "target_land_use_class", "building_area", "area_to_develop", "number_of_saleable_lots", "project_type_business_name", "project_cost", "project_tenure"],
-    [STEP.APPLICANT]: ["applicant_name", "first_name", "last_name", "contact_number", "email", "representative_name", "representative_contact", "representative_address", "corporation_name", "corporation_contact", "corporation_address", "right_over_land"],
+    [STEP.APPLICANT]: ["applicant_name", "first_name", "last_name", "contact_number", "email", "applicant_street", "applicant_barangay", "representative_name", "representative_contact", "representative_address", "corporation_name", "corporation_contact", "corporation_address", "right_over_land"],
     [STEP.FEES]: ["assessment_fee", "or_number", "date_of_receipt", "zoning_certificate_fee", "locational_clearance_fee", "development_permit_fee", "other_fees", "penalty_fee"],
 };
 
@@ -246,12 +246,15 @@ const emptyForm = () => ({
     application_type: "",
     form_number: "",
     target_land_use_class: "",
+    allowable_use: "",
     purpose: "",
     first_name: "",
     middle_name: "",
     last_name: "",
     suffix: "",
     applicant_name: "",
+    applicant_street: "",
+    applicant_barangay: "",
     contact_number: "",
     email: "",
     representative_name: "",
@@ -270,6 +273,7 @@ const emptyForm = () => ({
     right_over_land: "",
     project_tenure: "",
     preferred_release_mode: "",
+    route_to_sb: false,
     remarks: "",
     zoning_certificate_fee: "",
     locational_clearance_fee: "",
@@ -295,6 +299,7 @@ const emptyForm = () => ({
             survey_number: "",
             lot_area_sqm: "",
             land_use_class: "",
+            allowable_use: "",
             coordinates: "",
         },
     ],
@@ -303,220 +308,45 @@ const emptyForm = () => ({
 // ── Custom Map Bounds Controller ──
 function MapController({ brgyData, activeParcelFeature }) {
     const map = useMap();
+    const prevFeaturePin = useRef(null);
 
     useEffect(() => {
-        try {
-            map.invalidateSize();
-            if (activeParcelFeature) {
-                const layer = L.geoJSON(activeParcelFeature);
-                const bounds = layer.getBounds();
+        if (!map) return;
+        const currentPin = activeParcelFeature?.properties?.property_index_number || activeParcelFeature?.id || null;
+        const isSameFeature = currentPin && prevFeaturePin.current === currentPin;
+        prevFeaturePin.current = currentPin;
 
-                if (bounds.isValid()) {
-                    map.flyToBounds(bounds, { padding: [60, 60], maxZoom: 18, duration: 1.2 });
-                }
-            } else if (brgyData) {
-                const layer = L.geoJSON(brgyData);
-                const bounds = layer.getBounds();
+        const timer = setTimeout(() => {
+            try {
+                map.invalidateSize({ animate: false });
+                if (activeParcelFeature) {
+                    const layer = L.geoJSON(activeParcelFeature);
+                    const bounds = layer.getBounds();
 
-                if (bounds.isValid()) {
-                    map.fitBounds(bounds, { padding: [30, 30] });
+                    if (bounds.isValid()) {
+                        const currentBounds = map.getBounds();
+                        // Only fit bounds if the parcel isn't already fully visible in viewport
+                        if (!isSameFeature && (!currentBounds.isValid() || !currentBounds.contains(bounds))) {
+                            map.fitBounds(bounds, { padding: [60, 60], maxZoom: 18, animate: false });
+                        }
+                    }
+                } else if (brgyData && !isSameFeature) {
+                    const layer = L.geoJSON(brgyData);
+                    const bounds = layer.getBounds();
+
+                    if (bounds.isValid()) {
+                        map.fitBounds(bounds, { padding: [30, 30], animate: false });
+                    }
                 }
+            } catch (e) {
+                console.error("MapController error:", e);
             }
-        } catch (e) {
-            console.error("MapController error:", e);
-        }
+        }, 120);
+
+        return () => clearTimeout(timer);
     }, [brgyData, activeParcelFeature, map]);
 
     return null;
-}
-
-
-// ── Printable Official Application Routing & Acknowledgement Slip Modal ──
-function RoutingSlipModal({ open, data, onClose, onPrint }) {
-    const trackingUrl = `${window.location.origin}/track?ref=${encodeURIComponent(data?.reference_number || "")}`;
-
-    // Generated in the browser: reference numbers are never sent to a third-party QR service
-    const [qrCodeUrl, setQrCodeUrl] = useState("");
-    useEffect(() => {
-        if (!open || !data) return;
-        let cancelled = false;
-        QRCode.toDataURL(trackingUrl, { margin: 0, width: 150 })
-            .then((url) => !cancelled && setQrCodeUrl(url))
-            .catch(() => !cancelled && setQrCodeUrl(""));
-        return () => {
-            cancelled = true;
-        };
-    }, [open, data, trackingUrl]);
-
-    if (!open || !data) return null;
-
-    return (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-in fade-in">
-            <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[82vh]">
-                
-                {/* Header Controls (Non-Printable) */}
-                <div className="flex items-center justify-between px-5 py-2.5 border-b border-slate-100 bg-slate-50 print:hidden shrink-0">
-                    <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-xs font-bold text-slate-800">Application Routing Slip Generated</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={onPrint}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
-                        >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
-                            </svg>
-                            <span>Print Slip</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                </div>
-
-                {/* Printable Document Area */}
-                <div id="printable-routing-slip" className="p-4 sm:p-5 overflow-y-auto space-y-3 bg-white text-slate-900 font-sans">
-                    
-                    {/* Official Document Header */}
-                    <div className="text-center border-b border-slate-900/80 pb-2">
-                        <p className="text-[9px] font-semibold tracking-widest text-slate-500 uppercase">Republic of the Philippines · Province of Batangas</p>
-                        <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-tight text-slate-950 mt-0.5">Municipality of Rosario</h2>
-                        <p className="text-[10px] font-bold tracking-wider uppercase text-blue-700">Municipal Planning and Development Office (MPDO)</p>
-                        <div className="inline-block bg-slate-900 text-white text-[9px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded mt-1">
-                            Official Zoning Application Routing Slip
-                        </div>
-                    </div>
-
-                    {/* Reference No. & Public Tracking QR Row */}
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <div className="sm:col-span-8 flex flex-col justify-center space-y-1">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Application Reference No.</span>
-                            <h3 className="text-lg sm:text-xl font-mono font-extrabold text-blue-700 tracking-tight">{data.reference_number}</h3>
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-slate-600">
-                                <span>Date Filed: <strong className="text-slate-800 font-mono">{data.date_of_application || new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</strong></span>
-                                <span>Encoded By: <strong className="text-slate-800">{data.encoded_by_name || "Planning Staff"}</strong></span>
-                            </div>
-                        </div>
-                        <div className="sm:col-span-4 flex items-center justify-end gap-2.5 border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3">
-                            <div className="text-right">
-                                <p className="text-[10px] font-bold text-slate-700 uppercase">Public Tracking</p>
-                                <p className="text-[9px] text-slate-400">Scan QR to track status</p>
-                            </div>
-                            <div className="bg-white p-1 rounded-lg border border-slate-200 shadow-2xs shrink-0 text-center">
-                                {qrCodeUrl ? (
-                                    <img src={qrCodeUrl} alt={`QR code to track ${data.reference_number}`} className="w-12 h-12 object-contain" />
-                                ) : (
-                                    <div className="w-12 h-12" aria-hidden="true" />
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Applicant Profile & Clearance Scope */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Registered Applicant</p>
-                            <p className="font-bold text-slate-900 text-xs sm:text-sm truncate">{data.applicant_name}</p>
-                            <div className="flex items-center gap-3 text-[11px] text-slate-600">
-                                <span className="font-mono">+63 {data.contact_number}</span>
-                                {data.email && <span className="truncate">{data.email}</span>}
-                            </div>
-                            {data.representative_name && (
-                                <p className="text-[10px] text-slate-500 pt-1 border-t border-slate-200 mt-1 truncate">
-                                    Representative: <strong className="text-slate-700">{data.representative_name}</strong>
-                                </p>
-                            )}
-                        </div>
-                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Clearance Classification</p>
-                            <p className="font-bold text-slate-900 text-xs sm:text-sm">{data.application_type}</p>
-                            <div className="flex items-center gap-3 text-[11px] text-slate-600">
-                                <span>Land Use: <strong className="text-slate-800">{data.land_use_class}</strong></span>
-                                {data.project_cost && Number(data.project_cost) > 0 && (
-                                    <span>Project Cost: <strong className="text-slate-800 font-mono">₱ {Number(data.project_cost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
-                                )}
-                            </div>
-                            <p className="text-[11px] text-slate-600 truncate">Purpose: <span className="font-medium text-slate-700">{data.purpose}</span></p>
-                        </div>
-                    </div>
-
-                    {/* Location Summary & Assessment Fee Grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                        <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1.5">
-                            <div className="flex items-center justify-between border-b border-slate-200 pb-1">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Location & Lots Summary</p>
-                                <p className="font-semibold text-slate-800 text-[11px] truncate">{data.street_address ? `${data.street_address}, ` : ""}Brgy. {data.barangay}</p>
-                            </div>
-                            <div className="max-h-16 overflow-y-auto divide-y divide-slate-100 text-[11px]">
-                                {(data.parcels || []).map((parcel, idx) => (
-                                    <div key={idx} className="py-0.5 flex items-center justify-between">
-                                        <span className="font-mono font-semibold text-slate-800 truncate">{parcel.parcel_code || `Lot ${idx + 1}`}: PIN {parcel.property_index_number || "—"}</span>
-                                        <span className="text-slate-600 font-mono text-[10px] shrink-0">{parcel.lot_area_sqm ? `${Number(parcel.lot_area_sqm).toLocaleString()} m²` : ""}</span>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="pt-1 border-t border-slate-200 flex items-center justify-between text-[11px] font-bold text-blue-700">
-                                <span>Total Land Area:</span>
-                                <span className="font-mono">{Number(data.total_area || 0).toLocaleString()} sq.m</span>
-                            </div>
-                        </div>
-
-                        <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 flex flex-col justify-between">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-[9px] font-bold text-blue-800 uppercase tracking-wider">Assessed Clearance Fee</p>
-                                    <p className="text-base sm:text-lg font-mono font-bold text-blue-900 mt-0.5">₱ {Number(data.assessment_fee || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                                    <p className="text-[10px] text-blue-700">OR No: <strong className="font-mono">{data.or_number || "To be issued"}</strong></p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-[9px] font-bold text-blue-800 uppercase tracking-wider">Pipeline Status</p>
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 mt-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                                        Received
-                                    </span>
-                                    <p className="text-[9px] text-slate-500 mt-0.5">Next: Technical Review</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Official Notice */}
-                    <p className="text-[9px] text-center text-slate-400 pt-1.5 border-t border-slate-100 leading-relaxed">
-                        Present this routing slip to the MPDO Zoning Division for inspection tracking. Scan the QR code for 24/7 public tracking updates.
-                    </p>
-                </div>
-
-                {/* Footer Buttons (Non-Printable) */}
-                <div className="px-5 py-2.5 border-t border-slate-100 bg-slate-50 print:hidden flex items-center justify-between shrink-0">
-                    <button
-                        type="button"
-                        onClick={onPrint}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
-                    >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
-                        </svg>
-                        <span>Print Routing Slip</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
-                    >
-                        <span>Done & Return to Applications</span>
-                    </button>
-                </div>
-
-            </div>
-        </div>
-    );
 }
 
 export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayload = null, cloudDraftRef = null, inspectors = [] }) {
@@ -576,9 +406,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     // Smart Features State
     const [applicantSuggestion, setApplicantSuggestion] = useState(null);
-    const [showRoutingSlip, setShowRoutingSlip] = useState(false);
     const [siteMapOpen, setSiteMapOpen] = useState(false);
-    const [routingSlipData, setRoutingSlipData] = useState(null);
 
     // Tracking identifier
     const [tempDraftId, setTempDraftId] = useState(() => {
@@ -591,7 +419,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const [parcelMapData, setParcelMapData] = useState(null);
     const [activeParcelFeature, setActiveParcelFeature] = useState(null);
     const [activeParcelIndex, setActiveParcelIndex] = useState(null);
-    const rosarioCenter = [13.8450, 121.2063];
+    const rosarioCenter = [13.7850, 121.2500];
 
     // Payload cleaner
     const cleanPayload = (data) => {
@@ -725,9 +553,11 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const applyApplicantSuggestion = () => {
         if (!applicantSuggestion) return;
         const parts = splitFullName(applicantSuggestion.applicant_name);
-        // Stored numbers are digits only; the form keeps the 10-digit 9XXXXXXXXX mobile format
-        const digits = String(applicantSuggestion.contact_number || "").replace(/\D/g, "");
-        const mobile = digits.length >= 10 && digits.slice(-10).startsWith("9") ? digits.slice(-10) : "";
+        // Stored numbers are digits only; formatted to 10-digit mobile number
+        let mobile = String(applicantSuggestion.contact_number || "").replace(/\D/g, "");
+        if (mobile.startsWith("63") && mobile.length > 10) mobile = mobile.slice(2);
+        if (mobile.startsWith("0") && mobile.length === 11) mobile = mobile.slice(1);
+        if (mobile.length > 10) mobile = mobile.slice(-10);
         setForm((prev) => ({
             ...prev,
             ...parts,
@@ -948,6 +778,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     tct_number: "",
                     tax_dec_number: "",
                     lot_area_sqm: "",
+                    land_use_class: "",
+                    allowable_use: "",
                     coordinates: "",
                 },
             ],
@@ -1122,21 +954,17 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             }
 
             const cadastralZoneClass = data.land_use_class || data.zoning_plan_class || data.recorded_land_use_class || "";
-            let clupZoningClass = "Unmapped in CLUP"; 
-            
-            // ── Spatial Area Intersection Override using PIN ──
-            const spatialZoning = await fetchZoningByParcelArea(pin);
-            if (spatialZoning) {
-                clupZoningClass = spatialZoning; // Strictly matches spatial polygon intersection from land_use_plan
-            }
+            let clupZoningClass = cadastralZoneClass || "Unmapped in CLUP";
 
             let coordsStr = data.coordinates || (data.latitude && data.longitude ? `${data.latitude},${data.longitude}` : null);
 
             setForm((prev) => {
                 const newBarangay = index === 0 && data.barangay ? data.barangay : prev.barangay;
+                const newStreet = index === 0 && data.location_address ? data.location_address : prev.street_address;
                 return {
                     ...prev,
                     barangay: newBarangay,
+                    street_address: newStreet,
                     parcels: (prev.parcels || []).map((p, i) =>
                         i === index
                             ? {
@@ -1152,7 +980,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                   tax_dec_number: data.tax_dec_number || p.tax_dec_number || "",
                                   lot_area_sqm: data.lot_area_sqm ?? p.lot_area_sqm,
                                   cadastral_zone: cadastralZoneClass,
-                                  land_use_class: clupZoningClass, // Spatially queried via PostGIS geometry intersection
+                                  land_use_class: clupZoningClass,
                                   is_verified: true,
                                   coordinates: coordsStr || p.coordinates,
                               }
@@ -1166,8 +994,20 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 delete next.barangay;
                 return next;
             });
-            setFlash({ type: "success", msg: `PIN ${pin} cross-referenced with spatial land use geometry.` });
+            setFlash({ type: "success", msg: `PIN ${pin} verified successfully.` });
             setTimeout(() => setFlash(null), 3000);
+
+            // Fetch spatial zoning intersection in background
+            fetchZoningByParcelArea(pin).then((spatialZoning) => {
+                if (spatialZoning) {
+                    setForm((prev) => ({
+                        ...prev,
+                        parcels: (prev.parcels || []).map((p, i) =>
+                            i === index ? { ...p, land_use_class: spatialZoning } : p
+                        ),
+                    }));
+                }
+            });
         } catch (err) {
             setErrors((prev) => ({ ...prev, [`parcels.${index}.property_index_number`]: err?.message || "PIN not found in approved records" }));
             setForm((prev) => ({ ...prev, parcels: (prev.parcels || []).map((p, i) => i === index ? { ...p, is_verified: false } : p) }));
@@ -1176,21 +1016,13 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         }
     };
     // Direct GIS Map Click-to-Select Handler
-    const handleSelectMapParcel = async (pin, lot, area, brgy, feature) => {
+    const handleSelectMapParcel = (pin, lot, area, brgy, feature) => {
         const targetIdx = activeParcelIndex !== null ? activeParcelIndex : 0;
         const pProps = feature?.properties || {};
         
         const centroid = getGeometryCentroid(feature?.geometry);
         const cadastralZoneClass = pProps.land_use_class || pProps.zoning_class || pProps.land_use || "";
         let clupZoningClass = cadastralZoneClass || "Unmapped in CLUP";
-        
-        // ── Spatial Area Intersection Override using PIN ──
-        if (pin) {
-            const spatialZoning = await fetchZoningByParcelArea(pin);
-            if (spatialZoning) {
-                clupZoningClass = spatialZoning;
-            }
-        }
 
         const tdNo = pProps.tax_dec_number || pProps.td_no || "";
         const arpNo = pProps.arp_number || pProps.arp_no || "";
@@ -1204,11 +1036,14 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             setActiveParcelIndex(targetIdx);
         }
 
+        // Apply state update synchronously for instant UI response
         setForm((prev) => {
             const newBarangay = targetIdx === 0 && brgy ? brgy : prev.barangay;
+            const newStreet = targetIdx === 0 && locationAddress ? locationAddress : prev.street_address;
             return {
                 ...prev,
                 barangay: newBarangay,
+                street_address: newStreet,
                 parcels: (prev.parcels || []).map((p, i) =>
                     i === targetIdx
                         ? {
@@ -1224,7 +1059,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                               tax_dec_number: tdNo || p.tax_dec_number,
                               tct_number: tctNo || p.tct_number,
                               cadastral_zone: cadastralZoneClass, 
-                              land_use_class: clupZoningClass, // Spatially queried via geometry intersection
+                              land_use_class: clupZoningClass,
                               is_verified: Boolean(pin),
                               coordinates: centroid ? `${centroid.lat.toFixed(6)},${centroid.lng.toFixed(6)}` : p.coordinates,
                           }
@@ -1233,8 +1068,22 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             };
         });
 
-        setFlash({ type: "success", msg: `Selected lot PIN: ${pin || "Map Polygon"} · Zoning verified via area geometry` });
+        setFlash({ type: "success", msg: `Selected lot PIN: ${pin || "Map Polygon"} · Zoning verified` });
         setTimeout(() => setFlash(null), 3000);
+
+        // Perform spatial zoning lookup asynchronously in background
+        if (pin) {
+            fetchZoningByParcelArea(pin).then((spatialZoning) => {
+                if (spatialZoning) {
+                    setForm((prev) => ({
+                        ...prev,
+                        parcels: (prev.parcels || []).map((p, i) =>
+                            i === targetIdx ? { ...p, land_use_class: spatialZoning } : p
+                        ),
+                    }));
+                }
+            });
+        }
     };
 
     const handleLogout = () => {
@@ -1256,8 +1105,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };
@@ -1339,9 +1187,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             checkApplicantMatches("", "contact_number");
             return;
         }
-        if (val.startsWith("09")) val = val.slice(2);
-        else if (val.startsWith("9")) val = val.slice(1);
-        val = "9" + val;
+        if (val.startsWith("63") && val.length > 10) val = val.slice(2);
+        if (val.startsWith("0") && val.length === 11) val = val.slice(1);
         if (val.length > 10) val = val.slice(0, 10);
         setForm((f) => ({ ...f, contact_number: val }));
         checkApplicantMatches(val, "contact_number");
@@ -1412,17 +1259,18 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             if (!form.last_name?.trim()) newErrors.last_name = "Last name is required";
             if (!form.first_name?.trim()) newErrors.first_name = "First name is required";
             if (!form.applicant_name?.trim()) newErrors.applicant_name = "Applicant name is required";
-            if (!form.contact_number?.trim()) newErrors.contact_number = "Phone number is required";
+            if (!form.contact_number?.trim()) {
+                newErrors.contact_number = "Phone number is required";
+            } else if (form.contact_number.length !== 10) {
+                newErrors.contact_number = "Must be a 10-digit phone number";
+            }
             if (!form.email?.trim()) {
                 newErrors.email = "Email address is required";
             } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
                 newErrors.email = "Enter a valid email format";
             }
-            if (form.corporation_contact && (form.corporation_contact.length !== 10 || !form.corporation_contact.startsWith("9"))) {
-                newErrors.corporation_contact = "Must be exactly 10 digits starting with 9";
-            }
-            if (form.representative_contact && (form.representative_contact.length !== 10 || !form.representative_contact.startsWith("9"))) {
-                newErrors.representative_contact = "Must be exactly 10 digits starting with 9";
+            if (form.representative_contact && form.representative_contact.length !== 10) {
+                newErrors.representative_contact = "Must be a 10-digit phone number";
             }
         }
 
@@ -1490,37 +1338,17 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
         const payload = {
             ...form,
+            route_to_sb: form.application_stream === "amendment" ? true : Boolean(form.route_to_sb),
             draft_id: tempDraftId,
         };
         router.post("/applications/encode", payload, {
             onSuccess: (page) => {
-                // MASTER MERGE CORRECTION - SERVER-CONFIRMED CREATION CONTRACT.
-                //
-                // This handler previously fell back to a CLIENT-FABRICATED reference:
-                //
-                //   page.props.flash?.reference_number || `LC-${<date>}-${<rand>}`
-                //
-                // A successful HTTP status alone therefore let the browser invent a
-                // canonical-looking reference number, render it on the routing slip,
-                // mark the draft "Submitted" and treat creation as complete - all
-                // without the server having confirmed anything. That violates the
-                // business contract: the reference number is the application's
-                // canonical identity and may only ever come from the server.
-                //
-                // The fallback is removed rather than reworded. A 2xx that carries no
-                // authoritative reference is treated as an unconfirmed creation: the
-                // routing slip is NOT shown, the draft is NOT discarded, and the user
-                // is told to retry. The server always sets
-                // `flash.reference_number` on the success path
-                // (ApplicationController::store), so this is a guard against a
-                // malformed success, never against normal operation.
                 const ref = page.props.flash?.reference_number;
+                const newAppId = page.props.flash?.application_id || null;
 
                 if (!ref) {
                     setSubmissionFinalized(false);
                     setSubmitting(false);
-                    // Release the synchronous lock: the officer must be able to
-                    // retry, and the autosave may resume.
                     submittingRef.current = false;
                     setFlash({
                         type: "error",
@@ -1555,9 +1383,61 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
                 setSyncStatus("Submitted");
                 setSubmissionFinalized(true);
-                // B. Success is confirmed by the server, so it is recorded as
-                // such. Only now may the draft be considered consumed.
                 setSubmissionSucceeded(true);
+
+                const applicantName = form.applicant_name?.trim() || joinName(form.first_name, form.middle_name, form.last_name, form.suffix).trim() || "N/A";
+                const appType = form.application_type || (form.application_stream === "amendment" ? "Amendment Track" : "Standard Permit");
+                const barangay = form.parcels?.[0]?.barangay || form.barangay || "N/A";
+                const totalFee = form.assessment_fee ? Number(form.assessment_fee) : 0;
+
+                Swal.fire({
+                    title: "Application Encoded Successfully!",
+                    html: `
+                        <div class="text-left text-xs text-slate-600 mt-2 space-y-3">
+                            <p class="text-center font-medium text-slate-600 mb-3">
+                                ${ref ? `Reference No: <span class="font-bold text-slate-900">${ref}</span>` : "Application record created successfully."}
+                            </p>
+                            <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 text-left space-y-2 text-xs">
+                                <div class="flex justify-between items-center border-b border-slate-200/60 pb-1.5">
+                                    <span class="font-medium text-slate-500 text-[11px]">Applicant</span>
+                                    <span class="font-semibold text-slate-800">${applicantName}</span>
+                                </div>
+                                <div class="flex justify-between items-center border-b border-slate-200/60 pb-1.5">
+                                    <span class="font-medium text-slate-500 text-[11px]">Type / Track</span>
+                                    <span class="font-semibold text-slate-800">${appType}</span>
+                                </div>
+                                <div class="flex justify-between items-center ${totalFee > 0 ? "border-b border-slate-200/60 pb-1.5" : ""}">
+                                    <span class="font-medium text-slate-500 text-[11px]">Barangay</span>
+                                    <span class="font-semibold text-slate-800">${barangay}</span>
+                                </div>
+                                ${totalFee > 0 ? `
+                                <div class="flex justify-between items-center pt-0.5">
+                                    <span class="font-medium text-slate-500 text-[11px]">Assessed Fee</span>
+                                    <span class="font-bold text-emerald-600">₱${totalFee.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                </div>` : ""}
+                            </div>
+                        </div>
+                    `,
+                    icon: "success",
+                    showCancelButton: true,
+                    confirmButtonText: "View Application Details",
+                    cancelButtonText: "Applications List",
+                    buttonsStyling: false,
+                    customClass: {
+                        popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans max-w-md",
+                        title: "text-lg font-bold text-slate-900",
+                        htmlContainer: "text-xs text-slate-500 mt-2",
+                        actions: "flex flex-col-reverse sm:flex-row items-center justify-center gap-3 mt-6 w-full",
+                        confirmButton: "w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
+                        cancelButton: "w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
+                    },
+                }).then((result) => {
+                    if (result.isConfirmed && newAppId) {
+                        router.visit(`/applications/${newAppId}`);
+                    } else {
+                        router.visit("/applications");
+                    }
+                });
             },
             onError: (errs) => {
                 setSubmissionFinalized(false);
@@ -1904,7 +1784,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     </div>
 
                     {/* ── WORKSPACE ── */}
-                    <main className="flex-1 w-full h-full flex flex-col bg-slate-50 overflow-hidden relative">
+                    <main className="flex-1 w-full h-full flex flex-col bg-white overflow-hidden relative">
                         {flash && (
                             <div className="absolute top-4 right-4 z-[999] pointer-events-none animate-in fade-in slide-in-from-top-2">
                                 <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm pointer-events-auto transition-all ${flash.type === "success" ? "bg-slate-900 text-white border-slate-800" : "bg-rose-50 border-rose-200 text-rose-800"}`}>
@@ -1918,329 +1798,285 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                             </div>
                         )}
 
-                        {/* Background: Subtle Blurred Rosario GIS Map filling all whitespace across all steps */}
-                        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none select-none">
-                            <div className="absolute inset-0 filter blur-[1.5px] opacity-40 scale-105">
-                                <MapContainer 
-                                    center={rosarioCenter} 
-                                    zoom={12} 
-                                    zoomControl={false} 
-                                    scrollWheelZoom={false} 
-                                    dragging={false} 
-                                    doubleClickZoom={false} 
-                                    touchZoom={false}
-                                    attributionControl={false}
-                                >
-                                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                    {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
-                                </MapContainer>
-                            </div>
-                            {/* Soft frosted vignette overlay to keep text and inputs ultra-crisp */}
-                            <div className="absolute inset-0 bg-gradient-to-b from-slate-100/40 via-slate-50/60 to-slate-100/75" />
-                        </div>
+                        {/* Main Application Container - Full Screen Layout */}
+                        <div className="relative z-10 flex-1 w-full h-full flex flex-col lg:flex-row bg-white overflow-hidden">
+                            {currentStep === STEP.PROPERTY ? (
+                                /* ── STEP 1: GIS STUDIO ── */
+                                <StepPropertyGIS
+                                    form={form}
+                                    setForm={setForm}
+                                    setParcelField={setParcelField}
+                                    addParcel={addParcel}
+                                    removeParcel={removeParcel}
+                                    handlePinLookup={handlePinLookup}
+                                    pinLoading={pinLoading}
+                                    errors={errors}
+                                    totalLotArea={totalLotArea}
+                                    activeParcelIndex={activeParcelIndex}
+                                    setActiveParcelIndex={setActiveParcelIndex}
+                                    activeParcelFeature={activeParcelFeature}
+                                    setActiveParcelFeature={setActiveParcelFeature}
+                                    brgyMapData={brgyMapData}
+                                    parcelMapData={parcelMapData}
+                                    rosarioCenter={rosarioCenter}
+                                    getParcelStyle={getParcelStyle}
+                                    handleSelectMapParcel={handleSelectMapParcel}
+                                    MapController={MapController}
+                                    handleNext={handleNext}
+                                    formRef={formRef}
+                                    onPrintSiteMap={() => setSiteMapOpen(true)}
+                                />
+                            ) : (
+                                /* ── STEPS 1, 2, 4, 5: LEFT DOSSIER + RIGHT ACTIVE FORM ── */
+                                <>
+                                    {/* Left: Step Guidance & Application Summary (Light Theme) */}
+                                    <div className="w-full lg:w-76 xl:w-[310px] shrink-0 bg-slate-50/90 border-b lg:border-b-0 lg:border-r border-slate-200/90 p-4 sm:p-5 flex flex-col justify-between overflow-y-auto">
+                                        <div className="space-y-3.5">
+                                            <div>
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 uppercase tracking-wider">
+                                                    Step {currentStep} of 5 · Application Form
+                                                </span>
+                                                <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight mt-1.5">
+                                                    {STEPS[currentStep - 1]?.label}
+                                                </h2>
+                                                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                    {currentStep === STEP.APPLICATION && "Choose the clearance type, then describe the project. Options follow the zoning check of the property."}
+                                                    {currentStep === STEP.APPLICANT && "Confirm who is applying and their right over the land. The registered owner can be used as the applicant."}
+                                                    {currentStep === STEP.FEES && "Compute the assessment fee and record the official receipt."}
+                                                    {currentStep === STEP.REVIEW && "Check every section, including the fee, then choose the release mode and submit."}
+                                                </p>
+                                            </div>
 
-                        {/* Foreground: Centered Master Elevated Floating Modal (NON-SCROLLABLE modal wrapper) */}
-                        <div className="relative z-10 flex-1 w-full h-full flex items-center justify-center p-3 sm:p-5 lg:p-6 overflow-hidden">
-                            <div className="w-full max-w-6xl h-[calc(100vh-8.5rem)] max-h-[680px] min-h-[380px] bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col lg:flex-row shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
-                                
-                                {currentStep === STEP.PROPERTY ? (
-                                    /* ── STEP 1: GIS STUDIO (INSIDE FLOATING MODAL) ── */
-                                    <StepPropertyGIS
-                                        form={form}
-                                        setForm={setForm}
-                                        setParcelField={setParcelField}
-                                        addParcel={addParcel}
-                                        removeParcel={removeParcel}
-                                        handlePinLookup={handlePinLookup}
-                                        pinLoading={pinLoading}
-                                        errors={errors}
-                                        totalLotArea={totalLotArea}
-                                        activeParcelIndex={activeParcelIndex}
-                                        setActiveParcelIndex={setActiveParcelIndex}
-                                        activeParcelFeature={activeParcelFeature}
-                                        setActiveParcelFeature={setActiveParcelFeature}
-                                        brgyMapData={brgyMapData}
-                                        parcelMapData={parcelMapData}
-                                        rosarioCenter={rosarioCenter}
-                                        getParcelStyle={getParcelStyle}
-                                        handleSelectMapParcel={handleSelectMapParcel}
-                                        MapController={MapController}
-                                        handleNext={handleNext}
-                                        formRef={formRef}
-                                        onPrintSiteMap={() => setSiteMapOpen(true)}
-                                    />
-                                ) : (
-                                    /* ── STEPS 1, 2, 4, 5: LEFT DOSSIER + RIGHT ACTIVE FORM ── */
-                                    <>
-                                        {/* Left: Step Guidance & Application Summary (Light Theme) */}
-                                        <div className="w-full lg:w-76 xl:w-[310px] shrink-0 bg-slate-50/90 border-b lg:border-b-0 lg:border-r border-slate-200/90 p-4 sm:p-5 flex flex-col justify-between overflow-y-auto">
-                                            <div className="space-y-3.5">
-                                                <div>
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 uppercase tracking-wider">
-                                                        Step {currentStep} of 5 · Application Form
-                                                    </span>
-                                                    <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight mt-1.5">
-                                                        {STEPS[currentStep - 1]?.label}
-                                                    </h2>
-                                                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                                                        {currentStep === STEP.APPLICATION && "Choose the clearance type, then describe the project. Options follow the zoning check of the property."}
-                                                        {currentStep === STEP.APPLICANT && "Confirm who is applying and their right over the land. The registered owner can be used as the applicant."}
-                                                        {currentStep === STEP.FEES && "Compute the assessment fee and record the official receipt."}
-                                                        {currentStep === STEP.REVIEW && "Check every section, including the fee, then choose the release mode and submit."}
-                                                    </p>
+                                            {/* Application Summary or Review Checklist */}
+                                            {currentStep === STEP.REVIEW ? (
+                                                /* ── REVIEW & SECTION COMPLETION CHECKLIST ── */
+                                                <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-col items-center text-center">
+                                                    <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-3 shadow-sm">
+                                                        <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                        </svg>
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-[13px] font-bold text-slate-800 tracking-tight">Ready for Review</h3>
+                                                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                                                            Everything, including the assessed fee, is shown here for a final check before submission.
+                                                        </p>
+                                                    </div>
+                                                    <div className="w-full pt-3.5 mt-3.5 border-t border-slate-100 text-left">
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2.5">Required Actions</p>
+                                                        <ul className="text-[11px] text-slate-600 space-y-2 font-medium">
+                                                            {[
+                                                                ["Verify details in all sections", true],
+                                                                ["Confirm the fee and OR number", true],
+                                                                ["Select a mode of release", Boolean(form.preferred_release_mode)],
+                                                            ].map(([text, ok]) => (
+                                                                <li key={text} className="flex items-start gap-2">
+                                                                    <svg className={`w-3.5 h-3.5 mt-px shrink-0 ${ok ? "text-blue-500" : "text-slate-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d={ok ? "M9 12l2 2 4-4" : "M5 12h14"} />
+                                                                    </svg>
+                                                                    <span className={ok ? "" : "text-slate-500"}>{text}</span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
                                                 </div>
+                                            ) : (
+                                                /* ── STEPS 1, 2, 5: APPLICATION SUMMARY CARD ── */
+                                                <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200/90 shadow-xs space-y-2">
+                                                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Application Summary</span>
+                                                        <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-md">{tempDraftId}</span>
+                                                    </div>
 
-                                                {/* Application Summary or Review Checklist */}
-                                                {currentStep === STEP.REVIEW ? (
-                                                    /* ── REVIEW & SECTION COMPLETION CHECKLIST ── */
-                                                    <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-col items-center text-center">
-                                                        <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center border border-emerald-100 mb-3 shadow-sm">
-                                                            <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                            </svg>
-                                                        </div>
+                                                    <div className="space-y-1.5 text-xs">
                                                         <div>
-                                                            <h3 className="text-[13px] font-bold text-slate-800 tracking-tight">Ready for Review</h3>
-                                                            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                                                                Everything, including the assessed fee, is shown here for a final check before submission.
-                                                            </p>
+                                                            <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Category</p>
+                                                            <p className="font-bold text-slate-900 mt-0.5 truncate text-[11px]">{form.application_type || "Not selected yet"}</p>
                                                         </div>
-                                                        <div className="w-full pt-3.5 mt-3.5 border-t border-slate-100 text-left">
-                                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2.5">Required Actions</p>
-                                                            <ul className="text-[11px] text-slate-600 space-y-2 font-medium">
-                                                                {[
-                                                                    ["Verify details in all sections", true],
-                                                                    ["Confirm the fee and OR number", true],
-                                                                    ["Select a mode of release", Boolean(form.preferred_release_mode)],
-                                                                ].map(([text, ok]) => (
-                                                                    <li key={text} className="flex items-start gap-2">
-                                                                        <svg className={`w-3.5 h-3.5 mt-px shrink-0 ${ok ? "text-blue-500" : "text-slate-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d={ok ? "M9 12l2 2 4-4" : "M5 12h14"} />
-                                                                        </svg>
-                                                                        <span className={ok ? "" : "text-slate-500"}>{text}</span>
-                                                                    </li>
-                                                                ))}
-                                                            </ul>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    /* ── STEPS 1, 2, 5: APPLICATION SUMMARY CARD ── */
-                                                    <div className="bg-white rounded-2xl p-3 sm:p-3.5 border border-slate-200/90 shadow-xs space-y-2">
-                                                        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                                                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Application Summary</span>
-                                                            <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-md">{tempDraftId}</span>
-                                                        </div>
-
-                                                        <div className="space-y-1.5 text-xs">
+                                                        <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
                                                             <div>
-                                                                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Category</p>
-                                                                <p className="font-bold text-slate-900 mt-0.5 truncate text-[11px]">{form.application_type || "Not selected yet"}</p>
+                                                                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Applicant</p>
+                                                                <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">{form.applicant_name || "—"}</p>
                                                             </div>
-                                                            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
-                                                                <div>
-                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Applicant</p>
-                                                                    <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">{form.applicant_name || "—"}</p>
-                                                                </div>
-                                                                <div>
-                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Zoning Class</p>
-                                                                    <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">{feeBasis.zoneCode || "—"}</p>
-                                                                </div>
+                                                            <div>
+                                                                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Zoning Class</p>
+                                                                <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">{feeBasis.zoneCode || "—"}</p>
                                                             </div>
-                                                            <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
-                                                                <div>
-                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Location</p>
-                                                                    <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">
-                                                                        {form.barangay ? (form.street_address ? `${form.street_address}, Brgy. ${form.barangay}` : `Brgy. ${form.barangay}`) : "—"}
-                                                                    </p>
-                                                                </div>
-                                                                <div>
-                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Property Lots</p>
-                                                                    <p className="font-mono font-semibold text-slate-800 mt-0.5 text-[11px]">
-                                                                        {validParcelsCount > 0 
-                                                                            ? `${validParcelsCount} lot(s) (${totalLotArea.toLocaleString()} m²)` 
-                                                                            : "—"}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                            {currentStep >= STEP.FEES && form.assessment_fee ? (
-                                                                <div className="pt-1.5 border-t border-slate-100">
-                                                                    <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Assessment Fee</p>
-                                                                    <p className="font-mono font-bold text-emerald-600 text-xs mt-0.5">₱ {Number(form.assessment_fee).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                                                                </div>
-                                                            ) : null}
                                                         </div>
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Footer of Left Panel: 20% per Step Progress */}
-                                            <div className="pt-3 border-t border-slate-200/90 mt-3 lg:mt-0 space-y-1.5">
-                                                <div className="flex items-center justify-between text-xs">
-                                                    <span className="font-bold text-slate-800 flex items-center gap-1.5 text-[11px]">
-                                                        <span className={`w-2 h-2 rounded-full ${workflowProgress === 100 ? "bg-emerald-500" : "bg-blue-600 animate-pulse"}`} />
-                                                        Workflow Progress
-                                                    </span>
-                                                    <span className="font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-lg text-[11px] shadow-2xs">
-                                                        {workflowProgress}%
-                                                    </span>
-                                                </div>
-                                                <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden">
-                                                    <div 
-                                                        className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500 ease-out"
-                                                        style={{ width: `${workflowProgress}%` }}
-                                                    />
-                                                </div>
-                                                <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                                                    <span>{workflowProgress === 100 ? "Ready for submission" : `${workflowProgress}% completed (Step ${Math.min(5, Math.floor(workflowProgress / 20) + 1)} of 5)`}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* ── RIGHT PANEL: ACTIVE FORM SURFACE ── */}
-                                        <div ref={formRef} className="flex-1 p-5 sm:p-6 lg:p-7 flex flex-col justify-between bg-white overflow-y-auto">
-                                            <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
-                                                
-                                                {/* ── STEP 2: APPLICATION (category, purpose, project details) ── */}
-                                                {currentStep === STEP.APPLICATION && (
-                                                    <>
-                                                        {varianceNotice && (
-                                                            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs text-amber-800">
-                                                                <span className="text-sm">⚠️</span>
-                                                                <div className="flex-1">
-                                                                    <p className="font-bold">Zoning check flagged this parcel for variance review</p>
-                                                                    <p className="text-[11px] text-amber-700 mt-0.5">The requested zoning type did not conform to the barangay's CLUP classification. This filing may require Sangguniang Bayan reclassification or variance approval.</p>
-                                                                </div>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setVarianceNotice(false)}
-                                                                    className="text-amber-600 hover:text-amber-900 cursor-pointer shrink-0"
-                                                                    title="Dismiss"
-                                                                >
-                                                                    ✕
-                                                                </button>
+                                                        <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
+                                                            <div>
+                                                                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Location</p>
+                                                                <p className="font-semibold text-slate-800 truncate mt-0.5 text-[11px]">
+                                                                    {form.barangay ? (form.street_address ? `${form.street_address}, Brgy. ${form.barangay}` : `Brgy. ${form.barangay}`) : "—"}
+                                                                </p>
                                                             </div>
-                                                        )}
-                                                        <StepCategory
-                                                            form={form}
-                                                            set={set}
-                                                            handleTypeSelect={handleTypeSelect}
-                                                            errors={errors}
-                                                            APPLICATION_TYPES={APPLICATION_TYPES}
-                                                            AMENDMENT_TYPES={AMENDMENT_TYPES}
-                                                            LAND_USE_CLASSES={LAND_USE_CLASSES}
-                                                            zoningMismatch={hasZoningMismatch(form.parcels)}
-                                                            goToProperty={() => setCurrentStep(STEP.PROPERTY)}
-                                                            setParcelField={setParcelField}
-                                                            inspectors={inspectors}
-                                                        />
-                                                    </>
-                                                )}
-
-                                                {/* ── STEP 3: APPLICANT PROFILE ── */}
-                                                {currentStep === STEP.APPLICANT && (
-                                                    <StepApplicant
-                                                        form={form}
-                                                        set={set}
-                                                        setForm={setForm}
-                                                        handleNameChange={handleNameChange}
-                                                        handleContactInput={handleContactInput}
-                                                        applicantSuggestion={applicantSuggestion}
-                                                        applyApplicantSuggestion={applyApplicantSuggestion}
-                                                        setApplicantSuggestion={setApplicantSuggestion}
-                                                        errors={errors}
-                                                    />
-                                                )}
-
-                                                {/* ── STEP 4: FEES ── */}
-                                                {currentStep === STEP.FEES && (
-                                                    <StepFee
-                                                        form={form}
-                                                        set={set}
-                                                        feeSuggestion={feeSuggestion}
-                                                        applySuggestedFees={applySuggestedFees}
-                                                        errors={errors}
-                                                    />
-                                                )}
-
-                                                {/* ── STEP 5: REVIEW & SUBMIT ── */}
-                                                {currentStep === STEP.REVIEW && (
-                                                    <StepReview
-                                                        form={form}
-                                                        set={set}
-                                                        errors={errors}
-                                                        totalLotArea={totalLotArea}
-                                                        setCurrentStep={setCurrentStep}
-                                                        STEP={STEP}
-                                                        onPrintSiteMap={() => setSiteMapOpen(true)}
-                                                        onPreviewRoutingSlip={() => {
-                                                            setRoutingSlipData({
-                                                                reference_number: `DRAFT-${form.form_number || tempDraftId}`,
-                                                                date_of_application: new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
-                                                                encoded_by_name: userName,
-                                                                applicant_name: form.applicant_name || "Applicant Name Pending",
-                                                                contact_number: form.contact_number || "—",
-                                                                email: form.email || "—",
-                                                                representative_name: form.representative_name || "",
-                                                                application_type: form.application_type || "Locational Clearance",
-                                                                land_use_class: feeBasis.zoneCode || "—",
-                                                                purpose: form.purpose || "—",
-                                                                barangay: form.barangay || "—",
-                                                                street_address: form.street_address || "",
-                                                                parcels: form.parcels || [],
-                                                                total_area: totalLotArea,
-                                                                project_cost: form.project_cost || "",
-                                                                assessment_fee: form.assessment_fee || feeSuggestion.total,
-                                                                or_number: form.or_number || "",
-                                                            });
-                                                            setShowRoutingSlip(true);
-                                                        }}
-                                                    />
-                                                )}
-
-                                                {/* ── STEP NAVIGATION CONTROLS ── */}
-                                                <div className="pt-6 border-t border-slate-100 flex items-center justify-between gap-3 mt-auto">
-                                                    {currentStep > STEP.PROPERTY ? (
-                                                        <button
-                                                            type="button"
-                                                            onClick={handleBack}
-                                                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
-                                                        >
-                                                            <span>Back</span>
-                                                        </button>
-                                                    ) : <div />}
-
-                                                    {currentStep < STEP.REVIEW ? (
-                                                        <button
-                                                            key="next-btn"
-                                                            type="button"
-                                                            onClick={handleNext}
-                                                            className="inline-flex items-center justify-center min-w-[100px] gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 cursor-pointer ml-auto"
-                                                        >
-                                                            <span>Next</span>
-                                                        </button>
-                                                    ) : (
-                                                        <button
-                                                            key="submit-btn"
-                                                            type="submit"
-                                                            disabled={submitting}
-                                                            className="inline-flex items-center justify-center min-w-[120px] gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
-                                                        >
-                                                            {submitting ? (
-                                                                <>
-                                                                    <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
-                                                                    <span>Submitting...</span>
-                                                                </>
-                                                            ) : (
-                                                                <span>Submit Application</span>
-                                                            )}
-                                                        </button>
-                                                    )}
+                                                            <div>
+                                                                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Property Lots</p>
+                                                                <p className="font-mono font-semibold text-slate-800 mt-0.5 text-[11px]">
+                                                                    {validParcelsCount > 0 
+                                                                        ? `${validParcelsCount} lot(s) (${totalLotArea.toLocaleString()} m²)` 
+                                                                        : "—"}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        {currentStep >= STEP.FEES && form.assessment_fee ? (
+                                                            <div className="pt-1.5 border-t border-slate-100">
+                                                                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Assessment Fee</p>
+                                                                <p className="font-mono font-bold text-emerald-600 text-xs mt-0.5">₱ {Number(form.assessment_fee).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
                                                 </div>
-                                            </form>
+                                            )}
                                         </div>
-                                    </>
-                                )}
-                            </div>
+
+                                        {/* Footer of Left Panel: 20% per Step Progress */}
+                                        <div className="pt-3 border-t border-slate-200/90 mt-3 lg:mt-0 space-y-1.5">
+                                            <div className="flex items-center justify-between text-xs">
+                                                <span className="font-bold text-slate-800 flex items-center gap-1.5 text-[11px]">
+                                                    <span className={`w-2 h-2 rounded-full ${workflowProgress === 100 ? "bg-emerald-500" : "bg-blue-600 animate-pulse"}`} />
+                                                    Workflow Progress
+                                                </span>
+                                                <span className="font-mono font-bold text-blue-700 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-lg text-[11px] shadow-2xs">
+                                                    {workflowProgress}%
+                                                </span>
+                                            </div>
+                                            <div className="w-full h-1.5 bg-slate-200/80 rounded-full overflow-hidden">
+                                                <div 
+                                                    className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500 ease-out"
+                                                    style={{ width: `${workflowProgress}%` }}
+                                                />
+                                            </div>
+                                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                                                <span>{workflowProgress === 100 ? "Ready for submission" : `${workflowProgress}% completed (Step ${Math.min(5, Math.floor(workflowProgress / 20) + 1)} of 5)`}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* ── RIGHT PANEL: ACTIVE FORM SURFACE ── */}
+                                    <div ref={formRef} className="flex-1 p-5 sm:p-6 lg:p-7 flex flex-col justify-between bg-white overflow-y-auto">
+                                        <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between space-y-4">
+                                            
+                                            {/* ── STEP 2: APPLICATION (category, purpose, project details) ── */}
+                                            {currentStep === STEP.APPLICATION && (
+                                                <>
+                                                    {varianceNotice && (
+                                                        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 text-xs text-amber-800">
+                                                            <span className="text-sm">⚠️</span>
+                                                            <div className="flex-1">
+                                                                <p className="font-bold">Zoning check flagged this parcel for variance review</p>
+                                                                <p className="text-[11px] text-amber-700 mt-0.5">The requested zoning type did not conform to the barangay's CLUP classification. This filing may require Sangguniang Bayan reclassification or variance approval.</p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setVarianceNotice(false)}
+                                                                className="text-amber-600 hover:text-amber-900 cursor-pointer shrink-0"
+                                                                title="Dismiss"
+                                                                >
+                                                                ✕
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    <StepCategory
+                                                        form={form}
+                                                        set={set}
+                                                        handleTypeSelect={handleTypeSelect}
+                                                        errors={errors}
+                                                        APPLICATION_TYPES={APPLICATION_TYPES}
+                                                        AMENDMENT_TYPES={AMENDMENT_TYPES}
+                                                        LAND_USE_CLASSES={LAND_USE_CLASSES}
+                                                        zoningMismatch={hasZoningMismatch(form.parcels)}
+                                                        goToProperty={() => setCurrentStep(STEP.PROPERTY)}
+                                                        setParcelField={setParcelField}
+                                                        handlePinLookup={handlePinLookup}
+                                                        pinLoading={pinLoading}
+                                                        inspectors={inspectors}
+                                                    />
+                                                </>
+                                            )}
+
+                                            {/* ── STEP 3: APPLICANT PROFILE ── */}
+                                            {currentStep === STEP.APPLICANT && (
+                                                <StepApplicant
+                                                    form={form}
+                                                    set={set}
+                                                    setForm={setForm}
+                                                    handleNameChange={handleNameChange}
+                                                    handleContactInput={handleContactInput}
+                                                    applicantSuggestion={applicantSuggestion}
+                                                    applyApplicantSuggestion={applyApplicantSuggestion}
+                                                    setApplicantSuggestion={setApplicantSuggestion}
+                                                    errors={errors}
+                                                />
+                                            )}
+
+                                            {/* ── STEP 4: FEES ── */}
+                                            {currentStep === STEP.FEES && (
+                                                <StepFee
+                                                    form={form}
+                                                    set={set}
+                                                    feeSuggestion={feeSuggestion}
+                                                    applySuggestedFees={applySuggestedFees}
+                                                    errors={errors}
+                                                />
+                                            )}
+
+                                            {/* ── STEP 5: REVIEW & SUBMIT ── */}
+                                            {currentStep === STEP.REVIEW && (
+                                                <StepReview
+                                                    form={form}
+                                                    set={set}
+                                                    errors={errors}
+                                                    totalLotArea={totalLotArea}
+                                                    setCurrentStep={setCurrentStep}
+                                                    STEP={STEP}
+                                                    onPrintSiteMap={() => setSiteMapOpen(true)}
+                                                />
+                                            )}
+
+                                            {/* ── STEP NAVIGATION CONTROLS ── */}
+                                            <div className="pt-6 border-t border-slate-100 flex items-center justify-between gap-3 mt-auto">
+                                                {currentStep > STEP.PROPERTY ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleBack}
+                                                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs transition-all active:scale-98 cursor-pointer"
+                                                    >
+                                                        <span>Back</span>
+                                                    </button>
+                                                ) : <div />}
+
+                                                {currentStep < STEP.REVIEW ? (
+                                                    <button
+                                                        key="next-btn"
+                                                        type="button"
+                                                        onClick={handleNext}
+                                                        className="inline-flex items-center justify-center min-w-[100px] gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 cursor-pointer ml-auto"
+                                                    >
+                                                        <span>Next</span>
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        key="submit-btn"
+                                                        type="submit"
+                                                        disabled={submitting}
+                                                        className="inline-flex items-center justify-center min-w-[120px] gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ml-auto"
+                                                    >
+                                                        {submitting ? (
+                                                            <>
+                                                                <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+                                                                <span>Submitting...</span>
+                                                            </>
+                                                        ) : (
+                                                            <span>Submit Application</span>
+                                                        )}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </form>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </main>
                 </div>
@@ -2252,20 +2088,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 form={form}
                 parcelMapData={parcelMapData}
                 preparedBy={userName}
-            />
-
-            {/* Printable Application Routing Slip Modal */}
-            <RoutingSlipModal
-                open={showRoutingSlip}
-                data={routingSlipData}
-                onClose={() => {
-                    setShowRoutingSlip(false);
-                    // Only leave after a real submission, not when closing the Review step's preview
-                    if (syncStatus === "Submitted") {
-                        router.visit("/applications");
-                    }
-                }}
-                onPrint={() => window.print()}
             />
         </>
     );

@@ -37,6 +37,7 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn() => session('success'),
                 'error' => fn() => session('error'),
                 'reference_number' => fn() => session('reference_number'),
+                'application_id' => fn() => session('application_id'),
             ],
         ]);
     }

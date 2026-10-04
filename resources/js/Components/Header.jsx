@@ -4,7 +4,9 @@ import Swal from 'sweetalert2';
 import { promptParcelApplication } from '@/utils/parcelHandoff.jsx';
 import { getZoneInfo } from '@/utils/clupZones';
 
-// â”€â”€ Predictive Highlight Helper â”€â”€
+import { performLogout } from '@/utils/auth';
+
+// ── Predictive Highlight Helper ──
 const HighlightMatch = ({ text, query }) => {
     if (!query || !text) return <span>{text}</span>;
     // Escaped so a query like "T-(12" can't throw on an invalid pattern.
@@ -298,6 +300,15 @@ export default function Header({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [shortcutsModalOpen, profileMenuOpen, searchFocused]);
 
+    // ── Session Keep-Alive Heartbeat Ping ──
+    useEffect(() => {
+        const pingInterval = setInterval(() => {
+            fetch('/ping').catch(() => {});
+        }, 5 * 60 * 1000); // Ping every 5 minutes
+
+        return () => clearInterval(pingInterval);
+    }, []);
+
     const handleSignOutClick = () => {
         setProfileMenuOpen(false);
         if (onLogout) {
@@ -323,8 +334,7 @@ export default function Header({
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };

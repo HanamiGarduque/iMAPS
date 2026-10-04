@@ -62,7 +62,11 @@ return new class extends Migration
             $table->decimal('shape_area', 18, 8)->nullable();
             $table->decimal('land_area', 18, 8)->nullable();
         });
-        DB::statement('ALTER TABLE barangay_boundary ADD COLUMN geom geometry(MultiPolygon,4326)');
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement('ALTER TABLE barangay_boundary ADD COLUMN geom TEXT');
+        } else {
+            DB::statement('ALTER TABLE barangay_boundary ADD COLUMN geom geometry(MultiPolygon,4326)');
+        }
 
         Schema::create('failed_jobs', function (Blueprint $table) {
             $table->id();
@@ -100,7 +104,11 @@ return new class extends Migration
             $table->string('arp_number', 80)->nullable();
             $table->string('source', 80)->nullable();
         });
-        DB::statement('ALTER TABLE land_parcels ADD COLUMN geom geometry(MultiPolygon,4326)');
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement('ALTER TABLE land_parcels ADD COLUMN geom TEXT');
+        } else {
+            DB::statement('ALTER TABLE land_parcels ADD COLUMN geom geometry(MultiPolygon,4326)');
+        }
 
         Schema::create('land_use_plan', function (Blueprint $table) {
             $table->increments('gid');
@@ -109,7 +117,11 @@ return new class extends Migration
             $table->decimal('shape_leng', 18, 8)->nullable();
             $table->decimal('shape_area', 18, 8)->nullable();
         });
-        DB::statement('ALTER TABLE land_use_plan ADD COLUMN geom geometry(MultiPolygon,4326)');
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement('ALTER TABLE land_use_plan ADD COLUMN geom TEXT');
+        } else {
+            DB::statement('ALTER TABLE land_use_plan ADD COLUMN geom geometry(MultiPolygon,4326)');
+        }
 
         Schema::create('zoning_applications', function (Blueprint $table) {
             $table->id();
@@ -175,13 +187,21 @@ return new class extends Migration
             $table->string('survey_number')->nullable();
             $table->unique(['zoning_application_id', 'parcel_code']);
         });
-        DB::statement('ALTER TABLE parcels ADD COLUMN boundary geometry(Polygon,4326)');
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement('ALTER TABLE parcels ADD COLUMN boundary TEXT');
+        } else {
+            DB::statement('ALTER TABLE parcels ADD COLUMN boundary geometry(Polygon,4326)');
+        }
 
         Schema::create('rosario_boundary', function (Blueprint $table) {
             $table->increments('gid');
             $table->double('id')->nullable();
         });
-        DB::statement('ALTER TABLE rosario_boundary ADD COLUMN geom geometry(MultiPolygon,4326)');
+        if (DB::getDriverName() === 'sqlite') {
+            DB::statement('ALTER TABLE rosario_boundary ADD COLUMN geom TEXT');
+        } else {
+            DB::statement('ALTER TABLE rosario_boundary ADD COLUMN geom geometry(MultiPolygon,4326)');
+        }
 
         Schema::create('sessions', function (Blueprint $table) {
             $table->string('id', 255)->primary();

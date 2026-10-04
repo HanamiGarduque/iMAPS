@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Head, useForm, Link } from '@inertiajs/react';
 
 export default function Login() {
-    const { data, setData, post, processing, errors } = useForm({
+    const { data, setData, post, processing, errors, reset } = useForm({
         email: '',
         password: '',
         remember: false,
@@ -22,7 +22,9 @@ export default function Login() {
 
     const submit = (e) => {
         e.preventDefault();
-        post('/login');
+        post('/login', {
+            onFinish: () => reset('password'),
+        });
     };
 
     return (

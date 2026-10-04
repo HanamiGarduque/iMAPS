@@ -5,6 +5,7 @@ import { Link, Head, router, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
 import InspectionDeliveryStatusPanel from "@/Components/InspectionDeliveryStatusPanel";
 import { PlanningOfficerAssignment, InspectorRoundAssignment } from "@/Components/WorkAssignment";
@@ -13,6 +14,7 @@ import { getZoneInfo } from "@/utils/clupZones";
 import { loadBarangayBoundaries } from "@/utils/mapData";
 import ApplicationMap from "./Components/ApplicationMap";
 import SiteMapPrint from "./Components/SiteMapPrint";
+import { PermitExportPanel } from "./Components/GeneratePermitModal";
 
 const STAGES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released"];
 const STAGE_SHORT = { "Under Sangguniang Bayan": "SB" };
@@ -287,7 +289,7 @@ function ShowInner({
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
-    const [tab, setTab] = useState(app.status === "Technical Review" ? "parcels" : "overview");
+    const [tab, setTab] = useState(app.status === "For Release" || app.status === "Released" ? "export" : app.status === "Technical Review" ? "parcels" : "overview");
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [saving, setSaving] = useState(false);
     const [toast, setToast] = useState(null);
@@ -527,8 +529,7 @@ function ShowInner({
             cancelButtonText: "Cancel",
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };
@@ -634,10 +635,13 @@ function ShowInner({
         ["Penalty", app.penalty_fee],
     ].filter(([, v]) => Number(v) > 0);
 
+    const canExport = app.status === "For Release" || app.status === "Released";
+
     const tabs = [
         { id: "overview", label: "Summary" },
         { id: "parcels", label: `Lots (${lots.length})` },
         { id: "history", label: "History" },
+        ...(canExport ? [{ id: "export", label: "Export permit/doc" }] : []),
     ];
 
     return (
@@ -722,7 +726,7 @@ function ShowInner({
 
                     <main className="flex-1 flex flex-col lg:flex-row min-h-0">
                         {/* Map (view only) */}
-                        <div className="h-72 lg:h-auto lg:flex-1 border-b lg:border-b-0 lg:border-r border-slate-300 shrink-0 min-w-0">
+                        <div className="h-72 lg:h-auto lg:w-2/5 border-b lg:border-b-0 lg:border-r border-slate-300 shrink-0 min-w-0">
                             <ApplicationMap
                                 lots={lots}
                                 parcelMapData={parcelMapData}
@@ -739,7 +743,7 @@ function ShowInner({
                         </div>
 
                         {/* Record */}
-                        <div className="lg:w-[440px] xl:w-[480px] shrink-0 min-h-0 flex flex-col bg-white">
+                        <div className="lg:w-3/5 shrink-0 min-h-0 flex flex-col bg-white min-w-0">
                             <div className="shrink-0 px-5 pt-4 pb-3 border-b border-slate-200">
                                 <p className="text-[12.5px] text-slate-600">
                                     {dash(app.application_type)} · Brgy. {dash(app.barangay)}
@@ -972,7 +976,7 @@ function ShowInner({
                                                     <li key={p.id} className={`rounded-md border ${isOpen ? "border-[#0b2a5b]/40 shadow-sm" : "border-slate-200"}`}>
                                                         <button
                                                             type="button"
-                                                            onClick={() => setSelectedIndex(l.index)}
+                                                            onClick={() => setSelectedIndex(selectedIndex === l.index ? null : l.index)}
                                                             aria-expanded={isOpen}
                                                             className="w-full flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer hover:bg-slate-50 rounded-md"
                                                         >
@@ -1214,6 +1218,10 @@ function ShowInner({
                                         )}
                                     </>
                                 )}
+
+                                {tab === "export" && (
+                                    <PermitExportPanel app={app} />
+                                )}
                             </div>
                         </div>
                     </main>
@@ -1221,11 +1229,11 @@ function ShowInner({
             </div>
 
             {statusDialog && <UpdateStatusDialog currentStatus={app.status} preset={statusDialog} onClose={() => setStatusDialog(null)} onSubmit={submitStatus} saving={saving} />}
-
-            <SiteMapPrint open={siteMapOpen} onClose={() => setSiteMapOpen(false)} form={app} parcelMapData={parcelMapData} preparedBy={userName} />
+            {siteMapOpen && <SiteMapPrint open={siteMapOpen} onClose={() => setSiteMapOpen(false)} form={app} parcelMapData={parcelMapData} preparedBy={userName} />}
         </>
     );
 }
+
 
 class ShowErrorBoundary extends React.Component {
     constructor(props) {

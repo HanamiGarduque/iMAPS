@@ -27,6 +27,8 @@ class ZoningApplication extends Model
         'status',
         'purpose',
         'applicant_name',
+        'applicant_street',
+        'applicant_barangay',
         'contact_number',
         'email',
         'representative_name',
@@ -92,6 +94,11 @@ class ZoningApplication extends Model
     public function parcels(): HasMany
     {
         return $this->hasMany(Parcel::class, 'zoning_application_id');
+    }
+
+    public function generatedPermits(): HasMany
+    {
+        return $this->hasMany(GeneratedPermit::class, 'zoning_application_id')->latest();
     }
 
     public function technicalReviews(): HasMany

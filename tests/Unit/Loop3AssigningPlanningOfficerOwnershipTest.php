@@ -210,7 +210,7 @@ class Loop3AssigningPlanningOfficerOwnershipTest extends TestCase
 
     private function migrationSource(): string
     {
-        $path = dirname(__DIR__, 2) . '/database/migrations/2026_09_19_000000_add_assignment_provenance_to_site_inspections_table.php';
+        $path = dirname(__DIR__, 2) . '/database/migrations/2026_09_19_000002_add_assignment_provenance_to_site_inspections_table.php';
         $source = file_get_contents($path);
         $this->assertNotFalse($source, "Could not read $path");
 

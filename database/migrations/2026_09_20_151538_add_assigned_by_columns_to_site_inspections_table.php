@@ -12,8 +12,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('site_inspections', function (Blueprint $table) {
-            $table->unsignedBigInteger('assigned_by_imaps_user_id')->nullable();
-            $table->string('assigned_by_name')->nullable();
+            if (!Schema::hasColumn('site_inspections', 'assigned_by_imaps_user_id')) {
+                $table->unsignedBigInteger('assigned_by_imaps_user_id')->nullable();
+            }
+            if (!Schema::hasColumn('site_inspections', 'assigned_by_name')) {
+                $table->string('assigned_by_name')->nullable();
+            }
         });
     }
 
@@ -23,7 +27,12 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('site_inspections', function (Blueprint $table) {
-            $table->dropColumn(['assigned_by_imaps_user_id', 'assigned_by_name']);
+            if (Schema::hasColumn('site_inspections', 'assigned_by_imaps_user_id')) {
+                $table->dropColumn('assigned_by_imaps_user_id');
+            }
+            if (Schema::hasColumn('site_inspections', 'assigned_by_name')) {
+                $table->dropColumn('assigned_by_name');
+            }
         });
     }
 };

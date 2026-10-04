@@ -3,11 +3,12 @@ import { Head, router, Link } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
+import { performLogout } from "@/utils/auth";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Status Configuration Ã¢â€â‚¬Ã¢â€â‚¬
+// —— Status Configuration ——
 const STATUS_CONFIG = {
     Received: {
         dot: "bg-emerald-500",
@@ -133,7 +134,7 @@ const BARANGAY_COORDS = {
     "Antipolo": [13.8850, 121.2150],
     "Timbugan": [13.8310, 121.1920],
     "Namuco": [13.8580, 121.2270],
-    "Default": [13.8475, 121.2058],
+    "Default": [13.7850, 121.2500],
 };
 
 const SORT_OPTIONS = [
@@ -141,9 +142,9 @@ const SORT_OPTIONS = [
     { value: "oldest", label: "Oldest filing" },
     { value: "fee_desc", label: "Highest fee" },
     { value: "fee_asc", label: "Lowest fee" },
-    { value: "applicant_asc", label: "Applicant AÃ¢â‚¬â€œZ" },
-    { value: "applicant_desc", label: "Applicant ZÃ¢â‚¬â€œA" },
-    { value: "ref_asc", label: "Reference AÃ¢â‚¬â€œZ" },
+    { value: "applicant_asc", label: "Applicant A–Z" },
+    { value: "applicant_desc", label: "Applicant Z–A" },
+    { value: "ref_asc", label: "Reference A–Z" },
 ];
 
 const DATE_PRESETS = [
@@ -154,7 +155,7 @@ const DATE_PRESETS = [
     { label: "Custom Range", value: "custom" },
 ];
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ 10 Realistic Applications Ã¢â€â‚¬Ã¢â€â‚¬
+// —— 10 Realistic Applications ——
 
 const getDocColor = (type) => {
     if (type === "Locational Clearance") return "#3B82F6"; // blue
@@ -224,7 +225,7 @@ function splitTypes(type) {
     return String(type || "").split(",").map((t) => t.trim()).filter(Boolean);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Leaflet Custom Marker Icon Generator Ã¢â€â‚¬Ã¢â€â‚¬
+// —— Leaflet Custom Marker Icon Generator ——
 const createCustomMarker = (status, refNo) => {
     const color = STATUS_CONFIG[status]?.markerColor || "#3b82f6";
     return L.divIcon({
@@ -250,7 +251,7 @@ function MapViewRecenter({ bounds }) {
     return null;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Accessible, Keyboard-Friendly Dropdown Select Component Ã¢â€â‚¬Ã¢â€â‚¬
+// —— Accessible, Keyboard-Friendly Dropdown Select Component ——
 function DropdownSelect({
     value,
     onChange,
@@ -503,7 +504,7 @@ function DropdownSelect({
     );
 }
 
-export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [], applicant_counts = {}, delivery_monitoring = {} }) {
+export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [], drafts_count = 0, applicant_counts = {}, delivery_monitoring = {} }) {
     const [clock, setClock] = useState("");
 
     // URL parameter synchronization
@@ -542,7 +543,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const [selectedIds, setSelectedIds] = useState([]);
     const [moreOpen, setMoreOpen] = useState(false);
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ FILTER STATES Ã¢â€â‚¬Ã¢â€â‚¬
+    // —— FILTER STATES ——
     const [dateRangePreset, setDateRangePreset] = useState(urlParams.get("date_preset") || "all");
     const [dateFrom, setDateFrom] = useState(urlParams.get("date_from") || filters?.date_from || "");
     const [dateTo, setDateTo] = useState(urlParams.get("date_to") || filters?.date_to || "");
@@ -572,7 +573,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
             const now = new Date();
             setClock(
                 now.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
-                " Ã‚Â· " +
+                " · " +
                 now.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })
             );
         };
@@ -664,19 +665,19 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     };
 
     const formatDate = (d) => {
-        if (!d) return "Ã¢â‚¬â€";
+        if (!d) return "—";
         try {
             const date = new Date(d);
-            return isNaN(date.getTime()) ? "Ã¢â‚¬â€" : date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+            return isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
         } catch {
-            return "Ã¢â‚¬â€";
+            return "—";
         }
     };
 
     const formatFee = (fee) => {
-        if (!fee || fee === "0" || fee === 0) return "Ã¢â‚¬â€";
+        if (!fee || fee === "0" || fee === 0) return "—";
         const num = Number(String(fee).replace(/[^0-9.-]+/g, ""));
-        return isNaN(num) || num === 0 ? "Ã¢â‚¬â€" : "Ã¢â€šÂ±" + num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return isNaN(num) || num === 0 ? "—" : "₱" + num.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
     const isCorporateEntity = (name) => {
@@ -709,8 +710,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
             },
         }).then((result) => {
             if (result.isConfirmed) {
-                sessionStorage.removeItem("hasShownWelcome");
-                router.post("/logout");
+                performLogout();
             }
         });
     };
@@ -741,8 +741,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     // Dynamic Status Count Helper
     // PRE-EXISTING DATA-INTEGRITY DEFECT, FIXED DURING THE LOOP 9 INTEGRATION.
     //
-    // This dataset used to fall back to `SAMPLE_APPLICATIONS` Ã¢â‚¬â€ ten INVENTED
-    // records with fabricated applicant names, TCT numbers and phone numbers Ã¢â‚¬â€
+    // This dataset used to fall back to `SAMPLE_APPLICATIONS` — ten INVENTED
+    // records with fabricated applicant names, TCT numbers and phone numbers —
     // whenever the server returned no applications. An empty registry therefore
     // displayed invented companies as if they were real filings, and the status
     // counts below were computed from that fiction.
@@ -903,7 +903,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const forReleasePct = Math.round((forReleaseCount / totalCount) * 100);
     const releasedPct = Math.round((releasedCount / totalCount) * 100);
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Keyboard Navigation (/, Ã¢â€ â€˜ / Ã¢â€ â€œ, j / k, Enter, Space, Esc) Ã¢â€â‚¬Ã¢â€â‚¬
+    // —— Keyboard Navigation (/, ↑ / ↓, j / k, Enter, Space, Esc) ——
     useEffect(() => {
         const handleKeyDown = (e) => {
             const isInput = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
@@ -953,41 +953,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [viewMode, paginatedRecords, focusedRowIndex, peekItem, dateFilterOpen]);
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Export CSV Handler Ã¢â€â‚¬Ã¢â€â‚¬
-    const handleExportCSV = () => {
-        const headers = ["Reference Number", "Applicant Name", "Representative", "Application Type", "Land Use Class", "Barangay", "Lot Area (sqm)", "TCT Number", "Assessment Fee (PHP)", "OR Number", "Status", "Date Filed", "Purpose"];
-        const source = selectedIds.length > 0 ? filteredList.filter((app) => selectedIds.includes(rowKey(app))) : filteredList;
-        const rows = source.map((app) => [
-            `"${app.reference_number || ""}"`,
-            `"${app.applicant_name || ""}"`,
-            `"${app.representative_name || ""}"`,
-            `"${app.application_type || ""}"`,
-            `"${app.land_use_class || ""}"`,
-            `"${app.barangay || ""}"`,
-            `"${app.lot_area_sqm || ""}"`,
-            `"${app.tct_number || ""}"`,
-            `"${app.assessment_fee || ""}"`,
-            `"${app.or_number || ""}"`,
-            `"${app.status || ""}"`,
-            `"${formatDate(app.created_at)}"`,
-            `"${(app.purpose || "").replace(/"/g, '""')}"`,
-        ]);
-
-        const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `Rosario_Zoning_Registry_${new Date().toISOString().split("T")[0]}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Print Official Transmittal Registry Ã¢â€â‚¬Ã¢â€â‚¬
-    const handlePrintTransmittal = () => {
-        window.print();
-    };
-
     // Map bounds calculation
     const mapBounds = useMemo(() => {
         return filteredList.map((app) => BARANGAY_COORDS[app.barangay] || BARANGAY_COORDS["Default"]);
@@ -1010,16 +975,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                 ::-webkit-scrollbar-track { background: transparent; }
                 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
                 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-                /* Print Stylesheet for Official Transmittal Sheet */
-                @media print {
-                    body { background: white !important; color: black !important; }
-                    header, aside, .no-print, button, .print-hide { display: none !important; }
-                    #print-transmittal-header { display: block !important; }
-                    table { width: 100% !important; border: 1px solid #000 !important; }
-                    th, td { border: 1px solid #ddd !important; padding: 6px !important; font-size: 10pt !important; }
-                }
-                #print-transmittal-header { display: none; }
             `}</style>
 
             <div id="dashboard-root" className="bg-slate-100/60 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
@@ -1052,19 +1007,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                     <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
                         <div className="p-4 sm:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1580px] mx-auto w-full gap-3.5">
                             
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ PRINT-ONLY TRANSMITTAL HEADER Ã¢â€â‚¬Ã¢â€â‚¬ */}
-                            <div id="print-transmittal-header" className="mb-4 text-center">
-                                <h2 className="text-sm font-bold uppercase tracking-widest text-slate-600">Republic of the Philippines Ã‚Â· Province of Batangas</h2>
-                                <h1 className="text-xl font-black text-slate-900">MUNICIPALITY OF ROSARIO</h1>
-                                <p className="text-xs font-semibold text-slate-500">Municipal Planning and Development Office (MPDO) Ã‚Â· Zoning & Land Use Registry</p>
-                                <div className="mt-2 border-b-2 border-slate-900 pb-1 flex justify-between text-xs text-slate-600">
-                                    <span>Official Transmittal Summary</span>
-                                    <span>Date Generated: {new Date().toLocaleDateString("en-PH")}</span>
-                                </div>
-                            </div>
-
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ TOP HEADER SECTION Ã¢â€â‚¬Ã¢â€â‚¬ */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 no-print">
+                            {/* ── TOP HEADER SECTION ── */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
                                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -1080,63 +1024,36 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                 </div>
 
                                 <div className="flex items-center gap-2">
-                                    {/* Secondary actions grouped into one segmented control */}
-                                    <div className="inline-flex items-stretch h-9 rounded-lg border border-slate-200 bg-white shadow-2xs divide-x divide-slate-200 overflow-hidden">
-                                        <button
-                                            type="button"
-                                            onClick={handlePrintTransmittal}
-                                            className="inline-flex items-center gap-1.5 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-                                            title="Print official transmittal summary"
+                                    {userRole === "Planning Officer" && (
+                                        <Link
+                                            href="/applications/drafts"
+                                            className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-slate-200 bg-white shadow-2xs text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
                                         >
                                             <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M7 9V3h10v6M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 14h10v7H7z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                             </svg>
-                                            <span>Print</span>
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => handleExportCSV()}
-                                            className="inline-flex items-center gap-1.5 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
-                                            title={selectedIds.length > 0 ? `Export ${selectedIds.length} selected to CSV` : "Export filtered records to CSV"}
-                                        >
-                                            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                                            </svg>
-                                            <span>{selectedIds.length > 0 ? `Export (${selectedIds.length})` : "Export"}</span>
-                                        </button>
-
-                                        {userRole === "Planning Officer" && (
-                                            <Link
-                                                href="/applications/drafts"
-                                                className="inline-flex items-center gap-1.5 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-                                            >
-                                                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                                </svg>
-                                                <span>Drafts</span>
+                                            <span>Drafts</span>
+                                            {drafts_count > 0 && (
                                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-600" aria-hidden="true"></span>
-                                            </Link>
-                                        )}
-                                    </div>
+                                            )}
+                                        </Link>
+                                    )}
 
                                     {userRole === "Planning Officer" && (
-                                        <>
-                                            <Link
-                                                href="/applications/encode"
-                                                className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                                </svg>
-                                                <span>New Application</span>
-                                            </Link>
-                                        </>
+                                        <Link
+                                            href="/applications/encode"
+                                            className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                            </svg>
+                                            <span>New Application</span>
+                                        </Link>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ STATUS KPI TILES (also act as status filter) Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                            {/* —— STATUS KPI TILES (also act as status filter) —— */}
                             <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-1.5 grid grid-cols-2 md:grid-cols-5 gap-1.5 shrink-0 no-print">
                                 {[
                                     { label: "All filings", status: "", count: getStatusCount(""), dot: "bg-slate-500" },
@@ -1176,13 +1093,13 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                 })}
                             </div>
 
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ MASTER WORKSPACE ROW (TABLE CARD + QUICK PREVIEW PANEL) Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                            {/* —— MASTER WORKSPACE ROW (TABLE CARD + QUICK PREVIEW PANEL) —— */}
                             <div className="flex-1 flex gap-3.5 min-h-0 no-print">
 
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ UNIFIED MASTER WORKSPACE CARD Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                            {/* —— UNIFIED MASTER WORKSPACE CARD —— */}
                             <div className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200/90 shadow-2xs flex flex-col min-h-0 overflow-hidden">
 
-                                {/* Ã¢â€â‚¬Ã¢â€â‚¬ INTEGRATED FILTER TOOLBAR Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                                {/* —— INTEGRATED FILTER TOOLBAR —— */}
                                 <div className="px-3 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center gap-2 shrink-0">
                                     {/* Main Search Input */}
                                     <div className="relative w-full sm:w-56 shrink-0">
@@ -1255,7 +1172,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                 }`}
                                             >
                                                 {dateFrom || dateTo ? (
-                                                    <span>Filed: {formatDate(dateFrom)} Ã¢â‚¬â€œ {formatDate(dateTo)}</span>
+                                                    <span>Filed: {formatDate(dateFrom)} – {formatDate(dateTo)}</span>
                                                 ) : (
                                                     <>
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -1399,38 +1316,38 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     </div>
                                 </div>
 
-                                {/* Ã¢â€â‚¬Ã¢â€â‚¬ ACTIVE FILTERS CHIP STRIP Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                                {/* —— ACTIVE FILTERS CHIP STRIP —— */}
                                 {hasActiveFilters && (
                                     <div className="flex items-center gap-1.5 flex-wrap px-3.5 py-2 bg-slate-50/70 border-b border-slate-100 text-xs shrink-0">
                                         <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Active:</span>
                                         {selectedStatus && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-xs font-semibold">
                                                 Status: {selectedStatus === "Released" ? "Issued / Ready" : selectedStatus}
-                                                <button onClick={() => setSelectedStatus("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
+                                                <button onClick={() => setSelectedStatus("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
                                         )}
                                         {selectedCategory && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Type: {selectedCategory}
-                                                <button onClick={() => setSelectedCategory("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
+                                                <button onClick={() => setSelectedCategory("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
                                         )}
                                         {selectedBarangay && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Brgy: {selectedBarangay}
-                                                <button onClick={() => setSelectedBarangay("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
+                                                <button onClick={() => setSelectedBarangay("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
                                         )}
                                         {(dateFrom || dateTo) && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Date: {formatDate(dateFrom)} - {formatDate(dateTo)}
-                                                <button onClick={() => { setDateFrom(""); setDateTo(""); setDateRangePreset("all"); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
+                                                <button onClick={() => { setDateFrom(""); setDateTo(""); setDateRangePreset("all"); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
                                         )}
                                         {debouncedSearch && (
                                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
                                                 Query: "{debouncedSearch}"
-                                                <button onClick={() => { setSearchInput(""); setDebouncedSearch(""); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">Ã¢Å“â€¢</button>
+                                                <button onClick={() => { setSearchInput(""); setDebouncedSearch(""); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
                                             </span>
                                         )}
                                         <button
@@ -1442,7 +1359,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     </div>
                                 )}
 
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ DATA VIEW (LIST / FOLDERS) Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                            {/* —— DATA VIEW (LIST / FOLDERS) —— */}
                             {viewMode === "list" ? (
                                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                                     <div className="flex-1 overflow-auto custom-scrollbar">
@@ -1460,14 +1377,14 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     </th>
                                                     <th className="py-3 px-3">
                                                         <button type="button" onClick={() => handleHeaderSort("applicant")} className="uppercase tracking-wider hover:text-slate-800 cursor-pointer">
-                                                            Applicant{selectedSort === "applicant_asc" ? " Ã¢â€ â€˜" : selectedSort === "applicant_desc" ? " Ã¢â€ â€œ" : ""}
+                                                            Applicant{selectedSort === "applicant_asc" ? " ↑" : selectedSort === "applicant_desc" ? " ↓" : ""}
                                                         </button>
                                                     </th>
                                                     <th className="py-3 px-3">Application</th>
                                                     <th className="py-3 px-3">Barangay</th>
                                                     <th className="py-3 px-3">
                                                         <button type="button" onClick={() => handleHeaderSort("date")} className="uppercase tracking-wider hover:text-slate-800 cursor-pointer">
-                                                            Filed{selectedSort === "newest" ? " Ã¢â€ â€œ" : selectedSort === "oldest" ? " Ã¢â€ â€˜" : ""}
+                                                            Filed{selectedSort === "newest" ? " ↓" : selectedSort === "oldest" ? " ↑" : ""}
                                                         </button>
                                                     </th>
                                                     <th className="py-3 pr-4 w-10"><span className="sr-only">Open</span></th>
@@ -1482,10 +1399,10 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     const subline = types.length > 1
                                                         ? types.slice(1).join(", ")
                                                         : landUse
-                                                        ? `Land use Ã‚Â· ${landUse}`
+                                                        ? `Land use · ${landUse}`
                                                         : item.remarks?.trim()
-                                                        ? `Remark Ã‚Â· ${item.remarks}`
-                                                        : "Ã¢â‚¬â€";
+                                                        ? `Remark · ${item.remarks}`
+                                                        : "—";
                                                     const isSelected = peekItem && rowKey(peekItem) === key;
                                                     const isFocused = focusedRowIndex === idx;
 
@@ -1524,7 +1441,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
                                                             <td className="py-3 px-3">
                                                                 <div className="flex items-center gap-1.5">
-                                                                    <span className="text-[13px] text-slate-800 truncate max-w-[200px]">{types[0] || "Ã¢â‚¬â€"}</span>
+                                                                    <span className="text-[13px] text-slate-800 truncate max-w-[200px]">{types[0] || "—"}</span>
                                                                     {types.length > 1 && (
                                                                         <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded" title={types.slice(1).join(", ")}>
                                                                             +{types.length - 1}
@@ -1605,7 +1522,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                             </td>
 
                                                             <td className="py-3 px-3 text-[13px] text-slate-700 whitespace-nowrap">
-                                                                {item.barangay || "Ã¢â‚¬â€"}
+                                                                {item.barangay || "—"}
                                                             </td>
 
                                                             <td className="py-3 px-3 whitespace-nowrap">
@@ -1650,8 +1567,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     {/* Table Footer with Summary & Pagination */}
                                     <div className="px-4 py-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 shrink-0">
                                         <span>
-                                            <strong className="text-slate-900 font-semibold">{startIndex}Ã¢â‚¬â€œ{endIndex}</strong> of {filteredList.length} applications
-                                            {selectedIds.length > 0 && <span className="ml-2 text-blue-700 font-medium">Ã‚Â· {selectedIds.length} selected</span>}
+                                            <strong className="text-slate-900 font-semibold">{startIndex}–{endIndex}</strong> of {filteredList.length} applications
+                                            {selectedIds.length > 0 && <span className="ml-2 text-blue-700 font-medium">· {selectedIds.length} selected</span>}
                                         </span>
 
                                         <div className="flex items-center gap-5">
@@ -1702,7 +1619,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
                                             <span
                                                 className="hidden lg:flex w-8 h-8 items-center justify-center rounded-lg text-slate-400"
-                                                title="Shortcuts: / search Ã‚Â· Ã¢â€ â€˜Ã¢â€ â€œ or j/k move Ã‚Â· Space preview Ã‚Â· Enter open Ã‚Â· Esc close"
+                                                title="Shortcuts: / search · ↑↓ or j/k move · Space preview · Enter open · Esc close"
                                                 aria-label="Keyboard shortcuts: slash to search, arrows to move, space to preview, enter to open, escape to close"
                                                 role="img"
                                             >
@@ -1715,7 +1632,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     </div>
                                 </div>
                             ) : (
-                                /* Ã¢â€â‚¬Ã¢â€â‚¬ FOLDER ARCHIVE VIEW Ã¢â€â‚¬Ã¢â€â‚¬ */
+                                /* —— FOLDER ARCHIVE VIEW —— */
                                 <div className="flex-1 overflow-y-auto p-6 relative">
                                     {selectedFolder && selectedApplicant ? (
                                         <>
@@ -1786,7 +1703,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                 {item.reference_number || `APP-${item.id}`}
                                                             </span>
                                                             <span className="text-[10px] text-slate-400 font-medium mt-1">
-                                                                {item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : "Ã¢â‚¬â€"}
+                                                                {item.created_at ? new Date(item.created_at).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'}) : "—"}
                                                             </span>
                                                         </div>
                                                     ))}
@@ -1952,7 +1869,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                             )}
                         </div>
 
-                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ QUICK PREVIEW PANEL Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                        {/* —— QUICK PREVIEW PANEL —— */}
                         {viewMode === "list" && peekItem && (
                             <aside id="quick-preview" aria-label="Quick preview" className="hidden lg:flex w-[300px] shrink-0 bg-white rounded-xl border border-slate-200/90 shadow-2xs flex-col min-h-0 overflow-hidden">
                                 <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -2053,17 +1970,17 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     {/* Details */}
                                     <dl className="p-4 grid grid-cols-[96px_1fr] gap-x-3 gap-y-2.5 text-xs">
                                         <dt className="text-slate-500">Application</dt>
-                                        <dd className="text-slate-900">{splitTypes(peekItem.application_type).join(", ") || "Ã¢â‚¬â€"}</dd>
+                                        <dd className="text-slate-900">{splitTypes(peekItem.application_type).join(", ") || "—"}</dd>
                                         <dt className="text-slate-500">Land use</dt>
-                                        <dd className="text-slate-900">{peekItem.target_land_use_class || peekItem.land_use_class || "Ã¢â‚¬â€"}</dd>
+                                        <dd className="text-slate-900">{peekItem.target_land_use_class || peekItem.land_use_class || "—"}</dd>
                                         <dt className="text-slate-500">Location</dt>
-                                        <dd className="text-slate-900">{peekItem.barangay ? `Brgy. ${peekItem.barangay}` : "Ã¢â‚¬â€"}</dd>
+                                        <dd className="text-slate-900">{peekItem.barangay ? `Brgy. ${peekItem.barangay}` : "—"}</dd>
                                         <dt className="text-slate-500">Assessment fee</dt>
                                         <dd className="font-mono font-semibold text-slate-900">{formatFee(peekItem.assessment_fee)}</dd>
                                         <dt className="text-slate-500">Filed</dt>
-                                        <dd className="text-slate-900">{formatDate(peekItem.created_at)} <span className="text-slate-400">Ã‚Â· {timeAgo(peekItem.created_at)}</span></dd>
+                                        <dd className="text-slate-900">{formatDate(peekItem.created_at)} <span className="text-slate-400">· {timeAgo(peekItem.created_at)}</span></dd>
                                         <dt className="text-slate-500">Remarks</dt>
-                                        <dd className="text-slate-900 break-words">{peekItem.remarks?.trim() || "Ã¢â‚¬â€"}</dd>
+                                        <dd className="text-slate-900 break-words">{peekItem.remarks?.trim() || "—"}</dd>
                                     </dl>
                                 </div>
 
@@ -2120,7 +2037,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                     </div>
                         </div>
 
-                    {/* Ã¢â€â‚¬Ã¢â€â‚¬ END OF MAIN CONTENT Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                    {/* —— END OF MAIN CONTENT —— */}
                 </main>
             </div>
         </div>
