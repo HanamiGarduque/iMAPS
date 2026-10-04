@@ -1,82 +1,31 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
+/**
+ * SUPERSEDED - retained as a no-op compatibility migration.
+ *
+ * This filename is kept because deployed databases already recorded it in the
+ * `migrations` ledger, so deleting or renaming it would orphan those historical
+ * rows and leave `migrate:rollback` unable to resolve them.
+ *
+ * It must not mutate schema. Its timestamp sorts BEFORE
+ * 2026_09_19_000000_create_initial_schema, so on a fresh database it would ALTER
+ * `site_inspections` before that table exists. The canonical, correctly ordered
+ * migration that actually creates these columns is:
+ *
+ *   2026_09_19_000001_add_rich_result_columns_to_site_inspections_table
+ */
 return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasColumn('site_inspections', 'submitted_at')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->timestamp('submitted_at')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'inspection_result')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->string('inspection_result')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'observations')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->text('observations')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'discrepancies')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->text('discrepancies')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'recommendations')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->text('recommendations')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'inspector_notes')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->text('inspector_notes')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'checklist_data')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->json('checklist_data')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'confirmed_latitude')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->double('confirmed_latitude')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'confirmed_longitude')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->double('confirmed_longitude')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'gps_accuracy_m')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->double('gps_accuracy_m')->nullable();
-            });
-        }
-
-        if (!Schema::hasColumn('site_inspections', 'gps_confirmed_at')) {
-            Schema::table('site_inspections', function (Blueprint $table) {
-                $table->timestamp('gps_confirmed_at')->nullable();
-            });
-        }
+        // Intentionally no schema mutation. Superseded by ..._000001.
     }
 
     public function down(): void
     {
-        // Intentionally non-destructive because any of these columns may predate this repair.
+        // Intentionally no schema mutation. A superseded migration must never
+        // reverse columns it did not create.
     }
 };
