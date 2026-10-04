@@ -1966,3 +1966,75 @@ disposable PostgreSQL cluster.
 Operational rationale, workflow, ownership and verification evidence are recorded in
 `FIELDSYNC_BRIDGE_ARCHITECTURE.md`; the change record is in
 `FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md`.
+
+## 26. Post-master-sync merged schema - 2026-10-05 (APPLIED)
+
+Applied by controlled merge of `origin/master` (`ee16884`) into
+`fix/bridge-source-namespace-collision`. Local database `imaps_db_0921` only.
+No Supabase DDL, RLS, Storage or Auth change.
+
+### 26.1 `zoning_applications` - applicant address columns (ADDITIVE)
+
+Migration `2026_10_03_000001_add_applicant_address_columns_to_zoning_applications`, executed
+naturally at batch 20.
+
+| Column | Type | Length | Nullable | Position |
+|---|---|---|---|---|
+| `applicant_street` | `character varying` | 255 | YES | after `applicant_name` |
+| `applicant_barangay` | `character varying` | 255 | YES | after `applicant_street` |
+
+Both are guarded by `Schema::hasColumn`, so they are additive and re-runnable.
+`down()` drops both columns and is the only destructive path.
+
+### 26.2 `generated_permits` (NEW TABLE)
+
+Migration `2026_10_03_000004_create_generated_permits_table`, executed at batch 20.
+Unguarded `Schema::create`; the table did not previously exist.
+
+| Column | Type | Null | Default / notes |
+|---|---|---|---|
+| `id` | `bigserial` | NO | primary key |
+| `zoning_application_id` | `bigint` | NO | FK -> `zoning_applications(id)` ON DELETE CASCADE |
+| `permit_type` | `varchar(50)` | NO | `ze` / `lc` / `zc` / `dp` |
+| `permit_name` | `varchar(150)` | NO | |
+| `file_name` | `varchar(255)` | NO | |
+| `file_path` | `varchar(255)` | NO | |
+| `file_format` | `varchar(20)` | NO | default `pdf`; `pdf` / `xlsx` |
+| `file_size` | `bigint` | NO | default `0` |
+| `input_data` | `json` | YES | |
+| `generated_by` | `bigint` | YES | FK -> `users(id)` ON DELETE SET NULL |
+| `created_at` | `timestamp` | YES | |
+| `updated_at` | `timestamp` | YES | |
+
+Exactly 2 foreign keys. Table is **empty (0 rows)**; the migration does not seed.
+Local `public` table count 29 -> **30**.
+
+### 26.3 Ledger state after the sync
+
+`migrations` ledger **18 -> 30**.
+
+- **Batch 19 - baseline (6 rows, no DDL executed).** Six migrations were already fully applied
+  in this schema but absent from the ledger; they were recorded so the chain could proceed.
+  See `FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md` for the exact six and the proof each was applied.
+- **Batch 20 - naturally executed (6 rows).**
+  `2026_09_19_000001_add_rich_result_columns_to_site_inspections_table` (guarded no-op),
+  `2026_09_19_000002_add_assignment_provenance_to_site_inspections_table` (guarded no-op),
+  `2026_10_03_000001_add_applicant_address_columns_to_zoning_applications` (real),
+  `2026_10_03_000002_ensure_work_assignment_history_tables_exist` (no-op),
+  `2026_10_03_000003_ensure_inspection_delivery_monitoring_tables_exist` (no-op),
+  `2026_10_03_000004_create_generated_permits_table` (real).
+
+### 26.4 Legacy migration filenames retained as no-op shims
+
+`2026_09_11_000000_add_rich_result_columns_to_site_inspections_table` and
+`2026_09_19_000000_add_assignment_provenance_to_site_inspections_table` sort **before**
+`2026_09_19_000000_create_initial_schema` and would `ALTER site_inspections` before that table
+exists. Both filenames are retained because deployed ledgers already recorded them (batches 12 and
+14), and their `up()`/`down()` now perform **no schema mutation**. The canonical, correctly
+ordered migrations are `..._000001` and `..._000002`.
+
+### 26.5 Unchanged by this sync
+
+`report_escalations` (3 rows), `report_action_audit` (3), `notifications` (7), `users` (7),
+`site_inspections` (39), `zoning_applications` (74). Rich-result columns 11/11 and assignment
+provenance 2/2 intact. Protected fixture `APP-2026-00030` (local application 145) unchanged.

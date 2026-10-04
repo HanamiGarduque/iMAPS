@@ -6039,3 +6039,38 @@ all present and were exercised.
 
 Schema and evidence: `CANONICAL_DATABASE_SCHEMA.md` section 25. Change record:
 `FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md`.
+
+## Migration compatibility principle (2026-10-05)
+
+A deployed database can predate the migration repository that describes it. Two rules keep one
+repository history working for both provisioned databases and fresh installs.
+
+**1. A migration that is already applied must be recorded, not re-executed.** Where a database's
+schema demonstrably predates its ledger, the missing ledger rows are inserted without running the
+migration DDL. Re-running such a migration is not idempotent by default: `Schema::create` and an
+unguarded `ALTER TABLE ... ADD COLUMN` fail outright on `relation already exists` /
+`duplicate column`. This is why the ledger is evidence, not bookkeeping.
+
+**2. A migration whose filename sorts before the migration that creates its target table must be a
+no-op.** Filename order is execution order, and Laravel has no dependency graph. A migration that
+alters `site_inspections` but sorts before `create_initial_schema` works on a provisioned database
+and breaks every fresh install. The correct treatment is to keep the filename (deployed ledgers
+already recorded it), keep the canonical correctly-ordered migration as the real schema operation,
+and make the early-sorting file an explicit supersession shim whose `up()` and `down()` mutate
+nothing.
+
+Deleting such a file is worse than it looks. `migrate:rollback` prints `Migration not found`,
+**exits 0**, and leaves the ledger row in place - an apparent success that changes nothing and
+repeats on every subsequent rollback. Retaining the filename keeps `migrate:status` truthful and
+makes rollback resolve to a safe no-op.
+
+Two further operational invariants:
+
+- **A fresh database needs PostGIS before the initial-schema migration.** That migration issues raw
+  `ALTER TABLE ... ADD COLUMN geom geometry(...)`, so a fresh install fails with
+  `type "geometry" does not exist` unless the extension exists first. Disposable migration proofs
+  must create it explicitly; this is an installation prerequisite, not schema work.
+- **A migration's `down()` is part of its contract even when `up()` is guarded.** Four of the six
+  baselined migrations have destructive `down()` bodies. Any future `migrate:reset` against a
+  provisioned database would drop `users`, `notifications` or `historical_data` if those rows were
+  absent from the ledger.
