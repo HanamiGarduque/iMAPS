@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use App\Support\DiagnosticTextSanitizer;
+use App\Support\InspectorReportNotice;
 use App\Support\ReportingVisibility;
 use App\Support\SupportReportResolution;
 use Illuminate\Http\Client\ConnectionException;
@@ -16,14 +17,16 @@ use Throwable;
 class DiagnosticReportHandling
 {
     public function __construct(private DiagnosticReportReader $reader, private SupabaseService $supabase,
-        private ReportingVisibility $visibility, private SupportReportResolution $resolution, private ReportActionAudit $audit) {}
+        private ReportingVisibility $visibility, private SupportReportResolution $resolution, private ReportActionAudit $audit,
+        private InspectorReportNotice $notice) {}
 
     public function handle(User $viewer, string $id, array $input): array
     {
         $event = null;
+        $notificationReport = [];
         try {
             // One attempt only: automatic transaction retries would replay the remote side effect.
-            $result = DB::transaction(function () use ($viewer, $id, $input, &$event) {
+            $result = DB::transaction(function () use ($viewer, $id, $input, &$event, &$notificationReport) {
                 $read = $this->reader->find($id);
                 abort_unless($read['ok'], 503, 'The report could not be loaded. Please refresh.');
                 abort_if($read['report'] === null, 404);
@@ -82,6 +85,9 @@ class DiagnosticReportHandling
                     || ($rows[0]['id'] ?? null) !== $id || ($rows[0]['status'] ?? null) !== $status) {
                     return $this->uncertain($id, $actor->id);
                 }
+                // The reader removes inspector_id from browser props. Use the proven CAS row,
+                // never browser input, local reporter attribution, or application ownership.
+                $notificationReport = array_intersect_key($rows[0], array_flip(['id', 'status', 'inspector_id', 'reference_code']));
                 // $from is the fresh status in the successful CAS predicate, never browser state.
                 $event = ['report_id' => $id, 'action' => match ($status) {
                     'in_review' => 'report_review_started', 'resolved' => 'report_resolved', 'wont_fix' => 'report_wont_fix',
@@ -110,7 +116,22 @@ class DiagnosticReportHandling
         if ($recorded['outcome'] === 'failed') {
             return $this->partial('partial_success', 207, $event['to_status']);
         }
-        return $this->outcome('success', 200, 'Report updated and audit recorded.', true, true, $event['to_status']);
+        try {
+            $notification = $this->notice->send($notificationReport);
+        } catch (Throwable) {
+            $notification = 'delivery_unconfirmed';
+        }
+        if (! in_array($notification, ['delivered', 'already_present', 'not_applicable'], true)) {
+            Log::warning('Report and audit saved; inspector notification not confirmed.', [
+                'report_id' => $id, 'status' => $event['to_status'], 'classification' => $notification,
+                'time' => now()->toIso8601String(),
+            ]);
+            return $this->outcome('notification_failed', 207,
+                'Report updated and audit recorded, but inspector notification delivery could not be confirmed. Do not submit the report action again. Contact an administrator.',
+                true, true, $event['to_status']) + ['notification_status' => $notification];
+        }
+        return $this->outcome('success', 200, 'Report updated and audit recorded.', true, true, $event['to_status'])
+            + ['notification_status' => $notification];
     }
 
     private function partial(string $outcome, int $http, string $status): array

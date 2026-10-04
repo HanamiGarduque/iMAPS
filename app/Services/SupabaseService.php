@@ -144,6 +144,13 @@ class SupabaseService
             ->timeout(12)->patch("{$this->url}/rest/v1/diagnostic_reports?{$query}", $data);
     }
 
+    /** Existing activity UUID primary key supplies insert-only terminal-event dedupe. */
+    public function insertInspectorReportActivity(array $data): Response
+    {
+        return Http::withHeaders($this->serviceHeaders(['Prefer' => 'resolution=ignore-duplicates,return=representation']))
+            ->timeout(8)->post("{$this->url}/rest/v1/activity_log?on_conflict=id", $data);
+    }
+
     /**
      * Delete records matching specific conditions.
      */

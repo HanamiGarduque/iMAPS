@@ -22,6 +22,8 @@ class ReportHandlingTest extends ReportingTestCase
     private int $auditFailures = 0;
     private string $auditSqlstate = '40001';
     private string $auditConstraint = '';
+    private array $activityPosts = [];
+    private string $activityFailure = '';
 
     protected function setUp(): void
     {
@@ -46,6 +48,36 @@ class ReportHandlingTest extends ReportingTestCase
             }
         });
         $this->remoteWrite = function ($request) {
+            if (parse_url($request->url(), PHP_URL_PATH) === '/rest/v1/activity_log') {
+                $this->assertSame('POST', $request->method());
+                $this->assertTrue($request->hasHeader('Authorization', 'Bearer test-server'));
+                $this->assertTrue($request->hasHeader('Prefer', 'resolution=ignore-duplicates,return=representation'));
+                $this->assertStringContainsString('on_conflict=id', $request->url());
+                $this->assertSame(0, DB::transactionLevel(), 'Notify only after local commit.');
+                $this->assertGreaterThan(0, DB::table('report_action_audit')->whereIn('to_status', ['resolved', 'wont_fix'])->count());
+                $data = $request->data();
+                $this->activityPosts[] = $data;
+                if ($this->activityFailure === 'rejected') {
+                    return Http::response(['message' => 'Private transport details'], 403);
+                }
+                if ($this->activityFailure === 'lost_before_insert') {
+                    throw new \Illuminate\Http\Client\ConnectionException('Private transport details');
+                }
+                foreach ($this->remote['activity_log'] ?? [] as $row) {
+                    if ($row['id'] === $data['id']) {
+                        return Http::response([], 201);
+                    }
+                }
+                $row = $data + ['is_read' => false, 'occurred_at' => now()->toIso8601String(), 'created_at' => now()->toIso8601String()];
+                $this->remote['activity_log'][] = $row;
+                if ($this->activityFailure === 'lost_after_insert') {
+                    throw new \Illuminate\Http\Client\ConnectionException('Private transport details');
+                }
+                if ($this->activityFailure === 'reordered_keys') {
+                    $row = array_reverse($row, true);
+                }
+                return Http::response([$row], 201);
+            }
             $this->assertSame('PATCH', $request->method());
             $this->assertSame('/rest/v1/diagnostic_reports', parse_url($request->url(), PHP_URL_PATH));
             $this->assertTrue($request->hasHeader('Authorization', 'Bearer test-server'));
@@ -107,9 +139,11 @@ class ReportHandlingTest extends ReportingTestCase
         $this->assertSame(1, DB::table('report_action_audit')->count());
         if ($to === 'in_review') {
             $this->assertSame(['status' => 'in_review'], $this->patches[0]['data']);
+            $this->assertSame([], $this->activityPosts);
         } else {
             $this->assertSame(['status', 'response_message', 'responded_by_name', 'responded_at'], array_keys($this->patches[0]['data']));
             $this->assertSame("Reviewed.\nFixed.", $this->patches[0]['data']['response_message']);
+            $this->assertTerminalActivity($action, 'DR-2026-0001', "Reviewed.\nFixed.");
         }
         $this->assertSame(0, DB::table('notifications')->count());
     }
@@ -123,6 +157,11 @@ class ReportHandlingTest extends ReportingTestCase
         $this->handle(self::REPORT, $to, ['response_message' => $to === 'in_review' ? null : 'Clarified.'])->assertOk();
         $this->assertDatabaseHas('report_action_audit', ['action' => $action, 'from_status' => $from, 'performed_by' => $this->po->id]);
         $this->assertSame($this->po->id, DB::table('zoning_applications')->value('assigned_planning_officer_id'));
+        if ($to === 'in_review') {
+            $this->assertSame([], $this->activityPosts);
+        } else {
+            $this->assertTerminalActivity($action, 'DR-TEST-0002', 'Clarified.');
+        }
     }
 
     public function test_role_denials_create_no_remote_write_or_audit(): void
@@ -137,6 +176,7 @@ class ReportHandlingTest extends ReportingTestCase
         }
         $this->assertSame([], $this->patches);
         $this->assertSame(0, DB::table('report_action_audit')->count());
+        $this->assertSame([], $this->activityPosts);
     }
 
     public function test_post_re_resolves_owner_instead_of_page_or_browser_owner(): void
@@ -229,6 +269,7 @@ class ReportHandlingTest extends ReportingTestCase
         $this->actingAs($this->admin);
         DB::table('users')->where('id', $this->admin->id)->update(['name' => 'Current Admin Name']);
         $this->handle(self::LEGACY, 'resolved', ['response_message' => " Reviewed.\nhttps://example.test/file?token=private  ",
+            'inspector_id' => '99999999-0000-4000-8000-000000000099', 'recipient_id' => $this->po->id,
             'responded_by_name' => 'Forged', 'responded_at' => '1900-01-01', 'performed_by' => $this->po->id,
             'performed_by_name' => 'Forged', 'expected_status' => 'in_review'])->assertOk();
         $data = $this->patches[0]['data'];
@@ -238,6 +279,7 @@ class ReportHandlingTest extends ReportingTestCase
         $this->assertDatabaseHas('report_action_audit', ['from_status' => 'submitted', 'performed_by' => $this->admin->id,
             'performed_by_name' => 'Current Admin Name']);
         $this->assertSame(0, DB::table('notifications')->count());
+        $this->assertTerminalActivity('report_resolved', 'DR-2026-0001', 'Reviewed.');
     }
 
     public function test_review_rejects_response_content(): void
@@ -275,6 +317,7 @@ class ReportHandlingTest extends ReportingTestCase
         $reads = array_filter($this->calls, fn ($c) => $c[0] === 'diagnostic_reports');
         $this->assertCount(2, $reads);
         $this->assertSame(0, DB::table('report_action_audit')->count());
+        $this->assertSame([], $this->activityPosts);
     }
 
     public function test_remote_error_creates_no_audit_or_retry(): void
@@ -284,6 +327,7 @@ class ReportHandlingTest extends ReportingTestCase
         $this->handle(self::LEGACY, 'resolved', ['response_message' => 'Remote failure'])->assertStatus(503);
         $this->assertCount(1, $this->patches);
         $this->assertSame(0, DB::table('report_action_audit')->count());
+        $this->assertSame([], $this->activityPosts);
     }
 
     public function test_unproven_remote_representation_cannot_fabricate_audit(): void
@@ -295,6 +339,7 @@ class ReportHandlingTest extends ReportingTestCase
         }
         $this->assertSame(0, DB::table('report_action_audit')->count());
         $this->assertCount(3, $this->patches);
+        $this->assertSame([], $this->activityPosts);
     }
 
     public function test_bounded_local_retry_never_repeats_remote_patch(): void
@@ -305,6 +350,7 @@ class ReportHandlingTest extends ReportingTestCase
         $this->assertCount(1, $this->patches);
         $this->assertSame(2, $this->auditAttempts);
         $this->assertSame(1, DB::table('report_action_audit')->count());
+        $this->assertCount(1, $this->activityPosts);
     }
 
     public function test_exhausted_local_retry_returns_explicit_partial_success_and_safe_critical_log(): void
@@ -317,6 +363,7 @@ class ReportHandlingTest extends ReportingTestCase
         $this->assertCount(1, $this->patches);
         $this->assertSame(2, $this->auditAttempts);
         $this->assertSame(0, DB::table('report_action_audit')->count());
+        $this->assertSame([], $this->activityPosts);
         Log::shouldHaveReceived('critical')->once()->withArgs(fn ($message, $context) =>
             $context['report_id'] === self::LEGACY && $context['action'] === 'report_resolved'
             && $context['actor_id'] === $this->admin->id && isset($context['time'], $context['classification'])
@@ -350,9 +397,138 @@ class ReportHandlingTest extends ReportingTestCase
         $this->assertCount(1, $this->patches);
         if ($status !== 200) {
             Log::shouldHaveReceived('critical')->once();
+            $this->assertSame([], $this->activityPosts);
         } else {
             Log::shouldNotHaveReceived('critical');
+            $this->assertCount(1, $this->activityPosts);
         }
+    }
+
+    private function assertTerminalActivity(string $event, string $reference, string $privateResponse): void
+    {
+        $this->assertCount(1, $this->activityPosts);
+        $row = $this->activityPosts[0];
+        $this->assertSame('40000000-0000-4000-8000-000000000001', $row['inspector_id']);
+        $this->assertSame($event, $row['event_type']);
+        $this->assertTrue(\Illuminate\Support\Str::isUuid($row['id']));
+        $this->assertStringContainsString('MPDO responded to '.$reference, $row['subtitle']);
+        $this->assertStringContainsString('My Reports', $row['subtitle']);
+        $this->assertStringNotContainsString($privateResponse, json_encode($row));
+        $this->assertEqualsCanonicalizing(['id', 'inspector_id', 'event_type', 'title', 'subtitle'], array_keys($row));
+    }
+
+    public function test_terminal_replay_and_opposite_outcome_never_notify_again_even_after_user_deletes_activity(): void
+    {
+        $this->actingAs($this->admin);
+        $this->handle(self::LEGACY, 'resolved', ['response_message' => 'Fixed'])->assertOk();
+        $this->assertCount(1, $this->activityPosts);
+        $this->remote['activity_log'] = [];
+        foreach (['resolved', 'wont_fix'] as $status) {
+            $this->handle(self::LEGACY, $status, ['response_message' => 'Replay'])->assertConflict();
+        }
+        $this->assertCount(1, $this->activityPosts);
+        $this->assertCount(1, $this->patches);
+    }
+
+    public function test_same_event_is_deduped_without_resetting_read_state(): void
+    {
+        $this->actingAs($this->admin);
+        $this->handle(self::LEGACY, 'resolved', ['response_message' => 'Fixed'])->assertOk();
+        $this->assertCount(1, $this->activityPosts);
+        $this->remote['activity_log'][0]['is_read'] = true;
+        $original = $this->remote['activity_log'][0];
+        $result = app(\App\Support\InspectorReportNotice::class)->send($this->remote['diagnostic_reports'][1]);
+        $this->assertSame('already_present', $result);
+        $this->assertSame([$original], $this->remote['activity_log']);
+        $this->assertSame($this->activityPosts[0]['id'], $this->activityPosts[1]['id']);
+    }
+
+    public function test_lost_notification_acknowledgement_is_read_back_without_reposting(): void
+    {
+        $this->activityFailure = 'lost_after_insert';
+        $this->actingAs($this->admin);
+        $this->handle(self::LEGACY, 'resolved', ['response_message' => 'Private response'])->assertOk()
+            ->assertJsonPath('notification_status', 'already_present');
+        $this->assertCount(1, $this->activityPosts);
+        $this->assertCount(1, $this->remote['activity_log']);
+        $this->assertCount(1, $this->patches);
+    }
+
+    public static function notificationFailures(): array
+    {
+        return [['rejected', 'rejected'], ['lost_before_insert', 'delivery_unconfirmed']];
+    }
+
+    public function test_notification_confirmation_ignores_json_key_order(): void
+    {
+        $this->activityFailure = 'reordered_keys';
+        $this->actingAs($this->admin);
+        $this->handle(self::LEGACY, 'wont_fix', ['response_message' => 'Reviewed'])->assertOk()
+            ->assertJsonPath('notification_status', 'delivered');
+    }
+
+    public function test_existing_event_for_different_recipient_is_not_confirmed_or_overwritten(): void
+    {
+        $this->actingAs($this->admin);
+        $this->handle(self::LEGACY, 'resolved', ['response_message' => 'Reviewed'])->assertOk();
+        $this->assertCount(1, $this->activityPosts);
+        $original = $this->remote['activity_log'];
+        $report = $this->remote['diagnostic_reports'][1];
+        $report['inspector_id'] = '99999999-0000-4000-8000-000000000099';
+        $this->assertSame('identity_conflict', app(\App\Support\InspectorReportNotice::class)->send($report));
+        $this->assertSame($original, $this->remote['activity_log']);
+    }
+
+    public function test_missing_recipient_fails_closed_after_preserving_report_and_audit(): void
+    {
+        $this->remote['diagnostic_reports'][1]['inspector_id'] = null;
+        $this->actingAs($this->admin);
+        $this->handle(self::LEGACY, 'resolved', ['response_message' => 'Reviewed'])->assertStatus(207)
+            ->assertJsonPath('notification_status', 'invalid_report_identity')->assertJsonPath('audit_recorded', true);
+        $this->assertSame([], $this->activityPosts);
+    }
+
+    public function test_unexpected_notification_failure_cannot_erase_successful_business_result(): void
+    {
+        $notice = \Mockery::mock(\App\Support\InspectorReportNotice::class);
+        $notice->shouldReceive('send')->once()->andThrow(new \RuntimeException('Private exception'));
+        $this->app->instance(\App\Support\InspectorReportNotice::class, $notice);
+        $this->actingAs($this->admin);
+        $this->handle(self::LEGACY, 'resolved', ['response_message' => 'Reviewed'])->assertStatus(207)
+            ->assertJsonPath('outcome', 'notification_failed')->assertJsonPath('audit_recorded', true);
+        $this->assertSame(1, DB::table('report_action_audit')->count());
+        $this->assertCount(1, $this->patches);
+    }
+
+    public function test_unknown_delivery_and_failed_readback_never_reposts(): void
+    {
+        $this->activityFailure = 'lost_after_insert';
+        $this->remoteTableFails = ['activity_log'];
+        $this->actingAs($this->admin);
+        $this->handle(self::LEGACY, 'wont_fix', ['response_message' => 'Reviewed'])->assertStatus(207)
+            ->assertJsonPath('notification_status', 'delivery_unconfirmed');
+        $this->assertCount(1, $this->activityPosts);
+        $this->assertCount(1, $this->patches);
+    }
+
+    #[DataProvider('notificationFailures')]
+    public function test_notification_failure_preserves_response_and_audit_with_explicit_safe_result(string $failure, string $classification): void
+    {
+        Log::spy();
+        $this->activityFailure = $failure;
+        $this->actingAs($this->admin);
+        $this->handle(self::LEGACY, 'resolved', ['response_message' => 'Private response'])->assertStatus(207)
+            ->assertJsonPath('outcome', 'notification_failed')->assertJsonPath('remote_updated', true)
+            ->assertJsonPath('audit_recorded', true)->assertJsonPath('notification_status', $classification);
+        $this->assertCount(1, $this->patches);
+        $this->assertCount(1, $this->activityPosts);
+        $this->assertSame('resolved', $this->remote['diagnostic_reports'][1]['status']);
+        $this->assertSame(1, DB::table('report_action_audit')->count());
+        Log::shouldHaveReceived('warning')->once()->withArgs(fn ($message, $context) =>
+            $context['report_id'] === self::LEGACY && $context['classification'] === $classification
+            && ! str_contains(json_encode($context), 'Private'));
+        $this->handle(self::LEGACY, 'resolved', ['response_message' => 'Do not retry'])->assertConflict();
+        $this->assertCount(1, $this->activityPosts);
     }
 
     public function test_safe_response_projection_and_role_specific_controls(): void

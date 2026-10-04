@@ -54,6 +54,7 @@ export default function Show({ report, context = null, canNotify = false, handli
         <header><p className="text-sm font-semibold text-blue-700">{support ? "Application Support" : "Technical Issue"}</p><div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="break-words text-2xl font-bold">{report.reference_code || "Unreferenced report"}</h1><Status value={report.status} />{!handlingActions.length && <span className="text-xs text-slate-500">Read only</span>}</div></header>
         {result && <div role={result.outcome === "success" ? "status" : "alert"} className={`rounded-xl border p-4 text-sm ${result.outcome === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
             {result.remote_updated && !result.audit_recorded && <p className="mb-1 font-bold">Report updated — audit reconciliation required</p>}
+                {result.notification_status && !["delivered", "already_present", "not_applicable"].includes(result.notification_status) && <p className="mb-1 font-bold">Inspector notification not confirmed</p>}
             <p>{result.message}</p>
             {blocked && <Link href={`/diagnostics/${report.id}`} preserveState={false} className={`${control} mt-3`}>Refresh report</Link>}
         </div>}
