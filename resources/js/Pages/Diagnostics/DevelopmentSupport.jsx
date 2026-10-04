@@ -58,7 +58,7 @@ export default function DevelopmentSupport({ report, panel }) {
 
         {result && <div className="mt-3">{alert(result.message, result.outcome === "opened" || result.outcome === "closed" || result.outcome === "recommended" ? "amber" : "red")}</div>}
 
-        {!panel.contactConfigured && <div className="mt-3">{alert("Development Support contact is not configured. Ask an administrator to set IMAPS_SUPPORT_CONTACT_* before opening an escalation.")}</div>}
+        {!panel.contactConfigured && <div className="mt-3">{alert("Development Support contact is not configured. Please ask the system administrator to configure the support contact for future consultations.")}</div>}
         {panel.contactConfigured && <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {[["Name", panel.contact.name], ["Email", panel.contact.email], ["Channel", panel.contact.channel], ["Instructions", panel.contact.instructions]]
                 .filter(([, value]) => value).map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs font-semibold text-slate-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-800">{value}</dd></div>)}
@@ -106,7 +106,18 @@ export default function DevelopmentSupport({ report, panel }) {
             <ul className="mt-2 space-y-2">{panel.closed.map(episode => <li key={episode.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
                 <p className="font-semibold">Closed {stamp(episode.closed_at)}</p>
                 <p className="text-xs text-slate-500">Opened {stamp(episode.created_at)}</p>
-                {episode.recommendation && <p className="mt-1 whitespace-pre-wrap break-words">{episode.recommendation}</p>}
+                {/* An episode can close WITH a recommendation, WITHOUT one (the
+                    closure note then explains why), or with both. Each present
+                    field is labelled and rendered; an absent one renders nothing,
+                    so the history never implies content that was not recorded. */}
+                {episode.recommendation && <div className="mt-2">
+                    <p className="text-xs font-semibold text-slate-500">Recommendation</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">{episode.recommendation}</p>
+                </div>}
+                {episode.closure_note && <div className="mt-2">
+                    <p className="text-xs font-semibold text-slate-500">Closure note</p>
+                    <p className="mt-1 whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">{episode.closure_note}</p>
+                </div>}
             </li>)}</ul>
         </div>}
     </section>;

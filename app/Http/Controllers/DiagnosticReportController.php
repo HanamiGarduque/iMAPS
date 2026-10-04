@@ -62,6 +62,11 @@ class DiagnosticReportController extends Controller
      * contact. `contactConfigured` is computed from the four safe fields so the
      * view can say the contact is unconfigured instead of rendering an empty box -
      * and so no fabricated address can ever appear.
+     *
+     * A CLOSED episode projects `closure_note` alongside `recommendation`: an
+     * escalation can legitimately close WITHOUT a recommendation, and then the
+     * closure note is the only record of why. Omitting it made stored evidence
+     * unreachable in the history, so the panel could not explain the closure at all.
      */
     private function developmentSupport($viewer, array $row): ?array
     {
@@ -84,7 +89,7 @@ class DiagnosticReportController extends Controller
                 'id', 'status', 'created_at', 'recommendation', 'recommendation_at', 'closure_note',
             ]) ?? null,
             'closed' => $episodes->where('status', ReportEscalation::CLOSED)->values()
-                ->map(fn ($e) => $e->only(['id', 'created_at', 'closed_at', 'recommendation']))->all(),
+                ->map(fn ($e) => $e->only(['id', 'created_at', 'closed_at', 'recommendation', 'closure_note']))->all(),
             'contact' => $safe,
             'contactConfigured' => (bool) array_filter($safe),
             'escalatable' => $escalatable,
