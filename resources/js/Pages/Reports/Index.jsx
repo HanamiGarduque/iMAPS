@@ -5,7 +5,7 @@ import axios from "axios";
 import Chart from "chart.js/auto";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import { performLogout } from "@/utils/auth";
+import { confirmSignOut } from "@/utils/signOut";
 
 const APPLICATION_TYPES = ["All", "Locational Clearance", "Zoning Certificate", "Development Permit"];
 
@@ -704,20 +704,7 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
         return () => clearInterval(id);
     }, []);
 
-    const handleLogout = () => {
-        Swal.fire({
-            title: "Sign Out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: swalClass,
-        }).then((result) => {
-            if (result.isConfirmed) performLogout();
-        });
-    };
+    const handleLogout = confirmSignOut;
 
     const [pw, ph, paperName] = PAPER[form.document_size];
     const paperPx = form.orientation === "landscape" ? [ph * MM, pw * MM] : [pw * MM, ph * MM];

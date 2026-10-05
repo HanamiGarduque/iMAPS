@@ -1,10 +1,9 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
-import Swal from 'sweetalert2';
 import { promptParcelApplication } from '@/utils/parcelHandoff.jsx';
 import { getZoneInfo } from '@/utils/clupZones';
 
-import { performLogout } from '@/utils/auth';
+import { confirmSignOut } from '@/utils/signOut';
 
 // ── Predictive Highlight Helper ──
 const HighlightMatch = ({ text, query }) => {
@@ -114,6 +113,18 @@ export default function Header({
     const [searchQuery, setSearchQuery] = useState('');
     const [searchFocused, setSearchFocused] = useState(false);
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+
+    // Welcome after sign-in (once per session; logout clears the flag): the profile button shows
+    // "Good evening, Hanami / Signed in as Admin" for a few seconds, then returns to name and role.
+    const [greeting, setGreeting] = useState(null);
+    useEffect(() => {
+        if (!userName || sessionStorage.getItem('hasShownWelcome')) return;
+        const hour = new Date().getHours();
+        setGreeting(hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening');
+        sessionStorage.setItem('hasShownWelcome', 'true');
+        const t = setTimeout(() => setGreeting(null), 6000);
+        return () => clearTimeout(t);
+    }, [userName]);
     const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
     const [notifMenuOpen, setNotifMenuOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -297,32 +308,7 @@ export default function Header({
 
     const handleSignOutClick = () => {
         setProfileMenuOpen(false);
-        if (onLogout) {
-            onLogout();
-            return;
-        }
-
-        Swal.fire({
-            title: "Sign Out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
-                title: "text-lg font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-5",
-                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
-                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
-            },
-        }).then((result) => {
-            if (result.isConfirmed) {
-                performLogout();
-            }
-        });
+        (onLogout || confirmSignOut)();
     };
 
     return (
@@ -552,17 +538,32 @@ export default function Header({
             {/* â”€â”€ RIGHT SECTION: PST Clock, Shortcuts, Notifications & Profile â”€â”€ */}
             <div className="flex items-center gap-1.5 sm:gap-2.5">
                 {/* Philippine Standard Time Display */}
-                {clock && (
-                    <div className="hidden xl:flex items-center gap-1.5 text-slate-700 bg-slate-50 border border-slate-200/90 px-2.5 py-1 rounded-xl shadow-2xs">
-                        <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="9" />
-                            <polyline points="12 6 12 12 16 14" />
-                        </svg>
-                        <span className="text-[11px] font-mono font-bold tracking-tight text-slate-700">
-                            {clock}
-                        </span>
-                    </div>
-                )}
+                {clock && (() => {
+                    // Pages pass "Oct 6, 2026 · 12:36 AM"; show the time first and the date muted.
+                    const [datePart, timePart] = clock.split(' · ');
+                    // Built like the profile button: a 28px tile, then two lines (time over date) at the same
+                    // sizes as name-over-role, so the two read as a matched pair in the navbar.
+                    return (
+                        <div className="hidden xl:flex items-center gap-2.5 p-1 pr-2 rounded-xl select-none" aria-label={`Current time ${clock}`}>
+                            <div className="w-7 h-7 rounded-lg bg-slate-100 ring-1 ring-slate-200/80 grid place-items-center text-slate-500 shrink-0" aria-hidden="true">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <circle cx="12" cy="12" r="9" />
+                                    <polyline points="12 7 12 12 15.5 14" />
+                                </svg>
+                            </div>
+                            <div className="flex flex-col text-left tabular-nums">
+                                {timePart ? (
+                                    <>
+                                        <span className="text-xs font-bold text-slate-800 leading-tight">{timePart}</span>
+                                        <span className="text-[11px] text-slate-500 font-semibold leading-none mt-0.5">{datePart}</span>
+                                    </>
+                                ) : (
+                                    <span className="text-xs font-semibold text-slate-700">{clock}</span>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Keyboard Shortcuts Trigger */}
                 <button
@@ -599,12 +600,13 @@ export default function Header({
 
                     {/* Notifications Dropdown Panel */}
                     {notifMenuOpen && (
-                        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2 z-[999] animate-in fade-in slide-in-from-top-2 duration-150">
-                            <div className="px-3 py-2 flex items-center justify-between border-b border-slate-100">
+                        <div role="menu" aria-label="Notifications" className="absolute right-0 mt-2 w-80 sm:w-96 font-['Plus_Jakarta_Sans',sans-serif] bg-white rounded-xl shadow-[0_20px_40px_-12px_rgba(15,23,42,.22)] border border-slate-200/90 z-[999] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                            {/* Header — same structure as the account menu's summary block */}
+                            <div className="px-4 py-3 flex items-center justify-between border-b border-slate-100">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-xs font-bold text-slate-900">Notifications</h3>
+                                    <h3 className="text-[13px] font-semibold text-slate-900">Notifications</h3>
                                     {unreadCount > 0 && (
-                                        <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2 py-0.2 rounded-full">
+                                        <span className="inline-flex px-1.5 py-px rounded border border-blue-200/80 bg-blue-50 text-[10.5px] font-medium text-blue-700">
                                             {unreadCount} new
                                         </span>
                                     )}
@@ -613,21 +615,24 @@ export default function Header({
                                     <button
                                         type="button"
                                         onClick={handleMarkAllReadHeader}
-                                        className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                                        className="text-[12px] font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
                                     >
-                                        Mark all read
+                                        Mark all as read
                                     </button>
                                 )}
                             </div>
 
-                            <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 my-1">
+                            <div className="max-h-80 overflow-y-auto p-1.5 space-y-0.5">
                                 {recentNotifs.length === 0 ? (
-                                    <div className="p-6 text-center text-xs text-slate-400">
-                                        No recent notifications
+                                    <div className="px-4 py-8 text-center">
+                                        <p className="text-[12.5px] font-medium text-slate-700">You're all caught up</p>
+                                        <p className="mt-0.5 text-[11.5px] text-slate-500">No recent notifications.</p>
                                     </div>
                                 ) : (
                                     recentNotifs.map((item) => (
-                                        <div
+                                        <button
+                                            type="button"
+                                            role="menuitem"
                                             key={item.id}
                                             onClick={() => {
                                                 setNotifMenuOpen(false);
@@ -646,42 +651,46 @@ export default function Header({
                                                     router.visit(item.action_url);
                                                 }
                                             }}
-                                            className={`p-2.5 rounded-xl transition-all cursor-pointer flex items-start gap-2.5 hover:bg-slate-50 ${
-                                                !item.is_read ? 'bg-blue-50/40' : ''
-                                            }`}
+                                            className="w-full text-left px-2.5 py-2 rounded-lg transition-colors cursor-pointer flex items-start gap-2.5 hover:bg-slate-100"
                                         >
-                                            <div className="mt-0.5">
-                                                {!item.is_read ? (
-                                                    <span className="w-2 h-2 rounded-full bg-blue-600 block shrink-0" />
-                                                ) : (
-                                                    <span className="w-2 h-2 rounded-full bg-slate-300 block shrink-0" />
-                                                )}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center justify-between gap-1">
-                                                    <p className={`text-xs font-bold truncate ${!item.is_read ? 'text-slate-900' : 'text-slate-700'}`}>
+                                            {/* Unread dot; read items keep the same indent */}
+                                            <span className={`mt-[5px] w-2 h-2 rounded-full shrink-0 ${!item.is_read ? 'bg-blue-600' : 'bg-transparent'}`} aria-hidden="true" />
+                                            <span className="min-w-0 flex-1">
+                                                <span className="flex items-baseline justify-between gap-2">
+                                                    <span className={`text-[12.5px] truncate ${!item.is_read ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
                                                         {item.title}
-                                                    </p>
-                                                    <span className="text-[10px] text-slate-400 font-medium shrink-0">
-                                                        {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                                        {!item.is_read && <span className="sr-only"> (unread)</span>}
                                                     </span>
-                                                </div>
-                                                <p className="text-[11.5px] text-slate-500 truncate mt-0.5">
+                                                    <span className="text-[11px] text-slate-400 shrink-0 tabular-nums">
+                                                        {item.created_at ? (() => {
+                                                            const d = new Date(item.created_at);
+                                                            return d.toDateString() === new Date().toDateString()
+                                                                ? d.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+                                                                : d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+                                                        })() : ''}
+                                                    </span>
+                                                </span>
+                                                <span className="block text-[11.5px] text-slate-500 truncate mt-0.5">
                                                     {item.message}
-                                                </p>
-                                            </div>
-                                        </div>
+                                                </span>
+                                            </span>
+                                        </button>
                                     ))
                                 )}
                             </div>
 
-                            <div className="pt-2 border-t border-slate-100 text-center">
+                            {/* Footer item — styled like "Sign out" in the account menu */}
+                            <div className="p-1.5 border-t border-slate-100">
                                 <Link
                                     href="/notifications"
+                                    role="menuitem"
                                     onClick={() => setNotifMenuOpen(false)}
-                                    className="block w-full py-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-xl transition-colors"
+                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[12.5px] font-medium text-slate-700 hover:bg-slate-100 transition-colors"
                                 >
-                                    View All Notifications →
+                                    <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                                    </svg>
+                                    View all notifications
                                 </Link>
                             </div>
                         </div>
@@ -702,14 +711,16 @@ export default function Header({
                         <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white font-bold text-xs shadow-xs">
                             {userName?.charAt(0).toUpperCase() || 'S'}
                         </div>
-                        <div className="hidden sm:flex flex-col text-left">
+                        {/* Just after sign-in the button greets the user for a few seconds, then shows name and role. */}
+                        <div key={greeting ? 'greeting' : 'identity'} className="hidden sm:flex flex-col text-left animate-in fade-in duration-500">
                             <span className="text-xs font-bold text-slate-800 leading-tight">
-                                {userName}
+                                {greeting ? `${greeting}, ${(userName || '').trim().split(/\s+/)[0]}` : userName}
                             </span>
                             <span className="text-[11px] text-slate-500 font-semibold leading-none mt-0.5">
-                                {userRole}
+                                {greeting ? `Signed in as ${userRole}` : userRole}
                             </span>
                         </div>
+                        {greeting && <span className="sr-only" role="status">{`${greeting}, ${userName}. Signed in as ${userRole}.`}</span>}
                         <svg className={`w-3.5 h-3.5 text-slate-500 hidden sm:block transition-transform duration-200 ${profileMenuOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                         </svg>
@@ -717,31 +728,39 @@ export default function Header({
 
                     {/* Profile Dropdown Menu */}
                     {profileMenuOpen && (
-                        <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-200/80 p-1.5 z-[999] animate-in fade-in slide-in-from-top-2 duration-150">
-                            <div className="px-3 py-2.5 border-b border-slate-100 bg-slate-50/50 rounded-xl mb-1">
-                                <p className="text-xs font-bold text-slate-900 truncate">{userName}</p>
-                                <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5">{userRole}</p>
-                                <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                    <span>Authenticated Officer</span>
+                        <div role="menu" aria-label="Account" className="absolute right-0 mt-2 w-64 font-['Plus_Jakarta_Sans',sans-serif] bg-white rounded-xl shadow-[0_20px_40px_-12px_rgba(15,23,42,.22)] border border-slate-200/90 z-[999] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                            {/* Account summary */}
+                            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-100">
+                                <div className="w-10 h-10 rounded-lg bg-gradient-to-tr from-blue-700 to-indigo-600 grid place-items-center text-white font-bold text-sm shrink-0" aria-hidden="true">
+                                    {(userName || 'S').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('')}
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-[13px] font-semibold text-slate-900 truncate">{userName}</p>
+                                    {page?.props?.auth?.user?.email && (
+                                        <p className="text-[11.5px] text-slate-500 truncate">{page.props.auth.user.email}</p>
+                                    )}
+                                    <span className="mt-1 inline-flex px-1.5 py-px rounded border border-blue-200/80 bg-blue-50 text-[10.5px] font-medium text-blue-700">
+                                        {userRole}
+                                    </span>
                                 </div>
                             </div>
 
-                            <div className="space-y-0.5">
-                                {/* Upstream (origin/master) intentionally removed the
-                                    "Account & Settings" link from the profile dropdown.
-                                    Loop 6 keeps that removal: /settings stays backend-protected
-                                    with role:Admin and is reachable through the Admin-only
-                                    Sidebar entry, so no equivalent header guard is needed. */}
-
+                            {/* Upstream (origin/master) intentionally removed the
+                                "Account & Settings" link from the profile dropdown.
+                                Loop 6 keeps that removal: /settings stays backend-protected
+                                with role:Admin and is reachable through the Admin-only
+                                Sidebar entry, so no equivalent header guard is needed. */}
+                            <div className="p-1.5">
                                 <button
+                                    type="button"
+                                    role="menuitem"
                                     onClick={handleSignOutClick}
-                                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[12.5px] font-medium text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer group"
                                 >
-                                    <svg className="w-4 h-4 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <svg className="w-4 h-4 text-slate-400 group-hover:text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
                                     </svg>
-                                    <span>Sign Out</span>
+                                    Sign out
                                 </button>
                             </div>
                         </div>

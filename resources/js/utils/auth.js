@@ -14,13 +14,17 @@ export const performLogout = () => {
         console.warn("Storage clear error on logout:", err);
     }
 
-    const forceRedirectToLogin = () => {
-        window.location.href = '/login';
-    };
+    // On success the server redirects to /login and Inertia shows it. Forcing a second, full
+    // reload here as well made the login page load twice. Only fall back to a hard redirect
+    // when the logout request didn't succeed (network error, server error, expired session).
+    let succeeded = false;
 
     router.post('/logout', {}, {
-        onError: forceRedirectToLogin,
-        onSuccess: forceRedirectToLogin,
-        onFinish: forceRedirectToLogin,
+        onSuccess: () => {
+            succeeded = true;
+        },
+        onFinish: () => {
+            if (!succeeded) window.location.href = '/login';
+        },
     });
 };

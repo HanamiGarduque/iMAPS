@@ -179,6 +179,11 @@ export default function Login() {
     });
 
     const [showPassword, setShowPassword] = useState(false);
+    // Chrome autofills saved logins on page load into a protected preview the page can't style (it shows in a
+    // serif font). Keeping the fields read-only until the user interacts stops that; the browser then offers
+    // the saved login from its dropdown instead, and the filled text uses the page font.
+    const [locked, setLocked] = useState(true);
+    const unlock = () => locked && setLocked(false);
     const [active, setActive] = useState(0);
     const [showTerms, setShowTerms] = useState(false);
 
@@ -279,7 +284,9 @@ export default function Login() {
                                             placeholder="name@rosario.gov.ph"
                                             autoComplete="email"
                                             required
-                                            autoFocus
+                                            readOnly={locked}
+                                            onPointerDown={unlock}
+                                            onFocus={unlock}
                                         />
                                     </Field>
 
@@ -293,6 +300,9 @@ export default function Login() {
                                             placeholder="Enter your password"
                                             autoComplete="current-password"
                                             required
+                                            readOnly={locked}
+                                            onPointerDown={unlock}
+                                            onFocus={unlock}
                                         />
                                         <button
                                             type="button"

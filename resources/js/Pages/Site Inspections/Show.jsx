@@ -1,16 +1,15 @@
 // resources/js/Pages/Site Inspections/Show.jsx
 import React, { useState, useEffect } from "react";
 import { Link, Head, router, usePage } from "@inertiajs/react";
-import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import { performLogout } from "@/utils/auth";
 import { resolveBackTarget, readRegistryQuery } from "@/Components/folderOrigin";
 import PhotoLightbox from "@/Components/PhotoLightbox";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
+import { confirmSignOut } from "@/utils/signOut";
 
 // ── Status Badge Configuration ──
 const STATUS_LABELS = {
@@ -250,29 +249,7 @@ export default function Show({ auth, inspection }) {
         return () => clearInterval(id);
     }, []);
 
-    const handleLogout = () => {
-        Swal.fire({
-            title: "Sign Out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
-                title: "text-lg font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-5",
-                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
-                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
-            },
-        }).then((result) => {
-            if (result.isConfirmed) {
-                performLogout();
-            }
-        });
-    };
+    const handleLogout = confirmSignOut;
 
     const formatDate = (d) => {
         if (!d) return "—";

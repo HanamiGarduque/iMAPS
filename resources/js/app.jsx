@@ -1,6 +1,7 @@
 import { createInertiaApp, router } from '@inertiajs/react'
 import { createRoot } from 'react-dom/client'
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers'
+import PageLoader from './Components/PageLoader'
 import './bootstrap'
 import '../css/app.css'
 
@@ -18,6 +19,13 @@ createInertiaApp({
             import.meta.glob('./Pages/**/*.jsx')
         ),
     setup({ el, App, props }) {
-        createRoot(el).render(<App {...props} />)
+        createRoot(el).render(
+            <>
+                <App {...props} />
+                <PageLoader />
+            </>
+        )
     },
+    // The top progress bar is replaced by the centred loading bubble in PageLoader.
+    progress: false,
 })

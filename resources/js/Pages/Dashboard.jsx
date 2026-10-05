@@ -1,7 +1,5 @@
 import { Component, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import { Head, router } from "@inertiajs/react";
-import Swal from "sweetalert2";
-import { performLogout } from "@/utils/auth";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import {
@@ -27,6 +25,7 @@ import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
 import { ApplicationDetails, BarangayCard } from "@/Components/Dashboard/IdentifyCards";
 import { getLens } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
+import { confirmSignOut } from "@/utils/signOut";
 
 
 // The 3D view is split into its own chunk (it pulls in maplibre-gl). It loads
@@ -470,21 +469,6 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         else document.exitFullscreen().catch(() => {});
     };
 
-    useEffect(() => {
-        const hasShownWelcome = sessionStorage.getItem("hasShownWelcome");
-        if (!hasShownWelcome && userName) {
-            Swal.fire({
-                toast: true,
-                position: "top-end",
-                icon: "success",
-                title: `Welcome back, ${userName || "Staff"}!`,
-                showConfirmButton: false,
-                timer: 2500,
-                customClass: { popup: "swal-small-toast" },
-            });
-            sessionStorage.setItem("hasShownWelcome", "true");
-        }
-    }, [userName]);
 
     useEffect(() => {
         const tick = () => {
@@ -541,29 +525,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [sidebarOpen, inspectedApp]);
 
-    const handleLogout = () => {
-        Swal.fire({
-            title: "Sign out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Sign out",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-md border border-slate-200 shadow-xl p-6 bg-white",
-                title: "text-lg font-semibold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-5",
-                confirmButton: "inline-flex items-center justify-center px-4 py-2 rounded-[3px] bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-xs font-semibold cursor-pointer",
-                cancelButton: "inline-flex items-center justify-center px-4 py-2 rounded-[3px] bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-300 cursor-pointer",
-            },
-        }).then((r) => {
-            if (r.isConfirmed) {
-                performLogout();
-            }
-        });
-    };
+    const handleLogout = confirmSignOut;
 
     // ── What the canvas is showing, in words ──
     const moduleInfo = MODULES.find((m) => m.id === activeLayer);
@@ -611,7 +573,6 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 #dashboard-root { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
                 #dashboard-root .font-mono { font-family: 'JetBrains Mono', monospace !important; }
-                .swal-small-toast { width: auto !important; padding: 0.5rem 0.75rem !important; min-height: unset !important; border-radius: 4px !important; }
                 #dashboard-root ::-webkit-scrollbar { width: 8px; height: 8px; }
                 #dashboard-root ::-webkit-scrollbar-thumb { background: #c3c9d2; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
                 #dashboard-root ::-webkit-scrollbar-track { background: transparent; }

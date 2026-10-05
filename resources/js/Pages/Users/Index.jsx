@@ -4,7 +4,7 @@ import Swal from "sweetalert2";
 import axios from "axios";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import { performLogout } from "@/utils/auth";
+import { confirmSignOut } from "@/utils/signOut";
 
 export default function Index({ users = { data: [], links: [] }, filters = {}, role_counts = {}, auth = {} }) {
     const [clock, setClock] = useState("");
@@ -141,31 +141,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         router.get("/users", {}, { preserveState: true, replace: true });
     };
 
-    const handleLogout = () => {
-        Swal.fire({
-            title: "Sign Out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
-                title: "text-base font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-4",
-                confirmButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
-                cancelButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
-            },
-        }).then((result) => {
-            if (result.isConfirmed) {
-                performLogout();
-            }
-        });
-    };
+    const handleLogout = confirmSignOut;
 
     // Client-side status filtering on current page items
     const displayedUsers = useMemo(() => {
@@ -452,41 +428,8 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                 <main className="flex-1 w-full h-full flex flex-col overflow-hidden bg-white">
                     <div className="flex-1 flex flex-col h-full min-h-0 w-full">
 
-                        {/* ── HEADER SECTION ── */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-5 border-b border-slate-200/80 shrink-0">
-                            <div className="flex items-center gap-3.5">
-                                <div className="w-11 h-11 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 text-white flex items-center justify-center shrink-0 shadow-[0_8px_18px_-8px_rgba(37,99,235,.6),inset_0_1px_0_rgba(255,255,255,.25)]">
-                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h1 className="text-xl sm:text-[22px] font-bold text-slate-900 tracking-tight leading-tight">
-                                        User Management
-                                    </h1>
-                                    <div className="mt-1 flex items-center gap-2 flex-wrap text-xs text-slate-500">
-                                        <span>Manage staff accounts, roles and access</span>
-                                        <span className="text-slate-300" aria-hidden="true">•</span>
-                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-100 text-[11px] font-semibold text-blue-700">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                            {summaryStats.total} {summaryStats.total === 1 ? "account" : "accounts"}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-2.5">
-                                <Link
-                                    href="/register-new-account"
-                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-98 cursor-pointer"
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                    </svg>
-                                    <span>Register New Account</span>
-                                </Link>
-                            </div>
-                        </div>
+                        {/* No visible page header: the navbar's USERS badge names the page, the table stands alone. */}
+                        <h1 className="sr-only">User Management</h1>
 
                         {/* Full-width panel: filter bar on top, results scroll below. */}
                         <div className="bg-white overflow-hidden flex flex-col flex-1 min-h-0">
@@ -604,6 +547,17 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                         </svg>
                                     </button>
                                 </div>
+
+                                {/* Primary action, moved here from the removed page header */}
+                                <Link
+                                    href="/register-new-account"
+                                    className="inline-flex items-center gap-1.5 h-[30px] px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                    </svg>
+                                    Register New Account
+                                </Link>
                             </div>
                         </div>
 
@@ -630,8 +584,17 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                         ) : viewMode === "table" ? (
                             /* ── SCROLLABLE HIGH-DENSITY ENTERPRISE TABLE ── */
                             <div className="flex-1 flex flex-col min-h-0">
-                                <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto">
-                                    <table className="w-full text-left border-collapse">
+                                {/* Grey canvas under the white table so the list clearly ends instead of trailing into blank space */}
+                                <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto bg-slate-50/70">
+                                    <table className="w-full min-w-[860px] text-left border-collapse bg-white">
+                                        {/* Fixed widths for the short columns; Name takes the rest, so rows read without big gaps */}
+                                        <colgroup>
+                                            <col />
+                                            <col className="w-[190px]" />
+                                            <col className="w-[140px]" />
+                                            <col className="w-[200px]" />
+                                            <col className="w-[150px]" />
+                                        </colgroup>
                                         <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200/80">
                                             <tr className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-[0.08em]">
                                                 <th className="py-2.5 px-6">Name</th>
@@ -673,7 +636,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                    <div className="text-slate-400 text-[11px] truncate font-mono">
+                                                                    <div className="text-slate-400 text-[11px] truncate">
                                                                         {u.email}
                                                                     </div>
                                                                 </div>
@@ -760,6 +723,10 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                             })}
                                         </tbody>
                                     </table>
+                                    {/* End-of-list line */}
+                                    <p className="px-6 py-3 border-t border-slate-200/80 bg-white text-[11.5px] text-slate-400">
+                                        Showing {displayedUsers.length} of {summaryStats.total} {summaryStats.total === 1 ? "account" : "accounts"}
+                                    </p>
                                 </div>
                             </div>
                         ) : (
@@ -815,7 +782,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                         <h3 className="text-sm font-semibold text-slate-900 truncate">
                                                             {u.name}
                                                         </h3>
-                                                        <p className="text-xs text-slate-400 truncate font-mono mt-0.5">
+                                                        <p className="text-xs text-slate-400 truncate mt-0.5">
                                                             {u.email}
                                                         </p>
                                                     </div>
@@ -936,7 +903,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                             Metrics
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">
+                                    <p className="text-xs text-slate-400 mt-0.5 truncate">
                                         {statsModalUser.email}
                                     </p>
                                 </div>
@@ -1121,7 +1088,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                             {accountModalView === "password" ? "Security" : editingUser.role}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">{editingUser.email}</p>
+                                    <p className="text-xs text-slate-400 mt-0.5 truncate">{editingUser.email}</p>
                                 </div>
                             </div>
                             <button
@@ -1158,7 +1125,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                         type="email"
                                         value={editingUser.email}
                                         onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
                                         required
                                     />
                                 </div>
@@ -1327,7 +1294,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                             Activity Log
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">
+                                    <p className="text-xs text-slate-400 mt-0.5 truncate">
                                         {logsModalUser.email}
                                     </p>
                                 </div>

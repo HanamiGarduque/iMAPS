@@ -5,7 +5,6 @@ import { Link, Head, router, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import { performLogout } from "@/utils/auth";
 import ParcelInspectionStatus from "@/Components/ParcelInspectionStatus";
 import InspectionDeliveryStatusPanel from "@/Components/InspectionDeliveryStatusPanel";
 import { PlanningOfficerAssignment, InspectorRoundAssignment } from "@/Components/WorkAssignment";
@@ -15,6 +14,7 @@ import { loadBarangayBoundaries } from "@/utils/mapData";
 import ApplicationMap from "./Components/ApplicationMap";
 import SiteMapPrint from "./Components/SiteMapPrint";
 import { PermitExportPanel, getMissingRecommendedPermits } from "./Components/GeneratePermitModal";
+import { confirmSignOut } from "@/utils/signOut";
 
 const STANDARD_STAGES = ["Received", "Technical Review", "For Release", "Released"];
 const SB_STAGES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released"];
@@ -590,20 +590,7 @@ function ShowInner({
         });
     };
 
-    const handleLogout = () => {
-        Swal.fire({
-            title: "Sign Out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
-            cancelButtonText: "Cancel",
-        }).then((result) => {
-            if (result.isConfirmed) {
-                performLogout();
-            }
-        });
-    };
+    const handleLogout = confirmSignOut;
 
     // ── What's next ──
     const stageStart = useMemo(() => {

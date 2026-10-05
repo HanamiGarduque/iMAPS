@@ -111,6 +111,21 @@ export const AuthStyles = ({ lockScroll = false }) => (
     <style dangerouslySetInnerHTML={{__html: `
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         * { font-family: 'Plus Jakarta Sans', sans-serif !important; }
+        /* Browser autofill: the suggestion preview otherwise renders in the browser's default (serif) font,
+           and the filled field gets a blue tint. ::first-line is the only hook that styles the preview text. */
+        input:-webkit-autofill,
+        input:-webkit-autofill::first-line {
+            font-family: 'Plus Jakarta Sans', sans-serif !important;
+            font-size: 15px !important;
+        }
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus {
+            -webkit-text-fill-color: #0f172a;
+            -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+            caret-color: #0f172a;
+            transition: background-color 9999s ease-out 0s;
+        }
         body { background-color: #ffffff; margin: 0; overflow: ${lockScroll ? 'hidden' : 'auto'}; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }

@@ -94,7 +94,8 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                sans: ['Poppins', ...defaultTheme.fontFamily.sans],
+                // One typeface across iMAPS (matches User Management). Loaded in resources/views/app.blade.php.
+                sans: ['"Plus Jakarta Sans"', ...defaultTheme.fontFamily.sans],
             },
         },
     },
