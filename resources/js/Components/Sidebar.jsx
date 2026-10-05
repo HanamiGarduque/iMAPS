@@ -219,17 +219,27 @@ export default function Sidebar({
 
     if (!sidebarOpen) return null;
 
+    // Group items for display only; keyboard focus still uses the flat visibleItems index.
+    const ADMIN_SECTION = ['/users', '/settings'];
+    const DESCRIPTIONS = {
+        '/dashboard': 'Map & overview',
+        '/applications': 'Zoning clearances',
+        '/site-inspections': 'Field schedules',
+        '/diagnostics': 'FieldSync issues',
+        '/reports': 'Exports & summaries',
+        '/users': 'Staff & access',
+        '/settings': 'Map data & system',
+    };
+    const sections = [
+        { title: 'Workspace', entries: visibleItems.map((item, idx) => ({ item, idx })).filter(({ item }) => !ADMIN_SECTION.includes(item.href)) },
+        { title: 'Administration', entries: visibleItems.map((item, idx) => ({ item, idx })).filter(({ item }) => ADMIN_SECTION.includes(item.href)) },
+    ].filter((s) => s.entries.length > 0);
+
     return (
         <div
             ref={menuRef}
-            className="absolute top-2 left-3.5 z-[900] w-[260px] bg-white border border-slate-200/90 shadow-2xl rounded-2xl p-1.5 select-none animate-in fade-in zoom-in-95 duration-150 origin-top-left"
+            className="absolute top-1.5 left-3.5 sm:left-5 z-[900] w-[min(420px,calc(100vw-1.75rem))] bg-white border border-blue-200/70 ring-4 ring-blue-500/5 shadow-[0_20px_40px_-14px_rgba(37,99,235,.28)] rounded-2xl p-3 select-none animate-in fade-in slide-in-from-top-2 duration-200 ease-out origin-top-left"
         >
-            {/* Menu Header */}
-            <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-slate-100 mb-1">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider font-['Plus_Jakarta_Sans',sans-serif]">
-                    Navigation
-                </span>
-            </div>
 
             {/* Nav Items List / FieldSync guidance for Site Inspectors */}
             {isSiteInspector ? (
@@ -245,56 +255,63 @@ export default function Sidebar({
                     </div>
                 </div>
             ) : (
-            <div className="space-y-0.5" role="menu">
-                {visibleItems.map((item, idx) => {
-                    const active = isActive(item.href);
-                    const isKeyboardFocused = focusedIndex === idx;
+            <nav aria-label="Main navigation">
+                {sections.map((section, sIdx) => (
+                    <div key={section.title} className={sIdx > 0 ? 'mt-2 pt-2 border-t border-slate-100' : ''}>
+                        <p className="px-2.5 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                            {section.title}
+                        </p>
+                        <div className="grid grid-cols-2 gap-0.5" role="menu">
+                            {section.entries.map(({ item, idx }) => {
+                                const active = isActive(item.href);
+                                const isKeyboardFocused = focusedIndex === idx;
 
-                    return (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            onClick={() => setSidebarOpen && setSidebarOpen(false)}
-                            className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-xs transition-all duration-150 ${
-                                active
-                                    ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200/80 shadow-2xs'
-                                    : isKeyboardFocused
-                                    ? 'bg-slate-100 text-slate-900 font-semibold ring-1 ring-slate-300'
-                                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50 font-semibold'
-                            }`}
-                        >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                                <div className={`transition-colors ${active ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-700'}`}>
-                                    {item.icon}
-                                </div>
-                                <span className="truncate text-[13px]">
-                                    {item.label}
-                                </span>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                {item.badge && (
-                                    <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-600 text-white shadow-2xs">
-                                        {item.badge}
-                                    </span>
-                                )}
-                            </div>
-                        </Link>
-                    );
-                })}
-            </div>
+                                return (
+                                    <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        role="menuitem"
+                                        aria-current={active ? 'page' : undefined}
+                                        onClick={() => setSidebarOpen && setSidebarOpen(false)}
+                                        className={`group flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors duration-150 ${
+                                            active
+                                                ? 'bg-blue-50'
+                                                : isKeyboardFocused
+                                                ? 'bg-slate-100'
+                                                : 'hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        <span className={`grid place-items-center w-8 h-8 rounded-lg shrink-0 transition-colors ${
+                                            active ? 'bg-blue-600 text-white shadow-[0_4px_10px_-4px_rgba(37,99,235,.6)]' : 'bg-slate-100/80 text-slate-500 group-hover:bg-white group-hover:text-slate-700 group-hover:ring-1 group-hover:ring-slate-200'
+                                        }`}>
+                                            {item.icon}
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className={`flex items-center gap-1.5 text-[12.5px] font-medium leading-tight ${active ? 'text-blue-700 font-semibold' : 'text-slate-800'}`}>
+                                                <span className="truncate">{item.label}</span>
+                                                {item.badge && (
+                                                    <span className="text-[9.5px] font-bold uppercase px-1.5 rounded bg-blue-600 text-white shrink-0">{item.badge}</span>
+                                                )}
+                                            </span>
+                                            <span className="block mt-0.5 text-[11px] leading-tight text-slate-400 truncate">
+                                                {DESCRIPTIONS[item.href]}
+                                            </span>
+                                        </span>
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </nav>
             )}
 
-            {/* Micro Footer */}
-            <div className="mt-1 pt-2 border-t border-slate-100 px-2.5 flex items-center justify-between text-[11px]">
-                <div className="flex items-center gap-1.5 font-semibold text-slate-700">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Rosario Municipal GIS</span>
-                </div>
-                <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200/60">
-                    v1.0
-                </span>
+            {/* Footer: office identity */}
+            <div className="mt-2 pt-2.5 px-2.5 border-t border-slate-100 flex items-center justify-between gap-3 text-[10.5px] text-slate-400">
+                <span className="truncate">MPDO · Rosario, Batangas</span>
+                <span className="font-mono shrink-0">v1.0</span>
             </div>
+
         </div>
     );
 }

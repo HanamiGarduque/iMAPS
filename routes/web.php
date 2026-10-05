@@ -314,6 +314,10 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
         ->name('settings.upload-shapefile');
 
     Route::post('/settings/upload-tiles', [SettingsController::class, 'uploadRasterTiles']);
+    Route::post('/settings/restore-layer', [SettingsController::class, 'restoreLayer'])
+        ->name('settings.restore-layer');
+    Route::post('/settings/restore-tiles', [SettingsController::class, 'restoreRasterTiles'])
+        ->name('settings.restore-tiles');
     
     // User Management
     Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');

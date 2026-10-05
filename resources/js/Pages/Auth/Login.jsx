@@ -1,46 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Head, useForm, Link } from '@inertiajs/react';
+import { Icon, ICONS, PARCELS, CadastralBackground, Navbar, Field, inputClass, AuthStyles } from './AuthUI';
 
-const Icon = ({ d, className = 'w-5 h-5', sw = 1.6 }) => (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={sw} aria-hidden="true">
-        <path strokeLinecap="round" strokeLinejoin="round" d={d} />
-    </svg>
-);
-
-const ICONS = {
-    eye: 'M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z',
-    eyeOff: 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M3 3l18 18',
-    close: 'M6 18L18 6M6 6l12 12',
-    alert: 'M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z',
-    lock: 'M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z',
-    mail: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
-    shield: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
-};
-
-// ───────── Faint cadastral map as page texture: parcel outlines, one highlighted per module ─────────
-const COLS = 8;
-const ROWS = 6;
-const W = 1600;
-const H = 1000;
-const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
-
-const VERTS = Array.from({ length: ROWS + 1 }, (_, r) =>
-    Array.from({ length: COLS + 1 }, (_, c) => {
-        const edge = r === 0 || c === 0 || r === ROWS || c === COLS;
-        const j = edge ? 0.12 : 0.34;
-        return [
-            (c + (hash(r * 31 + c) - 0.5) * j * 2) * (W / COLS),
-            (r + (hash(r * 17 + c * 5 + 99) - 0.5) * j * 2) * (H / ROWS),
-        ];
-    })
-);
-
-const PARCELS = Array.from({ length: ROWS * COLS }, (_, i) => {
-    const r = Math.floor(i / COLS);
-    const c = i % COLS;
-    const q = [VERTS[r][c], VERTS[r][c + 1], VERTS[r + 1][c + 1], VERTS[r + 1][c]];
-    return { points: q.map((p) => p.join(',')).join(' ') };
-});
 const ACTIVE_PARCEL = [10, 21, 28];
 
 // Mirrors the modules that exist in the app today.
@@ -210,21 +171,6 @@ const MOCKS = [
     </MockFrame>,
 ];
 
-// Label above, input with a leading icon that lights up on focus. `aside` sits on the label row's right.
-const Field = ({ id, label, icon, aside, children }) => (
-    <div>
-        <div className="mb-2 flex items-center justify-between">
-            <label htmlFor={id} className="text-[13px] font-semibold text-slate-700">{label}</label>
-            {aside}
-        </div>
-        <div className="group relative">
-            <Icon d={icon} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-slate-400 transition-colors group-focus-within:text-blue-600" sw={1.8} />
-            {children}
-        </div>
-    </div>
-);
-const inputClass = 'block w-full h-11 rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-[15px] font-normal text-slate-900 placeholder:text-slate-400 shadow-sm transition hover:border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 focus:outline-none';
-
 export default function Login() {
     const { data, setData, post, processing, errors, reset } = useForm({
         email: '',
@@ -254,69 +200,20 @@ export default function Login() {
         <>
             <Head title="Sign In | iMAPS Rosario" />
 
-            <style dangerouslySetInnerHTML={{__html: `
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-                * { font-family: 'Plus Jakarta Sans', sans-serif !important; }
-                body { background-color: #ffffff; margin: 0; overflow: ${showTerms ? 'hidden' : 'auto'}; }
-                .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-                .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-                @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-                .rise { animation: rise .7s cubic-bezier(.16,1,.3,1) both; }
-                .rise-2 { animation-delay: .1s; }
-                @keyframes fill { from { transform: scaleY(0); } to { transform: scaleY(1); } }
-                .fill { transform-origin: top; animation: fill 6s linear forwards; }
-                @media (prefers-reduced-motion: reduce) { .rise { animation: none; } .fill { animation: none; transform: scaleY(1); } .parcel, .step { transition: none !important; } }
-            `}} />
+            <AuthStyles lockScroll={!!showTerms} />
 
             <div className="relative min-h-screen w-full overflow-hidden bg-white text-slate-900">
 
-                {/* Cadastral map texture */}
-                <div className="absolute inset-0" aria-hidden="true">
-                    <svg className="absolute inset-0 w-full h-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice">
-                        {PARCELS.map((p, i) => {
-                            const on = ACTIVE_PARCEL[active] === i;
-                            return (
-                                <polygon
-                                    key={i}
-                                    className="parcel"
-                                    points={p.points}
-                                    fill={on ? 'rgba(37,99,235,.07)' : 'transparent'}
-                                    stroke={on ? '#2563eb' : '#cbd5e1'}
-                                    strokeOpacity={on ? 0.8 : 0.5}
-                                    strokeWidth={on ? 2 : 1.2}
-                                    strokeLinejoin="round"
-                                    style={{ transition: 'all .8s ease' }}
-                                />
-                            );
-                        })}
-                    </svg>
-                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_85%_15%,rgba(191,219,254,.7),transparent_50%),radial-gradient(ellipse_at_10%_90%,rgba(224,231,255,.7),transparent_50%),linear-gradient(to_bottom,rgba(255,255,255,.6),rgba(255,255,255,.85))]" />
-                </div>
+                <CadastralBackground activeParcel={ACTIVE_PARCEL[active]} />
 
                 <div className="relative z-10 max-w-6xl mx-auto px-5 sm:px-6 min-h-screen flex flex-col">
 
-                    {/* Floating navbar */}
-                    <nav className="rise mt-4 flex items-center justify-between rounded-2xl bg-white/85 backdrop-blur-md border border-slate-200/70 px-4 py-2.5 shadow-[0_10px_40px_-14px_rgba(37,99,235,.25)]">
-                        <div className="flex items-center gap-3">
-                            <svg className="w-11 h-11 shrink-0" viewBox="0 0 44 44" aria-hidden="true">
-                                <circle cx="22" cy="22" r="22" className="fill-blue-100" />
-                                <circle cx="22" cy="22" r="17" className="fill-blue-200" />
-                                <circle cx="22" cy="22" r="12" className="fill-blue-400" />
-                                <circle cx="22" cy="22" r="8" className="fill-blue-600" />
-                                <path d="M22 14.5c-3 0-5.2 2.2-5.2 5 0 3.6 5.2 9 5.2 9s5.2-5.4 5.2-9c0-2.8-2.2-5-5.2-5Z" fill="#fff" />
-                                <circle cx="22" cy="19.5" r="2" className="fill-blue-600" />
-                            </svg>
-                            <div className="leading-tight">
-                                <p className="text-xl font-extrabold tracking-tight text-slate-900">iMAPS</p>
-                                <p className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-[0.06em] sm:tracking-[0.1em] text-blue-600">Municipal Planning and Development Office</p>
-                            </div>
-                        </div>
+                    <Navbar right={
                         <a href="mailto:admin@imaps-rosario.gov.ph" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors">
                             <Icon d={ICONS.mail} className="w-4 h-4" sw={2} />
                             <span className="hidden sm:inline">Need help?</span>
                         </a>
-                    </nav>
+                    } />
 
                     <main className="flex-1 grid lg:grid-cols-[minmax(0,540px)_400px] lg:justify-center gap-12 lg:gap-24 items-center py-12">
 

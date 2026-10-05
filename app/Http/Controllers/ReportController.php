@@ -7,13 +7,27 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class ReportController extends Controller
 {
+    private const BARANGAYS = [
+        'Alupay', 'Antipolo', 'Bagong Pook', 'Balibago',
+        'Barangay A (Poblacion)', 'Barangay B (Poblacion)', 'Barangay C (Poblacion)',
+        'Barangay D (Poblacion)', 'Barangay E (Poblacion)',
+        'Bayawang', 'Baybayin', 'Bulihan', 'Cahigam', 'Calantas', 'Colongan', 'Itlugan',
+        'Leviste (Tubahan)', 'Lumbangan', 'Maalas-as', 'Mabato', 'Mabunga',
+        'Macalamcam A', 'Macalamcam B', 'Malaya', 'Maligaya', 'Marilag', 'Masaya',
+        'Matamis (Malinao)', 'Mavalor', 'Mayuro', 'Namuco', 'Namunga', 'Nasi', 'Natu',
+        'Palakpak', 'Pinagsibaan', 'Putingkahoy', 'Quilib', 'Salao', 'San Agustin',
+        'San Carlos', 'San Ignacio', 'San Isidro', 'San Jose', 'San Roque', 'Santa Cruz',
+        'Timbugan', 'Tiquiwan', 'Tulos',
+    ];
+
     public function index()
     {
-        return Inertia::render('Reports/Index');
+        return Inertia::render('Reports/Index', [
+            'barangays' => self::BARANGAYS,
+        ]);
     }
 
     private function getHeaders(array $variables): array
@@ -23,7 +37,7 @@ class ReportController extends Controller
             switch ($var) {
                 case 'month': $headers[] = 'Month'; break;
                 case 'day': $headers[] = 'Day'; break;
-                case 'date': $headers[] = 'Date'; break;
+                case 'date': $headers[] = 'Date Filed'; break;
                 case 'year': $headers[] = 'Year'; break;
                 case 'application_type': $headers[] = 'Application Type'; break;
                 case 'status': $headers[] = 'Status'; break;
@@ -53,7 +67,8 @@ class ReportController extends Controller
             case 'name': return $item->applicant_name ?: ($item->parcels->first()->owner_name ?? '');
             case 'barangay': return $item->barangay ?: ($item->parcels->first()->barangay ?? '');
             case 'land_use_class': return $item->land_use_class ?: ($item->parcels->first()->land_use_class ?? '');
-            case 'lot_area_sqm': return $item->parcels->sum('lot_area_sqm');
+            // Summing float areas leaves artefacts like 1266.1599999; round to centimetre precision.
+            case 'lot_area_sqm': return round((float) $item->parcels->sum('lot_area_sqm'), 2);
             case 'building_area': return $item->building_area;
             case 'purpose': return $item->purpose;
             case 'project_cost': return $item->project_cost;
@@ -76,6 +91,17 @@ class ReportController extends Controller
         if ($request->application_type && $request->application_type !== 'All') {
             $query->where('application_type', $request->application_type);
         }
+        // Same fallback as extractValue(): the application's own barangay, else its first parcel's.
+        if ($request->barangay) {
+            $b = $request->barangay;
+            $query->where(function ($q) use ($b) {
+                $q->where('barangay', $b)
+                  ->orWhere(function ($q2) use ($b) {
+                      $q2->where(fn ($e) => $e->whereNull('barangay')->orWhere('barangay', ''))
+                         ->whereHas('parcels', fn ($p) => $p->where('barangay', $b));
+                  });
+            });
+        }
 
         return $query;
     }
@@ -86,25 +112,16 @@ class ReportController extends Controller
 
         // Pre-fill all Rosario Barangays if grouping by Barangay
         if ($groupBy === 'barangay') {
-            $rosarioBarangays = [
-                'Alupay', 'Antipolo', 'Bagong Pook', 'Balibago',
-                'Barangay A (Poblacion)', 'Barangay B (Poblacion)', 'Barangay C (Poblacion)',
-                'Barangay D (Poblacion)', 'Barangay E (Poblacion)',
-                'Bayawang', 'Baybayin', 'Bulihan', 'Cahigam', 'Calantas', 'Colongan', 'Itlugan',
-                'Leviste (Tubahan)', 'Lumbangan', 'Maalas-as', 'Mabato', 'Mabunga',
-                'Macalamcam A', 'Macalamcam B', 'Malaya', 'Maligaya', 'Marilag', 'Masaya',
-                'Matamis (Malinao)', 'Mavalor', 'Mayuro', 'Namuco', 'Namunga', 'Nasi', 'Natu',
-                'Palakpak', 'Pinagsibaan', 'Putingkahoy', 'Quilib', 'Salao', 'San Agustin',
-                'San Carlos', 'San Ignacio', 'San Isidro', 'San Jose', 'San Roque', 'Santa Cruz',
-                'Timbugan', 'Tiquiwan', 'Tulos'
-            ];
-            foreach ($rosarioBarangays as $b) {
+            foreach (self::BARANGAYS as $b) {
                 $groupedData[$b] = ['count' => 0, 'lot_area' => 0, 'fee' => 0, 'project_cost' => 0, 'building_area' => 0];
             }
         }
 
         foreach ($data as $item) {
-            $val = (string) $this->extractValue($item, $groupBy);
+            // Months are keyed by year too ("2026-01"), so January 2025 and January 2026 stay separate.
+            $val = $groupBy === 'month'
+                ? ($item->created_at ? $item->created_at->format('Y-m') : '')
+                : (string) $this->extractValue($item, $groupBy);
             if ($val === '') $val = 'Unknown';
             
             if (!isset($groupedData[$val])) {
@@ -118,12 +135,20 @@ class ReportController extends Controller
             $groupedData[$val]['building_area'] += (float) $this->extractValue($item, 'building_area');
         }
 
+        // Time groupings read best in chronological order.
+        if (in_array($groupBy, ['month', 'year'])) {
+            ksort($groupedData);
+        }
+
         $labels = [];
         $dataPts = [];
         $rows = [];
         $datasetLabel = 'Count';
 
         foreach ($groupedData as $label => $stats) {
+            if ($groupBy === 'month' && $label !== 'Unknown') {
+                $label = \Carbon\Carbon::createFromFormat('Y-m', $label)->format('M Y');
+            }
             $val = 0;
             if ($aggregation === 'sum_lot_area') {
                 $val = round($stats['lot_area'], 2);
@@ -159,117 +184,65 @@ class ReportController extends Controller
         ];
     }
 
-    /**
-     * Builds an advanced QuickChart config array for unified rendering
-     */
-    private function buildQuickChartConfig($chartType, $labels, $data, $datasetLabel)
+    // Only embed what is genuinely a PNG data URI; anything else is dropped and the PDF shows the table alone.
+    private function validPngDataUri(?string $uri): ?string
     {
-        $isPieOrDoughnut = in_array($chartType, ['pie', 'doughnut']);
-        $isHorizontal = $chartType === 'horizontalBar';
-        
-        $bgColors = [];
-        $borderColors = [];
-        $count = count($labels);
-        
-        if ($isPieOrDoughnut) {
-            // Distribute hues evenly across the golden angle for high contrast
-            for ($i = 0; $i < $count; $i++) {
-                $hue = ($i * 137.508) % 360;
-                $bgColors[] = "hsla({$hue}, 70%, 55%, 0.85)";
-                $borderColors[] = "#ffffff";
-            }
-        } else {
-            $bgColors = 'rgba(59, 130, 246, 0.8)';
-            $borderColors = 'rgba(29, 78, 216, 1)';
+        if (!$uri || !str_starts_with($uri, 'data:image/png;base64,')) {
+            return null;
         }
+        $bytes = base64_decode(substr($uri, 22), true);
+        return $bytes !== false && str_starts_with($bytes, "\x89PNG\r\n\x1a\n") ? $uri : null;
+    }
 
-        $options = [
-            'responsive' => true,
-            'maintainAspectRatio' => false,
-            'legend' => [
-                'display' => $isPieOrDoughnut,
-                'position' => 'right',
-                'labels' => ['fontSize' => 10, 'boxWidth' => 12, 'fontColor' => '#475569']
-            ],
-            'plugins' => [
-                'datalabels' => [
-                    'display' => true,
-                    'color' => $isPieOrDoughnut ? '#ffffff' : '#334155',
-                    'font' => ['weight' => 'bold', 'size' => 9],
-                    'align' => $isPieOrDoughnut ? 'center' : 'end',
-                    'anchor' => $isPieOrDoughnut ? 'center' : 'end',
-                ]
-            ]
-        ];
-
-        if (!$isPieOrDoughnut) {
-            $options['scales'] = [
-                'xAxes' => [[
-                    'gridLines' => ['display' => !$isHorizontal, 'color' => '#f1f5f9'],
-                    'ticks' => ['beginAtZero' => true, 'fontSize' => 10, 'fontColor' => '#64748b']
-                ]],
-                'yAxes' => [[
-                    'gridLines' => ['display' => $isHorizontal, 'color' => '#f1f5f9'],
-                    'ticks' => ['beginAtZero' => true, 'fontSize' => 10, 'fontColor' => '#64748b']
-                ]]
-            ];
-        }
-
+    // Shared by preview and download so both accept exactly the same options.
+    private function reportRules(): array
+    {
         return [
-            'type' => $chartType,
-            'data' => [
-                'labels' => $labels,
-                'datasets' => [[
-                    'label' => $datasetLabel,
-                    'data' => $data,
-                    'backgroundColor' => $bgColors,
-                    'borderColor' => $borderColors,
-                    'borderWidth' => 1
-                ]]
-            ],
-            'options' => $options
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'application_type' => 'nullable|in:All,Locational Clearance,Zoning Certificate,Development Permit',
+            'barangay' => 'nullable|in:' . implode(',', self::BARANGAYS),
+            'variables' => 'nullable|array',
+            'variables.*' => 'in:reference_number,date,application_type,status,name,barangay,land_use_class,lot_area_sqm,building_area,project_cost,purpose,assessment_fee',
+            'presentation_style' => 'nullable|in:table,summary_table,bar_chart,horizontal_bar_chart,line_chart,pie_chart,doughnut_chart',
+            'aggregation' => 'nullable|in:count,sum_lot_area,avg_lot_area,sum_building_area,sum_project_cost,sum_fee',
+            'group_by' => 'nullable|in:status,barangay,application_type,land_use_class,month,year',
         ];
     }
 
     public function previewReport(Request $request)
     {
-        $request->validate([
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
-            'application_type' => 'nullable|string',
-            'variables' => 'nullable|array',
-            'presentation_style' => 'nullable|string',
-            'aggregation' => 'nullable|string',
-            'group_by' => 'nullable|string'
+        $request->validate($this->reportRules(), [
+            'end_date.after_or_equal' => 'The end date must be on or after the start date.',
         ]);
 
         $query = $this->buildQuery($request);
-        $total_rows = $query->count();
-        $allData = $query->get();
+        $total_rows = (clone $query)->count();
 
-        $vars = $request->variables ?? ['reference_number'];
-        $vars = array_unique(array_merge(['month', 'day', 'date', 'year'], $vars));
+        // Only the columns the user picked, in the order they picked them.
+        $vars = array_values(array_unique($request->variables ?: ['reference_number']));
 
         $chartData = null;
 
         if ($request->presentation_style && $request->presentation_style !== 'table') {
+            $allData = $query->get();
             $summary = $this->generateSummaryData($allData, $request->group_by ?? 'barangay', $request->aggregation ?? 'count');
             $headers = [$summary['groupName'], $summary['datasetLabel']];
             $rows = $summary['rows'];
             
-            $chartTypes = ['bar_chart', 'horizontal_bar_chart', 'line_chart', 'pie_chart', 'doughnut_chart'];
-            if (in_array($request->presentation_style, $chartTypes)) {
-                $chartType = $request->presentation_style === 'horizontal_bar_chart' ? 'horizontalBar' : str_replace('_chart', '', $request->presentation_style);
-                
+            // Raw series only: the browser draws the chart itself, so no data leaves the server.
+            if (str_ends_with((string) $request->presentation_style, '_chart')) {
                 $chartData = [
-                    'config' => $this->buildQuickChartConfig($chartType, $summary['labels'], $summary['data'], $summary['datasetLabel']),
-                    'datasetLabel' => $summary['datasetLabel']
+                    'labels' => $summary['labels'],
+                    'data' => $summary['data'],
+                    'datasetLabel' => $summary['datasetLabel'],
                 ];
             }
         } else {
             $headers = $this->getHeaders($vars);
             $rows = [];
-            foreach ($allData->take(100) as $item) {
+            // The preview only shows 100 rows, so only fetch 100.
+            foreach ($query->limit(100)->get() as $item) {
                 $row = [];
                 foreach ($vars as $var) {
                     $row[] = $this->extractValue($item, $var);
@@ -288,24 +261,25 @@ class ReportController extends Controller
 
     public function generateReport(Request $request)
     {
-        $request->validate([
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
-            'application_type' => 'nullable|string',
-            'variables' => 'nullable|array',
+        $request->validate($this->reportRules() + [
             'format' => 'required|in:pdf,csv,xlsx',
-            'presentation_style' => 'nullable|string',
             'document_size' => 'nullable|in:a4,letter,legal',
             'orientation' => 'nullable|in:portrait,landscape',
-            'aggregation' => 'nullable|string',
-            'group_by' => 'nullable|string'
+            // Chart drawn by the browser; ~4 MB ceiling covers a 2000×1200 PNG with room to spare.
+            'chart_image' => 'nullable|string|max:4000000',
+            // Text size (px) chosen by the preview so wide tables fit the paper width.
+            'font_size' => 'nullable|numeric|between:5,12',
+            // Chart width (px) chosen by the preview so the chart and table fit on page 1.
+            'chart_width' => 'nullable|numeric|between:100,1000',
+        ], [
+            'end_date.after_or_equal' => 'The end date must be on or after the start date.',
         ]);
 
         $query = $this->buildQuery($request);
         $allData = $query->get();
 
-        $vars = $request->variables ?? ['reference_number'];
-        $vars = array_unique(array_merge(['month', 'day', 'date', 'year'], $vars));
+        // Only the columns the user picked, in the order they picked them.
+        $vars = array_values(array_unique($request->variables ?: ['reference_number']));
 
         $chartSrc = null;
 
@@ -314,23 +288,8 @@ class ReportController extends Controller
             $headers = [$summary['groupName'], $summary['datasetLabel']];
             $rows = $summary['rows'];
             
-            $chartTypes = ['bar_chart', 'horizontal_bar_chart', 'line_chart', 'pie_chart', 'doughnut_chart'];
-            if ($request->format === 'pdf' && in_array($request->presentation_style, $chartTypes)) {
-                $chartType = $request->presentation_style === 'horizontal_bar_chart' ? 'horizontalBar' : str_replace('_chart', '', $request->presentation_style);
-                
-                $chartConfig = $this->buildQuickChartConfig($chartType, $summary['labels'], $summary['data'], $summary['datasetLabel']);
-                $chartUrl = 'https://quickchart.io/chart?w=1000&h=600&c=' . urlencode(json_encode($chartConfig));
-                $chartSrc = $chartUrl;
-
-                // PRE-FETCH AS BASE64 TO PREVENT DOMPDF GD BLOCKS
-                try {
-                    $imageContent = @file_get_contents($chartUrl);
-                    if ($imageContent) {
-                        $chartSrc = 'data:image/png;base64,' . base64_encode($imageContent);
-                    }
-                } catch (\Exception $e) {
-                    // Fallback to URL
-                }
+            if ($request->format === 'pdf' && str_ends_with((string) $request->presentation_style, '_chart')) {
+                $chartSrc = $this->validPngDataUri($request->chart_image);
             }
         } else {
             $headers = $this->getHeaders($vars);
@@ -353,13 +312,14 @@ class ReportController extends Controller
         elseif ($request->start_date) $dateStr = 'from ' . $request->start_date;
         elseif ($request->end_date) $dateStr = 'until ' . $request->end_date;
 
-        $reportTitleStr = $appTypeStr . ' Report (' . $dateStr . ')';
+        $filters = array_filter([$request->barangay]);
+        $reportTitleStr = $appTypeStr . ' Report (' . $dateStr . ')' . ($filters ? ' - ' . implode(', ', $filters) : '');
         $filename = str_replace([' ', '(', ')'], ['_', '', ''], $reportTitleStr) . '_' . date('Ymd_His');
 
         DB::table('audit_trail')->insert([
             'application_id' => 0,
             'action' => 'Generated ' . strtoupper($request->format) . ' Report',
-            'performed_by' => auth()->id() ?? 1,
+            'performed_by' => $request->user()->id,
             'note' => 'Generated report: ' . $reportTitleStr,
             'performed_at' => now()
         ]);
@@ -385,8 +345,10 @@ class ReportController extends Controller
                 'rows' => $rows,
                 'report_title' => $reportTitleStr,
                 'presentation_style' => $request->presentation_style ?? 'table',
-                'chartSrc' => $chartSrc
-            ])->setPaper($request->document_size ?? 'a4', $request->orientation ?? 'landscape')->setOptions(['isRemoteEnabled' => true]);
+                'chartSrc' => $chartSrc,
+                'fontSize' => (float) ($request->font_size ?: 12),
+                'chartWidth' => $request->chart_width ? (int) $request->chart_width : null,
+            ])->setPaper($request->document_size ?? 'a4', $request->orientation ?? 'landscape')->setOptions(['isRemoteEnabled' => false]);
             return $pdf->download($filename . '.pdf');
         } elseif ($format === 'xlsx') {
             if (class_exists('\Shuchkin\SimpleXLSXGen')) {
