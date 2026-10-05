@@ -51,8 +51,9 @@
 -- SCHEMA-ADD-009 ADDED TABLE report_action_audit - report_action_audit
 -- SCHEMA-ADD-010 ADDED TABLE report_escalations - report_escalations
 -- SCHEMA-ADD-011 LEGACY RETAINED TABLE application_sequences - application_sequences
--- SCHEMA-CON-001 .. SCHEMA-CON-060 CONSTRAINTS (pk, unique, check, foreign key)
+-- SCHEMA-CON-001 .. SCHEMA-CON-061 CONSTRAINTS (pk, unique, check, foreign key)
 -- SCHEMA-IDX-001 .. SCHEMA-IDX-029 INDEXES
+-- SCHEMA-POL-001 .. SCHEMA-POL-002 POLICY DEFINITIONS (Supabase-managed storage policies and FieldSync metadata constraints), guarded application
 -- ============================================================
 
 -- ============================================================
@@ -1473,3 +1474,84 @@ CREATE INDEX technical_reviews_zoning_application_id_index ON public.technical_r
 -- [SCHEMA-IDX-029] INDEX technical_reviews_zoning_application_id_review_round_index
 -- ------------------------------------------------------------
 CREATE INDEX technical_reviews_zoning_application_id_review_round_index ON public.technical_reviews USING btree (zoning_application_id, review_round);
+
+-- ============================================================
+-- CANONICAL CONSTRAINTS & POLICY DEFINITIONS (FieldSync bridge hardening)
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- [SCHEMA-CON-061] CONSTRAINT ON field_job_photos (CHECK)
+-- ------------------------------------------------------------
+ALTER TABLE ONLY public.field_job_photos
+    ADD CONSTRAINT field_job_photos_path_namespace_chk
+    CHECK (
+        photo_url ~ ('^inspections/' || field_job_id::text || '/photo_[A-Za-z0-9_-]+\.jpg$')
+    );
+
+-- ------------------------------------------------------------
+-- [SCHEMA-POL-001] POLICY inspectors upload own inspection photos (storage.objects INSERT)
+-- [SCHEMA-POL-002] POLICY r4p1_inspectors_update_assigned_inspection_objects (storage.objects UPDATE)
+--
+-- Supabase Storage manages storage.objects and the storage.* / auth.uid()
+-- helpers. This canonical contract records the exact deployed policy semantics
+-- and applies the policy DDL only where those Supabase-managed objects exist,
+-- so a non-Supabase PostgreSQL validation pass never emits DDL against objects
+-- it does not own. No storage.objects trigger, no substitute Storage objects or
+-- functions are defined.
+-- ------------------------------------------------------------
+DO $$
+BEGIN
+    IF to_regclass('storage.objects') IS NOT NULL
+       AND to_regproc('storage.foldername(text)') IS NOT NULL
+       AND to_regproc('storage.allow_only_operation(text)') IS NOT NULL
+       AND to_regproc('auth.uid()') IS NOT NULL
+    THEN
+        DROP POLICY IF EXISTS "inspectors upload own inspection photos" ON storage.objects;
+        CREATE POLICY "inspectors upload own inspection photos"
+          ON storage.objects
+          FOR INSERT
+          TO authenticated
+          WITH CHECK (
+            bucket_id = 'inspection-photos'
+            AND (storage.foldername(name))[1] = 'inspections'
+            AND (storage.foldername(name))[2] ~ '^[0-9a-fA-F-]{36}$'
+            AND name ~ '^inspections/[0-9a-fA-F-]{36}/photo_[A-Za-z0-9_-]+\.jpg$'
+            AND EXISTS (
+              SELECT 1
+              FROM public.field_jobs
+              WHERE (public.field_jobs.id)::text = (storage.foldername(name))[2]
+                AND public.field_jobs.assigned_inspector_id =auth.uid()
+            )
+          );
+
+        DROP POLICY IF EXISTS "r4p1_inspectors_update_assigned_inspection_objects" ON storage.objects;
+        CREATE POLICY "r4p1_inspectors_update_assigned_inspection_objects"
+          ON storage.objects
+          FOR UPDATE
+          TO authenticated
+          USING (
+            bucket_id = 'inspection-photos'
+            AND storage.allow_only_operation('storage.object.upload_update')
+            AND (storage.foldername(name))[1] = 'inspections'
+            AND name ~ '^inspections/[0-9a-fA-F-]{36}/photo_[A-Za-z0-9_-]+\.jpg$'
+            AND EXISTS (
+              SELECT 1
+              FROM public.field_jobs job
+              WHERE (public.field_jobs.id)::text = (storage.foldername(objects.name))[2]
+                AND public.field_jobs.assigned_inspector_id =auth.uid()
+            )
+          )
+          WITH CHECK (
+            bucket_id = 'inspection-photos'
+            AND storage.allow_only_operation('storage.object.upload_update')
+            AND (storage.foldername(name))[1] = 'inspections'
+            AND name ~ '^inspections/[0-9a-fA-F-]{36}/photo_[A-Za-z0-9_-]+\.jpg$'
+            AND EXISTS (
+              SELECT 1
+              FROM public.field_jobs job
+              WHERE (public.field_jobs.id)::text = (storage.foldername(objects.name))[2]
+                AND public.field_jobs.assigned_inspector_id =auth.uid()
+            )
+          );
+    END IF;
+END $$;

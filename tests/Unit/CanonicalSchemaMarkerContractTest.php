@@ -34,7 +34,7 @@ class CanonicalSchemaMarkerContractTest extends TestCase
      * only: callers supply their own delimiters, so a delimiter mistake cannot
      * silently turn a reference scan into a no-op.
      */
-    private const MARKER_BODY = '(\[SCHEMA-(?:BASE|ADD|EXT|SEQ|SEQOWN|IDENT|CON|IDX)-\d+\]|\bSCHEMA-(?:BASE|ADD|EXT|SEQ|SEQOWN|IDENT|CON|IDX)-\d+)';
+    private const MARKER_BODY = '(\[SCHEMA-(?:BASE|ADD|EXT|SEQ|SEQOWN|IDENT|CON|IDX|POL)-\d+\]|\bSCHEMA-(?:BASE|ADD|EXT|SEQ|SEQOWN|IDENT|CON|IDX|POL)-\d+)';
 
     // ==================================================================
     // THE CANONICAL FILE IS PURE SQL
@@ -245,6 +245,23 @@ class CanonicalSchemaMarkerContractTest extends TestCase
                 "The canonical SQL must not define the migrations ledger (line {$number}): {$line}"
             );
         }
+    }
+
+    public function test_inspection_photo_authorization_markers_are_recorded_and_linked(): void
+    {
+        $declared = array_column($this->markerDeclarations(), 'marker');
+        $log = $this->changeLog();
+
+        foreach (['SCHEMA-POL-001', 'SCHEMA-POL-002', 'SCHEMA-CON-061'] as $marker) {
+            $this->assertContains($marker, $declared, "{$marker} must be declared in the canonical schema.");
+            $this->assertSame(1, count(array_keys($declared, $marker, true)), "{$marker} must be declared exactly once.");
+            $this->assertStringContainsString($marker, $log, "The change log must reference {$marker}.");
+        }
+
+        // The migration identifier and FieldSync commit are the canonical
+        // link from the change log to the actually-deployed backend delta.
+        $this->assertStringContainsString('005_harden_inspection_photo_authorization.sql', $log);
+        $this->assertStringContainsString('d6da48914ae16c4e7d80e41d6b66377cea5c8c75', $log);
     }
 
     // ==================================================================
@@ -607,6 +624,6 @@ class CanonicalSchemaMarkerContractTest extends TestCase
 
         private static function classlessMarkerPattern(): string
     {
-        return 'SCHEMA-(?:BASE|ADD|EXT|SEQ|SEQOWN|IDENT|CON|IDX)-\d+';
+        return 'SCHEMA-(?:BASE|ADD|EXT|SEQ|SEQOWN|IDENT|CON|IDX|POL)-\d+';
     }
 }

@@ -897,6 +897,16 @@ With RLS enabled, an authenticated inspector should be able to:
 - UPDATE an existing owned photo row, because FieldSync uses `upsert(..., onConflict: 'id')` on retry;
 - optionally DELETE only owned photos if product behavior explicitly requires deletion.
 
+Current canonical invariant (Workstream #9 authorization, `[SCHEMA-POL-001]`, `[SCHEMA-POL-002]`, `[SCHEMA-CON-061]`):
+
+- the inspection photo object namespace is tied to `field_job_id` (`inspections/<field_job_uuid>/photo_<base64url-key>.jpg`);
+- inspection-photo writes require the current assigned inspector (`field_jobs.assigned_inspector_id = auth.uid()`);
+- Storage overwrite/upsert is limited to the `storage.object.upload_update` operation;
+- Storage move/rename is not authorized by `[SCHEMA-POL-002]`;
+- `public.field_job_photos.photo_url` must live inside its own `field_job_id` namespace (`[SCHEMA-CON-061]`); that CHECK proves path shape and namespace coherence, not physical object existence;
+- DELETE remains denied;
+- full mid-flight inspector handover/ownership transfer is outside this prerequisite contract and is not implemented.
+
 The inspected schema dump includes inspector SELECT and INSERT policies but no photo UPDATE policy. Consequently, first upload may work while an idempotent retry that reaches the UPDATE branch may fail. This is a **HIGH, LIVE VERIFY** item. Any server-side iMAPS read must use an approved server credential or a separate least-privilege policy. The current iMAPS inspection-detail utility performs this read in browser code, so the configured browser key and effective RLS access must be audited; a service-role key must never be exposed there.
 
 ### 19.2 Storage contract
@@ -911,6 +921,8 @@ Active FieldSync code uploads to the `inspection-photos` bucket and stores a pub
 - public-bucket use is an explicit privacy decision. If evidence must be private, replace public URLs with durable object paths and generate authorized signed URLs at read time.
 
 No repository SQL inspected during this audit establishes that bucket or its object policies. Storage remains **LIVE VERIFY**.
+
+Canonical live contract (`[SCHEMA-POL-001]` INSERT / `[SCHEMA-POL-002]` UPDATE): authenticated, canonical object paths only, current `assigned_inspector_id = auth.uid()`; Storage UPDATE is permitted only for the `storage.object.upload_update` operation; DELETE remains denied.
 
 ---
 

@@ -2444,8 +2444,9 @@ The canonical schema is now `CANONICAL_DATABASE_SCHEMA.md`, which is pure execut
 | `[SCHEMA-SEQOWN-001]`..`[SCHEMA-SEQOWN-014]` and `[SCHEMA-SEQOWN-016]`..`[SCHEMA-SEQOWN-024]` | 23 `ALTER SEQUENCE ... OWNED BY` declarations. Marker 015 does not exist; the gap is permanent, not a typo. |
 | `[SCHEMA-BASE-001]`..`[SCHEMA-BASE-015]` | Core tables created by `create_initial_schema` |
 | `[SCHEMA-ADD-001]`..`[SCHEMA-ADD-011]` | Tables added by later migrations |
-| `[SCHEMA-CON-001]`..`[SCHEMA-CON-060]` | Primary key, unique, check and foreign key constraints |
-| `[SCHEMA-IDX-001]`..`[SCHEMA-IDX-029]` | Indexes, including the two partial unique indexes |
+| `[SCHEMA-CON-001]`..`[SCHEMA-CON-061]` | Primary key, unique, check and foreign key constraints |
+| [SCHEMA-IDX-001]..[SCHEMA-IDX-029] | Indexes, including the two partial unique indexes |
+| [SCHEMA-POL-001]..[SCHEMA-POL-002] | Supabase policy definitions for FieldSync inspection-photo authorization (guarded canonical application) |
 
 **Marker IDs are stable identifiers.** Once published, a marker ID is never renumbered or reused: renumbering would silently repoint every document that cites it. New objects take the next unused ID in their class, and a gap stays a gap. The ranges above are therefore a summary of the published set, not a promise of contiguity, and `SCHEMA-SEQOWN` deliberately has no 015. The canonical file is the index of record for the individual numbering.
 
@@ -3191,3 +3192,43 @@ This is operational migration history, not schema, so it belongs in this file. T
 **ROLLBACK / RECOVERY:** documentation only; `git checkout` of the four documents restores the previous state. No database recovery is needed because no database was written.
 
 **RELATED COMMIT:** `docs: normalize canonical database contract` on `fix/bridge-source-namespace-collision`
+
+---
+
+## 2026-10-06 - Workstream #9 backend authorization - **APPLIED / VERIFIED**
+
+**SCHEMA REFERENCE:** `[SCHEMA-POL-001]`, `[SCHEMA-POL-002]`, `[SCHEMA-CON-061]`
+
+**OBJECT:** shared Supabase/PostgreSQL backend authorization. Migration file `supabase/migrations/005_harden_inspection_photo_authorization.sql`; FieldSync commit `d6da48914ae16c4e7d80e41d6b66377cea5c8c75`. Applied: YES.
+
+**PURPOSE:** make the inspection-photo authorization contract canonical and enforceable on the shared backend (#9 source/local prerequisites track), so FieldSync can distinguish authorized current-assignee writes from authority loss.
+
+**APPLIED STATE:** APPLIED + VERIFIED / verifying.
+
+**APPLIED TO:** shared Supabase project `laapipjyprmmaylunxib` only. No FieldSync source change, no DELETE permission, no admin write, no bucket configuration change, no column/function/trigger/Edge Function change.
+
+**CHANGES recorded:**
+- canonical inspection-photo INSERT path authorization (`[SCHEMA-POL-001]`)
+- current-assignee enforcement (`field_jobs.assigned_inspector_id = auth.uid()`)
+- operation-aware Storage UPDATE/upsert authorization, same-key only (`[SCHEMA-POL-002]`, `storage.allow_only_operation('storage.object.upload_update')`)
+- Storage move/rename NOT authorized by this policy
+- metadata `field_job_id` ↔ path namespace coherence (`[SCHEMA-CON-061]`)
+
+**NO CHANGE:** DELETE permission (remains denied), admin Storage write, bucket configuration, table columns, functions, triggers, Edge Functions. FieldSync client upload semantics unchanged; still `upsert: true`.
+
+**EXACT CONSTRAINT:** `photo_url ~ ('^inspections/' || field_job_id::text || '/photo_[A-Za-z0-9_-]+\.jpg$')`. Guarantees canonical path shape and field_job namespace coherence. It does NOT prove physical Storage object existence; existence is enforced by the Storage RLS, not the CHECK.
+
+**VERIFICATION:**
+- migration transaction: PASS
+- deployed catalog verification (INSERT policy is authenticated-only, canonical-path, current-assignee; UPDATE policy carries the upload_update operation gate in USING and WITH CHECK; CHECK `field_job_photos_path_namespace_chk` live): PASS
+- metadata bad-shape probe rejected with PostgreSQL 23514 (rolled-back probe): PASS
+- operation gate with `storage.operation() = null` evaluates FALSE: PASS
+- FieldSync regression: #9 authority/provenance 11/11, #8 reassignment 28/28, retention 12/12, offline persistence 28/28, R4 photo loopback 30/30, R4 recovery 33/33, loop5 6/6, loop7e 6/6, responsive 27/27, reports/SQLite ownership suitesall PASS; `flutter analyze --no-pub` no issues; `git diff --check` exit 0: PASS
+
+**LIMITATION:**
+- FULL TWO-INSPECTOR LIVE JWT STORAGE-API MATRIX: **OUTSTANDING** — the linked management/CLI context exposed no real authenticated Storage API sessions, so the ALLOW cases requiring live JWTs were not directly executed. This is recorded as OUTSTANDING, not as a completed or failed matrix.
+- Full mid-flight inspector handover/ownership transfer is NOT implemented.
+
+**ROLLBACK / RECOVERY:** the exact inverse SQL restores the prior policy definitions and drops `field_job_photos_path_namespace_chk`; not executed.
+
+**RELATED COMMIT:** `fix: harden inspection photo authorization` on FieldSync `feat/midflight-handover-prerequisites`, commit `d6da48914ae16c4e7d80e41d6b66377cea5c8c75`.
