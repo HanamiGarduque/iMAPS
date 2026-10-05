@@ -6037,7 +6037,7 @@ None of the behaviour above is theoretical: the schema, its seven CHECK constrai
 partial unique index, its `users(id)` RESTRICT foreign keys and its guarded `down()` are
 all present and were exercised.
 
-Schema and evidence: `CANONICAL_DATABASE_SCHEMA.md` section 25. Change record:
+Schema and evidence: `CANONICAL_DATABASE_SCHEMA.md` marker `[SCHEMA-ADD-010]`, indexes `[SCHEMA-IDX-017]`/`[SCHEMA-IDX-018]`, constraints `[SCHEMA-CON-024]` and `[SCHEMA-CON-046]`-`[SCHEMA-CON-048]`. Change record:
 `FIELDSYNC_BRIDGE_DATABASE_CHANGE_LOG.md`.
 
 ## Migration compatibility principle (2026-10-05)

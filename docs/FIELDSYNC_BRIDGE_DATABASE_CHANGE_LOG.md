@@ -16,7 +16,7 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 4. **Business reason:** an application created by an active Planning Officer is owned by that officer, recorded as an explicit **initial assignment**. An initial assignment is **not a reassignment** and states no reason: the reason vocabulary describes why somebody is giving work away, and at first assignment nothing is.
 5. **Exact SQL / operation:**
    - `database/migrations/2026_09_27_020000_allow_initial_assignment_without_a_reason.php` - additive and idempotent.
-   - Applied with `php artisan migrate --force --path=...` (exit 0). The plain `migrate` remains unusable on this database for the pre-existing ledger drift recorded in `docs/CANONICAL_DATABASE_SCHEMA.md` section 12; no ledger row was edited by hand.
+   - Applied with `php artisan migrate --force --path=...` (exit 0). The plain `migrate` remains unusable on this database for the pre-existing ledger drift recorded in `docs/CANONICAL_DATABASE_SCHEMA.md` (see the migration-ledger history below); no ledger row was edited by hand.
 6. **After state:** `reason` is now NULLABLE on both `application_po_assignments` and `site_inspection_assignments`. The reason CHECK on both tables is replaced with the exact rule `initial -> reason IS NULL` / `reassignment -> reason IS NOT NULL AND reason IN (the five values)`, and the "Other requires a note" CHECK now uses `IS DISTINCT FROM` instead of `<>`.
 7. **TWO REAL DEFECTS FOUND AND FIXED, both by executing rather than reading:**
    - **Forced a false reason.** `reason` had been declared `NOT NULL` with a closed-vocabulary CHECK, so a first assignment could not omit it. Because nothing else was possible, the code had begun defaulting to "Workload Transfer" - so every brand-new application AND every brand-new inspection round was recorded as a workload handover that never happened. Both now record `reason = NULL`.
@@ -42,7 +42,7 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 5. **Exact SQL / operation:**
    - `database/migrations/2026_09_27_010000_add_work_reassignment_contract.php` - additive and idempotent (guarded on `Schema::hasColumn` / `hasTable` / `pg_constraint` presence).
    - Applied to local `imaps_db_0921` with `php artisan migrate --force --path=database/migrations/2026_09_27_010000_add_work_reassignment_contract.php` (exit 0).
-   - A plain `php artisan migrate` was **not** used and **not** attempted destructively: the repository's consolidated `create_initial_schema` is still recorded Pending against a live database that already has those tables, so a global run fails with `relation "users" already exists`. That ledger drift is pre-existing and is recorded in `docs/CANONICAL_DATABASE_SCHEMA.md` section 12. No ledger row was edited by hand.
+   - A plain `php artisan migrate` was **not** used and **not** attempted destructively: the repository's consolidated `create_initial_schema` is still recorded Pending against a live database that already has those tables, so a global run fails with `relation "users" already exists`. That ledger drift is pre-existing and is recorded in `docs/CANONICAL_DATABASE_SCHEMA.md` (see the migration-ledger history below). No ledger row was edited by hand.
 6. **After state:**
    - `zoning_applications.assigned_planning_officer_id bigint NULL`, FK `zoning_applications_assigned_po_foreign -> users(id) ON DELETE SET NULL`.
    - New table `application_po_assignments` (7 constraints: 5 FKs/checks + type + reason + other-note + from-shape).
@@ -880,7 +880,7 @@ Record all 14 fields used above. Never include secrets.
 8. **Table contract:** 10 columns. `id bigserial` PK; `user_id bigint NULL` FK -> `users(id)` `ON DELETE CASCADE`; `title varchar(255)` NOT NULL; `message text` NOT NULL; `type varchar(255)` NOT NULL DEFAULT `'system_alert'`; `action_url varchar(255)` NULL; `is_read boolean` NOT NULL DEFAULT `false`; `read_at timestamp(0)` NULL; `created_at` / `updated_at` `timestamp(0)` NULL. Indexes: the migration-named `(user_id, is_read)`, a partial `(user_id) WHERE user_id IS NULL` for the broadcast branch the composite cannot serve, and `(created_at DESC)` matching the real newest-first read order.
 9. **Three contract decisions recorded rather than "improved":** (a) `user_id` stays NULLABLE because `notifyAll()` writes a broadcast row with `user_id = NULL` and `scopeForUser()` deliberately matches NULL. (b) `type` gets **no** CHECK or enum, because the migration's own comment lists values as "e.g." and `notifyUser()` accepts any string; an enum would break it and diverge from the migration. (c) `created_at` / `updated_at` stay NULLABLE with **no database default**, exactly as `$table->timestamps()` produces, because `DEFAULT now()` or `NOT NULL` would both diverge from the shipped migration.
 9a. **TWO CLAIMS CORRECTED BY THE POST-APPLY RUNTIME SMOKE, not by reasoning.** The planned version of this entry asserted that `AppNotification::create()` leaves both timestamp columns NULL, and that PostgreSQL sorts NULLs LAST under `DESC`. **Both were wrong.** (i) `AppNotification` is a normal Eloquent model with `$timestamps` enabled, so Eloquent populates `created_at` / `updated_at` itself - measured at 0 of 8 smoke rows being NULL, with `orderByDesc('created_at)` ordering newest-first as the page and bell intend. The nullable, default-free columns therefore cause no ordering defect. (ii) PostgreSQL's default under `DESC` is `NULLS FIRST`, not `NULLS LAST`. Both errors were caught only because the smoke actually ran the real model against the real table; neither was visible from reading the migration. One characteristic genuinely remains: `timestamp(0)` is second precision, so same-second notifications tie and their relative order is planner-dependent - inherent to the migration's type, and not "fixed" because that would diverge from the migration.
-10. **Migration ledger:** **UNCHANGED, 16 rows. No ledger row is inserted by the artifact.** Per `CANONICAL_DATABASE_SCHEMA.md` section 2 the ledger is never edited by hand on the 0921 path, and section 12 records that a global `php artisan migrate` cannot be run against canonical at all.
+10. **Migration ledger:** **UNCHANGED, 16 rows. No ledger row is inserted by the artifact.** The ledger is never edited by hand on the 0921 path, and the migration-ledger history below records that a global `php artisan migrate` cannot be run against canonical at all.
 11. **The `2026_09_27_000000` prefix collision, recorded and NOT fixed here:** two repository migrations share that prefix - `create_notifications_table` and `add_reviewed_site_inspection_id_to_technical_reviews_table`. Laravel keys the ledger by migration NAME, so both would run, but the shared prefix makes execution order ambiguous. This is **why the notifications table is absent from canonical today**. Renaming a migration is a repository-history change and is not performed by this plan; ledger reconciliation remains a separate decision, exactly as section 12 states.
 12. **AUDIT FINDING - five of six notification write sites are inside a database transaction, so on canonical a Planning Officer currently cannot encode an application or record a technical review decision.** `ApplicationController::store` (L582, inside `DB::beginTransaction`/`rollBack` L518-732) and three `TechnicalReviewController::updateStatus` sites (L244, L292, L315, all inside the single `DB::transaction` spanning L190-L326) roll back on the notification insert. `RegisteredUserController::store` (L97) is not caught, so it 500s **after** creating the user row, leaving a half-completed registration. Only `SiteInspectionController::forceSync` (L131) is caught, so it degrades to a misleading flash error. `submitBatch` and `assignInspector` write no notifications and are unaffected. Read side: all six `NotificationController` methods fail, and `getUnread` backs the header bell that `Header.jsx` polls every 30s on every authenticated page; the browser degrades safely there, but the notifications page itself does not.
 13. **Fresh database handling:** **no duplicate definition added anywhere.** A fresh database already receives this table from the existing repository migration during the normal sequence, so the forward-SQL file is **0921-path only** and must never be run against a ledger-managed database - the same prohibition section 1 places on the fresh-install corrections.
@@ -2238,22 +2238,22 @@ identity lives locally in `report_action_audit.performed_by`.
 
 ### 3. SECURITY CHANGES
 
-- **status/response coherence** — `dr_response_coherence_ck`. `submitted`/`in_review`
+- **status/response coherence** ï¿½ `dr_response_coherence_ck`. `submitted`/`in_review`
   require all three response fields NULL; `resolved`/`wont_fix` require all three
   present with `response_message` and `responded_by_name` each containing at least
   one non-whitespace character.
-- **2000-char response limit** — `dr_response_message_length_ck`,
+- **2000-char response limit** ï¿½ `dr_response_message_length_ck`,
   `char_length(response_message) <= 2000`, enforced again in application validation
   and not surfaced as UI clutter.
-- **terminal lifecycle trigger** — `dr_guard_response_transition` BEFORE UPDATE FOR
+- **terminal lifecycle trigger** ï¿½ `dr_guard_response_transition` BEFORE UPDATE FOR
   EACH ROW. Terminal is final: no reopen, and the official response cannot be
   replaced by any writer. Narrow enough that an unrelated UPDATE is untouched.
-- **12-arg inspector filing validator** — `dr_support_filing_is_valid` extended from
+- **12-arg inspector filing validator** ï¿½ `dr_support_filing_is_valid` extended from
   9 to 12 arguments so that filing requires all three response fields NULL, closing
   a gap the new columns would otherwise have opened: an authenticated inspector could
   otherwise have filed their own report already carrying a fabricated response. The
   superseded 9-arg overload is dropped; exactly one validator remains.
-- **deterministic function ACL** — applied as `REVOKE` from
+- **deterministic function ACL** ï¿½ applied as `REVOKE` from
   `PUBLIC, anon, authenticated, service_role`, then grant back only the intent. This
   is required because live `pg_default_acl` for functions in `public` grants EXECUTE
   to `anon`, `authenticated` **and** `service_role` directly. Verified result:
@@ -2268,7 +2268,7 @@ mixed-whitespace-only responses all satisfied it. Six of seven whitespace-only i
 would have been accepted as an official response. The deployed test is
 `x ~ '[^[:space:]]'`.
 
-### 4. AUTHENTICATED PERMISSIONS — UNCHANGED
+### 4. AUTHENTICATED PERMISSIONS ï¿½ UNCHANGED
 
 | Role | SELECT | INSERT | UPDATE | DELETE |
 |---|---|---|---|---|
@@ -2289,7 +2289,7 @@ because it lives in another database.
 
 Applied with
 `php artisan migrate --path=database/migrations/2026_10_04_000000_create_report_action_audit_table.php`
-— exact path, so no unrelated pending migration was pulled in.
+ï¿½ exact path, so no unrelated pending migration was pulled in.
 
 Resulting catalog, read back live:
 
@@ -2350,7 +2350,7 @@ three response columns `NULL`. **Not mutated.**
 Local: table created with **0 rows**, migration recorded at batch 17 (was 16),
 `php -l` clean.
 
-### 8. INITIAL STATE — NOTHING FABRICATED
+### 8. INITIAL STATE ï¿½ NOTHING FABRICATED
 
 Remote: 4 reports, 0 with response content, 0 terminal.
 Local: 0 audit rows.
@@ -2362,13 +2362,13 @@ application reassignment, no PO assignment, no report status mutation.
 
 **Guarded, on both surfaces. Never used reflexively.**
 
-- **Remote** — refuses once any official response exists, because dropping the
+- **Remote** ï¿½ refuses once any official response exists, because dropping the
   columns would destroy inspector-facing records that cannot be reconstructed. The
   guard and the destructive DDL run in one transaction after
   `LOCK TABLE ... ACCESS EXCLUSIVE`, so no response can be created between the check
   and the drop. Restores the exact pre-apply 9-argument function ACL, including the
   pre-existing direct `service_role` EXECUTE grant.
-- **Local `down()`** — refuses when audit rows exist, because the corresponding
+- **Local `down()`** ï¿½ refuses when audit rows exist, because the corresponding
   remote reports are already terminal with an immutable official response, so the
   local evidence can never be regenerated. Returns if the table is absent, takes
   `ACCESS EXCLUSIVE` **before** counting so no insert can land between the emptiness
@@ -2386,7 +2386,7 @@ inverted boolean branch and labels correctly-rejected rows `FAIL`. The applied s
 is **not** implicated: its sibling `constraint_verdict` column is correct on all 10
 cases, and an independently written check with corrected logic returns `OK` on all 10.
 
-The locked artifact was **not** modified (SHA `3D144584…` preserved). Correcting the
+The locked artifact was **not** modified (SHA `3D144584ï¿½` preserved). Correcting the
 `expectation` expression needs a separate decision.
 ### 2026-10-05 - Development Support escalation episodes - LOCAL schema APPLIED + VERIFIED
 
@@ -2396,7 +2396,7 @@ The locked artifact was **not** modified (SHA `3D144584…` preserved). Correcting
 4. **Environment/project/database:** `C:\Users\Ralph Lauren\iMAPS`; local iMAPS PostgreSQL database `imaps_db_0921` on `pgsql`; shared Supabase project `laapipjyprmmaylunxib` **untouched**.
 5. **Business reason:** An internal consultation must be recorded as evidence - who asked, what came back, who closed it - and must not be able to leave a Technical Issue permanently unanswerable. The row is the authoritative episode record; there is deliberately no second escalation audit table.
 6. **Before state:** `report_escalations` **ABSENT**. `migrations` ledger 17 rows, max batch 17, zero escalation entries. Baseline counters: `report_action_audit` 3, `notifications` 7, `zoning_applications` 74, `users` 7, `site_inspections` 39. Remote `diagnostic_reports` 6 rows - `DR-2026-0001` in_review, `DR-2026-0002` and `DR-2026-0004` submitted technical issues, `DR-2026-0003` and `DR-2026-0006` submitted application support, `DR-2026-0005` resolved. `activity_log` 9 rows across 5 event types.
-7. **Exact SQL / operation:** One local migration file, `database/migrations/2026_10_05_000000_create_report_escalations_table.php`, creating table `report_escalations`, 3 indexes (one partial unique) and 7 CHECK constraints. Exact contract in `CANONICAL_DATABASE_SCHEMA.md` section 25. **User approval received: YES - APPLY.** Recovery snapshot taken first: `pg_dump --schema-only --no-owner`, SHA-256 `0D9D2E4D2A8BACD3411F558E65C16458D4722D3255B9A37DBF20B1250CA17694` (59,828 bytes; `report_escalations` absent, `report_action_audit` present).
+7. **Exact SQL / operation:** One local migration file, `database/migrations/2026_10_05_000000_create_report_escalations_table.php`, creating table `report_escalations`, 3 indexes (one partial unique) and 7 CHECK constraints. Exact contract in `CANONICAL_DATABASE_SCHEMA.md` marker `[SCHEMA-ADD-010]`. **User approval received: YES - APPLY.** Recovery snapshot taken first: `pg_dump --schema-only --no-owner`, SHA-256 `0D9D2E4D2A8BACD3411F558E65C16458D4722D3255B9A37DBF20B1250CA17694` (59,828 bytes; `report_escalations` absent, `report_action_audit` present).
 8. **After state:** `report_escalations` present with **0 rows**. `migrations` ledger 17 -> 18 with exactly one new entry `2026_10_05_000000_create_report_escalations_table` at batch 18. 11 columns, 3 `users(id) ON DELETE RESTRICT` foreign keys, **no foreign key on `report_id`**, 7 CHECK constraints, 3 indexes including the partial unique. No remote object, column, policy or row changed. `diagnostic_reports` untouched - escalation work never writes the report.
 9. **Verification query/result:** 41 checks against the live database, **all PASS**. Table exists; ledger holds exactly the expected single record at batch 18; table empty; exact 11-column list in ordinal order; zero FKs mention `report_id`; 3 FKs all `users(id)` `RESTRICT`; 7 CHECKs matching the canonical statements; 3 indexes including `report_escalations_one_open_per_report` as `UNIQUE ... USING btree (report_id) WHERE (status = 'open')`; **no** full `UNIQUE(report_id)`; history index `(report_id, created_at)`; safe `down()` order confirmed in source. Enforcement proven by SQLSTATE rather than by reading the DDL: refused `23514` for open+closure_note, open+recommendation+closure_note, closed with neither recommendation nor note, closed with a blank note, whitespace-only recommendation, recommendation without actor or time, 2001-character recommendation, 2001-character closure note, closed without closer, and an invalid status value; refused `23505` for a second open episode on one report; **accepted** closed+recommendation+null note, closed+no-recommendation+non-blank note, exactly 2000 characters, a plain open episode, two closed episodes on one report, and an open episode on a different report. All probes ran inside a transaction that was rolled back, so the table holds 0 rows. Disposable-cluster suite `tests/run-report-escalations-postgres.ps1`: 25 tests / 210 assertions, cluster torn down. Application-layer suite `tests/Feature/ReportEscalationTest.php`: 37 tests / 423 assertions. Unit suite 977 / 5824 with 20 pre-existing PHPUnit deprecations. Production build clean, `git diff --check` clean. A source/doc/live consistency pass confirmed the migration source, the live schema and all three documents agree on columns, foreign keys, CHECK constraints and indexes.
 10. **Related source/code:** `app/Models/ReportEscalation.php`; `app/Services/ReportEscalationService.php`; `app/Services/ReportLifecycleLock.php`; `app/Support/ReportEscalationGate.php`; `app/Http/Controllers/DiagnosticReportEscalationController.php`; `app/Support/ReportingVisibility.php`; `app/Services/DiagnosticReportHandling.php`; `resources/js/Pages/Diagnostics/DevelopmentSupport.jsx`; `tests/Feature/ReportEscalationTest.php`; `tests/Integration/ReportEscalationsPostgresTest.php`; `tests/run-report-escalations-postgres.ps1`. Source commit: recorded in section 15 below after the checkpoint commit is created.
@@ -2430,3 +2430,764 @@ The locked artifact was **not** modified (SHA `3D144584…` preserved). Correcting
 12. **Change scope:** Two source migrations rewritten; six ledger rows inserted; six migrations executed; two source conflicts resolved; documentation updated. No Supabase schema, RLS, Storage, Auth or Edge Function change. No remote row mutation. No role or authority change. `config/imaps.contact` still unset. FieldSync untouched.
 13. **Status:** **APPLIED + VERIFIED 2026-10-05** with explicit user approval. Regression: Development Support focused **48 tests / 511 assertions**; escalation + contract regression **200 / 2932**; Unit suite **1003 / 5916** with 20 pre-existing deprecations; disposable PostgreSQL **25 / 210**; `npm run build` clean; `git diff --check` clean. All four #7 gates match their prior baselines exactly.
 14. **Notes / risks:** (a) **Not pushed.** `composer install` cannot complete on this host, so the branch is intentionally left unpushed pending a decision (item 15). (b) **Merge defect found and repaired:** git's rename detection paired master's rename of the two legacy migrations with their deletion, and transplanted the no-op shim content onto master's canonical `..._000001`/`..._000002` paths - neutering the real schema operations while deleting the stale filenames. Detected because the fresh-install proof was re-run against the real merged tree rather than only the simulation. Both pairs were restored from `origin/master` and the checkpoint respectively, and the merged chain re-proven. (c) `git diff --check` reports ~120 trailing-whitespace findings inherited from `origin/master` in 9 of its files; deliberately **not** cleaned, as that is unrelated to this task. (d) The 8 orphan ledger rows referencing deleted migration files remain; two of them (`add_supabase_uuid_to_users_table`, `add_remarks_to_site_inspections_table`) have no live effect. Pre-existing, untouched. (e) `--pretend` is unreliable for guard-based migrations - it prints guard SQL without executing it, so the three `ensure_*` migrations appear to create tables that already exist. `migrate:status` is the reliable gate. (f) Deleting the two shim filenames makes `migrate:rollback` print "Migration not found", **exit 0**, and leave the ledger row in place - an apparent success that changes nothing. This is why they are retained. (g) No credential, token, secret or handshake value is recorded here or in any document.
+---
+
+## Canonical schema marker reference index (added 2026-10-05, documentation normalization)
+
+The canonical schema is now `CANONICAL_DATABASE_SCHEMA.md`, which is pure executable SQL. Every explanation, migration history and rationale lives here instead. Each marker below is referenced **verbatim** from that file and resolves to exactly one definition: the canonical file declares each bracket marker exactly once, so there are no duplicate marker IDs and no orphan references. `tests/Unit/CanonicalSchemaMarkerContractTest.php` enforces all of this.
+
+| Marker | Canonical object |
+|---|---|
+| `[SCHEMA-EXT-001]` | Required extension `postgis` |
+| `[SCHEMA-SEQ-001]`..`[SCHEMA-SEQ-023]` | Sequences backing serial column defaults |
+| `[SCHEMA-IDENT-001]` | Identity sequence for `technical_reviews.id` |
+| `[SCHEMA-SEQOWN-001]`..`[SCHEMA-SEQOWN-023]` | `ALTER SEQUENCE ... OWNED BY` declarations |
+| `[SCHEMA-BASE-001]`..`[SCHEMA-BASE-015]` | Core tables created by `create_initial_schema` |
+| `[SCHEMA-ADD-001]`..`[SCHEMA-ADD-011]` | Tables added by later migrations |
+| `[SCHEMA-CON-001]`..`[SCHEMA-CON-060]` | Primary key, unique, check and foreign key constraints |
+| `[SCHEMA-IDX-001]`..`[SCHEMA-IDX-029]` | Indexes, including the two partial unique indexes |
+
+Marker ranges are contiguous per class. The canonical file is the index of record for the individual numbering, because each object is numbered in dependency order: extension, sequences, tables, constraints, indexes.
+
+### Entry format
+
+Every schema-affecting entry below uses this compact structure. The canonical file defines the object; this file explains it. Full `CREATE TABLE` / `ALTER TABLE` statements are deliberately not duplicated here.
+
+---
+
+## Per-marker change-log entries
+
+Each entry references one canonical marker. Markers for sequences, sequence ownership, and per-object constraints/indexes are covered by their owning table entry, because they exist solely to serve that table; the marker IDs are listed so a reader can jump straight to them.
+
+### [SCHEMA-EXT-001] REQUIRED EXTENSION postgis
+
+**SCHEMA REFERENCE:** [SCHEMA-EXT-001]
+
+**OBJECT:** extension `postgis` (schema `public`)
+
+**PURPOSE:** Provides the `geometry`/`geography` types and spatial functions used by `barangay_boundary`, `land_parcels`, `land_use_plan`, `parcels` and `rosario_boundary`, and by the `distance_to_parcel_boundary` RPC. The canonical file declares it `IF NOT EXISTS`, so it is safe to run against a database that already has it.
+
+**SOURCE:** installation prerequisite; not owned by a single migration
+
+**ORIGIN / CONTEXT:** FieldSync Step 1 and Step 2 geometry verification, plus the iMAPS planning maps. Established during Loop 0 / Loop 1 schema reconciliation.
+
+**APPLIED STATE:** APPLIED + VERIFIED (live: PostGIS 3.6.2)
+
+**APPLIED TO:** `imaps_db_0921` (local canonical PostgreSQL); also present in the shared Supabase project
+
+**DEPENDENCIES:** none. This is the root of the schema dependency order: every PostGIS column in the canonical file depends on it.
+
+**VERIFICATION:** Live catalog query returned `postgis 3.6.2`. A fresh database given this marker first, then the rest of the canonical SQL, reproduced all five geospatial columns with identical type and SRID (4326) against the live database.
+
+**ROLLBACK / RECOVERY:** none required; no migration drops the extension. A fresh install that omits it fails with `type "geometry" does not exist` on the initial-schema migration, which is why the canonical file orders this marker first.
+
+**RELATED COMMIT:** pre-existing; unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-001] CORE TABLE users
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-001]
+
+**OBJECT:** table `users`
+
+**PURPOSE:** Identity and authority. `role` is constrained by `users_role_check` to exactly Planning Officer, Admin, Site Inspector. `handshake_key` is the iMAPS-to-Supabase identity bridge; its value is never recorded in any document.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** Loop 0 / Loop 1 schema reconciliation, 2026-09-19
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-030]`, `[SCHEMA-CON-031]`
+
+**VERIFICATION:** Column fingerprint (type, nullability, default, identity) compared against live `imaps_db_0921` from a fresh database built from the canonical SQL only: identical. Constraint definitions compared by name, type and `pg_get_constraintdef`: identical. The role CHECK was additionally proved by behaviour, refusing an out-of-vocabulary role.
+
+**ROLLBACK / RECOVERY:** `down()` in the owning migration; part of the initial-schema drop set, which runs in reverse dependency order.
+
+**RELATED COMMIT:** see the owning migration file; unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-002] CORE TABLE application_drafts
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-002]
+
+**OBJECT:** table `application_drafts`
+
+**PURPOSE:** In-progress zoning application drafts, before submission.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** zoning application intake
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-001]`, `[SCHEMA-CON-002]`, `[SCHEMA-CON-038]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-003] CORE TABLE application_status_tracks
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-003]
+
+**OBJECT:** table `application_status_tracks`
+
+**PURPOSE:** Append-only business lifecycle history for a zoning application, distinct from the FieldSync task lifecycle.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** iMAPS post-inspection business lifecycle
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-005]`, `[SCHEMA-IDX-002]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-004] CORE TABLE audit_trail
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-004]
+
+**OBJECT:** table `audit_trail`
+
+**PURPOSE:** System-wide accountability record, written in the same transaction as a work-ownership change.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** work reassignment accountability
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-006]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-005] CORE TABLE barangay_boundary
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-005]
+
+**OBJECT:** table `barangay_boundary` (PostGIS)
+
+**PURPOSE:** Rosario barangay boundary polygons, SRID 4326.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** planning maps
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-007]`, `[SCHEMA-IDX-003]`
+
+**VERIFICATION:** geometry column type and SRID identical; spatial GiST index identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-006] CORE TABLE failed_jobs
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-006]
+
+**OBJECT:** table `failed_jobs`
+
+**PURPOSE:** Laravel queue failure table.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** queue infrastructure
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-008]`, `[SCHEMA-CON-009]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-007] CORE TABLE jobs
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-007]
+
+**OBJECT:** table `jobs`
+
+**PURPOSE:** Laravel queue table. Inspection delivery pushes to Supabase run through it.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** inspection delivery queue
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-016]`, `[SCHEMA-IDX-006]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-008] CORE TABLE land_parcels
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-008]
+
+**OBJECT:** table `land_parcels` (PostGIS)
+
+**PURPOSE:** Cadastral land parcels. Deliberately not a FieldSync transport: the remote pin, not this geometry, is what FieldSync reads.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** cadastral reference geometry
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-017]`, `[SCHEMA-IDX-007]`
+
+**VERIFICATION:** geometry column type and SRID identical; spatial GiST index identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-009] CORE TABLE land_use_plan
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-009]
+
+**OBJECT:** table `land_use_plan` (PostGIS)
+
+**PURPOSE:** Zoning / land-use plan polygons, SRID 4326.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** zoning maps
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-018]`, `[SCHEMA-IDX-008]`
+
+**VERIFICATION:** geometry column type and SRID identical; spatial GiST index identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-010] CORE TABLE parcels
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-010]
+
+**OBJECT:** table `parcels` (PostGIS)
+
+**PURPOSE:** Application-linked parcel geometry and stored pin, SRID 4326. The stored pin is the authoritative coordinate; `ST_AsText` of cadastral geometry is never sent to Supabase.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** zoning application parcel association
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-020]`, `[SCHEMA-CON-021]`, `[SCHEMA-CON-044]`, `[SCHEMA-IDX-012]`, `[SCHEMA-IDX-013]`, `[SCHEMA-IDX-014]`
+
+**VERIFICATION:** boundary geometry type and SRID identical; pin and GiST indexes identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-011] CORE TABLE rosario_boundary
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-011]
+
+**OBJECT:** table `rosario_boundary` (PostGIS)
+
+**PURPOSE:** Municipality boundary polygon, SRID 4326.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** boundary enforcement
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-025]`, `[SCHEMA-IDX-019]`
+
+**VERIFICATION:** geometry column type and SRID identical; spatial GiST index identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-012] CORE TABLE sessions
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-012]
+
+**OBJECT:** table `sessions`
+
+**PURPOSE:** Web session store for the Inertia/React application.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** web authentication
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-026]`, `[SCHEMA-IDX-020]`, `[SCHEMA-IDX-021]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-013] CORE TABLE site_inspections
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-013]
+
+**OBJECT:** table `site_inspections`
+
+**PURPOSE:** Local Site Inspector task record. `inspector_id` is the server-side assignment authority: a Planning Officer reassignment moves this pointer and nothing else, so the round status and its evidence are never silently rewritten.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** inspector task lifecycle
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-028]`, `[SCHEMA-CON-053]`, `[SCHEMA-CON-054]`, `[SCHEMA-CON-055]`, `[SCHEMA-IDX-023]`, `[SCHEMA-IDX-024]`, `[SCHEMA-IDX-025]`, `[SCHEMA-IDX-026]`
+
+**VERIFICATION:** all columns (including the later-added rich-result, assignment-provenance, remarks and delivery-monitoring columns) reproduced identically from the canonical SQL; constraints and indexes identical.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`. Rollback is guarded rather than destructive, and separately records the completed-lifecycle protection established in Loop 5.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-014] CORE TABLE technical_reviews
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-014]
+
+**OBJECT:** table `technical_reviews`
+
+**PURPOSE:** Planning Officer technical review decision per zoning application, with `decision` constrained to Approved / Needs Site Inspection / Requires Reinspection / Declined.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** technical review authority
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-029]`, `[SCHEMA-CON-056]`, `[SCHEMA-CON-057]`, `[SCHEMA-CON-058]`, `[SCHEMA-IDX-027]`, `[SCHEMA-IDX-028]`, `[SCHEMA-IDX-029]`
+
+**VERIFICATION:** reproduced identically, including `reviewed_site_inspection_id` (`bigint` NULL) and the compound `(zoning_application_id, review_round)` index.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-015] CORE TABLE zoning_applications
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-015]
+
+**OBJECT:** table `zoning_applications`
+
+**PURPOSE:** The zoning application itself: applicant, parcel, business status, and the current Planning Officer pointer (`assigned_planning_officer_id`).
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** zoning application authority
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-032]`, `[SCHEMA-CON-033]`, `[SCHEMA-CON-059]`, `[SCHEMA-CON-060]`
+
+**VERIFICATION:** reproduced identically, including the later-added `applicant_street` and `applicant_barangay` (`varchar(255)` NULL).
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-001] ADDED TABLE forecast_runs
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-001]
+
+**OBJECT:** table `forecast_runs`
+
+**PURPOSE:** Forecast execution records: forecast period, model metrics, execution status.
+
+**SOURCE:** `database/migrations/2026_09_19_120751_create_forecast_runs_table.php`
+
+**ORIGIN / CONTEXT:** demand forecasting workstream
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-011]`
+
+**VERIFICATION:** reproduced identically from the canonical SQL; column fingerprint and constraint definitions match live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-002] ADDED TABLE forecast_outputs
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-002]
+
+**OBJECT:** table `forecast_outputs`
+
+**PURPOSE:** Per-application forecast outputs, with `forecast_run_id` cascading from `forecast_runs`.
+
+**SOURCE:** `database/migrations/2026_09_19_120752_create_forecast_outputs_table.php`
+
+**ORIGIN / CONTEXT:** demand forecasting workstream
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-010]`, `[SCHEMA-CON-039]`
+
+**VERIFICATION:** reproduced identically, including the `ON DELETE CASCADE` foreign key.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-003] ADDED TABLE historical_data
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-003]
+
+**OBJECT:** table `historical_data`
+
+**PURPOSE:** Historical application statistics used to train forecasts.
+
+**SOURCE:** `database/migrations/2026_09_23_145135_create_historical_data_table.php`
+
+**ORIGIN / CONTEXT:** demand forecasting workstream
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-013]`
+
+**VERIFICATION:** reproduced identically; column fingerprint matches live. This table is one of the six migrations that were already applied but unrecorded before the batch-19 ledger reconciliation.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`. Guarded: refuses to drop while rows exist.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-004] ADDED TABLE notifications
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-004]
+
+**OBJECT:** table `notifications`
+
+**PURPOSE:** In-app notification feed for Planning Officers and Site Inspectors. Deliberately no CHECK on `type`: a new notification kind must not require a migration. Also deliberately no `id` UUID hand-off to FieldSync; notifications are read locally by id.
+
+**SOURCE:** `database/migrations/2026_09_27_000000_create_notifications_table.php`
+
+**ORIGIN / CONTEXT:** Reports & Support notification delivery
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-019]`, `[SCHEMA-CON-043]`, `[SCHEMA-IDX-009]`, `[SCHEMA-IDX-010]`, `[SCHEMA-IDX-011]`
+
+**VERIFICATION:** reproduced identically, including the absence of a `type` CHECK and the three supporting indexes.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`. Guarded rather than destructive.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-005] ADDED TABLE application_po_assignments
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-005]
+
+**OBJECT:** table `application_po_assignments`
+
+**PURPOSE:** Append-only Planning Officer ownership history. Four CHECK constraints encode the initial-versus-reassignment rule and the "reason Other requires a note" rule, so the accountability story cannot be written inconsistently.
+
+**SOURCE:** `database/migrations/2026_09_27_010000_add_work_reassignment_contract.php`
+
+**ORIGIN / CONTEXT:** business continuity without account sharing
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-003]`, `[SCHEMA-CON-034]`..`[SCHEMA-CON-037]`, `[SCHEMA-IDX-001]`
+
+**VERIFICATION:** reproduced identically, all four CHECKs included. Enforcement proved by insert probes against the fresh database: an initial row with a non-null `from_planning_officer_id` was refused, and reason `Other` without a note was refused.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-006] ADDED TABLE site_inspection_assignments
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-006]
+
+**OBJECT:** table `site_inspection_assignments`
+
+**PURPOSE:** Append-only Site Inspector ownership history for one inspection round, mirroring the Planning Officer table. Eligibility is enforced in the application layer by `InspectorTransferGuard`, not by these tables, because local state cannot prove a round is unstarted.
+
+**SOURCE:** `database/migrations/2026_09_27_010000_add_work_reassignment_contract.php`
+
+**ORIGIN / CONTEXT:** business continuity without account sharing
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-027]`, `[SCHEMA-CON-049]`..`[SCHEMA-CON-052]`, `[SCHEMA-IDX-022]`
+
+**VERIFICATION:** reproduced identically, all four CHECKs included, with the same refusal behaviour as the PO table.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-007] ADDED TABLE inspection_delivery_attempts
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-007]
+
+**OBJECT:** table `inspection_delivery_attempts`
+
+**PURPOSE:** Append-only record of every FieldSync delivery attempt, with a controlled failure-category vocabulary, `attempt_number >= 1`, and `safe_message` that must never carry a token, key, password or connection string.
+
+**SOURCE:** `database/migrations/2026_09_28_030000_add_inspection_delivery_monitoring.php`
+
+**ORIGIN / CONTEXT:** Planning-Officer-triggered FieldSync delivery
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-014]`, `[SCHEMA-CON-015]`, `[SCHEMA-CON-042]`, `[SCHEMA-IDX-004]`, `[SCHEMA-IDX-005]`
+
+**VERIFICATION:** reproduced identically, including the `queue_job_uuid` correlation column and its partial index from `[SCHEMA-IDX-005]`.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-008] ADDED TABLE generated_permits
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-008]
+
+**OBJECT:** table `generated_permits`
+
+**PURPOSE:** Generated permit documents per zoning application. Created by the master permit-generation service; currently 0 rows, and `config/imaps.contact` is unset so no contact channel is fabricated.
+
+**SOURCE:** `database/migrations/2026_10_03_000004_create_generated_permits_table.php`
+
+**ORIGIN / CONTEXT:** permit generation service introduced on `origin/master` at `ee16884`
+
+**APPLIED STATE:** APPLIED + VERIFIED (empty)
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-012]`, `[SCHEMA-CON-040]`, `[SCHEMA-CON-041]`
+
+**VERIFICATION:** reproduced identically from the canonical SQL with 0 rows; column fingerprint and both foreign keys match live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`; a clean drop while the table is empty.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-009] ADDED TABLE report_action_audit
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-009]
+
+**OBJECT:** table `report_action_audit`
+
+**PURPOSE:** Immutable local audit of every diagnostic-report status transition. `performed_by` is the authoritative actor (`users(id)` `ON DELETE RESTRICT`); `performed_by_name` is a display snapshot only, never identity. The partial unique index `[SCHEMA-IDX-015]` guarantees at most one terminal row per report, while `[SCHEMA-IDX-016]` keeps full history queryable.
+
+**SOURCE:** `database/migrations/2026_10_04_000000_create_report_action_audit_table.php`
+
+**ORIGIN / CONTEXT:** Reports & Support response and status lifecycle
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-022]`, `[SCHEMA-CON-023]`, `[SCHEMA-CON-045]`, `[SCHEMA-IDX-015]`, `[SCHEMA-IDX-016]`
+
+**VERIFICATION:** reproduced identically, including all four CHECK constraints and both indexes. Enforcement proved by behaviour against the fresh database: a second terminal row for the same report was refused by the partial unique index, a terminal-plus-non-terminal pair was accepted, an out-of-vocabulary action was refused by `report_action_audit_action_ck`, and an illegal transition was refused by `report_action_audit_from_status_ck`.
+
+**ROLLBACK / RECOVERY:** owning migration `down()` takes `ACCESS EXCLUSIVE` before counting and refuses while any row exists, because once a remote report is terminal its official response cannot be regenerated.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-010] ADDED TABLE report_escalations
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-010]
+
+**OBJECT:** table `report_escalations`
+
+**PURPOSE:** Development Support escalation episodes. Deliberately no foreign key on `report_id`: an episode is local evidence and must not become un-insertable when the remote report changes. `[SCHEMA-IDX-017]` enforces one open episode per report; `[SCHEMA-IDX-018]` keeps history queryable. Seven CHECK constraints enforce the recommendation/closure coherence rules.
+
+**SOURCE:** `database/migrations/2026_10_05_000000_create_report_escalations_table.php`
+
+**ORIGIN / CONTEXT:** an Admin needs an auditable internal path to consult Development Support without that consultation competing with, or being silently dropped by, the report lifecycle
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-024]`, `[SCHEMA-CON-046]`..`[SCHEMA-CON-048]`, `[SCHEMA-IDX-017]`, `[SCHEMA-IDX-018]`
+
+**VERIFICATION:** reproduced identically, all seven CHECKs and both indexes included. Enforcement proved by behaviour against the fresh database: an out-of-vocabulary status was refused by `report_escalations_status_ck`, and a `closed` episode without a closer was refused by `report_escalations_closed_ck`.
+
+**ROLLBACK / RECOVERY:** owning migration `down()` takes `ACCESS EXCLUSIVE` before counting and refuses while any row exists. While the table is empty the rollback is a clean drop; once an episode exists it is deliberately blocked and requires an explicit recorded decision.
+
+**RELATED COMMIT:** source checkpoint `0ce72bed50ee7b841e8fbbe55b7eb5107755c67f`; unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-011] LEGACY RETAINED TABLE application_sequences
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-011]
+
+**OBJECT:** table `application_sequences`
+
+**PURPOSE:** Legacy per-application reference-number sequencing, retained for continuity with already-issued reference numbers.
+
+**SOURCE:** created by a historical migration; see the earlier entry "Historical - local `application_sequences` creation and APP/2026 alignment" in this file
+
+**ORIGIN / CONTEXT:** pre-dates the current reference-number contract
+
+**APPLIED STATE:** HISTORICAL - retained, not extended
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-004]`
+
+**VERIFICATION:** present in the canonical SQL and reproduced identically in the fresh verification database.
+
+**ROLLBACK / RECOVERY:** dropping it would orphan already-issued reference numbers, so it is retained by design.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+---
+
+## Column-level provenance (which migration owns which column)
+
+The canonical file defines each table as one block, because that is how PostgreSQL stores it. The table-level markers above therefore carry the column provenance; it is recorded here so the migration that introduced each column remains traceable.
+
+| Table marker | Later migrations that added columns to that table |
+|---|---|
+| `[SCHEMA-BASE-013]` | `2026_09_19_000001_add_rich_result_columns_to_site_inspections_table` (checklist_data, discrepancies, gps_confirmed_at, inspection_result, inspector_notes, observations, recommendations, submitted_at); `2026_09_19_000002_add_assignment_provenance_to_site_inspections_table` (assigned_by_imaps_user_id, assigned_by_name); `2026_09_20_151538_add_assigned_by_columns_to_site_inspections_table`; `2026_09_20_161016_add_remarks_to_site_inspections_table`; `2026_09_28_030000_add_inspection_delivery_monitoring` (delivery_status, delivered_at, last_delivery_attempt_at, last_delivery_failure_category); `2026_09_28_040000_add_delivery_attempt_queue_correlation` (queue_job_uuid) |
+| `[SCHEMA-BASE-014]` | `2026_09_27_000000_add_reviewed_site_inspection_id_to_technical_reviews_table` (reviewed_site_inspection_id, `bigint` NULL) |
+| `[SCHEMA-BASE-015]` | `2026_09_27_010000_add_work_reassignment_contract` (assigned_planning_officer_id); `2026_10_03_000001_add_applicant_address_columns_to_zoning_applications` (applicant_street, applicant_barangay, both `varchar(255)` NULL) |
+| `[SCHEMA-ADD-005]` / `[SCHEMA-ADD-006]` | `2026_10_03_000002_ensure_work_assignment_history_tables_exist` (guard-only: re-asserts the same columns, adds nothing) |
+| `[SCHEMA-ADD-007]` | `2026_10_03_000003_ensure_inspection_delivery_monitoring_tables_exist` (guard-only: re-asserts the same columns, adds nothing) |
+
+---
+
+## Superseded migration compatibility shims
+
+Two migration files in `database/migrations` have stale historical filenames and bodies that intentionally mutate nothing. They are recorded here, not as operational prose in the canonical schema, because the canonical file represents *resulting schema* and a shim produces no schema.
+
+| Stale filename | Canonical owner | Shim behaviour |
+|---|---|---|
+| `2026_09_11_000000_add_rich_result_columns_to_site_inspections_table.php` | `2026_09_19_000001_add_rich_result_columns_to_site_inspections_table.php` | `up()` and `down()` are both empty |
+| `2026_09_19_000000_add_assignment_provenance_to_site_inspections_table.php` | `2026_09_19_000002_add_assignment_provenance_to_site_inspections_table.php` | `up()` and `down()` are both empty |
+
+**Why they are retained (migration-ledger and rollback compatibility):**
+
+- Laravel executes migrations in filename order and has no dependency graph. Each stale filename sorts *before* the migration that creates `site_inspections`, so a file that altered the table at that position worked on an already-provisioned database and broke every fresh install.
+- The deployed ledger already records the stale filenames, so the ledger row must keep resolving.
+- Deleting the files is worse than it looks: `migrate:rollback` then prints "Migration not found", **exits 0**, and leaves the ledger row in place. That is an apparent success which changes nothing and repeats on every subsequent rollback.
+- Rolling back through the shim batches is now safe: it removes a ledger row and touches no schema.
+
+**Resulting schema markers for the columns these migrations actually create:** the rich-result columns and the assignment-provenance columns both belong to `[SCHEMA-BASE-013]`, so that canonical block already contains all of them.
+
+---
+
+## Migration ledger baseline (operational history, batch 19 -> 20, final ledger 30)
+
+This is operational migration history, not schema, so it belongs in this file. The canonical schema represents only the resulting structure and deliberately omits the `migrations` ledger table, because Laravel creates and owns it.
+
+**Situation found (2026-10-05 pre-sync reconciliation):** the deployed database had 18 ledger rows and max batch 18, while six repository migrations were already fully applied but unrecorded. The deployed schema therefore predated its own migration repository, and `php artisan migrate` could not run at all.
+
+**The six baseline rows inserted at batch 19, with no DDL re-executed:**
+
+1. `2026_09_19_000000_create_initial_schema` - all 15 tables verified present
+2. `2026_09_23_145135_create_historical_data_table` - `historical_data` present
+3. `2026_09_27_000000_add_reviewed_site_inspection_id_to_technical_reviews_table` - `reviewed_site_inspection_id` present as `bigint` NULL
+4. `2026_09_27_000000_create_notifications_table` - `notifications` present
+5. `2026_09_28_030000_add_inspection_delivery_monitoring` - 4 of 4 columns plus the attempts table
+6. `2026_09_28_040000_add_delivery_attempt_queue_correlation` - `queue_job_uuid` plus the partial index
+
+**Why the DDL was not re-executed:** re-running those migrations is not idempotent by default. `Schema::create` fails with `relation already exists`, and an unguarded `ALTER TABLE ... ADD COLUMN` fails with `duplicate column`. The ledger is evidence of what the schema already contains, not a script to be replayed.
+
+**Snapshot / recovery evidence:** a compressed `pg_dump -Fc` snapshot was taken first, 9,175,089 bytes, SHA-256 `84D9D51D7263F59E79F7D59F368B1B22CD33A310985CB771F4B430A7545B3CDD`, validated by `pg_restore --list` (262 entries) **and** by a full restore into a disposable cluster that reproduced ledger 18 and the pre-sync row counts.
+
+**Post-sync batch 20:** after the controlled merge of `origin/master`, `php artisan migrate --force` executed six further migrations at batch 20, which added `zoning_applications.applicant_street` and `applicant_barangay` and created `generated_permits`. `migrate:status` was used as the gate rather than `--pretend`, because `--pretend` prints guard SQL without executing it and therefore makes the `ensure_*` migrations appear to create tables that already exist.
+
+**Final ledger state: 30 rows, max batch 20.** Verified again on 2026-10-05 during this documentation normalization: ledger 30, max batch 20, with the six batch-19 names and the six batch-20 names all present.
+
+---
+
+## 2026-10-05 - Documentation normalization: the canonical schema becomes pure SQL
+
+**SCHEMA REFERENCE:** all markers in `CANONICAL_DATABASE_SCHEMA.md`
+
+**OBJECT:** documentation structure only. No database object, column, constraint, index or row was created, altered or dropped. SQLite, Supabase and the iMAPS live database are untouched.
+
+**PURPOSE:** make the canonical schema a copy-pasteable SQL source of truth, so that copying the whole file and pasting it into PostgreSQL constructs the canonical structure in one controlled execution, and move every explanation, migration narrative, issue commentary, test-evidence paragraph and rollback story into this change log where it belongs.
+
+**SOURCE:** live `pg_dump --schema-only` of `imaps_db_0921`, so the SQL is derived from actual schema rather than retyped from documentation
+
+**ORIGIN / CONTEXT:** the previous `CANONICAL_DATABASE_SCHEMA.md` was 2,040 lines of mixed Markdown narrative and SQL fragments: 26 numbered sections, 287 Markdown table rows, 26 code fences, and zero stable schema markers. It could not be executed as a whole and could not be referenced unambiguously.
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** documentation only
+
+**DEPENDENCIES:** none. The canonical SQL is ordered extension -> sequences -> tables -> constraints -> indexes so it runs start to finish on an empty database.
+
+**VERIFICATION:** the regenerated canonical file was executed verbatim against a freshly created empty database on a disposable PostgreSQL 18.3 cluster with `ON_ERROR_STOP=1`: exit 0, zero errors. The resulting schema was then compared with live `imaps_db_0921`: identical column fingerprints (294 rows covering type, nullability, default and identity), identical constraint set by name, type and definition (217), identical index set (63), identical PostGIS columns and SRIDs (5), and identical views, functions and triggers. The only intended difference is the three `migrations` ledger columns, which the canonical file deliberately omits. Two CHECK constraints and one partial unique index differ only in PostgreSQL's own deparse formatting of an `ARRAY[...]` literal; their behaviour was proved equal by insert probes rather than by text comparison.
+
+**ROLLBACK / RECOVERY:** documentation only; `git checkout` of the four documents restores the previous state. No database recovery is needed because no database was written.
+
+**RELATED COMMIT:** `docs: normalize canonical database contract` on `fix/bridge-source-namespace-collision`
