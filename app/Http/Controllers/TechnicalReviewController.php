@@ -291,8 +291,11 @@ class TechnicalReviewController extends Controller
                     note: $note
                 );
 
-                AppNotification::notifyRoles(
-                    ['Admin', 'Planning Officer'],
+                $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+                $recipientIds = array_merge($adminIds, array_filter([auth()->id(), $application->assigned_planning_officer_id, $application->encoded_by]));
+
+                AppNotification::notifyUsers(
+                    $recipientIds,
                     'Technical Review Decision: ' . $validated['decision'],
                     "Application {$application->reference_number} status updated to \"{$application->status}\".",
                     'status_updated',
@@ -314,8 +317,11 @@ class TechnicalReviewController extends Controller
                     note: $note
                 );
 
-                AppNotification::notifyRoles(
-                    ['Admin', 'Planning Officer'],
+                $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+                $recipientIds = array_merge($adminIds, array_filter([auth()->id(), $application->assigned_planning_officer_id, $application->encoded_by]));
+
+                AppNotification::notifyUsers(
+                    $recipientIds,
                     'Site Inspection Flagged',
                     "Application {$application->reference_number} requires Site Inspection on {$validated['scheduled_date']}.",
                     'inspection_assigned',

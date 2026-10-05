@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AppNotification;
 use App\Models\ApplicationPoAssignment;
 use App\Models\SiteInspection;
 use App\Models\SiteInspectionAssignment;
@@ -140,6 +141,19 @@ class WorkAssignmentService
                 action: $isInitial ? 'PLANNING_OFFICER_ASSIGNED' : 'PLANNING_OFFICER_REASSIGNED',
                 actor: $actor,
                 note: $this->describe($fromId, $target->id, $target->name, $effectiveReason, $effectiveNote),
+            );
+
+            $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+            $recipientIds = array_merge($adminIds, array_filter([$target->id, $fromId, $actor->id]));
+
+            AppNotification::notifyUsers(
+                $recipientIds,
+                $isInitial ? 'Application Assigned' : 'Application Reassigned',
+                $isInitial
+                    ? "You have been assigned as Planning Officer for Application {$application->reference_number} by {$actor->name}."
+                    : "Application {$application->reference_number} was reassigned to {$target->name} by {$actor->name}.",
+                'status_updated',
+                "/applications/{$application->id}"
             );
 
             return $history;

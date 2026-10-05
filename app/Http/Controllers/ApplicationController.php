@@ -97,6 +97,8 @@ class ApplicationController extends Controller
                 'zoning_applications.id',
                 'zoning_applications.reference_number',
                 'zoning_applications.application_type',
+                'zoning_applications.application_stream',
+                'zoning_applications.sb_ordinance_number',
                 'zoning_applications.target_land_use_class',
                 'zoning_applications.status',
                 'zoning_applications.applicant_name',
@@ -107,6 +109,10 @@ class ApplicationController extends Controller
                 'zoning_applications.remarks',
                 'zoning_applications.created_at',
                 'users.name as encoded_by_name'
+            )
+            ->selectRaw(
+                '(CASE WHEN zoning_applications.application_stream = ? OR zoning_applications.status = ? OR (zoning_applications.sb_ordinance_number IS NOT NULL AND zoning_applications.sb_ordinance_number != ?) OR EXISTS (SELECT 1 FROM application_status_tracks WHERE application_status_tracks.reference_number = zoning_applications.reference_number AND application_status_tracks.status = ?) THEN true ELSE false END) as has_sb_routing',
+                ['amendment', 'Under Sangguniang Bayan', '', 'Under Sangguniang Bayan']
             );
 
         $this->applyRegistryFilters($query, $request);
@@ -524,8 +530,15 @@ class ApplicationController extends Controller
 
         $targetLandUseClass = $validated['target_land_use_class'] ?? $validated['land_use_class'] ?? $targetLandUseClass;
 
-        if ($validated['application_stream'] === 'amendment' && empty($targetLandUseClass)) {
-            return back()->withErrors(['target_land_use_class' => 'Target zoning classification is required for legislative amendments.']);
+        if ($validated['application_stream'] === 'amendment') {
+            if (empty($targetLandUseClass)) {
+                return back()->withErrors(['target_land_use_class' => 'Target zoning classification is required for legislative amendments.']);
+            }
+            $types = array_filter(array_map('trim', explode(',', $validated['application_type'] ?? '')));
+            $hasPetition = in_array('Petition for Rezoning', $types, true) || in_array('Petition for Reclassification', $types, true);
+            if (!$hasPetition) {
+                return back()->withErrors(['application_type' => 'A legislative petition (Rezoning or Reclassification) is required for amendment applications.']);
+            }
         } elseif ($validated['application_stream'] === 'permit') {
             $targetLandUseClass = null;
         }
@@ -595,8 +608,11 @@ class ApplicationController extends Controller
             // conflict region. Both survive; neither replaces the other, and the
             // notification fires first so the Planning Officers who may pick the
             // work up are told about it before ownership is recorded.
-            AppNotification::notifyRoles(
-                ['Admin', 'Planning Officer'],
+            $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+            $recipientIds = array_merge($adminIds, [Auth::id()]);
+
+            AppNotification::notifyUsers(
+                $recipientIds,
                 'New Application Encoded',
                 "Application {$referenceNumber} for {$application->applicant_name} ({$application->barangay}) has been encoded.",
                 'application_created',
@@ -946,6 +962,7 @@ class ApplicationController extends Controller
             'canReassignInspector'       => $viewerRole === 'Planning Officer',
 
             'statusOrder'      => self::STATUS_ORDER,
+            'hasSbRouting'     => $application->hasSbRouting(),
             // When each stage began, for "days in stage" on the record page
             'statusHistory'    => DB::table('application_status_tracks')
                 ->where('reference_number', $application->reference_number)
@@ -977,6 +994,17 @@ class ApplicationController extends Controller
                 $validated['sb_ordinance_number'] ?? '—',
                 $validated['dar_clearance_ref'] ?? '—'
             )
+        );
+
+        $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+        $recipientIds = array_merge($adminIds, array_filter([Auth::id(), $application->assigned_planning_officer_id, $application->encoded_by]));
+
+        AppNotification::notifyUsers(
+            $recipientIds,
+            'Amendment References Updated',
+            "Sangguniang Bayan / DAR Clearance reference numbers updated for Application {$application->reference_number}.",
+            'status_updated',
+            "/applications/{$application->id}"
         );
 
         return back()->with('success', 'Amendment references saved.');
@@ -1139,10 +1167,29 @@ class ApplicationController extends Controller
                 ]);
             }
 
-            $transitionError = $this->getTransitionError($currentStatus, $request->new_status);
+            if ($currentStatus === 'Under Sangguniang Bayan' && $request->new_status === 'For Release' && empty(trim($application->sb_ordinance_number ?? ''))) {
+                DB::rollBack();
+                return back()->withErrors([
+                    'status' => 'Sangguniang Bayan Ordinance Number must be recorded before releasing this application.',
+                ]);
+            }
+
+            $hasSb = $application->hasSbRouting();
+            $transitionError = $this->getTransitionError($currentStatus, $request->new_status, $hasSb);
             if ($transitionError) {
                 DB::rollBack();
                 return back()->withErrors(['status' => $transitionError]);
+            }
+
+            if ($request->new_status === 'Released') {
+                $missingPermitNames = $application->getMissingRecommendedPermitNames();
+                if (!empty($missingPermitNames)) {
+                    DB::rollBack();
+                    $permitList = implode(', ', $missingPermitNames);
+                    return back()->withErrors([
+                        'status' => "Cannot mark as Released. The required permit(s) ({$permitList}) have not been generated yet. Please generate them in the Export permit/doc tab first.",
+                    ]);
+                }
             }
 
             $application->update(['status' => $request->new_status]);
@@ -1165,6 +1212,17 @@ class ApplicationController extends Controller
                 $application->status
             );
 
+            $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+            $recipientIds = array_merge($adminIds, array_filter([Auth::id(), $application->assigned_planning_officer_id, $application->encoded_by]));
+
+            AppNotification::notifyUsers(
+                $recipientIds,
+                'Application Status Updated',
+                "Application {$application->reference_number} status updated from \"{$currentStatus}\" to \"{$request->new_status}\".",
+                'status_updated',
+                "/applications/{$application->id}"
+            );
+
             DB::commit();
 
             return back()->with('success', 'Status updated successfully.');
@@ -1177,13 +1235,19 @@ class ApplicationController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ─────────────────────────────────────────────────────────────────────────
-    private function getTransitionError(string $from, string $to): ?string
+    private function getTransitionError(string $from, string $to, bool $hasSb = true): ?string
     {
         if ($from === $to)
             return "Status is already \"{$from}\".";
 
-        $fromRank = self::STATUS_ORDER[$from] ?? -1;
-        $toRank   = self::STATUS_ORDER[$to]   ?? -1;
+        $orderList = $hasSb
+            ? ['Received', 'Technical Review', 'Under Sangguniang Bayan', 'For Release', 'Released', 'Denied']
+            : ['Received', 'Technical Review', 'For Release', 'Released', 'Denied'];
+
+        $orderMap = array_flip($orderList);
+
+        $fromRank = $orderMap[$from] ?? -1;
+        $toRank   = $orderMap[$to]   ?? -1;
 
         if ($fromRank === -1 || $toRank === -1)
             return "Unrecognised status value.";
@@ -1198,7 +1262,7 @@ class ApplicationController extends Controller
             return "Cannot revert status from \"{$from}\" back to \"{$to}\".";
 
         if ($toRank > $fromRank + 1) {
-            $order = array_flip(self::STATUS_ORDER);
+            $order = array_flip($orderMap);
             $next  = $order[$fromRank + 1] ?? 'the next step';
             return "Cannot skip steps. Next allowed status is \"{$next}\".";
         }
@@ -1421,6 +1485,17 @@ class ApplicationController extends Controller
                 strtoupper($format),
                 $format === 'pdf' && $permits->lastPdfDriver() ? ' via ' . $permits->lastPdfDriver() : ''
             )
+        );
+
+        $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+        $recipientIds = array_merge($adminIds, array_filter([Auth::id(), $application->assigned_planning_officer_id, $application->encoded_by]));
+
+        AppNotification::notifyUsers(
+            $recipientIds,
+            'Permit Generated',
+            "{$label} for Application {$application->reference_number} has been generated.",
+            'permit_generated',
+            "/applications/{$application->id}"
         );
 
         $mime = $format === 'pdf'

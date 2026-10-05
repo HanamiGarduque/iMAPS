@@ -1,7 +1,7 @@
-// resources/js/Pages/Applications/Components/StepCategory.jsx
 import React from "react";
 import { Label, Input, Select, Textarea } from "./FormControls";
 import ParcelInspectionScheduler from "./ParcelInspectionScheduler";
+import { getRecommendedPetition } from "@/Components/MapKit";
 
 const ZONING_SUB_CLASSES = [
     {
@@ -74,6 +74,7 @@ export default function StepCategory({
     AMENDMENT_TYPES = [],
     LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Industrial", "Institutional", "Recreational"],
     zoningMismatch = false,
+    recommendedPetition = null,
     goToProperty,
     setParcelField,
     handlePinLookup,
@@ -82,6 +83,7 @@ export default function StepCategory({
 }) {
     const activeTypes = form.application_stream === "amendment" ? AMENDMENT_TYPES : APPLICATION_TYPES;
     const hasVerifiedLot = (form.parcels || []).some((p) => p.is_verified);
+    const effectiveRecommendedPetition = recommendedPetition || (form.application_stream === "amendment" ? getRecommendedPetition(form.parcels) : null);
 
     // Safely parse selected types into an array for multi-select support
     const selectedApplicationTypes = (form.application_type || "")
@@ -94,8 +96,19 @@ export default function StepCategory({
     const handleStreamChange = (stream) => {
         if (stream === form.application_stream) return;
         set("application_stream")({ target: { value: stream } });
-        set("application_type")({ target: { value: "" } });
-        set("target_land_use_class")({ target: { value: "" } });
+        const currentTypes = (form.application_type || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+        const standardType = currentTypes.find((t) => !t.startsWith("Petition for")) || "Locational Clearance";
+
+        if (stream === "amendment") {
+            const petitionType = effectiveRecommendedPetition || currentTypes.find((t) => t.startsWith("Petition for")) || "Petition for Rezoning";
+            set("application_type")({ target: { value: `${standardType}, ${petitionType}` } });
+        } else {
+            set("application_type")({ target: { value: standardType } });
+            set("target_land_use_class")({ target: { value: "" } });
+        }
     };
 
     const numberField = (field, label, placeholder, step = "any") => (
@@ -196,37 +209,136 @@ export default function StepCategory({
             {/* 3. Application Category (multi-select) */}
             <div>
                 <Label required hasError={!!errors.application_type}>Application Category</Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-1.5">
-                    {activeTypes.map((type) => {
-                        const isSelected = selectedApplicationTypes.includes(type.id);
-                        return (
-                            <button
-                                type="button"
-                                key={type.id}
-                                onClick={() => handleTypeSelect(type.id)}
-                                aria-pressed={isSelected}
-                                className={`p-3 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-2.5 relative overflow-hidden group text-left ${
-                                    isSelected
-                                        ? "bg-blue-50/60 border-blue-600 ring-2 ring-blue-500/10 shadow-xs"
-                                        : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
-                                }`}
-                            >
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
-                                    isSelected ? "bg-blue-600 text-white shadow-2xs" : "bg-slate-100 text-slate-500 group-hover:bg-slate-200"
-                                }`}>
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d={type.icon} />
-                                    </svg>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className={`text-xs font-bold leading-tight ${isSelected ? "text-blue-950" : "text-slate-800"}`}>{type.id}</p>
-                                    <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{type.desc}</p>
-                                </div>
-                                {isSelected && <div className="w-2 h-2 rounded-full bg-blue-600 absolute top-2.5 right-2.5" />}
-                            </button>
-                        );
-                    })}
-                </div>
+                {form.application_stream === "amendment" ? (
+                    <div className="space-y-4 mt-1.5">
+                        <div>
+                            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Intended Permit / Clearance</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                {APPLICATION_TYPES.map((type) => {
+                                    const isSelected = selectedApplicationTypes.includes(type.id);
+                                    return (
+                                        <button
+                                            type="button"
+                                            key={type.id}
+                                            onClick={() => handleTypeSelect(type.id)}
+                                            aria-pressed={isSelected}
+                                            className={`p-3 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-2.5 relative overflow-hidden group text-left ${
+                                                isSelected
+                                                    ? "bg-blue-50/60 border-blue-600 ring-2 ring-blue-500/10 shadow-xs"
+                                                    : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                                            }`}
+                                        >
+                                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                                                isSelected ? "bg-blue-600 text-white shadow-2xs" : "bg-slate-100 text-slate-500 group-hover:bg-slate-200"
+                                            }`}>
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d={type.icon} />
+                                                </svg>
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className={`text-xs font-bold leading-tight ${isSelected ? "text-blue-950" : "text-slate-800"}`}>{type.id}</p>
+                                                <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{type.desc}</p>
+                                            </div>
+                                            {isSelected && <div className="w-2 h-2 rounded-full bg-blue-600 absolute top-2.5 right-2.5" />}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div>
+                            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                                Required Legislative Petition (Sangguniang Bayan)
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                {AMENDMENT_TYPES.map((type) => {
+                                    const isSelected = selectedApplicationTypes.includes(type.id);
+                                    const isRecommended = effectiveRecommendedPetition ? type.id === effectiveRecommendedPetition : false;
+                                    const isLocked = Boolean(effectiveRecommendedPetition);
+                                    const isDisabled = isLocked && !isRecommended;
+
+                                    return (
+                                        <button
+                                            type="button"
+                                            key={type.id}
+                                            onClick={() => {
+                                                if (isDisabled || (isLocked && isSelected)) return;
+                                                handleTypeSelect(type.id);
+                                            }}
+                                            disabled={isDisabled}
+                                            aria-pressed={isSelected}
+                                            title={isDisabled ? "Not applicable for this parcel's zoning" : isLocked ? "Mandated by zoning mismatch" : undefined}
+                                            className={`p-3 rounded-2xl border-2 transition-all flex items-start gap-2.5 relative overflow-hidden group text-left ${
+                                                isDisabled
+                                                    ? "bg-slate-50/60 border-slate-200/80 opacity-40 cursor-not-allowed select-none"
+                                                    : isSelected
+                                                    ? "bg-purple-50/60 border-purple-600 ring-2 ring-purple-500/10 shadow-xs cursor-default"
+                                                    : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50 cursor-pointer"
+                                            }`}
+                                        >
+                                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                                                isDisabled
+                                                    ? "bg-slate-100 text-slate-400"
+                                                    : isSelected
+                                                    ? "bg-purple-600 text-white shadow-2xs"
+                                                    : "bg-slate-100 text-slate-500 group-hover:bg-slate-200"
+                                            }`}>
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d={type.icon} />
+                                                </svg>
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className={`text-xs font-bold leading-tight ${
+                                                    isDisabled ? "text-slate-400" : isSelected ? "text-purple-950" : "text-slate-800"
+                                                }`}>
+                                                    {type.id}
+                                                </p>
+                                                <p className={`text-[10px] mt-0.5 leading-snug ${isDisabled ? "text-slate-400" : "text-slate-500"}`}>
+                                                    {type.desc}
+                                                </p>
+                                            </div>
+                                            {isSelected && (
+                                                <div className="w-2 h-2 rounded-full bg-purple-600 absolute top-2.5 right-2.5" />
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-1.5">
+                        {APPLICATION_TYPES.map((type) => {
+                            const isSelected = selectedApplicationTypes.includes(type.id);
+                            return (
+                                <button
+                                    type="button"
+                                    key={type.id}
+                                    onClick={() => handleTypeSelect(type.id)}
+                                    aria-pressed={isSelected}
+                                    className={`p-3 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-2.5 relative overflow-hidden group text-left ${
+                                        isSelected
+                                            ? "bg-blue-50/60 border-blue-600 ring-2 ring-blue-500/10 shadow-xs"
+                                            : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                                    }`}
+                                >
+                                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                                        isSelected ? "bg-blue-600 text-white shadow-2xs" : "bg-slate-100 text-slate-500 group-hover:bg-slate-200"
+                                    }`}>
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d={type.icon} />
+                                        </svg>
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className={`text-xs font-bold leading-tight ${isSelected ? "text-blue-950" : "text-slate-800"}`}>{type.id}</p>
+                                        <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{type.desc}</p>
+                                    </div>
+                                    {isSelected && <div className="w-2 h-2 rounded-full bg-blue-600 absolute top-2.5 right-2.5" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
                 {errors.application_type && <p className="text-xs font-medium text-rose-500 mt-1">{errors.application_type}</p>}
             </div>
 

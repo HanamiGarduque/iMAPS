@@ -505,6 +505,7 @@ export default function InspectionDeliveryStatusPanel({ applicationId }) {
     useEffect(() => {
         if (!flashSuccess || seenFlash.current === flashSuccess) return;
         seenFlash.current = flashSuccess;
+        if (!/delivery|retry/i.test(flashSuccess)) return;
         setToast(flashSuccess);
         const timer = setTimeout(() => setToast(null), 4000);
         return () => clearTimeout(timer);

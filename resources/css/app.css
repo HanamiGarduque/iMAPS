@@ -36,9 +36,13 @@
 .swal2-icon * {
     box-sizing: content-box !important;
 }
-.swal2-icon.swal2-success .swal2-success-circular-line-left,
-.swal2-icon.swal2-success .swal2-success-circular-line-right,
+.swal2-icon.swal2-success [class^='swal2-success-circular-line'],
 .swal2-icon.swal2-success .swal2-success-fix {
-    background-color: transparent !important;
+    background-color: var(--swal2-background, #ffffff) !important;
 }
+.swal2-icon.swal2-success .swal2-success-line-tip,
+.swal2-icon.swal2-success .swal2-success-line-long {
+    font-size: 16px !important;
+}
+
 

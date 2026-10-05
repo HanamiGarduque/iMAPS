@@ -14,9 +14,11 @@ import { getZoneInfo } from "@/utils/clupZones";
 import { loadBarangayBoundaries } from "@/utils/mapData";
 import ApplicationMap from "./Components/ApplicationMap";
 import SiteMapPrint from "./Components/SiteMapPrint";
-import { PermitExportPanel } from "./Components/GeneratePermitModal";
+import { PermitExportPanel, getMissingRecommendedPermits } from "./Components/GeneratePermitModal";
 
-const STAGES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released"];
+const STANDARD_STAGES = ["Received", "Technical Review", "For Release", "Released"];
+const SB_STAGES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released"];
+const STAGES = SB_STAGES;
 const STAGE_SHORT = { "Under Sangguniang Bayan": "SB" };
 const STATUS_DOT = {
     Received: "bg-emerald-500",
@@ -113,13 +115,14 @@ function StatusPill({ status }) {
     );
 }
 
-// Five-step stepper for the permit's journey; the current stage is filled.
-function StageProgress({ status }) {
-    const current = STAGES.indexOf(status);
+// Stepper for the permit's journey; the current stage is filled.
+// Routing to Sangguniang Bayan (SB) is optional and only displayed when the application is routed to SB.
+function StageProgress({ status, stages = STANDARD_STAGES }) {
+    const current = stages.indexOf(status);
     const denied = status === "Denied";
     return (
         <ol className="flex items-center w-full" aria-label="Application stage">
-            {STAGES.map((s, i) => {
+            {stages.map((s, i) => {
                 const done = !denied && (current > i || status === "Released");
                 const isCurrent = !denied && current === i && status !== "Released";
                 return (
@@ -190,12 +193,13 @@ function More({ title, children, open = false }) {
 const FIELD = "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] text-slate-800 focus:outline-none focus:border-[#0b2a5b] focus:ring-2 focus:ring-[#0b2a5b]/15";
 
 // Only the transitions the server accepts: the next stage, or Denied
-function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving }) {
-    const next = STAGES[STAGES.indexOf(currentStatus) + 1];
+function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving, missingPermits = [], stages = SB_STAGES }) {
+    const next = stages[stages.indexOf(currentStatus) + 1];
     const options = [next, "Denied"].filter(Boolean);
     const [newStatus, setNewStatus] = useState(preset && options.includes(preset) ? preset : options[0] || "");
     const [remarks, setRemarks] = useState("");
     const needsReason = newStatus === "Denied";
+    const releaseBlocked = newStatus === "Released" && missingPermits.length > 0;
 
     useEffect(() => {
         const onKey = (e) => e.key === "Escape" && onClose();
@@ -224,6 +228,26 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving }
                             ))}
                         </div>
                     </fieldset>
+
+                    {releaseBlocked && (
+                        <div className="rounded-lg bg-amber-50/80 border border-amber-200 p-3 text-xs text-amber-900">
+                            <div className="flex items-center gap-1.5 font-semibold text-amber-900">
+                                <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                                </svg>
+                                <span>Permit documents required before release</span>
+                            </div>
+                            <p className="mt-1 text-[11.5px] text-amber-800">
+                                Generate the required documents in the Export tab before marking as Released:
+                            </p>
+                            <ul className="mt-1 list-disc list-inside font-semibold text-[11.5px] text-amber-900">
+                                {missingPermits.map((p) => (
+                                    <li key={p.type}>{p.label}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
                     <div>
                         <label htmlFor="status-remarks" className="text-[12px] font-semibold text-slate-700">
                             {needsReason ? "Reason for denial" : "Remarks (optional)"} {needsReason && <span className="text-rose-600">*</span>}
@@ -245,7 +269,7 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving }
                     <button
                         type="button"
                         onClick={() => onSubmit({ new_status: newStatus, remarks })}
-                        disabled={saving || !newStatus || (needsReason && !remarks.trim())}
+                        disabled={saving || !newStatus || (needsReason && !remarks.trim()) || releaseBlocked}
                         className={`px-4 py-2 rounded-md text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed ${
                             needsReason ? "bg-rose-700 hover:bg-rose-800" : "bg-[#0b2a5b] hover:bg-[#0e3574]"
                         }`}
@@ -280,12 +304,32 @@ function ShowInner({
     reassignmentReasons = [],
     canReassignPlanningOfficer = false,
     canReassignInspector = false,
+    hasSbRouting: propHasSbRouting = false,
     errors: serverErrors = {},
 }) {
     const app = initialApp || alternateApp || {};
     const userName = auth?.user?.name || "Planning Officer";
     const userRole = auth?.user?.role || "Planning Officer";
     const isAmendment = String(app.application_stream || "").toLowerCase() === "amendment";
+
+    const hasSbRouting = useMemo(() => {
+        if (propHasSbRouting) return true;
+        if (app.has_sb_routing || app.hasSbRouting) return true;
+        if (String(app.application_stream || "").toLowerCase() === "amendment") return true;
+        if (app.status === "Under Sangguniang Bayan") return true;
+        if (Boolean(app.sb_ordinance_number?.trim())) return true;
+        if (statusHistory?.some((h) => h.status === "Under Sangguniang Bayan")) return true;
+        if (auditTrail?.some((a) => {
+            const text = `${a.action || ""} ${a.note || ""}`.toLowerCase();
+            return text.includes("sangguniang bayan") || text.includes("route to sb") || text.includes("routed to sb");
+        })) return true;
+        if (Boolean(app.route_to_sb)) return true;
+        return false;
+    }, [propHasSbRouting, app, statusHistory, auditTrail]);
+
+    const stages = useMemo(() => {
+        return hasSbRouting ? SB_STAGES : STANDARD_STAGES;
+    }, [hasSbRouting]);
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
@@ -299,6 +343,16 @@ function ShowInner({
     const [brgyMapData, setBrgyMapData] = useState(null);
     const [liveStatuses, setLiveStatuses] = useState({});
     const [refs, setRefs] = useState({ sb_ordinance_number: app.sb_ordinance_number || "", dar_clearance_ref: app.dar_clearance_ref || "" });
+    const [savedPermits, setSavedPermits] = useState(app.generated_permits || app.generatedPermits || []);
+
+    useEffect(() => {
+        setSavedPermits(app.generated_permits || app.generatedPermits || []);
+    }, [app.generated_permits, app.generatedPermits]);
+
+    const missingPermits = useMemo(
+        () => getMissingRecommendedPermits(app, savedPermits),
+        [app, savedPermits]
+    );
 
     useEffect(() => {
         const tick = () => {
@@ -317,6 +371,16 @@ function ShowInner({
             .then(setParcelMapData)
             .catch(() => {});
     }, []);
+
+    const flashSuccess = usePage().props?.flash?.success;
+    const seenSuccessFlash = useRef(null);
+
+    useEffect(() => {
+        if (flashSuccess && seenSuccessFlash.current !== flashSuccess) {
+            seenSuccessFlash.current = flashSuccess;
+            showToast(flashSuccess, "success");
+        }
+    }, [flashSuccess]);
 
     useEffect(() => {
         const first = Object.values(serverErrors || {})[0];
@@ -493,6 +557,13 @@ function ShowInner({
     };
 
     const submitStatus = ({ new_status, remarks }) => {
+        if (new_status === "Released" && missingPermits.length > 0) {
+            showToast(
+                `Cannot mark as Released. The required permit(s) (${missingPermits.map((p) => p.label).join(", ")}) must be generated first.`,
+                "error"
+            );
+            return;
+        }
         setSaving(true);
         router.post(
             "/applications/update-status",
@@ -545,7 +616,7 @@ function ShowInner({
 
     const pendingInspections = lots.filter((l) => inspectionOpen(l.parcel));
     const undecided = lots.filter((l) => !reviews[l.parcel.id]?.decision);
-    const nextStage = STAGES[STAGES.indexOf(app.status) + 1];
+    const nextStage = stages[stages.indexOf(app.status) + 1];
     const isFinal = app.status === "Released" || app.status === "Denied";
     const deniedReasons = lots.map((l) => latestReview[l.parcel.id]).filter((r) => r?.decision === "Declined" && r.decision_reason);
 
@@ -555,9 +626,76 @@ function ShowInner({
             : app.status === "Received"
             ? { label: "Start technical review", onClick: () => setStatusDialog("Technical Review") }
             : app.status === "Under Sangguniang Bayan"
-            ? { label: "Mark for release", onClick: () => setStatusDialog("For Release") }
+            ? {
+                label: "Mark for release",
+                onClick: () => {
+                    if (!app.sb_ordinance_number?.trim()) {
+                        Swal.fire({
+                            title: "SB Ordinance Required",
+                            text: "Please record and save the approved Sangguniang Bayan Ordinance Number in the Summary tab before marking this application for release.",
+                            icon: "warning",
+                            confirmButtonColor: "#0b2a5b",
+                            confirmButtonText: "Go to input field",
+                            showCancelButton: true,
+                            cancelButtonText: "Close",
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                setTab("overview");
+                                setTimeout(() => {
+                                    const el = document.getElementById("sb_ordinance_number");
+                                    el?.focus();
+                                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                }, 150);
+                            }
+                        });
+                        return;
+                    }
+                    setStatusDialog("For Release");
+                },
+                disabled: saving,
+                title: app.sb_ordinance_number?.trim()
+                    ? "Proceed to release clearance"
+                    : "Requires approved Sangguniang Bayan Ordinance Number",
+            }
             : app.status === "For Release"
-            ? { label: "Mark as released", onClick: () => setStatusDialog("Released") }
+            ? {
+                label: "Mark as released",
+                onClick: () => {
+                    if (missingPermits.length > 0) {
+                        Swal.fire({
+                            title: "Cannot Mark as Released",
+                            html: `<div class="text-left space-y-3 font-sans">
+                                <p class="text-xs text-slate-600">The application type <strong>${app.application_type}</strong> requires the following permit document(s) to be generated before release:</p>
+                                <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
+                                    ${missingPermits.map((p) => `<div class="text-xs font-bold text-amber-900 flex items-center gap-2"><span>${p.icon || '📄'}</span><span>${p.label}</span></div>`).join("")}
+                                </div>
+                                <p class="text-xs text-slate-500">Please generate the required permit document(s) in the <strong>Export permit/doc</strong> tab before marking this application as released.</p>
+                            </div>`,
+                            icon: "warning",
+                            confirmButtonColor: "#0b2a5b",
+                            confirmButtonText: "Go to Export Tab",
+                            showCancelButton: true,
+                            cancelButtonText: "Close",
+                            customClass: {
+                                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
+                                title: "text-base font-bold text-slate-900",
+                                confirmButton: "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
+                                cancelButton: "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
+                            },
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                setTab("export");
+                            }
+                        });
+                        return;
+                    }
+                    setStatusDialog("Released");
+                },
+                disabled: saving,
+                title: missingPermits.length > 0
+                    ? `Requires generating: ${missingPermits.map((p) => p.label).join(", ")}`
+                    : "Mark application as released to applicant",
+            }
             : null;
 
     // ── History ──
@@ -603,7 +741,9 @@ function ShowInner({
             : app.status === "Under Sangguniang Bayan"
             ? "Awaiting Sangguniang Bayan action"
             : app.status === "For Release"
-            ? "Ready for release"
+            ? missingPermits.length > 0
+                ? "Generate required permits"
+                : "Ready for release"
             : app.status === "Released"
             ? "Released to the applicant"
             : app.status === "Denied"
@@ -621,8 +761,17 @@ function ShowInner({
                 .join(" · ");
         }
         if (app.status === "Technical Review" && undecided.length) return `Decide on ${undecided.map((l) => l.code).join(", ")} in the Lots tab.`;
-        if (app.status === "Under Sangguniang Bayan" && isAmendment) return "Record the SB ordinance number once the petition is approved.";
-        if (app.status === "For Release") return `Release mode: ${dash(app.preferred_release_mode)}`;
+        if (app.status === "Under Sangguniang Bayan" && (isAmendment || hasSbRouting)) {
+            return app.sb_ordinance_number?.trim()
+                ? `SB Ordinance ${app.sb_ordinance_number} recorded. Ready to mark for release.`
+                : "Record the SB ordinance number once the petition is approved.";
+        }
+        if (app.status === "For Release") {
+            if (missingPermits.length > 0) {
+                return `Pending permit generation: ${missingPermits.map((p) => p.label).join(", ")}. Please generate in the Export tab before release.`;
+            }
+            return `All required permits generated. Release mode: ${dash(app.preferred_release_mode)}`;
+        }
         if (app.status === "Denied" && deniedReasons.length) return deniedReasons.map((r) => `${lotCodeById[r.parcel_id]}: ${r.decision_reason}`).join(" · ");
         return null;
     })();
@@ -641,7 +790,7 @@ function ShowInner({
         { id: "overview", label: "Summary" },
         { id: "parcels", label: `Lots (${lots.length})` },
         { id: "history", label: "History" },
-        ...(canExport ? [{ id: "export", label: "Export permit/doc" }] : []),
+        ...(canExport ? [{ id: "export", label: app.status === "Released" ? "Permits" : "Export permit/doc" }] : []),
     ];
 
     return (
@@ -749,7 +898,7 @@ function ShowInner({
                                     {dash(app.application_type)} · Brgy. {dash(app.barangay)}
                                 </p>
                                 <div className="mt-3">
-                                    <StageProgress status={app.status} />
+                                    <StageProgress status={app.status} stages={stages} />
                                 </div>
                                 <dl className="mt-3 grid grid-cols-3 border border-slate-200 rounded-md divide-x divide-slate-200">
                                     {[
@@ -758,8 +907,8 @@ function ShowInner({
                                         ["Assessment fee", peso(app.assessment_fee)],
                                     ].map(([k, v]) => (
                                         <div key={k} className="px-3 py-2 min-w-0">
-                                            <dt className="text-[11px] text-slate-500">{k}</dt>
-                                            <dd className="text-[12.5px] font-semibold text-slate-900 truncate tabular-nums">{v}</dd>
+                                             <dt className="text-[11px] text-slate-500">{k}</dt>
+                                             <dd className="text-[12.5px] font-semibold text-slate-900 truncate tabular-nums">{v}</dd>
                                         </div>
                                     ))}
                                 </dl>
@@ -770,6 +919,41 @@ function ShowInner({
                                 <p className="text-[11px] text-slate-500">Next step</p>
                                 <p className="text-[13px] font-semibold text-slate-900">{nextStep}</p>
                                 {nextDetail && <p className="text-[12px] text-slate-600 mt-0.5">{nextDetail}</p>}
+                                {app.status === "Under Sangguniang Bayan" && (isAmendment || hasSbRouting) && !app.sb_ordinance_number?.trim() && (
+                                    <div className="mt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setTab("overview");
+                                                setTimeout(() => {
+                                                    const el = document.getElementById("sb_ordinance_number");
+                                                    el?.focus();
+                                                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                                }, 100);
+                                            }}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-semibold shadow-xs cursor-pointer transition-colors"
+                                        >
+                                            <span>Input SB Ordinance Number</span>
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                )}
+                                {app.status === "For Release" && missingPermits.length > 0 && (
+                                    <div className="mt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setTab("export")}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12px] font-semibold shadow-xs cursor-pointer transition-colors"
+                                        >
+                                            <span>Generate Required Permits</span>
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                )}
                                 {overARTA && (
                                     <p className="text-[12px] font-medium text-amber-800 mt-1">
                                         {daysSinceFiling} working days since filing, beyond the {ARTA_WORKING_DAYS}-day processing time for highly technical applications (RA 11032).
@@ -827,7 +1011,7 @@ function ShowInner({
                                                     )}
                                                 </Row>
                                             )}
-                                            <Row label="Track">{isAmendment ? "Legislative amendment (Track B)" : "Standard clearance (Track A)"}</Row>
+                                            <Row label="Track">{isAmendment ? "Legislative amendment (Track B)" : hasSbRouting ? "Standard clearance (Track A · SB Routed)" : "Standard clearance (Track A)"}</Row>
                                             {isAmendment && app.target_land_use_class && (
                                                 <Row label="Target zoning">
                                                     {app.target_land_use_class}
@@ -837,16 +1021,27 @@ function ShowInner({
                                             <Row label="Purpose">{app.purpose}</Row>
                                         </dl>
 
-                                        {isAmendment && (
-                                            <div className="mt-4 mb-2 p-3 rounded-md border border-slate-200 bg-slate-50">
-                                                <p className="text-[12.5px] font-semibold text-slate-800 mb-2">Sangguniang Bayan / DAR references</p>
+                                        {(isAmendment || hasSbRouting) && (
+                                            <div className={`mt-4 mb-2 p-3.5 rounded-lg border transition-all ${
+                                                !app.sb_ordinance_number?.trim() && app.status === "Under Sangguniang Bayan"
+                                                    ? "border-blue-300 bg-blue-50/50 shadow-xs ring-1 ring-blue-500/20"
+                                                    : "border-slate-200 bg-slate-50"
+                                            }`}>
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <p className="text-[12.5px] font-semibold text-slate-800">Sangguniang Bayan / DAR references</p>
+                                                    {!app.sb_ordinance_number?.trim() && app.status === "Under Sangguniang Bayan" && (
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-full">
+                                                            Awaiting Input
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                                     {[
                                                         ["sb_ordinance_number", "SB ordinance no.", "e.g. Ord. No. 2026-014"],
                                                         ["dar_clearance_ref", "DAR clearance ref.", "e.g. DAR-CC-2026-0021"],
                                                     ].map(([field, label, placeholder]) => (
                                                         <div key={field}>
-                                                            <label htmlFor={field} className="text-[12px] text-slate-600">{label}</label>
+                                                            <label htmlFor={field} className="text-[12px] font-medium text-slate-700">{label}</label>
                                                             <input
                                                                 id={field}
                                                                 type="text"
@@ -854,7 +1049,7 @@ function ShowInner({
                                                                 value={refs[field]}
                                                                 onChange={(e) => setRefs((r) => ({ ...r, [field]: e.target.value }))}
                                                                 placeholder={placeholder}
-                                                                className={`mt-1 font-mono ${FIELD}`}
+                                                                className={`mt-1 font-mono ${FIELD} ${field === 'sb_ordinance_number' && !app.sb_ordinance_number?.trim() && app.status === 'Under Sangguniang Bayan' ? 'border-blue-400 bg-white ring-2 ring-blue-500/10' : ''}`}
                                                             />
                                                         </div>
                                                     ))}
@@ -864,7 +1059,7 @@ function ShowInner({
                                                         type="button"
                                                         onClick={saveRefs}
                                                         disabled={saving || (refs.sb_ordinance_number === (app.sb_ordinance_number || "") && refs.dar_clearance_ref === (app.dar_clearance_ref || ""))}
-                                                        className="h-8 px-3.5 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
+                                                        className="h-8 px-3.5 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed shadow-2xs"
                                                     >
                                                         Save references
                                                     </button>
@@ -1216,7 +1411,11 @@ function ShowInner({
                                 )}
 
                                 {tab === "export" && (
-                                    <PermitExportPanel app={app} />
+                                    <PermitExportPanel
+                                        app={app}
+                                        savedPermits={savedPermits}
+                                        onSavedPermitsChange={setSavedPermits}
+                                    />
                                 )}
                             </div>
                         </div>
@@ -1224,7 +1423,17 @@ function ShowInner({
                 </div>
             </div>
 
-            {statusDialog && <UpdateStatusDialog currentStatus={app.status} preset={statusDialog} onClose={() => setStatusDialog(null)} onSubmit={submitStatus} saving={saving} />}
+            {statusDialog && (
+                <UpdateStatusDialog
+                    currentStatus={app.status}
+                    preset={statusDialog}
+                    stages={stages}
+                    onClose={() => setStatusDialog(null)}
+                    onSubmit={submitStatus}
+                    saving={saving}
+                    missingPermits={missingPermits}
+                />
+            )}
             {siteMapOpen && <SiteMapPrint open={siteMapOpen} onClose={() => setSiteMapOpen(false)} form={app} parcelMapData={parcelMapData} preparedBy={userName} />}
         </>
     );

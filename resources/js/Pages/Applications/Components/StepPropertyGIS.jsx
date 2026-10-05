@@ -351,9 +351,10 @@ export default function StepPropertyGIS({
             if (activeParcelIndex !== pendingEncode.index) return;
             setPendingEncode(null);
             const p = pendingEncode.feature.properties || {};
-            handleSelectMapParcel(p.property_index_number?.trim(), p.lot_number || p.lot_no, p.lot_area_sqm || p.area, p.barangay, pendingEncode.feature);
+            const preloaded = identify?.feature?.properties?.property_index_number?.trim() === p.property_index_number?.trim() ? identify?.areaZone : null;
+            handleSelectMapParcel(p.property_index_number?.trim(), p.lot_number || p.lot_no, p.lot_area_sqm || p.area, p.barangay, pendingEncode.feature, preloaded);
         }
-    }, [pendingEncode, parcels, activeParcelIndex]);
+    }, [pendingEncode, parcels, activeParcelIndex, identify]);
 
     const startEncode = (payload) => {
         let index = nextTargetIndex;
@@ -369,7 +370,8 @@ export default function StepPropertyGIS({
             setPendingEncode({ ...payload, index });
         } else {
             const p = payload.feature?.properties || {};
-            handleSelectMapParcel(p.property_index_number?.trim(), p.lot_number || p.lot_no, p.lot_area_sqm || p.area, p.barangay, payload.feature);
+            const preloaded = identify?.feature?.properties?.property_index_number?.trim() === p.property_index_number?.trim() ? identify?.areaZone : null;
+            handleSelectMapParcel(p.property_index_number?.trim(), p.lot_number || p.lot_no, p.lot_area_sqm || p.area, p.barangay, payload.feature, preloaded);
         }
     };
 
@@ -632,12 +634,19 @@ export default function StepPropertyGIS({
         if (!isConfirmed) return;
 
         const triggeringParcel = { ...form.parcels[parcelIndex], parcel_code: "P-01" };
-        setForm((prev) => ({
-            ...prev,
-            application_stream: "amendment",
-            application_type: newType,
-            parcels: [triggeringParcel],
-        }));
+        setForm((prev) => {
+            const currentTypes = (prev.application_type || "")
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+            const standardType = currentTypes.find((t) => !t.startsWith("Petition for")) || "Locational Clearance";
+            return {
+                ...prev,
+                application_stream: "amendment",
+                application_type: `${standardType}, ${newType}`,
+                parcels: [triggeringParcel],
+            };
+        });
         setActiveParcelIndex(0);
     };
 
@@ -1347,7 +1356,9 @@ export default function StepPropertyGIS({
                                                                     </Attr>
                                                                     <Attr label="Assessor class">{parcel.cadastral_zone}</Attr>
                                                                     <Attr label="CLUP zone">
-                                                                        {parcel.land_use_class && (
+                                                                        {parcel.is_zoning_loading || !parcel.land_use_class ? (
+                                                                            <span className="text-slate-400">Checking…</span>
+                                                                        ) : (
                                                                             <span>
                                                                                 {parcel.land_use_class}
                                                                                 {getZoneInfo(parcel.land_use_class).label !== parcel.land_use_class && (

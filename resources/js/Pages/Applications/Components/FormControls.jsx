@@ -30,15 +30,37 @@ export const Textarea = ({ className = "", hasError = false, ...props }) => (
     <textarea className={`${inputBaseStyles(hasError, false)} rounded-2xl resize-none ${className}`} {...props} />
 );
 
-export const Select = ({ children, className = "", hasError = false, ...props }) => (
-    <div className="relative group">
-        <select className={`${inputBaseStyles(hasError, false)} rounded-full appearance-none pr-10 cursor-pointer ${className}`} {...props}>
-            {children}
-        </select>
-        <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-slate-400 group-hover:text-blue-600 transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-            </svg>
+export const Select = ({ children, className = "", hasError = false, onKeyDown, ...props }) => {
+    const handleKeyDown = (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+                if (typeof e.currentTarget.showPicker === "function") {
+                    e.currentTarget.showPicker();
+                } else {
+                    const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window });
+                    e.currentTarget.dispatchEvent(event);
+                }
+            } catch (err) {}
+        }
+        if (onKeyDown) onKeyDown(e);
+    };
+
+    return (
+        <div className="relative group">
+            <select
+                className={`${inputBaseStyles(hasError, false)} rounded-full appearance-none pr-10 cursor-pointer ${className}`}
+                onKeyDown={handleKeyDown}
+                {...props}
+            >
+                {children}
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-slate-400 group-hover:text-blue-600 transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                </svg>
+            </div>
         </div>
-    </div>
-);
+    );
+};

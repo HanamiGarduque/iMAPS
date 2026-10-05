@@ -177,21 +177,44 @@ const getFoldColor = (type) => {
     return "#94A3B8";
 };
 
-const PROGRESS_STEPS = [
+const STANDARD_PROGRESS_STEPS = [
+    { key: "Received", label: "Received" },
+    { key: "Technical Review", label: "Technical review" },
+    { key: "For Release", label: "Issued / ready for release" },
+];
+
+const SB_PROGRESS_STEPS = [
     { key: "Received", label: "Received" },
     { key: "Technical Review", label: "Technical review" },
     { key: "Under Sangguniang Bayan", label: "Sangguniang Bayan" },
     { key: "For Release", label: "Issued / ready for release" },
 ];
 
-function getProgressSteps(status) {
+const PROGRESS_STEPS = SB_PROGRESS_STEPS;
+
+function getProgressSteps(appOrStatus) {
+    const isObject = typeof appOrStatus === "object" && appOrStatus !== null;
+    const status = isObject ? appOrStatus.status : appOrStatus;
+    const hasSb = isObject
+        ? Boolean(
+            appOrStatus.has_sb_routing ||
+            appOrStatus.hasSbRouting ||
+            String(appOrStatus.application_stream || "").toLowerCase() === "amendment" ||
+            appOrStatus.status === "Under Sangguniang Bayan" ||
+            appOrStatus.sb_ordinance_number?.trim() ||
+            appOrStatus.route_to_sb
+          )
+        : status === "Under Sangguniang Bayan";
+
+    const steps = hasSb ? SB_PROGRESS_STEPS : STANDARD_PROGRESS_STEPS;
+
     if (status === "Denied") {
-        return PROGRESS_STEPS.map((step) => ({ ...step, state: "denied" }));
+        return steps.map((step) => ({ ...step, state: "denied" }));
     }
     const currentIndex = status === "Released"
-        ? PROGRESS_STEPS.length
-        : PROGRESS_STEPS.findIndex((step) => step.key === status);
-    return PROGRESS_STEPS.map((step, idx) => ({
+        ? steps.length
+        : steps.findIndex((step) => step.key === status);
+    return steps.map((step, idx) => ({
         ...step,
         state: idx < currentIndex ? "done" : idx === currentIndex ? "current" : "pending",
     }));
@@ -1382,12 +1405,11 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     </th>
                                                     <th className="py-3 px-3">Application</th>
                                                     <th className="py-3 px-3">Barangay</th>
-                                                    <th className="py-3 px-3">
+                                                    <th className="py-3 pl-3 pr-4">
                                                         <button type="button" onClick={() => handleHeaderSort("date")} className="uppercase tracking-wider hover:text-slate-800 cursor-pointer">
                                                             Filed{selectedSort === "newest" ? " ↓" : selectedSort === "oldest" ? " ↑" : ""}
                                                         </button>
                                                     </th>
-                                                    <th className="py-3 pr-4 w-10"><span className="sr-only">Open</span></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
@@ -1403,17 +1425,22 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                         : item.remarks?.trim()
                                                         ? `Remark · ${item.remarks}`
                                                         : "—";
-                                                    const isSelected = peekItem && rowKey(peekItem) === key;
+                                                    const isSelected = Boolean(peekItem && rowKey(peekItem) === key);
                                                     const isFocused = focusedRowIndex === idx;
+                                                    const isHighlighted = isSelected || isFocused;
 
                                                     return (
                                                         <tr
                                                             key={key ?? idx}
                                                             onClick={() => { setPeekItem(item); setFocusedRowIndex(idx); }}
-                                                            aria-selected={Boolean(isSelected)}
+                                                            aria-selected={isSelected}
                                                             className={`cursor-pointer transition-colors group ${
-                                                                isSelected ? "bg-blue-50/50" : "hover:bg-slate-50"
-                                                            } ${isFocused ? "ring-1 ring-inset ring-blue-500" : ""}`}
+                                                                isSelected ? "bg-blue-50/60" : isFocused ? "bg-blue-50/30" : "hover:bg-slate-50"
+                                                            } ${
+                                                                isHighlighted
+                                                                    ? "[&>td]:border-y [&>td]:border-blue-500 [&>td:first-child]:border-l [&>td:first-child]:border-blue-500 [&>td:last-child]:border-r [&>td:last-child]:border-blue-500"
+                                                                    : ""
+                                                            }`}
                                                         >
                                                             <td className="py-3 pl-4 pr-2" onClick={(e) => e.stopPropagation()}>
                                                                 <input
@@ -1525,23 +1552,9 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                 {item.barangay || "—"}
                                                             </td>
 
-                                                            <td className="py-3 px-3 whitespace-nowrap">
+                                                            <td className="py-3 pl-3 pr-4 whitespace-nowrap">
                                                                 <p className="text-[13px] text-slate-700">{formatDate(item.created_at)}</p>
                                                                 <p className="text-[11px] text-slate-400">{timeAgo(item.created_at)}</p>
-                                                            </td>
-
-                                                            <td className="py-3 pr-4 text-right" onClick={(e) => e.stopPropagation()}>
-                                                                <Link
-                                                                    href={item.id ? `/applications/${item.id}` : "#"}
-                                                                    aria-label={`View full record for ${item.applicant_name || refCode}`}
-                                                                    title="View full record"
-                                                                    className="inline-flex w-8 h-8 items-center justify-center rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                                                                >
-                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                                    </svg>
-                                                                </Link>
                                                             </td>
                                                         </tr>
                                                     );
@@ -1923,7 +1936,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     <div className="p-4 border-b border-slate-100">
                                         <h4 className="text-xs font-semibold text-slate-900 mb-3">Progress</h4>
                                         <ol>
-                                            {getProgressSteps(peekItem.status).map((step, idx, arr) => {
+                                            {getProgressSteps(peekItem).map((step, idx, arr) => {
                                                 const isLast = idx === arr.length - 1;
                                                 const sub = step.state === "current"
                                                     ? "Current stage"

@@ -37,6 +37,7 @@ export const NO_LABELS = []; // stable identity so hidden label sets don't re-tr
 
 export const CHECK_COLORS = {
     unverified: "#94a3b8",
+    checking: "#94a3b8",
     verified: "#16a34a",
     consistent: "#16a34a",
     mismatch: "#d97706",
@@ -180,12 +181,15 @@ export function MapLabels({ map, badges = NO_LABELS, zoneLabels = NO_LABELS, par
 // Mirrors the progression-lock comparison: Assessor classification vs spatial CLUP zone.
 export function getZoningCheck(parcel, isAmendmentStream) {
     if (!parcel.is_verified) return { key: "unverified", label: "Not verified", dot: "bg-slate-300" };
+    if (parcel.is_zoning_loading || !parcel.land_use_class) {
+        return { key: "checking", label: "Checking…", dot: "bg-slate-400" };
+    }
     const cadastral = parcel.cadastral_zone?.trim().toLowerCase();
     const clup = parcel.land_use_class?.trim().toLowerCase();
-    if (!cadastral || !clup) return { key: "verified", label: "Verified", dot: "bg-emerald-500" };
+    if (!cadastral) return { key: "verified", label: "Verified", dot: "bg-emerald-500" };
     if (cadastral === clup) return { key: "consistent", label: "Consistent", dot: "bg-emerald-500" };
     if (isAmendmentStream) return { key: "amendment", label: "Amendment track", dot: "bg-blue-500" };
-    const isAgri = cadastral.includes("agri") || cadastral.includes("agind");
+    const isAgri = cadastral.includes("agri");
     return {
         key: "mismatch",
         label: "Mismatch",
@@ -194,6 +198,35 @@ export function getZoningCheck(parcel, isAmendmentStream) {
             ? { label: "Switch to Reclassification", type: "Petition for Reclassification" }
             : { label: "Switch to Rezoning", type: "Petition for Rezoning" },
     };
+}
+
+// Determines the recommended legislative petition (Rezoning vs Reclassification)
+// based on property zoning mismatch (agricultural zones mandate Reclassification).
+export function getRecommendedPetition(parcels) {
+    if (!Array.isArray(parcels) || parcels.length === 0) return null;
+
+    // Find the first verified parcel with a zoning mismatch
+    const mismatchParcel = parcels.find((p) => {
+        const cadastral = p.cadastral_zone?.trim().toLowerCase();
+        const clup = p.land_use_class?.trim().toLowerCase();
+        return p.is_verified && cadastral && clup && cadastral !== clup;
+    });
+
+    if (mismatchParcel) {
+        const cadastral = (mismatchParcel.cadastral_zone || "").toLowerCase();
+        const isAgri = cadastral.includes("agri");
+        return isAgri ? "Petition for Reclassification" : "Petition for Rezoning";
+    }
+
+    // Fallback: check any verified parcel with cadastral zone
+    const verified = parcels.find((p) => p.is_verified && p.cadastral_zone);
+    if (verified) {
+        const cadastral = (verified.cadastral_zone || "").toLowerCase();
+        const isAgri = cadastral.includes("agri");
+        return isAgri ? "Petition for Reclassification" : "Petition for Rezoning";
+    }
+
+    return null;
 }
 
 // Approximate map scale (1:n) at 96 dpi: web-mercator metres per pixel × pixels per metre

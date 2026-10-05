@@ -13,6 +13,13 @@ class ZoningApplication extends Model
 {
     use HasFactory;
 
+    public const PERMIT_LABELS = [
+        'ze' => 'Zoning Evaluation',
+        'lc' => 'Locational Clearance',
+        'zc' => 'Zoning Certification',
+        'dp' => 'Development Permit',
+    ];
+
     protected $table = 'zoning_applications';
 
     protected $fillable = [
@@ -91,6 +98,23 @@ class ZoningApplication extends Model
         $this->attributes['target_land_use_class'] = $value;
     }
 
+    public function hasSbRouting(): bool
+    {
+        if (strtolower((string) $this->application_stream) === 'amendment') {
+            return true;
+        }
+        if ($this->status === 'Under Sangguniang Bayan') {
+            return true;
+        }
+        if (!empty(trim((string) $this->sb_ordinance_number))) {
+            return true;
+        }
+        return DB::table('application_status_tracks')
+            ->where('reference_number', $this->reference_number)
+            ->where('status', 'Under Sangguniang Bayan')
+            ->exists();
+    }
+
     public function parcels(): HasMany
     {
         return $this->hasMany(Parcel::class, 'zoning_application_id');
@@ -138,6 +162,106 @@ class ZoningApplication extends Model
         return $this->hasMany(ApplicationPoAssignment::class, 'zoning_application_id')
             ->orderBy('reassigned_at')
             ->orderBy('id');
+    }
+
+    /**
+     * Get permit types recommended to be issued for this application based on its application_type and stream.
+     * Note: 'ze' (Zoning Evaluation) is an internal review worksheet and not an issued permit.
+     *
+     * @return string[] Array of permit codes (e.g. ['lc'], ['lc', 'zc'])
+     */
+    public function getRecommendedPermitTypes(): array
+    {
+        $types = array_filter(array_map('trim', explode(',', $this->application_type ?? '')));
+        $recommended = [];
+
+        foreach ($types as $type) {
+            $lower = strtolower($type);
+
+            if (str_contains($lower, 'palc')) {
+                $recommended[] = 'dp';
+            } elseif (str_contains($lower, 'development')) {
+                $recommended[] = 'dp';
+            } elseif (str_contains($lower, 'zoning cert')) {
+                $recommended[] = 'zc';
+            } elseif (str_contains($lower, 'locational') || str_contains($lower, 'clearance')) {
+                $recommended[] = 'lc';
+            } elseif (str_contains($lower, 'rezoning') || str_contains($lower, 'reclassification')) {
+                // In amendment stream or petitions, approved petition culminates in Locational Clearance citing SB ordinance
+                $recommended[] = 'lc';
+            }
+        }
+
+        // If none matched individual tokens, check the whole string
+        if (empty($recommended)) {
+            $lower = strtolower($this->application_type ?? '');
+            if (str_contains($lower, 'palc') || str_contains($lower, 'development')) {
+                $recommended[] = 'dp';
+            } elseif (str_contains($lower, 'zoning cert')) {
+                $recommended[] = 'zc';
+            } elseif (str_contains($lower, 'rezoning') || str_contains($lower, 'reclassification')) {
+                $recommended[] = 'lc';
+            } else {
+                $recommended[] = 'lc';
+            }
+        }
+
+        return array_values(array_unique($recommended));
+    }
+
+    /**
+     * Get recommended permit types that have NOT been generated yet for this application.
+     *
+     * @return string[] Array of missing permit codes (e.g. ['zc'])
+     */
+    public function getMissingRecommendedPermitTypes(): array
+    {
+        $recommended = $this->getRecommendedPermitTypes();
+        if (empty($recommended)) {
+            return [];
+        }
+
+        $generatedTypes = ($this->relationLoaded('generatedPermits') ? $this->generatedPermits : $this->generatedPermits())
+            ->pluck('permit_type')
+            ->filter()
+            ->unique()
+            ->all();
+
+        $missing = [];
+        $lowerAppType = strtolower($this->application_type ?? '');
+        $hasPalc = str_contains($lowerAppType, 'palc');
+
+        foreach ($recommended as $code) {
+            // For PALC, generating either 'dp' or 'lc' satisfies PALC unless 'lc' is explicitly in recommended
+            if ($code === 'dp' && $hasPalc && in_array('lc', $generatedTypes, true) && !in_array('lc', $recommended, true)) {
+                continue;
+            }
+
+            if (!in_array($code, $generatedTypes, true)) {
+                $missing[] = $code;
+            }
+        }
+
+        return array_values(array_unique($missing));
+    }
+
+    /**
+     * Get missing recommended permit names in human-readable form.
+     *
+     * @return string[] Array of missing permit names (e.g. ['Locational Clearance', 'Zoning Certification'])
+     */
+    public function getMissingRecommendedPermitNames(): array
+    {
+        $missing = $this->getMissingRecommendedPermitTypes();
+        return array_map(fn($code) => self::PERMIT_LABELS[$code] ?? strtoupper($code), $missing);
+    }
+
+    /**
+     * Check if all recommended permit documents have been generated.
+     */
+    public function hasAllRecommendedPermitsGenerated(): bool
+    {
+        return empty($this->getMissingRecommendedPermitTypes());
     }
 
     public static function countThisMonth(): int

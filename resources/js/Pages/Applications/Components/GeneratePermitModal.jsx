@@ -6,11 +6,46 @@ import axios from "axios";
 import Swal from "sweetalert2";
 
 export const PERMITS = [
-    { type: "ze", label: "Zoning Evaluation", paper: "A4", icon: "📋" },
-    { type: "lc", label: "Locational Clearance", paper: "A4", icon: "📄" },
-    { type: "zc", label: "Zoning Certification", paper: "A4", icon: "📜" },
-    { type: "dp", label: "Development Permit", paper: "8.5 × 13 (long)", icon: "🏛️" },
+    { type: "ze", label: "Zoning Evaluation", paper: "A4" },
+    { type: "lc", label: "Locational Clearance", paper: "A4" },
+    { type: "zc", label: "Zoning Certification", paper: "A4" },
+    { type: "dp", label: "Development Permit", paper: "8.5 × 13 (long)" },
 ];
+
+export function PermitIcon({ type, className = "w-5 h-5" }) {
+    switch (type) {
+        case "ze":
+            return (
+                <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+                </svg>
+            );
+        case "lc":
+            return (
+                <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+            );
+        case "zc":
+            return (
+                <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+                </svg>
+            );
+        case "dp":
+            return (
+                <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.333A48.408 48.408 0 0012 9.75c-2.551 0-5.056.2-7.5.583V21h15z" />
+                </svg>
+            );
+        default:
+            return (
+                <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+            );
+    }
+}
 
 const GROUP_ORDER = ["Numbers & dates", "Applicant & project", "Lot / property", "Evaluation", "Fees", "Signatories"];
 
@@ -32,47 +67,138 @@ export function defaultPermitFor(app = {}) {
     return "ze";
 }
 
+export function getRecommendedPermitTypes(app = {}) {
+    const rawTypes = (app.application_type || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+    const recommended = [];
+
+    for (const type of rawTypes) {
+        const lower = type.toLowerCase();
+        if (lower.includes("palc")) {
+            recommended.push("dp");
+        } else if (lower.includes("development")) {
+            recommended.push("dp");
+        } else if (lower.includes("zoning cert")) {
+            recommended.push("zc");
+        } else if (lower.includes("locational") || lower.includes("clearance")) {
+            recommended.push("lc");
+        } else if (lower.includes("rezoning") || lower.includes("reclassification")) {
+            recommended.push("lc");
+        }
+    }
+
+    if (recommended.length === 0) {
+        const lower = (app.application_type || "").toLowerCase();
+        if (lower.includes("palc") || lower.includes("development")) {
+            recommended.push("dp");
+        } else if (lower.includes("zoning cert")) {
+            recommended.push("zc");
+        } else if (lower.includes("rezoning") || lower.includes("reclassification")) {
+            recommended.push("lc");
+        } else {
+            recommended.push("lc");
+        }
+    }
+
+    return [...new Set(recommended)];
+}
+
 export function getRecommendedPermitForApp(app = {}) {
-    const t = (app.application_type || "").toLowerCase();
-    if (t.includes("development") || t.includes("palc")) return "dp";
-    if (t.includes("zoning cert") || t.includes("rezoning") || t.includes("reclassification")) return "zc";
-    return "lc";
+    const types = getRecommendedPermitTypes(app);
+    return types[0] || "lc";
+}
+
+export function getMissingRecommendedPermits(app = {}, savedPermits = []) {
+    const recommended = getRecommendedPermitTypes(app);
+    const savedTypes = new Set(
+        (savedPermits || [])
+            .map((p) => (typeof p === "object" ? p?.permit_type : p))
+            .filter(Boolean)
+    );
+
+    const lowerAppType = (app.application_type || "").toLowerCase();
+    const hasPalc = lowerAppType.includes("palc");
+
+    const missing = [];
+    for (const type of recommended) {
+        // If PALC, generating either 'dp' or 'lc' satisfies PALC unless 'lc' is explicitly required
+        if (type === "dp" && hasPalc && savedTypes.has("lc") && !recommended.includes("lc")) {
+            continue;
+        }
+
+        if (!savedTypes.has(type)) {
+            const pObj = PERMITS.find((p) => p.type === type) || { type, label: type.toUpperCase() };
+            missing.push(pObj);
+        }
+    }
+
+    return missing;
 }
 
 export function getAvailablePermitsForApp(app = {}) {
     const t = (app.application_type || "").toLowerCase();
+    const isAmendment = String(app.application_stream || "").toLowerCase() === "amendment";
     const allowed = ["ze"];
 
-    if (t.includes("development")) {
+    if (t.includes("development") || t.includes("palc")) {
         allowed.push("dp");
-        allowed.push("lc");
-    } else if (t.includes("zoning cert") || t.includes("rezoning") || t.includes("reclassification")) {
-        allowed.push("zc");
-    } else if (t.includes("palc")) {
-        allowed.push("dp");
-        allowed.push("lc");
-    } else {
         allowed.push("lc");
     }
 
-    return PERMITS.filter((p) => allowed.includes(p.type));
+    if (t.includes("locational") || t.includes("clearance")) {
+        allowed.push("lc");
+    }
+
+    if (t.includes("zoning cert") || t.includes("rezoning") || t.includes("reclassification")) {
+        allowed.push("zc");
+        if (isAmendment || app.sb_ordinance_number || t.includes("locational") || t.includes("clearance")) {
+            allowed.push("lc");
+        }
+    }
+
+    if (!allowed.includes("lc") && !t.includes("zoning cert")) {
+        allowed.push("lc");
+    }
+
+    const uniqueAllowed = [...new Set(allowed)];
+    return PERMITS.filter((p) => uniqueAllowed.includes(p.type));
 }
 
 // ── Tab content: list of permits, each opens the modal ──
-export function PermitExportPanel({ app }) {
+export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSavedPermitsChange }) {
+    const isReleased = app?.status === "Released";
     const [open, setOpen] = useState(null);
-    const [savedPermits, setSavedPermits] = useState(app?.generated_permits || app?.generatedPermits || []);
+    const [localSavedPermits, setLocalSavedPermits] = useState(
+        propSavedPermits || app?.generated_permits || app?.generatedPermits || []
+    );
+    const savedPermits = propSavedPermits !== undefined ? propSavedPermits : localSavedPermits;
     const defaultPermit = defaultPermitFor(app);
-    const recommendedPermit = getRecommendedPermitForApp(app);
+    const recommendedTypes = getRecommendedPermitTypes(app);
+    const missingPermits = getMissingRecommendedPermits(app, savedPermits);
+    const savedTypes = new Set(
+        (savedPermits || []).map((p) => (typeof p === "object" ? p?.permit_type : p)).filter(Boolean)
+    );
 
     const fetchSavedPermits = async () => {
         try {
             const { data } = await axios.get(`/applications/${app.id}/saved-permits`);
-            if (data?.permits) setSavedPermits(data.permits);
+            if (data?.permits) {
+                setLocalSavedPermits(data.permits);
+                onSavedPermitsChange?.(data.permits);
+            }
         } catch (e) {
             console.error("Failed to fetch saved permits:", e);
         }
     };
+
+    useEffect(() => {
+        if (propSavedPermits) {
+            setLocalSavedPermits(propSavedPermits);
+        }
+    }, [propSavedPermits]);
 
     useEffect(() => {
         if (app?.id) fetchSavedPermits();
@@ -131,106 +257,206 @@ export function PermitExportPanel({ app }) {
 
     return (
         <div className="space-y-4 pb-4">
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                <h3 className="text-xs font-bold text-slate-900">Generate permit & evaluation</h3>
+            <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200">
+                <h3 className="text-xs font-semibold text-slate-900">
+                    {isReleased ? "Permits & Issued Documents" : "Permits & Documents"}
+                </h3>
                 <p className="text-[11.5px] text-slate-500 mt-0.5">
-                    Permit formats are tailored to the application type. Zoning Evaluation is default for all applications.
-                    All generated permits are automatically stored permanently under this application.
+                    {isReleased
+                        ? "Official clearance certificates and evaluation documents issued for this application."
+                        : "Generate official clearance certificates and evaluation worksheets for this application."}
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {getAvailablePermitsForApp(app).map((p) => {
-                    const isDefault = p.type === defaultPermit;
-                    const isRecommended = p.type === recommendedPermit;
+            {/* Status notification when application is in For Release stage */}
+            {!isReleased && app?.status === "For Release" && (
+                <div
+                    className={`p-3.5 rounded-xl border flex items-start gap-3 ${
+                        missingPermits.length > 0
+                            ? "bg-amber-50/70 border-amber-200 text-amber-900"
+                            : "bg-emerald-50/70 border-emerald-200 text-emerald-900"
+                    }`}
+                >
+                    <div className="shrink-0 mt-0.5">
+                        {missingPermits.length > 0 ? (
+                            <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                            </svg>
+                        ) : (
+                            <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        )}
+                    </div>
+                    <div className="min-w-0 flex-1 text-xs">
+                        <p className="font-semibold">
+                            {missingPermits.length > 0
+                                ? "Permit generation required before release"
+                                : "All required permits generated"}
+                        </p>
+                        <p className="text-[11.5px] mt-0.5 opacity-85">
+                            {missingPermits.length > 0
+                                ? `Required before release: ${missingPermits.map((p) => p.label).join(", ")}.`
+                                : "All recommended documents have been generated and archived."}
+                        </p>
+                    </div>
+                </div>
+            )}
 
-                    return (
-                        <button
-                            key={p.type}
-                            type="button"
-                            onClick={() => setOpen(p.type)}
-                            className={`text-left p-3 rounded-xl border transition-all cursor-pointer hover:shadow-sm ${
-                                isRecommended
-                                    ? "border-[#0b2a5b] bg-blue-50/60 ring-1 ring-blue-900/10"
-                                    : isDefault
-                                    ? "border-emerald-300 bg-emerald-50/30"
-                                    : "border-slate-200 bg-white hover:bg-slate-50"
-                            }`}
-                        >
-                            <div className="flex items-center gap-2.5">
-                                <span className="text-xl">{p.icon}</span>
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                        <p className="text-[12.5px] font-bold text-slate-900">{p.label}</p>
-                                        {isDefault && (
-                                            <span className="text-[9.5px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md">
-                                                Default
-                                            </span>
-                                        )}
+            {/* Document generation options - only visible before release */}
+            {!isReleased && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {getAvailablePermitsForApp(app).map((p) => {
+                        const isDefault = p.type === defaultPermit;
+                        const isRecommended = recommendedTypes.includes(p.type);
+                        const isGenerated = savedTypes.has(p.type);
+
+                        return (
+                            <button
+                                key={p.type}
+                                type="button"
+                                onClick={() => setOpen(p.type)}
+                                className={`group text-left p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                                    isGenerated
+                                        ? "border-emerald-200 bg-emerald-50/20 hover:bg-emerald-50/40 hover:border-emerald-300"
+                                        : isRecommended
+                                        ? "border-blue-200 bg-blue-50/30 hover:bg-blue-50/60 hover:border-blue-300"
+                                        : "border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300"
+                                }`}
+                            >
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                                        isGenerated
+                                            ? "bg-emerald-100 text-emerald-700"
+                                            : isRecommended
+                                            ? "bg-blue-100 text-blue-800"
+                                            : "bg-slate-100 text-slate-600"
+                                    }`}>
+                                        <PermitIcon type={p.type} className="w-5 h-5" />
                                     </div>
-                                    <p className="text-[11px] text-slate-500 mt-0.5">
-                                        PDF · {p.paper}
-                                    </p>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <p className="text-[13px] font-semibold text-slate-900 group-hover:text-blue-950 transition-colors">
+                                                {p.label}
+                                            </p>
+                                            {isGenerated && (
+                                                <span className="text-[10px] font-semibold bg-emerald-100/80 text-emerald-800 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                    </svg>
+                                                    Generated
+                                                </span>
+                                            )}
+                                            {!isGenerated && isRecommended && (
+                                                <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md">
+                                                    Required
+                                                </span>
+                                            )}
+                                            {isDefault && !isRecommended && !isGenerated && (
+                                                <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
+                                                    Worksheet
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            PDF · {p.paper}
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
-                        </button>
-                    );
-                })}
-            </div>
+                                <div className="text-slate-400 group-hover:text-slate-600 shrink-0">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                                    </svg>
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
 
             {/* Saved Permits & Issued Documents List */}
-            <div className="mt-5 border-t border-slate-200 pt-4">
-                <div className="flex items-center justify-between mb-2.5">
-                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                        <span>📁</span> Saved Permits & Stored Documents ({savedPermits.length})
+            <div className={isReleased ? "space-y-3" : "mt-5 border-t border-slate-200 pt-4"}>
+                <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-semibold text-slate-900 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+                        </svg>
+                        {isReleased ? "Issued Documents" : "Stored Documents"}
+                        <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full">
+                            {savedPermits.length}
+                        </span>
                     </h4>
                     <button
                         type="button"
                         onClick={fetchSavedPermits}
-                        className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+                        className="text-xs text-slate-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer transition-colors"
                     >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                        </svg>
                         Refresh
                     </button>
                 </div>
 
                 {savedPermits.length === 0 ? (
-                    <div className="p-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-center text-xs text-slate-400">
-                        No stored permits for this application yet. Generated permits will be automatically stored here.
+                    <div className="py-8 px-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-center">
+                        <svg className="w-8 h-8 text-slate-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                        </svg>
+                        <p className="text-xs font-semibold text-slate-600">No stored documents found</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                            {isReleased
+                                ? "No permit documents were recorded for this released application."
+                                : "Generated permits will appear here automatically."}
+                        </p>
                     </div>
                 ) : (
                     <div className="space-y-2">
                         {savedPermits.map((item) => (
-                            <div key={item.id} className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-3 shadow-2xs">
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-bold text-slate-900 truncate">{item.permit_name}</span>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase ${item.file_format === 'pdf' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                            {item.file_format}
-                                        </span>
+                            <div key={item.id} className="p-3.5 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-3 shadow-2xs">
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#0b2a5b] flex items-center justify-center shrink-0">
+                                        <PermitIcon type={item.permit_type} className="w-4 h-4" />
                                     </div>
-                                    <p className="text-[11px] text-slate-500 mt-0.5">
-                                        Saved {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                                        {item.formatted_file_size && ` · ${item.formatted_file_size}`}
-                                        {item.generated_by?.name && ` · by ${item.generated_by.name}`}
-                                    </p>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-semibold text-slate-900 truncate">{item.permit_name}</span>
+                                            <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded uppercase ${item.file_format === 'pdf' ? 'bg-rose-50 text-rose-700 border border-rose-200/70' : 'bg-emerald-50 text-emerald-700 border border-emerald-200/70'}`}>
+                                                {item.file_format}
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 mt-0.5">
+                                            {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                            {item.formatted_file_size && ` · ${item.formatted_file_size}`}
+                                            {item.generated_by?.name && ` · by ${item.generated_by.name}`}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex items-center gap-1.5 shrink-0">
                                     <a
                                         href={`/applications/${app.id}/saved-permits/${item.id}/download`}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                                        className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200/80 text-slate-700 hover:text-slate-900 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
                                     >
-                                        <span>📥</span> {item.file_format === 'pdf' ? 'View PDF' : 'Download'}
+                                        <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.25V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                        </svg>
+                                        {item.file_format === 'pdf' ? 'View PDF' : 'Download'}
                                     </a>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleDeleteSavedPermit(item)}
-                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
-                                        title="Delete stored permit"
-                                    >
-                                        ✕
-                                    </button>
+                                    {!isReleased && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteSavedPermit(item)}
+                                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                                            title="Delete stored permit"
+                                            aria-label="Delete stored permit"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -238,12 +464,16 @@ export function PermitExportPanel({ app }) {
                 )}
             </div>
 
-            {open && (
+            {!isReleased && open && (
                 <GeneratePermitModal
                     app={app}
                     initialType={open}
+                    savedPermits={savedPermits}
                     onClose={() => {
                         setOpen(null);
+                        fetchSavedPermits();
+                    }}
+                    onPermitGenerated={() => {
                         fetchSavedPermits();
                     }}
                 />
@@ -252,7 +482,7 @@ export function PermitExportPanel({ app }) {
     );
 }
 
-export default function GeneratePermitModal({ app, initialType, onClose }) {
+export default function GeneratePermitModal({ app, initialType, onClose, onPermitGenerated, savedPermits = [] }) {
     const [type, setType] = useState(initialType || defaultPermitFor(app));
     const [schema, setSchema] = useState(null);
     const [values, setValues] = useState({});
@@ -265,6 +495,22 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
     const [previewError, setPreviewError] = useState(null);
     const [previewDriver, setPreviewDriver] = useState(null); // libreoffice | excel | dompdf
     const abortController = useRef(null);
+
+    const [modalSavedPermits, setModalSavedPermits] = useState(
+        savedPermits || app?.generated_permits || app?.generatedPermits || []
+    );
+
+    useEffect(() => {
+        if (savedPermits && savedPermits.length) {
+            setModalSavedPermits(savedPermits);
+        }
+    }, [savedPermits]);
+
+    const isAlreadyGenerated = useMemo(() => {
+        return (modalSavedPermits || []).some(
+            (p) => (typeof p === "object" ? p?.permit_type : p) === type
+        );
+    }, [modalSavedPermits, type]);
 
     useEffect(() => {
         let cancelled = false;
@@ -400,6 +646,8 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
                 { responseType: "blob" }
             );
             remember();
+            setModalSavedPermits((prev) => [...prev, { permit_type: type }]);
+            onPermitGenerated?.(type);
             const url = URL.createObjectURL(res.data);
             const name = `${schema.label.replace(/\s+/g, "_")}_${app.reference_number || app.id}.${format}`;
             if (tab) {
@@ -451,6 +699,9 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
                     {getAvailablePermitsForApp(app).map((p) => {
                         const isDefault = p.type === defaultPermitFor(app);
                         const isActive = type === p.type;
+                        const isGen = (modalSavedPermits || []).some(
+                            (s) => (typeof s === "object" ? s?.permit_type : s) === p.type
+                        );
 
                         return (
                             <button
@@ -458,16 +709,21 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
                                 type="button"
                                 disabled={!!busy}
                                 onClick={() => setType(p.type)}
-                                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-2 shrink-0 cursor-pointer transition-colors ${
                                     isActive
                                         ? "bg-[#0b2a5b] border-[#0b2a5b] text-white"
                                         : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
                                 }`}
                             >
-                                <span>{p.icon}</span>
+                                <PermitIcon type={p.type} className={`w-3.5 h-3.5 ${isActive ? "text-white" : "text-slate-500"}`} />
                                 {p.label}
-                                {isDefault && (
-                                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${isActive ? "bg-emerald-500 text-white" : "bg-emerald-100 text-emerald-800"}`}>
+                                {isGen && (
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isActive ? "bg-emerald-500 text-white" : "bg-emerald-100 text-emerald-800"}`}>
+                                        Saved
+                                    </span>
+                                )}
+                                {isDefault && !isGen && (
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isActive ? "bg-slate-700 text-white" : "bg-slate-100 text-slate-700"}`}>
                                         Default
                                     </span>
                                 )}
@@ -536,25 +792,50 @@ export default function GeneratePermitModal({ app, initialType, onClose }) {
                 </div>
 
                 {/* Footer */}
-                <div className="px-5 py-3 border-t border-slate-100 bg-white flex flex-wrap items-center justify-between gap-2 shrink-0">
-                    <div className="text-[11.5px] min-h-[1rem]">
+                <div className="px-5 py-3 border-t border-slate-100 bg-white flex items-center justify-between gap-3 shrink-0">
+                    <div className="text-[11.5px] min-w-0 flex-1 pr-2">
                         {error ? (
-                            <span className="text-rose-600 font-semibold">{error}</span>
+                            <span className="text-rose-600 font-semibold block truncate">{error}</span>
                         ) : missing.length > 0 ? (
-                            <span className="text-amber-600">Still blank: {missing.map((f) => f.label).join(", ")}</span>
+                            <span className="text-amber-600 block line-clamp-2 leading-tight" title={missing.map((f) => f.label).join(", ")}>
+                                Still blank: {missing.map((f) => f.label).join(", ")}
+                            </span>
+                        ) : isAlreadyGenerated ? (
+                            <span className="text-emerald-700 font-medium flex items-center gap-1.5 truncate">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                                A stored copy exists. Re-generating will produce an updated copy.
+                            </span>
                         ) : null}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                         <button
                             type="button"
                             disabled={loading || !!busy || !schema}
                             onClick={() => generate("pdf")}
-                            className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:bg-slate-300 cursor-pointer"
+                            className={`px-5 py-2 rounded-lg text-white text-xs font-bold disabled:bg-slate-300 cursor-pointer shadow-xs transition-colors flex items-center gap-1.5 shrink-0 ${
+                                isAlreadyGenerated
+                                    ? "bg-[#0b2a5b] hover:bg-[#0e3574]"
+                                    : "bg-emerald-600 hover:bg-emerald-700"
+                            }`}
                         >
-                            {busy === "pdf" ? "Generating PDF…" : `Generate ${schema?.label || "permit"} PDF`}
+                            {busy === "pdf" ? (
+                                <span>{isAlreadyGenerated ? "Re-generating PDF…" : "Generating PDF…"}</span>
+                            ) : (
+                                <>
+                                    {isAlreadyGenerated && (
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                        </svg>
+                                    )}
+                                    <span>
+                                        {isAlreadyGenerated
+                                            ? `Re-generate ${schema?.label || "permit"} PDF`
+                                            : `Generate ${schema?.label || "permit"} PDF`}
+                                    </span>
+                                </>
+                            )}
                         </button>
                     </div>
-                
                 </div>
                 
                 </div>

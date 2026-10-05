@@ -18,6 +18,7 @@ import StepFee from "./Components/StepFee";
 import SiteMapPrint from "./Components/SiteMapPrint";
 import { splitFullName, joinName } from "@/utils/names";
 import { getZoneInfo } from "@/utils/clupZones";
+import { getRecommendedPetition } from "@/Components/MapKit";
 const AMENDMENT_TYPES = [
     {
         id: "Petition for Rezoning",
@@ -372,6 +373,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     });
     const [submitting, setSubmitting] = useState(false);
     const [submissionFinalized, setSubmissionFinalized] = useState(false);
+    const [showRoutingSlip, setShowRoutingSlip] = useState(false);
+    const [routingSlipData, setRoutingSlipData] = useState(null);
 
     // ── LOOP 9 SUBMISSION INTEGRITY (restored by the master merge) ──────────
     // A/B. `submittingRef` is a SYNCHRONOUS lock, separate from the `submitting`
@@ -501,6 +504,31 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         [form.application_type, feeBasis, totalLotArea, form.project_cost]
     );
 
+    const recommendedPetition = useMemo(() => {
+        return getRecommendedPetition(form.parcels);
+    }, [form.parcels]);
+
+    // In Amendment track, ensure the legislative petition is strictly synchronized with
+    // the zoning mismatch recommendation and cannot be left blank, unselected, or mismatched.
+    useEffect(() => {
+        if (form.application_stream === "amendment") {
+            const currentTypes = (form.application_type || "")
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
+            const currentPetition = currentTypes.find((t) => t.startsWith("Petition for"));
+            const targetPetition = recommendedPetition || currentPetition || "Petition for Rezoning";
+
+            if (currentPetition !== targetPetition) {
+                const standardTypes = currentTypes.filter((t) => !t.startsWith("Petition for"));
+                setForm((f) => ({
+                    ...f,
+                    application_type: [...standardTypes, targetPetition].join(", "),
+                }));
+            }
+        }
+    }, [form.application_stream, recommendedPetition, form.application_type]);
+
     // The schedule only pre-fills the itemised fees; the officer can adjust them and the total is always their sum
     const applySuggestedFees = () => {
         setForm((prev) => ({
@@ -571,6 +599,24 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         setTimeout(() => setFlash(null), 3000);
     };
 
+    // Helper to move focus to the next field when pressing Enter on an input
+    const focusNextField = (currentEl) => {
+        if (!currentEl) return;
+        const root = currentEl.closest("form") || formRef.current || document;
+        const focusable = Array.from(
+            root.querySelectorAll(
+                'input:not([type="hidden"]):not([disabled]):not([readonly]), select:not([disabled]):not([readonly]), textarea:not([disabled]):not([readonly])'
+            )
+        ).filter((el) => {
+            return el.offsetParent !== null && window.getComputedStyle(el).visibility !== "hidden";
+        });
+
+        const index = focusable.indexOf(currentEl);
+        if (index >= 0 && index < focusable.length - 1) {
+            focusable[index + 1].focus();
+        }
+    };
+
     // Global Keyboard Navigation
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -590,10 +636,33 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 return;
             }
 
-            if (e.key === "Enter" && e.target.tagName !== "TEXTAREA" && e.target.type !== "submit" && e.target.type !== "button" && !e.target.dataset.noAdvance) {
-                if (currentStep < STEP.REVIEW) {
+            if (e.key === "Enter") {
+                // If focused on a select dropdown, open it and NEVER trigger Next
+                if (e.target.tagName === "SELECT") {
                     e.preventDefault();
-                    handleNext();
+                    e.stopPropagation();
+                    try {
+                        if (typeof e.target.showPicker === "function") {
+                            e.target.showPicker();
+                        } else {
+                            const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window });
+                            e.target.dispatchEvent(event);
+                        }
+                    } catch (err) {}
+                    return;
+                }
+
+                // If focused on textarea, submit button, or regular button, let native behavior proceed
+                if (e.target.tagName === "TEXTAREA" || e.target.type === "submit" || e.target.type === "button" || e.target.dataset?.noAdvance) {
+                    return;
+                }
+
+                // If focused on an input field:
+                // User uses Tab and Enter to navigate fields — move to next field instead of triggering Next
+                if (e.target.tagName === "INPUT") {
+                    e.preventDefault();
+                    focusNextField(e.target);
+                    return;
                 }
             }
         };
@@ -954,8 +1023,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             }
 
             const cadastralZoneClass = data.land_use_class || data.zoning_plan_class || data.recorded_land_use_class || "";
-            let clupZoningClass = cadastralZoneClass || "Unmapped in CLUP";
-
             let coordsStr = data.coordinates || (data.latitude && data.longitude ? `${data.latitude},${data.longitude}` : null);
 
             setForm((prev) => {
@@ -980,7 +1047,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                   tax_dec_number: data.tax_dec_number || p.tax_dec_number || "",
                                   lot_area_sqm: data.lot_area_sqm ?? p.lot_area_sqm,
                                   cadastral_zone: cadastralZoneClass,
-                                  land_use_class: clupZoningClass,
+                                  land_use_class: "",
+                                  is_zoning_loading: Boolean(pin),
                                   is_verified: true,
                                   coordinates: coordsStr || p.coordinates,
                               }
@@ -999,30 +1067,49 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
             // Fetch spatial zoning intersection in background
             fetchZoningByParcelArea(pin).then((spatialZoning) => {
-                if (spatialZoning) {
-                    setForm((prev) => ({
-                        ...prev,
-                        parcels: (prev.parcels || []).map((p, i) =>
-                            i === index ? { ...p, land_use_class: spatialZoning } : p
-                        ),
-                    }));
-                }
+                setForm((prev) => ({
+                    ...prev,
+                    parcels: (prev.parcels || []).map((p, i) =>
+                        i === index
+                            ? {
+                                  ...p,
+                                  land_use_class: spatialZoning || "Unmapped in CLUP",
+                                  is_zoning_loading: false,
+                              }
+                            : p
+                    ),
+                }));
+            }).catch(() => {
+                setForm((prev) => ({
+                    ...prev,
+                    parcels: (prev.parcels || []).map((p, i) =>
+                        i === index
+                            ? {
+                                  ...p,
+                                  land_use_class: "Unmapped in CLUP",
+                                  is_zoning_loading: false,
+                              }
+                            : p
+                    ),
+                }));
             });
         } catch (err) {
             setErrors((prev) => ({ ...prev, [`parcels.${index}.property_index_number`]: err?.message || "PIN not found in approved records" }));
-            setForm((prev) => ({ ...prev, parcels: (prev.parcels || []).map((p, i) => i === index ? { ...p, is_verified: false } : p) }));
+            setForm((prev) => ({ ...prev, parcels: (prev.parcels || []).map((p, i) => i === index ? { ...p, is_verified: false, is_zoning_loading: false } : p) }));
         } finally {
             setPinLoading((prev) => ({ ...prev, [index]: false }));
         }
     };
     // Direct GIS Map Click-to-Select Handler
-    const handleSelectMapParcel = (pin, lot, area, brgy, feature) => {
+    const handleSelectMapParcel = (pin, lot, area, brgy, feature, preloadedClupZone = null) => {
         const targetIdx = activeParcelIndex !== null ? activeParcelIndex : 0;
         const pProps = feature?.properties || {};
         
         const centroid = getGeometryCentroid(feature?.geometry);
         const cadastralZoneClass = pProps.land_use_class || pProps.zoning_class || pProps.land_use || "";
-        let clupZoningClass = cadastralZoneClass || "Unmapped in CLUP";
+        const hasPreloaded = preloadedClupZone !== null && preloadedClupZone !== undefined && preloadedClupZone !== "";
+        const clupZoningClass = hasPreloaded ? preloadedClupZone : "";
+        const isChecking = !hasPreloaded && Boolean(pin);
 
         const tdNo = pProps.tax_dec_number || pProps.td_no || "";
         const arpNo = pProps.arp_number || pProps.arp_no || "";
@@ -1060,6 +1147,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                               tct_number: tctNo || p.tct_number,
                               cadastral_zone: cadastralZoneClass, 
                               land_use_class: clupZoningClass,
+                              is_zoning_loading: isChecking,
                               is_verified: Boolean(pin),
                               coordinates: centroid ? `${centroid.lat.toFixed(6)},${centroid.lng.toFixed(6)}` : p.coordinates,
                           }
@@ -1068,20 +1156,37 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             };
         });
 
-        setFlash({ type: "success", msg: `Selected lot PIN: ${pin || "Map Polygon"} · Zoning verified` });
+        setFlash({ type: "success", msg: `Selected lot PIN: ${pin || "Map Polygon"}` });
         setTimeout(() => setFlash(null), 3000);
 
-        // Perform spatial zoning lookup asynchronously in background
-        if (pin) {
+        // Perform spatial zoning lookup asynchronously in background if not preloaded
+        if (pin && !hasPreloaded) {
             fetchZoningByParcelArea(pin).then((spatialZoning) => {
-                if (spatialZoning) {
-                    setForm((prev) => ({
-                        ...prev,
-                        parcels: (prev.parcels || []).map((p, i) =>
-                            i === targetIdx ? { ...p, land_use_class: spatialZoning } : p
-                        ),
-                    }));
-                }
+                setForm((prev) => ({
+                    ...prev,
+                    parcels: (prev.parcels || []).map((p, i) =>
+                        i === targetIdx
+                            ? {
+                                  ...p,
+                                  land_use_class: spatialZoning || "Unmapped in CLUP",
+                                  is_zoning_loading: false,
+                              }
+                            : p
+                    ),
+                }));
+            }).catch(() => {
+                setForm((prev) => ({
+                    ...prev,
+                    parcels: (prev.parcels || []).map((p, i) =>
+                        i === targetIdx
+                            ? {
+                                  ...p,
+                                  land_use_class: "Unmapped in CLUP",
+                                  is_zoning_loading: false,
+                              }
+                            : p
+                    ),
+                }));
             });
         }
     };
@@ -1156,6 +1261,36 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const handleTypeSelect = (typeId) => {
+        const isPetition = typeId.startsWith("Petition for");
+        if (form.application_stream === "amendment" && isPetition) {
+            // If there is an actual recommendation based on the mismatch, it is locked:
+            // The user cannot uncheck it, nor can they change the recommendation to the other petition.
+            if (recommendedPetition) {
+                return;
+            }
+            // If no specific mismatch recommendation exists, allow selecting between petitions (radio behavior),
+            // but prevent unchecking to 0 petitions.
+            setForm((f) => {
+                const current = (f.application_type || "")
+                    .split(",")
+                    .map((item) => item.trim())
+                    .filter(Boolean);
+                const standardTypes = current.filter((t) => !t.startsWith("Petition for"));
+                return {
+                    ...f,
+                    application_type: [...standardTypes, typeId].join(", "),
+                };
+            });
+            if (errors.application_type) {
+                setErrors((err) => {
+                    const n = { ...err };
+                    delete n.application_type;
+                    return n;
+                });
+            }
+            return;
+        }
+
         setForm((f) => {
             const current = (f.application_type || "")
                 .split(",")
@@ -1231,8 +1366,20 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             if (!form.application_type) newErrors.application_type = "Select an application category";
             if (!form.form_number?.trim()) newErrors.form_number = "Form number is required";
             if (!form.purpose?.trim()) newErrors.purpose = "Operational purpose is required";
-            if (form.application_stream === "amendment" && !form.target_land_use_class) {
-                newErrors.target_land_use_class = "Target zoning class is required";
+            if (form.application_stream === "amendment") {
+                if (!form.target_land_use_class) {
+                    newErrors.target_land_use_class = "Target zoning class is required";
+                }
+                const currentTypes = (form.application_type || "")
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                const recPetition = getRecommendedPetition(form.parcels);
+                if (recPetition && !currentTypes.includes(recPetition)) {
+                    newErrors.application_type = `This application requires ${recPetition} due to the zoning mismatch.`;
+                } else if (!currentTypes.some((t) => t.startsWith("Petition for"))) {
+                    newErrors.application_type = "A legislative petition (Rezoning or Reclassification) is required for Track B.";
+                }
             }
             if (form.application_stream !== "amendment" && hasZoningMismatch(form.parcels)) {
                 newErrors.application_stream = "A lot's zoning doesn't match the CLUP, so this must be a legislative amendment (Track B)";
@@ -1419,6 +1566,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                         </div>
                     `,
                     icon: "success",
+                    iconHtml: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
                     showCancelButton: true,
                     confirmButtonText: "View Application Details",
                     cancelButtonText: "Applications List",
@@ -1502,7 +1650,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
         const offInvalid = router.on("invalid", (event) => {
             event.preventDefault();
-            if (isExpiredSession(event.detail?.status)) {
+            const status = event.detail?.response?.status ?? event.detail?.status;
+            if (isExpiredSession(status)) {
                 setSubmitting(false);
                 submittingRef.current = false;
                 setSubmissionFinalized(false);
@@ -1515,7 +1664,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             }
             // A 5xx during submission is a server failure, not a validation
             // problem; it must not be presented as a field error.
-            if (event.detail?.status >= 500) {
+            if (status >= 500) {
                 setSubmitting(false);
                 submittingRef.current = false;
                 setSubmissionFinalized(false);
@@ -1528,6 +1677,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         });
 
         const offException = router.on("exception", (event) => {
+            console.error("Submission exception:", event.detail?.exception);
+            if (submissionSucceeded) return;
+
             event.preventDefault();
             setSubmitting(false);
             submittingRef.current = false;
@@ -1543,7 +1695,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             offInvalid?.();
             offException?.();
         };
-    }, [submitting, submissionFinalized]);
+    }, [submitting, submissionFinalized, submissionSucceeded]);
 
     const brgyStyle = {
         color: "#2563eb",
@@ -1575,6 +1727,44 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         ];
         return done.filter(Boolean).length * 20;
     }, [form]);
+
+    const stepHasInputs = (stepId) => {
+        switch (stepId) {
+            case STEP.PROPERTY:
+                return Boolean(
+                    form.barangay?.trim() ||
+                    (Array.isArray(form.parcels) && form.parcels.some((p) => p.property_index_number?.trim() || p.is_verified || p.boundary_geojson || p.lot_area_sqm))
+                );
+            case STEP.APPLICATION:
+                return Boolean(
+                    form.application_type ||
+                    form.form_number?.trim() ||
+                    form.purpose?.trim() ||
+                    form.target_land_use_class
+                );
+            case STEP.APPLICANT:
+                return Boolean(
+                    form.applicant_name?.trim() ||
+                    form.first_name?.trim() ||
+                    form.last_name?.trim() ||
+                    form.contact_number?.trim() ||
+                    form.email?.trim() ||
+                    form.right_over_land ||
+                    form.corporation_name?.trim() ||
+                    form.representative_name?.trim()
+                );
+            case STEP.FEES:
+                return Boolean(
+                    form.or_number?.trim() ||
+                    (form.assessment_fee !== "" && form.assessment_fee != null && Number(form.assessment_fee) > 0) ||
+                    form.date_of_receipt
+                );
+            case STEP.REVIEW:
+                return Boolean(form.preferred_release_mode);
+            default:
+                return false;
+        }
+    };
 
     const stepProgress = Math.round((currentStep / 5) * 100);
 
@@ -1624,7 +1814,10 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     margin: 0.5rem auto 1rem !important;
                 }
                 .swal2-icon .swal2-icon-content {
-                    font-size: 2.25rem !important;
+                    font-size: 2rem !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
                 }
                 .swal2-title {
                     font-size: 1.25rem !important;
@@ -1722,36 +1915,37 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                             </div>
                         </div>
 
-                        {/* Center: Modern Smart Stepper (No checks, sleek executive numbered design) */}
+                        {/* Center: Modern Smart Stepper (Direct seamless access to each step, with indicator for steps with inputs) */}
                         <div className="flex items-center bg-slate-100/90 p-1 rounded-2xl border border-slate-200/80 gap-1 overflow-x-auto max-w-full">
                             {STEPS.map((step) => {
-                                const isCompleted = currentStep > step.id;
+                                const hasInputs = stepHasInputs(step.id);
                                 const isCurrent = currentStep === step.id;
                                 return (
                                     <button
                                         key={step.id}
                                         type="button"
-                                        onClick={() => isCompleted && setCurrentStep(step.id)}
-                                        className={`group flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap select-none ${
+                                        onClick={() => {
+                                            setCurrentStep(step.id);
+                                            if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
+                                        }}
+                                        className={`group flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap select-none cursor-pointer ${
                                             isCurrent
-                                                ? "bg-white text-blue-700 shadow-xs ring-1 ring-slate-200/80 cursor-default font-bold"
-                                                : isCompleted
-                                                ? "text-slate-700 hover:text-blue-700 hover:bg-white/70 cursor-pointer"
-                                                : "text-slate-400 cursor-not-allowed opacity-70"
+                                                ? "bg-white text-blue-700 shadow-xs ring-1 ring-slate-200/80 font-bold cursor-default"
+                                                : "text-slate-600 hover:text-blue-700 hover:bg-white/70"
                                         }`}
                                     >
                                         <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-md transition-colors ${
                                             isCurrent
                                                 ? "bg-blue-600 text-white shadow-2xs"
-                                                : isCompleted
+                                                : hasInputs
                                                 ? "bg-blue-50 text-blue-700 border border-blue-200/60 group-hover:bg-blue-600 group-hover:text-white"
-                                                : "bg-slate-200/70 text-slate-400"
+                                                : "bg-slate-200/70 text-slate-500 group-hover:bg-slate-300 group-hover:text-slate-700"
                                         }`}>
                                             0{step.id}
                                         </span>
                                         <span className="tracking-tight">{step.title}</span>
-                                        {isCompleted && (
-                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" />
+                                        {hasInputs && (
+                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0" title="Has inputs" />
                                         )}
                                     </button>
                                 );
@@ -1986,6 +2180,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                         AMENDMENT_TYPES={AMENDMENT_TYPES}
                                                         LAND_USE_CLASSES={LAND_USE_CLASSES}
                                                         zoningMismatch={hasZoningMismatch(form.parcels)}
+                                                        recommendedPetition={recommendedPetition}
                                                         goToProperty={() => setCurrentStep(STEP.PROPERTY)}
                                                         setParcelField={setParcelField}
                                                         handlePinLookup={handlePinLookup}
