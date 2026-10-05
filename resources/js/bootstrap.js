@@ -2,6 +2,9 @@ import axios from 'axios';
 
 window.axios = axios;
 
+// No hard-coded CSRF header: the <meta> token goes stale after sign-in (the session token is
+// rotated), which made /logout fail with a 419. Axios and Inertia read the always-fresh
+// XSRF-TOKEN cookie on their own.
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 
 // Automatically handle expired CSRF token (419 Page Expired) for Axios requests

@@ -17,7 +17,7 @@ class ForecastService
     public function __construct()
     {
         $this->url = config('services.forecast.url', env('FORECAST_SERVICE_URL', 'http://localhost:8002/api/v1/forecast'));
-        $this->apiKey = config('services.forecast.api_key', env('FORECAST_SERVICE_API_KEY', 'njsdYUBJSJksmouye3u8c09cm2879002n8370ndbMb81bjVnmoFbanJNyvMoNYVgv18namwst34biObMShwn19nnjnWbgy198bsanFTBMAJnBSYbm189nsbHNJ28anNSMOwo2129nNYlMMoquerTRYGBnimijVcvBygtBTf38dbhHy772LLaosha0nabe7abwzxcbXxvybenBvgf7gya891sdyb'));
+        $this->apiKey = (string) config('services.forecast.api_key', env('FORECAST_SERVICE_API_KEY', 'njsdYUBJSJksmouye3u8c09cm2879002n8370ndbMb81bjVnmoFbanJNyvMoNYVgv18namwst34biObMShwn19nnjnWbgy198bsanFTBMAJnBSYbm189nsbHNJ28anNSMOwo2129nNYlMMoquerTRYGBnimijVcvBygtBTf38dbhHy772LLaosha0nabe7abwzxcbXxvybenBvgf7gya891sdyb'));
     }
 
     /**

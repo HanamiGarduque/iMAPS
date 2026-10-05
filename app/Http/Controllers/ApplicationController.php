@@ -195,6 +195,7 @@ class ApplicationController extends Controller
             'inspectors'      => $inspectors,
             'status_counts'   => $statusCounts,
             'applicant_counts' => $applicantCounts,
+            'drafts_count'    => DB::table('application_drafts')->where('user_id', Auth::id())->count(),
             // LOOP 9D. Lets the browser render the filter without inventing the
             // vocabulary, and states that the feature is Admin-only.
             'delivery_monitoring' => [
@@ -345,17 +346,6 @@ class ApplicationController extends Controller
             InspectionDeliveryStatus::STATE_FAILED,
         ];
 
-        $draftsCount = DB::table('application_drafts')
-            ->where('user_id', Auth::id())
-            ->count();
-
-        return Inertia::render('Applications/Index', [
-            'applications'  => $applications,
-            'filters'       => (object) $request->only(['barangay', 'status', 'application_type', 'date_from', 'date_to', 'search']),
-            'inspectors'    => $inspectors,
-            'status_counts' => $statusCounts,
-            'drafts_count'  => $draftsCount,
-        ]);
         if ($requested === 'all' || ! in_array($requested, $filterable, true)) {
             return $query;
         }
@@ -470,7 +460,7 @@ class ApplicationController extends Controller
         $validated = $request->validate([
             'application_stream'  => 'required|in:permit,amendment',
             'application_type'    => 'required|string|max:255',
-            'form_number'         => 'required|string|max:255',
+            'form_number'         => 'required|string|max:100|unique:zoning_applications,form_number',
             'target_land_use_class' => ['nullable', 'in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational,R1-Z,R2-Z,MR2-SZ,BR2-SZ,C1-Z,C2-Z,C/MP-Z,I1-Z,I2-Z,I3-Z,AgIndZ,AgIndZ-PTR,AgIndZ-PGR,GI-Z,UTS-Z,CMRF,PR-Z,T-Z,ECT-Z'],
             'land_use_class'        => ['nullable', 'in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational,R1-Z,R2-Z,MR2-SZ,BR2-SZ,C1-Z,C2-Z,C/MP-Z,I1-Z,I2-Z,I3-Z,AgIndZ,AgIndZ-PTR,AgIndZ-PGR,GI-Z,UTS-Z,CMRF,PR-Z,T-Z,ECT-Z'],
             'purpose'             => 'required|string',

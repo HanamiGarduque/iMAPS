@@ -3,7 +3,6 @@
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\TechnicalReviewController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\PublicPortalController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SettingsController;
@@ -13,9 +12,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\TaxMapLookupController;
 use App\Http\Controllers\WorkReassignmentController;
-use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 // ── Session Keep-Alive Ping ──
 Route::get('/ping', function () {
@@ -23,14 +20,7 @@ Route::get('/ping', function () {
 })->name('ping');
 
 // ── Public Landing Page ──
-Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin'       => Route::has('login'),
-        'canRegister'    => false,
-        'laravelVersion' => Application::VERSION,
-        'phpVersion'     => PHP_VERSION,
-    ]);
-});
+Route::redirect('/', '/login');
 
 // ── Internal Authenticated Routes (Loop 6: Admin + Planning Officer only) ──
 // Site Inspectors are FieldSync-only and receive 403 here even with an
@@ -332,9 +322,5 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     Route::post('/users/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
     Route::post('/users/{id}/update', [UserManagementController::class, 'updateProfile'])->name('users.update-profile');
 });
-
-// ── Public Portal Access ──
-Route::get('/public-portal', [PublicPortalController::class, 'index'])
-    ->name('public-portal');
 
 require __DIR__ . '/auth.php';

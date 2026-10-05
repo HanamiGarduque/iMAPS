@@ -22,15 +22,6 @@ class SupabaseService
 
     // â”€â”€ Headers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    private function publicHeaders(): array
-    {
-        return [
-            'apikey'        => $this->anonKey,
-            'Authorization' => 'Bearer ' . $this->anonKey,
-            'Content-Type'  => 'application/json',
-        ];
-    }
-
     private function serviceHeaders(array $extra = []): array
     {
         return array_merge([
@@ -82,44 +73,6 @@ class SupabaseService
     }
 
     // â”€â”€ Domain methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-    public function syncStatusTrack(array $payload): bool
-    {
-        $response = $this->insert('application_status_tracks', $payload);
-
-        if ($response->failed()) {
-            Log::error('Supabase sync failed', [
-                'reference_number' => $payload['reference_number'] ?? null,
-                'status'           => $response->status(),
-                'body'             => $response->body(),
-            ]);
-
-            return false;
-        }
-
-        return true;
-    }
-
-    public function getApplicationByReference(string $ref)
-    {
-        $response = Http::withHeaders($this->publicHeaders())
-            ->get("{$this->url}/rest/v1/zoning_applications", [
-                'reference_number' => "eq.$ref",
-                'select' => '*'
-            ]);
-
-        if ($response->failed()) {
-            Log::error('Supabase fetch failed', [
-                'reference_number' => $ref,
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-
-            return null;
-        }
-
-        return $response->json()[0] ?? null;
-    }
 
     /**
      * Push full Zoning Application and returns the newly generated Supabase Application UUID.

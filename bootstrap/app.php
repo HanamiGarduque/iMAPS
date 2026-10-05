@@ -33,11 +33,14 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
             if ($response->getStatusCode() === 419) {
-                if ($request->expectsJson()) {
-                    return response()->json(['message' => 'Session expired. Please refresh and log in again.'], 419);
+                // An expired session means the user is already signed out; bouncing "back"
+                // to the same stale page made Sign Out look like it did nothing.
+                if ($request->is('logout')) {
+                    return redirect()->route('login');
                 }
-                return redirect()->route('login')->with([
-                    'message' => 'Your session has expired. Please sign in again.',
+
+                return back()->with([
+                    'message' => 'The page expired, please try again.',
                 ]);
             }
             return $response;
