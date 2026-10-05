@@ -24,7 +24,7 @@
 -- SCHEMA-EXT-001 REQUIRED EXTENSION postgis
 -- SCHEMA-SEQ-001 .. SCHEMA-SEQ-023 SEQUENCES backing serial column defaults
 -- SCHEMA-IDENT-001 .. SCHEMA-IDENT-001 IDENTITY columns (inline with their table)
--- SCHEMA-SEQOWN-001 .. SCHEMA-SEQOWN-023 SEQUENCE OWNERSHIP (ALTER SEQUENCE OWNED BY)
+-- SCHEMA-SEQOWN-001..014 and SCHEMA-SEQOWN-016..024 SEQUENCE OWNERSHIP (ALTER SEQUENCE OWNED BY; 23 markers, no marker 015)
 -- SCHEMA-BASE-001 CORE users TABLE - users
 -- SCHEMA-BASE-002 CORE application_drafts TABLE - application_drafts
 -- SCHEMA-BASE-003 CORE application_status_tracks TABLE - application_status_tracks
@@ -324,7 +324,7 @@ CREATE TABLE public.users (
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-001] SEQUENCE OWNERSHIP - users_id_seq
+-- [SCHEMA-SEQOWN-023] SEQUENCE OWNERSHIP - users_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
@@ -347,7 +347,7 @@ CREATE TABLE public.application_drafts (
 ALTER TABLE ONLY public.application_drafts ALTER COLUMN id SET DEFAULT nextval('public.application_drafts_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-002] SEQUENCE OWNERSHIP - application_drafts_id_seq
+-- [SCHEMA-SEQOWN-001] SEQUENCE OWNERSHIP - application_drafts_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.application_drafts_id_seq OWNED BY public.application_drafts.id;
 
@@ -443,7 +443,7 @@ CREATE TABLE public.jobs (
 ALTER TABLE ONLY public.jobs ALTER COLUMN id SET DEFAULT nextval('public.jobs_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-007] SEQUENCE OWNERSHIP - jobs_id_seq
+-- [SCHEMA-SEQOWN-012] SEQUENCE OWNERSHIP - jobs_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.jobs_id_seq OWNED BY public.jobs.id;
 
@@ -471,7 +471,7 @@ CREATE TABLE public.land_parcels (
 ALTER TABLE ONLY public.land_parcels ALTER COLUMN gid SET DEFAULT nextval('public.land_parcels_gid_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-008] SEQUENCE OWNERSHIP - land_parcels_gid_seq
+-- [SCHEMA-SEQOWN-013] SEQUENCE OWNERSHIP - land_parcels_gid_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.land_parcels_gid_seq OWNED BY public.land_parcels.gid;
 
@@ -490,7 +490,7 @@ CREATE TABLE public.land_use_plan (
 ALTER TABLE ONLY public.land_use_plan ALTER COLUMN gid SET DEFAULT nextval('public.land_use_plan_gid_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-009] SEQUENCE OWNERSHIP - land_use_plan_gid_seq
+-- [SCHEMA-SEQOWN-014] SEQUENCE OWNERSHIP - land_use_plan_gid_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.land_use_plan_gid_seq OWNED BY public.land_use_plan.gid;
 
@@ -522,7 +522,7 @@ CREATE TABLE public.parcels (
 ALTER TABLE ONLY public.parcels ALTER COLUMN id SET DEFAULT nextval('public.parcels_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-010] SEQUENCE OWNERSHIP - parcels_id_seq
+-- [SCHEMA-SEQOWN-017] SEQUENCE OWNERSHIP - parcels_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.parcels_id_seq OWNED BY public.parcels.id;
 
@@ -538,7 +538,7 @@ CREATE TABLE public.rosario_boundary (
 ALTER TABLE ONLY public.rosario_boundary ALTER COLUMN gid SET DEFAULT nextval('public.rosario_boundary_gid_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-011] SEQUENCE OWNERSHIP - rosario_boundary_gid_seq
+-- [SCHEMA-SEQOWN-020] SEQUENCE OWNERSHIP - rosario_boundary_gid_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.rosario_boundary_gid_seq OWNED BY public.rosario_boundary.gid;
 
@@ -597,7 +597,7 @@ CREATE TABLE public.site_inspections (
 ALTER TABLE ONLY public.site_inspections ALTER COLUMN id SET DEFAULT nextval('public.site_inspections_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-012] SEQUENCE OWNERSHIP - site_inspections_id_seq
+-- [SCHEMA-SEQOWN-022] SEQUENCE OWNERSHIP - site_inspections_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.site_inspections_id_seq OWNED BY public.site_inspections.id;
 
@@ -690,7 +690,7 @@ CREATE TABLE public.zoning_applications (
 ALTER TABLE ONLY public.zoning_applications ALTER COLUMN id SET DEFAULT nextval('public.zoning_applications_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-013] SEQUENCE OWNERSHIP - zoning_applications_id_seq
+-- [SCHEMA-SEQOWN-024] SEQUENCE OWNERSHIP - zoning_applications_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.zoning_applications_id_seq OWNED BY public.zoning_applications.id;
 
@@ -713,7 +713,7 @@ CREATE TABLE public.forecast_runs (
 ALTER TABLE ONLY public.forecast_runs ALTER COLUMN id SET DEFAULT nextval('public.forecast_runs_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-014] SEQUENCE OWNERSHIP - forecast_runs_id_seq
+-- [SCHEMA-SEQOWN-008] SEQUENCE OWNERSHIP - forecast_runs_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.forecast_runs_id_seq OWNED BY public.forecast_runs.id;
 
@@ -734,7 +734,7 @@ CREATE TABLE public.forecast_outputs (
 ALTER TABLE ONLY public.forecast_outputs ALTER COLUMN id SET DEFAULT nextval('public.forecast_outputs_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-015] SEQUENCE OWNERSHIP - forecast_outputs_id_seq
+-- [SCHEMA-SEQOWN-007] SEQUENCE OWNERSHIP - forecast_outputs_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.forecast_outputs_id_seq OWNED BY public.forecast_outputs.id;
 
@@ -759,7 +759,7 @@ CREATE TABLE public.historical_data (
 ALTER TABLE ONLY public.historical_data ALTER COLUMN id SET DEFAULT nextval('public.historical_data_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-016] SEQUENCE OWNERSHIP - historical_data_id_seq
+-- [SCHEMA-SEQOWN-010] SEQUENCE OWNERSHIP - historical_data_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.historical_data_id_seq OWNED BY public.historical_data.id;
 
@@ -782,7 +782,7 @@ CREATE TABLE public.notifications (
 ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('public.notifications_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-017] SEQUENCE OWNERSHIP - notifications_id_seq
+-- [SCHEMA-SEQOWN-016] SEQUENCE OWNERSHIP - notifications_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
 
@@ -808,7 +808,7 @@ CREATE TABLE public.application_po_assignments (
 ALTER TABLE ONLY public.application_po_assignments ALTER COLUMN id SET DEFAULT nextval('public.application_po_assignments_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-018] SEQUENCE OWNERSHIP - application_po_assignments_id_seq
+-- [SCHEMA-SEQOWN-002] SEQUENCE OWNERSHIP - application_po_assignments_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.application_po_assignments_id_seq OWNED BY public.application_po_assignments.id;
 
@@ -834,7 +834,7 @@ CREATE TABLE public.site_inspection_assignments (
 ALTER TABLE ONLY public.site_inspection_assignments ALTER COLUMN id SET DEFAULT nextval('public.site_inspection_assignments_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-019] SEQUENCE OWNERSHIP - site_inspection_assignments_id_seq
+-- [SCHEMA-SEQOWN-021] SEQUENCE OWNERSHIP - site_inspection_assignments_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.site_inspection_assignments_id_seq OWNED BY public.site_inspection_assignments.id;
 
@@ -863,7 +863,7 @@ CREATE TABLE public.inspection_delivery_attempts (
 ALTER TABLE ONLY public.inspection_delivery_attempts ALTER COLUMN id SET DEFAULT nextval('public.inspection_delivery_attempts_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-020] SEQUENCE OWNERSHIP - inspection_delivery_attempts_id_seq
+-- [SCHEMA-SEQOWN-011] SEQUENCE OWNERSHIP - inspection_delivery_attempts_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.inspection_delivery_attempts_id_seq OWNED BY public.inspection_delivery_attempts.id;
 
@@ -888,7 +888,7 @@ CREATE TABLE public.generated_permits (
 ALTER TABLE ONLY public.generated_permits ALTER COLUMN id SET DEFAULT nextval('public.generated_permits_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-021] SEQUENCE OWNERSHIP - generated_permits_id_seq
+-- [SCHEMA-SEQOWN-009] SEQUENCE OWNERSHIP - generated_permits_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.generated_permits_id_seq OWNED BY public.generated_permits.id;
 
@@ -913,7 +913,7 @@ CREATE TABLE public.report_action_audit (
 ALTER TABLE ONLY public.report_action_audit ALTER COLUMN id SET DEFAULT nextval('public.report_action_audit_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-022] SEQUENCE OWNERSHIP - report_action_audit_id_seq
+-- [SCHEMA-SEQOWN-018] SEQUENCE OWNERSHIP - report_action_audit_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.report_action_audit_id_seq OWNED BY public.report_action_audit.id;
 
@@ -944,7 +944,7 @@ CREATE TABLE public.report_escalations (
 ALTER TABLE ONLY public.report_escalations ALTER COLUMN id SET DEFAULT nextval('public.report_escalations_id_seq'::regclass);
 
 -- ------------------------------------------------------------
--- [SCHEMA-SEQOWN-023] SEQUENCE OWNERSHIP - report_escalations_id_seq
+-- [SCHEMA-SEQOWN-019] SEQUENCE OWNERSHIP - report_escalations_id_seq
 -- ------------------------------------------------------------
 ALTER SEQUENCE public.report_escalations_id_seq OWNED BY public.report_escalations.id;
 

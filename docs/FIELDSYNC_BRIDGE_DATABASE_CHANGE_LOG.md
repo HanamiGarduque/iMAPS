@@ -2441,13 +2441,13 @@ The canonical schema is now `CANONICAL_DATABASE_SCHEMA.md`, which is pure execut
 | `[SCHEMA-EXT-001]` | Required extension `postgis` |
 | `[SCHEMA-SEQ-001]`..`[SCHEMA-SEQ-023]` | Sequences backing serial column defaults |
 | `[SCHEMA-IDENT-001]` | Identity sequence for `technical_reviews.id` |
-| `[SCHEMA-SEQOWN-001]`..`[SCHEMA-SEQOWN-023]` | `ALTER SEQUENCE ... OWNED BY` declarations |
+| `[SCHEMA-SEQOWN-001]`..`[SCHEMA-SEQOWN-014]` and `[SCHEMA-SEQOWN-016]`..`[SCHEMA-SEQOWN-024]` | 23 `ALTER SEQUENCE ... OWNED BY` declarations. Marker 015 does not exist; the gap is permanent, not a typo. |
 | `[SCHEMA-BASE-001]`..`[SCHEMA-BASE-015]` | Core tables created by `create_initial_schema` |
 | `[SCHEMA-ADD-001]`..`[SCHEMA-ADD-011]` | Tables added by later migrations |
 | `[SCHEMA-CON-001]`..`[SCHEMA-CON-060]` | Primary key, unique, check and foreign key constraints |
 | `[SCHEMA-IDX-001]`..`[SCHEMA-IDX-029]` | Indexes, including the two partial unique indexes |
 
-The ranges above are a convenience summary. The canonical file is the index of record for the individual numbering, because each object is numbered in dependency order within its own marker class: extension, sequences, tables, constraints, indexes. Nothing depends on a class being gap-free, so a future object may be appended without renumbering; the uniqueness and reference-integrity tests check declarations, not ranges.
+**Marker IDs are stable identifiers.** Once published, a marker ID is never renumbered or reused: renumbering would silently repoint every document that cites it. New objects take the next unused ID in their class, and a gap stays a gap. The ranges above are therefore a summary of the published set, not a promise of contiguity, and `SCHEMA-SEQOWN` deliberately has no 015. The canonical file is the index of record for the individual numbering.
 
 ### Entry format
 

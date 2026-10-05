@@ -459,6 +459,10 @@ class CanonicalSchemaMarkerContractTest extends TestCase
     /**
      * The canonical file's own index must agree with what it declares, or the
      * "summary" is worse than no summary.
+     *
+     * This deliberately tolerates gaps. A gap is a permanent fact about a
+     * published identifier set, not an error to be renumbered away, so the index
+     * is checked for "declares nothing that does not exist" and not the reverse.
      */
     public function test_canonical_marker_index_agrees_with_the_declared_markers(): void
     {
@@ -467,21 +471,7 @@ class CanonicalSchemaMarkerContractTest extends TestCase
             $declared[$declaration['marker']] = true;
         }
 
-        $lines = explode("\n", str_replace("\r\n", "\n", $this->canonical()));
-        $indexed = [];
-
-        foreach ($lines as $line) {
-            if (preg_match('/^\s*--\s*(SCHEMA-[A-Z]+-\d+)\s*\.\.\s*(SCHEMA-[A-Z]+-\d+)\b/', $line, $m) !== 1) {
-                continue;
-            }
-            $class = preg_replace('/-\d+$/', '', $m[1]);
-            $from = (int) preg_replace('/^.*-/', '', $m[1]);
-            $to = (int) preg_replace('/^.*-/', '', $m[2]);
-
-            for ($n = $from; $n <= $to; $n++) {
-                $indexed[sprintf('%s-%03d', $class, $n)] = true;
-            }
-        }
+        $indexed = $this->markersNamedByTheCanonicalIndex();
 
         $this->assertNotEmpty($indexed, 'The canonical file must carry a marker index.');
 
@@ -489,11 +479,118 @@ class CanonicalSchemaMarkerContractTest extends TestCase
             $this->assertArrayHasKey(
                 $marker,
                 $declared,
-                "The canonical index lists [{$marker}], which the file never declares."
+                "The canonical index names [{$marker}], which the file never declares."
             );
         }
     }
 
+    /**
+     * Marker IDs are stable, published identifiers. This pins the published
+     * SCHEMA-SEQOWN set exactly, including the deliberate gap, so a future
+     * renumbering cannot silently repoint every document that cites one.
+     *
+     * The 015 gap exists because `migrations_id_seq` is the Laravel ledger's own
+     * sequence, which the canonical schema deliberately omits. It was left vacant
+     * rather than closed, because these IDs had already been pushed.
+     */
+    public function test_seqown_marker_identities_are_stable_and_keep_their_intentional_gap(): void
+    {
+        $expected = [];
+
+        foreach (range(1, 14) as $n) {
+            $expected[] = sprintf('SCHEMA-SEQOWN-%03d', $n);
+        }
+        foreach (range(16, 24) as $n) {
+            $expected[] = sprintf('SCHEMA-SEQOWN-%03d', $n);
+        }
+
+        $actual = [];
+        foreach ($this->markerDeclarations() as $declaration) {
+            if (str_starts_with($declaration['marker'], 'SCHEMA-SEQOWN-')) {
+                $actual[] = $declaration['marker'];
+            }
+        }
+        sort($actual);
+
+        $this->assertSame(
+            $expected,
+            $actual,
+            'SCHEMA-SEQOWN identities changed. These IDs were published in 566b82b and are '
+            . 'stable identifiers; they must never be renumbered to make the class contiguous.'
+        );
+
+        $this->assertCount(23, $actual);
+        $this->assertNotContains('SCHEMA-SEQOWN-015', $actual, '015 is intentionally vacant.');
+        $this->assertContains('SCHEMA-SEQOWN-024', $actual, '024 is a published identity.');
+    }
+
+    /**
+     * A gap must never be closed by renumbering. If a new object is ever added to
+     * this class it takes the next unused ID above the current maximum, so this
+     * pins the highest published ID as the ceiling rather than deriving it from
+     * the count.
+     */
+    public function test_a_marker_gap_does_not_shift_the_identities_above_it(): void
+    {
+        $seqown = [];
+        foreach ($this->markerDeclarations() as $declaration) {
+            if (str_starts_with($declaration['marker'], 'SCHEMA-SEQOWN-')) {
+                $seqown[] = (int) substr($declaration['marker'], -3);
+            }
+        }
+
+        // The count is 23 while the highest ID is 24. Anything that "tidied" the
+        // class would make these two numbers equal.
+        $this->assertCount(23, $seqown);
+        $this->assertSame(24, max($seqown));
+        $this->assertSame(1, min($seqown));
+
+        foreach ($seqown as $number) {
+            if ($number === 15) {
+                continue;
+            }
+            $this->assertContains(
+                $number,
+                range(1, 24),
+                "SEQOWN ID {$number} drifted outside the published 001..024 window."
+            );
+        }
+    }
+
+    /**
+     * Marker IDs named by the canonical file's own index lines. Handles both the
+     * `A..B` shorthand and the explicit `A..B and C..D` form, and deliberately
+     * expands ranges inclusive of any gap they describe.
+     *
+     * @return array<string, true>
+     */
+    private function markersNamedByTheCanonicalIndex(): array
+    {
+        $lines = explode("\n", str_replace("\r\n", "\n", $this->canonical()));
+        $named = [];
+
+        foreach ($lines as $line) {
+            // Only the index block: an index line is a comment naming IDs, not a
+            // declaration (which is followed by the SQL it labels).
+            if (preg_match('/^\s*--\s*(?!\[[A-Z])((?:SCHEMA-[A-Z]+-\d+)(?:\s*\.\.\s*(?:SCHEMA-[A-Z]+-\d+))?(?:\s*and\s*(?:SCHEMA-[A-Z]+-\d+)(?:\s*\.\.\s*(?:SCHEMA-[A-Z]+-\d+))?)*)\b/', $line, $m) !== 1) {
+                continue;
+            }
+
+            preg_match_all('/(SCHEMA-[A-Z]+)-(\d+)(?:\s*\.\.\s*(?:SCHEMA-[A-Z]+-(\d+)))?/', $m[1], $pairs, PREG_SET_ORDER);
+
+            foreach ($pairs as $pair) {
+                $class = $pair[1];
+                $from = (int) $pair[2];
+                $to = isset($pair[3]) && $pair[3] !== '' ? (int) $pair[3] : $from;
+
+                for ($n = $from; $n <= $to; $n++) {
+                    $named[sprintf('%s-%03d', $class, $n)] = true;
+                }
+            }
+        }
+
+        return $named;
+    }
     /**
      * @return list<string>
      */
