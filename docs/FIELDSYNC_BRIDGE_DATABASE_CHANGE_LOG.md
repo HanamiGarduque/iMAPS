@@ -2238,22 +2238,22 @@ identity lives locally in `report_action_audit.performed_by`.
 
 ### 3. SECURITY CHANGES
 
-- **status/response coherence** � `dr_response_coherence_ck`. `submitted`/`in_review`
+- **status/response coherence** — `dr_response_coherence_ck`. `submitted`/`in_review`
   require all three response fields NULL; `resolved`/`wont_fix` require all three
   present with `response_message` and `responded_by_name` each containing at least
   one non-whitespace character.
-- **2000-char response limit** � `dr_response_message_length_ck`,
+- **2000-char response limit** — `dr_response_message_length_ck`,
   `char_length(response_message) <= 2000`, enforced again in application validation
   and not surfaced as UI clutter.
-- **terminal lifecycle trigger** � `dr_guard_response_transition` BEFORE UPDATE FOR
+- **terminal lifecycle trigger** — `dr_guard_response_transition` BEFORE UPDATE FOR
   EACH ROW. Terminal is final: no reopen, and the official response cannot be
   replaced by any writer. Narrow enough that an unrelated UPDATE is untouched.
-- **12-arg inspector filing validator** � `dr_support_filing_is_valid` extended from
+- **12-arg inspector filing validator** — `dr_support_filing_is_valid` extended from
   9 to 12 arguments so that filing requires all three response fields NULL, closing
   a gap the new columns would otherwise have opened: an authenticated inspector could
   otherwise have filed their own report already carrying a fabricated response. The
   superseded 9-arg overload is dropped; exactly one validator remains.
-- **deterministic function ACL** � applied as `REVOKE` from
+- **deterministic function ACL** — applied as `REVOKE` from
   `PUBLIC, anon, authenticated, service_role`, then grant back only the intent. This
   is required because live `pg_default_acl` for functions in `public` grants EXECUTE
   to `anon`, `authenticated` **and** `service_role` directly. Verified result:
@@ -2268,7 +2268,7 @@ mixed-whitespace-only responses all satisfied it. Six of seven whitespace-only i
 would have been accepted as an official response. The deployed test is
 `x ~ '[^[:space:]]'`.
 
-### 4. AUTHENTICATED PERMISSIONS � UNCHANGED
+### 4. AUTHENTICATED PERMISSIONS — UNCHANGED
 
 | Role | SELECT | INSERT | UPDATE | DELETE |
 |---|---|---|---|---|
@@ -2289,7 +2289,7 @@ because it lives in another database.
 
 Applied with
 `php artisan migrate --path=database/migrations/2026_10_04_000000_create_report_action_audit_table.php`
-� exact path, so no unrelated pending migration was pulled in.
+— exact path, so no unrelated pending migration was pulled in.
 
 Resulting catalog, read back live:
 
@@ -2350,7 +2350,7 @@ three response columns `NULL`. **Not mutated.**
 Local: table created with **0 rows**, migration recorded at batch 17 (was 16),
 `php -l` clean.
 
-### 8. INITIAL STATE � NOTHING FABRICATED
+### 8. INITIAL STATE — NOTHING FABRICATED
 
 Remote: 4 reports, 0 with response content, 0 terminal.
 Local: 0 audit rows.
@@ -2362,13 +2362,13 @@ application reassignment, no PO assignment, no report status mutation.
 
 **Guarded, on both surfaces. Never used reflexively.**
 
-- **Remote** � refuses once any official response exists, because dropping the
+- **Remote** — refuses once any official response exists, because dropping the
   columns would destroy inspector-facing records that cannot be reconstructed. The
   guard and the destructive DDL run in one transaction after
   `LOCK TABLE ... ACCESS EXCLUSIVE`, so no response can be created between the check
   and the drop. Restores the exact pre-apply 9-argument function ACL, including the
   pre-existing direct `service_role` EXECUTE grant.
-- **Local `down()`** � refuses when audit rows exist, because the corresponding
+- **Local `down()`** — refuses when audit rows exist, because the corresponding
   remote reports are already terminal with an immutable official response, so the
   local evidence can never be regenerated. Returns if the table is absent, takes
   `ACCESS EXCLUSIVE` **before** counting so no insert can land between the emptiness
@@ -2386,7 +2386,7 @@ inverted boolean branch and labels correctly-rejected rows `FAIL`. The applied s
 is **not** implicated: its sibling `constraint_verdict` column is correct on all 10
 cases, and an independently written check with corrected logic returns `OK` on all 10.
 
-The locked artifact was **not** modified (SHA `3D144584�` preserved). Correcting the
+The locked artifact was **not** modified (SHA `3D144584—` preserved). Correcting the
 `expectation` expression needs a separate decision.
 ### 2026-10-05 - Development Support escalation episodes - LOCAL schema APPLIED + VERIFIED
 
@@ -2447,7 +2447,7 @@ The canonical schema is now `CANONICAL_DATABASE_SCHEMA.md`, which is pure execut
 | `[SCHEMA-CON-001]`..`[SCHEMA-CON-060]` | Primary key, unique, check and foreign key constraints |
 | `[SCHEMA-IDX-001]`..`[SCHEMA-IDX-029]` | Indexes, including the two partial unique indexes |
 
-Marker ranges are contiguous per class. The canonical file is the index of record for the individual numbering, because each object is numbered in dependency order: extension, sequences, tables, constraints, indexes.
+The ranges above are a convenience summary. The canonical file is the index of record for the individual numbering, because each object is numbered in dependency order within its own marker class: extension, sequences, tables, constraints, indexes. Nothing depends on a class being gap-free, so a future object may be appended without renumbering; the uniqueness and reference-integrity tests check declarations, not ranges.
 
 ### Entry format
 

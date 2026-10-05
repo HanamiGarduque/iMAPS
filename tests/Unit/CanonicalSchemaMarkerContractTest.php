@@ -25,6 +25,10 @@ class CanonicalSchemaMarkerContractTest extends TestCase
 
     private const ARCHITECTURE = 'docs/FIELDSYNC_BRIDGE_ARCHITECTURE.md';
 
+    private const HISTORY_ARCHIVE = 'docs/FIELDSYNC_BRIDGE_HISTORY_ARCHIVE.md';
+
+    private const LOOP_10 = 'docs/LOOP_10_ACCEPTANCE_RECORD.md';
+
     /**
      * Matches a marker reference with or without its brackets. The body
      * only: callers supply their own delimiters, so a delimiter mistake cannot
@@ -345,7 +349,166 @@ class CanonicalSchemaMarkerContractTest extends TestCase
         return array_values(array_unique($found));
     }
 
-    private static function classlessMarkerPattern(): string
+
+    // ==================================================================
+    // DOCUMENTATION HYGIENE
+    // ==================================================================
+
+    /**
+     * The corruption this pins: a lossy text round-trip turned ten stray
+     * continuation bytes in the parent into literal U+FFFD replacement
+     * characters, and a strict UTF-8 reader then failed on them. A documentation
+     * file that cannot be decoded strictly is not readable evidence.
+     */
+    public function test_every_normalized_document_decodes_as_strict_utf8_without_a_bom(): void
+    {
+        foreach ($this->normalizedDocuments() as $path) {
+            $bytes = (string) file_get_contents($path);
+
+            $this->assertNotSame(
+                "\xEF\xBB\xBF",
+                substr($bytes, 0, 3),
+                "{$path} must not carry a UTF-8 BOM."
+            );
+
+            // A strict decoder rejects lone continuation bytes and truncated
+            // sequences; a lenient one silently substitutes U+FFFD, which is
+            // how this defect stayed invisible.
+            $decoded = (string) mb_convert_encoding($bytes, 'UTF-8', 'UTF-8');
+            $this->assertSame(
+                $bytes,
+                $decoded,
+                "{$path} is not valid UTF-8, or contains a character that does not survive a decode round trip."
+            );
+
+            $this->assertStringNotContainsString(
+                "\u{FFFD}",
+                $decoded,
+                "{$path} contains a literal U+FFFD replacement character."
+            );
+        }
+    }
+
+    /**
+     * Architecture belongs in the architecture document; dated records do not.
+     * History is preserved verbatim in the archive rather than deleted, so this
+     * asserts separation, not loss.
+     */
+    public function test_architecture_document_holds_architecture_not_project_history(): void
+    {
+        $architecture = $this->architecture();
+
+        foreach ([
+            '## Scope of this document',
+            'CONFIRMED BUSINESS RULES',
+            'Admin/PO page',
+        ] as $architectureSection) {
+            $this->assertStringContainsString(
+                $architectureSection,
+                $architecture,
+                "The architecture document must keep its architecture section: {$architectureSection}"
+            );
+        }
+
+        foreach ([
+            'BRIDGE WORK ENTRYPOINT',
+            'CURRENT ACTIVE LOOP',
+            'CANONICAL ISSUE ORDER',
+            'LOOP STATUS RECONCILIATION',
+        ] as $historySection) {
+            $this->assertStringNotContainsString(
+                $historySection,
+                $architecture,
+                "A project-history/status section leaked back into the architecture document: {$historySection}"
+            );
+        }
+    }
+
+    /**
+     * The archive is only worth having if it actually preserves the history it
+     * claims to preserve. Each section removed from the architecture document
+     * must still be readable somewhere.
+     */
+    public function test_archived_history_is_preserved_verbatim(): void
+    {
+        $archive = $this->read(self::HISTORY_ARCHIVE);
+
+        foreach ([
+            'BRIDGE WORK ENTRYPOINT',
+            'CURRENT ACTIVE LOOP',
+            'LOOP STATUS RECONCILIATION',
+            'CANONICAL ISSUE ORDER',
+            'LOOP 7B MANUAL E2E DISCOVERY',
+            'LOOP 9C-2 - DELIVERY STATUS UI',
+            'POST-CLEANUP DOCUMENTATION CHECKPOINT',
+        ] as $archivedSection) {
+            $this->assertStringContainsString(
+                $archivedSection,
+                $archive,
+                "History was dropped instead of archived: {$archivedSection}"
+            );
+        }
+
+        $this->assertStringContainsString(
+            'FIELDSYNC_BRIDGE_ARCHITECTURE.md',
+            $archive,
+            'The archive must point the reader back to the architecture document.'
+        );
+    }
+
+    /**
+     * The canonical file's own index must agree with what it declares, or the
+     * "summary" is worse than no summary.
+     */
+    public function test_canonical_marker_index_agrees_with_the_declared_markers(): void
+    {
+        $declared = [];
+        foreach ($this->markerDeclarations() as $declaration) {
+            $declared[$declaration['marker']] = true;
+        }
+
+        $lines = explode("\n", str_replace("\r\n", "\n", $this->canonical()));
+        $indexed = [];
+
+        foreach ($lines as $line) {
+            if (preg_match('/^\s*--\s*(SCHEMA-[A-Z]+-\d+)\s*\.\.\s*(SCHEMA-[A-Z]+-\d+)\b/', $line, $m) !== 1) {
+                continue;
+            }
+            $class = preg_replace('/-\d+$/', '', $m[1]);
+            $from = (int) preg_replace('/^.*-/', '', $m[1]);
+            $to = (int) preg_replace('/^.*-/', '', $m[2]);
+
+            for ($n = $from; $n <= $to; $n++) {
+                $indexed[sprintf('%s-%03d', $class, $n)] = true;
+            }
+        }
+
+        $this->assertNotEmpty($indexed, 'The canonical file must carry a marker index.');
+
+        foreach (array_keys($indexed) as $marker) {
+            $this->assertArrayHasKey(
+                $marker,
+                $declared,
+                "The canonical index lists [{$marker}], which the file never declares."
+            );
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function normalizedDocuments(): array
+    {
+        return [
+            self::CANONICAL,
+            self::CHANGE_LOG,
+            self::ARCHITECTURE,
+            self::HISTORY_ARCHIVE,
+            self::LOOP_10,
+        ];
+    }
+
+        private static function classlessMarkerPattern(): string
     {
         return 'SCHEMA-(?:BASE|ADD|EXT|SEQ|SEQOWN|IDENT|CON|IDX)-\d+';
     }
