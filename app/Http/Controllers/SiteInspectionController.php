@@ -5,12 +5,35 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\SiteInspection;
+use App\Support\InspectionOperationsSummary;
+use App\Support\InspectionRoundNumbering;
+use App\Support\InspectionReviewVisibility;
+use App\Support\InspectionOperationsContext;
 use App\Models\AppNotification;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
 
 class SiteInspectionController extends Controller
 {
+    /**
+     * PHASE 2B1 runtime fix: the operations summary is injected rather than
+     * constructed ad hoc.
+     *
+     * enrichForOperationsOverview() is a separate method and therefore has no
+     * access to a local variable created inside index(). An earlier revision
+     * instantiated the service in index() and referenced $summary inside the
+     * helper, which raised Undefined variable  and returned HTTP 500
+     * on GET /site-inspections.
+     *
+     * Constructor property promotion matches the existing controller pattern in
+     * this codebase (DiagnosticReportController, PublicPortalController,
+     * WorkReassignmentController), keeps InspectionOperationsSummary as the single
+     * source of summary logic, introduces no static/global state, and leaves the
+     * dependency mockable for tests.
+     */
+    public function __construct(private readonly InspectionOperationsSummary $summary)
+    {
+    }
+
     /**
      * Display a listing of the site inspections.
      *
@@ -35,73 +58,107 @@ class SiteInspectionController extends Controller
             ->get();
 
         $all = $pendingInspections->concat($completedInspections);
-        $rounds = $this->roundNumbersByApplication($all);
 
-        foreach ($all as $inspection) {
-            $round = $rounds[$inspection->id] ?? 1;
+        // PHASE 2B2B: round identity comes from the one canonical source, keyed
+        // by (application, parcel) rather than by application alone. The status
+        // wording stays deliberately limited to what the LOCAL row can prove: a
+        // locally `assigned` inspection is "Assigned", never "Ongoing" or "In
+        // Progress", because iMAPS cannot see field progress.
+        $this->attachRoundIdentity($all);
+        $this->attachDisplayIdentity($all);
 
-            // Presentation-safe, locally provable identity. The status wording is
-            // deliberately limited to what the LOCAL row can prove: a locally
-            // `assigned` inspection is "Assigned", never "Ongoing" or "In
-            // Progress", because iMAPS cannot see field progress.
-            $inspection->round_number = $round;
-            $inspection->round_kind = $round === 1 ? 'Original Inspection' : 'Reinspection';
-            $inspection->display_status = $this->displayStatus((string) $inspection->status);
-            $inspection->display_reference = $inspection->zoningApplication?->reference_number
-                ?: ('Application #' . $inspection->zoning_application_id);
-        }
+        $all = $pendingInspections->concat($completedInspections);
 
         return Inertia::render('Site Inspections/Index', [
             'pendingInspections' => $pendingInspections,
             'completedInspections' => $completedInspections,
+            // PHASE 2B2C: read-only Planning Officer review visibility, resolved
+            // in bulk. A round-specific decision appears only where
+            // reviewed_site_inspection_id proves it; parcel-level context is
+            // shown once per parcel chain, on the newest round only.
+            'poReview' => InspectionReviewVisibility::summarize($all),
+            // PHASE 2B1: read-only operations enrichment + page counters.
+            'operations' => $this->enrichForOperationsOverview($all),
+            'counters' => $this->summary->counters($all),
         ]);
     }
 
+
     /**
-     * Map every inspection id to its 1-based round number WITHIN its own
-     * application, ordered by id.
+     * PHASE 2B1 - read-only enrichment for the Admin operations overview.
      *
-     * This is the true inspection sequence for that application, read from the
-     * database rather than from the rows that happen to be on screen, so a
-     * round number can never be derived from an unrelated list, from the
-     * applicant, or from the inspection id alone. Scoping to
-     * `zoning_application_id` is what makes this safe: an applicant with five
-     * applications still gets Round 1 for each of them.
+     * Every field added here is locally provable. Two things are deliberately
+     * NOT added:
+     *
+     *  - the live FieldSync `status` / `current_step`. iMAPS cannot see field
+     *    progress, so a local `assigned` round renders "Assigned" and never
+     *    "Ongoing". Inferring live progress here would be inventing data.
+     *
+     *  - a per-round diagnostic. The remote `diagnostic_reports` table has no
+     *    `local_inspection_id` and no `parcel_id`, so no per-round diagnostic is
+     *    derivable and none is displayed.
      */
-    private function roundNumbersByApplication($inspections): array
+    private function enrichForOperationsOverview($inspections): array
     {
-        $applicationIds = $inspections
-            ->pluck('zoning_application_id')
-            ->filter()
-            ->unique()
-            ->values();
+        // Round identity is resolved by InspectionRoundNumbering here, so the
+        // overview reads exactly the same round the list and detail pages show.
+        // The summary no longer depends on an attribute having been injected by
+        // this controller, so it produces the same answer when called directly.
+        return collect($this->summary->summarize($inspections))
+            ->keyBy('id')
+            ->all();
+    }
 
-        if ($applicationIds->isEmpty()) {
-            return [];
-        }
+    /**
+     * Attach canonical round identity to each row, for presentation.
+     *
+     * PHASE 2B2B: this delegates to {@see InspectionRoundNumbering}, which
+     * groups by (zoning_application_id, parcel_id). The previous per-application
+     * derivation lived here and disagreed with the writer path, the delivery
+     * supersession rule and itself between two display sites.
+     *
+     * A row with no recorded parcel is given `round_number = null` and the
+     * `Historical Inspection` kind. It is NOT defaulted to 1: doing so is exactly
+     * how a parcel-unknown row came to be displayed as a real round.
+     *
+     * @param  \Illuminate\Support\Collection<int, SiteInspection>  $inspections
+     */
+    private function attachRoundIdentity($inspections): void
+    {
+        $rounds = InspectionRoundNumbering::forInspections($inspections);
 
-        $rows = DB::table('site_inspections')
-            ->select('id', 'zoning_application_id')
-            ->whereIn('zoning_application_id', $applicationIds)
-            ->orderBy('zoning_application_id')
-            ->orderBy('id')
-            ->get();
+        foreach ($inspections as $inspection) {
+            $round = $rounds[(int) $inspection->id] ?? null;
 
-        // Built with an explicit loop on purpose. Collecting this with
-        // flatMap()/collapse() renumbers integer keys, which silently replaced
-        // every inspection id with a positional index and gave two different
-        // inspections of the same application the same round number.
-        $rounds = [];
+            if ($round === null) {
+                // No chain and no parcel: label it honestly and carry no number.
+                $inspection->round_number = null;
+                $inspection->round_kind = InspectionRoundNumbering::KIND_HISTORICAL;
+                $inspection->round_note = InspectionRoundNumbering::HISTORICAL_NOTE;
 
-        foreach ($rows->groupBy('zoning_application_id') as $group) {
-            $round = 0;
-
-            foreach ($group as $row) {
-                $rounds[$row->id] = ++$round;
+                continue;
             }
-        }
 
-        return $rounds;
+            $inspection->round_number = $round['round_number'];
+            $inspection->round_kind = $round['round_kind'];
+            $inspection->round_note = $round['note'];
+        }
+    }
+
+    /**
+     * Attach the locally provable display identity (status wording and the
+     * application reference). Split out of round identity so the two concerns
+     * cannot drift, and so round handling has exactly one entry point.
+     *
+     * @param  \Illuminate\Support\Collection<int, SiteInspection>  $inspections
+     */
+    private function attachDisplayIdentity($inspections): void
+    {
+        foreach ($inspections as $inspection) {
+            $inspection->display_status = $this->displayStatus((string) $inspection->status);
+            $inspection->display_reference = $inspection->zoningApplication?->reference_number
+                ?: ('Application #' . $inspection->zoning_application_id);
+        }
     }
 
     /**
@@ -121,25 +178,92 @@ class SiteInspectionController extends Controller
     }
 
     /**
-     * Force a sync from Supabase.
+     * PHASE 2A - scoped manual reverse sync, ONE inspection round.
+     *
+     * REPLACES the former unscoped `forceSync()`, which called
+     * `Artisan::call('sync:pull-inspections')` with NO --local-inspection-id and
+     * could therefore write every completed inspection in the namespace from a
+     * single click on the list. That global path is gone from both the route file
+     * and this controller, so no unscoped invocation remains.
+     *
+     * SCOPE: the chosen `local_inspection_id` is passed straight through to the
+     * existing command. The command still applies `bridge_source_id` scoping via
+     * `SupabaseService::scopedFilters()`, which fails closed when no bridge source
+     * is configured, so identity is never resolved by reference_number, by
+     * application alone, or by parcel alone.
+     *
+     * AUTHORITY: this is synchronization, not a business decision. It imports a
+     * FieldSync result that already exists. It cannot approve, decline, request a
+     * reinspection, assign an inspector, schedule a round, create a round, or edit
+     * findings. Those remain Planning Officer / FieldSync responsibilities.
+     *
+     * FEEDBACK: the outcome is read back from the command's machine-readable
+     * result line, so an inspection that was already current is reported as no
+     * change rather than as a successful sync.
      */
-    public function forceSync()
+    public function syncOneFromFieldSync(Request $request, $inspection)
     {
-        try {
-            Artisan::call('sync:pull-inspections');
+        // Safety 1: the target must exist. A missing id is refused, not a silent no-op.
+        $target = SiteInspection::find($inspection);
 
-            AppNotification::notifyRoles(
-                ['Admin', 'Planning Officer'],
-                'Field Inspections Synced',
-                'Successfully pulled the latest completed site inspections from FieldSync.',
-                'inspection_completed',
-                '/site-inspections'
+        if (! $target) {
+            return back()->with(
+                'error',
+                'That inspection round does not exist, so nothing was synced.'
             );
-
-            return back()->with('success', 'Successfully pulled the latest completed inspections from Supabase.');
-        } catch (\Exception $e) {
-            return back()->with('error', 'Failed to sync with Supabase: ' . $e->getMessage());
         }
+
+        // Safety 2 and 3: the id is bound to the loaded row and passed through
+        // verbatim. No second identity mechanism is introduced, and no other
+        // inspection can be reached from this action because the command filters on
+        // this exact id.
+        $localInspectionId = (int) $target->id;
+
+        try {
+            Artisan::call('sync:pull-inspections', [
+                '--local-inspection-id' => $localInspectionId,
+            ]);
+
+            $output = trim((string) Artisan::output());
+        } catch (\Throwable $e) {
+            return back()->with(
+                'error',
+                'Sync from FieldSync failed for Inspection '.$localInspectionId.': '.$e->getMessage()
+            );
+        }
+
+        return back()->with('success', $this->describeSyncOutcome($output, $localInspectionId));
+    }
+
+    /**
+     * Turn the command's machine-readable result into honest Admin-facing feedback.
+     *
+     * A result token is only emitted by the command when it actually knows the
+     * answer. Anything unrecognised is reported as unknown rather than as a
+     * success, because a sync that could not be proven must never be reported as
+     * one.
+     */
+    private function describeSyncOutcome(string $output, int $localInspectionId): string
+    {
+        $label = 'Inspection '.$localInspectionId.': ';
+
+        if (str_contains($output, 'SYNC_RESULT=CHANGED')) {
+            return $label.'imported the latest completed FieldSync result; local data was updated.';
+        }
+
+        if (str_contains($output, 'SYNC_RESULT=NO_CHANGE')) {
+            return $label.'already up to date with FieldSync; no local change was required.';
+        }
+
+        if (str_contains($output, 'SYNC_RESULT=NO_REMOTE_RESULT')) {
+            return $label.'has no completed FieldSync result to import yet; nothing was changed.';
+        }
+
+        if (str_contains($output, 'SYNC_RESULT=FAILED')) {
+            return $label.'the bridge could not be reached; nothing was changed.';
+        }
+
+        return $label.'sync ran but the bridge returned no result that could be interpreted; no change was confirmed.';
     }
 
     /**
@@ -151,21 +275,35 @@ class SiteInspectionController extends Controller
             'zoningApplication.parcels',
             'inspector',
             'parcel',
+            // PHASE 2B2D: attempt evidence for the read-only delivery summary.
+            // Eager loaded, so this is NOT a per-attempt query.
+            'deliveryAttempts',
         ])->findOrFail($id);
 
-        // Same per-application round identity as the list, so the detail page
-        // never has to infer it from the raw inspection id.
-        $rounds = $this->roundNumbersByApplication(collect([$inspection]));
-        $round = $rounds[$inspection->id] ?? 1;
+        // PHASE 2B2B: identical round identity to the list page. The helper
+        // re-reads the whole (application, parcel) chain from the database, so
+        // resolving a single row still yields its true position rather than
+        // always reporting Round 1.
+        $this->attachRoundIdentity(collect([$inspection]));
+        $this->attachDisplayIdentity(collect([$inspection]));
 
-        $inspection->round_number = $round;
-        $inspection->round_kind = $round === 1 ? 'Original Inspection' : 'Reinspection';
-        $inspection->display_status = $this->displayStatus((string) $inspection->status);
-        $inspection->display_reference = $inspection->zoningApplication?->reference_number
-            ?: ('Application #' . $inspection->zoning_application_id);
+        // PHASE 2B2C: read-only Planning Officer review visibility for THIS round.
+        $poReview = InspectionReviewVisibility::summarize(collect([$inspection]));
+
+        // PHASE 2B2D: the read-only operations context that lets the Admin stay
+        // on this page - delivery condition and this parcel's round history.
+        //
+        // Application Support is resolved separately by exact namespaced mirror
+        // identity. Technical Issues and global report counts never enter this payload.
 
         return Inertia::render('Site Inspections/Show', [
             'inspection' => $inspection,
+            'poReview' => $poReview[(int) $inspection->id] ?? null,
+            'delivery' => InspectionOperationsContext::delivery($inspection),
+            'roundHistory' => InspectionOperationsContext::roundHistory($inspection),
+            'applicationSupport' => app(\App\Support\ReportingVisibility::class)->applicationSummary(
+                request()->user(), (int) $inspection->zoning_application_id
+            ),
         ]);
     }
 }

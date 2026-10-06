@@ -337,20 +337,43 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
         $this->assertStringContainsString('key={inspection.inspection_id}', $code, 'Keyed by the stable persisted identity.');
     }
 
-    public function test_the_round_label_is_chronology_only(): void
+    public function test_the_round_label_comes_from_the_server_and_is_never_inferred(): void
     {
         $code = $this->code();
 
-        $this->assertStringContainsString('Inspection Round {inspection.round}', $code);
+        // PHASE 2B2B: the server now sends round_kind / round_note alongside the
+        // canonical round, so the panel can LABEL a parcel-unknown row instead of
+        // printing a number. The original rule is unchanged and still enforced:
+        // the client must never work the round out for itself.
+        $this->assertStringContainsString(
+            'inspection.round == null',
+            $code,
+            'the label must handle a null round'
+        );
+        $this->assertStringContainsString(
+            '`Inspection Round ${inspection.round}`',
+            $code,
+            'a parcel-bearing round must read from the server value'
+        );
+        $this->assertStringContainsString(
+            'inspection.round_kind',
+            $code,
+            'the classification must be taken from the server, not inferred'
+        );
 
-        // "Original Inspection" / "Reinspection" are not derivable here: the
-        // server does not send round_kind, and inferring it from array position
-        // would be a client-side business inference.
-        foreach (['Original Inspection', 'Reinspection', 'round_kind'] as $forbidden) {
+        // No client-side derivation: nothing may compute a round from array
+        // position, a count, or a comparison.
+        foreach ([
+            'indexOf(',
+            'findIndex(',
+            'index + 1',
+            'idx + 1',
+            '.length + 1',
+        ] as $forbidden) {
             $this->assertStringNotContainsString(
                 $forbidden,
                 $code,
-                "'{$forbidden}' must not be inferred; the server sends chronology only."
+                "'{$forbidden}' must not be used to derive a round in the browser."
             );
         }
     }

@@ -170,8 +170,10 @@ class WorkReassignmentController extends Controller
         );
 
         // Deliver the new assignment to FieldSync. The push upserts on
-        // local_inspection_id, so the SAME job row is handed over — no second
-        // job is created and no evidence is rewritten.
+        // (bridge_source_id, local_inspection_id), so the SAME job row is handed
+        // over — no second job is created and no evidence is rewritten. The
+        // namespace is what makes "the same job" mean this environment's job;
+        // the bare local id would hand over another environment's row.
         PushInspectionToSupabase::dispatch($inspection->fresh());
 
         return back()->with(

@@ -330,13 +330,27 @@ class Loop9bDeliveryWriterContractTest extends TestCase
     // CONTRACT: Loops 1-8 remote bridge behaviour must be unchanged.
     // ==================================================================
 
-    public function test_all_three_conflict_keys_are_unchanged(): void
+    public function test_all_three_conflict_keys_are_namespaced(): void
     {
         $src = $this->jobSource();
 
-        $this->assertStringContainsString('on_conflict=local_application_id', $src);
-        $this->assertStringContainsString('on_conflict=local_parcel_id', $src);
-        $this->assertStringContainsString('on_conflict=local_inspection_id', $src);
+        // The three remote identities are unchanged IN MEANING - one
+        // application row, one parcel row, one field job per round - but each
+        // key is now (bridge_source_id, local id). A bare local integer is not
+        // globally unique on a shared bridge project, which is the proven
+        // 2026-10-01 collision. See BridgeSourceNamespaceCollisionTest.
+        $this->assertStringContainsString('on_conflict=bridge_source_id,local_application_id', $src);
+        $this->assertStringContainsString('on_conflict=bridge_source_id,local_parcel_id', $src);
+        $this->assertStringContainsString('on_conflict=bridge_source_id,local_inspection_id', $src);
+
+        // And no bare local-id key may survive anywhere in the writer.
+        foreach (['local_application_id', 'local_parcel_id', 'local_inspection_id'] as $column) {
+            $this->assertStringNotContainsString(
+                "on_conflict={$column}",
+                $src,
+                "on_conflict={$column} alone is the cross-environment collision defect.",
+            );
+        }
     }
 
     public function test_remote_operation_order_is_preserved(): void

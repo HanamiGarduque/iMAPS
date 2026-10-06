@@ -1,163 +1,53 @@
-// resources/js/Pages/Diagnostics/Index.jsx
-import React from "react";
-import { Head, router, usePage } from "@inertiajs/react";
+import React, { useRef, useState } from "react";
+import { Link, router } from "@inertiajs/react";
+import { ReportShell, Status, Reporter, Blocks, stamp, control, statuses, typeLabels } from "./ReportUi";
 
 /**
- * LOOP 9E/9F - Admin triage list for FieldSync inspector diagnostic reports.
+ * ONE REQUEST IN FLIGHT AT A TIME, ON PURPOSE.
  *
- * WHAT THIS IS
- * ------------
- * A FieldSync Site Inspector submits a support issue into the REMOTE
- * `diagnostic_reports` table. This page is the iMAPS Admin half of that path,
- * which did not exist before this loop.
- *
- * IT IS NOT DELIVERY MONITORING. There is no delivery status, no attempt count,
- * no failure category, no supersession and no queue detail here. Those belong to
- * 9D, on the Applications list, and none of it is duplicated.
- *
- * READ ONLY
- * ---------
- * There is no status control, no edit form, no delete, and no action of any kind
- * that writes remotely. The page states this rather than implying it by the
- * absence of buttons, so an operator knows the boundary is deliberate.
- *
- * FREE TEXT IS ALREADY SANITIZED SERVER-SIDE
- * ------------------------------------------
- * Every string here arrived through `DiagnosticTextSanitizer`. The one live
- * remote report contains a signed Supabase Storage URL - a bearer capability on
- * a private inspection photo - in its `summary`, so this file renders only what
- * the server deemed safe. It deliberately has no link renderer: a URL that
- * survived sanitization is displayed as inert text and is never clickable, so a
- * future change to the sanitizer cannot turn a report into a navigation vector.
+ * Inertia does NOT cancel a superseded `router.get`, and it applies whichever
+ * response arrives last. So two rapid tab switches could land out of order and
+ * paint the older, already-abandoned failure over the newer success - which is
+ * exactly the "stale error after switching tabs" symptom. Serializing here means
+ * a second switch is ignored while one is in flight, so only one response is ever
+ * in a position to be applied. This changes no authorization and no data.
  */
-export default function Index({ reports = [], loadError = null, readOnly = true }) {
-    const { auth } = usePage().props;
-    const isAdmin = auth?.user?.role === "Admin";
-
-    const total = reports.length;
-
-    return (
-        <>
-            <Head title="Diagnostic Reports" />
-
-            <div className="p-4 sm:p-6 space-y-4">
-                <header className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <h1 className="text-xl font-bold text-slate-900">Diagnostic Reports</h1>
-                        <p className="text-[12px] text-slate-500 mt-1 max-w-3xl leading-relaxed">
-                            Support issues submitted by FieldSync Site Inspectors. These are
-                            reports about the FieldSync application itself. They are
-                            separate from inspection delivery, which is monitored on the
-                            Applications list.
-                        </p>
-                    </div>
-
-                    {readOnly && (
-                        <span className="shrink-0 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-300">
-                            Read only
-                        </span>
-                    )}
-                </header>
-
-                {loadError && (
-                    <div role="alert" className="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
-                        <p className="text-[13px] font-bold text-amber-800">{loadError}</p>
-                        <p className="text-[12px] text-amber-700 mt-0.5">
-                            This does not indicate a problem with the reports themselves.
-                        </p>
-                    </div>
-                )}
-
-                {!isAdmin && (
-                    <div role="alert" className="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
-                        <p className="text-[13px] font-bold text-amber-800">
-                            This area is restricted to administrators.
-                        </p>
-                    </div>
-                )}
-
-                {/* Sanitized remote prose is only ever rendered as inert plain
-                    text. `whitespace-pre-wrap` preserves the inspector's line
-                    breaks without introducing any markup surface. */}
-                {isAdmin && total > 0 && !loadError && (
-                    <p className="text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap">
-                        Report text is sanitized server-side before it is displayed.
-                        Links and credentials pasted into a report are removed.
-                    </p>
-                )}
-
-                {isAdmin && total === 0 && !loadError && (
-                    <div className="p-6 rounded-xl bg-slate-50 border border-slate-200 text-center">
-                        <p className="text-[13px] font-bold text-slate-700">No diagnostic reports</p>
-                        <p className="text-[12px] text-slate-500 mt-1">
-                            No FieldSync inspector has submitted a report yet.
-                        </p>
-                    </div>
-                )}
-
-                {isAdmin && total > 0 && (
-                    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-                        <div className="px-4 py-2.5 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                            {total} {total === 1 ? "report" : "reports"}
-                        </div>
-
-                        <ul className="divide-y divide-slate-100">
-                            {reports.map((report) => (
-                                <li key={report.id}>
-                                    <button
-                                        type="button"
-                                        onClick={() => router.visit(`/diagnostics/${report.id}`)}
-                                        className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
-                                    >
-                                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                                            <span className="text-[12px] font-bold text-slate-800">
-                                                {report.reference_code || "Unreferenced"}
-                                            </span>
-                                            {report.module && (
-                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                                    {report.module}
-                                                </span>
-                                            )}
-                                            {report.status && (
-                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
-                                                    {report.status}
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        <p className="text-[13px] font-semibold text-slate-900 mt-1 break-words">
-                                            {report.title || "(no title)"}
-                                        </p>
-
-                                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[11px] text-slate-500">
-                                            {/* Identity is shown only as the server
-                                                resolved it. The server never guesses
-                                                a person from a remote uuid. */}
-                                            <span>
-                                                Inspector: {report.inspector?.label || "Unresolved inspector"}
-                                            </span>
-                                            {report.created_at && (
-                                                <span>Submitted: {formatDate(report.created_at)}</span>
-                                            )}
-                                        </div>
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-            </div>
-        </>
-    );
-}
-
-function formatDate(value) {
-    if (!value) return null;
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString("en-PH", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-    });
+export default function Index({ reports = [], counts = {}, allowedTypes = [], filters = {}, pagination = {}, loadError = null }) {
+    const [loading, setLoading] = useState(false);
+    const inFlight = useRef(false);
+    const support = filters.type === "application_support";
+    const visit = (changes) => {
+        if (inFlight.current) return;
+        inFlight.current = true;
+        setLoading(true);
+        router.get("/diagnostics", { ...filters, page: 1, ...changes }, {
+            preserveState: true, preserveScroll: true,
+            onFinish: () => { inFlight.current = false; setLoading(false); },
+        });
+    };
+    return <ReportShell><header><h1 className="text-2xl font-bold text-slate-900">Reports &amp; Support</h1>
+        <p className="mt-1 text-sm text-slate-500">Inspector-submitted reports from FieldSync. Open a report to review its details and available handling actions.</p></header>
+        {allowedTypes.length > 1 ? <nav aria-label="Report types" className="flex flex-wrap gap-2">{allowedTypes.map(type => <button
+            key={type}
+            type="button"
+            disabled={loading}
+            aria-current={filters.type === type ? "page" : undefined}
+            onClick={() => visit({ type })}
+            className={`${control} ${filters.type === type ? "ring-2 ring-blue-600" : ""}`}
+        >{typeLabels[type]} <span className="ml-2 rounded bg-white px-2">{loadError ? "—" : counts[type] ?? 0}</span></button>)}</nav> : <h2 className="text-lg font-semibold">Application Support</h2>}
+        <div className="flex flex-wrap items-center gap-3"><label className="text-sm font-semibold text-slate-600">Status <select value={filters.status || ""} disabled={loading} onChange={e => visit({ status: e.target.value })} className="ml-2 min-h-10 rounded-lg border-slate-300 text-sm"><option value="">All statuses</option>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+            {filters.application && <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600"><span>Filtered to one application</span><button className={control} onClick={() => visit({ application: "" })}>Clear application filter</button></div>}
+            <span className="text-sm text-slate-500" aria-live="polite">{loading ? "Loading reports…" : !loadError ? `${pagination.total ?? 0} report(s)` : ""}</span></div>
+        {loadError ? <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-800"><p>{loadError}</p><button className={`${control} mt-3`} onClick={() => visit({})} disabled={loading}>Try again</button></div> : reports.length === 0 ? <div className="rounded-xl border border-slate-200 bg-white p-10 text-center"><h3 className="font-semibold">{support ? "No support reports for this selection." : "No technical issues reported."}</h3><p className="mt-2 text-sm text-slate-500">{support ? "Application Support requests will appear here when they are available to you." : "Try another status filter or check again later."}</p></div> :
+            <ul className="space-y-3" aria-busy={loading}>{reports.map(report => <li key={report.id}><Link href={`/diagnostics/${report.id}`} className="block rounded-xl border border-slate-200 bg-white p-5 transition hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
+                <div className="flex flex-wrap items-center justify-between gap-2"><span className="break-words font-bold text-slate-900">{report.reference_code || "Unreferenced"}</span><Status value={report.status} /></div>
+                <h3 className="mt-2 break-words font-semibold">{report.title || "Untitled report"}</h3>
+                {support ? <><p className="mt-2 text-sm font-semibold text-blue-800">{report.context?.resolved ? report.context.application.reference_number : "Application context unavailable"}</p>
+                    {report.context?.resolved && <p className="mt-1 break-words text-sm text-slate-600">{report.context.application.applicant_name}</p>}
+                    <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2"><span>Category: {report.support_category_label}</span><span>Current Planning Officer: {report.context?.resolved ? report.context.owner?.name || "Not assigned" : "Unavailable"}</span><span>Reported by: <Reporter report={report} /></span><span>Submitted: {stamp(report.created_at)}</span></div></> :
+                    <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2"><span>Module / screen: {report.module || "Not provided"}</span><span>Reported by: <Reporter report={report} /></span><span>{report.occurred_at ? "Occurred" : "Submitted"}: {stamp(report.occurred_at || report.created_at)}</span><span>Blocks field work: <Blocks value={report.blocks_field_work} /></span></div>}
+                <span className="mt-4 inline-block text-sm font-semibold text-blue-700">View report →</span>
+            </Link></li>)}</ul>}
+        {!loadError && pagination.last > 1 && <nav aria-label="Report pagination" className="flex flex-wrap items-center justify-between gap-3"><button className={control} disabled={loading || pagination.page <= 1} onClick={() => visit({ page: pagination.page - 1 })}>Previous</button><span className="text-sm">Page {pagination.page} of {pagination.last}</span><button className={control} disabled={loading || pagination.page >= pagination.last} onClick={() => visit({ page: pagination.page + 1 })}>Next</button></nav>}
+    </ReportShell>;
 }

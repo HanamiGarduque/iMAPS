@@ -107,15 +107,47 @@ class Loop7SecurePhotoReaderContractTest extends TestCase
         $this->assertStringNotContainsString('photosToRender.length || inspection.photo_count', $component);
     }
 
+    /**
+     * The security property this test exists to protect is the CROSS-PARCEL
+     * REJECTION: a remote `supabase_parcels` row may only supply a value when
+     * its `local_parcel_id` matches the parcel actually being displayed.
+     * Otherwise an officer looking at lot A would be shown lot B's data. That
+     * guard is preserved exactly, and is asserted first below.
+     *
+     * The remote fallback supplies only the cadastral Property Index No.
+     * Parcel Pin is confirmed FieldSync GPS evidence, never the local parcel
+     * location or a cadastral number.
+     */
     public function test_parcel_pin_projection_prefers_local_pin_and_rejects_cross_parcel_remote_pin(): void
     {
         $component = file_get_contents(dirname(__DIR__, 2) . '/resources/js/Components/ParcelInspectionStatus.jsx');
 
-        $this->assertStringContainsString('localParcel', $component);
-        $this->assertStringContainsString('remoteParcelPin', $component);
+        // THE SECURITY PROPERTY. A remote parcel row is only trusted when it
+        // demonstrably refers to the parcel on screen.
         $this->assertStringContainsString('local_parcel_id === localParcel?.id', $component);
+        $this->assertMatchesRegularExpression(
+            '/local_parcel_id === localParcel\?\.id\s*\?\s*inspection\.supabase_parcels\?\.property_index_number\s*:\s*null;/',
+            $component,
+            'A remote parcel value must be discarded entirely when the local parcel does not match.'
+        );
+
+        // The local parcel is the primary source, and the remote row is only a
+        // fallback for the cadastral number.
+        $this->assertStringContainsString('localParcel', $component);
+        $this->assertStringContainsString('remotePropertyIndexNumber', $component);
+        $this->assertStringContainsString(
+            'localParcel?.property_index_number || remotePropertyIndexNumber',
+            $component,
+            'The local cadastral number must win, with the matched remote row as fallback.'
+        );
+
+        // Parcel Pin shares the validated confirmed point, with no location fallback.
         $this->assertStringContainsString('displayParcelPin', $component);
-        $this->assertStringContainsString("localParcel?.property_index_number || remoteParcelPin || 'N/A'", $component);
+        $this->assertStringContainsString(
+            "const displayParcelPin = displayConfirmedPoint ?? 'N/A';",
+            $component,
+            'Parcel Pin must be N/A until both FieldSync-confirmed coordinates are valid.'
+        );
     }
 
     /**

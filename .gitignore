@@ -3,6 +3,10 @@
 .env
 .env.backup
 .env.production
+# Local test credential file. It carries a real DB_PASSWORD, APP_KEY and
+# SUPABASE_SERVICE_KEY, so it must never be staged or committed. Only
+# `.env.example` (non-secret, placeholder values only) belongs in Git.
+.env.testing
 .phpactor.json
 .phpunit.result.cache
 /.fleet

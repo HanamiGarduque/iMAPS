@@ -16,7 +16,7 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 4. **Business reason:** an application created by an active Planning Officer is owned by that officer, recorded as an explicit **initial assignment**. An initial assignment is **not a reassignment** and states no reason: the reason vocabulary describes why somebody is giving work away, and at first assignment nothing is.
 5. **Exact SQL / operation:**
    - `database/migrations/2026_09_27_020000_allow_initial_assignment_without_a_reason.php` - additive and idempotent.
-   - Applied with `php artisan migrate --force --path=...` (exit 0). The plain `migrate` remains unusable on this database for the pre-existing ledger drift recorded in `docs/CANONICAL_DATABASE_SCHEMA.md` section 12; no ledger row was edited by hand.
+   - Applied with `php artisan migrate --force --path=...` (exit 0). The plain `migrate` remains unusable on this database for the pre-existing ledger drift recorded in `docs/CANONICAL_DATABASE_SCHEMA.md` (see the migration-ledger history below); no ledger row was edited by hand.
 6. **After state:** `reason` is now NULLABLE on both `application_po_assignments` and `site_inspection_assignments`. The reason CHECK on both tables is replaced with the exact rule `initial -> reason IS NULL` / `reassignment -> reason IS NOT NULL AND reason IN (the five values)`, and the "Other requires a note" CHECK now uses `IS DISTINCT FROM` instead of `<>`.
 7. **TWO REAL DEFECTS FOUND AND FIXED, both by executing rather than reading:**
    - **Forced a false reason.** `reason` had been declared `NOT NULL` with a closed-vocabulary CHECK, so a first assignment could not omit it. Because nothing else was possible, the code had begun defaulting to "Workload Transfer" - so every brand-new application AND every brand-new inspection round was recorded as a workload handover that never happened. Both now record `reason = NULL`.
@@ -42,7 +42,7 @@ Never record credentials, keys, tokens, handshakes, passwords, or secrets. If hi
 5. **Exact SQL / operation:**
    - `database/migrations/2026_09_27_010000_add_work_reassignment_contract.php` - additive and idempotent (guarded on `Schema::hasColumn` / `hasTable` / `pg_constraint` presence).
    - Applied to local `imaps_db_0921` with `php artisan migrate --force --path=database/migrations/2026_09_27_010000_add_work_reassignment_contract.php` (exit 0).
-   - A plain `php artisan migrate` was **not** used and **not** attempted destructively: the repository's consolidated `create_initial_schema` is still recorded Pending against a live database that already has those tables, so a global run fails with `relation "users" already exists`. That ledger drift is pre-existing and is recorded in `docs/CANONICAL_DATABASE_SCHEMA.md` section 12. No ledger row was edited by hand.
+   - A plain `php artisan migrate` was **not** used and **not** attempted destructively: the repository's consolidated `create_initial_schema` is still recorded Pending against a live database that already has those tables, so a global run fails with `relation "users" already exists`. That ledger drift is pre-existing and is recorded in `docs/CANONICAL_DATABASE_SCHEMA.md` (see the migration-ledger history below). No ledger row was edited by hand.
 6. **After state:**
    - `zoning_applications.assigned_planning_officer_id bigint NULL`, FK `zoning_applications_assigned_po_foreign -> users(id) ON DELETE SET NULL`.
    - New table `application_po_assignments` (7 constraints: 5 FKs/checks + type + reason + other-note + from-shape).
@@ -849,6 +849,49 @@ Record all 14 fields used above. Never include secrets.
 20. **Notification sender behaviour, Technical Review transport, remote-only identity drift, the FieldSync role label and the unexercised recorder failure branch remain SEPARATE and untouched.**
 21. **Status:** **ADMIN DELIVERY MONITORING COMPLETE.** Next is 9E / 9F diagnostics scope audit only. 9D must not be read as closing Loop 9E/9F or Loop 9G.
 22. **CLOSURE ANNOTATION (added by the Loop 9 final docs-only pass):** preserved as written, because it was accurate as at 2026-09-30 and remains correct as a statement about 9D's own scope. **9E/9F and 9G are both DONE**, and neither was closed by 9D.
+### 2026-10-01 - Post-Loop 9 smoke: `notifications` table APPLIED to the canonical 0921 database
+
+1. **Date/time:** 2026-10-01. **STATUS: APPLIED.** Supersedes the same-day PLANNED entry recorded one commit earlier; the plan is preserved below in this entry's item 20 so the record is not rewritten.
+2. **Approval:** explicit user approval to apply only `database/sql/2026_10_01_create_notifications_table_for_0921_forward.sql` to `imaps_db_0921`, with no `php artisan migrate`, no ledger edit, no master touch, no merge or sync.
+3. **Loop / issue:** post-Loop 9 system smoke, "Admin -> Notify Planning Officers" for FieldSync Diagnostic Reports. The action was blocked on this table and is now unblocked.
+4. **System:** iMAPS PostgreSQL only, local `imaps_db_0921`. **No Supabase change. No FieldSync change. No business data change.**
+5. **Pre-apply backup:** taken first, as the documented 0921 procedure requires. `pg_dump` exit 0, 26,220,886 bytes, verified to contain `COPY` blocks for `zoning_applications`, `site_inspections`, `technical_reviews` and `audit_trail`. No credential was printed.
+6. **Operation:** `psql -v ON_ERROR_STOP=1 --echo-all -f database/sql/2026_10_01_create_notifications_table_for_0921_forward.sql`, **exit 0**. Both precondition guards ran, the table and all three indexes were created, and the transaction committed. `ON_ERROR_STOP=1` means a failed statement would have aborted with a non-zero exit rather than continuing silently.
+7. **Exact SQL executed:** the artifact verbatim - `CREATE TABLE IF NOT EXISTS public.notifications` (10 columns, `notifications_pkey`, `notifications_user_id_foreign`), three `CREATE INDEX IF NOT EXISTS` statements (`notifications_user_id_is_read_index`, `notifications_broadcast_index`, `notifications_created_at_index`), six `COMMENT ON` statements, and two `DO $$` guard blocks. **No `DROP`, no `TRUNCATE`, no `UPDATE`, no `DELETE`, and no `migrations` ledger insert.**
+8. **Post-apply verification, every recorded condition in `CANONICAL_DATABASE_SCHEMA.md` 22.9 checked and PASSED:** table exists; **exactly 10 columns** with the recorded types, lengths, nullability and defaults (`type` default `system_alert`, `is_read` default `false`, `id` a bigserial sequence, `read_at`/`created_at`/`updated_at` with no default); `PRIMARY KEY (id)`; the single FK `user_id -> users(id) ON DELETE CASCADE`; exactly one foreign key; **no CHECK/enum constraint**; **exactly 4 indexes** (the 3 explicit plus the PK index); table queryable and **0 rows**; **migration ledger still 16** with **no notification ledger row**; `public` tables **26 -> 27**.
+9. **Business data unchanged - the regression guard:** `zoning_applications` 73, `site_inspections` 38, `technical_reviews` 79, `inspection_delivery_attempts` 8, `audit_trail` 162, `users` 7, `failed_jobs` 14, `application_po_assignments` 3, `application_status_tracks` 146. All six full-row fingerprints byte-identical: `cf1bc99afe8b2d7f90ca5d179f1d700b`, `222f3a3cbe3e90b5246f58585e5a8504`, `4024d7cf21533bea82af2d26023bf2b5`, `0372609f777e6098c7d19d96521d792a`, `11a22c9d6b5689f3bb094808689f6930`, `514a00071e43069b408823b4ce53b21a`.
+10. **Runtime smoke of the existing write/read paths - real model, real table, inside a transaction that is always rolled back, so nothing persisted.** All passed: `notifyUser` persists with the correct type override, `is_read` default `false`, `read_at` NULL, `action_url` stored; `notifyRoles(['Admin','Planning Officer'])` writes exactly one row per matching user and **none to a Site Inspector**; `notifyAll` writes a `user_id = NULL` broadcast row; `scopeForUser` returns targeted **and** broadcast rows, and a Site Inspector sees the broadcast but not PO-targeted rows; `unread()` counts correctly; `orderByDesc('created_at')` is genuinely newest-first; single mark-as-read persists `is_read` and `read_at` and leaves the unread set; bulk mark-all-read clears every unread row.
+11. **Constraint enforcement proven, each violation inside its own SAVEPOINT** (a failed statement poisons a PostgreSQL transaction, which is exactly what the first attempt demonstrated): a bogus `user_id` is rejected by the FK; a missing `title` is rejected; a missing `message` is rejected. Cascade was verified from the catalog (`confdeltype = 'c'`) rather than by deleting a user, because `users.password` is NOT NULL and a throwaway credential has no place in canonical.
+12. **Post-smoke state:** `notifications` table **empty again** (8 rows created, all rolled back), ledger still 16, `users` still 7, `audit_trail` still 162, `users` fingerprint unchanged. The smoke created and deleted no user, wrote no audit row and wrote no business row.
+13. **The pre-existing defect is now fixed:** the five write sites that were inside a transaction (`ApplicationController::store`, three `TechnicalReviewController::updateStatus` sites) and the uncaught `RegisteredUserController::store` no longer fail with `42P01`, so a Planning Officer can once again encode an application and record a technical review decision, and the notifications page and header bell work. `forceSync` no longer reports a false failure.
+14. **No credential column exists on the table:** the 10 columns are `id, user_id, title, message, type, action_url, is_read, read_at, created_at, updated_at` - no `token`, `key`, `secret`, `password`, `payload` or `handshake_key`, verified against `information_schema`.
+15. **TWO ERRORS IN MY OWN PLANNED DOCUMENTATION, caught by running the code rather than reading it.** See item 9a in the superseded plan below, preserved there. Both the "rows are written with NULL timestamps" claim and the "PostgreSQL sorts NULLs LAST under DESC" claim were wrong; both are corrected in the artifact and in `CANONICAL_DATABASE_SCHEMA.md` 22.5.
+16. **Not done:** no `php artisan migrate`, no `migrate:fresh` / `migrate:reset`, no `DROP TABLE`, no ledger row inserted or edited, no migration renamed, no FieldSync change, no master merge or sync, no `notifications` row left behind.
+
+### 2026-10-01 - Post-Loop 9 smoke: `notifications` table for the canonical 0921 database - **PLANNED / NOT APPLIED** (SUPERSEDED by the APPLIED entry above; preserved as the plan as written)
+
+1. **Date/time:** 2026-10-01. **STATUS: PLANNED / NOT APPLIED.** Awaiting explicit user DB approval. **No SQL was executed, no migration was created or run, no ledger row was inserted, and the canonical database is unchanged.**
+2. **Loop / issue:** post-Loop 9 system smoke, "Admin -> Notify Planning Officers" for FieldSync Diagnostic Reports. The action is blocked on a database object that does not exist, so the plan is recorded first and the button is deliberately not implemented.
+3. **System:** iMAPS PostgreSQL only, local `imaps_db_0921`. **No Supabase change. No FieldSync change. No application data change.**
+4. **Business reason:** `App\Models\AppNotification` declares `$table = 'notifications'`, and that table is absent from canonical, so the model raises `SQLSTATE[42P01] ... relation "notifications" does not exist`.
+5. **THIS IS PRE-EXISTING AND NOT INTRODUCED HERE.** Six already-shipped production call sites write to the same missing table. It is recorded now only because it blocks the diagnostics action, and because the audit of those sites produced a materially important finding (item 12).
+6. **Exact SQL / operation against any database:** **NONE EXECUTED.** The prepared artifact is `database/sql/2026_10_01_create_notifications_table_for_0921_forward.sql`, created and parse-validated but deliberately NOT run.
+7. **Forward SQL design:** additive and idempotent (`IF NOT EXISTS` throughout, single transaction), mirroring the repository migration `2026_09_27_000000_create_notifications_table.php` exactly so the live table and the migration cannot diverge. Two precondition guards abort loudly rather than silently reconciling: `public.users` must exist, and any pre-existing `notifications` relation must be structurally complete. Silently "fixing" an unexpected existing table could destroy notification history this repository did not write.
+8. **Table contract:** 10 columns. `id bigserial` PK; `user_id bigint NULL` FK -> `users(id)` `ON DELETE CASCADE`; `title varchar(255)` NOT NULL; `message text` NOT NULL; `type varchar(255)` NOT NULL DEFAULT `'system_alert'`; `action_url varchar(255)` NULL; `is_read boolean` NOT NULL DEFAULT `false`; `read_at timestamp(0)` NULL; `created_at` / `updated_at` `timestamp(0)` NULL. Indexes: the migration-named `(user_id, is_read)`, a partial `(user_id) WHERE user_id IS NULL` for the broadcast branch the composite cannot serve, and `(created_at DESC)` matching the real newest-first read order.
+9. **Three contract decisions recorded rather than "improved":** (a) `user_id` stays NULLABLE because `notifyAll()` writes a broadcast row with `user_id = NULL` and `scopeForUser()` deliberately matches NULL. (b) `type` gets **no** CHECK or enum, because the migration's own comment lists values as "e.g." and `notifyUser()` accepts any string; an enum would break it and diverge from the migration. (c) `created_at` / `updated_at` stay NULLABLE with **no database default**, exactly as `$table->timestamps()` produces, because `DEFAULT now()` or `NOT NULL` would both diverge from the shipped migration.
+9a. **TWO CLAIMS CORRECTED BY THE POST-APPLY RUNTIME SMOKE, not by reasoning.** The planned version of this entry asserted that `AppNotification::create()` leaves both timestamp columns NULL, and that PostgreSQL sorts NULLs LAST under `DESC`. **Both were wrong.** (i) `AppNotification` is a normal Eloquent model with `$timestamps` enabled, so Eloquent populates `created_at` / `updated_at` itself - measured at 0 of 8 smoke rows being NULL, with `orderByDesc('created_at)` ordering newest-first as the page and bell intend. The nullable, default-free columns therefore cause no ordering defect. (ii) PostgreSQL's default under `DESC` is `NULLS FIRST`, not `NULLS LAST`. Both errors were caught only because the smoke actually ran the real model against the real table; neither was visible from reading the migration. One characteristic genuinely remains: `timestamp(0)` is second precision, so same-second notifications tie and their relative order is planner-dependent - inherent to the migration's type, and not "fixed" because that would diverge from the migration.
+10. **Migration ledger:** **UNCHANGED, 16 rows. No ledger row is inserted by the artifact.** The ledger is never edited by hand on the 0921 path, and the migration-ledger history below records that a global `php artisan migrate` cannot be run against canonical at all.
+11. **The `2026_09_27_000000` prefix collision, recorded and NOT fixed here:** two repository migrations share that prefix - `create_notifications_table` and `add_reviewed_site_inspection_id_to_technical_reviews_table`. Laravel keys the ledger by migration NAME, so both would run, but the shared prefix makes execution order ambiguous. This is **why the notifications table is absent from canonical today**. Renaming a migration is a repository-history change and is not performed by this plan; ledger reconciliation remains a separate decision, exactly as section 12 states.
+12. **AUDIT FINDING - five of six notification write sites are inside a database transaction, so on canonical a Planning Officer currently cannot encode an application or record a technical review decision.** `ApplicationController::store` (L582, inside `DB::beginTransaction`/`rollBack` L518-732) and three `TechnicalReviewController::updateStatus` sites (L244, L292, L315, all inside the single `DB::transaction` spanning L190-L326) roll back on the notification insert. `RegisteredUserController::store` (L97) is not caught, so it 500s **after** creating the user row, leaving a half-completed registration. Only `SiteInspectionController::forceSync` (L131) is caught, so it degrades to a misleading flash error. `submitBatch` and `assignInspector` write no notifications and are unaffected. Read side: all six `NotificationController` methods fail, and `getUnread` backs the header bell that `Header.jsx` polls every 30s on every authenticated page; the browser degrades safely there, but the notifications page itself does not.
+13. **Fresh database handling:** **no duplicate definition added anywhere.** A fresh database already receives this table from the existing repository migration during the normal sequence, so the forward-SQL file is **0921-path only** and must never be run against a ledger-managed database - the same prohibition section 1 places on the fresh-install corrections.
+14. **Verification performed (read-only / non-canonical):** the artifact was executed inside a throwaway schema inside a rolled-back transaction. It created exactly the 10 columns above, the PK, the FK and the 3 explicit indexes; `scopeForUser` semantics (targeted + broadcast) held; `is_read` defaulted to `false`; a second run was a no-op; and the incompatible-schema guard aborted as intended. The scratch schema was dropped. Canonical was re-verified afterwards and is untouched: `notifications` still absent, ledger still 16, still 26 tables, all business row counts and fingerprints identical.
+15. **Notify-PO contract recorded, NOT implemented:** Admin-only send; target active `Planning Officer` users; content limited to diagnostic `reference_code`, `module`, a short safe summary and a link to the detail page; content drawn from the **sanitized** `DiagnosticReportReader` output, never the raw remote row; must not carry a signed URL, JWT, token, credential, handshake key or any text the sanitizer removed; a cooldown to prevent rapid duplicate sends; a small success confirmation; and the report is **NOT** auto-marked resolved. A Planning Officer may read the notice and open the report; a Site Inspector has no iMAPS web diagnostics access at all.
+16. **Support contact config (unchanged, audited this pass):** `config/imaps.php` expects `IMAPS_SUPPORT_CONTACT_NAME`, `IMAPS_SUPPORT_CONTACT_EMAIL`, `IMAPS_SUPPORT_CONTACT_CHANNEL`, `IMAPS_SUPPORT_INSTRUCTIONS`. All four default to NULL, are rendered **Admin-only** on diagnostic detail, degrade to a "not configured" placeholder rather than an invented contact, are rendered as inert text and never as links, and the config reads **no** credential environment variable. **No values are set and none are invented.**
+17. **Validation:** `php -l` clean; `git diff --check` clean. No PHP test was added or changed, because this pass changes no PHP behaviour - the notification model, controller and all six call sites are untouched. Existing suites were not re-run as a gate for a docs-and-SQL-only change; the last full Unit result on this branch stands (631 tests / 3537 assertions / 0 failures).
+18. **Deliberately NOT done:** no `php artisan migrate`, no `migrate:fresh` / `migrate:reset`, no `DROP TABLE`, no ledger insert, no notification button or route, no migration rename, no master merge or sync, no FieldSync change.
+19. **Status:** **PLAN READY, AWAITING USER DB APPROVAL.** Applying `2026_10_01_create_notifications_table_for_0921_forward.sql` is the precondition for the Admin "Notify Planning Officers" action, and independently fixes the pre-existing transaction-rollback defect in item 12.
+20. **Correction to the 2026-09-30 9E/9F entry above, recorded rather than edited.** That entry states, correctly for its date, "Admin 200 on both routes; **Planning Officer 403** on both". On branch `fix/post-loop9-smoke-diagnostics` the diagnostics read boundary was widened to `role:Admin,Planning Officer`, because a Planning Officer is the role that resolves day-to-day FieldSync issues inside MPDO and was unable to read the report they had to act on. A **Site Inspector is still refused** on both routes, and the report remains immutable: both routes are GET-only, the controller exposes no `store`/`update`/`destroy`, and no mutation route exists for any role. The 9E/9F entry is left as written because it is accurate chronology; this item is the current contract. **Schema and database impact of that access change: NONE.**
+
 ### 2026-09-30 - Loop 9E/9F inspector diagnostic report Admin triage - schema/data migration: NONE - READ-ONLY REMOTE READER
 
 1. **Loop / issue:** Loop 9E/9F, treated as ONE unit because the canonical record never defines them separately. The architecture record deferred "no diagnostic backend (**9E/9F**)" and named the Admin diagnostic access path as "CONTRACT/ACCESS WORK REQUIRED".
@@ -873,3 +916,2319 @@ Record all 14 fields used above. Never include secrets.
 20. **Status:** **ADMIN DIAGNOSTIC TRIAGE COMPLETE.** 9E/9F closes the documented diagnostic-backend obligation. 9G - full cross-system E2E and final Loop 9 closure audit - has not started.
 21. **CLOSURE ANNOTATION (added by the Loop 9 final docs-only pass):** the "9G has not started" wording above is the accurate status as at 2026-09-30 and is preserved as chronology. **9G is DONE.** The final cross-system closure audit was performed read-only and classified the loop as having docs-only closure items, which this pass has now recorded. 9G itself made **no** code, schema, data or test change. See `LOOP 9 - FINAL CLOSURE` in the architecture document.
 22. **Final database closure statement (added by the Loop 9 final docs-only pass):** final Loop 9 schema state **MATCHES CANONICAL**; unrecorded schema changes **NONE**; 9C-4 was **UI ONLY**; 9C-5 was **E2E TEST DATA ONLY**; 9D was **NO DB CHANGE**; 9E/9F was **NO LOCAL DB CHANGE**; 9G was **AUDIT ONLY**; this docs pass is **NO DB CHANGE** — no migration, no forward SQL, no Supabase schema change, no FieldSync schema change.
+
+### 2026-10-01 - Cross-environment bridge identity fix (Pass 1) - **PREPARED / NOT APPLIED REMOTELY** - SUPABASE FORWARD SQL PREPARED, iMAPS CONFIG + WRITERS + READERS UPDATED
+
+1. **Date/time:** 2026-10-01. **STATUS: PREPARED - NOT YET APPLIED REMOTELY.** No SQL was executed against the shared Supabase FieldSync project, and no iMAPS SQL was executed at all. No `php artisan migrate`, no `migrate:fresh` / `migrate:reset`, no ledger row inserted or edited, no master merge or sync, no push to `master`.
+2. **Branch:** `fix/bridge-source-namespace-collision`, created from the verified HEAD of `loop10-full-e2e-acceptance` (`df1a280`). Master was not merged, synced, rebased or pushed.
+3. **Loop / issue:** cross-environment bridge identity collision. A second iMAPS environment overwrote the FieldSync job of a live application owned by this one.
+4. **Root cause:** `field_jobs.local_inspection_id` (and the three sibling mirror identities) is a bare iMAPS-local integer. It is unique only inside ONE iMAPS database, while the Supabase FieldSync project is shared by more than one. `ON CONFLICT (local_inspection_id)` therefore resolved two different rounds from two different databases onto one remote row.
+5. **Incident:** `APP-2026-00026` / local application `132` / parcel `64` / Teshow Promsakha Sakonnakhon, Mavalor. Round 2 = local inspection `37`, remote job `a761b17a-3fad-44ed-b451-7f0af0e41183`. At `2026-10-01T02:45:13.120729+00:00` another environment pushed its own local inspection `37` and overwrote `supabase_application_id` (-> `7a87a08d`, APP-2026-00032 / Boy Abunda), `supabase_parcel_id` (-> `2676c039`, their parcel 70), `assigned_inspector_id` (-> `c4e22f50`, Juan Dela Cruz), `scheduled_date`, `deadline_date` and `assignment_instructions`. FieldSync-owned lifecycle survived untouched: `status = in_progress`, `current_step = 1`, `started_at = 2026-09-26T18:05:46.831173+00:00`, `step_timestamps = {"1": "2026-09-26T17:50:46.146511Z"}`, and the Renato / `ddcebeac` "Completed Step 1: Site verification" in Mavalor `activity_log` row.
+6. **Contract:** every iMAPS environment writing to the shared bridge carries a stable, explicit, non-secret `IMAPS_BRIDGE_SOURCE_ID`, exposed as `config('bridge.source_id')` from the new `config/bridge.php` and resolved by the new `App\Services\BridgeSourceIdentity`. Explicit, stable, unique, non-secret, never derived from hostname / `APP_ENV` / database name, and **FAIL CLOSED** - there is no `default`, no `production` fallback, no hostname, no database name.
+7. **Config change (iMAPS only, no data):** new `config/bridge.php` with `source_id => env('IMAPS_BRIDGE_SOURCE_ID')`. New non-secret `.env.example` documenting the property, the shape rules and the rejection list. **The user's `.env` was NOT modified and is NOT committed**; no secret was printed, staged or written.
+8. **Audited scope - namespaced (4 tables):** `field_jobs` (`local_inspection_id`), `supabase_zoning_applications` (`local_application_id`), `supabase_parcels` (`local_parcel_id`), `field_job_reviews` (`technical_review_id`). `field_job_reviews` is not in the originally expected list but the audit proved it keys on a bare iMAPS-local integer with a bare `UNIQUE`, so it has the identical defect and is included.
+9. **Audited scope - deliberately NOT namespaced:** `field_job_photos` (identity is the remote uuid `field_job_id` FK; no local integer, so no collision), `local_inspections` (0 rows, no local-id mirror column in use), `profiles`, `activity_log`, `diagnostic_reports`, `application_status_tracks`, `notification_subscriptions`, `inspector_devices`, `inspector_device_subscriptions`, `push_device_subscriptions` (no local-id identity).
+10. **Audit evidence:** live PostgREST row/column reads, the live PostgREST OpenAPI document, deliberate invalid-value probes confirming `integer` / `bigint` column types (`22P02`), read-only joins against the local iMAPS database, and a frozen provenance classifier. NOT assumed from documentation.
+11. **Writers updated (existing writers only, no parallel writer):** `App\Jobs\PushInspectionToSupabase` (namespace resolved first, before any HTTP request; three composite `ON CONFLICT` targets; namespaced existing-job status pre-read), `SupabaseService::pushZoningApplication`, `::pushParcel`, `::createFieldJob`, `::upsertFieldJobReview`. The retry path (`InspectionDeliveryRetryService`) and the reassignment path (`WorkReassignmentController`) were **not** given a second writer: they already re-queue the same one, so they inherit the namespace, and both now say so in comments.
+12. **Readers updated:** `SupabaseService::findFieldJobIdByLocalInspectionId`, `::fieldJobTransferStates`, `::getInspectionWithSignedPhotos`, and `PullCompletedInspections`. Each previously meant "my environment's local row" and filtered on a bare integer.
+13. **Confidentiality note (found while auditing, fixed by the same change):** `getInspectionWithSignedPhotos` resolved the job by a bare `local_inspection_id` and then returned that job's findings, checklist and **signed private Storage URLs**. Without the namespace, another environment's round sharing the integer could have been rendered to a Planning Officer. It now resolves only this deployment's row and fails closed.
+14. **Deliberately NOT changed:** FieldSync's inspector-visibility query `assigned_inspector_id = auth.uid()`. It is correct - it is scoped to the authenticated Supabase Auth user, which is globally unique. The defect was never there. `FieldSyncInspectorVisibilityContractTest` asserts that no iMAPS bridge read filters by `assigned_inspector_id`, so the collision cannot later be "fixed" in the wrong place. FieldSync repository: **not touched**.
+15. **Forward SQL prepared:** `database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql`. Single transaction. Refuses to run without the `bridge_source_id` psql variable, and rejects the same placeholder words the writer rejects. Incompatible-schema guard runs **before** any DDL. Bare constraints are dropped by **catalog lookup**, not by a hard-coded name, because the live constraint names were never exported. Contains no `DELETE`, no `TRUNCATE`, no `DROP TABLE`, no `DROP COLUMN`, and no write to any FieldSync-owned lifecycle column. Post-apply assertions cover foreign-namespace absence, all four composite constraints, primary keys, foreign keys, and unchanged row counts.
+16. **Remote UUID primary keys are preserved.** Replacing a `UNIQUE` constraint does not touch the primary key, so `field_job_photos.field_job_id` and `field_job_reviews.field_job_id` keep resolving to the same rows.
+17. **Legacy classification - frozen, three-way, no guessed provenance:** **A (proven current environment) = 55 rows** claimed - `field_jobs` 15 of 16, `supabase_zoning_applications` 21 of 24, `supabase_parcels` 19 of 20, `field_job_reviews` 0. Each claimed row satisfied four independent checks: the local id exists here; the remote application's `reference_number` **and** `applicant_name` equal the local row's; the remote parcel's `property_index_number` **and** `owner_name` equal the local row's with a matching application relationship; and the remote `assigned_inspector_id` resolves through this deployment's own `handshake_key` mapping to the local `site_inspections.inspector_id`.
+18. **Legacy classification - B (proven other environment) = 4 rows, left `NULL`, never claimed:** applications `7a87a08d` (local 138, APP-2026-00032 / Boy Abunda), `4afe8a3d` (local 136, APP-2026-00030 / Iris A. Napoles), `b23e89d7` (local 137, APP-2026-00031); parcel `2676c039` (local 70). None of those local ids exists in this database. They are left `NULL` deliberately: PostgreSQL treats `NULL` as distinct inside `UNIQUE`, so an unclaimed row cannot collide with either namespace, and their owning environment must claim them with its OWN `IMAPS_BRIDGE_SOURCE_ID`. No identity was invented for them.
+19. **Legacy classification - C (unresolved) = 1 row, left `NULL`, deliberately NOT claimed:** `a761b17a-3fad-44ed-b451-7f0af0e41183` (local inspection `37`). Its mapping contradicts this environment's local record while its lifecycle and `activity_log` prove Teshow, so neither "current" nor "other" can be asserted from the mirror columns. It is repaired first, then claimed.
+20. **Post-hijack activity audit - result: NO POST-HIJACK WORK.** `field_jobs.updated_at` on the hijacked row is still exactly `2026-10-01T02:45:13.120729+00:00`, i.e. no remote write after the hijack itself. `activity_log` for the job: 1 row total, **0** after the hijack. `activity_log` by Juan Dela Cruz, ever: **0**. `field_job_photos`: **0**. `field_job_reviews`: **0**. `current_step` still `1`. `submitted_at` still `NULL`. `checklist 0 / 0`. GPS columns all `NULL`. `rework_started_at` `NULL`. `diagnostic_reports` by Juan, ever: **0**; by anyone after the hijack: **0**. Remote `local_inspections`: **0** rows. `field_jobs` assigned to Juan anywhere: **1**, only the hijacked row, never written after the hijack. **Consequence:** there is no evidence to split and none was invented. The other environment can recreate its own namespaced job after deploying its own writer.
+21. **Loop 10 fixture protected:** `APP-2026-00030` / local inspection `41` / remote job `1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999` is in the frozen Class-A claimed list (with application mirror `b108513f` and parcel mirror `cf974dc9`). `BridgeSourceNamespaceCollisionTest` asserts it resolves by `bridge_source_id` + `41`, keeps the same uuid, the same assignment (`7abb9a75`), the same `in_progress` status, the same `current_step = 1`, the same `started_at` and `step_timestamps`, and that a writer retry creates **no duplicate**.
+22. **Old-deployment behaviour, proven not assumed:** once the bare `UNIQUE(local_inspection_id)` is dropped, an old writer's `ON CONFLICT (local_inspection_id)` raises SQLSTATE **42P10** ("there is no unique or exclusion constraint matching the ON CONFLICT specification"), which PostgREST returns as HTTP 409. The writer's existing `!successful()` branch classifies it and fails the attempt. The old writer STOPS; it cannot corrupt another environment. **Required coordination: every active iMAPS deployment on this Supabase project must be upgraded before the apply, or its deliveries fail with 42P10 until it is. No compatibility shim was created, on purpose - preserving a bare-local-id conflict target preserves the vulnerability.**
+23. **Verification - dry run against real PostgreSQL, never the live bridge:** `database/sql/2026_10_01_bridge_source_namespace_dryrun.sql`, run in a throwaway database, inside throwaway schema `bridge_ns_dryrun`, which is dropped at the end. It first reproduces the defect (a bare `UNIQUE(local_inspection_id)` rejects the second writer), then proves: `(source_a, 37)` and `(source_b, 37)` **coexist** as two distinct rows; a source_a retry updates **only** the source_a row and leaves FieldSync lifecycle untouched; source_b **cannot** overwrite the source_a mapping; an old bare-local-id writer is rejected with 42P10; repeated identical writes stay one row per namespace; an unclaimed `NULL` row coexists with both namespaces; the application and parcel mirrors coexist the same way; two environments coexist on the same `technical_review_id`; and a photo still resolves to its job through the uuid primary key. All nine passed, and the script contains **no** reference to any real bridge table.
+24. **Validation:** `BridgeSourceNamespaceCollisionTest` 21 tests / 115 assertions PASS (real writer code driven against an in-memory PostgREST simulator that enforces composite `ON CONFLICT` and refuses an undeclared target). `BridgeNamespaceSqlContractTest` 34 tests / 153 assertions PASS. `FieldSyncInspectorVisibilityContractTest` 4 tests / 25 assertions PASS. `Loop7SecurePhotoReaderTest` 9 tests / 32 assertions PASS, including two new cases: the job read is namespaced, and an unconfigured namespace refuses the read with **zero** HTTP requests sent. Full Unit suite **735 tests / 4028 assertions PASS** (baseline 676 / 3729; the 16 pre-existing deprecations and 9 pre-existing skips are unchanged). `php -l` clean on all 13 changed PHP files. `npm run build` PASS. `git diff --check` clean.
+25. **Feature suite state, reported not hidden:** the Feature suite was already failing on this branch before this work - 55 errors and 40 failures, all from this environment lacking `pdo_sqlite` (`DB_CONNECTION=sqlite` in `phpunit.xml`, PHP built with `pdo_pgsql` only). Verified by stashing the change and re-running: identical 55 / 40. After the change: identical 55 / 40, plus 2 net new passing Feature tests. **This change introduced no Feature regression and did not paper over the pre-existing environment limitation.**
+26. **Pre-existing contract tests updated, with the reasoning recorded in each:** `Loop4ReinspectionNewRoundTest`, `Loop9bDeliveryWriterContractTest`, `Loop9bWriterCorrelationCorrectionTest`, `ParcelPointBridgeContractTest` and `WorkReassignmentContractTest` each asserted the bare `on_conflict=local_*` keys. Those assertions encoded the defect, so they were updated to the namespaced keys and, where useful, extended with a negative assertion that no bare key may return. Round isolation, single-job-per-round, lifecycle preservation and the parcel-geometry contract are unchanged.
+27. **Related finding recorded, not fixed:** `reference_number` also collides across environments - remote applications `4afe8a3d` (local 136) and `b108513f` (local 145) both carry `APP-2026-00030`. There is no unique constraint on it, so nothing is overwritten today, but a reference-number lookup can return another environment's application. Out of scope here; it needs its own decision.
+28. **Rollback:** written out in full at the foot of the forward SQL - drop the four composite constraints, the four supporting indexes and the four `bridge_source_id` columns, then restore the four original bare `UNIQUE` constraints. Reverting **restores the collision vulnerability**, so it is an emergency measure only, and every already-deployed namespaced writer must be reverted at the same time or its `ON CONFLICT` targets will fail with 42P10.
+29. **Still outstanding, each needing its own approval:** (a) apply the forward SQL remotely; (b) the Teshow mapping repair on `a761b17a…` - the exact five-step procedure is prepared, preserving that row's uuid, status, `current_step`, `started_at`, `step_timestamps`, GPS, checklist, photos and `activity_log`, with no reset; (c) coordinate with the other environment and identify its source id; (d) Phase 2 `SET NOT NULL` on `bridge_source_id` once every environment is deployed; (e) decide the `reference_number` collision separately.
+30. **No migration.** No local iMAPS schema change was needed or made: the namespace lives in the shared remote mirror tables. `php artisan migrate` is neither required nor appropriate and was not run.
+
+---
+
+## 2026-10-01 - CROSS-ENVIRONMENT BRIDGE NAMESPACE COLLISION - PREPARED, NOT APPLIED (REMOTE / SUPABASE)
+
+**Status: PREPARED. Remote apply NOT AUTHORIZED. Ledger untouched. No remote write performed.**
+
+> This entry is the authoritative home for the bridge namespace rationale. The same
+> material previously appeared as section 23 of `CANONICAL_DATABASE_SCHEMA.md`; that
+> section was removed during the pre-apply gate because this file and
+> `FIELDSYNC_BRIDGE_ARCHITECTURE.md` are the correct homes for a remote bridge
+> contract that is not part of the local database. **No information was lost** — see
+> the audit table and the nine dry-run proofs below.
+
+### Classification
+
+**BLOCKING HOTFIX INSIDE THE LOOP 10 PERIOD** — see the CURRENT STATE block in
+`FIELDSYNC_BRIDGE_ARCHITECTURE.md`. Independent of Loop 10's own acceptance rows.
+
+### 1. The defect
+
+The shared Supabase FieldSync bridge tables are written to by more than one iMAPS
+environment. Their mirror tables keyed iMAPS rows by **BARE LOCAL INTEGER IDS**,
+which are unique only inside ONE iMAPS database while the Supabase project is
+shared. Two writable environments therefore resolved the same
+`local_inspection_id = 37` onto the same remote `field_jobs` row and overwrote
+each other's assignment.
+
+Observed incident: **`APP-2026-00026` / inspection 37 / job
+`a761b17a-3fad-44ed-b451-7f0af0e41183`**. Local round 37 holds
+`inspector_id = 6` (Renato Dimaculangan), whose handshake resolves to remote
+`ddcebeac-2217-41c5-a6e2-d7f873db9af2`. The remote job is assigned to
+`c4e22f50-d3c3-4495-b3be-bd264da2e735` (Juan Dela Cruz). **The pointers disagree.**
+The row was not deleted; it is still present and `in_progress`.
+
+### 2. The identity contract (LOCKED)
+
+Bridge identity is the composite **`(bridge_source_id, local_*_id)`**.
+
+| | |
+|---|---|
+| Environment variable | `IMAPS_BRIDGE_SOURCE_ID` |
+| Application config | `config('bridge.source_id')` |
+| Authority | `App\Services\BridgeSourceIdentity` |
+| Remote column | `bridge_source_id` (`text`, nullable) on four mirrored tables |
+| Shape | 2–63 chars: letters, digits, `.`, `_`, `-` |
+| Rejected placeholders | `default`, `none`, `null`, `nil`, `undefined`, `changeme`, `todo`, `fixme`, `localhost`, `example`, `placeholder`, `your-bridge-source-id` |
+
+Properties: **explicit** (never derived from hostname, `APP_ENV` or database
+name), **stable** (configuration, not runtime state), **non-secret** (it appears
+in logs and in the remote table), and **fail closed** (a write needing bridge
+identity without a usable value raises before any HTTP request).
+
+`production` is deliberately **not** on the rejected list: an environment genuinely
+named "production" is an explicit choice. The contract forbids a *silent* fallback
+to it, not an explicit value.
+
+### 3. Source identity rule — CORRECTED 2026-10-01
+
+The earlier wording said one distinct value "per iMAPS database/environment" and
+listed "clone" among the things a value stays identical across. **That was wrong
+and is corrected here:**
+
+- **The SAME logical database / environment keeps the SAME source id** across
+  restarts, deploys, rebuilds and rollbacks.
+- **ANY independent clone or database that can write to this Supabase project MUST
+  be given a NEW source id.** An independently writable clone that inherits the
+  parent source's id reproduces the original collision, because bare local integer
+  ids are unique only within one database.
+
+A clone is stable *only* when it is not an independent writer. Every statement
+implying an independent writable clone should retain the same id has been removed
+from `.env.example`, `BridgeSourceIdentity` and the architecture document.
+
+This logical source's id is **`rosario-imaps-local-0921-a`**. It appears in
+`.env.example` and documentation only. **It has NOT been written into any `.env`;
+that requires explicit approval.**
+
+### 4. `reference_number` is NOT bridge identity
+
+No `UNIQUE(reference_number)` is added, and no mirror correlation by
+`reference_number` is introduced. `reference_number` is a **business** identifier.
+Public tracking design is explicitly out of scope for this hotfix.
+
+`SupabaseService::getApplicationByReference()` targets the LOCAL
+`zoning_applications` table, not `supabase_zoning_applications`, so it is not a
+mirror-identity concern.
+
+An audit of executable iMAPS bridge code found **no** reader that identifies or
+correlates an application mirror row by `reference_number`.
+
+### 5. Remote tables affected
+
+Four tables, each proven from the live schema to key on a bare iMAPS-local integer.
+
+| Remote table | Local-id identity column | Type | Before | After (prepared) |
+|---|---|---|---|---|
+| `public.field_jobs` | `local_inspection_id` | `integer`, nullable | `UNIQUE (local_inspection_id)` | `UNIQUE (bridge_source_id, local_inspection_id)` |
+| `public.supabase_zoning_applications` | `local_application_id` | `integer`, nullable | `UNIQUE (local_application_id)` | `UNIQUE (bridge_source_id, local_application_id)` |
+| `public.supabase_parcels` | `local_parcel_id` | `integer`, nullable | `UNIQUE (local_parcel_id)` | `UNIQUE (bridge_source_id, local_parcel_id)` |
+| `public.field_job_reviews` | `technical_review_id` | `bigint` | `UNIQUE (technical_review_id)` | `UNIQUE (bridge_source_id, technical_review_id)` |
+
+`field_job_photos` is **NOT** namespaced: its identity is a remote uuid FK and
+there is no local integer to collide. `SET NOT NULL` on `bridge_source_id` is
+**Phase 2** and needs its own approval after every writer has deployed.
+
+The `supabase_zoning_applications` constraint name is 58 characters on purpose:
+PostgreSQL truncates identifiers at 63, and a silently truncated name would make
+the verification and the documented rollback refer to a non-existent object. The
+original 74-character name was caught by the dry run.
+
+### 6. Indexes — CORRECTED 2026-10-01
+
+**KEPT:** `field_jobs_bridge_source_id_status_index`, because
+`PullCompletedInspections` filters `bridge_source_id` + `status` and `status` is
+not the leading column of the composite `UNIQUE`.
+
+**REMOVED as speculative** (they were proposed before the readers were audited):
+
+- `(bridge_source_id, assigned_inspector_id)` — FieldSync's inspector query
+  filters `assigned_inspector_id = auth.uid()` and does **not** scope that read by
+  `bridge_source_id`, so a composite index leading with `bridge_source_id` would
+  not have served it. FieldSync's query is **unchanged**.
+- `(bridge_source_id, reference_number)` — no proven reader identifies a mirror row
+  by `reference_number`.
+- `(bridge_source_id, property_index_number)` — cadastral display data, not bridge
+  identity.
+
+An index no query uses costs write amplification on every mirror write and implies
+a correlation that does not exist. **No existing live index is removed by this
+artifact**, and the FieldSync-owned index remains untouched.
+
+`FieldSyncInspectorVisibilityContractTest` previously REQUIRED the
+`assigned_inspector_id` index to exist. That assertion encoded the wrong
+premise and now asserts the real invariant instead: the forward SQL never drops
+anything FieldSync's visibility depends on, and creates no partial predicate that
+could hide an inspector's own rows.
+
+### 7. Frozen legacy backfill classification
+
+| Table | Claimed (Class A) | Total | Left `NULL` |
+|---|---|---|---|
+| `field_jobs` | 15 | 16 | 1 (Teshow job `a761b17a-…`, Class C, unresolved) |
+| `supabase_zoning_applications` | 21 | 24 | 3 (Class B, proven other environment) |
+| `supabase_parcels` | 19 | 20 | 1 (Class B, proven other environment) |
+| `field_job_reviews` | 0 | 0 | 0 |
+| **Total** | **55** | **60** | **5** |
+
+Class A rows were proven by four independent checks: the local row exists; remote
+`reference_number` **and** `applicant_name` match; remote `property_index_number`
+**and** `owner_name` match with a consistent application relationship; and remote
+`assigned_inspector_id` resolves through this deployment's own `handshake_key`
+mapping to the local inspector. Class B rows have no local counterpart at all.
+Class C is the single row whose mapping and lifecycle evidence disagree.
+
+The UUID lists are **frozen literals inside the script**, joined on the primary
+key, so an incorrect edit cannot widen the `UPDATE` set.
+
+### 8. Dry-run result
+
+Nine proofs, all PASS, all against real PostgreSQL in a scratch schema the script
+drops before finishing:
+
+1. The pre-fix defect reproduces — a bare `UNIQUE(local_inspection_id)` rejects the second writer.
+2. `(source_a, 37)` and `(source_b, 37)` coexist as two distinct rows.
+3. A source_a retry converges on the source_a row and leaves FieldSync lifecycle untouched.
+4. The same retry does not touch the source_b row.
+5. A source_b write cannot overwrite the source_a mapping — the incident, neutralised.
+6. An old bare-local-id writer is rejected with SQLSTATE `42P10`.
+7. Repeated identical writes stay one row per namespace.
+8. An unclaimed (`NULL`) legacy row coexists with both namespaces.
+9. Application, parcel and review mirrors all coexist per namespace, and a photo still resolves to its job through the uuid primary key.
+
+### 9. Preserved objects
+
+| Object | Treatment |
+|---|---|
+| `id uuid` primary keys on all four tables | **PRESERVED.** Replacing a `UNIQUE` does not touch a primary key. |
+| `field_job_photos.field_job_id` -> `field_jobs(id)` | **PRESERVED**, proved in the dry run. |
+| `field_job_reviews.field_job_id` -> `field_jobs(id)` | **PRESERVED.** |
+| `supabase_parcels.supabase_application_id` | **PRESERVED.** |
+| All FieldSync-owned lifecycle columns | **NOT WRITTEN.** `status`, `current_step`, `started_at`, `step_timestamps`, `rework_started_at`, `submitted_at`, `checklist_*`, `photo_*`, GPS, `findings`, `observations`, `discrepancies`, `recommendations`, `inspection_result`, `is_compliant`, `inspector_notes`. |
+| Row counts | **UNCHANGED.** Asserted in the script. No `DELETE`, `TRUNCATE`, `DROP TABLE` or `DROP COLUMN`. |
+
+### 10. Old-deployment behaviour after a future apply
+
+An old iMAPS deployment still sending `ON CONFLICT (local_inspection_id)` receives
+`SQLSTATE 42P10` (PostgREST HTTP 409) and its delivery attempt is marked failed by
+the writer's existing non-2xx branch. It **fails closed** rather than corrupting
+another environment. Every active deployment on the project must be upgraded
+first. No compatibility shim is provided, because preserving the bare-local-id
+conflict target preserves the vulnerability.
+
+### 11. Rollback
+
+Written out in full at the foot of the forward SQL: drop the four composite
+constraints, drop `field_jobs_bridge_source_id_status_index`, drop the four
+`bridge_source_id` columns, restore the four original bare `UNIQUE` constraints.
+Reverting **restores the collision vulnerability**, so it is an emergency measure
+only, and every deployed namespaced writer must be reverted at the same time or
+its `ON CONFLICT` targets will fail with `42P10`.
+
+If a namespace value is later found duplicated between two environments, the fix
+is to give one of them a new `IMAPS_BRIDGE_SOURCE_ID` and re-push its own rows
+under it. Existing rows are **not** rewritten in place; that would be the hijack
+all over again.
+
+### 12. Local impact
+
+**NONE.** No local iMAPS table, column, constraint or index changes. No migration.
+No ledger change. The only iMAPS-side changes are
+`BridgeSourceIdentity` documentation, the `.env.example` example, the two
+unapplied SQL artifacts, the corrected test premise, and documentation.
+
+---
+
+## 2026-10-02 - PRE-APPLY CORRECTION: `updated_at` TRIGGER SIDE-EFFECT ON THE `field_jobs` BACKFILL
+
+**Status: PRE-APPLY CORRECTION. Still PREPARED, still NOT applied. No remote SQL executed. No `.env` modified.**
+
+### 1. The defect this correction fixes
+
+`public.field_jobs` carries an **enabled `BEFORE UPDATE` trigger
+`trg_field_jobs_set_updated_at` executing `public.set_updated_at_utc()`** — a fact
+established by a live read-only catalog query recorded earlier in this log, and
+corroborated by the current data: 9 of 16 jobs carry an `updated_at` that differs
+from `created_at`, which is what a firing `BEFORE UPDATE` trigger produces.
+
+The prepared Phase 1 backfill was
+`UPDATE public.field_jobs SET bridge_source_id = v_source WHERE ...`. That is an
+`UPDATE`, so the trigger fired and stamped a fresh `updated_at` onto **all 15
+Class-A rows**, including **two COMPLETED rounds** whose write times are
+historical evidence. The intended change is `bridge_source_id` and nothing else,
+so the original plan silently rewrote the observable write-time of every real
+inspection job.
+
+**Note on verification:** `pg_trigger` is not reachable through PostgREST, so the
+trigger's existence cannot be confirmed from the iMAPS application. It is
+therefore asserted **inside the forward SQL transaction itself**, which is the
+correct place for the guard regardless: an environment whose trigger is missing,
+renamed or already disabled must abort before a single row is touched.
+
+### 2. The correction
+
+`database/sql/2026_10_01_bridge_source_namespace_collision_fix_forward.sql`
+Section 5 now, for `field_jobs` only:
+
+1. **5a — BEFORE snapshot** into a temp table (`ON COMMIT DROP`) of `id`,
+   `updated_at`, `status`, `current_step`, `started_at`, `submitted_at`,
+   `step_timestamps`, `assigned_inspector_id`, `supabase_application_id`,
+   `supabase_parcel_id` for every frozen Class-A uuid. An empty snapshot RAISEs:
+   if the frozen list matched nothing, the backfill would claim nothing and the
+   verification would be vacuous.
+2. **5b — assert** `trg_field_jobs_set_updated_at` **exists and is enabled**
+   (`tgenabled = 'O'`). Missing, renamed or already-disabled → `RAISE`, aborting
+   the transaction **before any row is written**.
+3. **5c — disable that one trigger by exact name**:
+   `ALTER TABLE public.field_jobs DISABLE TRIGGER trg_field_jobs_set_updated_at`.
+4. **5d — run the frozen Class-A backfill**, setting `bridge_source_id` only.
+5. **5e — re-enable immediately** and **assert** it is enabled again.
+6. **5f — verify** that `bridge_source_id` equals the requested source id and that
+   every other snapshotted column is identical. Any mismatch → `RAISE`, rolling
+   back the whole transaction.
+
+What is **NOT** done:
+
+- the trigger **function** is never modified;
+- the trigger is **never dropped**;
+- **`DISABLE TRIGGER USER` is never used** — that would also suppress
+  `trg_preserve_completed_field_job_lifecycle`, the FieldSync-side guard on
+  finished rounds;
+- the completed-lifecycle trigger is never disabled;
+- the mirror tables (`supabase_zoning_applications`, `supabase_parcels`,
+  `field_job_reviews`) have no such trigger and need no handling.
+
+Everything stays inside the script's single existing transaction, so a failure
+rolls the re-enable back together with everything else. `ALTER TABLE ... DISABLE
+TRIGGER` is transactional in PostgreSQL.
+
+All comparisons use `IS DISTINCT FROM`, so a `NULL` is treated as a real
+difference rather than an unknown that silently matches nothing.
+
+### 3. Dry-run proof (real PostgreSQL, throwaway database)
+
+The dry run now creates **both** live triggers and adds a tenth test. Executed
+against a scratch database that was dropped afterwards; the real Supabase project
+was never contacted.
+
+| Step | Proof | Result |
+|---|---|---|
+| 10a | an ordinary `UPDATE` changes `updated_at` | **PASS** |
+| 10b | the timestamp trigger exists and is enabled before anything is disabled | **PASS** |
+| 10c | disabling by exact name leaves `trg_preserve_completed_field_job_lifecycle` **enabled** | **PASS** |
+| 10d | the namespace backfill sets `bridge_source_id` and preserves `updated_at` byte-identically, plus `status`, `current_step`, `submitted_at`, `step_timestamps`, `assignment_instructions` | **PASS** |
+| 10e | the trigger is re-enabled and verified | **PASS** |
+| 10f | an ordinary `UPDATE` changes `updated_at` again after re-enable | **PASS** |
+| 10g | the completed-lifecycle guard still rejects a status change on a completed row | **PASS** |
+
+Dry run exit code `0`; the scratch database was confirmed gone (`0` matching rows
+in `pg_database`) afterwards.
+
+Two real defects surfaced while building this proof and were fixed: the scratch
+`field_jobs` table had no `created_at`/`updated_at` columns at all, so the trigger
+function had nothing to assign; and three temp tables were declared
+`ON COMMIT DROP`, which under `psql` autocommit are destroyed by their own
+creating transaction and were therefore missing when the later verification read
+them. The teardown `DROP SCHEMA ... CASCADE` already cleans them up.
+
+### 4. Teshow recovery contract CORRECTED
+
+The documented Pass 2 procedure previously claimed the Teshow row's `updated_at`
+stays byte-identical. **That claim was wrong** and is now corrected.
+
+Unlike the Class-A backfill — which changes nothing but `bridge_source_id` — the
+Teshow repair is a **genuine data change**, so the enabled `updated_at` trigger
+**must** stamp a new value. Suppressing it there would falsify the record of when
+the mapping was corrected.
+
+| | |
+|---|---|
+| **PRESERVE EXACTLY** | job uuid, `created_at`, `status`, `current_step`, `started_at`, `step_timestamps`, `rework_started_at`, `submitted_at`, GPS evidence, checklist progress and `checklist_data`, photo evidence and every `field_job_photos` row, inspection result and evidence text, every `activity_log` row |
+| **EXPECTED TO CHANGE** | the mapping columns being repaired (`supabase_application_id`, `supabase_parcel_id`, `assigned_inspector_id`, `scheduled_date`, `deadline_date`, `assignment_instructions`), `bridge_source_id`, and `updated_at` — the last **exactly because the real enabled trigger records the repair** |
+
+The repair is now specified as **ONE guarded `UPDATE`** against the single uuid
+`a761b17a-3fad-44ed-b451-7f0af0e41183`, setting all six mapping columns **and**
+`bridge_source_id` in the same statement, inside one transaction with a BEFORE
+snapshot, AFTER assertions and rollback on any preservation failure. The previous
+five-step procedure deferred `bridge_source_id` to a second write, which could
+half-apply. **The repair has NOT been executed.**
+
+### 5. Local impact
+
+**NONE.** No local iMAPS table, column, constraint or index changes; no migration;
+no ledger change. Only the unapplied forward SQL, the unapplied dry run, the
+`FieldSyncInspectorVisibilityContractTest` invariants and documentation.
+
+---
+
+## 2026-10-02 - PREPARED CORRECTIVE FOLLOW-UP: SURVIVING STANDALONE UNIQUE INDEX ON `field_job_reviews` — **NOT YET APPLIED**
+
+**Status: PREPARED. Remote apply NOT AUTHORIZED. No remote write executed in this pass.**
+**SUPERSEDED 2026-10-02 - the corrective was subsequently applied and verified;
+see the later entry "CORRECTIVE APPLIED: STANDALONE BARE UNIQUE INDEX ON
+`field_job_reviews` REMOVED - APPLIED / VERIFIED". This entry is preserved
+unaltered below as the plan as written.**
+
+### 1. What was found
+
+The Phase 1 namespace apply succeeded on the four composite identities and the
+15/21/19/0 backfill, but **one bare uniqueness object survived** on
+`field_job_reviews`:
+
+```
+field_job_reviews_technical_review_id_key   UNIQUE btree (technical_review_id)
+```
+
+Verified live as a **standalone index**, not a constraint: its owning
+`pg_constraint` row is `NULL`. The three other tables' bare uniques were removed
+correctly.
+
+### 2. Root cause
+
+`2026_10_01_bridge_source_namespace_collision_fix_forward.sql` Section 6 dropped
+every survivor with:
+
+```sql
+ALTER TABLE public.field_job_reviews DROP CONSTRAINT IF EXISTS <name>
+```
+
+A PostgreSQL `UNIQUE` may be either
+
+- a **constraint-backed** object — present in `pg_constraint`, dropped by `DROP CONSTRAINT`; or
+- a **standalone unique index** — absent from `pg_constraint`, dropped only by `DROP INDEX`.
+
+On this table it was the second shape. `IF EXISTS` suppressed the error and
+`DROP CONSTRAINT` did nothing at all. The drop was **silently a no-op** — which is
+why the apply reported success and a post-apply assertion did not catch it.
+
+### 3. Consequence
+
+The composite that was added beside it can never admit a second row for the same
+`technical_review_id`, because the bare index forbids it first. Two iMAPS
+environments still cannot both write `local technical_review_id = N`. That is
+precisely the collision class the namespace exists to remove, so
+**`field_job_reviews` is only half namespaced.**
+
+The table holds **0 rows**, so nothing is blocked today and no delivery is
+affected: this is a **latent** defect, not an active one.
+
+### 4. Why the post-apply verification missed it
+
+The forward SQL's Section 8 asserted that each *composite* constraint existed and
+valid. It never asserted that the *bare* object was **absent**, because Section 6
+reported a drop as a `NOTICE` and treated `DROP CONSTRAINT IF EXISTS` as
+sufficient. The dry run could not catch it either: it created the bare unique as a
+table-level `UNIQUE (...)`, i.e. always the **constraint** shape, so the
+standalone shape was never exercised.
+
+### 5. Correction to the forward artifact (for the future)
+
+Section 6 now **catalog-detects the object type per survivor** rather than
+assuming it:
+
+```sql
+LEFT JOIN pg_constraint k ON k.conrelid = t.oid AND k.conname = c.relname
+...
+IF v_is_constraint THEN ALTER TABLE ... DROP CONSTRAINT ...
+ELSE                     DROP INDEX ... END IF;
+```
+
+and then **verifies the object is gone, raising if it survives**. A drop that
+cannot be verified is now a hard failure, not a notice. The same applies to all
+four tables, and `NOT i.indisprimary` keeps primary keys out of scope.
+
+Everything else is unchanged: same transaction, same backfill lists, same
+composite names, same trigger handling, same source-id rules, same preservation
+assertions.
+
+### 6. Dry-run correction — both shapes now reproduced
+
+The dry run's `field_job_reviews` bare unique is now created as a
+**standalone index**, matching the live shape, while the other three remain
+table-level constraints. Its Section 6 equivalent performs the same
+type detection. One run now proves both paths:
+
+```
+field_jobs:                     dropped bare UNIQUE CONSTRAINT field_jobs_local_inspection_id_key
+supabase_zoning_applications:   dropped bare UNIQUE CONSTRAINT supabase_zoning_applications_local_application_id_key
+supabase_parcels:               dropped bare UNIQUE CONSTRAINT supabase_parcels_local_parcel_id_key
+field_job_reviews:              dropped bare UNIQUE INDEX    field_job_reviews_technical_review_id_key
+```
+
+Had the dry run kept using `DROP CONSTRAINT IF EXISTS` everywhere, the fourth
+line would be missing and the review-coexistence proof would fail. That is now a
+real regression test rather than an assumption.
+
+### 7. Corrective artifact prepared
+
+`database/sql/2026_10_02_drop_field_job_reviews_bare_unique_index_after_namespace.sql`
+
+Single transaction. Preconditions asserted before any change:
+
+1. `public.field_job_reviews` exists;
+2. `bridge_source_id` exists and is `text` (proving the apply ran first);
+3. row count is exactly `0`;
+4. the composite `UNIQUE (bridge_source_id, technical_review_id)` exists and is **valid**;
+5. the survivor's `pg_get_indexdef` matches the exact expected string;
+6. it is a valid single-column `UNIQUE` on `technical_review_id`;
+7. it has **no owning `pg_constraint`** — the fact that made the original drop a no-op;
+8. it is not the primary key.
+
+Any mismatch `RAISE`s and rolls back. The only mutation is:
+
+```sql
+DROP INDEX public.field_job_reviews_technical_review_id_key;
+```
+
+Postconditions verified inside the same transaction: survivor gone; **no** bare
+`UNIQUE` on `technical_review_id` under **any** name; composite intact and valid;
+primary key intact; `field_job_id` foreign key intact; row count still `0`. No
+other table is touched and nothing is written.
+
+### 8. Verification
+
+- Dry run exit `0`; all eight `updated_at` proofs PASS; both uniqueness shapes
+  proved removed; scratch database confirmed dropped.
+- `BridgeReviewUniqueIndexGapTest` **13 tests / 88 assertions** — new. Pins the
+  object-type detection, the "survivor must be gone" failure mode, the
+  `NOT i.indisprimary` scope guard, the dry run's standalone shape, and every
+  precondition and postcondition of the corrective artifact.
+- `BridgeNamespaceSqlContractTest` 41/217, `BridgeSourceNamespaceCollisionTest`
+  21/115, `FieldSyncInspectorVisibilityContractTest` 6/31.
+- Full Unit **748 passed / 4183 assertions / 0 failures / 9 skipped** (the 9 are
+  the known `pdo_sqlite` gap). `npm run build` PASS. Whitespace check clean.
+- Maintenance-mode note: three `Loop9c2RetryActionContractTest` cases assert 403/302
+  from real routes and fail while the application is in maintenance mode, because
+  Laravel returns 503 before routing. **Proved to be the sole cause** — lifting
+  maintenance gives 748/748, and maintenance was restored immediately. This is a
+  consequence of the Pass 2A freeze, not of these changes.
+
+### 9. Status
+
+**PREPARED corrective follow-up, NOT YET APPLIED.** The architecture document is
+deliberately **not** marked fully verified. Remote apply requires explicit
+approval and a fresh precheck, exactly like every prior remote change.
+
+### 10. Deliberately not done
+
+No remote SQL executed. Teshow not repaired. No `.env` change. No queue worker
+started. `php artisan up` not left in effect (maintenance restored ON).
+**PASS-SCOPED, SUPERSEDED:** this describes THIS pass only and is not current
+state. Maintenance is now OFF and `php artisan queue:work` is RUNNING as PID 48352, the
+project's own known expected dev worker. See the readiness reconciliation entry. No
+FieldSync change. No master merge, sync, rebase or push. `.env` not committed.
+
+---
+
+## 2026-10-02 - CORRECTIVE APPLIED: STANDALONE BARE UNIQUE INDEX ON `field_job_reviews` REMOVED - **APPLIED / VERIFIED**
+
+**Status: APPLIED / VERIFIED. This supersedes the status of the PREPARED entry
+above; that entry is preserved unaltered above as the plan as written.**
+
+### 1. Date/time and scope
+
+2026-10-02. Exactly one object was removed from the shared Supabase FieldSync
+project (`laapipjyprmmaylunxib`). Nothing else was written, in this pass or in
+the Teshow pass that follows it on the same date.
+
+### 2. Exact operation
+
+`database/sql/2026_10_02_drop_field_job_reviews_bare_unique_index_after_namespace.sql`,
+executed as committed through native `psql` with `-v ON_ERROR_STOP=1`. **psql exit
+0.** The artifact was not stripped of its psql commands, not inlined, not
+rewritten, and not substituted with a Management API SQL statement.
+
+The single mutation, verbatim:
+
+```sql
+DROP INDEX public.field_job_reviews_technical_review_id_key;
+```
+
+### 3. What was removed, and how it is proved to be that object
+
+**Exactly one** standalone bare `UNIQUE` index was removed:
+`public.field_job_reviews_technical_review_id_key`, a valid single-column
+`UNIQUE` on `technical_review_id` with **no owning `pg_constraint`** - the fact
+that made the original drop inside the namespace forward SQL a silent no-op.
+All eight preconditions were asserted before the drop, and the six
+postconditions inside the same transaction, all of which passed.
+
+### 4. What was preserved
+
+- The composite `UNIQUE (bridge_source_id, technical_review_id)` is intact and
+  valid, as `field_job_reviews_bridge_source_id_technical_review_id_key`. It
+  owns exactly one `pg_constraint` row.
+- The primary key `field_job_reviews_pkey` and the `field_job_id` foreign key
+  are intact.
+- `field_job_reviews` row count remained **0** throughout. The table has never
+  held a row, so the drop could not have destroyed data.
+- **No other table was touched.** The artifact contains no `DELETE`, no
+  `TRUNCATE`, no `DROP TABLE` and no `DROP COLUMN`.
+
+### 5. Post-apply read-back, re-queried independently after the apply
+
+`pg_indexes` on `public.field_job_reviews` returns exactly three indexes, and
+the bare unique's relname is absent from `pg_class` entirely:
+
+| index | definition | owning `pg_constraint` |
+| --- | --- | --- |
+| `field_job_reviews_bridge_source_id_technical_review_id_key` | `UNIQUE (bridge_source_id, technical_review_id)` | 1 |
+| `field_job_reviews_field_job_id_index` | `(field_job_id)` | 0 |
+| `field_job_reviews_pkey` | `UNIQUE (id)` | 1 |
+
+### 6. Consequence for the bridge contract
+
+The namespace is now structurally complete. `technical_review_id` is no longer
+uniquely constrained on its own anywhere, so a second iMAPS environment can
+hold a review for the same Supabase `technical_review_id` without colliding,
+while the composite still guarantees one review per
+`(bridge_source_id, technical_review_id)` **within** each environment. This is
+the whole point of the Phase 1 namespace fix, and the surviving bare unique was
+the last place where the pre-fix assumption still lived in the live schema.
+
+### 7. What remains outstanding
+
+- **Teshow Round 2 recovery is PENDING.** The corrective removed a schema
+  obstacle; it did not repair a single row. The mapping repair on
+  `a761b17a-3fad-44ed-b451-7f0af0e41183` is prepared and validated but **not
+  applied**; it is recorded in the entry that follows this one.
+- Loop 10 remains **PARTIAL - FIELD ACCEPTANCE PENDING**. CP7-CP13 are unproven
+  and cannot be claimed from a database-side change. This entry changes no
+  Loop 10 status.
+
+### 8. Deliberately not done
+
+No repair SQL executed. No queue worker started. `php artisan up` not left in
+effect - maintenance mode remains ON. No FieldSync change. No master merge,
+sync, rebase or push. `.env` and `.env.testing` not read, modified, staged or
+committed. No credential, token, handshake key or database password recorded.
+
+---
+
+## 2026-10-02 - TESHOW ROUND 2 GUARDED MAPPING REPAIR - **APPLIED / VERIFIED**
+
+**Status: APPLIED / VERIFIED by an authorized operator, then independently
+reverified read-only from the backend. Backend recovery and visibility PASS.
+Device confirmation remains PENDING. Loop 10 remains PARTIAL - FIELD ACCEPTANCE
+PENDING. No remote write was performed during this finalization pass.**
+
+### 1. Date/time and scope
+
+2026-10-02. Branch `fix/bridge-source-namespace-collision`, head
+`bbe483abe5ffc000b0eb0b3c897d7d32edf2cebd` at the start of this pass. Locked
+bridge source `rosario-imaps-local-0921-a`. Maintenance mode ON, queue worker
+NONE, throughout.
+
+### 2. The artifact
+
+`database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql`
+
+One transaction. One `UPDATE`, against one primary key:
+
+```
+a761b17a-3fad-44ed-b451-7f0af0e41183     (local_inspection_id = 37)
+```
+
+### 3. Seven columns written, and nothing else
+
+| column | corrupt value found | value written |
+| --- | --- | --- |
+| `bridge_source_id` | `NULL` | `rosario-imaps-local-0921-a` |
+| `supabase_application_id` | `7a87a08d-...` (other env) | `eaf432ea-8f26-4266-bf4b-ca88887ac470` |
+| `supabase_parcel_id` | `2676c039-...` (other env) | `69bfaafb-a5e2-4871-b9d0-830ea0599b3f` |
+| `assigned_inspector_id` | `c4e22f50-...` (other env) | `ddcebeac-2217-41c5-a6e2-d7f873db9af2` |
+| `scheduled_date` | `2026-10-01` | `2026-09-23` |
+| `deadline_date` | `2026-10-03` | `2026-10-23` |
+| `assignment_instructions` | `ddd` | `Loop 4 Round 2 reinspection E2E.` |
+
+`id`, `local_inspection_id`, `created_at`, `status`, `current_step`,
+`started_at`, `assigned_by_imaps_user_id` and `assigned_by_name` are **not**
+assigned, and neither is any lifecycle, GPS, checklist, photo or evidence
+column. `updated_at` is **not** assigned either - the enabled
+`trg_field_jobs_set_updated_at` trigger stamps it, because this is a genuine
+data change and suppressing the timestamp would falsify the record of when the
+mapping was corrected.
+
+### 4. The restored values are corroborated, not assumed
+
+Each "after" value was read back from the **local canonical database** and each
+remote UUID was confirmed to exist on Supabase, read-only:
+
+- local `site_inspections` **37** -> `zoning_application_id` **132** =
+  `APP-2026-00026` -> `eaf432ea-...` exists
+- `parcel_id` **64** = **Mavalor** -> `69bfaafb-...` exists
+- `inspector_id` **6** = **Renato Dimaculangan**, `dimaculanganr@gmail.com` ->
+  `ddcebeac-...`
+- `scheduled_date` `2026-09-23`, `deadline_date` `2026-10-23`,
+  `assigned_notes` `Loop 4 Round 2 reinspection E2E.`
+- local status `assigned`, `confirmed_latitude`/`confirmed_longitude` `NULL`,
+  `completed_at` `NULL` - consistent with the remote row's preserved
+  `in_progress` / `current_step = 1`.
+
+The decisive cross-check is **Mavalor**. The surviving `activity_log` row
+records Renato completing "Step 1: Site verification" at **Mavalor** on
+2026-09-26, and restored parcel 64 **is** Mavalor. The corrupted mapping
+pointed real completed work at a different site; the restored mapping points it
+back at the site the inspector actually visited. FieldSync's own log and the
+local record agree with each other.
+
+### 5. All twenty preconditions re-verified against the live remote, read-only
+
+`id`; `bridge_source_id IS NULL`; `local_inspection_id = 37`;
+`status = in_progress`; `current_step = 1`;
+`started_at = 2026-09-26T18:05:46.831173+00`;
+`created_at = 2026-09-22T13:48:04.35162+00`;
+`updated_at = 2026-10-01T02:45:13.120729+00` (the hijack timestamp);
+`supabase_application_id = 7a87a08d-...`; `supabase_parcel_id = 2676c039-...`;
+`assigned_inspector_id = c4e22f50-...`; `scheduled_date = 2026-10-01`;
+`deadline_date = 2026-10-03`; `assignment_instructions = 'ddd'`;
+`assigned_by_imaps_user_id = 4`; `assigned_by_name = 'Jyerine Desunia'`;
+`field_job_photos` **0**; `field_job_reviews` **0**; `activity_log` **1**;
+`local_inspection_id = 37` present on exactly **1** row in the whole table.
+
+Loop 10 guard, also verified read-only: job `1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999`,
+`bridge_source_id = rosario-imaps-local-0921-a`, `status = in_progress`,
+`current_step = 1`, `started_at = 2026-10-01T03:39:49.20847+00`,
+`updated_at = 2026-10-01T03:39:49.349537+00`.
+
+### 6. The preservation contract, and how it is enforced
+
+The whole row is snapshotted before the write. After the write, `to_jsonb` of the
+after-row minus **only** the seven mapping columns and `updated_at` must equal
+the same projection of the before-row. Two further checks close the loopholes a
+per-key comparison would leave: the two key sets must be identical, and the two
+whole projected documents must be equal as text. `field_job_photos`,
+`field_job_reviews` and `activity_log` are compared by count **and** by
+`md5(string_agg(t::text, ',' ORDER BY t.id))`. The Loop 10 job is compared
+byte-for-byte, `updated_at` included, because this repair does not target it and
+so must not move it at all.
+
+### 7. Behavioural validation, in throwaway databases, never the real bridge
+
+The artifact's own statements were executed against a scratch PostgreSQL
+database that reproduces the real table shapes, the real `set_updated_at_utc()`
+trigger, and the exact audited row in its exact corrupt state - with only the
+schema qualifier changed. The real bridge was never referenced.
+
+- **Positive run: applied and committed, `psql` exit 0.** Every postcondition
+  held: preservation byte-identical, `updated_at` advanced through the trigger,
+  dependent evidence unchanged (`photos=0, reviews=0, activity_log=1`), Loop 10
+  job byte-identical, and exactly **1** row resolving for
+  `(rosario-imaps-local-0921-a, 37)`. An independent read-back in a fresh psql
+  session confirmed the repaired mapping persisted.
+- **Drift run: refused, `psql` exit 3.** The identical fixture was re-created
+  and then written once more by "the other environment" before the repair ran.
+  The `updated_at` precondition refused it, and a read-back proved the row was
+  left exactly as the drift left it - `bridge_source_id` still `NULL`, the
+  drifted values intact. This is the guard doing its job: the audited
+  corruption is a point in time, and a second hijack invalidates the plan.
+
+Both scratch databases were dropped and confirmed absent.
+
+### 8. Three defects this validation caught in the artifact itself
+
+Recorded because they would each have aborted a correct apply against the real
+bridge, and because a text-only review had passed all three:
+
+1. `RAISE NOTICE '...', v_n;` with no `%` placeholder is a PL/pgSQL error
+   (`too many parameters specified for RAISE`). Under `ON_ERROR_STOP` this
+   aborted the transaction immediately after a successful write.
+2. `GET DIAGNOSTICS v_n = ROW_COUNT;` in a `DO` block *separate* from the
+   `UPDATE` always reads `0`, because `ROW_COUNT` is scoped to the statement's
+   own context. The artifact would have reported `the UPDATE affected 0 row(s)`
+   and rolled back a correct repair. The `UPDATE` now lives inside the same
+   `DO` block, so it is still exactly one statement against exactly one key.
+3. The preservation join used `USING (key)` against `jsonb_each(...) AS b(k, v)`.
+   The column-list alias renames the columns, so `USING (key)` fails with
+   `column "key" specified in USING clause does not exist in left table`. Now
+   `ON b.k = a.k`.
+
+A fourth issue was corrected as a design fault rather than a crash: the
+"nothing created or deleted" postcondition hardcoded `field_jobs` to 16 rows.
+That would abort a valid repair if an unrelated job were created between the
+audit and the apply. It now compares against the count snapshotted at the start
+of the same run, which is the property that actually matters.
+
+### 9. Status
+
+**APPLIED / VERIFIED.** An authorized operator applied and committed
+`database/sql/2026_10_02_repair_teshow_round2_after_bridge_namespace.sql`.
+The finalization pass then performed only read-only backend queries; it did not
+re-execute the repair or any other remote SQL.
+
+### 10. Read-only post-apply verification
+
+- Teshow resolves exactly once by UUID and exactly once by
+  `(bridge_source_id, local_inspection_id) = (rosario-imaps-local-0921-a, 37)`.
+- The verified row is UUID `a761b17a-3fad-44ed-b451-7f0af0e41183`, application
+  `eaf432ea-8f26-4266-bf4b-ca88887ac470`, parcel
+  `69bfaafb-a5e2-4871-b9d0-830ea0599b3f`, and inspector
+  `ddcebeac-2217-41c5-a6e2-d7f873db9af2` (Renato).
+- FieldSync lifecycle remains `in_progress` / step `1`; trigger-managed
+  `updated_at` is `2026-10-02T03:02:20.971649+00:00`.
+- Dependent evidence remains `photos=0`, `reviews=0`, `activity_log=1`.
+- The backend equivalent of FieldSync's inspector filter,
+  `assigned_inspector_id = ddcebeac-2217-41c5-a6e2-d7f873db9af2`, returns the
+  Teshow UUID exactly once: **BACKEND VISIBILITY PASS**.
+- Round 1 / local inspection `36` remains exactly one row, UUID
+  `76d79ab8-e38e-4682-ada2-a67ac84dde00`, `completed` / step `6`, on the same
+  application, parcel, source and inspector.
+- Loop 10 UUID `1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999` remains on source
+  `rosario-imaps-local-0921-a`, `in_progress` / step `1`; Loop 10 remains
+  **PARTIAL / FIELD ACCEPTANCE PENDING**.
+- Device confirmation is still **PENDING**. No FieldSync source was changed.
+
+### 11. Operational boundary
+
+No queue worker was started **in this pass** (pass-scoped, not current state:
+`php artisan queue:work` is RUNNING as PID 48352, the project's own known expected dev
+worker, already verified during the Teshow recovery closure). No FieldSync change. No
+master merge, sync, rebase or push. No `.env` or `.env.testing` staging or commit. No credential, token,
+handshake key or database password recorded. No GPS value faked, no proximity
+rule bypassed, no completion manufactured, and no inspection progress edited
+directly.
+
+### 2026-10-02 - Teshow recovery closure + Loop 10 resume - **NO DB WRITE** - DOCS-ONLY ACCEPTANCE NOTES
+
+1. **Date/time:** 2026-10-02. **STATUS: Teshow recovery CLOSED; Loop 10 remains PARTIAL / FIELD ACCEPTANCE PENDING.** **Schema change: NONE. Data change: NONE. Forward SQL: NONE. Migration: NONE.** No Supabase write, no iMAPS write, no FieldSync change, no master change. Documentation only.
+2. **Branch:** `fix/bridge-source-namespace-collision`, at `d48ea25`. Same branch only; no merge, sync, rebase or push of `master`.
+3. **Device confirmation recorded: PASS.** Teshow Round 2 is visible on the FieldSync device, and the backend row it resolves to is correct: job `a761b17a-3fad-44ed-b451-7f0af0e41183`, `local_inspection_id 37`, `bridge_source_id rosario-imaps-local-0921-a`, application `eaf432ea-…` (APP-2026-00026 / Teshow), parcel `69bfaafb-…` (local parcel 64, Jose Dimayuga, Mavalor), inspector `ddcebeac-…` (Renato / Hubbie), with `status in_progress`, `current_step 1`, `started_at 2026-09-26T18:05:46.831173+00:00`, `step_timestamps {"1": "2026-09-26T17:50:46.146511Z"}` and Renato's Mavalor `activity_log` row all intact. Backend and device now agree on round, site and inspector.
+4. **Historical review limitation recorded.** `technical_reviews` 75 (`review_round 1`, `Needs Site Inspection`, `site_inspection_task_id 36`) and 76 (`review_round 2`, `Requires Reinspection`, `site_inspection_task_id 37`), both `zoning_application_id 132`, `parcel_id 64`, `reviewed_by 4`, were written **2026-09-22** — five days before Loop 8 introduced `reviewed_site_inspection_id`, `resolveReviewedInspectionId()` and the `PushPlanningReviewToSupabase` transport (**2026-09-27**). `reviewed_site_inspection_id` is therefore legitimately **NULL** on both, and **no Planning Review card is expected in FieldSync** for `APP-2026-00026` unless a future valid post-Loop 8 review is created normally.
+5. **Review data changed: NO.** Verified read-only after the closure work: review 75 and 76 are byte-identical to the pre-closure audit on `decision`, `review_round`, `site_inspection_task_id`, `reviewed_site_inspection_id`, `parcel_id`, `zoning_application_id` and `updated_at`. No backfill. No inferred linkage. No hand-created `field_job_reviews` row. No FieldSync UI change.
+6. **Why the NULL must not be "fixed".** Loop 8's own contract states a NULL `reviewed_site_inspection_id` "is the honest answer when no completed round exists — no link is invented, and no historical row is backfilled", and that `site_inspection_task_id` (the NEW round a decision creates) is explicitly NOT a synonym of the reviewed round. Inferring `36` for review 76 from `review_round = 2` is precisely that forbidden inference. Review 75 is doubly excluded: `Needs Site Inspection` is deliberately outside `TRANSPORTABLE_DECISIONS` because it is the initial scheduling decision with no reviewed round.
+7. **No transport failure occurred — recorded so it is not re-investigated.** `field_job_reviews` = 0 rows. `failed_jobs` = 14 rows and **0** of them name `PushPlanningReviewToSupabase`; all 14 are `PushInspectionToSupabase` on unrelated rounds. The `jobs` queue held 0 pending rows before the worker was started. Both dispatch sites guard on `if ($reviewedSiteInspectionId !== null)`, so with the column NULL neither row ever built a transport; there is nothing to replay or retry.
+8. **iMAPS web UI unaffected and already correct.** `ApplicationController::show` selects `technical_reviews.*` for `zoning_application_id = 132` (left-joined to `users` for `reviewed_by_name`, ordered by `review_round DESC`) and passes `technicalReviews` to `Applications/Show`, which renders both reviews in the per-parcel review panel and in the History timeline. The reviews were always visible in iMAPS; only the FieldSync card is absent, for the reason in item 4.
+9. **Maintenance mode: OFF.** No `storage/framework/down`; no `php artisan down` in effect.
+10. **Queue worker: RUNNING, using the project's existing process only.** Command `php artisan queue:work` — byte-identical to the project's `npm run dev:queue` script and the same command the project's existing dev runner already spawns alongside `php artisan serve`. No supervisor, service, watchdog, systemd unit or new process model was invented or installed. `queue:restart` was deliberately NOT run, to avoid signalling the live worker.
+11. **Duplicate avoided.** During the check a second `queue:work` was started and immediately stopped again, leaving exactly ONE `queue:work` process — the project's own, **PID 48352**, started 11:45:41. Liveness verified: process alive, `Responding = True`, and CPU delta of **0 s over a 3 s sample**, i.e. healthy and idle in its wait loop rather than spinning or blocked.
+12. **Starting the worker was provably safe and had no remote effect.** `jobs` held **0 pending rows** before the worker was started, so the start was a no-op by construction and could not write to Supabase. A byte-for-byte remote snapshot diff taken immediately before and after (worker running) confirms it: `field_jobs` 16, `supabase_zoning_applications` 24, `supabase_parcels` 20, `field_job_photos` 5, `activity_log` 7, `field_job_reviews` 0 — **all UNCHANGED**.
+13. **Teshow protected: PASS.** Row `a761b17a-3fad-44ed-b451-7f0af0e41183` byte-identical across the closure window.
+14. **Loop 10 protected: PASS.** Frozen resume baseline `APP-2026-00030` / application 145 / round 41 / job `1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999` byte-identical: `bridge_source_id rosario-imaps-local-0921-a`, `status in_progress`, `current_step 1`, application `b108513f-…`, parcel `cf974dc9-…`, inspector `7abb9a75-…` (Gemini), `updated_at 2026-10-01T03:39:49.349537+00:00`.
+15. **Duplicate jobs: 0.** 16 rows across 16 distinct `local_inspection_id` values; zero local ids carry more than one `field_jobs` row anywhere in the namespace.
+16. **`field_job_reviews` still 0.** Verified before and after.
+17. **Loop 10 status UNCHANGED: PARTIAL / FIELD ACCEPTANCE PENDING.** Nothing here advanced a checkpoint. CP1–CP6 remain PASS; CP7–CP13 remain **FIELD ACCEPTANCE PENDING** because FieldSync enforces a real 30 m proximity rule against the assigned parcel and no device session has taken place on site. **Next: resume Loop 10 at CP7** against the frozen baseline in item 14.
+18. **Validation:** documentation-only change. Full Unit suite 735 / 4028 PASS with the 16 pre-existing deprecations and 9 pre-existing skips unchanged; `npm run build` PASS; `php -l` clean; `git diff --check` clean. No source file was modified, so no behaviour changed and no focused test needed updating.
+19. **Still outstanding, unchanged from the prior entries:** Loop 10 CP7–CP13 field acceptance; the historical round-35 reverse-sync gap (open separate, predates Loop 10); and the `reference_number` cross-environment collision, still recorded and deliberately unfixed.
+20. **Not done:** no Supabase write, no iMAPS write, no `field_job_reviews` creation, no technical-review backfill or inference, no FieldSync change, no queue dispatch of any pending job, no new worker/supervisor setup, no master change.
+
+---
+
+## 2026-10-02 - READINESS PROVENANCE: ISOLATED FIELD APK BUILD - **NO SUPABASE WRITE IN THE BUILD WINDOW**
+
+**Status: build PASS. Loop 10 unchanged: PARTIAL - FIELD ACCEPTANCE PENDING.
+This entry records provenance only. No repair, re-apply or cleanup was
+performed.**
+
+### 1. The distinction that must not be collapsed
+
+Two separate events were briefly conflated. Both are real; they are separated
+here by timestamp, and the ordering is what resolves it.
+
+**HISTORICAL PRE-BUILD WRITE - AUTHORIZED, TESHOW REPAIR.**
+`2026-10-02 03:02:20 UTC` (`11:02:20` local). This is the authorized manual
+apply of the guarded repair artifact against
+`a761b17a-3fad-44ed-b451-7f0af0e41183`, using the same artifact whose twenty
+preconditions and postconditions were proven before delivery. It is
+**COMPLETE**, it is **not** an incident, and no investigation is warranted.
+Teshow remains closed at the backend level; device confirmation is recorded
+separately in the acceptance record.
+
+**ISOLATED APK BUILD WINDOW - NO SUPABASE WRITE OBSERVED.**
+`04:41:53` - `04:47:14 UTC` (`12:41:53` - `12:47:14` local). Every Supabase
+interaction in this window was a read-only `SELECT`. No `INSERT`, `UPDATE`,
+`DELETE`, DDL or Management API write occurred. The authorized repair
+**preceded this window by 1 h 39 m**, so the build neither produced nor
+repeated it.
+
+### 2. Corrected scope of the fingerprint evidence
+
+The before/after fixture hash
+`619cba4e60a4bd46fd3e53a777611cbd` is valid evidence for one narrow claim only:
+**the Loop 10 fixture was unchanged DURING the build window.** It is not
+evidence about the earlier authorized repair, because the "before" sample was
+taken after that repair had already committed. Stability across a window is
+silent about everything before it. Citing it as proof that no write had ever
+occurred would have been a false negative; the narrow claim is the correct one.
+
+### 3. Isolated debug APK build - PASS
+
+From the authoritative checkout `imaps_fieldsync_main` (`origin`
+`imaps-fieldsync`, branch `fix/home-active-assignments`, HEAD `be7b7a3`). The
+smaller/stub FieldSync checkout is not the acceptance gate and was not used.
+
+`flutter clean` exit 0; `flutter pub get` exit 0; `flutter build apk --debug -v`
+exit 0, `BUILD SUCCESSFUL in 5m 11s`. APK
+`app-debug.apk`, 194,564,241 bytes, SHA-256 `DA2EDF06...`. Zero error
+signatures across 7,774 verbose lines. `pubspec.lock` preserved byte-identical
+(`210930DC...`); `pubspec.yaml` unchanged. All 128 git-tracked files under
+`lib/`, `android/` and `test/` byte-identical; HEAD and the 38 pre-existing
+dirty entries unchanged. No test runner was active and no `flutter test` was
+run.
+
+### 4. FieldSync findings - CLASSIFIED CODEX-OWNED, NOT FIXED
+
+Recorded with evidence, changed nothing. **Codex Task 01** (Home Active
+Assignments logic + render/layout, and the `home_active_assignments_test.dart`
+assertion) was excluded from Cline entirely.
+
+- **A** `pre_loop3_cleanup_contract_test.dart` scheduling lifecycle separation.
+- **B** `home_active_assignments_test.dart` render/layout - **Codex Task 01**.
+- **C** CP7 GPS: code gates `distance <= 30.0` while the UI says "In Zone
+  (< 30 m)"; **no accuracy or staleness gate exists in the GPS path**.
+- **D** checklist rework reset gap: `hydrateForRework` restores prior answers and
+  resets nothing, while per-step `_reworkStep(1..6)` is ignored because
+  `hydrateForRework` hardcodes `_currentStep = 1`.
+- **E** Android readiness: `applicationId` and `namespace` are both
+  `com.example.imaps_fieldsync`, label `imaps_fieldsync`, and all three SDK
+  levels delegate to `flutter.*` and are therefore **unpinned**.
+- **F** `webhook_test.dart:104` performs a live `client.from('field_jobs')
+  .insert({...})` with no tag, skip or group guard, so it is eligible to run in
+  a normal regression suite against the **shared live** database.
+
+Item C was **not** "fixed" by loosening the on-screen text, and the genuine
+30 m proximity rule was not bypassed or weakened. Running no `flutter test` at
+all is what kept item F from writing to the live bridge.
+
+### 5. Generated tracked artifact - RECORDED ONLY, NOT FIXED
+
+`android/build/reports/problems/problems-report.html` is a Gradle-generated
+report that is tracked in git, and the build rewrote it, so it now differs from
+`HEAD` (deprecation count `15` -> `30`, and `"requestedTasks"` now
+`assembleDebug`). Per instruction it was **not** untracked, removed, reverted or
+committed. Repository hygiene finding for Codex: a machine-generated report
+should not be version controlled, and it will keep producing a spurious diff on
+every build. The doubled count is the same deprecation evaluated in two paths,
+not a doubling of real problems.
+
+### 6. Fixture preserved
+
+Remote `619cba4e...` and local `01ebebc0...` both stable; 16 jobs total; Loop 10
+job `1f9df2ac-...` byte-identical at `updated_at 2026-10-01T03:39:49.349537+00`
+and never a write target. Frozen, not cleaned up.
+
+### 7. Deliberately not done
+
+No FieldSync source edited, no finding fixed, no Codex branch touched, no
+report untracked, no `flutter test` run, no fixture alteration, no `master`
+merge/sync/rebase/push, no branch merged, no `.env` or `.env.testing` change.
+
+---
+
+## 2026-10-02 - FINAL READINESS STATE RECONCILIATION - **MAINTENANCE OFF, KNOWN DEV WORKER RUNNING, FIXTURE FROZEN**
+
+**Status: reconciled. Loop 10 unchanged: PARTIAL - FIELD ACCEPTANCE PENDING.
+No source change, no database change, no Supabase write.**
+
+### 1. Queue worker - KNOWN EXPECTED, NOT AN UNEXPLAINED PROCESS
+
+The single `queue:work` process is **PID 48352**, started `11:45:41`, and it is
+**RUNNING / KNOWN EXPECTED**. It was already verified during the earlier Teshow
+recovery closure, where it was established as the project's own single dev
+worker, spawned by the project's existing dev runner alongside
+`php artisan serve`. It is the same command as the project's `npm run dev:queue`.
+
+| | |
+|---|---|
+| Worker PID | **48352** (unchanged; not stopped, not replaced) |
+| `queue:work` process count | **exactly 1** |
+| Second worker started | **NO** - none started in this pass |
+| `queue:restart` | **NOT RUN** - deliberately, to avoid signalling the live worker |
+| Supervisor / service / watchdog | **NONE** introduced |
+
+Any earlier note reading "queue worker: NONE" is **pass-scoped, not current
+state**, and has been annotated as superseded rather than silently deleted. The
+historical claim that *that* pass started no worker remains true; only its use
+as a description of the present was wrong.
+
+### 2. Maintenance mode - OFF
+
+`php artisan up` was run (exit `0`). `storage/framework/maintenance.php` no
+longer exists. There is no active database maintenance. A real read-only HTTP
+`GET` to the running server returned **HTTP 200** on both `/` and `/login`, and
+`php artisan route:list` returned exit `0` with **77 routes**, so the
+application is genuinely serving rather than merely un-flagged.
+
+### 3. Pending jobs unchanged - a lift of maintenance wrote nothing
+
+| | Before | After |
+|---|---|---|
+| `jobs` (pending) | **0** | **0** |
+| `failed_jobs` | **14** | **14** |
+
+A zero-length queue means nothing could be dispatched, and the live worker is
+idle in its wait loop. No job was dispatched, queued or retried in this pass.
+
+### 4. Remote data - byte-for-byte unchanged
+
+| Check | Fingerprint | Result |
+|---|---|---|
+| All 16 `field_jobs` rows | `9d5d0bc2ac09fde40283a10dddc72ee5` before and after | **UNCHANGED** |
+| Loop 10 pair (`1f9df2ac-...`, `a761b17a-...`) | `619cba4e60a4bd46fd3e53a777611cbd` before and after | **UNCHANGED** |
+| Teshow `a761b17a-...` | `updated_at 2026-10-02 03:02:20.971649+00`, `bridge_source_id rosario-imaps-local-0921-a`, `assignment_instructions 'Loop 4 Round 2 reinspection E2E.'` | **UNCHANGED** |
+
+Every Supabase interaction in this pass was a read-only `SELECT`. The Loop 10
+resume baseline `APP-2026-00030` / application 145 / round 41 / job
+`1f9df2ac-e7a5-4ea2-a6de-89f5ebd2a999` remains frozen and ready for CP7.
+
+### 5. `loop8_types_tmp.php` - MISSING UNTRACKED TEMP, NON-BLOCKING
+
+The file is **gone from the working tree**. It was never tracked by git, so its
+contents are **not recoverable from history** and have **not** been recreated or
+inferred. Classified **NON-BLOCKING MISSING TEMP/EVIDENCE ARTIFACT**.
+
+Runtime-dependency check performed, and the finding is **NONE**:
+
+- no reference in any `.php`, `.json`, `.js`, `.mjs`, `.md`, `.yml`, `.yaml` or
+  `.env` file outside `vendor/`, `node_modules/`, `build/`, `.git/` and
+  `storage/`;
+- no reference in `composer.json`, `phpunit.xml`, `package.json` or `artisan`;
+- no stale entry in `vendor/composer/autoload_classmap.php`.
+
+Nothing in any source, test, doc or runtime path depends on it. The **32**
+remaining untracked evidence files are preserved and untouched.
+
+### 6. Loop 10 status - UNCHANGED
+
+**LOOP 10 REMAINS PARTIAL / FIELD ACCEPTANCE PENDING.** CP1-CP6 remain PASS;
+CP7-CP13 and the Round 1 -> 2 retention proof remain unproven and still require
+physical presence within 30 m of the San Carlos parcel. Nothing in this
+reconciliation advanced a checkpoint.
+
+### 7. Deliberately not done
+
+No Supabase write. No job dispatched. No FieldSync modification. No iMAPS source
+modification. `loop8_types_tmp.php` not recreated. `master` not touched, nothing
+merged. Existing worker PID 48352 left running and unsignalled; no second worker
+started.
+
+---
+
+## 2026-10-03 - Reports & Support V2 shared reporting schema - **APPLIED / VERIFIED**
+
+<!-- reports-and-support-v2:apply -->
+
+**APPLY STATUS: APPLIED / VERIFIED**
+
+Applied in one transaction and verified read-only against the live project. This
+entry supersedes its own earlier `APPLYING / PENDING VERIFICATION` state, which was
+recorded before execution and left the VERIFICATION section deliberately pending.
+
+### 1. WHY
+
+- One shared model for **Technical Issue** and **Application Support**, so a
+  FieldSync-inspector-authored report can be either an app-level problem or a
+  request about one specific application, without a second table or a second
+  reference format.
+- **Durable application identity.** A support report must keep resolving to its
+  application, and therefore to its current Planning Officer, after the FieldSync
+  task that produced it is archived.
+- **Bridge namespace safety.** Report-to-application resolution must never use a
+  bare local integer id, because those are only unique inside one iMAPS database
+  and this Supabase project is shared.
+- **FieldSync report filing hardening.** The existing permissive INSERT policy
+  checked only `auth.uid() = inspector_id`, and the existing `field_jobs` UPDATE
+  policy let an assigned inspector rewrite the very identity fields a filing check
+  must trust.
+- **Least-privilege DB boundary.** `anon` and `authenticated` held eight
+  privileges each on three shared tables; RLS was the only thing preventing
+  misuse.
+
+### 2. WHEN
+
+| | |
+|---|---|
+| Approval | 2026-10-03, user / HEAD DB approval GRANTED |
+| Apply date | 2026-10-03 |
+| Project | `laapipjyprmmaylunxib` |
+| Bridge source identity | `rosario-imaps-local-0921-a` |
+| Identity resolution | `App\Services\BridgeSourceIdentity::id()` -> `config('bridge.source_id')` -> `IMAPS_BRIDGE_SOURCE_ID` |
+| Approved artifact SHA-256 | `D542242BEB5F7CFDD7DC1DFA3CF512E236ECF817E9EC00070FEFAAEB4F2616BC` |
+| Form | one transaction, sections B-I |
+
+### 3. CHANGE
+
+**`diagnostic_reports` — 13 new columns**
+
+`report_type` (`NOT NULL DEFAULT 'technical_issue'`), `field_job_id`,
+`supabase_application_id`, `bridge_source_id`, `support_category`,
+`affected_field`, `requested_change`, `expected_behavior`, `blocks_field_work`,
+`occurred_at`, `connectivity_state`, `app_version`, `os_version`.
+
+No `UPDATE` and no backfill: existing rows read as Technical Issues through the
+column default.
+
+**New foreign keys**
+
+| Constraint | Target | Delete |
+|---|---|---|
+| `dr_field_job_fk` | `field_jobs(id)` | `ON DELETE SET NULL` |
+| `dr_application_fk` | `supabase_zoning_applications(id)` | `ON DELETE RESTRICT` |
+
+**New CHECK constraints**
+
+`dr_report_type_ck` (closed `report_type` vocabulary) and `dr_report_identity_ck`
+(at-rest identity and controlled support-category coherence). No at-rest
+restriction on `status` or on the review fields, so trusted Admin/support review
+remains possible after initial filing.
+
+**New `field_jobs` identity protection**
+
+`dr_protect_field_job_identity()` plus the `dr_guard_field_job_identity`
+`BEFORE UPDATE` trigger. Ordinary authenticated callers cannot alter `id`,
+`local_inspection_id`, `supabase_application_id`, `supabase_parcel_id` or
+`bridge_source_id`. Ordinary operational updates and trusted `service_role`
+bridge operations remain allowed.
+
+**New report filing policy**
+
+`dr_support_filing_is_valid(...)` (`SECURITY INVOKER`) plus the
+`dr_support_filing_valid` **`AS RESTRICTIVE FOR INSERT TO authenticated`** policy.
+Both existing permissive own-report policies are preserved unchanged.
+
+**Grant hardening**
+
+| Object | `authenticated` | `anon` |
+|---|---|---|
+| `diagnostic_reports` | `SELECT, INSERT` | none |
+| `field_jobs` | `SELECT, UPDATE` | none |
+| `supabase_zoning_applications` | `SELECT` | none |
+| `diagnostic_report_seq` | `USAGE` | none |
+
+`service_role` grants are untouched. The existing authenticated Admin job INSERT
+policy is preserved as a policy but no longer has a table privilege to act on,
+because no product consumer creates jobs as an authenticated client.
+
+**New indexes**
+
+`dr_reports_type_status_created_idx`, `dr_reports_support_app_idx`,
+`dr_reports_field_job_idx`.
+
+**Preserved unchanged**
+
+`set_diagnostic_reference`, `touch_diagnostic_report`,
+`generate_diagnostic_reference()`, `public.diagnostic_report_seq`,
+`diagnostic_reports_status_check`, both existing own-report policies, every
+`field_jobs` and mirror policy, the legacy report row, and all `service_role`
+grants. No second reference generator and no second reference format was
+introduced.
+
+### 4. VERIFICATION
+
+**4.1 Apply execution**
+
+| | |
+|---|---|
+| Started (UTC) | `2026-10-03 01:20:46` |
+| Completed (UTC) | `2026-10-03 01:20:47` |
+| Duration | 1.49 s |
+| Transport | Supabase Management API, project `laapipjyprmmaylunxib` |
+| HTTP status | **201** |
+| Transaction | **COMMITTED** |
+| Error | **NONE** |
+| Statement text SHA-256 | `0592CB79BE838B15C5E394C0DA02B92D0A71B46A3C3AE6219613188D280AED83` |
+
+The statement text is the artifact's own apply region, artifact lines 49-201,
+**extracted rather than retyped**: the `-- BEGIN APPLY` marker, `BEGIN;`, sections
+B through I, and `COMMIT;`. The artifact was re-hashed immediately before
+execution and still matched
+`D542242BEB5F7CFDD7DC1DFA3CF512E236ECF817E9EC00070FEFAAEB4F2616BC`.
+
+**4.2 Pre-apply drift gate**
+
+18 structural fingerprints were compared with the frozen V2.2/V2.3 baseline; a
+19th confirmed that none of the V2 objects existed.
+
+| Gate | Result |
+|---|---|
+| SCHEMA DRIFT | **NO** |
+| POLICY DRIFT | **NO** |
+| TRIGGER DRIFT | **NO** |
+| ACL DRIFT | **NO** |
+| Partial apply detected | **NO** |
+
+**4.3 Objects created**
+
+13 columns on `diagnostic_reports`; `dr_field_job_fk`; `dr_application_fk`;
+`dr_report_type_ck`; `dr_report_identity_ck`; `dr_protect_field_job_identity()`;
+`dr_guard_field_job_identity`; `dr_support_filing_is_valid(uuid,uuid,text,text,text,text,text,text,text)`;
+`dr_support_filing_valid`; `dr_reports_type_status_created_idx`;
+`dr_reports_support_app_idx`; `dr_reports_field_job_idx`.
+
+**4.4 Live definition equivalence**
+
+Both new function bodies exist **verbatim** in the approved artifact. Both are
+`SECURITY INVOKER` with `search_path` pinned empty. Neither the function bodies nor
+the policy hardcode a deployment source id.
+
+**4.5 Post-apply state, read-only**
+
+- New columns: all 13 present at ordinal positions 14-26 with the expected types,
+  nullability and defaults; `report_type` is `text NOT NULL DEFAULT 'technical_issue'`.
+- Constraints: `dr_field_job_fk` is `ON UPDATE RESTRICT ON DELETE SET NULL`;
+  `dr_application_fk` is `ON UPDATE RESTRICT ON DELETE RESTRICT`; both CHECKs match
+  the approved definitions; `diagnostic_reports_status_check`,
+  `diagnostic_reports_inspector_id_fkey` (still `ON DELETE CASCADE`), the primary
+  key and the `reference_code` unique key are unchanged.
+- Policies: `Inspectors create own reports` and `Inspectors view own reports`
+  preserved unchanged; `dr_support_filing_valid` created as
+  `RESTRICTIVE / INSERT / authenticated`; **0** report `UPDATE` or `DELETE`
+  policies exist; all `field_jobs` and mirror policies unchanged.
+- Job guard: `dr_guard_field_job_identity` is enabled (`tgenabled = 'O'`),
+  `BEFORE UPDATE ... FOR EACH ROW`. `authenticated` and `anon` hold **no** EXECUTE
+  on `dr_protect_field_job_identity()`; only `postgres` and `service_role` do.
+- Reference mechanism: `set_diagnostic_reference`, `generate_diagnostic_reference()`
+  and `touch_diagnostic_report` are intact and enabled; `diagnostic_report_seq`
+  still has `last_value = 1, is_called = true`, so **no** reference code was
+  consumed; exactly **one** function in `public` generates `reference_code`, so no
+  second generator exists.
+- Grants, confirmed by `has_table_privilege` / `has_sequence_privilege` /
+  `has_function_privilege`:
+
+  | Check | Result |
+  |---|---|
+  | `anon` on all three tables, and on the sequence | **false** for every privilege |
+  | `authenticated` `diagnostic_reports` SELECT / INSERT | true / true |
+  | `authenticated` `diagnostic_reports` UPDATE | false |
+  | `authenticated` `field_jobs` SELECT / UPDATE | true / true |
+  | `authenticated` `field_jobs` INSERT | false |
+  | `authenticated` mirror SELECT | true |
+  | `authenticated` mirror UPDATE | false |
+  | `authenticated` sequence USAGE / UPDATE | true / false |
+  | `anon` EXECUTE on the filing helper | false |
+  | `authenticated` EXECUTE on the filing helper | true |
+  | `authenticated` EXECUTE on the trigger function | false |
+  | `service_role` `field_jobs` INSERT and mirror UPDATE | true (trusted access preserved) |
+
+- Counts, before and after: `diagnostic_reports` 1 -> 1; `field_jobs` 16 -> 16;
+  `supabase_zoning_applications` 24 -> 24; `supabase_parcels` 20 -> 20;
+  `diagnostic_report_seq` unchanged. **Business rows deleted: 0.**
+
+**4.6 Legacy report**
+
+`DR-2026-0001` is byte-identical to its pre-apply fingerprint.
+
+| Field | Pre-apply | Post-apply |
+|---|---|---|
+| `id` | `0dcbfec0-2400-4c7f-af66-c4e4a8eb0d3d` | identical |
+| `reference_code` | `DR-2026-0001` | identical |
+| `inspector_id` | `ddcebeac-2217-41c5-a6e2-d7f873db9af2` | identical |
+| `title` / `module` / `status` | `error` / `sync center` / `submitted` | identical |
+| `created_at` / `updated_at` | `2026-09-07 11:02:05.01888+00` | identical |
+| `summary` length / SHA-256 | 3473 / `53230e9d...` | identical |
+| `report_type` | (column did not exist) | `technical_issue` |
+| `field_job_id`, `supabase_application_id`, `bridge_source_id`, `support_category` | (did not exist) | all NULL |
+
+The live `summary` contains a signed Supabase Storage URL, so it was never returned
+as text: only its length and a SHA-256 digest were compared.
+
+**4.7 Isolated executable security suite**
+
+Re-run after the apply, against the same approved artifact:
+
+```
+TOTAL 85 PASS     (74 PostgreSQL engine checks + 11 application-contract checks)
+0 FAIL
+```
+
+Engine: PGlite 0.3.16 / PostgreSQL 17.5, in memory, disposable. No production row
+was mutated to prove any negative case; the live project was verified structurally
+and read-only.
+
+**4.8 Namespace and protected fixtures**
+
+- `BridgeSourceIdentity::id()` = `rosario-imaps-local-0921-a`, confirmed through the
+  live runtime resolver.
+- Namespace coherence across all 16 jobs: 16 in this namespace, **16/16** with a
+  mirror namespace equal to the job namespace, **0** jobs pointing at a NULL-source
+  mirror.
+- Loop 10 job `1f9df2ac-...` (inspection 41): `in_progress`, step 1,
+  `updated_at 2026-10-01 03:39:49.349537+00`, unchanged. Local application 145 /
+  inspection 41 / parcel 77, unchanged.
+- Teshow job `a761b17a-...` (inspection 37): `in_progress`, step 1,
+  `updated_at 2026-10-02 03:02:20.971649+00`, matching its recorded fingerprint.
+- Local counts unchanged: 39 inspections, 80 technical reviews, 6 notifications,
+  74 applications, 10 delivery attempts.
+- Open-separate evidence deliberately **not** touched: 3 NULL-source mirrors
+  (local 136/137/138) and the duplicate `APP-2026-00030` mirror pair
+  (`4afe8a3d...` NULL-source vs `b108513f...` namespaced local 145) both still
+  present exactly as before.
+- Loop 10 remains **PARTIAL / FIELD ACCEPTANCE PENDING**; its 80 reviews still have
+  0 explicit `reviewed_site_inspection_id` links. This migration advanced no
+  Loop 10 checkpoint.
+
+### 5. ROLLBACK
+
+Rollback is a **separately approved** guarded operation and is never appended to
+an apply invocation. See the guarded rollback contract in the approved artifact,
+section K.
+
+It **refuses to discard retained support data**: if any Application Support report
+identity or any populated new field exists, the rollback aborts rather than
+deleting reports or nulling application identity to make itself succeed. It never
+deletes a report or a report-bearing application mirror. It does not reset
+`diagnostic_report_seq` or any reference code.
+
+A successful rollback restores the audited baseline grants, which are broader than
+the post-apply grants, so it is itself an explicit security decision.
+
+---
+
+## 2026-10-04 - Reports & Support response/status contract - **APPLIED / VERIFIED**
+
+Marker: `reports-and-support-response-v1`.
+
+**Why:** official Reports & Support response/status lifecycle. The V2 apply gave
+inspectors a way to *file* a report and gave Admin/PO visibility, but the database
+had no contract for **In Review -> official MPDO response -> Resolved / Won't fix**,
+no responder attribution, and nothing for FieldSync to consume. This change creates
+the database foundation for that lifecycle only.
+
+Applied to two surfaces under one explicit user approval.
+
+### 1. SCOPE
+
+| Surface | Database | What it received |
+|---|---|---|
+| Shared bridge | Supabase `laapipjyprmmaylunxib`, `public.diagnostic_reports` | safe inspector-facing response projection + lifecycle/security protection |
+| Local iMAPS | `imaps_db_0921`, `public.report_action_audit` | authoritative local evidence of who acted, what transition, when |
+
+**The product handling workflow is NOT implemented by this change.** No response
+endpoint, no status endpoint, no UI. Schema and audit foundation only.
+
+### 2. NEW REMOTE COLUMNS
+
+| Column | Type | Note |
+|---|---|---|
+| `response_message` | `text` NULL | the official response; only the safe projection reaches the inspector client |
+| `responded_by_name` | `character varying(255)` NULL | display snapshot, bounded by local `users.name varchar(255)` |
+| `responded_at` | `timestamptz` NULL | when the official response was issued |
+
+All three are nullable with no DEFAULT and no backfill, so all 4 existing reports
+read `NULL` and no historical response is fabricated.
+
+No `responded_by` and no local actor id were added: FieldSync wildcard-selects this
+table, so every added column reaches the inspector client. Canonical responder
+identity lives locally in `report_action_audit.performed_by`.
+
+### 3. SECURITY CHANGES
+
+- **status/response coherence** — `dr_response_coherence_ck`. `submitted`/`in_review`
+  require all three response fields NULL; `resolved`/`wont_fix` require all three
+  present with `response_message` and `responded_by_name` each containing at least
+  one non-whitespace character.
+- **2000-char response limit** — `dr_response_message_length_ck`,
+  `char_length(response_message) <= 2000`, enforced again in application validation
+  and not surfaced as UI clutter.
+- **terminal lifecycle trigger** — `dr_guard_response_transition` BEFORE UPDATE FOR
+  EACH ROW. Terminal is final: no reopen, and the official response cannot be
+  replaced by any writer. Narrow enough that an unrelated UPDATE is untouched.
+- **12-arg inspector filing validator** — `dr_support_filing_is_valid` extended from
+  9 to 12 arguments so that filing requires all three response fields NULL, closing
+  a gap the new columns would otherwise have opened: an authenticated inspector could
+  otherwise have filed their own report already carrying a fabricated response. The
+  superseded 9-arg overload is dropped; exactly one validator remains.
+- **deterministic function ACL** — applied as `REVOKE` from
+  `PUBLIC, anon, authenticated, service_role`, then grant back only the intent. This
+  is required because live `pg_default_acl` for functions in `public` grants EXECUTE
+  to `anon`, `authenticated` **and** `service_role` directly. Verified result:
+  validator `{postgres=X/postgres,authenticated=X/postgres}`, transition function
+  `{postgres=X/postgres}`. `service_role` provably never calls either
+  (`rolbypassrls = true`, so the RESTRICTIVE INSERT policy is never evaluated for it;
+  and a trigger function is never authorised at fire time).
+
+**`btrim()` was rejected as the non-blank test.** It strips ordinary spaces only, so
+tab-only, newline-only, carriage-return-only, form-feed-only, vertical-tab-only and
+mixed-whitespace-only responses all satisfied it. Six of seven whitespace-only inputs
+would have been accepted as an official response. The deployed test is
+`x ~ '[^[:space:]]'`.
+
+### 4. AUTHENTICATED PERMISSIONS — UNCHANGED
+
+| Role | SELECT | INSERT | UPDATE | DELETE |
+|---|---|---|---|---|
+| `authenticated` | yes | yes | **NO** | **NO** |
+| `anon` | no | no | no | no |
+| `service_role` | yes | yes | yes | yes |
+
+RLS enabled, not forced, 3 policies, **zero** UPDATE policies and **zero** DELETE
+policies. Status vocabulary unchanged at exactly four values. Five indexes unchanged.
+
+### 5. LOCAL iMAPS MIGRATION
+
+`database/migrations/2026_10_04_000000_create_report_action_audit_table.php`
+
+Purpose: authoritative local actor/action audit. Append-only; no `created_at` /
+`updated_at`. `report_id` is the remote UUID and deliberately has no foreign key
+because it lives in another database.
+
+Applied with
+`php artisan migrate --path=database/migrations/2026_10_04_000000_create_report_action_audit_table.php`
+— exact path, so no unrelated pending migration was pulled in.
+
+Resulting catalog, read back live:
+
+- 8 columns: `id`, `report_id`, `action`, `from_status`, `to_status`, `performed_by`,
+  `performed_by_name`, `performed_at`
+- 4 CHECK constraints: `_action_ck`, `_from_status_ck`, `_to_status_ck`,
+  `_transition_ck`
+- FK `performed_by -> users(id)` `ON DELETE RESTRICT`
+- **4 indexes**: `report_action_audit_pkey`,
+  `report_action_audit_report_id_performed_at_index` (ordered history),
+  `report_action_audit_report_id_action_unique` (retry idempotency),
+  `report_action_audit_one_terminal_unique` (one terminal outcome per report).
+  Aggregate `unique = 3`, `non_unique = 1`.
+- Deliberately **no** index on `performed_by`. Laravel's `constrained()` emits none,
+  PostgreSQL does not auto-index a referencing column, and no planned query needs it.
+  Verified live: 12 of 21 FKs in this schema have no supporting index, including the
+  two identical actor-`RESTRICT` precedents.
+
+Maximum two audit rows per report: `submitted -> terminal` is one,
+`submitted -> in_review -> terminal` is two, and three is unrepresentable.
+
+### 6. ARTIFACT SHA-256
+
+| Artifact | SHA-256 |
+|---|---|
+| Candidate A (remote forward SQL) | `50476673468C1CD9E6BBBB7BB47B22D20135F2955E6E07F1B6D4269F69EB69D7` |
+| Remote verification SQL | `3D14458478A141A15A0270235312C73724ECDD30C7A44F59824BBD06A63C5E0C` |
+| Remote guarded rollback SQL | `36E92ED57F459CF0496BAD82FC34B4380E10BE0A336EDD65E01E7B04CD157DC0` |
+| Candidate B (local migration) | `8EBF310835ABD03EF88CD31B09A71341A93619D3FB44D29141263FE3E5A25DB9` |
+
+All four re-verified immediately before execution; the repository copy of Candidate B
+re-verified after copying.
+
+### 7. VERIFICATION RESULTS
+
+Remote, executed via the approved read-only artifact, exit 0:
+
+| Check | Result |
+|---|---|
+| columns | 29 (was 26) |
+| `response_message` / `responded_by_name` / `responded_at` | `text` NULL / `varchar(255)` NULL / `timestamptz` NULL |
+| constraints | 10 (5 CHECK / 3 FK / 1 PK / 1 UNIQUE) |
+| coherence rule | contains `~ '[^[:space:]]'` for both fields; **no** `btrim` |
+| triggers | 3, all enabled |
+| validator | exactly 1, `pronargs = 12`; `pronargs = 9` returns zero rows |
+| function ACLs | exact match on both functions |
+| table grants / RLS / policies | unchanged; 0 UPDATE, 0 DELETE policies |
+| indexes | 5, unchanged |
+| status vocabulary | 4, unchanged |
+| existing report rows | 4, unchanged, all `submitted` |
+| response content | 0 rows carry any response field; 0 terminal rows |
+| whitespace truth table | 15/15 correct; 6 inputs `btrim()` wrongly accepted are now rejected |
+| multiline real-text response | accepted by the expression |
+
+`DR-2026-0003`: `application_support` / `submitted`, `local_application_id` 131, all
+three response columns `NULL`. **Not mutated.**
+
+Local: table created with **0 rows**, migration recorded at batch 17 (was 16),
+`php -l` clean.
+
+### 8. INITIAL STATE — NOTHING FABRICATED
+
+Remote: 4 reports, 0 with response content, 0 terminal.
+Local: 0 audit rows.
+
+No fabricated response, no fabricated responder, no fabricated audit row, no
+application reassignment, no PO assignment, no report status mutation.
+
+### 9. ROLLBACK
+
+**Guarded, on both surfaces. Never used reflexively.**
+
+- **Remote** — refuses once any official response exists, because dropping the
+  columns would destroy inspector-facing records that cannot be reconstructed. The
+  guard and the destructive DDL run in one transaction after
+  `LOCK TABLE ... ACCESS EXCLUSIVE`, so no response can be created between the check
+  and the drop. Restores the exact pre-apply 9-argument function ACL, including the
+  pre-existing direct `service_role` EXECUTE grant.
+- **Local `down()`** — refuses when audit rows exist, because the corresponding
+  remote reports are already terminal with an immutable official response, so the
+  local evidence can never be regenerated. Returns if the table is absent, takes
+  `ACCESS EXCLUSIVE` **before** counting so no insert can land between the emptiness
+  check and the drop, throws if any row exists, drops only when empty. No force mode,
+  no truncate, no row deletion.
+
+Destructive/behavioural rollback tests (74-77, 79, 81) were deliberately **not**
+executed against the working database; the live check was structural/source-contract
+only, per the approved plan.
+
+### 10. KNOWN DEFECT FOUND DURING VERIFICATION
+
+The locked remote verification artifact's **V17b `expectation` column** has an
+inverted boolean branch and labels correctly-rejected rows `FAIL`. The applied schema
+is **not** implicated: its sibling `constraint_verdict` column is correct on all 10
+cases, and an independently written check with corrected logic returns `OK` on all 10.
+
+The locked artifact was **not** modified (SHA `3D144584—` preserved). Correcting the
+`expectation` expression needs a separate decision.
+### 2026-10-05 - Development Support escalation episodes - LOCAL schema APPLIED + VERIFIED
+
+1. **Date/time:** 2026-10-05.
+2. **Loop / issue:** Reports & Support post-2C. An Admin needs an auditable internal path to consult Development Support about a Technical Issue without that consultation competing with, or being silently dropped by, the report lifecycle.
+3. **System:** iMAPS application source, one local Laravel migration, documentation. **No Supabase DDL, no RLS, no FieldSync DB change, no OneSignal, no role change.** FieldSync received only an uncommitted, separately-reviewed presentation diff that is NOT part of this entry.
+4. **Environment/project/database:** `C:\Users\Ralph Lauren\iMAPS`; local iMAPS PostgreSQL database `imaps_db_0921` on `pgsql`; shared Supabase project `laapipjyprmmaylunxib` **untouched**.
+5. **Business reason:** An internal consultation must be recorded as evidence - who asked, what came back, who closed it - and must not be able to leave a Technical Issue permanently unanswerable. The row is the authoritative episode record; there is deliberately no second escalation audit table.
+6. **Before state:** `report_escalations` **ABSENT**. `migrations` ledger 17 rows, max batch 17, zero escalation entries. Baseline counters: `report_action_audit` 3, `notifications` 7, `zoning_applications` 74, `users` 7, `site_inspections` 39. Remote `diagnostic_reports` 6 rows - `DR-2026-0001` in_review, `DR-2026-0002` and `DR-2026-0004` submitted technical issues, `DR-2026-0003` and `DR-2026-0006` submitted application support, `DR-2026-0005` resolved. `activity_log` 9 rows across 5 event types.
+7. **Exact SQL / operation:** One local migration file, `database/migrations/2026_10_05_000000_create_report_escalations_table.php`, creating table `report_escalations`, 3 indexes (one partial unique) and 7 CHECK constraints. Exact contract in `CANONICAL_DATABASE_SCHEMA.md` marker `[SCHEMA-ADD-010]`. **User approval received: YES - APPLY.** Recovery snapshot taken first: `pg_dump --schema-only --no-owner`, SHA-256 `0D9D2E4D2A8BACD3411F558E65C16458D4722D3255B9A37DBF20B1250CA17694` (59,828 bytes; `report_escalations` absent, `report_action_audit` present).
+8. **After state:** `report_escalations` present with **0 rows**. `migrations` ledger 17 -> 18 with exactly one new entry `2026_10_05_000000_create_report_escalations_table` at batch 18. 11 columns, 3 `users(id) ON DELETE RESTRICT` foreign keys, **no foreign key on `report_id`**, 7 CHECK constraints, 3 indexes including the partial unique. No remote object, column, policy or row changed. `diagnostic_reports` untouched - escalation work never writes the report.
+9. **Verification query/result:** 41 checks against the live database, **all PASS**. Table exists; ledger holds exactly the expected single record at batch 18; table empty; exact 11-column list in ordinal order; zero FKs mention `report_id`; 3 FKs all `users(id)` `RESTRICT`; 7 CHECKs matching the canonical statements; 3 indexes including `report_escalations_one_open_per_report` as `UNIQUE ... USING btree (report_id) WHERE (status = 'open')`; **no** full `UNIQUE(report_id)`; history index `(report_id, created_at)`; safe `down()` order confirmed in source. Enforcement proven by SQLSTATE rather than by reading the DDL: refused `23514` for open+closure_note, open+recommendation+closure_note, closed with neither recommendation nor note, closed with a blank note, whitespace-only recommendation, recommendation without actor or time, 2001-character recommendation, 2001-character closure note, closed without closer, and an invalid status value; refused `23505` for a second open episode on one report; **accepted** closed+recommendation+null note, closed+no-recommendation+non-blank note, exactly 2000 characters, a plain open episode, two closed episodes on one report, and an open episode on a different report. All probes ran inside a transaction that was rolled back, so the table holds 0 rows. Disposable-cluster suite `tests/run-report-escalations-postgres.ps1`: 25 tests / 210 assertions, cluster torn down. Application-layer suite `tests/Feature/ReportEscalationTest.php`: 37 tests / 423 assertions. Unit suite 977 / 5824 with 20 pre-existing PHPUnit deprecations. Production build clean, `git diff --check` clean. A source/doc/live consistency pass confirmed the migration source, the live schema and all three documents agree on columns, foreign keys, CHECK constraints and indexes.
+10. **Related source/code:** `app/Models/ReportEscalation.php`; `app/Services/ReportEscalationService.php`; `app/Services/ReportLifecycleLock.php`; `app/Support/ReportEscalationGate.php`; `app/Http/Controllers/DiagnosticReportEscalationController.php`; `app/Support/ReportingVisibility.php`; `app/Services/DiagnosticReportHandling.php`; `resources/js/Pages/Diagnostics/DevelopmentSupport.jsx`; `tests/Feature/ReportEscalationTest.php`; `tests/Integration/ReportEscalationsPostgresTest.php`; `tests/run-report-escalations-postgres.ps1`. Source commit: recorded in section 15 below after the checkpoint commit is created.
+11. **Rollback SQL/steps:** `php artisan migrate:rollback --path=database/migrations/2026_10_05_000000_create_report_escalations_table.php`. `down()` takes `LOCK TABLE ... ACCESS EXCLUSIVE` before counting and **refuses while any row exists**, because escalation history has no remote copy and no supported way to reconstruct it. With the table currently empty the rollback is a clean drop; once any episode exists it is deliberately blocked and requires an explicit, recorded decision. Full schema restore from the pre-apply snapshot if ever required.
+12. **Change scope:** One new LOCAL table and its indexes and constraints. No Supabase schema, RLS, Storage, Auth or Edge Function change. No remote or local row mutation. `config/imaps.contact` remains unset, so the panel renders an explicit "not configured" notice and fabricates no contact detail. FieldSync notification transport, parser and navigation unchanged. No fourth `users.role` value; `users_role_check`, `RoleMiddleware`, `RegisteredUserController` and the layout are untouched. Inspector Notification was committed separately in `098bb93` and is unchanged by this entry.
+13. **Status:** **APPLIED + VERIFIED 2026-10-05** with explicit user approval. Migration ran clean in 787.72ms, exit 0, ledger 17 -> 18, table created empty, 41/41 live checks passed. Independent Cline audits preceded the apply: implementation audit PASS with no blocking findings; cleanup verification PASS with one non-blocking finding, a FieldSync layout test that cannot fail if production regresses because the production chip is private.
+14. **Notes / risks:** (a) Immutability of a recorded recommendation and of closed rows is enforced by the application layer only - there is no database trigger - matching the accepted v1 architecture of `report_action_audit`. A future generic `->update()` against `report_escalations` anywhere in `app/` would bypass it. (b) `ReportLifecycleLock` is a no-op off the `pgsql` driver, so the SQLite harness proves authority, lifecycle and the terminal gate but **not** concurrency; only the disposable PostgreSQL suite proves blocking and the race outcome. (c) `config/imaps.contact` is unset, so an Admin may open an escalation with no usable channel and must close it with a required `closure_note` explaining why. (d) No credential, token, secret or handshake value is recorded here or in any document. (e) Verification note: the first post-apply verification run used a READ ONLY transaction for its behavioural probes, so SQLSTATE `25006 read_only_sql_transaction` blocked every insert regardless of the schema; that run proved nothing and was discarded. The reported evidence comes from the corrected run using a writable transaction rolled back at the end, with explicit `23514` and `23505` codes. (f) Documentation note: an earlier revision of these three documents was produced by reading and rewriting them, which corrupted their pre-existing non-ASCII characters. They were restored from HEAD and rewritten append-only in UTF-8 with LF endings, preserving each file's original byte-for-byte content; the canonical file retains its UTF-8 BOM.
+
+### 2026-10-05 - Development Support escalation - source checkpoint
+
+15. **Source commit:** `0ce72bed50ee7b841e8fbbe55b7eb5107755c67f` on `fix/bridge-source-namespace-collision`,
+    message `feat: add development support escalation workflow`, parent `098bb93d7057bea753d449ca7183a4b623c33b49`
+    (the Inspector Notification checkpoint, not amended). 22 files, +2206/-58. Pushed to
+    `origin/fix/bridge-source-namespace-collision`; local and remote in sync. `master` unchanged at
+    `3b54243203af9bccdc29a5abadd698b6fc1d51ee`. Branch is 8 commits ahead of and 33 behind
+    `origin/master` (`ee16884ad9b371a17c25e69d1d2c9a8f83e365bf`); no merge, rebase or sync was performed.
+    All 14 documents and the migration were committed in that single checkpoint.
+### 2026-10-05 - Pre-sync migration reconciliation + controlled master sync - LOCAL schema APPLIED + VERIFIED
+
+1. **Date/time:** 2026-10-05.
+2. **Loop / issue:** Reports & Support (#7) had to be synced with `origin/master` before the final cross-system E2E. The branches had diverged and the migration histories did not match the already-provisioned local database.
+3. **System:** iMAPS application source, local Laravel migration ledger, documentation. **No Supabase DDL/RLS, no FieldSync change, no role change.** Two source migrations were rewritten as no-op shims; six ledger rows were inserted without executing DDL; six master migrations were then executed normally.
+4. **Environment/project/database:** `C:\Users\Ralph Lauren\iMAPS`; local PostgreSQL `imaps_db_0921`; shared Supabase project `laapipjyprmmaylunxib` **untouched**.
+5. **Business reason:** A deployed database whose schema predates its migration repository cannot run `php artisan migrate` at all. Two legacy filenames also sorted before the migration that creates the table they alter, so any fresh install failed. Both had to be reconciled before master could be merged, or the merged chain would have been broken for every future installation.
+6. **Before state:** `migrations` ledger **18 rows**, max batch **18**. Six repository migrations were **unrecorded but fully applied**: `2026_09_19_000000_create_initial_schema` (15/15 tables present), `2026_09_23_145135_create_historical_data_table` (`historical_data` present), `2026_09_27_000000_add_reviewed_site_inspection_id_to_technical_reviews_table` (column `bigint` NULL present), `2026_09_27_000000_create_notifications_table` (`notifications` present), `2026_09_28_030000_add_inspection_delivery_monitoring` (4/4 columns + attempts table), `2026_09_28_040000_add_delivery_attempt_queue_correlation` (`queue_job_uuid` + partial index). Eight ledger rows referenced migration files no longer in the repository. Baseline counters: `report_escalations` 3, `report_action_audit` 3, `notifications` 7, `users` 7, `site_inspections` 39, `zoning_applications` 74. Branch 35 ahead / 8 behind `origin/master`.
+7. **Exact SQL / operation:** (a) Rewrote `2026_09_11_000000_add_rich_result_columns_to_site_inspections_table.php` and `2026_09_19_000000_add_assignment_provenance_to_site_inspections_table.php` as no-op supersession shims. (b) `INSERT INTO migrations (migration, batch) VALUES (6 names), 19` in **one explicit transaction**, no migration DDL executed. (c) Controlled **merge** (not rebase) of `origin/master` `ee16884` into the feature branch, two conflicts resolved. (d) `php artisan migrate --force`, six migrations recorded at batch 20. **User approval received: YES - APPLY.** Recovery snapshot first: compressed `pg_dump -Fc`, 9,175,089 bytes, SHA-256 `84D9D51D7263F59E79F7D59F368B1B22CD33A310985CB771F4B430A7545B3CDD`, verified by `pg_restore --list` (262 entries) **and by a full restore into a disposable cluster**, which reproduced ledger 18, `users` 7, `site_inspections` 39, `zoning_applications` 74, `report_escalations` 3, `report_action_audit` 3, `notifications` 7, 29 tables, postgis 3.6.2, with `applicant_street` and `generated_permits` absent.
+8. **After state:** Ledger **18 -> 30**; batch 19 holds exactly the six baseline rows, batch 20 exactly the six executed rows. `zoning_applications.applicant_street`/`applicant_barangay` added (`varchar(255)` NULL). `generated_permits` created, empty, 2 FKs. Public tables 29 -> 30. All pre-existing counters unchanged.
+9. **Verification query/result:** Pre-write precondition gate: **34 checks, 0 failures** (ledger 18/18, six names absent, 15/15 initial-schema tables, `historical_data`, `technical_reviews.reviewed_site_inspection_id` bigint NULL, `notifications`, 4/4 delivery columns, attempts table, `queue_job_uuid` uuid, correlation index, all six row counts, protected `APP-2026-00030`). Baseline transaction: 6 inserted, in-transaction invariants verified, committed; post-commit ledger 24, max batch 19, schema/data fingerprint unchanged (29 tables / 297 columns / 7 / 39 / 74 / 3 / 3 / 7). Migration gate: pending set parsed from `migrate:status` and proven **exactly** the proven six, with `create_initial_schema`, `historical_data`, `notifications`, both delivery/correlation legacy migrations and both stale filenames all confirmed **not pending**. Post-apply: **30 checks, 0 failures**. Fresh-install proof run twice against a disposable PostgreSQL with PostGIS 3.6.2 created first - once on a simulated chain and, after a merge defect was found and repaired, once against the **real merged `database/migrations`** - both exit 0 with 22 files, 29 tables, no `42P01`/`42P07`/`42701`.
+10. **Related source/code:** `database/migrations/2026_09_11_000000_add_rich_result_columns_to_site_inspections_table.php`; `database/migrations/2026_09_19_000000_add_assignment_provenance_to_site_inspections_table.php`; `tests/Unit/LegacyMigrationOrderingContractTest.php` (17 tests / 72 assertions); `tests/Unit/SessionExpiryResponseTest.php` (3 tests / 11 assertions). Merge commit `561b0eea722ada1d5e92df7a05ec86264fbc40ed`; source checkpoint `c168f7dad2be6e489e3a9f87d6e18dc06d5ec8b3`.
+11. **Rollback SQL/steps:** Restore the compressed snapshot (`pg_restore`). The six ledger rows are removable by `DELETE FROM migrations WHERE batch = 19` if a future migration needs to re-derive them, though re-running `create_initial_schema` against this schema would fail with `42P07`. The two shims are no-ops in both directions, so rolling back through batches 12 or 14 is now safe: it removes a ledger row without touching schema. **Do not** delete the shim files - that is what reintroduces the silent rollback failure recorded in item 14(f).
+12. **Change scope:** Two source migrations rewritten; six ledger rows inserted; six migrations executed; two source conflicts resolved; documentation updated. No Supabase schema, RLS, Storage, Auth or Edge Function change. No remote row mutation. No role or authority change. `config/imaps.contact` still unset. FieldSync untouched.
+13. **Status:** **APPLIED + VERIFIED 2026-10-05** with explicit user approval. Regression: Development Support focused **48 tests / 511 assertions**; escalation + contract regression **200 / 2932**; Unit suite **1003 / 5916** with 20 pre-existing deprecations; disposable PostgreSQL **25 / 210**; `npm run build` clean; `git diff --check` clean. All four #7 gates match their prior baselines exactly.
+14. **Notes / risks:** (a) **Not pushed.** `composer install` cannot complete on this host, so the branch is intentionally left unpushed pending a decision (item 15). (b) **Merge defect found and repaired:** git's rename detection paired master's rename of the two legacy migrations with their deletion, and transplanted the no-op shim content onto master's canonical `..._000001`/`..._000002` paths - neutering the real schema operations while deleting the stale filenames. Detected because the fresh-install proof was re-run against the real merged tree rather than only the simulation. Both pairs were restored from `origin/master` and the checkpoint respectively, and the merged chain re-proven. (c) `git diff --check` reports ~120 trailing-whitespace findings inherited from `origin/master` in 9 of its files; deliberately **not** cleaned, as that is unrelated to this task. (d) The 8 orphan ledger rows referencing deleted migration files remain; two of them (`add_supabase_uuid_to_users_table`, `add_remarks_to_site_inspections_table`) have no live effect. Pre-existing, untouched. (e) `--pretend` is unreliable for guard-based migrations - it prints guard SQL without executing it, so the three `ensure_*` migrations appear to create tables that already exist. `migrate:status` is the reliable gate. (f) Deleting the two shim filenames makes `migrate:rollback` print "Migration not found", **exit 0**, and leave the ledger row in place - an apparent success that changes nothing. This is why they are retained. (g) No credential, token, secret or handshake value is recorded here or in any document.
+---
+
+## Canonical schema marker reference index (added 2026-10-05, documentation normalization)
+
+The canonical schema is now `CANONICAL_DATABASE_SCHEMA.md`, which is pure executable SQL. Every explanation, migration history and rationale lives here instead. Each marker below is referenced **verbatim** from that file and resolves to exactly one definition: the canonical file declares each bracket marker exactly once, so there are no duplicate marker IDs and no orphan references. `tests/Unit/CanonicalSchemaMarkerContractTest.php` enforces all of this.
+
+| Marker | Canonical object |
+|---|---|
+| `[SCHEMA-EXT-001]` | Required extension `postgis` |
+| `[SCHEMA-SEQ-001]`..`[SCHEMA-SEQ-023]` | Sequences backing serial column defaults |
+| `[SCHEMA-IDENT-001]` | Identity sequence for `technical_reviews.id` |
+| `[SCHEMA-SEQOWN-001]`..`[SCHEMA-SEQOWN-014]` and `[SCHEMA-SEQOWN-016]`..`[SCHEMA-SEQOWN-024]` | 23 `ALTER SEQUENCE ... OWNED BY` declarations. Marker 015 does not exist; the gap is permanent, not a typo. |
+| `[SCHEMA-BASE-001]`..`[SCHEMA-BASE-015]` | Core tables created by `create_initial_schema` |
+| `[SCHEMA-ADD-001]`..`[SCHEMA-ADD-011]` | Tables added by later migrations |
+| `[SCHEMA-CON-001]`..`[SCHEMA-CON-061]` | Primary key, unique, check and foreign key constraints |
+| [SCHEMA-IDX-001]..[SCHEMA-IDX-029] | Indexes, including the two partial unique indexes |
+| [SCHEMA-POL-001]..[SCHEMA-POL-002] | Supabase policy definitions for FieldSync inspection-photo authorization (guarded canonical application) |
+
+**Marker IDs are stable identifiers.** Once published, a marker ID is never renumbered or reused: renumbering would silently repoint every document that cites it. New objects take the next unused ID in their class, and a gap stays a gap. The ranges above are therefore a summary of the published set, not a promise of contiguity, and `SCHEMA-SEQOWN` deliberately has no 015. The canonical file is the index of record for the individual numbering.
+
+### Entry format
+
+Every schema-affecting entry below uses this compact structure. The canonical file defines the object; this file explains it. Full `CREATE TABLE` / `ALTER TABLE` statements are deliberately not duplicated here.
+
+---
+
+## Per-marker change-log entries
+
+Each entry references one canonical marker. Markers for sequences, sequence ownership, and per-object constraints/indexes are covered by their owning table entry, because they exist solely to serve that table; the marker IDs are listed so a reader can jump straight to them.
+
+### [SCHEMA-EXT-001] REQUIRED EXTENSION postgis
+
+**SCHEMA REFERENCE:** [SCHEMA-EXT-001]
+
+**OBJECT:** extension `postgis` (schema `public`)
+
+**PURPOSE:** Provides the `geometry`/`geography` types and spatial functions used by `barangay_boundary`, `land_parcels`, `land_use_plan`, `parcels` and `rosario_boundary`, and by the `distance_to_parcel_boundary` RPC. The canonical file declares it `IF NOT EXISTS`, so it is safe to run against a database that already has it.
+
+**SOURCE:** installation prerequisite; not owned by a single migration
+
+**ORIGIN / CONTEXT:** FieldSync Step 1 and Step 2 geometry verification, plus the iMAPS planning maps. Established during Loop 0 / Loop 1 schema reconciliation.
+
+**APPLIED STATE:** APPLIED + VERIFIED (live: PostGIS 3.6.2)
+
+**APPLIED TO:** `imaps_db_0921` (local canonical PostgreSQL); also present in the shared Supabase project
+
+**DEPENDENCIES:** none. This is the root of the schema dependency order: every PostGIS column in the canonical file depends on it.
+
+**VERIFICATION:** Live catalog query returned `postgis 3.6.2`. A fresh database given this marker first, then the rest of the canonical SQL, reproduced all five geospatial columns with identical type and SRID (4326) against the live database.
+
+**ROLLBACK / RECOVERY:** none required; no migration drops the extension. A fresh install that omits it fails with `type "geometry" does not exist` on the initial-schema migration, which is why the canonical file orders this marker first.
+
+**RELATED COMMIT:** pre-existing; unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-001] CORE TABLE users
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-001]
+
+**OBJECT:** table `users`
+
+**PURPOSE:** Identity and authority. `role` is constrained by `users_role_check` to exactly Planning Officer, Admin, Site Inspector. `handshake_key` is the iMAPS-to-Supabase identity bridge; its value is never recorded in any document.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** Loop 0 / Loop 1 schema reconciliation, 2026-09-19
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-030]`, `[SCHEMA-CON-031]`
+
+**VERIFICATION:** Column fingerprint (type, nullability, default, identity) compared against live `imaps_db_0921` from a fresh database built from the canonical SQL only: identical. Constraint definitions compared by name, type and `pg_get_constraintdef`: identical. The role CHECK was additionally proved by behaviour, refusing an out-of-vocabulary role.
+
+**ROLLBACK / RECOVERY:** `down()` in the owning migration; part of the initial-schema drop set, which runs in reverse dependency order.
+
+**RELATED COMMIT:** see the owning migration file; unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-002] CORE TABLE application_drafts
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-002]
+
+**OBJECT:** table `application_drafts`
+
+**PURPOSE:** In-progress zoning application drafts, before submission.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** zoning application intake
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-001]`, `[SCHEMA-CON-002]`, `[SCHEMA-CON-038]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-003] CORE TABLE application_status_tracks
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-003]
+
+**OBJECT:** table `application_status_tracks`
+
+**PURPOSE:** Append-only business lifecycle history for a zoning application, distinct from the FieldSync task lifecycle.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** iMAPS post-inspection business lifecycle
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-005]`, `[SCHEMA-IDX-002]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-004] CORE TABLE audit_trail
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-004]
+
+**OBJECT:** table `audit_trail`
+
+**PURPOSE:** System-wide accountability record, written in the same transaction as a work-ownership change.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** work reassignment accountability
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-006]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-005] CORE TABLE barangay_boundary
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-005]
+
+**OBJECT:** table `barangay_boundary` (PostGIS)
+
+**PURPOSE:** Rosario barangay boundary polygons, SRID 4326.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** planning maps
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-007]`, `[SCHEMA-IDX-003]`
+
+**VERIFICATION:** geometry column type and SRID identical; spatial GiST index identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-006] CORE TABLE failed_jobs
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-006]
+
+**OBJECT:** table `failed_jobs`
+
+**PURPOSE:** Laravel queue failure table.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** queue infrastructure
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-008]`, `[SCHEMA-CON-009]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-007] CORE TABLE jobs
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-007]
+
+**OBJECT:** table `jobs`
+
+**PURPOSE:** Laravel queue table. Inspection delivery pushes to Supabase run through it.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** inspection delivery queue
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-016]`, `[SCHEMA-IDX-006]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-008] CORE TABLE land_parcels
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-008]
+
+**OBJECT:** table `land_parcels` (PostGIS)
+
+**PURPOSE:** Cadastral land parcels. Deliberately not a FieldSync transport: the remote pin, not this geometry, is what FieldSync reads.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** cadastral reference geometry
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-017]`, `[SCHEMA-IDX-007]`
+
+**VERIFICATION:** geometry column type and SRID identical; spatial GiST index identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-009] CORE TABLE land_use_plan
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-009]
+
+**OBJECT:** table `land_use_plan` (PostGIS)
+
+**PURPOSE:** Zoning / land-use plan polygons, SRID 4326.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** zoning maps
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-018]`, `[SCHEMA-IDX-008]`
+
+**VERIFICATION:** geometry column type and SRID identical; spatial GiST index identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-010] CORE TABLE parcels
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-010]
+
+**OBJECT:** table `parcels` (PostGIS)
+
+**PURPOSE:** Application-linked parcel geometry and stored pin, SRID 4326. The stored pin is the authoritative coordinate; `ST_AsText` of cadastral geometry is never sent to Supabase.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** zoning application parcel association
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-020]`, `[SCHEMA-CON-021]`, `[SCHEMA-CON-044]`, `[SCHEMA-IDX-012]`, `[SCHEMA-IDX-013]`, `[SCHEMA-IDX-014]`
+
+**VERIFICATION:** boundary geometry type and SRID identical; pin and GiST indexes identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-011] CORE TABLE rosario_boundary
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-011]
+
+**OBJECT:** table `rosario_boundary` (PostGIS)
+
+**PURPOSE:** Municipality boundary polygon, SRID 4326.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** boundary enforcement
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-EXT-001]`, `[SCHEMA-CON-025]`, `[SCHEMA-IDX-019]`
+
+**VERIFICATION:** geometry column type and SRID identical; spatial GiST index identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-012] CORE TABLE sessions
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-012]
+
+**OBJECT:** table `sessions`
+
+**PURPOSE:** Web session store for the Inertia/React application.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** web authentication
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-026]`, `[SCHEMA-IDX-020]`, `[SCHEMA-IDX-021]`
+
+**VERIFICATION:** column fingerprint and constraint definitions identical between the canonical-SQL database and live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-013] CORE TABLE site_inspections
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-013]
+
+**OBJECT:** table `site_inspections`
+
+**PURPOSE:** Local Site Inspector task record. `inspector_id` is the server-side assignment authority: a Planning Officer reassignment moves this pointer and nothing else, so the round status and its evidence are never silently rewritten.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** inspector task lifecycle
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-028]`, `[SCHEMA-CON-053]`, `[SCHEMA-CON-054]`, `[SCHEMA-CON-055]`, `[SCHEMA-IDX-023]`, `[SCHEMA-IDX-024]`, `[SCHEMA-IDX-025]`, `[SCHEMA-IDX-026]`
+
+**VERIFICATION:** all columns (including the later-added rich-result, assignment-provenance, remarks and delivery-monitoring columns) reproduced identically from the canonical SQL; constraints and indexes identical.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`. Rollback is guarded rather than destructive, and separately records the completed-lifecycle protection established in Loop 5.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-014] CORE TABLE technical_reviews
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-014]
+
+**OBJECT:** table `technical_reviews`
+
+**PURPOSE:** Planning Officer technical review decision per zoning application, with `decision` constrained to Approved / Needs Site Inspection / Requires Reinspection / Declined.
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** technical review authority
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-029]`, `[SCHEMA-CON-056]`, `[SCHEMA-CON-057]`, `[SCHEMA-CON-058]`, `[SCHEMA-IDX-027]`, `[SCHEMA-IDX-028]`, `[SCHEMA-IDX-029]`
+
+**VERIFICATION:** reproduced identically, including `reviewed_site_inspection_id` (`bigint` NULL) and the compound `(zoning_application_id, review_round)` index.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-BASE-015] CORE TABLE zoning_applications
+
+**SCHEMA REFERENCE:** [SCHEMA-BASE-015]
+
+**OBJECT:** table `zoning_applications`
+
+**PURPOSE:** The zoning application itself: applicant, parcel, business status, and the current Planning Officer pointer (`assigned_planning_officer_id`).
+
+**SOURCE:** `database/migrations/2026_09_19_000000_create_initial_schema.php`
+
+**ORIGIN / CONTEXT:** zoning application authority
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-032]`, `[SCHEMA-CON-033]`, `[SCHEMA-CON-059]`, `[SCHEMA-CON-060]`
+
+**VERIFICATION:** reproduced identically, including the later-added `applicant_street` and `applicant_barangay` (`varchar(255)` NULL).
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-001] ADDED TABLE forecast_runs
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-001]
+
+**OBJECT:** table `forecast_runs`
+
+**PURPOSE:** Forecast execution records: forecast period, model metrics, execution status.
+
+**SOURCE:** `database/migrations/2026_09_19_120751_create_forecast_runs_table.php`
+
+**ORIGIN / CONTEXT:** demand forecasting workstream
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-011]`
+
+**VERIFICATION:** reproduced identically from the canonical SQL; column fingerprint and constraint definitions match live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-002] ADDED TABLE forecast_outputs
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-002]
+
+**OBJECT:** table `forecast_outputs`
+
+**PURPOSE:** Per-application forecast outputs, with `forecast_run_id` cascading from `forecast_runs`.
+
+**SOURCE:** `database/migrations/2026_09_19_120752_create_forecast_outputs_table.php`
+
+**ORIGIN / CONTEXT:** demand forecasting workstream
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-010]`, `[SCHEMA-CON-039]`
+
+**VERIFICATION:** reproduced identically, including the `ON DELETE CASCADE` foreign key.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-003] ADDED TABLE historical_data
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-003]
+
+**OBJECT:** table `historical_data`
+
+**PURPOSE:** Historical application statistics used to train forecasts.
+
+**SOURCE:** `database/migrations/2026_09_23_145135_create_historical_data_table.php`
+
+**ORIGIN / CONTEXT:** demand forecasting workstream
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-013]`
+
+**VERIFICATION:** reproduced identically; column fingerprint matches live. This table is one of the six migrations that were already applied but unrecorded before the batch-19 ledger reconciliation.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`. Guarded: refuses to drop while rows exist.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-004] ADDED TABLE notifications
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-004]
+
+**OBJECT:** table `notifications`
+
+**PURPOSE:** In-app notification feed for Planning Officers and Site Inspectors. Deliberately no CHECK on `type`: a new notification kind must not require a migration. Also deliberately no `id` UUID hand-off to FieldSync; notifications are read locally by id.
+
+**SOURCE:** `database/migrations/2026_09_27_000000_create_notifications_table.php`
+
+**ORIGIN / CONTEXT:** Reports & Support notification delivery
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-019]`, `[SCHEMA-CON-043]`, `[SCHEMA-IDX-009]`, `[SCHEMA-IDX-010]`, `[SCHEMA-IDX-011]`
+
+**VERIFICATION:** reproduced identically, including the absence of a `type` CHECK and the three supporting indexes.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`. Guarded rather than destructive.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-005] ADDED TABLE application_po_assignments
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-005]
+
+**OBJECT:** table `application_po_assignments`
+
+**PURPOSE:** Append-only Planning Officer ownership history. Four CHECK constraints encode the initial-versus-reassignment rule and the "reason Other requires a note" rule, so the accountability story cannot be written inconsistently.
+
+**SOURCE:** `database/migrations/2026_09_27_010000_add_work_reassignment_contract.php`
+
+**ORIGIN / CONTEXT:** business continuity without account sharing
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-003]`, `[SCHEMA-CON-034]`..`[SCHEMA-CON-037]`, `[SCHEMA-IDX-001]`
+
+**VERIFICATION:** reproduced identically, all four CHECKs included. Enforcement proved by insert probes against the fresh database: an initial row with a non-null `from_planning_officer_id` was refused, and reason `Other` without a note was refused.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-006] ADDED TABLE site_inspection_assignments
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-006]
+
+**OBJECT:** table `site_inspection_assignments`
+
+**PURPOSE:** Append-only Site Inspector ownership history for one inspection round, mirroring the Planning Officer table. Eligibility is enforced in the application layer by `InspectorTransferGuard`, not by these tables, because local state cannot prove a round is unstarted.
+
+**SOURCE:** `database/migrations/2026_09_27_010000_add_work_reassignment_contract.php`
+
+**ORIGIN / CONTEXT:** business continuity without account sharing
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-027]`, `[SCHEMA-CON-049]`..`[SCHEMA-CON-052]`, `[SCHEMA-IDX-022]`
+
+**VERIFICATION:** reproduced identically, all four CHECKs included, with the same refusal behaviour as the PO table.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-007] ADDED TABLE inspection_delivery_attempts
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-007]
+
+**OBJECT:** table `inspection_delivery_attempts`
+
+**PURPOSE:** Append-only record of every FieldSync delivery attempt, with a controlled failure-category vocabulary, `attempt_number >= 1`, and `safe_message` that must never carry a token, key, password or connection string.
+
+**SOURCE:** `database/migrations/2026_09_28_030000_add_inspection_delivery_monitoring.php`
+
+**ORIGIN / CONTEXT:** Planning-Officer-triggered FieldSync delivery
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-014]`, `[SCHEMA-CON-015]`, `[SCHEMA-CON-042]`, `[SCHEMA-IDX-004]`, `[SCHEMA-IDX-005]`
+
+**VERIFICATION:** reproduced identically, including the `queue_job_uuid` correlation column and its partial index from `[SCHEMA-IDX-005]`.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-008] ADDED TABLE generated_permits
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-008]
+
+**OBJECT:** table `generated_permits`
+
+**PURPOSE:** Generated permit documents per zoning application. Created by the master permit-generation service; currently 0 rows, and `config/imaps.contact` is unset so no contact channel is fabricated.
+
+**SOURCE:** `database/migrations/2026_10_03_000004_create_generated_permits_table.php`
+
+**ORIGIN / CONTEXT:** permit generation service introduced on `origin/master` at `ee16884`
+
+**APPLIED STATE:** APPLIED + VERIFIED (empty)
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-012]`, `[SCHEMA-CON-040]`, `[SCHEMA-CON-041]`
+
+**VERIFICATION:** reproduced identically from the canonical SQL with 0 rows; column fingerprint and both foreign keys match live.
+
+**ROLLBACK / RECOVERY:** owning migration `down()`; a clean drop while the table is empty.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-009] ADDED TABLE report_action_audit
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-009]
+
+**OBJECT:** table `report_action_audit`
+
+**PURPOSE:** Immutable local audit of every diagnostic-report status transition. `performed_by` is the authoritative actor (`users(id)` `ON DELETE RESTRICT`); `performed_by_name` is a display snapshot only, never identity. The partial unique index `[SCHEMA-IDX-015]` guarantees at most one terminal row per report, while `[SCHEMA-IDX-016]` keeps full history queryable.
+
+**SOURCE:** `database/migrations/2026_10_04_000000_create_report_action_audit_table.php`
+
+**ORIGIN / CONTEXT:** Reports & Support response and status lifecycle
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-022]`, `[SCHEMA-CON-023]`, `[SCHEMA-CON-045]`, `[SCHEMA-IDX-015]`, `[SCHEMA-IDX-016]`
+
+**VERIFICATION:** reproduced identically, including all four CHECK constraints and both indexes. Enforcement proved by behaviour against the fresh database: a second terminal row for the same report was refused by the partial unique index, a terminal-plus-non-terminal pair was accepted, an out-of-vocabulary action was refused by `report_action_audit_action_ck`, and an illegal transition was refused by `report_action_audit_from_status_ck`.
+
+**ROLLBACK / RECOVERY:** owning migration `down()` takes `ACCESS EXCLUSIVE` before counting and refuses while any row exists, because once a remote report is terminal its official response cannot be regenerated.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-010] ADDED TABLE report_escalations
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-010]
+
+**OBJECT:** table `report_escalations`
+
+**PURPOSE:** Development Support escalation episodes. Deliberately no foreign key on `report_id`: an episode is local evidence and must not become un-insertable when the remote report changes. `[SCHEMA-IDX-017]` enforces one open episode per report; `[SCHEMA-IDX-018]` keeps history queryable. Seven CHECK constraints enforce the recommendation/closure coherence rules.
+
+**SOURCE:** `database/migrations/2026_10_05_000000_create_report_escalations_table.php`
+
+**ORIGIN / CONTEXT:** an Admin needs an auditable internal path to consult Development Support without that consultation competing with, or being silently dropped by, the report lifecycle
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-024]`, `[SCHEMA-CON-046]`..`[SCHEMA-CON-048]`, `[SCHEMA-IDX-017]`, `[SCHEMA-IDX-018]`
+
+**VERIFICATION:** reproduced identically, all seven CHECKs and both indexes included. Enforcement proved by behaviour against the fresh database: an out-of-vocabulary status was refused by `report_escalations_status_ck`, and a `closed` episode without a closer was refused by `report_escalations_closed_ck`.
+
+**ROLLBACK / RECOVERY:** owning migration `down()` takes `ACCESS EXCLUSIVE` before counting and refuses while any row exists. While the table is empty the rollback is a clean drop; once an episode exists it is deliberately blocked and requires an explicit recorded decision.
+
+**RELATED COMMIT:** source checkpoint `0ce72bed50ee7b841e8fbbe55b7eb5107755c67f`; unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-011] LEGACY RETAINED TABLE application_sequences
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-011]
+
+**OBJECT:** table `application_sequences`
+
+**PURPOSE:** Legacy per-application reference-number sequencing, retained for continuity with already-issued reference numbers.
+
+**SOURCE:** created by a historical migration; see the earlier entry "Historical - local `application_sequences` creation and APP/2026 alignment" in this file
+
+**ORIGIN / CONTEXT:** pre-dates the current reference-number contract
+
+**APPLIED STATE:** HISTORICAL - retained, not extended
+
+**APPLIED TO:** `imaps_db_0921`
+
+**DEPENDENCIES:** `[SCHEMA-CON-004]`
+
+**VERIFICATION:** present in the canonical SQL and reproduced identically in the fresh verification database.
+
+**ROLLBACK / RECOVERY:** dropping it would orphan already-issued reference numbers, so it is retained by design.
+
+**RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+---
+
+## Column-level provenance (which migration owns which column)
+
+The canonical file defines each table as one block, because that is how PostgreSQL stores it. The table-level markers above therefore carry the column provenance; it is recorded here so the migration that introduced each column remains traceable.
+
+| Table marker | Later migrations that added columns to that table |
+|---|---|
+| `[SCHEMA-BASE-013]` | `2026_09_19_000001_add_rich_result_columns_to_site_inspections_table` (checklist_data, discrepancies, gps_confirmed_at, inspection_result, inspector_notes, observations, recommendations, submitted_at); `2026_09_19_000002_add_assignment_provenance_to_site_inspections_table` (assigned_by_imaps_user_id, assigned_by_name); `2026_09_20_151538_add_assigned_by_columns_to_site_inspections_table`; `2026_09_20_161016_add_remarks_to_site_inspections_table`; `2026_09_28_030000_add_inspection_delivery_monitoring` (delivery_status, delivered_at, last_delivery_attempt_at, last_delivery_failure_category); `2026_09_28_040000_add_delivery_attempt_queue_correlation` (queue_job_uuid) |
+| `[SCHEMA-BASE-014]` | `2026_09_27_000000_add_reviewed_site_inspection_id_to_technical_reviews_table` (reviewed_site_inspection_id, `bigint` NULL) |
+| `[SCHEMA-BASE-015]` | `2026_09_27_010000_add_work_reassignment_contract` (assigned_planning_officer_id); `2026_10_03_000001_add_applicant_address_columns_to_zoning_applications` (applicant_street, applicant_barangay, both `varchar(255)` NULL) |
+| `[SCHEMA-ADD-005]` / `[SCHEMA-ADD-006]` | `2026_10_03_000002_ensure_work_assignment_history_tables_exist` (guard-only: re-asserts the same columns, adds nothing) |
+| `[SCHEMA-ADD-007]` | `2026_10_03_000003_ensure_inspection_delivery_monitoring_tables_exist` (guard-only: re-asserts the same columns, adds nothing) |
+
+---
+
+## Superseded migration compatibility shims
+
+Two migration files in `database/migrations` have stale historical filenames and bodies that intentionally mutate nothing. They are recorded here, not as operational prose in the canonical schema, because the canonical file represents *resulting schema* and a shim produces no schema.
+
+| Stale filename | Canonical owner | Shim behaviour |
+|---|---|---|
+| `2026_09_11_000000_add_rich_result_columns_to_site_inspections_table.php` | `2026_09_19_000001_add_rich_result_columns_to_site_inspections_table.php` | `up()` and `down()` are both empty |
+| `2026_09_19_000000_add_assignment_provenance_to_site_inspections_table.php` | `2026_09_19_000002_add_assignment_provenance_to_site_inspections_table.php` | `up()` and `down()` are both empty |
+
+**Why they are retained (migration-ledger and rollback compatibility):**
+
+- Laravel executes migrations in filename order and has no dependency graph. Each stale filename sorts *before* the migration that creates `site_inspections`, so a file that altered the table at that position worked on an already-provisioned database and broke every fresh install.
+- The deployed ledger already records the stale filenames, so the ledger row must keep resolving.
+- Deleting the files is worse than it looks: `migrate:rollback` then prints "Migration not found", **exits 0**, and leaves the ledger row in place. That is an apparent success which changes nothing and repeats on every subsequent rollback.
+- Rolling back through the shim batches is now safe: it removes a ledger row and touches no schema.
+
+**Resulting schema markers for the columns these migrations actually create:** the rich-result columns and the assignment-provenance columns both belong to `[SCHEMA-BASE-013]`, so that canonical block already contains all of them.
+
+---
+
+## Migration ledger baseline (operational history, batch 19 -> 20, final ledger 30)
+
+This is operational migration history, not schema, so it belongs in this file. The canonical schema represents only the resulting structure and deliberately omits the `migrations` ledger table, because Laravel creates and owns it.
+
+**Situation found (2026-10-05 pre-sync reconciliation):** the deployed database had 18 ledger rows and max batch 18, while six repository migrations were already fully applied but unrecorded. The deployed schema therefore predated its own migration repository, and `php artisan migrate` could not run at all.
+
+**The six baseline rows inserted at batch 19, with no DDL re-executed:**
+
+1. `2026_09_19_000000_create_initial_schema` - all 15 tables verified present
+2. `2026_09_23_145135_create_historical_data_table` - `historical_data` present
+3. `2026_09_27_000000_add_reviewed_site_inspection_id_to_technical_reviews_table` - `reviewed_site_inspection_id` present as `bigint` NULL
+4. `2026_09_27_000000_create_notifications_table` - `notifications` present
+5. `2026_09_28_030000_add_inspection_delivery_monitoring` - 4 of 4 columns plus the attempts table
+6. `2026_09_28_040000_add_delivery_attempt_queue_correlation` - `queue_job_uuid` plus the partial index
+
+**Why the DDL was not re-executed:** re-running those migrations is not idempotent by default. `Schema::create` fails with `relation already exists`, and an unguarded `ALTER TABLE ... ADD COLUMN` fails with `duplicate column`. The ledger is evidence of what the schema already contains, not a script to be replayed.
+
+**Snapshot / recovery evidence:** a compressed `pg_dump -Fc` snapshot was taken first, 9,175,089 bytes, SHA-256 `84D9D51D7263F59E79F7D59F368B1B22CD33A310985CB771F4B430A7545B3CDD`, validated by `pg_restore --list` (262 entries) **and** by a full restore into a disposable cluster that reproduced ledger 18 and the pre-sync row counts.
+
+**Post-sync batch 20:** after the controlled merge of `origin/master`, `php artisan migrate --force` executed six further migrations at batch 20, which added `zoning_applications.applicant_street` and `applicant_barangay` and created `generated_permits`. `migrate:status` was used as the gate rather than `--pretend`, because `--pretend` prints guard SQL without executing it and therefore makes the `ensure_*` migrations appear to create tables that already exist.
+
+**Final ledger state: 30 rows, max batch 20.** Verified again on 2026-10-05 during this documentation normalization: ledger 30, max batch 20, with the six batch-19 names and the six batch-20 names all present.
+
+---
+
+## 2026-10-05 - Documentation normalization: the canonical schema becomes pure SQL
+
+**SCHEMA REFERENCE:** all markers in `CANONICAL_DATABASE_SCHEMA.md`
+
+**OBJECT:** documentation structure only. No database object, column, constraint, index or row was created, altered or dropped. SQLite, Supabase and the iMAPS live database are untouched.
+
+**PURPOSE:** make the canonical schema a copy-pasteable SQL source of truth, so that copying the whole file and pasting it into PostgreSQL constructs the canonical structure in one controlled execution, and move every explanation, migration narrative, issue commentary, test-evidence paragraph and rollback story into this change log where it belongs.
+
+**SOURCE:** live `pg_dump --schema-only` of `imaps_db_0921`, so the SQL is derived from actual schema rather than retyped from documentation
+
+**ORIGIN / CONTEXT:** the previous `CANONICAL_DATABASE_SCHEMA.md` was 2,040 lines of mixed Markdown narrative and SQL fragments: 26 numbered sections, 287 Markdown table rows, 26 code fences, and zero stable schema markers. It could not be executed as a whole and could not be referenced unambiguously.
+
+**APPLIED STATE:** APPLIED + VERIFIED
+
+**APPLIED TO:** documentation only
+
+**DEPENDENCIES:** none. The canonical SQL is ordered extension -> sequences -> tables -> constraints -> indexes so it runs start to finish on an empty database.
+
+**VERIFICATION:** the regenerated canonical file was executed verbatim against a freshly created empty database on a disposable PostgreSQL 18.3 cluster with `ON_ERROR_STOP=1`: exit 0, zero errors. The resulting schema was then compared with live `imaps_db_0921`: identical column fingerprints (294 rows covering type, nullability, default and identity), identical constraint set by name, type and definition (217), identical index set (63), identical PostGIS columns and SRIDs (5), and identical views, functions and triggers. The only intended difference is the three `migrations` ledger columns, which the canonical file deliberately omits. Two CHECK constraints and one partial unique index differ only in PostgreSQL's own deparse formatting of an `ARRAY[...]` literal; their behaviour was proved equal by insert probes rather than by text comparison.
+
+**ROLLBACK / RECOVERY:** documentation only; `git checkout` of the four documents restores the previous state. No database recovery is needed because no database was written.
+
+**RELATED COMMIT:** `docs: normalize canonical database contract` on `fix/bridge-source-namespace-collision`
+
+---
+
+## 2026-10-06 - Workstream #9 backend authorization - **APPLIED / VERIFIED**
+
+**SCHEMA REFERENCE:** `[SCHEMA-POL-001]`, `[SCHEMA-POL-002]`, `[SCHEMA-CON-061]`
+
+**OBJECT:** shared Supabase/PostgreSQL backend authorization. Migration file `supabase/migrations/005_harden_inspection_photo_authorization.sql`; FieldSync commit `d6da48914ae16c4e7d80e41d6b66377cea5c8c75`. Applied: YES.
+
+**PURPOSE:** make the inspection-photo authorization contract canonical and enforceable on the shared backend (#9 source/local prerequisites track), so FieldSync can distinguish authorized current-assignee writes from authority loss.
+
+**APPLIED STATE:** APPLIED + VERIFIED / verifying.
+
+**APPLIED TO:** shared Supabase project `laapipjyprmmaylunxib` only. No FieldSync source change, no DELETE permission, no admin write, no bucket configuration change, no column/function/trigger/Edge Function change.
+
+**CHANGES recorded:**
+- canonical inspection-photo INSERT path authorization (`[SCHEMA-POL-001]`)
+- current-assignee enforcement (`field_jobs.assigned_inspector_id = auth.uid()`)
+- operation-aware Storage UPDATE/upsert authorization, same-key only (`[SCHEMA-POL-002]`, `storage.allow_only_operation('storage.object.upload_update')`)
+- Storage move/rename NOT authorized by this policy
+- metadata `field_job_id` ↔ path namespace coherence (`[SCHEMA-CON-061]`)
+
+**NO CHANGE:** DELETE permission (remains denied), admin Storage write, bucket configuration, table columns, functions, triggers, Edge Functions. FieldSync client upload semantics unchanged; still `upsert: true`.
+
+**EXACT CONSTRAINT:** `photo_url ~ ('^inspections/' || field_job_id::text || '/photo_[A-Za-z0-9_-]+\.jpg$')`. Guarantees canonical path shape and field_job namespace coherence. It does NOT prove physical Storage object existence; existence is enforced by the Storage RLS, not the CHECK.
+
+**VERIFICATION:**
+- migration transaction: PASS
+- deployed catalog verification (INSERT policy is authenticated-only, canonical-path, current-assignee; UPDATE policy carries the upload_update operation gate in USING and WITH CHECK; CHECK `field_job_photos_path_namespace_chk` live): PASS
+- metadata bad-shape probe rejected with PostgreSQL 23514 (rolled-back probe): PASS
+- operation gate with `storage.operation() = null` evaluates FALSE: PASS
+- FieldSync regression: #9 authority/provenance 11/11, #8 reassignment 28/28, retention 12/12, offline persistence 28/28, R4 photo loopback 30/30, R4 recovery 33/33, loop5 6/6, loop7e 6/6, responsive 27/27, reports/SQLite ownership suitesall PASS; `flutter analyze --no-pub` no issues; `git diff --check` exit 0: PASS
+
+**LIMITATION:**
+- FULL TWO-INSPECTOR LIVE JWT STORAGE-API MATRIX: **OUTSTANDING** — the linked management/CLI context exposed no real authenticated Storage API sessions, so the ALLOW cases requiring live JWTs were not directly executed. This is recorded as OUTSTANDING, not as a completed or failed matrix.
+- Full mid-flight inspector handover/ownership transfer is NOT implemented.
+
+**ROLLBACK / RECOVERY:** the exact inverse SQL restores the prior policy definitions and drops `field_job_photos_path_namespace_chk`; not executed.
+
+**RELATED COMMIT:** `fix: harden inspection photo authorization` on FieldSync `feat/midflight-handover-prerequisites`, commit `d6da48914ae16c4e7d80e41d6b66377cea5c8c75`.

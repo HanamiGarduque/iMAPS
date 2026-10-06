@@ -82,9 +82,18 @@ export default function Sidebar({
             // This file is a known upstream-contested merge point, so the entry
             // is a single self-contained object appended after an existing one.
             href: '/diagnostics',
-            label: 'Diagnostic Reports',
+            label: 'Reports & Support',
             badge: null,
-            adminOnly: true,
+            // POST-LOOP-9 SMOKE FIX: a Planning Officer now has READ access to
+            // diagnostic reports, because they are the role that resolves
+            // day-to-day FieldSync issues inside MPDO and previously could not
+            // even read the report they had to act on. The server enforces the
+            // real boundary with `role:Admin,Planning Officer`; a Site Inspector
+            // is still refused there and still receives no navigation at all.
+            //
+            // `adminOnly: false` is PRESENTATION ONLY, matching the rule used for
+            // the other shared entries. It is not the security boundary.
+            adminOnly: false,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />

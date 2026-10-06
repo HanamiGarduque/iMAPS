@@ -1217,11 +1217,15 @@ function ShowInner({
 
                                                                 {p.site_inspection?.id && (
                                                                     <div className="mt-2">
-                                                                                                        <ParcelInspectionStatus
-                                                    inspectionId={p.site_inspection.id}
-                                                    onStatusFetched={onInspectionStatus(p.id)}
-                                                    onInspectionDataFetched={onInspectionDataFetched(p.id)}
-                                                />
+                                                                        {/* Local parcel supplies cadastral identity;
+                                                                            Parcel Pin uses only confirmed inspection GPS. */}
+                                                                        <ParcelInspectionStatus
+                                                                            inspectionId={p.site_inspection.id}
+                                                                            localInspection={p.site_inspection}
+                                                                            localParcel={p}
+                                                                            onStatusFetched={onInspectionStatus(p.id)}
+                                                                            onInspectionDataFetched={onInspectionDataFetched(p.id)}
+                                                                        />
 
                                                                         {/* ── MASTER MERGE CORRECTION §6: SITE INSPECTOR ROUND
                                                                             ASSIGNMENT, re-homed into master's expanded-lot layout.

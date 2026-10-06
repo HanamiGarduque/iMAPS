@@ -9,6 +9,7 @@ use App\Services\InspectionDeliveryRetryService;
 use App\Support\InspectionDeliveryRetryEligibility;
 use App\Support\InspectionDeliveryRetryResult;
 use App\Support\InspectionDeliveryStatus;
+use App\Support\InspectionRoundNumbering;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -264,11 +265,22 @@ class InspectionDeliveryController extends Controller
         array $latestRoundIdsByParcel,
         array $attempts = []
     ): array {
-        $index = 0;
+        // PHASE 2B2B: the DISPLAYED round number now comes from the canonical
+        // (application, parcel) chain instead of a positional counter over
+        // whatever set of rounds the caller happened to pass in.
+        //
+        // The old `$index++` was caller-dependent: the same round was labelled
+        // differently depending on which list was loaded, and two parcels of one
+        // application were numbered as a single visit sequence.
+        //
+        // NOTHING about eligibility or delivery state is derived here. The
+        // supersession predicate below still comes from
+        // InspectionDeliveryRetryEligibility and is unchanged.
+        $roundIdentities = InspectionRoundNumbering::forInspections($rounds);
 
-        return $rounds->map(function (SiteInspection $round) use ($ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, &$index, $attempts): array {
-            $index++;
+        return $rounds->map(function (SiteInspection $round) use ($ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, $attempts, $roundIdentities): array {
             $roundId = (int) $round->getKey();
+            $identity = $roundIdentities[$roundId] ?? null;
 
             // LOOP 9D: server-computed supersession. This asks the SAME
             // predicate `InspectionDeliveryRetryService` enforces, from the SAME
@@ -287,11 +299,18 @@ class InspectionDeliveryController extends Controller
                 // Stable identity first. A later round never replaces an
                 // earlier one; both are always returned.
                 'inspection_id'     => (int) $round->getKey(),
-                // Derived 1-based display position within this application,
-                // following the canonical id chronology. This is NOT a stored
-                // value - `site_inspections` has no round_number column - so
-                // `inspection_id` remains the only stable round identity.
-                'round'             => $index,
+                // Canonical 1-based position within this round's own
+                // (application, parcel) chain. Derived on read - `site_inspections`
+                // has no round_number column - so `inspection_id` remains the
+                // only stable round identity.
+                //
+                // NULL for a historical row with no recorded parcel: it belongs to
+                // no chain, so no round number is displayed rather than a
+                // fabricated one. Such a round is separately reported as
+                // superseded and therefore not retryable, which is unchanged.
+                'round'             => $identity === null ? null : $identity['round_number'],
+                'round_kind'        => $identity['round_kind'] ?? InspectionRoundNumbering::KIND_HISTORICAL,
+                'round_note'        => $identity['note'] ?? InspectionRoundNumbering::HISTORICAL_NOTE,
                 'parcel_id'         => $round->parcel_id === null ? null : (int) $round->parcel_id,
                 'inspection_status' => $round->status,
                 'created_at'        => $round->created_at?->toIso8601String(),
