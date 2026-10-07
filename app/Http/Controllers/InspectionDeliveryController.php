@@ -157,7 +157,11 @@ class InspectionDeliveryController extends Controller
             // label and message.
             'retry_actor_unavailable_reason' => InspectionDeliveryStatus::retryUnavailableReason($viewerRole, $ownerId, $viewerId),
 
-            'inspections' => $this->shapeRounds($rounds, $ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, $attemptsByRound),
+            // ISSUE C hotfix: $recorderLiveFrom is the ONE per-request recorder
+            // proof read above. It is passed INTO shapeRounds() rather than read
+            // there, so shaping stays a function of its arguments and can never
+            // silently turn one aggregate read into one query per round.
+            'inspections' => $this->shapeRounds($rounds, $ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, $attemptsByRound, $recorderLiveFrom),
         ]);
     }
 
@@ -268,7 +272,8 @@ class InspectionDeliveryController extends Controller
         ?int $viewerId,
         ?string $viewerRole,
         array $latestRoundIdsByParcel,
-        array $attempts = []
+        array $attempts = [],
+        ?\DateTimeInterface $recorderLiveFrom = null
     ): array {
         // PHASE 2B2B: the DISPLAYED round number now comes from the canonical
         // (application, parcel) chain instead of a positional counter over
