@@ -774,13 +774,29 @@ class ApplicationController extends Controller
             $routeToSb = $request->boolean('route_to_sb') || ($validated['application_stream'] === 'amendment');
 
             // 3. Roll up overall status dynamically based on "restrictive precedence"
+            //
+            // ORDER MATTERS: an outstanding inspection requirement is evaluated
+            // BEFORE legislative routing.
+            //
+            // Legislative routing is not bypassed or removed - an amendment still
+            // belongs to the Sangguniang Bayan workflow, and `hasSbRouting()`
+            // still reports it. What must not happen is entering SB while a lot
+            // still has no field evidence, because the application would then
+            // leave Technical Review without the inspection findings the officer
+            // needs, and the Technical Review queue/full-record evaluation would
+            // no longer be reachable for that lot.
+            //
+            // This matches the precedence TechnicalReviewController::submitBatch()
+            // already applies when the officer later records the parcel
+            // evaluations: Declined > Needs Site Inspection > Approved, with SB
+            // routing considered only once nothing further is required.
             if (!empty($decisionsSeen)) {
                 if (in_array('Declined', $decisionsSeen, true)) {
                     $application->update(['status' => 'Denied']);
-                } elseif ($routeToSb) {
-                    $application->update(['status' => 'Under Sangguniang Bayan']);
                 } elseif (in_array('Needs Site Inspection', $decisionsSeen, true)) {
                     $application->update(['status' => 'Technical Review']);
+                } elseif ($routeToSb) {
+                    $application->update(['status' => 'Under Sangguniang Bayan']);
                 } else {
                     $application->update(['status' => 'For Release']);
                 }
