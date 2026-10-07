@@ -54,10 +54,13 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
     // §8 / §22  NULL SEMANTICS - THE CRITICAL ONE
     // ══════════════════════════════════════════════════════════════
 
-    public function test_null_maps_to_the_neutral_no_delivery_record_state(): void
+    public function test_null_maps_to_the_delivery_history_unavailable_state(): void
     {
         $this->assertSame(InspectionDeliveryStatus::STATE_NO_RECORD, InspectionDeliveryStatus::state(null));
-        $this->assertSame('No Delivery Record', InspectionDeliveryStatus::label(InspectionDeliveryStatus::STATE_NO_RECORD));
+        // ISSUE C: "No Delivery Record" was retired. A missing row is an absence
+        // of history, and reading it as certainty about the delivery itself is
+        // what misinformed Planning Officers.
+        $this->assertSame('Delivery History Unavailable', InspectionDeliveryStatus::label(InspectionDeliveryStatus::STATE_NO_RECORD));
     }
 
     public function test_null_is_never_rendered_as_a_problem(): void
@@ -170,7 +173,10 @@ class Loop9c1DeliveryStatusContractTest extends TestCase
     {
         $state = InspectionDeliveryStatus::state('delivered');
 
-        $this->assertSame('Delivered to FieldSync', InspectionDeliveryStatus::label($state));
+        // ISSUE C: the business state is DELIVERED. Naming the destination inside the
+        // state name duplicated the panel title and invited the reader to treat the
+        // label as a delivery-system fact.
+        $this->assertSame('Delivered', InspectionDeliveryStatus::label($state));
         $this->assertFalse(InspectionDeliveryStatus::isFailure('delivered'));
     }
 

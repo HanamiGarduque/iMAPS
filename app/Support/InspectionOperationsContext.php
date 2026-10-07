@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\InspectionDeliveryAttempt;
 use App\Models\SiteInspection;
 use Illuminate\Support\Facades\DB;
 
@@ -59,8 +60,18 @@ final class InspectionOperationsContext
      */
     public static function delivery(SiteInspection $inspection): array
     {
-        $state = InspectionDeliveryStatus::state($inspection->delivery_status);
         $delivery = $inspection->deliveryAttempts;
+
+        // ISSUE C: "not yet delivered" needs proof that the recorder was already
+        // running when this round was created AND still holds no attempt. A NULL
+        // status on its own is only an absence of history.
+        $neverAttempted = $delivery->isEmpty()
+            && InspectionDeliveryStatus::provesNeverDelivered(
+                $inspection->created_at,
+                InspectionDeliveryAttempt::recorderLiveFrom(),
+            );
+
+        $state = InspectionDeliveryStatus::state($inspection->delivery_status, $neverAttempted);
 
         $attempts = $delivery->isEmpty() ? null : $delivery->sortByDesc('attempt_number')->first();
 
@@ -82,7 +93,7 @@ final class InspectionOperationsContext
             'state' => $state,
             'label' => InspectionDeliveryStatus::label($state),
             'message' => InspectionDeliveryStatus::message($state),
-            'is_failure' => InspectionDeliveryStatus::isFailure($inspection->delivery_status),
+            'is_failure' => InspectionDeliveryStatus::isFailure($inspection->delivery_status, $neverAttempted),
 
             'attempt_count' => $delivery->count(),
             'last_attempt_at' => $attempts?->attempted_at?->toDateString()

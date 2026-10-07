@@ -118,6 +118,11 @@ class InspectionDeliveryController extends Controller
         // predicate, so "current round" means one thing on both sides.
         $latestRoundIdsByParcel = InspectionDeliveryRetryEligibility::latestRoundIdsByParcel($rounds);
 
+        // ISSUE C: ONE aggregate read per request. When the recorder was first
+        // demonstrably running is what separates "never sent" from "we have no
+        // history for this round", and it is the same fact for every round.
+        $recorderLiveFrom = InspectionDeliveryAttempt::recorderLiveFrom();
+
         // LOOP 9D: at most ONE extra query, and only when an Admin asked for one
         // named round's history. Loading it here rather than per round is what
         // keeps the disclosure on-demand instead of an N+1.
@@ -278,7 +283,7 @@ class InspectionDeliveryController extends Controller
         // InspectionDeliveryRetryEligibility and is unchanged.
         $roundIdentities = InspectionRoundNumbering::forInspections($rounds);
 
-        return $rounds->map(function (SiteInspection $round) use ($ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, $attempts, $roundIdentities): array {
+        return $rounds->map(function (SiteInspection $round) use ($ownerId, $viewerId, $viewerRole, $latestRoundIdsByParcel, $attempts, $roundIdentities, $recorderLiveFrom): array {
             $roundId = (int) $round->getKey();
             $identity = $roundIdentities[$roundId] ?? null;
 
@@ -329,6 +334,11 @@ class InspectionDeliveryController extends Controller
                     $viewerId,
                     $viewerRole,
                     $latestRoundIdsByParcel,
+                    // ISSUE C: proven silence, never assumed silence.
+                    InspectionDeliveryStatus::provesNeverDelivered(
+                        $round->created_at,
+                        $recorderLiveFrom,
+                    ) && (int) $round->delivery_attempts_count === 0,
                 ),
 
                 // LOOP 9D. A superseded round stays VISIBLE and is never hidden:
@@ -361,10 +371,11 @@ class InspectionDeliveryController extends Controller
         ?int $ownerId,
         ?int $viewerId,
         ?string $viewerRole,
-        array $latestRoundIdsByParcel
+        array $latestRoundIdsByParcel,
+        bool $neverAttempted = false
     ): array
     {
-        $state = InspectionDeliveryStatus::state($round->delivery_status);
+        $state = InspectionDeliveryStatus::state($round->delivery_status, $neverAttempted);
         $isFailed = $state === InspectionDeliveryStatus::STATE_FAILED;
 
         return [

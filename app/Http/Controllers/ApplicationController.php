@@ -9,6 +9,7 @@ use App\Models\TechnicalReview;
 use App\Services\AuditLogger;
 use App\Models\ApplicationDraft;
 use App\Models\ApplicationPoAssignment;
+use App\Models\InspectionDeliveryAttempt;
 use App\Models\SiteInspection;
 use App\Models\SiteInspectionAssignment;
 use App\Jobs\PushInspectionToSupabase; 
@@ -294,7 +295,16 @@ class ApplicationController extends Controller
             ];
         }
 
-        $state = InspectionDeliveryStatus::state($round->delivery_status);
+        // ISSUE C: a NULL round only earns "not yet delivered" when this caller
+        // can PROVE the recorder was already running when the round was created
+        // and still holds no attempt for it. Silence from an older recorder is
+        // history we do not have, not proof of non-delivery.
+        $neverAttempted = (int) ($round->delivery_attempts_count ?? 0) === 0
+            && InspectionDeliveryStatus::provesNeverDelivered(
+                $round->created_at,
+                InspectionDeliveryAttempt::recorderLiveFrom(),
+            );
+        $state = InspectionDeliveryStatus::state($round->delivery_status, $neverAttempted);
         $isFailed = $state === InspectionDeliveryStatus::STATE_FAILED;
 
         return [
