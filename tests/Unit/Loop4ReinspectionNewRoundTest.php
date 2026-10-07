@@ -72,7 +72,7 @@ class Loop4ReinspectionNewRoundTest extends TestCase
         $this->assertNotFalse($source);
         $this->assertStringContainsString("'Requires Reinspection'", $source);
         $this->assertStringContainsString("'reviews.*.decision'                 => 'required|string|in:Approved,Needs Site Inspection,Requires Reinspection,Declined'", $source);
-        $this->assertStringContainsString('DB::transaction(function () use ($application, $validated)', $source);
+        $this->assertStringContainsString('DB::transaction(function () use ($application, $validated, &$pendingReviewTransports)', $source);
         $this->assertStringContainsString("empty(\$review['inspector_id']) || empty(\$review['scheduled_date']) || empty(\$review['deadline_date'])", $source);
         $this->assertStringContainsString("reviews.\$parcelId.assigned_notes", $source);
         $this->assertStringContainsString('$latestInspection->newRound($assignmentData)', $source);
