@@ -4,8 +4,10 @@ namespace App\Jobs;
 
 use App\Models\InspectionDeliveryAttempt;
 use App\Models\SiteInspection;
+use App\Models\TechnicalReview;
 use App\Services\BridgeSourceIdentity;
 use App\Services\InspectionDeliveryRecorder;
+use App\Support\InspectionRoundNumbering;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -260,6 +262,21 @@ class PushInspectionToSupabase implements ShouldQueue
             // supabase_application_id, supabase_parcel_id, assigned_inspector_id,
             // scheduled_date, deadline_date and assignment_instructions while
             // leaving the Teshow lifecycle columns intact.
+            // ISSUE D: authoritative round context. Round number is derived
+            // iMAPS-side from the SAME canonical ordering used everywhere else
+            // (site_inspections grouped by application+parcel, ordered by id ASC).
+            // It is never invented from a client list index or sort order.
+            $round = InspectionRoundNumbering::forInspection($this->inspection);
+            $roundNumber = $round['is_historical'] ? null : $round['round_number'];
+
+            // The review that CREATED this round, if it was a Requires Reinspection
+            // decision. A normal first inspection has no such review, so its
+            // previous/reason/timestamp stay NULL.
+            $creator = TechnicalReview::where('site_inspection_task_id', $this->inspection->id)
+                ->where('decision', 'Requires Reinspection')
+                ->orderByDesc('id')
+                ->first();
+
             $jobPayload = self::withAssigningOfficerProvenance(
                 [
                     'bridge_source_id'         => $bridgeSourceId,
@@ -271,6 +288,10 @@ class PushInspectionToSupabase implements ShouldQueue
                     'deadline_date'           => $this->inspection->deadline_date ? $this->inspection->deadline_date->format('Y-m-d') : null,
                     'assigned_inspector_id'   => $this->resolveSupabaseUserId($this->inspection->inspector_id),
                     'assignment_instructions' => $this->inspection->assigned_notes,
+                    'inspection_round_number' => $roundNumber,
+                    'previous_site_inspection_id' => $creator?->reviewed_site_inspection_id,
+                    'reinspection_reason'     => $creator?->decision_reason,
+                    'reinspection_reviewed_at' => $creator?->reviewed_at?->toIso8601String(),
                 ],
                 $this->inspection->assigned_by_imaps_user_id,
                 $this->inspection->assigned_by_name,

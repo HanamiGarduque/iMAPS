@@ -761,6 +761,7 @@ class TechnicalReviewController extends Controller
             reviewedBy: (int) $technicalReview->reviewed_by,
             reviewedByName: $reviewer?->name,
             reviewedAt: $technicalReview->reviewed_at?->toIso8601String(),
+            decisionReason: $technicalReview->decision_reason,
         );
     }
 
