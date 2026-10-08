@@ -4,7 +4,7 @@ import Swal from "sweetalert2";
 import axios from "axios";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import { performLogout } from "@/utils/auth";
+import { confirmSignOut } from "@/utils/signOut";
 
 export default function Index({ users = { data: [], links: [] }, filters = {}, role_counts = {}, auth = {} }) {
     const [clock, setClock] = useState("");
@@ -141,31 +141,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         router.get("/users", {}, { preserveState: true, replace: true });
     };
 
-    const handleLogout = () => {
-        Swal.fire({
-            title: "Sign Out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
-                title: "text-base font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-4",
-                confirmButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
-                cancelButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
-            },
-        }).then((result) => {
-            if (result.isConfirmed) {
-                performLogout();
-            }
-        });
-    };
+    const handleLogout = confirmSignOut;
 
     // Client-side status filtering on current page items
     const displayedUsers = useMemo(() => {
@@ -285,34 +261,12 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
     };
 
     // Role badge configuration matching the exact design
-    const getRoleBadge = (role) => {
-        switch (role) {
-            case "Admin":
-                return {
-                    label: "System Admin",
-                    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
-                    avatarBg: "bg-slate-100 text-slate-700 border-slate-200",
-                };
-            case "Planning Officer":
-                return {
-                    label: "Planning Officer",
-                    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
-                    avatarBg: "bg-slate-100 text-slate-700 border-slate-200",
-                };
-            case "Site Inspector":
-                return {
-                    label: "Site Inspector",
-                    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
-                    avatarBg: "bg-slate-100 text-slate-700 border-slate-200",
-                };
-            default:
-                return {
-                    label: role || "Staff",
-                    badgeClass: "bg-slate-100 text-slate-700 border-slate-200",
-                    avatarBg: "bg-slate-100 text-slate-700 border-slate-200",
-                };
-        }
-    };
+    // One blue/slate scheme for every role.
+    const getRoleBadge = (role) => ({
+        label: role === "Admin" ? "System Admin" : role || "Staff",
+        badgeClass: "bg-white text-slate-700 border-slate-200",
+        avatarBg: "bg-blue-50 text-blue-700 border-blue-100",
+    });
 
     // Submit Edit User Profile
     const submitEditProfile = async (e) => {
@@ -471,75 +425,46 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                     />
                 )}
 
-                <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
-                    <div className="p-6 sm:p-8 flex-1 flex flex-col h-full overflow-y-auto max-w-6xl mx-auto w-full gap-5">
+                <main className="flex-1 w-full h-full flex flex-col overflow-hidden bg-white">
+                    <div className="flex-1 flex flex-col h-full min-h-0 w-full">
 
-                        {/* ── HEADER SECTION ── */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 shrink-0">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                                    </svg>
-                                </div>
-                                <div className="flex items-center gap-2.5 flex-wrap">
-                                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-                                        User Management
-                                    </h1>
-                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                        {summaryStats.total} {summaryStats.total === 1 ? "Account" : "Accounts"}
-                                    </span>
-                                </div>
-                            </div>
+                        {/* No visible page header: the navbar's USERS badge names the page, the table stands alone. */}
+                        <h1 className="sr-only">User Management</h1>
 
-                            <div className="flex items-center gap-2.5">
-                                <Link
-                                    href="/register-new-account"
-                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-98 cursor-pointer"
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                    </svg>
-                                    <span>Register New Account</span>
-                                </Link>
-                            </div>
-                        </div>
-
-                        {/* ── ROLE TABS & FILTERS BAR (EXACT ORIGINAL DESIGN) ── */}
-                        <div className="border-b border-slate-200/80 pb-0.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
-                            <nav className="-mb-px flex space-x-6 sm:space-x-8 overflow-x-auto" aria-label="Staff Roles">
-                                {[
-                                    { id: "", label: "All Staff", count: summaryStats.total },
-                                    { id: "Planning Officer", label: "Planning Officers", count: summaryStats.poCount },
-                                    { id: "Site Inspector", label: "Site Inspectors", count: summaryStats.inspectorCount },
-                                    { id: "Admin", label: "Administrators", count: summaryStats.adminCount },
-                                ].map((tab) => {
-                                    const isSelected = (filters.role || "") === tab.id;
-                                    return (
-                                        <button
-                                            key={tab.id || "all"}
-                                            type="button"
-                                            onClick={() => applyFilter({ role: tab.id })}
-                                            className={`py-3 px-1 border-b-2 text-xs font-medium transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${isSelected
-                                                ? "border-blue-600 text-blue-600 font-semibold"
-                                                : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"
-                                                }`}
-                                        >
-                                            <span>{tab.label}</span>
-                                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold transition-colors ${isSelected
-                                                ? "bg-blue-100 text-blue-700"
-                                                : "bg-slate-100 text-slate-500"
-                                                }`}>
-                                                {tab.count}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </nav>
+                        {/* Full-width panel: filter bar on top, results scroll below. */}
+                        <div className="bg-white overflow-hidden flex flex-col flex-1 min-h-0">
+                        {/* ── TOOLBAR: role switch (left), status/search/view (right) ── */}
+                        <div className="px-6 py-3 border-b border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
+                        <nav className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100 border border-slate-200/80 overflow-x-auto max-w-full" aria-label="Filter by role">
+                            {[
+                                { id: "", label: "All staff", count: summaryStats.total },
+                                { id: "Planning Officer", label: "Planning Officers", count: summaryStats.poCount },
+                                { id: "Site Inspector", label: "Site Inspectors", count: summaryStats.inspectorCount },
+                                { id: "Admin", label: "Administrators", count: summaryStats.adminCount },
+                            ].map((card) => {
+                                const on = (filters.role || "") === card.id;
+                                return (
+                                    <button
+                                        key={card.id || "all"}
+                                        type="button"
+                                        onClick={() => applyFilter({ role: card.id })}
+                                        aria-pressed={on}
+                                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs whitespace-nowrap transition-all cursor-pointer ${on
+                                            ? "bg-white text-slate-900 font-semibold shadow-xs ring-1 ring-slate-200/80"
+                                            : "text-slate-500 hover:text-slate-800"
+                                            }`}
+                                    >
+                                        {card.label}
+                                        <span className={`min-w-5 px-1.5 rounded-full text-[10.5px] font-semibold tabular-nums text-center ${on ? "bg-blue-600 text-white" : "bg-slate-200/80 text-slate-600"}`}>
+                                            {card.count}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </nav>
 
                             {/* Quick Search & Controls */}
-                            <div className="flex items-center gap-2.5 pb-2 md:pb-0">
+                            <div className="flex items-center gap-2.5">
                                 {/* Status Switch */}
                                 <div className="inline-flex items-center rounded-lg border border-slate-200/90 p-0.5 bg-white shadow-2xs">
                                     {[
@@ -622,12 +547,23 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                         </svg>
                                     </button>
                                 </div>
+
+                                {/* Primary action, moved here from the removed page header */}
+                                <Link
+                                    href="/register-new-account"
+                                    className="inline-flex items-center gap-1.5 h-[30px] px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                    </svg>
+                                    Register New Account
+                                </Link>
                             </div>
                         </div>
 
                         {/* ── TABLE OR DIRECTORY CARDS ── */}
                         {displayedUsers.length === 0 ? (
-                            <div className="bg-white rounded-xl border border-slate-200/90 p-12 text-center shadow-xs">
+                            <div className="p-12 text-center">
                                 <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
@@ -647,17 +583,25 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                             </div>
                         ) : viewMode === "table" ? (
                             /* ── SCROLLABLE HIGH-DENSITY ENTERPRISE TABLE ── */
-                            <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
-                                <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-270px)]">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200/80 shadow-2xs">
-                                            <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                                                <th className="py-3 px-5">Name</th>
-                                                <th className="py-3 px-4">Role</th>
-                                                <th className="py-3 px-4">Status</th>
-                                                <th className="py-3 px-4">Last Active</th>
-                                                <th className="py-3 px-4 text-center">View Logs</th>
-                                                <th className="py-3 px-5 text-right">Actions</th>
+                            <div className="flex-1 flex flex-col min-h-0">
+                                {/* Grey canvas under the white table so the list clearly ends instead of trailing into blank space */}
+                                <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto bg-slate-50/70">
+                                    <table className="w-full min-w-[860px] text-left border-collapse bg-white">
+                                        {/* Fixed widths for the short columns; Name takes the rest, so rows read without big gaps */}
+                                        <colgroup>
+                                            <col />
+                                            <col className="w-[190px]" />
+                                            <col className="w-[140px]" />
+                                            <col className="w-[200px]" />
+                                            <col className="w-[150px]" />
+                                        </colgroup>
+                                        <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-200/80">
+                                            <tr className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-[0.08em]">
+                                                <th className="py-2.5 px-6">Name</th>
+                                                <th className="py-2.5 px-4">Role</th>
+                                                <th className="py-2.5 px-4">Status</th>
+                                                <th className="py-2.5 px-4">Last active</th>
+                                                <th className="py-2.5 px-6 text-right">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 text-xs">
@@ -670,11 +614,11 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                 return (
                                                     <tr
                                                         key={u.id}
-                                                        className={`hover:bg-slate-50/70 transition-colors ${!u.is_active ? "bg-rose-50/15" : ""
+                                                        className={`hover:bg-blue-50/40 transition-colors ${!u.is_active ? "bg-slate-100/60" : ""
                                                             }`}
                                                     >
                                                         {/* User Column */}
-                                                        <td className="py-3.5 px-5">
+                                                        <td className="py-2.5 px-6">
                                                             <div className="flex items-center gap-3">
                                                                 <div
                                                                     className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-xs border shrink-0 ${roleInfo.avatarBg}`}
@@ -692,7 +636,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                                             </span>
                                                                         )}
                                                                     </div>
-                                                                    <div className="text-slate-400 text-[11px] truncate font-mono">
+                                                                    <div className="text-slate-400 text-[11px] truncate">
                                                                         {u.email}
                                                                     </div>
                                                                 </div>
@@ -700,31 +644,29 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                         </td>
 
                                                         {/* Role Column */}
-                                                        <td className="py-3.5 px-4 whitespace-nowrap">
-                                                            <span
-                                                                className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${roleInfo.badgeClass}`}
-                                                            >
+                                                        <td className="py-2.5 px-4 whitespace-nowrap">
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${roleInfo.badgeClass}`}>
                                                                 {roleInfo.label}
                                                             </span>
                                                         </td>
 
                                                         {/* Status Column */}
-                                                        <td className="py-3.5 px-4 whitespace-nowrap">
+                                                        <td className="py-2.5 px-4 whitespace-nowrap">
                                                             {u.is_active ? (
-                                                                <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
-                                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-blue-100 bg-blue-50 text-[11px] font-semibold text-blue-700">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                                                                     Active
                                                                 </span>
                                                             ) : (
-                                                                <span className="inline-flex items-center gap-1.5 text-xs text-rose-600 font-medium">
-                                                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-slate-200 bg-slate-100 text-[11px] font-semibold text-slate-500">
+                                                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
                                                                     Suspended
                                                                 </span>
                                                             )}
                                                         </td>
 
                                                         {/* Last Active Column */}
-                                                        <td className="py-3.5 px-4 whitespace-nowrap">
+                                                        <td className="py-2.5 px-4 whitespace-nowrap">
                                                             <div className="text-slate-700 text-xs">
                                                                 {formatRelativeOrDate(u.last_login)}
                                                             </div>
@@ -733,30 +675,16 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                             </div>
                                                         </td>
 
-                                                        {/* View Logs Column (dedicated, matches reference layout) */}
-                                                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => openLogs(u)}
-                                                                title="View Activity Logs"
-                                                                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-200 shadow-2xs transition-colors cursor-pointer"
-                                                            >
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                                </svg>
-                                                            </button>
-                                                        </td>
-
-                                                        {/* Actions Column */}
-                                                        <td className="py-3.5 px-5 text-right whitespace-nowrap">
-                                                            <div className="flex items-center justify-end gap-1.5">
+                                                        {/* Actions Column: metrics, activity logs, edit — borderless icon buttons */}
+                                                        <td className="py-2.5 px-6 text-right whitespace-nowrap">
+                                                            <div className="flex items-center justify-end gap-0.5">
                                                                 {(isOfficer || isInspector) && (
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => setStatsModalUser(u)}
-                                                                        title="View Metrics"
-                                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-200/80 hover:border-blue-200 shadow-2xs transition-colors cursor-pointer"
+                                                                        title="View metrics"
+                                                                        aria-label={`View metrics for ${u.name}`}
+                                                                        className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
                                                                     >
                                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
@@ -766,9 +694,23 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
 
                                                                 <button
                                                                     type="button"
+                                                                    onClick={() => openLogs(u)}
+                                                                    title="View activity logs"
+                                                                    aria-label={`View activity logs for ${u.name}`}
+                                                                    className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                                                >
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                    </svg>
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
                                                                     onClick={() => { setEditingUser({ ...u }); setAccountModalView("profile"); }}
-                                                                    title="Edit Account"
-                                                                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 border border-slate-200/80 hover:border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                                                                    title="Edit account"
+                                                                    aria-label={`Edit account for ${u.name}`}
+                                                                    className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
                                                                 >
                                                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H8.25A2.25 2.25 0 016 18.75V14" />
@@ -781,11 +723,15 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                             })}
                                         </tbody>
                                     </table>
+                                    {/* End-of-list line */}
+                                    <p className="px-6 py-3 border-t border-slate-200/80 bg-white text-[11.5px] text-slate-400">
+                                        Showing {displayedUsers.length} of {summaryStats.total} {summaryStats.total === 1 ? "account" : "accounts"}
+                                    </p>
                                 </div>
                             </div>
                         ) : (
                             /* ── DIRECTORY GRID VIEW ── */
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-slate-50/50 flex-1 min-h-0 overflow-y-auto content-start">
                                 {displayedUsers.map((u) => {
                                     const roleInfo = getRoleBadge(u.role);
                                     const isSelf = currentUserId === u.id || (currentUserEmail && currentUserEmail === (u.email || "").toLowerCase());
@@ -795,7 +741,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                     return (
                                         <div
                                             key={u.id}
-                                            className={`bg-white rounded-xl border p-5 transition-all shadow-xs hover:border-slate-300 flex flex-col justify-between ${!u.is_active ? "border-rose-200 bg-rose-50/10" : "border-slate-200/90"
+                                            className={`bg-white rounded-2xl border p-5 transition-all shadow-[0_30px_70px_-30px_rgba(37,99,235,.35)] hover:border-slate-300 flex flex-col justify-between ${!u.is_active ? "border-slate-300 bg-slate-50" : "border-slate-200/90"
                                                 }`}
                                         >
                                             <div>
@@ -814,12 +760,12 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                         )}
                                                         {u.is_active ? (
                                                             <span className="inline-flex items-center gap-1 text-[11px] text-slate-600">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                                                                 Active
                                                             </span>
                                                         ) : (
-                                                            <span className="inline-flex items-center gap-1 text-[11px] text-rose-600 font-medium">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
                                                                 Suspended
                                                             </span>
                                                         )}
@@ -836,7 +782,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                         <h3 className="text-sm font-semibold text-slate-900 truncate">
                                                             {u.name}
                                                         </h3>
-                                                        <p className="text-xs text-slate-400 truncate font-mono mt-0.5">
+                                                        <p className="text-xs text-slate-400 truncate mt-0.5">
                                                             {u.email}
                                                         </p>
                                                     </div>
@@ -865,7 +811,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                                         type="button"
                                                         onClick={() => openLogs(u)}
                                                         title="View Activity Logs"
-                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-200 shadow-2xs transition-colors cursor-pointer"
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-200/80 hover:border-blue-200 shadow-2xs transition-colors cursor-pointer"
                                                     >
                                                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
@@ -889,10 +835,11 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                 })}
                             </div>
                         )}
+                        </div>
 
                         {/* ── PAGINATION CONTROLS ── */}
                         {users?.last_page > 1 && (
-                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-200/80 pb-4">
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-3 border-t border-slate-200/80 shrink-0">
                                 <p className="text-xs text-slate-500">
                                     Showing <span className="font-semibold text-slate-800">{users.from || 1}</span> to{" "}
                                     <span className="font-semibold text-slate-800">{users.to || displayedUsers.length}</span> of{" "}
@@ -956,7 +903,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                             Metrics
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">
+                                    <p className="text-xs text-slate-400 mt-0.5 truncate">
                                         {statsModalUser.email}
                                     </p>
                                 </div>
@@ -985,7 +932,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                         </div>
                                         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
                                             <div className="text-[10px] text-slate-400 uppercase font-semibold">Total Fees</div>
-                                            <div className="text-base font-bold text-emerald-700 mt-0.5 truncate font-mono">
+                                            <div className="text-base font-bold text-blue-700 mt-0.5 truncate font-mono">
                                                 {statsModalUser.stats?.total_fees || "₱0.00"}
                                             </div>
                                         </div>
@@ -1034,7 +981,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                         </div>
                                         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
                                             <div className="text-[10px] text-slate-400 uppercase font-semibold">Compliance</div>
-                                            <div className="text-lg font-bold text-emerald-700 mt-0.5">
+                                            <div className="text-lg font-bold text-blue-700 mt-0.5">
                                                 {statsModalUser.inspector_stats?.compliance_rate || 0}%
                                             </div>
                                         </div>
@@ -1141,7 +1088,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                             {accountModalView === "password" ? "Security" : editingUser.role}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">{editingUser.email}</p>
+                                    <p className="text-xs text-slate-400 mt-0.5 truncate">{editingUser.email}</p>
                                 </div>
                             </div>
                             <button
@@ -1178,7 +1125,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                         type="email"
                                         value={editingUser.email}
                                         onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
                                         required
                                     />
                                 </div>
@@ -1190,11 +1137,11 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                             type="button"
                                             onClick={() => setEditingUser({ ...editingUser, is_active: true })}
                                             className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-2 cursor-pointer transition-colors ${editingUser.is_active
-                                                ? "bg-emerald-50 border-emerald-300 text-emerald-800 font-semibold"
+                                                ? "bg-blue-50 border-blue-300 text-blue-800 font-semibold"
                                                 : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                                                 }`}
                                         >
-                                            <span className={`w-1.5 h-1.5 rounded-full ${editingUser.is_active ? "bg-emerald-500" : "bg-slate-300"}`}></span>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${editingUser.is_active ? "bg-blue-500" : "bg-slate-300"}`}></span>
                                             Active
                                         </button>
 
@@ -1331,7 +1278,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                     >
                                         {getInitials(logsModalUser.name)}
                                     </div>
-                                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white bg-indigo-600 text-white shadow-sm">
+                                    <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white bg-blue-600 text-white shadow-sm">
                                         <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -1343,11 +1290,11 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                         <h2 className="text-sm font-bold text-slate-900 tracking-tight truncate">
                                             {logsModalUser.name}
                                         </h2>
-                                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-indigo-200 bg-indigo-50 font-semibold text-indigo-700">
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-blue-200 bg-blue-50 font-semibold text-blue-700">
                                             Activity Log
                                         </span>
                                     </div>
-                                    <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">
+                                    <p className="text-xs text-slate-400 mt-0.5 truncate">
                                         {logsModalUser.email}
                                     </p>
                                 </div>
@@ -1372,7 +1319,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                         <div className="overflow-x-auto overflow-y-auto flex-1">
                             {isLoadingLogs ? (
                                 <div className="p-12 text-center">
-                                    <div className="w-8 h-8 rounded-full border-2 border-slate-200 border-t-indigo-500 animate-spin mx-auto mb-3" />
+                                    <div className="w-8 h-8 rounded-full border-2 border-slate-200 border-t-blue-500 animate-spin mx-auto mb-3" />
                                     <p className="text-xs text-slate-400 font-medium">Loading activity logs…</p>
                                 </div>
                             ) : logsError ? (

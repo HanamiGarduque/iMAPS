@@ -18,8 +18,16 @@ use Tests\TestCase;
  *
  * THE POINT OF THIS SUITE
  * -----------------------
- * 1. AUTHORITY. Admin only, read only, and enforced by the route middleware rather
- *    than by hiding a link. There must be no write path of any kind.
+ * 1. AUTHORITY. Read-only, and enforced by the route middleware rather than by
+ *    hiding a link. There must be no write path of any kind.
+ *
+ *    POST-LOOP-9 SMOKE FIX: the authorized set was widened from Admin-only to
+ *    `role:Admin,Planning Officer`. A Planning Officer resolves day-to-day
+ *    FieldSync issues inside MPDO and previously could not read the report they
+ *    had to act on. A Site Inspector remains refused (they submit through
+ *    FieldSync only) and the read-only guarantee is unchanged, so this suite's
+ *    authority assertions now pin the full two-role boundary plus the continued
+ *    absence of any mutation route.
  * 2. THE REDACTION CONTRACT. The audit found that the single live report contains
  *    a signed Supabase Storage URL - a bearer capability granting read on a
  *    private inspection photo - inside its free text. Every assertion here is
@@ -391,7 +399,7 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
         }
 
         $this->assertStringContainsString(
-            'DiagnosticTextSanitizer::sanitize',
+            'DiagnosticTextSanitizer::forBatch',
             $source,
             'Free text must pass through the sanitizer.'
         );
@@ -473,30 +481,171 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
         }
     }
 
-    public function test_diagnostic_routes_are_admin_only_get_routes(): void
+    /**
+     * POST-LOOP-9 SMOKE FIX - the authority boundary moved, deliberately.
+     *
+     * The list and detail are now `role:Admin,Planning Officer`. This is a
+     * WIDENING of READ access and nothing else, and the reason is a real
+     * operational gap rather than a convenience: a Planning Officer is the role
+     * that resolves day-to-day FieldSync issues inside MPDO, and under the old
+     * Admin-only rule the one person best placed to act on a report could not
+     * open it.
+     *
+     * What this test now pins is the FULL boundary, which is stronger than the
+     * one it replaced:
+     *   - Admin and Planning Officer are authorized;
+     *   - Site Inspector is NOT in the authorized list;
+     *   - there is still no mutation route in any verb, for either role, so the
+     *     report stays immutable while being readable by two roles.
+     */
+    public function test_diagnostic_routes_are_admin_and_planning_officer_get_routes(): void
     {
         $web = (string) file_get_contents(base_path('routes/web.php'));
 
-        $this->assertMatchesRegularExpression(
-            "#/diagnostics'.*?role:Admin#s",
-            $web,
-            'The diagnostic list must be Admin-only.'
-        );
+        // Authority is asserted against the RESOLVED runtime chain, not the
+        // source text. Asserting only on routes/web.php is what let the
+        // Planning Officer 403 ship: the source read
+        // `role:Admin,Planning Officer`, but the routes were declared INSIDE
+        // `Route::middleware(['auth', 'role:Admin'])`, and group middleware is
+        // inherited and COMBINED with a route's own rather than replaced by it.
+        // An inherited `role:Admin` therefore ran FIRST and aborted 403.
+        foreach (['diagnostics.index', 'diagnostics.show'] as $name) {
+            $route = \Illuminate\Support\Facades\Route::getRoutes()->getByName($name);
+            $this->assertNotNull($route, "Route {$name} must be registered.");
 
-        $this->assertMatchesRegularExpression(
-            "#/diagnostics/\{report\}'.*?role:Admin#s",
-            $web,
-            'The diagnostic detail must be Admin-only.'
-        );
+            $chain = array_values(array_filter(
+                app(\Illuminate\Routing\Router::class)->gatherRouteMiddleware($route),
+                fn ($p) => str_contains((string) $p, 'RoleMiddleware')
+            ));
 
-        // No mutation route may exist for this resource in any verb.
-        foreach (['post', 'put', 'patch', 'delete'] as $verb) {
+            $this->assertCount(
+                1,
+                $chain,
+                "{$name} must resolve to exactly ONE authority; a second entry is inherited from an enclosing group and runs first."
+            );
+            $this->assertStringEndsWith(
+                ':Admin,Planning Officer',
+                (string) $chain[0],
+                "{$name} must be readable by Admin and Planning Officer."
+            );
+
+            // The Site Inspector must be named nowhere in the authorized list.
+            $this->assertStringNotContainsString(
+                'Site Inspector',
+                (string) $chain[0],
+                "{$name} must NOT authorize a Site Inspector; they submit through FieldSync only."
+            );
+        }
+
+        // Phase 2B adds only the authorized handling POST. Filed report content
+        // stays immutable; generic write/delete endpoints remain forbidden.
+        foreach (['put', 'patch', 'delete'] as $verb) {
             $this->assertDoesNotMatchRegularExpression(
                 "#Route::{$verb}\('/diagnostics#i",
                 $web,
-                "No {$verb} route may exist for diagnostics; the loop is read-only."
+                "No {$verb} route may ever exist for diagnostics; the report is immutable in iMAPS."
             );
         }
+
+        // The Development Support batch adds three MORE Admin-only escalation POSTs.
+        // The count is widened deliberately, but the invariant underneath it is
+        // NOT relaxed: every one of the five must still resolve to exactly ONE
+        // authority, and none of them may name a Planning Officer. That is
+        // asserted per-route immediately below rather than left to the count.
+        $this->assertSame(
+            5,
+            preg_match_all("#Route::post\('/diagnostics#i", $web),
+            'Exactly the handling, Admin notice and three Development Support escalation POSTs may exist.'
+        );
+
+        // Read the notice action's authority from the RESOLVED chain, for the
+        // same reason as the GET routes above.
+        $notifyRoute = \Illuminate\Support\Facades\Route::getRoutes()
+            ->getByName('diagnostics.notify-planning-officers');
+        $this->assertNotNull($notifyRoute, 'The notice action must be registered.');
+
+        $notifyChain = array_values(array_filter(
+            app(\Illuminate\Routing\Router::class)->gatherRouteMiddleware($notifyRoute),
+            fn ($p) => str_contains((string) $p, 'RoleMiddleware')
+        ));
+
+        $this->assertCount(1, $notifyChain, 'The notice action must resolve to exactly ONE authority.');
+        $this->assertStringEndsWith(
+            ':Admin',
+            (string) $notifyChain[0],
+            'The notice action must be Admin-only, never shared with a Planning Officer.'
+        );
+        $this->assertStringNotContainsString(
+            'Planning Officer',
+            (string) $notifyChain[0],
+            'A Planning Officer must not be able to trigger the notice action.'
+        );
+
+        // Every escalation route is Admin-only and writes only the LOCAL escalation
+        // record - never the remote report. Read from the RESOLVED chain for the
+        // same inherited-group reason as the GET routes above, and asserted
+        // individually so adding a route can never quietly widen authority.
+        foreach ([
+            'diagnostics.escalations.store' => 'open',
+            'diagnostics.escalations.recommendation' => 'record a recommendation',
+            'diagnostics.escalations.close' => 'close',
+        ] as $name => $purpose) {
+            $route = \Illuminate\Support\Facades\Route::getRoutes()->getByName($name);
+            $this->assertNotNull($route, "Escalation route {$name} must be registered.");
+
+            $chain = array_values(array_filter(
+                app(\Illuminate\Routing\Router::class)->gatherRouteMiddleware($route),
+                fn ($p) => str_contains((string) $p, 'RoleMiddleware')
+            ));
+
+            $this->assertCount(1, $chain, "{$name} must resolve to exactly ONE authority.");
+            $this->assertStringEndsWith(
+                ':Admin',
+                (string) $chain[0],
+                "Escalation route {$name} ({$purpose}) must be Admin-only."
+            );
+            $this->assertStringNotContainsString(
+                'Planning Officer',
+                (string) $chain[0],
+                "A Planning Officer must never reach {$name}; internal escalation is Admin-mediated."
+            );
+            $this->assertSame(
+                ['POST'],
+                array_values(array_diff($route->methods(), ['HEAD'])),
+                "Escalation route {$name} must be a POST; there is no reopen, edit or delete verb."
+            );
+        }
+
+// No generic write endpoint: only the exact handling, notice and escalation
+        // endpoints may mutate anything.
+        $this->assertDoesNotMatchRegularExpression(
+            "#Route::post\('/diagnostics(?!/\{report\}/(?:notify-planning-officers|handle|escalations(?:/\{escalation\}/(?:recommendation|close))?))#i",
+            $web,
+            'Only the exact handling, notice and escalation endpoints may mutate anything.'
+        );
+
+        // A Site Inspector must not gain the nav entry either.
+        $sidebar = (string) file_get_contents(base_path('resources/js/Components/Sidebar.jsx'));
+        $this->assertMatchesRegularExpression(
+            "#href: '/diagnostics'.*?adminOnly: false#s",
+            $sidebar,
+            'A Planning Officer must see the Diagnostics entry in navigation.'
+        );
+    }
+
+    /**
+     * A Site Inspector gets no internal navigation at all, which is what keeps
+     * the Diagnostics entry away from them regardless of the `adminOnly` flag.
+     */
+    public function test_a_site_inspector_receives_no_diagnostics_navigation(): void
+    {
+        $sidebar = (string) file_get_contents(base_path('resources/js/Components/Sidebar.jsx'));
+
+        $this->assertMatchesRegularExpression(
+            '/const visibleItems = isSiteInspector\s*\?\s*\[\s*\]/',
+            $sidebar,
+            'A Site Inspector must still receive an empty navigation set.'
+        );
     }
 
     public function test_no_delivery_monitoring_is_duplicated(): void
@@ -536,16 +685,59 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
         }
     }
 
-    public function test_the_diagnostic_ui_has_no_write_control(): void
+    /**
+     * POST-LOOP-9 SMOKE FIX - the ban is now scoped to the REPORT, not the page.
+     *
+     * Both diagnostics pages now render the shared authenticated shell, and that
+     * shell contains one `router.post("/logout")` for the sign-out control, so a
+     * blanket `router.post` ban started failing on code that cannot touch a
+     * diagnostic report. Deleting the shared shell to satisfy a substring match
+     * would have been the wrong fix.
+     *
+     * The SECURITY INTENT is unchanged and is now asserted more precisely: what
+     * must never exist is a write aimed at a diagnostic report or at a
+     * notification about one. A sign-out is not that.
+     *
+     * COMPENSATING ASSERTION: the only POST these pages may contain is the
+     * shell's logout, so a future write cannot be added under this exemption.
+     */
+    public function test_the_diagnostic_ui_has_only_scoped_handling_and_notice_controls(): void
     {
         foreach (['Index', 'Show'] as $page) {
             $source = (string) file_get_contents(base_path("resources/js/Pages/Diagnostics/{$page}.jsx"));
 
-            foreach (['router.post', 'router.put', 'router.patch', 'router.delete', 'method:'] as $write) {
-                $this->assertStringNotContainsString(
-                    $write,
-                    $source,
-                    "Diagnostics/{$page}.jsx must not issue a write. Found '{$write}'."
+            // A write aimed at the diagnostic REPORT itself, in any verb. The
+            // single authorized Admin notice action is excluded by name,
+            // because it writes a local notification, not the report.
+            $this->assertDoesNotMatchRegularExpression(
+                '#router\.(post|put|patch|delete)\s*\(\s*[`"\'](/diagnostics/(?!.*notify-planning-officers))#i',
+                $source,
+                "Diagnostics/{$page}.jsx must not issue a write against a diagnostic report."
+            );
+
+            // The handling form uses JSON, not an Inertia mutation. No generic
+            // write or client-direct Supabase transport is permitted.
+            preg_match_all('#axios\.post\s*\(\s*[`"\']([^`"\']+)#i', $source, $handlingPosts);
+            $this->assertSame($page === 'Show' ? ['/diagnostics/${report.id}/handle'] : [], $handlingPosts[1]);
+            $this->assertStringNotContainsString('supabase', $source);
+
+            // No Inertia options-bag verb, which is the other way to mutate.
+            $this->assertStringNotContainsString(
+                'method:',
+                $source,
+                "Diagnostics/{$page}.jsx must not issue a write. Found 'method:'."
+            );
+
+            // Any POST the page may contain is either the shell's sign-out or
+            // the single authorized Admin notice action - nothing else.
+            preg_match_all('#router\.post\s*\(\s*[`"\']([^`"\']+)#i', $source, $posts);
+            foreach ($posts[1] as $target) {
+                $isAllowed = str_contains($target, 'logout')
+                    || str_contains($target, 'notify-planning-officers');
+
+                $this->assertTrue(
+                    $isAllowed,
+                    "Diagnostics/{$page}.jsx may only POST to logout or the Admin notice action; found '{$target}'."
                 );
             }
 
@@ -554,6 +746,47 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
                 $this->assertStringNotContainsString($foreignControl, $source);
             }
         }
+    }
+
+    /**
+     * The one authorized POST is the Admin notice action, and it must not be
+     * able to resolve or otherwise mutate the report it points at.
+     *
+     * The 9E/9F contract was "the report is immutable in iMAPS". Adding an
+     * in-app reminder does not weaken that, but it does mean the proof cannot
+     * simply be "there is no POST route any more" - it has to become "the only
+     * POST writes a notification and touches no report field".
+     */
+    public function test_the_admin_notice_action_cannot_resolve_a_report(): void
+    {
+        $controller = $this->executable(
+            (string) file_get_contents(base_path('app/Http/Controllers/DiagnosticReportController.php'))
+        );
+
+        $start = strpos($controller, 'public function notifyPlanningOfficers(');
+        $this->assertNotFalse($start, 'The Admin notice action must exist.');
+        $body = substr($controller, $start, 4000);
+
+        // It writes a notification and nothing else: no local update, no
+        // delete, no create on any other table, no raw query.
+        foreach (['->update(', '->delete()', '->create(', 'DB::table('] as $writer) {
+            $this->assertStringNotContainsString(
+                $writer,
+                $body,
+                "The notice action must not write anything but a notification. Found '{$writer}'."
+            );
+        }
+
+        // It must not claim to resolve the report.
+        $this->assertDoesNotMatchRegularExpression(
+            '/(is_resolved|resolved_at|setResolved|markResolved|[\'"\'](?:is_)?resolved[\'"\'\s]*=>)/i',
+            $body,
+            'The notice action must not set or claim a resolved state.'
+        );
+
+        // The notice text comes from the dedicated sanitizer-only builder, not
+        // from an ad-hoc interpolation at the call site.
+        $this->assertStringContainsString('app(DiagnosticNotice::class)->send(', $controller);
     }
 
     public function test_sanitized_text_is_never_reparsed_as_markup(): void
@@ -569,12 +802,9 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
                 "Diagnostics/{$page}.jsx must never inject remote text as markup."
             );
 
-            // Sanitized text must be rendered as an inert text node.
-            $this->assertStringContainsString(
-                'whitespace-pre-wrap',
-                $code,
-                "Diagnostics/{$page}.jsx must render sanitized prose as plain text."
-            );
+            $shared = $this->executable($this->read('resources/js/Pages/Diagnostics/ReportUi.jsx'));
+            $this->assertStringNotContainsString('dangerouslySetInnerHTML', $shared);
+            $this->assertStringContainsString('whitespace-pre-wrap', $shared);
         }
     }
 }

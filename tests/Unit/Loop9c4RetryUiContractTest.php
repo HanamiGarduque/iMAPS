@@ -422,10 +422,23 @@ class Loop9c4RetryUiContractTest extends TestCase
     {
         $code = $this->code();
 
+        // PHASE 2B2B: `round` may now be null for a historical parcel-unknown row,
+        // so the accessible name has to describe that case in words rather than
+        // printing an absent number to a screen reader.
         $this->assertStringContainsString(
-            'aria-label={`Retry FieldSync delivery for Inspection Round ${round}`}',
+            'round == null',
             $code,
-            'The retry control must carry a text alternative naming the round it acts on.'
+            'The retry control\'s accessible name must handle a null round.'
+        );
+        $this->assertStringContainsString(
+            'this historical inspection round',
+            $code,
+            'A parcel-unknown round must be named in words, not as a number.'
+        );
+        $this->assertStringContainsString(
+            '`Inspection Round ${round}`',
+            $code,
+            'A parcel-bearing round must still be named by its number.'
         );
         $this->assertStringContainsString(
             'min-h-[28px]',

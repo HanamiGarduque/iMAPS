@@ -147,11 +147,30 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
     // Legacy raw photo paths are intentionally not rendered directly.
     const photosToRender = (inspection.field_job_photos || []).filter((photo) => photo.signed_url);
 
-    // Get the accurate photo count
-    const remoteParcelPin = inspection.supabase_parcels?.local_parcel_id === localParcel?.id
+    // Parcel Pin is FieldSync GPS-verification evidence, not the encoded
+    // parcel/application location. Both display surfaces use the confirmed
+    // pair as soon as it is synced, without waiting for inspection completion.
+    const toValidCoordinate = (value, min, max) => {
+        if (typeof value !== 'number' && typeof value !== 'string') return null;
+        if (typeof value === 'string' && value.trim() === '') return null;
+        const n = Number(value);
+        return Number.isFinite(n) && n >= min && n <= max ? n : null;
+    };
+
+    // Cadastral identity stays separate; a remote fallback must match this parcel.
+    const remotePropertyIndexNumber = inspection.supabase_parcels?.local_parcel_id === localParcel?.id
         ? inspection.supabase_parcels?.property_index_number
         : null;
-    const displayParcelPin = localParcel?.property_index_number || remoteParcelPin || 'N/A';
+    const displayPropertyIndexNumber = localParcel?.property_index_number || remotePropertyIndexNumber || 'N/A';
+
+    // Neither display may substitute localParcel.latitude/longitude for GPS evidence.
+    const confirmedLatitude = toValidCoordinate(inspection?.confirmed_latitude, -90, 90);
+    const confirmedLongitude = toValidCoordinate(inspection?.confirmed_longitude, -180, 180);
+    const hasConfirmedPoint = confirmedLatitude !== null && confirmedLongitude !== null;
+    const displayConfirmedPoint = hasConfirmedPoint
+        ? `${confirmedLatitude.toFixed(6)}, ${confirmedLongitude.toFixed(6)}`
+        : null;
+    const displayParcelPin = displayConfirmedPoint ?? 'N/A';
 
     const actualPhotoCount = photosToRender.length;
 
@@ -211,8 +230,15 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                     </div>
                     <div>
                         <SectionLabel>Parcel PIN</SectionLabel>
+                        {/* Captured and synced GPS evidence, independent of completion status. */}
                         <p className="text-[12px] font-mono font-medium text-slate-700 bg-slate-50 inline-block px-1.5 py-0.5 rounded border border-slate-200">
                             {displayParcelPin}
+                        </p>
+                    </div>
+                    <div>
+                        <SectionLabel>Property Index No.</SectionLabel>
+                        <p className="text-[12px] font-mono font-medium text-slate-700 bg-slate-50 inline-block px-1.5 py-0.5 rounded border border-slate-200">
+                            {displayPropertyIndexNumber}
                         </p>
                     </div>
                     <div>
@@ -225,6 +251,31 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                             <span className="text-[13px] font-medium text-slate-400">Pending</span>
                         )}
                     </div>
+                </div>
+
+                {/* Same FieldSync evidence as Parcel Pin; never the encoded parcel location. */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3.5 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <SectionLabel>Confirmed Inspection Point (FieldSync)</SectionLabel>
+                        {displayConfirmedPoint ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                GPS confirmed
+                            </span>
+                        ) : null}
+                    </div>
+
+                    {displayConfirmedPoint ? (
+                        <p className="text-[12px] font-mono font-medium text-slate-700 mt-0.5">
+                            {displayConfirmedPoint}
+                        </p>
+                    ) : (
+                        <p className="text-[12px] text-slate-500 mt-0.5">
+                            Not yet captured. Parcel Pin becomes available once
+                            FieldSync GPS verification is captured and synced; the
+                            inspection does not need to be completed first. The
+                            encoded parcel/application location is separate.
+                        </p>
+                    )}
                 </div>
 
                 {/* Progress & Media Metrics */}

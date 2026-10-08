@@ -64,6 +64,14 @@
 - **Node.js** >= 18.x & **npm**
 - **SQLite** or **MySQL / PostgreSQL** database engine
 
+> **PHP 8.2 constraint.** The permit generation feature pulls in `phpoffice/phpspreadsheet` and
+> `phpoffice/phpword`, whose transitive dependency `maennchen/zipstream-php` must stay on the **3.1.x**
+> line. ZipStream 3.2.x requires PHP 8.3, so `composer install` fails on a PHP 8.2 runtime. The lock
+> pins 3.1.2 (which requires `php-64bit: ^8.2`) and the project platform stays `php: ^8.2`. Do not
+> broaden-update the lock without re-checking that requirement.
+> Both packages also require the **`gd`** extension, which is not enabled by default in every PHP
+> distribution.
+
 ### 💻 Installation & Setup
 
 1. **Clone the repository:**

@@ -72,7 +72,7 @@ class Loop4ReinspectionNewRoundTest extends TestCase
         $this->assertNotFalse($source);
         $this->assertStringContainsString("'Requires Reinspection'", $source);
         $this->assertStringContainsString("'reviews.*.decision'                 => 'required|string|in:Approved,Needs Site Inspection,Requires Reinspection,Declined'", $source);
-        $this->assertStringContainsString('DB::transaction(function () use ($application, $validated)', $source);
+        $this->assertStringContainsString('DB::transaction(function () use ($application, $validated, &$pendingReviewTransports)', $source);
         $this->assertStringContainsString("empty(\$review['inspector_id']) || empty(\$review['scheduled_date']) || empty(\$review['deadline_date'])", $source);
         $this->assertStringContainsString("reviews.\$parcelId.assigned_notes", $source);
         $this->assertStringContainsString('$latestInspection->newRound($assignmentData)', $source);
@@ -162,9 +162,13 @@ class Loop4ReinspectionNewRoundTest extends TestCase
     {
         $source = file_get_contents(dirname(__DIR__, 2) . '/app/Jobs/PushInspectionToSupabase.php');
         $this->assertNotFalse($source);
+        // The lookup and the upsert are both namespaced. Round isolation still
+        // depends on the new local id, but the namespace is now what makes
+        // "this round" mean this environment's round; see
+        // BridgeSourceNamespaceCollisionTest for the proven incident.
         $this->assertStringContainsString("'local_inspection_id' => \"eq.{\$this->inspection->id}\"", $source);
         $this->assertStringContainsString("'local_inspection_id'     => \$this->inspection->id", $source);
-        $this->assertStringContainsString('field_jobs?on_conflict=local_inspection_id', $source);
+        $this->assertStringContainsString('field_jobs?on_conflict=bridge_source_id,local_inspection_id', $source);
         $this->assertStringContainsString("'status'                  => \$existingJob['status'] ?? 'assigned'", $source);
         foreach (['submitted_at', 'current_step', 'step_timestamps', 'rework_started_at',
             'findings', 'observations', 'discrepancies', 'recommendations',

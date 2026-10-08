@@ -741,8 +741,11 @@ class WorkReassignmentContractTest extends TestCase
 
         $this->assertStringContainsString('PushInspectionToSupabase::dispatch', $controller);
 
-        // Keyed on the local round, so a re-push converges on one job row.
-        $this->assertStringContainsString('on_conflict=local_inspection_id', $job);
+        // Keyed on THIS environment's round, so a re-push converges on one job
+        // row. The namespace is what makes "the same job" mean this
+        // environment's job rather than another environment's row that shares
+        // the local id.
+        $this->assertStringContainsString('on_conflict=bridge_source_id,local_inspection_id', $job);
         $this->assertStringContainsString('assigned_inspector_id', $job);
     }
 

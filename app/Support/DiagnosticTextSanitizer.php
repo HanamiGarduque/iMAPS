@@ -54,7 +54,7 @@ class DiagnosticTextSanitizer
      * Accepts anything, including null, arrays and scalars, because the input is
      * whatever a remote JSON document happened to contain. Returns a string.
      */
-    public static function sanitize(mixed $value): string
+    public static function sanitize(mixed $value, ?array $knownSecrets = null): string
     {
         if ($value === null) {
             return '';
@@ -101,7 +101,7 @@ class DiagnosticTextSanitizer
         // ORDER MATTERS. A signed URL already contains a JWT in its query string,
         // so the URL rules must run first; otherwise the JWT rule would replace
         // only the token and leave a usable-looking link behind.
-        $text = self::redactKnownCredentialValues($text);
+        $text = self::redactKnownCredentialValues($text, $knownSecrets);
         $text = self::redactUrls($text);
         $text = self::redactBearerAndAuthorization($text);
         $text = self::redactJwtShaped($text);
@@ -186,7 +186,14 @@ class DiagnosticTextSanitizer
      * The comparison is done with a plain substring check against a value that is
      * only ever used for comparison. It is never stored, returned or logged.
      */
-    private static function redactKnownCredentialValues(string $text): string
+    /** One credential read per shaping batch, with no static/cross-request cache. */
+    public static function forBatch(): \Closure
+    {
+        $secrets = self::knownCredentialValues();
+        return static fn (mixed $value): string => self::sanitize($value, $secrets);
+    }
+
+    private static function knownCredentialValues(): array
     {
         $secrets = [];
 
@@ -218,7 +225,12 @@ class DiagnosticTextSanitizer
             // The shape-based rules below still apply.
         }
 
-        foreach (array_keys($secrets) as $secret) {
+        return array_keys($secrets);
+    }
+
+    private static function redactKnownCredentialValues(string $text, ?array $knownSecrets = null): string
+    {
+        foreach ($knownSecrets ?? self::knownCredentialValues() as $secret) {
             $text = str_replace($secret, self::MARKER_CREDENTIAL, $text);
         }
 
@@ -283,18 +295,54 @@ class DiagnosticTextSanitizer
         );
     }
 
-    /** Remove an `Authorization: ...` or `Bearer ...` fragment. */
+    /**
+     * Remove any `Authorization: ...` or `Bearer ...` fragment.
+     *
+     * THE HEADER RULE MUST CONSUME THE SCHEME, NOT STOP AT IT.
+     *
+     * This rule matched `\S+` after the colon, which stops after ONE
+     * whitespace-delimited token. On the real header shape
+     *
+     *     Authorization: Bearer eyJhbGciOiJ1...
+     *
+     * that consumed only the word `Bearer`, leaving the credential itself in the
+     * output as `Authorization: [redacted credential] eyJhbGciOiJ1...`. The bearer
+     * rule running next could no longer match, because the word it looks for had
+     * already been replaced. The header therefore looked redacted while the token
+     * was still readable in the text a Planning Officer sees.
+     *
+     * Verified against the live sanitizer, not theorised: an
+     * `Authorization: Bearer abc123` input returned `abc123` intact.
+     *
+     * The scheme is now consumed together with its value, so the whole header
+     * collapses to a single authored marker and no fragment of the credential is
+     * echoed back. The second rule keeps the original behaviour for a header that
+     * carries no recognised scheme.
+     */
     private static function redactBearerAndAuthorization(string $text): string
     {
-        $text = (string) preg_replace(
-            '/\bauthorization\s*[:=]\s*\S+/i',
-            'Authorization: ' . self::MARKER_CREDENTIAL,
+        // Do the header replacement FIRST, on the original text, and only then run
+        // the scheme-less and bare-bearer rules. Running them as a chain of
+        // replacements let a later rule match INSIDE an already-inserted marker and
+        // mangle it into `Authorization: [redacted credential] credential]`, which
+        // is text a user would read. Each rule therefore skips authored markers.
+        $text = (string) preg_replace_callback(
+            '/\bauthorization\s*[:=]\s*(?:bearer|token|basic|digest|apikey|negotiate)\s+\S+/i',
+            static fn (array $m): string => 'Authorization: ' . self::MARKER_CREDENTIAL,
             $text
         );
 
-        return (string) preg_replace(
-            '/\bbearer\s+\S+/i',
-            'Bearer ' . self::MARKER_CREDENTIAL,
+        // A header with no recognised scheme: consume the whole value rather than
+        // stopping after one token.
+        $text = (string) preg_replace_callback(
+            '/\bauthorization\s*[:=]\s*(?!\[)[^\s][^\s]*/i',
+            static fn (array $m): string => 'Authorization: ' . self::MARKER_CREDENTIAL,
+            $text
+        );
+
+        return (string) preg_replace_callback(
+            '/\bbearer\s+(?!\[)\S+/i',
+            static fn (array $m): string => 'Bearer ' . self::MARKER_CREDENTIAL,
             $text
         );
     }

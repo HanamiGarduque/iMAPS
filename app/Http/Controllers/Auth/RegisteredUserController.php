@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
@@ -35,64 +36,86 @@ class RegisteredUserController extends Controller
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
-        $handshakeKey = Str::random(60); 
-        $phtTimestamp = now('Asia/Manila')->format('Y-m-d H:i:s'); 
+        $handshakeKey = Str::random(60);
+        $phtTimestamp = now('Asia/Manila')->format('Y-m-d H:i:s');
         $supabaseUserId = null;
 
         if ($request->role === 'Site Inspector') {
             $supabaseUrl = config('services.supabase.url');
             $supabaseKey = config('services.supabase.service_key');
 
-            $authResponse = Http::withHeaders([
-                'apikey'        => $supabaseKey,
-                'Authorization' => 'Bearer ' . $supabaseKey,
-            ])->post("{$supabaseUrl}/auth/v1/admin/users", [
-                'email'         => $request->email,
-                'password'      => $request->password,
-                'email_confirm' => true,
-            ]);
+            $stage = 'AUTH_CREATE';
+            try {
+                $authResponse = Http::withHeaders([
+                    'apikey'        => $supabaseKey,
+                    'Authorization' => 'Bearer ' . $supabaseKey,
+                ])->timeout(12)->post("{$supabaseUrl}/auth/v1/admin/users", [
+                    'email'         => $request->email,
+                    'password'      => $request->password,
+                    'email_confirm' => true,
+                ]);
+                $createdId = $authResponse->json('id');
+                if (!$authResponse->successful() || !is_string($createdId) || !Str::isUuid($createdId)) {
+                    throw new \RuntimeException('Auth creation unverified.');
+                }
+                $supabaseUserId = $createdId;
+                $stage = 'PROFILE_VERIFY';
+                sleep(1);
 
-            $supabaseUserId = $authResponse->json('id');
-
-            if ($authResponse->successful() && $supabaseUserId) {
-                
-                // 1. Pause execution for 1 second to let the Supabase trigger finish
-                sleep(1); 
-
-                // 2. Patch the existing row created by the trigger
                 $profileResponse = Http::withHeaders([
                     'apikey'        => $supabaseKey,
                     'Authorization' => 'Bearer ' . $supabaseKey,
                     'Content-Type'  => 'application/json',
-                ])->patch("{$supabaseUrl}/rest/v1/profiles?id=eq.{$supabaseUserId}", [
+                    'Prefer'        => 'return=representation',
+                ])->timeout(12)->patch("{$supabaseUrl}/rest/v1/profiles?id=eq.{$supabaseUserId}", [
                     'full_name'     => $request->name,
                     'role'          => 'inspector',
                     'handshake_key' => $handshakeKey,
-                    'created_at'    => $phtTimestamp, 
+                    'created_at'    => $phtTimestamp,
                     'updated_at'    => $phtTimestamp,
                 ]);
 
-                // 3. Throw a hard error to the frontend if the update STILL fails
-                if (!$profileResponse->successful()) {
-                    throw ValidationException::withMessages([
-                        'email' => 'User created in Auth, but Profile sync failed: ' . $profileResponse->body(),
-                    ]);
+                $rows = $profileResponse->json();
+                $profile = is_array($rows) && array_is_list($rows) && count($rows) === 1 ? $rows[0] : null;
+                if (!$profileResponse->successful() || !is_array($profile)
+                    || ($profile['id'] ?? null) !== $supabaseUserId
+                    || ($profile['role'] ?? null) !== 'inspector'
+                    || ($profile['handshake_key'] ?? null) !== $handshakeKey
+                    || ($profile['full_name'] ?? null) !== $request->name
+                    || trim($request->name) === '') {
+                    throw new \RuntimeException('Profile verification failed.');
                 }
-
-            } else {
+            } catch (\Throwable $error) {
+                Log::error('Inspector provisioning failed.', [
+                    'PROVISIONING_STAGE' => $stage,
+                    'auth_user_id' => $supabaseUserId,
+                ]);
                 throw ValidationException::withMessages([
-                    'email' => 'Failed to register user in Supabase Auth: ' . ($authResponse->json('msg') ?? $authResponse->body()),
+                    'email' => $stage === 'PROFILE_VERIFY'
+                        ? 'The remote identity was created, but its inspector profile could not be verified. Contact the administrator before retrying.'
+                        : 'Remote identity creation could not be confirmed. Contact the administrator before retrying.',
                 ]);
             }
         }
 
-        $user = User::create([
-            'name'          => $request->name,
-            'email'         => $request->email,
-            'role'          => $request->role,    
-            'password'      => Hash::make($request->password),
-            'handshake_key' => $handshakeKey,
-        ]);
+        try {
+            $user = User::create([
+                'name'          => $request->name,
+                'email'         => $request->email,
+                'role'          => $request->role,
+                'password'      => Hash::make($request->password),
+                'handshake_key' => $handshakeKey,
+            ]);
+        } catch (\Throwable $error) {
+            if ($supabaseUserId === null) throw $error;
+            Log::error('Inspector provisioning failed.', [
+                'PROVISIONING_STAGE' => 'LOCAL_CREATE',
+                'auth_user_id' => $supabaseUserId,
+            ]);
+            throw ValidationException::withMessages([
+                'email' => 'The remote inspector account was verified, but the local account could not be completed. Contact the administrator before retrying.',
+            ]);
+        }
 
         \App\Models\AppNotification::notifyRoles(
             ['Admin'],

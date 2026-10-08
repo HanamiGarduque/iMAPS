@@ -187,7 +187,13 @@ class TechnicalReviewController extends Controller
             $this->validateFieldSyncParcelCoordinates($parcel);
         }
 
-        DB::transaction(function () use ($validated) {
+        // Loop 8: transport rows are collected inside the transaction and only
+        // dispatched after it commits, so the review row identity is durable
+        // before any remote write is attempted. Collected by REFERENCE: the
+        // dispatch loop below runs after the closure has returned.
+        $pendingReviewTransports = [];
+
+        DB::transaction(function () use ($validated, &$pendingReviewTransports) {
             // Eager load parcels so we can extract the parcel_id
             $application = ZoningApplication::with('parcels')->findOrFail($validated['id']);
             $oldStatus = $application->status;
@@ -209,11 +215,6 @@ class TechnicalReviewController extends Controller
             // 2. Process Technical Reviews & Site Inspections while ensuring PARCEL_ID is stored
             $currentRound = TechnicalReview::where('zoning_application_id', $application->id)->max('review_round') ?? 0;
             $nextRound = $currentRound + 1;
-
-            // Loop 8: transport rows are collected inside the transaction and only
-            // dispatched after it commits, so the review row identity is durable
-            // before any remote write is attempted.
-            $pendingReviewTransports = [];
 
             // If a specific parcel_id was sent from the frontend, use it. 
             // Otherwise, apply this decision to ALL parcels in the application.
@@ -362,7 +363,11 @@ class TechnicalReviewController extends Controller
         // Loop 8: transport Planning Review metadata only after the review rows
         // are committed. This never reopens or mutates the reviewed task.
         foreach ($pendingReviewTransports as $transport) {
-            PushPlanningReviewToSupabase::dispatch($transport);
+            // The transport is an ALREADY-CONSTRUCTED job. `Job::dispatch()`
+            // forwards its arguments to the constructor, so dispatching it as
+            // `Job::dispatch($transport)` would re-invoke the constructor with
+            // the job itself as argument #1. `dispatch()` takes the instance.
+            dispatch($transport);
         }
 
         return redirect('/applications')->with('success', 'Technical review processed successfully.');
@@ -438,7 +443,12 @@ class TechnicalReviewController extends Controller
             }
         }
 
-        DB::transaction(function () use ($application, $validated) {
+        // Loop 8: dispatch review transports only after the review rows commit.
+        // Collected by REFERENCE: the dispatch loop below runs after the
+        // closure has returned, so an inner declaration would be discarded.
+        $pendingReviewTransports = [];
+
+        DB::transaction(function () use ($application, $validated, &$pendingReviewTransports) {
             $reviews = $validated['reviews'];
             $assigningOfficer = $this->currentPlanningOfficerAssignmentActor();
 
@@ -447,7 +457,6 @@ class TechnicalReviewController extends Controller
             $nextRound = $currentRound + 1;
 
             $decisionsSeen = [];
-            $pendingReviewTransports = [];
 
             foreach ($reviews as $parcelId => $review) {
                 $decisionsSeen[] = $review['decision'];
@@ -657,7 +666,9 @@ class TechnicalReviewController extends Controller
 
         // Loop 8: dispatch review transports only after the review rows commit.
         foreach ($pendingReviewTransports as $transport) {
-            PushPlanningReviewToSupabase::dispatch($transport);
+            // Already-constructed job: `dispatch()` takes the instance, not
+            // constructor arguments.
+            dispatch($transport);
         }
 
         // Updates redirect strictly to /applications
@@ -945,6 +956,7 @@ class TechnicalReviewController extends Controller
             reviewedBy: (int) $technicalReview->reviewed_by,
             reviewedByName: $reviewer?->name,
             reviewedAt: $technicalReview->reviewed_at?->toIso8601String(),
+            decisionReason: $technicalReview->decision_reason,
         );
     }
 

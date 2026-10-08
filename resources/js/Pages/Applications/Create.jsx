@@ -5,7 +5,6 @@ import axios from "axios";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import { performLogout } from "@/utils/auth";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -19,6 +18,7 @@ import SiteMapPrint from "./Components/SiteMapPrint";
 import { splitFullName, joinName } from "@/utils/names";
 import { getZoneInfo } from "@/utils/clupZones";
 import { getRecommendedPetition } from "@/Components/MapKit";
+import { confirmSignOut } from "@/utils/signOut";
 const AMENDMENT_TYPES = [
     {
         id: "Petition for Rezoning",
@@ -1199,29 +1199,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         }
     };
 
-    const handleLogout = () => {
-        Swal.fire({
-            title: "Sign Out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
-                title: "text-lg font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-5",
-                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
-                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
-            },
-        }).then((result) => {
-            if (result.isConfirmed) {
-                performLogout();
-            }
-        });
-    };
+    const handleLogout = confirmSignOut;
 
     const set = (field) => (e) => {
         const val = e.target.value;

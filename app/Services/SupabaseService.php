@@ -20,6 +20,50 @@ class SupabaseService
         $this->serviceKey = config('services.supabase.service_key');
     }
 
+    // ── Cross-environment bridge namespace ────────────────────────────────────
+    //
+    // Every lookup below means "MY environment's row". A bare local integer id
+    // is not that, because local ids are only unique inside one iMAPS database
+    // and this Supabase project is shared by several of them. Each such lookup
+    // therefore resolves the namespace first (fail closed) and filters on it.
+
+    /**
+     * This environment's bridge source identity. Fails closed when unset.
+     */
+    public function bridgeSourceId(): string
+    {
+        return BridgeSourceIdentity::id();
+    }
+
+    /**
+     * Namespace the given mirror payload for this environment.
+     */
+    public function namespaced(array $payload): array
+    {
+        $payload[BridgeSourceIdentity::COLUMN] = $this->bridgeSourceId();
+
+        return $payload;
+    }
+
+    /**
+     * PostgREST filters that restrict a row set to this environment.
+     */
+    public function scopedFilters(array $filters = []): array
+    {
+        return array_merge(
+            [BridgeSourceIdentity::COLUMN => 'eq.' . $this->bridgeSourceId()],
+            $filters,
+        );
+    }
+
+    /**
+     * Composite `on_conflict` target for a mirror table's local-id identity.
+     */
+    public function localIdConflictTarget(string $localColumn): string
+    {
+        return BridgeSourceIdentity::COLUMN . ',' . $localColumn;
+    }
+
     // â”€â”€ Headers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private function serviceHeaders(array $extra = []): array
@@ -47,11 +91,21 @@ class SupabaseService
 
     /**
      * Fetch records matching specific PostgREST criteria.
+     *
+     * The optional timeout is a per-call bound, so a read on a user-facing page
+     * fails in seconds with an honest error instead of holding the browser open
+     * for the framework default. It shortens the worst case; it never lengthens
+     * a wait to hide a failure.
      */
-    public function select(string $table, string $query = '*', array $params = []): Response
+    public function select(string $table, string $query = '*', array $params = [], ?int $timeout = null): Response
     {
-        return Http::withHeaders($this->serviceHeaders())
-            ->get("{$this->url}/rest/v1/{$table}?select={$query}", $params);
+        $request = Http::withHeaders($this->serviceHeaders());
+
+        if ($timeout !== null) {
+            $request = $request->timeout($timeout);
+        }
+
+        return $request->get("{$this->url}/rest/v1/{$table}", array_merge($params, ['select' => $query]));
     }
 
     /**
@@ -61,6 +115,31 @@ class SupabaseService
     {
         return Http::withHeaders($this->serviceHeaders(['Prefer' => 'return=representation']))
             ->patch("{$this->url}/rest/v1/{$table}?{$column}=eq.{$value}", $data);
+    }
+
+    /** Exact report lifecycle CAS. Never retry this request: a lost reply may have committed. */
+    public function updateDiagnosticReportById(string $id, string $expectedStatus, array $data): Response
+    {
+        $terminal = in_array($data['status'] ?? null, ['resolved', 'wont_fix'], true);
+        $keys = $terminal ? ['status', 'response_message', 'responded_by_name', 'responded_at'] : ['status'];
+        if (! \Illuminate\Support\Str::isUuid($id)
+            || ! in_array($expectedStatus, ['submitted', 'in_review'], true)
+            || ! in_array($data['status'] ?? null, ['in_review', 'resolved', 'wont_fix'], true)
+            || ($data['status'] ?? null) === $expectedStatus
+            || array_diff(array_keys($data), $keys) || array_diff($keys, array_keys($data))) {
+            throw new \InvalidArgumentException('Invalid report lifecycle CAS.');
+        }
+
+        $query = http_build_query(['id' => 'eq.'.$id, 'status' => 'eq.'.$expectedStatus], '', '&', PHP_QUERY_RFC3986);
+        return Http::withHeaders($this->serviceHeaders(['Prefer' => 'return=representation']))
+            ->timeout(12)->patch("{$this->url}/rest/v1/diagnostic_reports?{$query}", $data);
+    }
+
+    /** Existing activity UUID primary key supplies insert-only terminal-event dedupe. */
+    public function insertInspectorReportActivity(array $data): Response
+    {
+        return Http::withHeaders($this->serviceHeaders(['Prefer' => 'resolution=ignore-duplicates,return=representation']))
+            ->timeout(8)->post("{$this->url}/rest/v1/activity_log?on_conflict=id", $data);
     }
 
     /**
@@ -76,13 +155,18 @@ class SupabaseService
 
     /**
      * Push full Zoning Application and returns the newly generated Supabase Application UUID.
+     *
+     * Namespaced: the identity is (bridge_source_id, local_application_id).
      */
     public function pushZoningApplication(array $payload): ?string
     {
-        // Must request 'return=representation' to catch the newly assigned primary key UUID
-        $response = $this->insert('supabase_zoning_applications', $payload, [
-            'Prefer' => 'return=representation'
-        ]);
+        $payload = $this->namespaced($payload);
+
+        $response = $this->upsert(
+            'supabase_zoning_applications',
+            $payload,
+            $this->localIdConflictTarget('local_application_id'),
+        );
 
         if ($response->failed()) {
             Log::error('Failed to push zoning application to Supabase', [
@@ -98,10 +182,16 @@ class SupabaseService
 
     /**
      * Push associated Parcel records to Supabase.
+     *
+     * Namespaced: the identity is (bridge_source_id, local_parcel_id).
      */
     public function pushParcel(array $payload): bool
     {
-        $response = $this->insert('supabase_parcels', $payload);
+        $response = $this->upsert(
+            'supabase_parcels',
+            $this->namespaced($payload),
+            $this->localIdConflictTarget('local_parcel_id'),
+        );
 
         if ($response->failed()) {
             Log::error('Failed to push parcel to Supabase', [
@@ -117,10 +207,16 @@ class SupabaseService
 
     /**
      * Create/Assign a field job in Supabase.
+     *
+     * Namespaced: the identity is (bridge_source_id, local_inspection_id).
      */
     public function createFieldJob(array $payload): bool
     {
-        $response = $this->insert('field_jobs', $payload);
+        $response = $this->upsert(
+            'field_jobs',
+            $this->namespaced($payload),
+            $this->localIdConflictTarget('local_inspection_id'),
+        );
 
         if ($response->failed()) {
             Log::error('Failed to create field job in Supabase', [
@@ -135,18 +231,39 @@ class SupabaseService
     }
 
     /**
+     * Upsert one mirror row on a composite (bridge_source_id, local_*_id) key.
+     *
+     * A bare local-id conflict target is deliberately NOT offered: it is the
+     * cross-environment collision defect this whole contract exists to close.
+     */
+    private function upsert(string $table, array $payload, string $onConflict): Response
+    {
+        return Http::withHeaders($this->serviceHeaders([
+            'Prefer' => 'resolution=merge-duplicates,return=representation',
+        ]))->post(
+            "{$this->url}/rest/v1/{$table}?on_conflict=" . $onConflict,
+            $payload,
+        );
+    }
+
+    /**
      * Resolve the exact remote field job for a local inspection round.
      *
      * Loop 8 uses this as the ONLY way to map a reviewed inspection round to a
      * remote job. It never guesses by application or parcel, because a
      * Planning Review must attach to the exact round that was reviewed.
+     *
+     * NAMESPACED: `local_inspection_id` alone is not "my round". A second
+     * environment holding the same integer must never receive this
+     * environment's Planning Review, so the lookup is scoped to this
+     * deployment's bridge source identity and fails closed without one.
      */
     public function findFieldJobIdByLocalInspectionId(int $localInspectionId): ?string
     {
-        $response = $this->select('field_jobs', 'id', [
+        $response = $this->select('field_jobs', 'id', $this->scopedFilters([
             'local_inspection_id' => "eq.{$localInspectionId}",
             'limit'               => 1,
-        ]);
+        ]));
 
         if ($response->failed()) {
             Log::error('Failed to resolve field job for reviewed inspection round', [
@@ -201,10 +318,10 @@ class SupabaseService
         $response = $this->select(
             'field_jobs',
             'local_inspection_id,status,gps_confirmed_at,checklist_completed_count,photo_count',
-            [
+            $this->scopedFilters([
                 'local_inspection_id' => 'in.(' . implode(',', $ids) . ')',
                 'limit'               => (string) count($ids),
-            ]
+            ])
         );
 
         if ($response->failed()) {
@@ -251,15 +368,22 @@ class SupabaseService
      *    round created by a reinspection decision;
      *  - this writes ONLY `field_job_reviews`. It never touches field_jobs
      *    status, current_step, progress, completed state or photo evidence;
-     *  - the conflict target is the iMAPS source review identity, so re-running
-     *    a review transport converges on one row instead of duplicating.
+     *  - the conflict target is NAMESPACED, so re-running a review transport
+     *    converges on one row per (environment, review) instead of
+     *    duplicating - and two environments holding the same local
+     *    `technical_review_id` cannot overwrite each other's review. A bare
+     *    `on_conflict=technical_review_id` is the same collision defect as the
+     *    job mirror: `technical_review_id` is an iMAPS-local integer.
      */
     public function upsertFieldJobReview(array $payload): bool
     {
         $response = Http::withHeaders($this->serviceHeaders([
             'Prefer' => 'resolution=merge-duplicates,return=minimal',
         ]))
-            ->post("{$this->url}/rest/v1/field_job_reviews?on_conflict=technical_review_id", $payload);
+            ->post(
+                "{$this->url}/rest/v1/field_job_reviews?on_conflict=" . $this->localIdConflictTarget('technical_review_id'),
+                $this->namespaced($payload)
+            );
 
         if ($response->failed()) {
             Log::error('Failed to upsert planning review metadata', [
@@ -285,6 +409,12 @@ class SupabaseService
      * field_job_photos. A malformed or cross-job path is omitted rather than
      * exposed or signed.
      *
+     * NAMESPACED: the job is resolved as (bridge_source_id,
+     * local_inspection_id). Without the namespace this endpoint can display
+     * ANOTHER environment's inspection, checklist, findings and signed photos
+     * to a Planning Officer, which is a confidentiality defect as well as a
+     * correlation defect.
+     *
      * @throws \RuntimeException when the inspection or one of its signed URLs
      *                           cannot be read from Supabase.
      */
@@ -294,10 +424,15 @@ class SupabaseService
             throw new \RuntimeException('Inspection evidence is temporarily unavailable.');
         }
 
+        // Fail closed before any remote read: an unconfigured deployment must
+        // not fall back to an unscoped lookup.
+        $bridgeSourceId = $this->bridgeSourceId();
+
         $response = $this->select(
             'field_jobs',
             'id,local_inspection_id,supabase_parcel_id,status,scheduled_date,deadline_date,submitted_at,inspection_result,is_compliant,findings,observations,discrepancies,recommendations,inspector_notes,checklist_completed_count,checklist_total_count,checklist_data,photo_count,confirmed_latitude,confirmed_longitude,gps_accuracy_m,gps_confirmed_at',
             [
+                BridgeSourceIdentity::COLUMN => "eq.{$bridgeSourceId}",
                 'local_inspection_id' => "eq.{$localInspectionId}",
                 'limit' => 1,
             ],

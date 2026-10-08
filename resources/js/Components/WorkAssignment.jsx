@@ -463,7 +463,9 @@ export function InspectorRoundAssignment({
 
 // ── Shared modal ─────────────────────────────────────────────────────────────
 
-function ReassignModal({
+// Exported so the confirm-button enablement can be asserted against the real
+// rendered markup rather than against the source text. No behaviour change.
+export function ReassignModal({
     title,
     subtitle,
     description,
@@ -485,7 +487,13 @@ function ReassignModal({
     onSubmit,
     confirmLabel,
 }) {
-    const ready = Boolean(targetId && reason && (!noteRequired || note.trim()));
+    // A reason describes work being TAKEN from somebody, so it gates the button
+    // only when there is a current owner. On a first assignment the Reason field
+    // is not rendered at all (see `{!isInitial && ...}` below), so requiring
+    // `reason` here left `ready` permanently false and the confirm button
+    // permanently disabled: an officer could be selected and nothing submitted.
+    // This mirrors the payload, which already sends `reason: current ? reason : null`.
+    const ready = Boolean(targetId && (isInitial || reason) && (!noteRequired || note.trim()));
 
     return (
         <div className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs">

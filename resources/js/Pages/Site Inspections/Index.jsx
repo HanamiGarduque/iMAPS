@@ -3,18 +3,18 @@ import { Head, usePage, router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import { performLogout } from "@/utils/auth";
 import DropdownSelect from "@/Components/DropdownSelect";
 import { detailUrlFromFolder } from "@/Components/folderOrigin";
+import { confirmSignOut } from "@/utils/signOut";
 
 
 const ROSARIO_BARANGAYS = [
-    "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
-    "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", 
-    "Macalamcam A", "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", 
-    "Mayuro", "Namuco", "Namunga", "Natu", "Nasi", "Palacpac", "Pinagsibaan", "Poblacion A", 
-    "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", 
-    "San Carlos", "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan", 
+    "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam",
+    "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga",
+    "Macalamcam A", "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor",
+    "Mayuro", "Namuco", "Namunga", "Natu", "Nasi", "Palacpac", "Pinagsibaan", "Poblacion A",
+    "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao",
+    "San Carlos", "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan",
     "Tiquiwan", "Tulos"
 ];
 
@@ -40,7 +40,7 @@ const STATUS_OPTIONS = [
 ];
 
 export default function SiteInspectionsIndex() {
-        const { auth, pendingInspections = [], completedInspections = [], flash = {} } = usePage().props;
+    const { auth, pendingInspections = [], completedInspections = [], operations = {}, poReview = {}, counters = null, flash = {} } = usePage().props;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
     // The open applicant folder is read from the URL, not held only in state, so
@@ -69,13 +69,13 @@ export default function SiteInspectionsIndex() {
     const [searchInput, setSearchInput] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
-    
+
     const [selectedStatus, setSelectedStatus] = useState("");
     const [selectedCategory, setSelectedCategory] = useState(""); // Keeping this just in case, user snippet has it
     const [selectedLandUse, setSelectedLandUse] = useState(""); // Keeping this just in case, user snippet has it
     const [selectedBarangay, setSelectedBarangay] = useState("");
     const [selectedSort, setSelectedSort] = useState("newest");
-    
+
     const [dateFilterOpen, setDateFilterOpen] = useState(false);
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
@@ -92,7 +92,7 @@ export default function SiteInspectionsIndex() {
     }, [searchInput]);
 
     const hasActiveFilters = Boolean(
-        debouncedSearch || selectedStatus || selectedCategory || selectedLandUse || selectedBarangay || 
+        debouncedSearch || selectedStatus || selectedCategory || selectedLandUse || selectedBarangay ||
         selectedSort !== "newest" || dateFrom || dateTo || dateRangePreset !== "all"
     );
 
@@ -140,7 +140,7 @@ export default function SiteInspectionsIndex() {
                 break;
         }
     };
-    
+
     const formatDate = (dateString) => {
         if (!dateString) return "";
         return new Date(dateString).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -157,7 +157,7 @@ export default function SiteInspectionsIndex() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    
+
     useEffect(() => {
         if (flash?.success) {
             Swal.fire({
@@ -181,31 +181,7 @@ export default function SiteInspectionsIndex() {
         }
     }, [flash]);
 
-    const handleLogout = () => {
-        Swal.fire({
-            title: "Sign Out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
-                title: "text-base font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-4",
-                confirmButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
-                cancelButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
-            },
-        }).then((result) => {
-            if (result.isConfirmed) {
-                performLogout();
-            }
-        });
-    };
+    const handleLogout = confirmSignOut;
 
     useEffect(() => {
         const tick = () => {
@@ -227,18 +203,18 @@ export default function SiteInspectionsIndex() {
 
     const filteredInspections = React.useMemo(() => {
         let items = allInspections;
-        
+
         if (selectedStatus) {
             items = items.filter(i => String(i.status || "").toLowerCase() === selectedStatus.toLowerCase());
         }
-        
+
         if (selectedBarangay) {
             items = items.filter(i => {
                 const brgy = (i.zoning_application?.project_location || i.zoning_application?.barangay || i.barangay || "");
                 return String(brgy).toLowerCase().includes(selectedBarangay.toLowerCase());
             });
         }
-        
+
         if (debouncedSearch) {
             const q = debouncedSearch.toLowerCase();
             items = items.filter(i => {
@@ -249,7 +225,7 @@ export default function SiteInspectionsIndex() {
                 return matchName || matchCorp || matchRef;
             });
         }
-        
+
         if (dateFrom) {
              items = items.filter(i => {
                  const itemDate = new Date(i.created_at).toISOString().split("T")[0];
@@ -303,7 +279,7 @@ export default function SiteInspectionsIndex() {
 
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-                
+
                 #site-inspections-page-root {
                     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
                 }
@@ -318,12 +294,12 @@ export default function SiteInspectionsIndex() {
             `}</style>
 
             <div id="site-inspections-page-root" className="bg-slate-50/75 text-slate-800 h-screen flex flex-col overflow-hidden antialiased">
-                <Header 
-                    userName={auth?.user?.name || 'Staff Member'} 
-                    userRole={auth?.user?.role || 'Planning Officer'} 
-                    clock={clock} 
+                <Header
+                    userName={auth?.user?.name || 'Staff Member'}
+                    userRole={auth?.user?.role || 'Planning Officer'}
+                    clock={clock}
                     sidebarOpen={sidebarOpen}
-                    setSidebarOpen={setSidebarOpen} 
+                    setSidebarOpen={setSidebarOpen}
                     onLogout={handleLogout}
                     activePage="Site Inspections"
                 />
@@ -354,21 +330,35 @@ export default function SiteInspectionsIndex() {
                                     <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Site Inspections</h1>
                                     <p className="text-xs text-slate-500 mt-1">
                                         Manage and review site inspections conducted from iMAPS-FieldSync.
+                                        {/* PHASE 2B1: page-level counters. Each is derived ONLY from
+                                            locally provable state, supplied by
+                                            InspectionOperationsSummary::counters(). "Awaiting PO Review" is
+                                            deliberately absent: with reviewed_site_inspection_id NULL on every
+                                            existing review, "no decision yet" cannot be distinguished from
+                                            "never linked", so any count would be a guess. */}
+                                        {counters && (
+                                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                {[["Under Inspection", counters.under_inspection, "bg-blue-50 text-blue-700"],
+                                                    ["Completed", counters.completed, "bg-emerald-50 text-emerald-700"],
+                                                    ["Reinspection", counters.reinspections, "bg-violet-50 text-violet-700"],
+                                                    ["Delivery Issues", counters.delivery_issues, "bg-rose-50 text-rose-700"]].map(([label, value, tone]) => (
+                                                    <span key={label} className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded ${tone}`}>
+                                                        {label} {value ?? 0}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
                                     </p>
                                 </div>
 
-                                <div className="flex items-center gap-2.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => router.post('/site-inspections/sync')}
-                                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-98 cursor-pointer"
-                                    >
-                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-                                        </svg>
-                                        <span>Refresh Data</span>
-                                    </button>
-                                </div>
+                                {/* PHASE 2A: the former global "Refresh Data" button is
+                                    REMOVED. It posted to an unscoped bulk reverse sync
+                                    (no --local-inspection-id) and its label implied a
+                                    read, so one click could write every completed
+                                    inspection in the namespace. Nothing on this list
+                                    performs a reverse sync now. Manual support sync is
+                                    scoped to a single round and lives on that round's
+                                    DETAIL page, beside the record it acts on. */}
                             </div>
 
                             {/* ── TABS & DATA CONTAINER ── */}
@@ -585,21 +575,21 @@ export default function SiteInspectionsIndex() {
                                         </div>
                                     )}
                                 </div>
-                                
 
-                                
+
+
 
                                 {/* ── DATA SECTION ── */}
                                 <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden flex flex-col flex-1 min-h-0 relative z-0">
-                                    
+
                                     <div className="flex-1 overflow-y-auto relative bg-slate-50/40">
                                         <div className="absolute inset-0 opacity-[0.025] bg-[radial-gradient(#000_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none"></div>
                                         <div className="p-6 sm:p-8 relative z-10 h-full flex flex-col">
                                             {selectedFolder ? (
                                                 <>
                                                     <div className="flex items-center gap-3 mb-8">
-                                                        <button 
-                                                            type="button" 
+                                                        <button
+                                                            type="button"
                                                             onClick={() => setSelectedFolder(null)}
                                                             className="flex items-center justify-center w-8 h-8 bg-white border border-slate-200/80 rounded-full hover:bg-slate-50 text-slate-500 hover:text-blue-600 shadow-sm transition-all ring-1 ring-black/[0.02]"
                                                         >
@@ -610,11 +600,28 @@ export default function SiteInspectionsIndex() {
                                                             <p className="text-[11px] font-medium text-slate-500 uppercase tracking-widest mt-0.5">{(folderGroups[selectedFolder] || []).length} Inspection{(folderGroups[selectedFolder] || []).length !== 1 ? 's' : ''}</p>
                                                         </div>
                                                     </div>
-                                                    <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-6 gap-y-8 text-center">
-                                                        {(folderGroups[selectedFolder] || []).map((item, idx) => (
+                                                    {/* INSPECTION ENTRIES INSIDE AN OPEN FOLDER.
+                                                        These were an 8-column icon-first grid at large
+                                                        viewports, which left roughly 110px of content
+                                                        width beside a 72px drop-shadowed icon and forced
+                                                        `line-clamp-1` onto the application reference, so
+                                        APP-2026-00030 rendered as "APP-2026-…". Identity data
+                                                        was also smaller and lighter than the decoration.
+                                        Now a left-aligned info-card: fewer, wider columns, a
+                                        proportionally smaller icon, the reference allowed to wrap,
+                                        status promoted to a real badge, and the INS id given
+                                        a legible size. Decorative gradients are unchanged. */}
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                        {(folderGroups[selectedFolder] || []).map((item, idx) => {
+                                                            // PHASE 2B2C: server-resolved review visibility for this
+                                                            // round. Read, never computed here - the browser cannot
+                                                            // tell a round decision from parcel-level context.
+                                                            const review = poReview?.[item.id] || null;
+
+                                                            return (
                                                             <div
                                                                 key={idx}
-                                                                className="group flex flex-col items-center p-3 rounded-2xl transition-all cursor-pointer hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 border border-transparent hover:border-slate-200/60"
+                                                                className="group flex items-start gap-3 p-3 rounded-xl transition-all cursor-pointer bg-white/70 hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-200/70 hover:border-blue-200"
                                                                 onClick={() => {
                                                                     router.visit(
                                                                         detailUrlFromFolder(
@@ -626,8 +633,8 @@ export default function SiteInspectionsIndex() {
                                                                     );
                                                                 }}
                                                             >
-                                                                <div className="relative mb-3 transition-transform duration-300 text-slate-300 group-hover:text-blue-500">
-                                                                    <svg width="72" height="72" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-md text-blue-500 group-hover:drop-shadow-lg transition-all duration-300">
+                                                                <div className="relative shrink-0 text-slate-300 group-hover:text-blue-500">
+                                                                    <svg width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-sm transition-all duration-300">
                                                                         <path d="M22 14C22 10.6863 24.6863 8 28 8H60L82 30V86C82 89.3137 79.3137 92 76 92H28C24.6863 92 22 89.3137 22 86V14Z" fill="url(#doc-base)"/>
                                                                         <path d="M60 8V24C60 27.3137 62.6863 30 66 30H82L60 8Z" fill="url(#doc-fold)"/>
                                                                         <rect x="34" y="44" width="32" height="5" rx="2.5" fill="#CBD5E1"/>
@@ -651,33 +658,112 @@ export default function SiteInspectionsIndex() {
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                <span className="text-[12px] font-bold text-slate-700 leading-snug line-clamp-1 group-hover:text-blue-700 transition-colors">
-                                                                    {item.display_reference || `Application #${item.zoning_application_id}`}
-                                                                </span>
-                                                                {/* Round identity is scoped to the application, not the
-                                                                    applicant and not the raw id, and the status wording
-                                                                    is limited to what the local row can prove. */}
-                                                                <span className="text-[10px] font-semibold text-slate-600 mt-1 leading-tight">
-                                                                    {item.round_number ? `Round ${item.round_number} · ` : ""}{item.round_kind || "Inspection"}
-                                                                </span>
-                                                                <span className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${item.display_status === "Completed" ? "text-emerald-600" : "text-amber-600"}`}>
-                                                                    {item.display_status || "Assigned"}
-                                                                </span>
-                                                                <span className="text-[10px] text-slate-400 font-medium mt-1">
-                                                                    {(() => {
-                                                                        // Locally provable dates only: when the inspection
-                                                                        // came back, otherwise when it was scheduled.
-                                                                        const stamp = item.submitted_at || item.completed_at || item.scheduled_date;
-                                                                        return stamp
-                                                                            ? new Date(stamp).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})
-                                                                            : "—";
-                                                                    })()}
-                                                                </span>
-                                                                {/* The internal record id stays available, but only as a
-                                                                    quiet secondary reference rather than the identity. */}
-                                                                <span className="text-[9px] font-mono text-slate-300 mt-0.5">INS-{item.id}</span>
-                                                            </div>
-                                                        ))}
+                                                                {/* Identity is left-aligned and allowed to wrap. The
+                                                                    reference is the primary identifier, so it is
+                                                                    never clamped: a truncated application
+                                                                    reference is not an acceptable rendering of
+                                                                    a unique key. */}
+                                                                <div className="min-w-0 flex-1 flex flex-col items-start gap-1">
+                                                                    <span className="text-[13px] font-bold text-slate-800 leading-snug break-words group-hover:text-blue-700 transition-colors">
+                                                                        {item.display_reference || `Application #${item.zoning_application_id}`}
+                                                                    </span>
+                                                                    {/* PHASE 2B2B: round identity is one PARCEL's visit sequence, resolved by
+                                                                        the server. A historical row whose parcel was never
+                                                                        recorded carries no round_number at all and says so,
+                                                                        rather than being given a fabricated "Round 1".
+                                                                        Everything else about the record stays visible. */}
+                                                                    <span className="text-[11px] font-semibold text-slate-600 leading-tight">
+                                                                        {item.round_number
+                                                                            ? `Round ${item.round_number} · ${item.round_kind || "Inspection"}`
+                                                                            : item.round_kind === "Historical Inspection"
+                                                                              ? `${item.round_kind} · ${item.round_note || "Parcel not recorded"}`
+                                                                              : item.round_kind || "Inspection"}
+                                                                    </span>
+                                                                    {/* PHASE 2B1: applicant and parcel, so a group is
+                                                                        identifiable without opening the application. */}
+                                                                    {(operations?.[item.id]?.applicant_name || operations?.[item.id]?.parcel_label) && (
+                                                                        <span className="text-[11px] text-slate-600 leading-tight break-words">
+                                                                            {[operations?.[item.id]?.applicant_name, operations?.[item.id]?.parcel_label].filter(Boolean).join(" · ")}
+                                                                        </span>
+                                                                    )}
+                                                                    <div className="flex flex-wrap items-center gap-1.5">
+                                                                        <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${item.display_status === "Completed" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                                                                            {item.display_status || "Assigned"}
+                                                                        </span>
+                                                                        {/* Delivery is the canonical Loop 9 vocabulary, per
+                                                                            round. NULL is "No Delivery Record" and is
+                                                                            deliberately NOT styled or labelled as a
+                                                                            failure. */}
+                                                                        {operations?.[item.id]?.delivery_label && (
+                                                                            <span
+                                                                                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                                                                                    operations?.[item.id]?.delivery_is_failure
+                                                                                        ? "bg-rose-50 text-rose-700"
+                                                                                        : "bg-slate-100 text-slate-600"
+                                                                                }`}
+                                                                            >
+                                                                                {operations?.[item.id]?.delivery_label}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {/* PHASE 2B2C - Planning Officer review visibility.
+                                                                        A ROUND-SPECIFIC decision appears only where
+                                                                        reviewed_site_inspection_id proves this exact
+                                                                        round was judged. That column is NULL on
+                                                                        every existing review, so this renders nothing
+                                                                        today - honest, not a gap.
+
+                                                                        PARCEL-LEVEL context is labelled as such and
+                                                                        shown only on the NEWEST round of the parcel's
+                                                                        chain, so one review is never repeated across
+                                                                        every historical card of the same lot - which
+                                                                        would read as though it applied to all. */}
+                                                                    {review?.po_decision && (
+                                                                        <span className="text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded">
+                                                                            PO Decision: {review.po_decision}
+                                                                        </span>
+                                                                    )}
+                                                                    {!review?.po_decision
+                                                                        && review?.is_current_round
+                                                                        && review?.parcel_review && (
+                                                                            <span
+                                                                                className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded"
+                                                                                title={review.parcel_review.context}
+                                                                            >
+                                                                                Latest Parcel Review:{" "}
+                                                                                {review.parcel_review.label}
+                                                                            </span>
+                                                                        )}
+                                                                    <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
+                                                                        <span className="text-[11px] text-slate-500 font-medium">
+                                                                            {(() => {
+                                                                                // Locally provable dates only: when the inspection
+                                                                                // came back, otherwise when it was scheduled.
+                                                                                const stamp = item.submitted_at || item.completed_at || item.scheduled_date;
+                                                                                return stamp
+                                                                                    ? new Date(stamp).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})
+                                                                                    : "—";
+                                                                            })()}
+                                                                        </span>
+                                                                        {operations?.[item.id]?.scheduled_date && (
+                                                                            <span className="text-[10px] text-slate-500">
+                                                                                Sched {operations?.[item.id]?.scheduled_date}
+                                                                            </span>
+                                                                        )}
+                                                                        {operations?.[item.id]?.inspector_name && (
+                                                                            <span className="text-[10px] text-slate-500">
+                                                                                {operations?.[item.id]?.inspector_name}
+                                                                            </span>
+                                                                        )}
+                                                                        {/* The internal record id stays available as a quiet
+                                                                            secondary reference, but it must remain
+                                                                            legible rather than near-invisible. */}
+                                                                        <span className="text-[10px] font-mono text-slate-400">INS-{item.id}</span>
+                                                                    </div>
+                                                                </div>
+                                                                </div>
+                                                        );
+                                                        })}
                                                     </div>
                                                 </>
                                             ) : (
@@ -724,9 +810,9 @@ export default function SiteInspectionsIndex() {
                                             )}
                                         </div>
                                     </div>
-                                
-                            
-                        
+
+
+
 </div>
 </div>
 </div>

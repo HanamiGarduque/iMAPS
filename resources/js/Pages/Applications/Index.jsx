@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Head, router, Link } from "@inertiajs/react";
-import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import { performLogout } from "@/utils/auth";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
+import { confirmSignOut } from "@/utils/signOut";
 import "leaflet/dist/leaflet.css";
 
 // —— Status Configuration ——
@@ -101,6 +100,7 @@ const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Indus
 // server. The browser holds no delivery vocabulary and no business predicate.
 const DELIVERY_STATE_STYLES = {
     no_delivery_record: "bg-slate-100 text-slate-600 border-slate-300",
+    not_yet_delivered:  "bg-slate-100 text-slate-600 border-slate-300",
     pending_delivery: "bg-blue-50 text-blue-700 border-blue-300",
     delivered: "bg-emerald-50 text-emerald-700 border-emerald-300",
     delivery_failed: "bg-red-50 text-red-700 border-red-300",
@@ -714,29 +714,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         selectedSort !== "newest" || dateFrom || dateTo || dateRangePreset !== "all"
     );
 
-    const handleLogout = () => {
-        Swal.fire({
-            title: "Sign Out?",
-            text: "Are you sure you want to log out of iMAPS?",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, sign out",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
-                title: "text-lg font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-5",
-                confirmButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
-                cancelButton: "inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
-            },
-        }).then((result) => {
-            if (result.isConfirmed) {
-                performLogout();
-            }
-        });
-    };
+    const handleLogout = confirmSignOut;
 
     const handleCopyRef = (e, refNo) => {
         e.stopPropagation();
