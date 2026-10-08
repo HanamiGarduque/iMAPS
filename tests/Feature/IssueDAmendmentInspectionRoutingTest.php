@@ -73,6 +73,16 @@ class IssueDAmendmentInspectionRoutingTest extends TestCase
         $this->assertSame('amendment', $application->application_stream);
     }
 
+    public function test_amendment_reclassification_with_needs_inspection_is_routed_to_technical_review(): void
+    {
+        $application = $this->encodeAmended(
+            ['application_type' => 'Petition for Reclassification'],
+            [['parcel_code' => 'P-01', 'decision' => 'Needs Site Inspection', 'inspector' => true]],
+        );
+
+        $this->assertSame('Technical Review', $application->status);
+    }
+
     public function test_amendment_with_inspection_creates_the_round_and_keeps_the_request(): void
     {
         $application = $this->encodeAmended(
@@ -88,6 +98,7 @@ class IssueDAmendmentInspectionRoutingTest extends TestCase
         $this->assertSame($inspection->id, TechnicalReview::where('parcel_id', $parcel->id)->value('site_inspection_task_id'));
         $this->assertSame('assigned', $inspection->status);
         $this->assertNull($inspection->completed_at);
+        $this->assertNull($inspection->submitted_at);
 
         // The fix changes WHEN SB is entered, not WHETHER the lot is SB-eligible.
         $this->assertTrue($application->fresh()->hasSbRouting());
@@ -164,6 +175,7 @@ class IssueDAmendmentInspectionRoutingTest extends TestCase
             );
 
             $this->assertSame('Technical Review', $application->status, "Inspection requirement must win ($label).");
+            $this->assertCount(2, $application->parcels()->get());
             $this->assertSame(1, SiteInspection::where('zoning_application_id', $application->id)->count(), "One round ($label).");
         }
     }
