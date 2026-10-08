@@ -1325,8 +1325,7 @@ function ShowInner({
                             </div>
                             <section aria-labelledby="case-glance" className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                                 <div className="px-4 pt-3.5 pb-3 border-b border-slate-100">
-                                    <p className="text-[10.5px] font-medium uppercase tracking-wide text-slate-400">Application</p>
-                                    <h2 id="case-glance" className="mt-0.5 text-[14px] font-semibold tracking-tight text-slate-900 leading-snug">{dash(app.application_type)}</h2>
+                                    <h2 id="case-glance" className="text-[14px] font-semibold tracking-tight text-slate-900 leading-snug">Application</h2>
                                     <p className="mt-0.5 text-[12px] text-slate-500 tabular-nums">
                                         Brgy. {dash(app.barangay)} · Filed {fmtDate(app.created_at, true)}
                                     </p>
@@ -1366,7 +1365,8 @@ function ShowInner({
                                             </Spec>
                                         </div>
                                     )}
-                                    <Spec label="Track">{isAmendment ? "Amendment (Track B)" : hasSbRouting ? "Clearance (Track A · SB routed)" : "Clearance (Track A)"}</Spec>
+                                    <Spec label="Type">{dash(app.application_type)}</Spec>
+                                    <Spec label="Track">{isAmendment ? "Rezoning / reclassification (needs SB approval)" : hasSbRouting ? "Standard clearance (SB routed)" : "Standard clearance"}</Spec>
                                     {isAmendment && app.target_land_use_class ? (
                                         <Spec label="Target zoning">
                                             {app.target_land_use_class}

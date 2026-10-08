@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -27,16 +26,13 @@ class AuthenticatedSessionController extends Controller
 
     public function store(LoginRequest $request): RedirectResponse
     {
-        $user = User::where('email', $request->email)->first();
+        $throttleKey = $request->throttleKey();
 
-        // 1. Prevent login if the account is already blocked
-        if ($user && !$user->is_active) {
-            throw ValidationException::withMessages([
-                'email' => 'Your account has been deactivated. Please contact an administrator.',
-            ]);
+        // Temporary, per email+IP lockout. The account itself is never deactivated: anyone who
+        // knows an email address could otherwise lock that person (or every admin) out for good.
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $this->throwLockedOut($throttleKey);
         }
-
-        $throttleKey = Str::transliterate(Str::lower($request->input('email')).'|'.$request->ip());
 
         // 2. Attempt authentication.
         //
@@ -51,10 +47,20 @@ class AuthenticatedSessionController extends Controller
         // reveal the FieldSync role guidance to a caller whose password did
         // not verify.
         $siteInspectorRejected = false;
+        $deactivated = false;
 
         if (! Auth::attemptWhen(
             $request->only('email', 'password'),
-            function ($attemptedUser) use (&$siteInspectorRejected) {
+            function ($attemptedUser) use (&$siteInspectorRejected, &$deactivated) {
+                // Deactivation is only revealed once the password has been verified (this callback
+                // never runs for a wrong password), so the login page can't be used to probe which
+                // emails belong to deactivated accounts.
+                if ($attemptedUser instanceof User && !$attemptedUser->is_active) {
+                    $deactivated = true;
+
+                    return false;
+                }
+
                 if ($attemptedUser instanceof User && $attemptedUser->role === 'Site Inspector') {
                     $siteInspectorRejected = true;
 
@@ -62,9 +68,16 @@ class AuthenticatedSessionController extends Controller
                 }
 
                 return true;
-            },
-            $request->boolean('remember')
+            }
         )) {
+            if ($deactivated) {
+                RateLimiter::clear($throttleKey);
+
+                throw ValidationException::withMessages([
+                    'email' => 'Your account has been deactivated. Please contact an administrator.',
+                ]);
+            }
+
             if ($siteInspectorRejected) {
                 // Credentials verified + Site Inspector role: a role rejection,
                 // not a failed password. Clear the failure counter exactly as
@@ -79,27 +92,21 @@ class AuthenticatedSessionController extends Controller
                 ]);
             }
 
-            RateLimiter::hit($throttleKey);
+            RateLimiter::hit($throttleKey, 900);
             $attempts = RateLimiter::attempts($throttleKey);
 
-            // 3. Block account on the 5th failed attempt
+            // 3. Block further attempts from this email+IP for 15 minutes on the 5th failure
             if ($attempts >= 5) {
-                if ($user) {
-                    $user->is_active = false;
-                    $user->save();
-                }
-                
-                RateLimiter::clear($throttleKey);
-
-                throw ValidationException::withMessages([
-                    'email' => 'Security Alert: Your account has been permanently blocked due to 5 failed login attempts. Contact an admin to restore access.',
-                ]);
+                $this->throwLockedOut($throttleKey);
             }
 
             // Show remaining attempts
             $attemptsLeft = 5 - $attempts;
             throw ValidationException::withMessages([
-                'email' => trans('auth.failed') . " You have {$attemptsLeft} attempt(s) remaining.",
+                // The same hint goes to every wrong-password response, so a legitimately deactivated user
+                // knows where to look without the page revealing which emails are deactivated.
+                'email' => trans('auth.failed') . " You have {$attemptsLeft} attempt(s) remaining."
+                    . ' If you still cannot sign in, your account may be deactivated; contact an administrator.',
             ]);
         }
 
@@ -116,6 +123,17 @@ class AuthenticatedSessionController extends Controller
         }
 
         return redirect()->intended(route('overview', absolute: false));
+    }
+
+    // retry_after (seconds) lets the login page show a live countdown; the email message is the plain-text fallback.
+    private function throwLockedOut(string $throttleKey): never
+    {
+        $seconds = RateLimiter::availableIn($throttleKey);
+
+        throw ValidationException::withMessages([
+            'email' => 'Too many failed login attempts. Try again in ' . ceil($seconds / 60) . ' minute(s).',
+            'retry_after' => (string) $seconds,
+        ]);
     }
 
     public function destroy(Request $request): RedirectResponse

@@ -8,7 +8,7 @@ import Swal from "sweetalert2";
 export const PERMITS = [
     { type: "ze", label: "Zoning Evaluation", paper: "A4" },
     { type: "lc", label: "Locational Clearance", paper: "A4" },
-    { type: "zc", label: "Zoning Certification", paper: "A4" },
+    { type: "zc", label: "Zoning Certificate", paper: "A4" },
     { type: "dp", label: "Development Permit", paper: "8.5 × 13 (long)" },
 ];
 
@@ -385,8 +385,13 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                             const ready = savedTypes.has(p.type);
                             const todo = p.req && !ready;
                             const state = ready ? "Ready" : p.req ? "Required" : "Optional";
+                            // Newest saved copy of this permit, so it can be checked right where release is decided.
+                            const latest = ready
+                                ? [...savedPermits].filter((sp) => typeof sp === "object" && sp.permit_type === p.type)
+                                    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+                                : null;
                             return (
-                                <li key={p.type} className="w-[136px]">
+                                <li key={p.type} className="relative w-[136px]">
                                     <button
                                         type="button"
                                         onClick={() => setOpen(p.type)}
@@ -409,6 +414,21 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                                             <span className="text-slate-400">· {p.paper}</span>
                                         </span>
                                     </button>
+                                    {latest && (
+                                        <a
+                                            href={`/applications/${app.id}/saved-permits/${latest.id}/download`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            title={`View ${p.label}`}
+                                            aria-label={`View ${p.label}`}
+                                            className="absolute top-1 left-[62px] z-10 w-6 h-6 inline-flex items-center justify-center rounded-full bg-white/95 text-slate-500 ring-1 ring-slate-200 shadow-sm hover:text-blue-700 hover:ring-blue-300 transition-colors"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            </svg>
+                                        </a>
+                                    )}
                                 </li>
                             );
                         })}

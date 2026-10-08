@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Http;
+use App\Models\AppNotification;
 use App\Models\AuditTrail;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class UserManagementController extends Controller
@@ -52,11 +54,14 @@ class UserManagementController extends Controller
                 $supabaseUrl = rtrim(config('services.supabase.url'), '/');
                 $supabaseKey = config('services.supabase.service_key');
 
-                // Query Supabase profiles filtered by handshake_key to get their Supabase UUIDs first
-                $profileResponse = Http::withHeaders([
+                // Short timeouts: stats are a bonus, so a slow Supabase must not hold the page for the 30s default.
+                $supabase = Http::withHeaders([
                     'apikey' => $supabaseKey,
                     'Authorization' => 'Bearer ' . $supabaseKey,
-                ])->get($supabaseUrl . '/rest/v1/profiles', [
+                ])->connectTimeout(2)->timeout(5);
+
+                // Query Supabase profiles filtered by handshake_key to get their Supabase UUIDs first
+                $profileResponse = $supabase->get($supabaseUrl . '/rest/v1/profiles', [
                     'select' => 'id,handshake_key',
                     'handshake_key' => 'in.(' . implode(',', $handshakeKeys) . ')'
                 ]);
@@ -67,11 +72,8 @@ class UserManagementController extends Controller
 
                     if (!empty($supabaseUuids)) {
                         // Query field jobs using the matched Supabase UUIDs
-                        $jobResponse = Http::withHeaders([
-                            'apikey' => $supabaseKey,
-                            'Authorization' => 'Bearer ' . $supabaseKey,
-                        ])->get($supabaseUrl . '/rest/v1/field_jobs', [
-                            'select' => '*',
+                        $jobResponse = $supabase->get($supabaseUrl . '/rest/v1/field_jobs', [
+                            'select' => 'assigned_inspector_id,status,is_self_scheduled,is_compliant,rework_started_at,photo_count,checklist_total_count,checklist_completed_count',
                             'assigned_inspector_id' => 'in.(' . implode(',', $supabaseUuids) . ')'
                         ]);
 
@@ -127,12 +129,20 @@ class UserManagementController extends Controller
                 $userApps = $apps->where('encoded_by', $poId);
 
                 $totalFees = $userApps->sum('assessment_fee');
-                $topBarangay = $userApps->countBy('barangay')->sortDesc()->keys()->first() ?? 'N/A';
+                $barangayCounts = $userApps->whereNotNull('barangay')->where('barangay', '!=', '')->countBy('barangay')->sortDesc();
+                $topBarangay = $barangayCounts->keys()->first() ?? 'N/A';
+                $byMonth = $userApps->countBy(fn ($a) => substr((string) $a->created_at, 0, 7));
+                $trend = collect(range(5, 0))->map(function ($i) use ($byMonth) {
+                    $m = now()->startOfMonth()->subMonths($i);
+
+                    return ['label' => $m->format('M'), 'count' => $byMonth[$m->format('Y-m')] ?? 0];
+                })->values();
 
                 $types = [
                     'locational' => $userApps->where('application_type', 'Locational Clearance')->count(),
                     'development' => $userApps->where('application_type', 'Development Permit')->count(),
-                    'zoning' => $userApps->where('application_type', 'Zoning Certificate')->count(),
+                    // Stored as "Zoning Certificate" or legacy "Zoning Certification", often inside a comma-separated multi-type value.
+                    'zoning' => $userApps->filter(fn ($a) => str_contains((string) $a->application_type, 'Zoning Certific'))->count(),
                     'special' => $userApps->where('application_type', 'Preliminary Approval and Locational Clearance (PALC)')->count(),
                 ];
 
@@ -145,6 +155,18 @@ class UserManagementController extends Controller
                 $poStats[$poId] = [
                     'total_fees' => '₱' . number_format($totalFees, 2),
                     'top_barangay' => $topBarangay,
+                    'top_barangays' => $barangayCounts->take(3)->map(fn ($c, $b) => ['name' => $b, 'count' => $c])->values(),
+                    'last_encoded_at' => $userApps->max('created_at'),
+                    'this_month' => $trend->last()['count'],
+                    'trend' => $trend,
+                    'recent' => $userApps->sortByDesc('created_at')->take(5)->map(fn ($a) => [
+                        'id' => $a->id,
+                        'reference_number' => $a->reference_number,
+                        'applicant_name' => $a->applicant_name,
+                        'application_type' => $a->application_type,
+                        'status' => $a->status,
+                        'created_at' => $a->created_at,
+                    ])->values(),
                     'types' => $types,
                     'status' => $status,
                 ];
@@ -166,6 +188,7 @@ class UserManagementController extends Controller
                 $user->stats = $poStats[$user->id] ?? [
                     'total_fees' => '₱0.00',
                     'top_barangay' => 'N/A',
+                    'top_barangays' => [], 'last_encoded_at' => null, 'this_month' => 0, 'trend' => [], 'recent' => [],
                     'types' => ['locational' => 0, 'development' => 0, 'zoning' => 0, 'special' => 0],
                     'status' => ['released' => 0, 'pending' => 0, 'denied' => 0]
                 ];
@@ -207,37 +230,103 @@ class UserManagementController extends Controller
     {
         $request->validate([
             'admin_password' => 'required',
-            'target_user_id' => 'required'
+            'target_user_id' => 'required|integer|exists:users,id',
         ]);
 
-        $adminUser = Auth::user();
+        $adminUser = $request->user();
+        $throttleKey = 'sensitive-data:' . $adminUser->id;
 
-        if ($adminUser && Hash::check($request->admin_password, $adminUser->password)) {
-            $targetUser = DB::table('users')->where('id', $request->target_user_id)->first();
-            
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
             return response()->json([
-                'success' => true,
-                'handshake_key' => $targetUser->handshake_key,
-            ]);
+                'success' => false,
+                'message' => 'Too many failed attempts. Try again in ' . RateLimiter::availableIn($throttleKey) . ' seconds.',
+            ], 429);
         }
 
-        return response()->json(['success' => false, 'message' => 'Authentication failed.'], 403);
+        if (!Hash::check($request->admin_password, $adminUser->password)) {
+            RateLimiter::hit($throttleKey, 900);
+            return response()->json(['success' => false, 'message' => 'Authentication failed.'], 403);
+        }
+
+        RateLimiter::clear($throttleKey);
+
+        DB::table('audit_trail')->insert([
+            'application_id' => 0,
+            'action' => 'Handshake Key Revealed',
+            'performed_by' => $adminUser->id,
+            'note' => 'Revealed handshake key for user #' . $request->target_user_id,
+            'performed_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'handshake_key' => DB::table('users')->where('id', $request->target_user_id)->value('handshake_key'),
+        ]);
     }
 
     public function updateProfile(Request $request, $id)
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $id,
+            'email' => ['required', 'email', Rule::unique('users', 'email')->ignore($id)],
             'is_active' => 'required|boolean',
         ]);
 
-        DB::table('users')->where('id', $id)->update([
-            'name' => $request->name,
-            'email' => $request->email,
-            'is_active' => $request->is_active,
-            'updated_at' => now(),
-        ]);
+        $error = null;
+
+        DB::transaction(function () use ($request, $id, &$error) {
+            // Lock active admins so two concurrent deactivations can't both pass the last-admin check.
+            $activeAdminIds = DB::table('users')->where('role', 'Admin')->where('is_active', true)
+                ->lockForUpdate()->pluck('id')->all();
+
+            $target = DB::table('users')->where('id', $id)->lockForUpdate()->first();
+            if (!$target) {
+                $error = ['User not found.', 404];
+                return;
+            }
+
+            if (!$request->boolean('is_active') && $target->is_active) {
+                if ((int) $id === (int) $request->user()->id) {
+                    $error = ['You cannot deactivate your own account.', 422];
+                    return;
+                }
+                if ($target->role === 'Admin' && count(array_diff($activeAdminIds, [(int) $id])) === 0) {
+                    $error = ['Cannot deactivate the last active administrator.', 422];
+                    return;
+                }
+            }
+
+            $new = [
+                'name' => $request->name,
+                'email' => $request->email,
+                'is_active' => $request->boolean('is_active'),
+            ];
+
+            $changes = [];
+            foreach ($new as $field => $value) {
+                if ($target->$field != $value) {
+                    $changes[] = $field === 'is_active'
+                        ? 'active: ' . ($target->is_active ? 'yes' : 'no') . ' → ' . ($value ? 'yes' : 'no')
+                        : "$field: {$target->$field} → $value";
+                }
+            }
+
+            DB::table('users')->where('id', $id)->update($new + ['updated_at' => now()]);
+
+            if ($changes) {
+                DB::table('audit_trail')->insert([
+                    'application_id' => 0,
+                    'action' => 'User Profile Updated',
+                    'performed_by' => $request->user()->id,
+                    'note' => "Updated user #{$id} (" . implode('; ', $changes) . ')',
+                    'performed_at' => now(),
+                ]);
+            }
+        });
+
+        if ($error) {
+            return response()->json(['success' => false, 'message' => $error[0]], $error[1]);
+        }
 
         return response()->json(['success' => true]);
     }
@@ -268,12 +357,35 @@ class UserManagementController extends Controller
         $request->validate([
             'target_user_id' => 'required|exists:users,id',
             'new_password' => 'required|string|min:8',
+            'admin_password' => 'required|current_password',
         ]);
 
-        DB::table('users')->where('id', $request->target_user_id)->update([
-            'password' => Hash::make($request->new_password),
-            'updated_at' => now(),
-        ]);
+        DB::transaction(function () use ($request) {
+            DB::table('users')->where('id', $request->target_user_id)->update([
+                'password' => Hash::make($request->new_password),
+                'updated_at' => now(),
+            ]);
+
+            DB::table('audit_trail')->insert([
+                'application_id' => 0,
+                'action' => 'Password Reset',
+                'performed_by' => $request->user()->id,
+                'note' => 'Reset password for user #' . $request->target_user_id,
+                'performed_at' => now(),
+            ]);
+        });
+
+        // Best-effort and outside the transaction: a notification failure must not undo the reset.
+        try {
+            AppNotification::notifyUser(
+                $request->target_user_id,
+                'Password Reset',
+                'An administrator reset your password. If you did not expect this, contact your administrator.',
+                'system_alert'
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Password reset notification failed: ' . $e->getMessage());
+        }
 
         return response()->json(['success' => true]);
     }

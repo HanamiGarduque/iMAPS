@@ -33,6 +33,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
     const [isSavingProfile, setIsSavingProfile] = useState(false);
     const [newPasswordInput, setNewPasswordInput] = useState("");
     const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
+    const [adminPasswordInput, setAdminPasswordInput] = useState("");
     const [showResetPassword, setShowResetPassword] = useState(false);
     const [passwordResetError, setPasswordResetError] = useState("");
     const [isResettingPassword, setIsResettingPassword] = useState(false);
@@ -42,6 +43,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         setAccountModalView("profile");
         setNewPasswordInput("");
         setConfirmPasswordInput("");
+        setAdminPasswordInput("");
         setPasswordResetError("");
         setShowResetPassword(false);
     };
@@ -50,6 +52,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         setAccountModalView("password");
         setNewPasswordInput("");
         setConfirmPasswordInput("");
+        setAdminPasswordInput("");
         setPasswordResetError("");
     };
 
@@ -57,6 +60,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         setAccountModalView("profile");
         setNewPasswordInput("");
         setConfirmPasswordInput("");
+        setAdminPasswordInput("");
         setPasswordResetError("");
     };
 
@@ -324,8 +328,8 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         e.preventDefault();
         if (!editingUser) return;
 
-        if (!newPasswordInput || !confirmPasswordInput) {
-            setPasswordResetError("Both password fields are required.");
+        if (!newPasswordInput || !confirmPasswordInput || !adminPasswordInput) {
+            setPasswordResetError("All password fields are required.");
             return;
         }
 
@@ -349,6 +353,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                 {
                     target_user_id: editingUser.id,
                     new_password: newPasswordInput,
+                    admin_password: adminPasswordInput,
                 },
                 {
                     headers: {
@@ -878,7 +883,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                     aria-modal="true"
                     className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
                 >
-                    <div className="bg-white rounded-2xl w-full max-w-xl flex flex-col shadow-2xl border border-slate-200/80 overflow-hidden">
+                    <div className={`bg-white rounded-2xl w-full ${statsModalUser.role === "Planning Officer" ? "max-w-3xl" : "max-w-xl"} flex flex-col shadow-2xl border border-slate-200/80 overflow-hidden`}>
                         <div className="flex items-center justify-between gap-3 p-5 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white shrink-0">
                             <div className="flex items-center gap-3 min-w-0">
                                 <div className="relative shrink-0">
@@ -920,55 +925,180 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                             </button>
                         </div>
 
-                        <div className="p-5 overflow-y-auto max-h-[70vh] space-y-4 text-xs">
-                            {statsModalUser.role === "Planning Officer" && (
-                                <>
-                                    <div className="grid grid-cols-3 gap-3">
-                                        <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
-                                            <div className="text-[10px] text-slate-400 uppercase font-semibold">Total Encoded</div>
-                                            <div className="text-lg font-bold text-slate-900 mt-0.5">
-                                                {statsModalUser.encoded_applications_count || 0}
-                                            </div>
-                                        </div>
-                                        <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
-                                            <div className="text-[10px] text-slate-400 uppercase font-semibold">Total Fees</div>
-                                            <div className="text-base font-bold text-blue-700 mt-0.5 truncate font-mono">
-                                                {statsModalUser.stats?.total_fees || "₱0.00"}
-                                            </div>
-                                        </div>
-                                        <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-center">
-                                            <div className="text-[10px] text-slate-400 uppercase font-semibold">Top Barangay</div>
-                                            <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">
-                                                {statsModalUser.stats?.top_barangay || "N/A"}
-                                            </div>
-                                        </div>
-                                    </div>
+                        <div className="p-5 overflow-y-auto max-h-[75vh] space-y-4 text-xs">
+                            {statsModalUser.role === "Planning Officer" && (() => {
+                                const st = statsModalUser.stats || {};
+                                const total = statsModalUser.encoded_applications_count || 0;
+                                const pct = (n) => (total ? Math.round(((n || 0) / total) * 100) : 0);
+                                const fmtDate = (d) =>
+                                    d ? new Date(String(d).replace(" ", "T")).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" }) : "—";
+                                const totalFeesNum = parseFloat(String(st.total_fees || "0").replace(/[^0-9.]/g, "")) || 0;
+                                const avgFee = total
+                                    ? "₱" + (totalFeesNum / total).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                    : "—";
+                                const released = st.status?.released || 0;
+                                const pending = st.status?.pending || 0;
+                                const denied = st.status?.denied || 0;
+                                const decided = released + denied;
+                                const releaseRate = decided ? Math.round((released / decided) * 100) + "%" : "—";
+                                const statuses = [
+                                    ["Released", released, "bg-emerald-500"],
+                                    ["In Progress", pending, "bg-amber-400"],
+                                    ["Denied", denied, "bg-red-500"],
+                                    ["Other", Math.max(0, total - released - pending - denied), "bg-slate-300"],
+                                ];
+                                const types = [
+                                    ["Locational Clearance", st.types?.locational],
+                                    ["Development Permit", st.types?.development],
+                                    ["Zoning Certificate", st.types?.zoning],
+                                    ["Special Land Use", st.types?.special],
+                                ];
+                                const trend = st.trend || [];
+                                const maxTrend = Math.max(1, ...trend.map((t) => t.count));
+                                const statusBadge = (s) =>
+                                    s === "Released"
+                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                        : s === "Denied"
+                                            ? "bg-red-50 text-red-700 border-red-200"
+                                            : "bg-amber-50 text-amber-700 border-amber-200";
+                                const sectionTitle = "text-[11px] font-semibold text-slate-500 uppercase tracking-wider";
+                                const kpis = [
+                                    ["Total Encoded", total, `${st.this_month || 0} this month`],
+                                    ["Total Fees", st.total_fees || "₱0.00", `Avg ${avgFee} / app`],
+                                    ["Release Rate", releaseRate, `${released} of ${decided} decided`],
+                                    ["Last Encoded", st.last_encoded_at ? fmtDate(st.last_encoded_at) : "None yet", `Top: ${st.top_barangay || "N/A"}`],
+                                ];
 
-                                    <div className="border border-slate-200/80 rounded-xl p-4">
-                                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2.5">
-                                            Application Breakdown
+                                return (
+                                    <>
+                                        {/* KPI strip */}
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                            {kpis.map(([label, value, sub]) => (
+                                                <div key={label} className="bg-slate-50 rounded-xl p-3 border border-slate-100 min-w-0">
+                                                    <div className="text-[10px] text-slate-400 uppercase font-semibold">{label}</div>
+                                                    <div className="text-base font-bold text-slate-900 mt-1 truncate" title={String(value)}>{value}</div>
+                                                    <div className="text-[10px] text-slate-500 mt-0.5 truncate" title={sub}>{sub}</div>
+                                                </div>
+                                            ))}
                                         </div>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                                                <span className="text-slate-600">Locational Clearance</span>
-                                                <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.locational || 0}</span>
+
+                                        {/* Status distribution */}
+                                        <div className="border border-slate-200/80 rounded-xl p-4">
+                                            <div className={`${sectionTitle} mb-2.5`}>Status Distribution</div>
+                                            <div
+                                                className="flex h-2.5 rounded-full overflow-hidden bg-slate-100"
+                                                role="img"
+                                                aria-label={statuses.map(([l, n]) => `${l} ${n}`).join(", ")}
+                                            >
+                                                {statuses.map(([label, n, color]) =>
+                                                    n ? <div key={label} className={color} style={{ width: `${pct(n)}%` }} title={`${label}: ${n}`} /> : null
+                                                )}
                                             </div>
-                                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                                                <span className="text-slate-600">Development Permit</span>
-                                                <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.development || 0}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center py-1 border-b border-slate-100">
-                                                <span className="text-slate-600">Zoning Certificate</span>
-                                                <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.zoning || 0}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center py-1">
-                                                <span className="text-slate-600">Special Land Use</span>
-                                                <span className="font-semibold text-slate-800">{statsModalUser.stats?.types?.special || 0}</span>
+                                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5">
+                                                {statuses.map(([label, n, color]) => (
+                                                    <span key={label} className="flex items-center gap-1.5 text-slate-600">
+                                                        <span className={`w-2 h-2 rounded-full ${color}`} />
+                                                        {label} <span className="font-semibold text-slate-800">{n}</span>
+                                                        <span className="text-slate-400">({pct(n)}%)</span>
+                                                    </span>
+                                                ))}
                                             </div>
                                         </div>
-                                    </div>
-                                </>
-                            )}
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {/* Type breakdown */}
+                                            <div className="border border-slate-200/80 rounded-xl p-4">
+                                                <div className={`${sectionTitle} mb-3`}>Application Types</div>
+                                                <div className="space-y-2.5">
+                                                    {types.map(([label, n]) => (
+                                                        <div key={label}>
+                                                            <div className="flex justify-between items-center gap-2">
+                                                                <span className="text-slate-600 truncate">{label}</span>
+                                                                <span className="font-semibold text-slate-800 shrink-0">
+                                                                    {n || 0} <span className="text-[10px] font-normal text-slate-400">({pct(n)}%)</span>
+                                                                </span>
+                                                            </div>
+                                                            <div className="h-1 rounded-full bg-slate-100 mt-1 overflow-hidden">
+                                                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct(n)}%` }} />
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Trend + barangays */}
+                                            <div className="border border-slate-200/80 rounded-xl p-4 flex flex-col gap-4">
+                                                <div>
+                                                    <div className={`${sectionTitle} mb-2.5`}>Last 6 Months</div>
+                                                    <div
+                                                        className="flex items-end gap-1.5 h-16"
+                                                        role="img"
+                                                        aria-label={`Applications encoded per month: ${trend.map((t) => `${t.label} ${t.count}`).join(", ")}`}
+                                                    >
+                                                        {trend.map((t) => (
+                                                            <div key={t.label} className="flex-1 flex flex-col items-center justify-end h-full gap-1" title={`${t.label}: ${t.count}`}>
+                                                                <span className="text-[9px] font-semibold text-slate-500">{t.count || ""}</span>
+                                                                <div className="w-full rounded-t bg-blue-500/80" style={{ height: `${(t.count / maxTrend) * 100}%`, minHeight: t.count ? 3 : 1 }} />
+                                                                <span className="text-[9px] text-slate-400">{t.label}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className={`${sectionTitle} mb-2`}>Top Barangays</div>
+                                                    {st.top_barangays?.length ? (
+                                                        <ol className="space-y-1.5">
+                                                            {st.top_barangays.map((b, i) => (
+                                                                <li key={b.name} className="flex justify-between gap-2">
+                                                                    <span className="text-slate-600 truncate">{i + 1}. {b.name}</span>
+                                                                    <span className="font-semibold text-slate-800">{b.count}</span>
+                                                                </li>
+                                                            ))}
+                                                        </ol>
+                                                    ) : (
+                                                        <p className="text-slate-400">No data yet</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Recent applications */}
+                                        <div className="border border-slate-200/80 rounded-xl overflow-hidden">
+                                            <div className={`${sectionTitle} px-4 pt-4 pb-2.5`}>Recent Applications</div>
+                                            {st.recent?.length ? (
+                                                <ul className="divide-y divide-slate-100">
+                                                    {st.recent.map((app) => (
+                                                        <li key={app.id}>
+                                                            <Link
+                                                                href={`/applications/${app.id}`}
+                                                                className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 focus:bg-slate-50 focus:outline-none transition-colors"
+                                                            >
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="font-mono font-semibold text-blue-700 truncate">
+                                                                            {app.reference_number || `#${app.id}`}
+                                                                        </span>
+                                                                        <span className="text-slate-400 shrink-0">· {fmtDate(app.created_at)}</span>
+                                                                    </div>
+                                                                    <div className="text-slate-600 truncate mt-0.5">
+                                                                        {app.applicant_name || "Unnamed applicant"}
+                                                                        <span className="text-slate-400"> — {app.application_type || "—"}</span>
+                                                                    </div>
+                                                                </div>
+                                                                <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border font-semibold ${statusBadge(app.status)}`}>
+                                                                    {app.status || "—"}
+                                                                </span>
+                                                            </Link>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            ) : (
+                                                <p className="px-4 pb-4 text-slate-400">No applications encoded yet.</p>
+                                            )}
+                                        </div>
+                                    </>
+                                );
+                            })()}
 
                             {statsModalUser.role === "Site Inspector" && (
                                 <>
@@ -1220,6 +1350,19 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
                                         value={confirmPasswordInput}
                                         onChange={(e) => setConfirmPasswordInput(e.target.value)}
                                         placeholder="Re-type new password"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-700 mb-1">Your Admin Password</label>
+                                    <input
+                                        type="password"
+                                        autoComplete="current-password"
+                                        value={adminPasswordInput}
+                                        onChange={(e) => setAdminPasswordInput(e.target.value)}
+                                        placeholder="Confirm it's you"
                                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
                                         required
                                     />

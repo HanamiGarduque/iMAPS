@@ -111,7 +111,7 @@ return [
         ],
 
         'zc' => [
-            'label'      => 'Zoning Certification',
+            'label'      => 'Zoning Certificate',
             'sheet'      => 'ZONING',
             'paper'      => 'A4',
             'print_area' => 'A1:I83',
@@ -187,7 +187,7 @@ return [
         'APPLICATION_NO'  => ['label' => 'Application No.',            'group' => 'Numbers & dates', 'readonly' => true],
         'ZE_NO'           => ['label' => 'Zoning Evaluation No.',      'group' => 'Numbers & dates'],
         'LC_DN'           => ['label' => 'LC Decision No.',            'group' => 'Numbers & dates'],
-        'ZC_DN'           => ['label' => 'Zoning Certification No.',   'group' => 'Numbers & dates'],
+        'ZC_DN'           => ['label' => 'Zoning Certificate No.',   'group' => 'Numbers & dates'],
         'DP_DN'           => ['label' => 'Development Permit No.',     'group' => 'Numbers & dates'],
         'DATE_TODAY'      => ['label' => 'Evaluation date',            'group' => 'Numbers & dates', 'type' => 'date'],
         'DATE_ISSUED'     => ['label' => 'Date issued',                'group' => 'Numbers & dates', 'type' => 'date'],
@@ -240,7 +240,7 @@ return [
         'OR_NUMBER'       => ['label' => 'O.R. No.',                     'group' => 'Fees', 'readonly' => true],
         'ASSESSMENT_FEE'  => ['label' => 'Amount paid (Php)',            'group' => 'Fees', 'readonly' => true],
         'DEVELOPMENT_FEE' => ['label' => 'Development fee (Php)',        'group' => 'Fees', 'readonly' => true],
-        'ZC_AMOUNT'       => ['label' => 'Zoning certification amount',  'group' => 'Fees', 'type' => 'select', 'options' => 'LIST!K10:K28'],
+        'ZC_AMOUNT'       => ['label' => 'Zoning Certificate amount',  'group' => 'Fees', 'type' => 'select', 'options' => 'LIST!K10:K28'],
 
         // Signatories
         'PLANNING_OFFICER' => ['label' => 'Prepared by (Planning Officer)', 'group' => 'Signatories'],

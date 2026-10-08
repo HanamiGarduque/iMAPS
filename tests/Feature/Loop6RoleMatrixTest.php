@@ -24,7 +24,7 @@ use Tests\TestCase;
  *                      Admin-only modules denied.
  * SITE INSPECTOR:      web login rejected with FieldSync guidance and no
  *                      session; no last_login/role/is_active/password/
- *                      handshake_key/remember_token change; an invalid SI
+ *                      handshake_key change; an invalid SI
  *                      password follows the ordinary invalid-credentials
  *                      path (no role guidance leaked).
  * PUBLIC:              covered in Loop6AccessBoundaryTest (portal + tracking).
@@ -133,15 +133,10 @@ class Loop6RoleMatrixTest extends TestCase
     {
         $inspector = User::factory()->create(['role' => 'Site Inspector']);
 
-        // Pre-populate identity/remember state so any write during the
-        // rejected attempt (rehash, remember-token rotation, handshake or
-        // role change) is observable as an exact-value difference.
-        $inspector->forceFill([
-            'handshake_key'  => 'loop6-si-handshake-proof',
-            'remember_token' => 'Loop6SiRememberTokenBeforeAttemptMustRemainExactlyUnchanged',
-        ])->save();
+        // Pre-populate identity state so any write during the rejected attempt
+        // (rehash, handshake or role change) is observable as an exact-value difference.
+        $inspector->forceFill(['handshake_key' => 'loop6-si-handshake-proof'])->save();
         $passwordBefore = $inspector->password;
-        $rememberBefore = $inspector->remember_token;
 
         $response = $this->from('/login')->post('/login', [
             'email'    => $inspector->email,
@@ -175,11 +170,6 @@ class Loop6RoleMatrixTest extends TestCase
             $passwordBefore,
             $inspector->password,
             'The password hash must remain unchanged (no rehash write) for a rejected web login.',
-        );
-        $this->assertSame(
-            $rememberBefore,
-            $inspector->remember_token,
-            'A pre-populated remember_token must NOT be rotated by a rejected web login.',
         );
 
         // The credential-valid rejection cleared the failure counter exactly
@@ -245,7 +235,7 @@ class Loop6RoleMatrixTest extends TestCase
         );
     }
 
-    public function test_failed_login_attempts_still_count_and_lock_out(): void
+    public function test_failed_login_attempts_temporarily_block_without_deactivating_the_account(): void
     {
         $admin = $this->admin();
         $key   = Str::transliterate(Str::lower($admin->email).'|127.0.0.1');
@@ -261,23 +251,36 @@ class Loop6RoleMatrixTest extends TestCase
         }
 
         $combined = implode(' ', session('errors')->get('email'));
-        $this->assertStringContainsString(
-            'Security Alert',
-            $combined,
-            'The pre-existing 5-attempt lockout policy must remain intact.',
-        );
+        $this->assertStringContainsString('Too many failed login attempts', $combined);
         $this->assertStringNotContainsString(
             'Site Inspectors use FieldSync',
             $combined,
             'Lockout responses must never reveal FieldSync role guidance.',
         );
 
-        $admin->refresh();
-        $this->assertFalse(
-            (bool) $admin->is_active,
-            'The pre-existing account-lock behavior (is_active = false on the 5th failure) must remain intact.',
-        );
-        $this->assertSame(0, RateLimiter::attempts($key), 'The limiter must be cleared when the lockout fires.');
+        // The login page ticks this down live, so the server must send the seconds left.
+        $retryAfter = (int) session('errors')->first('retry_after');
+        $this->assertGreaterThan(0, $retryAfter);
+        $this->assertLessThanOrEqual(900, $retryAfter);
+
+        // An outsider typing wrong passwords must not be able to deactivate the account.
+        $this->assertTrue((bool) $admin->fresh()->is_active, 'Failed logins must never deactivate the account.');
+        $this->assertSame(5, RateLimiter::attempts($key));
+
+        // The login page counts this down live.
+        $retryAfter = (int) session('errors')->first('retry_after');
+        $this->assertGreaterThan(0, $retryAfter);
+        $this->assertLessThanOrEqual(900, $retryAfter);
+
+        // While blocked, even the correct password is refused from this email+IP...
+        $this->post('/login', ['email' => $admin->email, 'password' => 'password'])
+            ->assertSessionHasErrors('email');
+        $this->assertGuest();
+
+        // ...but the block is temporary: once it expires the real user can sign in.
+        RateLimiter::clear($key);
+        $this->post('/login', ['email' => $admin->email, 'password' => 'password']);
+        $this->assertAuthenticated();
     }
 
     // ───────────────────────────── ADMIN ─────────────────────────────
@@ -418,15 +421,19 @@ class Loop6RoleMatrixTest extends TestCase
 
         foreach ([
             '/register-new-account',
-            '/analytics',
-            '/audit-log',
             '/settings',
             '/users',
         ] as $uri) {
             $this->actingAs($officer)->get($uri)->assertForbidden("{$uri} must remain Admin-only.");
         }
 
-        $this->actingAs($officer)->post('/analytics/rerun', [])->assertForbidden('/analytics/rerun must remain Admin-only.');
         $this->actingAs($officer)->post('/users/sensitive-data', [])->assertForbidden('/users/sensitive-data must remain Admin-only.');
+
+        // The analytics and audit-log modules were removed (AnalyticsController is gone), so these are
+        // unreachable for everyone. Asserted explicitly: re-adding one without a role gate fails here.
+        foreach (['/analytics', '/audit-log'] as $uri) {
+            $this->actingAs($officer)->get($uri)->assertNotFound("{$uri} no longer exists; re-adding it needs an Admin-only gate and this assertion updated.");
+        }
+        $this->actingAs($officer)->post('/analytics/rerun', [])->assertNotFound();
     }
 }

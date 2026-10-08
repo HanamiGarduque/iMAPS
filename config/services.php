@@ -49,8 +49,12 @@ return [
     ],
 
     'forecast' => [
-    'url'     => env('FORECAST_SERVICE_URL', 'http://localhost:8002/api/v1/forecast'),
-    'api_key' => env('FORECAST_SERVICE_API_KEY'),
-],
+        'url'     => env('FORECAST_SERVICE_URL', 'http://localhost:8002/api/v1/forecast'),
+        'api_key' => env('FORECAST_SERVICE_API_KEY'),
+        // The service trains an XGBoost model per request and loads shapefiles on
+        // first call. Measured: ~24s warm, over 30s cold — Guzzle's 30s default
+        // aborted the request while the forecast was still running.
+        'timeout' => (int) env('FORECAST_SERVICE_TIMEOUT', 180),
+    ],
 ];
 

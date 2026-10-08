@@ -200,7 +200,7 @@ class ReportController extends Controller
         return [
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
-            'application_type' => 'nullable|in:All,Locational Clearance,Zoning Certificate,Development Permit',
+            'application_type' => 'nullable|in:All,Locational Clearance,Zoning Certificate,Development Permit,Preliminary Approval and Locational Clearance (PALC)',
             'barangay' => 'nullable|in:' . implode(',', self::BARANGAYS),
             'variables' => 'nullable|array',
             'variables.*' => 'in:reference_number,date,application_type,status,name,barangay,land_use_class,lot_area_sqm,building_area,project_cost,purpose,assessment_fee',
@@ -326,6 +326,12 @@ class ReportController extends Controller
 
         $format = $request->format;
 
+        if ($format !== 'pdf') {
+            $reportTitleStr = $this->neutralizeFormula($reportTitleStr);
+            $headers = $this->neutralizeFormula($headers);
+            $rows = $this->neutralizeFormula($rows);
+        }
+
         if ($format === 'csv') {
             $callback = function () use ($headers, $rows, $reportTitleStr) {
                 $file = fopen('php://output', 'w');
@@ -384,5 +390,20 @@ class ReportController extends Controller
                 return response()->streamDownload($callback, $filename . '.csv', ['Content-Type' => 'text/csv']);
             }
         }
+    }
+
+    /**
+     * Spreadsheet apps run text starting with = + - @ (or tab/CR) as a formula; a leading ' makes it plain text.
+     * Plain numbers are left alone so negative values stay numeric.
+     */
+    private function neutralizeFormula($value)
+    {
+        if (is_array($value)) {
+            return array_map([$this, 'neutralizeFormula'], $value);
+        }
+
+        return is_string($value) && !is_numeric($value) && preg_match('/^[=+\-@\t\r]/', $value)
+            ? "'" . $value
+            : $value;
     }
 }

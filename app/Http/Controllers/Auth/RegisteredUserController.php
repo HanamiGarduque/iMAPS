@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -60,23 +61,30 @@ class RegisteredUserController extends Controller
                 }
                 $supabaseUserId = $createdId;
                 $stage = 'PROFILE_VERIFY';
-                sleep(1);
 
-                $profileResponse = Http::withHeaders([
-                    'apikey'        => $supabaseKey,
-                    'Authorization' => 'Bearer ' . $supabaseKey,
-                    'Content-Type'  => 'application/json',
-                    'Prefer'        => 'return=representation',
-                ])->timeout(12)->patch("{$supabaseUrl}/rest/v1/profiles?id=eq.{$supabaseUserId}", [
-                    'full_name'     => $request->name,
-                    'role'          => 'inspector',
-                    'handshake_key' => $handshakeKey,
-                    'created_at'    => $phtTimestamp,
-                    'updated_at'    => $phtTimestamp,
-                ]);
+                // The profile row is created remotely right after the auth user, so it may not exist yet:
+                // retry briefly instead of always sleeping.
+                $profile = null;
+                for ($attempt = 0; $attempt < 4 && !$profile; $attempt++) {
+                    if ($attempt > 0) usleep(300000);
 
-                $rows = $profileResponse->json();
-                $profile = is_array($rows) && array_is_list($rows) && count($rows) === 1 ? $rows[0] : null;
+                    $profileResponse = Http::withHeaders([
+                        'apikey'        => $supabaseKey,
+                        'Authorization' => 'Bearer ' . $supabaseKey,
+                        'Content-Type'  => 'application/json',
+                        'Prefer'        => 'return=representation',
+                    ])->timeout(12)->patch("{$supabaseUrl}/rest/v1/profiles?id=eq.{$supabaseUserId}", [
+                        'full_name'     => $request->name,
+                        'role'          => 'inspector',
+                        'handshake_key' => $handshakeKey,
+                        'created_at'    => $phtTimestamp,
+                        'updated_at'    => $phtTimestamp,
+                    ]);
+
+                    $rows = $profileResponse->json();
+                    $profile = $profileResponse->successful() && is_array($rows) && array_is_list($rows) && count($rows) === 1 ? $rows[0] : null;
+                }
+
                 if (!$profileResponse->successful() || !is_array($profile)
                     || ($profile['id'] ?? null) !== $supabaseUserId
                     || ($profile['role'] ?? null) !== 'inspector'
@@ -86,14 +94,18 @@ class RegisteredUserController extends Controller
                     throw new \RuntimeException('Profile verification failed.');
                 }
             } catch (\Throwable $error) {
+                $removed = $supabaseUserId !== null && $this->deleteRemoteAccount($supabaseUserId);
                 Log::error('Inspector provisioning failed.', [
                     'PROVISIONING_STAGE' => $stage,
                     'auth_user_id' => $supabaseUserId,
+                    'remote_account_removed' => $removed,
                 ]);
                 throw ValidationException::withMessages([
-                    'email' => $stage === 'PROFILE_VERIFY'
-                        ? 'The remote identity was created, but its inspector profile could not be verified. Contact the administrator before retrying.'
-                        : 'Remote identity creation could not be confirmed. Contact the administrator before retrying.',
+                    'email' => match (true) {
+                        $removed => 'The inspector account could not be completed and the partial remote account was removed. You can try again.',
+                        $supabaseUserId !== null => 'The remote identity was created, but its inspector profile could not be verified and could not be removed. Contact the administrator before retrying.',
+                        default => 'Remote identity creation could not be confirmed. Contact the administrator before retrying.',
+                    },
                 ]);
             }
         }
@@ -108,14 +120,26 @@ class RegisteredUserController extends Controller
             ]);
         } catch (\Throwable $error) {
             if ($supabaseUserId === null) throw $error;
+            $removed = $this->deleteRemoteAccount($supabaseUserId);
             Log::error('Inspector provisioning failed.', [
                 'PROVISIONING_STAGE' => 'LOCAL_CREATE',
                 'auth_user_id' => $supabaseUserId,
+                'remote_account_removed' => $removed,
             ]);
             throw ValidationException::withMessages([
-                'email' => 'The remote inspector account was verified, but the local account could not be completed. Contact the administrator before retrying.',
+                'email' => $removed
+                    ? 'The local account could not be completed and the remote inspector account was removed. You can try again.'
+                    : 'The remote inspector account was verified, but the local account could not be completed and the remote account could not be removed. Contact the administrator before retrying.',
             ]);
         }
+
+        DB::table('audit_trail')->insert([
+            'application_id' => 0,
+            'action' => 'User Account Created',
+            'performed_by' => $request->user()->id,
+            'note' => "Created {$user->role} account #{$user->id} for {$user->name} ({$user->email})",
+            'performed_at' => now(),
+        ]);
 
         \App\Models\AppNotification::notifyRoles(
             ['Admin'],
@@ -128,5 +152,21 @@ class RegisteredUserController extends Controller
         event(new Registered($user));
 
         return back()->with('success', 'User account successfully provisioned!');
+    }
+
+    // Best-effort rollback of a half-created inspector: without it the email stays taken in Supabase
+    // and every retry fails. A 404 counts as removed (already gone).
+    private function deleteRemoteAccount(string $supabaseUserId): bool
+    {
+        try {
+            $key = config('services.supabase.service_key');
+            $response = Http::withHeaders(['apikey' => $key, 'Authorization' => 'Bearer ' . $key])
+                ->timeout(12)
+                ->delete(config('services.supabase.url') . "/auth/v1/admin/users/{$supabaseUserId}");
+
+            return $response->successful() || $response->status() === 404;
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 }

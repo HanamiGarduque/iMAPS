@@ -13,11 +13,15 @@ class ForecastService
 {
     protected string $url;
     protected string $apiKey;
+    protected int $timeout;
 
     public function __construct()
     {
-        $this->url = config('services.forecast.url', env('FORECAST_SERVICE_URL', 'http://localhost:8002/api/v1/forecast'));
-        $this->apiKey = (string) config('services.forecast.api_key', env('FORECAST_SERVICE_API_KEY', 'njsdYUBJSJksmouye3u8c09cm2879002n8370ndbMb81bjVnmoFbanJNyvMoNYVgv18namwst34biObMShwn19nnjnWbgy198bsanFTBMAJnBSYbm189nsbHNJ28anNSMOwo2129nNYlMMoquerTRYGBnimijVcvBygtBTf38dbhHy772LLaosha0nabe7abwzxcbXxvybenBvgf7gya891sdyb'));
+        // Config only. A hardcoded fallback key would let a missing
+        // FORECAST_SERVICE_API_KEY look like a working install.
+        $this->url = (string) config('services.forecast.url');
+        $this->apiKey = (string) config('services.forecast.api_key');
+        $this->timeout = (int) config('services.forecast.timeout', 180);
     }
 
     /**
@@ -103,6 +107,10 @@ class ForecastService
      */
     public function generateForecast(?UploadedFile $file = null): array
     {
+        if ($this->url === '' || $this->apiKey === '') {
+            throw new Exception('Forecasting service is not configured. Set FORECAST_SERVICE_URL and FORECAST_SERVICE_API_KEY.');
+        }
+
         try {
             if ($file) {
                 $fileContent = file_get_contents($file->getRealPath());
@@ -116,14 +124,13 @@ class ForecastService
                 $fileName = 'rosario_zoning_apps_2021_2026.csv';
             }
 
-            $response = Http::withHeaders([
-                'X-API-Key' => $this->apiKey,
-                'accept'    => 'application/json',
-            ])->attach(
-                'file',
-                $fileContent,
-                $fileName
-            )->post($this->url);
+            $response = Http::timeout($this->timeout)
+                ->withHeaders([
+                    'X-API-Key' => $this->apiKey,
+                    'accept'    => 'application/json',
+                ])
+                ->attach('file', $fileContent, $fileName)
+                ->post($this->url);
 
             if ($response->failed()) {
                 Log::error('Forecast Microservice Error', [
@@ -198,31 +205,10 @@ class ForecastService
             $data['pins'] = $pins;
             return $data;
         } catch (Exception $e) {
-            Log::warning('Forecasting microservice unavailable, using spatial forecast model fallback: ' . $e->getMessage());
-
-            $q4Data = $this->getQuarterData(2026, 4);
-            $q1Data = $this->getQuarterData(2027, 1);
-            $allPins = array_merge($q4Data['pins'], $q1Data['pins']);
-
-            return [
-                'status' => 'success',
-                'pins' => $allPins,
-                'forecasts' => [
-                    ['Quarter_Label' => '2026 Q4', 'Predicted_Quarterly_Clearances' => count($q4Data['pins'])],
-                    ['Quarter_Label' => '2027 Q1', 'Predicted_Quarterly_Clearances' => count($q1Data['pins'])],
-                ],
-                'summary' => [
-                    'q4_2026_total' => count($q4Data['pins']),
-                    'q1_2027_total' => count($q1Data['pins']),
-                    'combined_total' => count($allPins)
-                ],
-                'metrics' => [
-                    'mae' => 2.155,
-                    'wmape' => 0.302,
-                    'validation_mae' => 2.155,
-                    'validation_wmape' => 0.302,
-                ],
-            ];
+            // Fail closed. Inventing pins and reporting fixed MAE/WMAPE here
+            // presented a forecast that no model produced.
+            Log::error('Forecast generation failed', ['error' => $e->getMessage()]);
+            throw $e;
         }
     }
 

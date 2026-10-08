@@ -2,7 +2,6 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ForecastController;
 
 // Loop 6: the tax-map lookup endpoint is NOT registered here. It lives in
 // routes/web.php behind the session guard plus role:Admin,Planning Officer.
@@ -11,9 +10,5 @@ use App\Http\Controllers\ForecastController;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
-})->middleware('auth:sanctum');
-
-Route::post('/analytics/report/preview', [App\Http\Controllers\AnalyticsController::class, 'previewReport'])->name('analytics.report.preview');
-Route::post('/analytics/report', [App\Http\Controllers\AnalyticsController::class, 'generateReport'])->name('analytics.report');
-Route::post('/forecast/generate', [ForecastController::class, 'generate']);
+})->middleware(['auth:sanctum', App\Http\Middleware\EnsureUserIsActive::class]);
 

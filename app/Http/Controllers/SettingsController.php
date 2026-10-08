@@ -6,7 +6,11 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
+use App\Models\AppNotification;
+use App\Models\User;
 use ZipArchive;
 
 class SettingsController extends Controller
@@ -71,9 +75,9 @@ class SettingsController extends Controller
         $baseName = $shpFile->getFilenameWithoutExtension();
         $dir = $shpFile->getPath();
 
-        // 3. Validate the Big Five exist together
+        // 3. Validate the required files exist together (.cpg is optional in the format)
         $missing = [];
-        foreach (['shx', 'dbf', 'prj', 'cpg'] as $ext) {
+        foreach (['shx', 'dbf', 'prj'] as $ext) {
             if (!File::exists("$dir/$baseName.$ext")) {
                 $missing[] = ".$ext";
             }
@@ -99,12 +103,26 @@ class SettingsController extends Controller
         // 6. Execute PostGIS Import via Terminal Commands
         // Using -d to DROP the existing table and recreate it with the new data
         $shpPath = "$dir/$baseName.shp";
-        $dbHost = env('DB_HOST', '127.0.0.1');
-        $dbUser = env('DB_USERNAME', 'postgres');
-        $dbName = env('DB_DATABASE', 'imaps');
-        $dbPass = env('DB_PASSWORD', '');
+        // config(), not env(): env() returns null once config is cached.
+        $db = config('database.connections.pgsql');
 
-        $sqlCommand = "shp2pgsql -d -I -s 4326 " . escapeshellarg($shpPath) . " " . escapeshellarg($targetTable);
+        // Read the source CRS from the .prj so PRS92/UTM data is reprojected to the
+        // layer's WGS84 instead of being stored with raw coordinates under the wrong SRID.
+        $srsInfo = Process::run(['gdalsrsinfo', '-o', 'epsg', "$dir/$baseName.prj"]);
+        if ($srsInfo->failed() || !preg_match('/EPSG:(\d+)/', $srsInfo->output(), $m)) {
+            File::deleteDirectory($extractPath);
+            return back()->withErrors(['shapefile_zip' => 'Could not identify the coordinate system in the .prj file. Re-export the shapefile with a standard EPSG coordinate system.']);
+        }
+        $srid = $m[1] === '4326' ? '4326' : "{$m[1]}:4326";
+
+        // Optional .cpg names the attribute encoding (e.g. "UTF-8" or "1252"); ignore content that doesn't look like one.
+        $encoding = '';
+        $cpg = File::exists("$dir/$baseName.cpg") ? trim(File::get("$dir/$baseName.cpg")) : '';
+        if (preg_match('/^[A-Za-z0-9._-]{1,30}$/', $cpg)) {
+            $encoding = ' -W ' . escapeshellarg(ctype_digit($cpg) ? "CP$cpg" : $cpg);
+        }
+
+        $sqlCommand = "shp2pgsql -d -I -s $srid$encoding " . escapeshellarg($shpPath) . " " . escapeshellarg($targetTable);
         // Generate the SQL using shp2pgsql
         $generateSql = Process::run($sqlCommand);
 
@@ -115,9 +133,9 @@ class SettingsController extends Controller
 
         // Push SQL to database using psql. ON_ERROR_STOP makes psql exit non-zero on a
         // failed statement; without it a broken import would be reported as a success.
-        $importSql = Process::env(['PGPASSWORD' => $dbPass])
+        $importSql = Process::env(['PGPASSWORD' => (string) $db['password']])
             ->input($generateSql->output())
-            ->run("psql -v ON_ERROR_STOP=1 -h $dbHost -U $dbUser -d $dbName");
+            ->run(['psql', '-v', 'ON_ERROR_STOP=1', '-h', $db['host'], '-p', (string) $db['port'], '-U', $db['username'], '-d', $db['database']]);
 
         // 7. Cleanup Temporary Files
         File::deleteDirectory($extractPath);
@@ -138,6 +156,7 @@ class SettingsController extends Controller
             'has_backup' => $hasBackup,
             'backup_at'  => $hasBackup ? ($previous['updated_at'] ?? null) : null,
         ]);
+        $this->audit($request, 'Map Layer Imported', "Imported the " . Str::headline($request->layer_type) . " map layer from " . $zipFile->getClientOriginalName());
 
         $this->flushMapCache();
 
@@ -166,6 +185,7 @@ class SettingsController extends Controller
             'has_backup' => false,
             'backup_at'  => null,
         ]);
+        $this->audit($request, 'Map Layer Restored', "Restored the previous version of the " . Str::headline($request->layer_type) . " map layer");
 
         $this->flushMapCache();
 
@@ -187,7 +207,7 @@ class SettingsController extends Controller
         // Validate the archive before replacing the currently active tile set.
         $zip = new ZipArchive;
         if ($zip->open($zipFile->path()) === TRUE) {
-            $hasTile = false;
+            $tileEntries = [];
             for ($index = 0; $index < $zip->numFiles; $index++) {
                 $entryName = $zip->getNameIndex($index);
                 $normalizedName = str_replace('\\', '/', (string) $entryName);
@@ -196,22 +216,30 @@ class SettingsController extends Controller
                     return back()->withErrors(['tiles_zip' => 'The archive contains an unsafe file path.']);
                 }
                 if (preg_match('/\.(png|jpe?g|webp)$/i', $normalizedName)) {
-                    $hasTile = true;
+                    $tileEntries[] = $entryName;
                 }
             }
-            if (!$hasTile) {
+            if (!$tileEntries) {
                 $zip->close();
                 return back()->withErrors(['tiles_zip' => 'The archive does not contain PNG, JPG, or WebP map tiles.']);
             }
 
             $stagingPath = storage_path('app/temp_tiles/' . uniqid());
             File::ensureDirectoryExists($stagingPath);
-            if (!$zip->extractTo($stagingPath)) {
+            if (!$zip->extractTo($stagingPath, $tileEntries)) {
                 $zip->close();
                 File::deleteDirectory($stagingPath);
                 return back()->withErrors(['tiles_zip' => 'Failed to extract the tile archive.']);
             }
             $zip->close();
+
+            // Extension alone can be faked (e.g. a script renamed to .png): require real image content.
+            foreach (File::allFiles($stagingPath) as $file) {
+                if (@getimagesize($file->getPathname()) === false) {
+                    File::deleteDirectory($stagingPath);
+                    return back()->withErrors(['tiles_zip' => 'The archive contains a file that is not a valid image.']);
+                }
+            }
 
             // Move the current tiles aside (instead of deleting them) so the deploy can be undone.
             $hasBackup = false;
@@ -241,6 +269,7 @@ class SettingsController extends Controller
                 'has_backup' => $hasBackup,
                 'backup_at'  => $hasBackup ? ($previous['updated_at'] ?? null) : null,
             ]);
+            $this->audit($request, 'Map Tiles Uploaded', 'Uploaded the CLUP raster map tiles from ' . $zipFile->getClientOriginalName());
 
             return back()->with('success', 'CLUP raster map overlay updated successfully!');
         } else {
@@ -257,10 +286,19 @@ class SettingsController extends Controller
             return back()->withErrors(['restore' => 'There are no previous tiles to restore.']);
         }
 
-        File::deleteDirectory($publicPath);
-        if (!File::moveDirectory($backupPath, $publicPath)) {
-            return back()->withErrors(['restore' => 'The previous tiles could not be restored.']);
+        // Park the current tiles instead of deleting them, so a failed move can be rolled back.
+        $parkedPath = $publicPath . '.replaced';
+        File::deleteDirectory($parkedPath);
+        if (File::exists($publicPath) && !File::moveDirectory($publicPath, $parkedPath)) {
+            return back()->withErrors(['restore' => 'The current tiles could not be set aside, so nothing was changed.']);
         }
+        if (!File::moveDirectory($backupPath, $publicPath)) {
+            if (File::exists($parkedPath)) {
+                File::moveDirectory($parkedPath, $publicPath);
+            }
+            return back()->withErrors(['restore' => 'The previous tiles could not be restored. The current tiles were kept.']);
+        }
+        File::deleteDirectory($parkedPath);
 
         $this->recordHistory(self::TILES_KEY, [
             'updated_at' => now()->toIso8601String(),
@@ -269,6 +307,7 @@ class SettingsController extends Controller
             'has_backup' => false,
             'backup_at'  => null,
         ]);
+        $this->audit($request, 'Map Tiles Restored', 'Restored the previous CLUP raster map tiles');
 
         return back()->with('success', 'Previous raster tiles restored.');
     }
@@ -330,6 +369,29 @@ class SettingsController extends Controller
     }
 
     // Upload history lives in a small JSON file: one entry per layer plus one for the tiles.
+    private function audit(Request $request, string $action, string $note): void
+    {
+        DB::table('audit_trail')->insert([
+            'application_id' => 0,
+            'action' => $action,
+            'performed_by' => $request->user()->id,
+            'note' => $note,
+            'performed_at' => now(),
+        ]);
+
+        // Tell the other admins and the planning officers (not site inspectors, not the actor).
+        // Best-effort: a notification failure must not undo a change that already went through.
+        try {
+            $recipients = User::whereIn('role', ['Admin', 'Planning Officer'])
+                ->where('is_active', true)
+                ->where('id', '!=', $request->user()->id)
+                ->pluck('id')->all();
+            AppNotification::notifyUsers($recipients, 'Map Settings Changed', "{$request->user()->name}: {$note}.");
+        } catch (\Throwable $e) {
+            Log::warning('Settings change notification failed: ' . $e->getMessage());
+        }
+    }
+
     private function historyPath(): string
     {
         return storage_path('app/settings_layer_history.json');

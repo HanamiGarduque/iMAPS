@@ -16,7 +16,7 @@ class ZoningApplication extends Model
     public const PERMIT_LABELS = [
         'ze' => 'Zoning Evaluation',
         'lc' => 'Locational Clearance',
-        'zc' => 'Zoning Certification',
+        'zc' => 'Zoning Certificate',
         'dp' => 'Development Permit',
     ];
 
@@ -248,7 +248,7 @@ class ZoningApplication extends Model
     /**
      * Get missing recommended permit names in human-readable form.
      *
-     * @return string[] Array of missing permit names (e.g. ['Locational Clearance', 'Zoning Certification'])
+     * @return string[] Array of missing permit names (e.g. ['Locational Clearance', 'Zoning Certificate'])
      */
     public function getMissingRecommendedPermitNames(): array
     {

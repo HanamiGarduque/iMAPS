@@ -33,12 +33,6 @@ class ZoningApplicationFactory extends Factory
         'Residential', 'Commercial', 'Industrial', 'Agri-Industrial', 'Institutional', 'Recreational',
     ];
 
-    // Rosario, Batangas center: 13.8410, 121.2062
-    // ~0.05 degrees offset covers roughly the whole municipality
-    private const LAT_CENTER  = 13.8410;
-    private const LNG_CENTER  = 121.2062;
-    private const COORD_SPREAD = 0.05;
-
     public function definition(): array
     {
         $applicationType = $this->faker->randomElement(self::APPLICATION_TYPES);
@@ -65,19 +59,8 @@ class ZoningApplicationFactory extends Factory
             'email'               => $this->faker->optional(0.7)->safeEmail(),
             'representative_name' => $this->faker->optional(0.4)->name(),
             'barangay'            => $this->faker->randomElement(self::BARANGAYS),
-            'lot_number'          => $this->faker->numerify('Lot ##'),
-            'tct_number'          => $this->faker->numerify('TCT-####-######'),
-            'lot_area_sqm'            => $this->faker->randomFloat(4, 50, 5000),
-            'latitude'            => $this->faker->randomFloat(
-                                        7,
-                                        self::LAT_CENTER - self::COORD_SPREAD,
-                                        self::LAT_CENTER + self::COORD_SPREAD
-                                    ),
-            'longitude'           => $this->faker->randomFloat(
-                                        7,
-                                        self::LNG_CENTER - self::COORD_SPREAD,
-                                        self::LNG_CENTER + self::COORD_SPREAD
-                                    ),
+            // lot_number, tct_number, lot_area_sqm, latitude and longitude live on `parcels`:
+            // an application has many parcels, so they are no longer columns here.
             'assessment_fee'      => $this->faker->randomFloat(2, 500, 50000),
             'or_number'           => $this->faker->optional(0.5)->numerify('OR-#######'),
             'remarks'             => $this->faker->optional(0.4)->sentence(),

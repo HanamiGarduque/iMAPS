@@ -7,7 +7,7 @@ import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { confirmSignOut } from "@/utils/signOut";
 
-const APPLICATION_TYPES = ["All", "Locational Clearance", "Zoning Certificate", "Development Permit"];
+const APPLICATION_TYPES = ["All", "Locational Clearance", "Zoning Certificate", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)"];
 
 const COLUMNS = [
     { id: "reference_number", label: "Reference number" },

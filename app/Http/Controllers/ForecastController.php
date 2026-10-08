@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Services\ForecastService;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 
 class ForecastController extends Controller
@@ -34,10 +35,14 @@ class ForecastController extends Controller
                 'data'    => $forecastData,
             ]);
         } catch (\Exception $e) {
+            Log::error('Forecast generation request failed', ['error' => $e->getMessage()]);
+
+            // 503, not 500: the forecasting microservice is a separate deployment
+            // that is not part of this repository. The reason stays in the log.
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Unable to generate spatial forecast: ' . $e->getMessage(),
-            ], 500);
+                'message' => 'The urban growth forecasting service is unavailable. Contact your administrator.',
+            ], 503);
         }
     }
 

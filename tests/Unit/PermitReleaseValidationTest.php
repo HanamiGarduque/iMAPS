@@ -78,11 +78,11 @@ class PermitReleaseValidationTest extends TestCase
 
         // LC is generated, but ZC is still missing
         $this->assertSame(['zc'], $app->getMissingRecommendedPermitTypes());
-        $this->assertSame(['Zoning Certification'], $app->getMissingRecommendedPermitNames());
+        $this->assertSame(['Zoning Certificate'], $app->getMissingRecommendedPermitNames());
         $this->assertFalse($app->hasAllRecommendedPermitsGenerated());
 
         // Now both generated
-        $zcPermit = new GeneratedPermit(['permit_type' => 'zc', 'permit_name' => 'Zoning Certification']);
+        $zcPermit = new GeneratedPermit(['permit_type' => 'zc', 'permit_name' => 'Zoning Certificate']);
         $app->setRelation('generatedPermits', new EloquentCollection([$lcPermit, $zcPermit]));
 
         $this->assertSame([], $app->getMissingRecommendedPermitTypes());

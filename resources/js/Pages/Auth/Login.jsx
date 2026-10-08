@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Head, useForm, Link } from '@inertiajs/react';
+import { useState, useEffect, useRef } from 'react';
+import { Head, useForm } from '@inertiajs/react';
 import { Icon, ICONS, PARCELS, CadastralBackground, Navbar, Field, inputClass, AuthStyles } from './AuthUI';
 
 const ACTIVE_PARCEL = [10, 21, 28];
@@ -172,26 +172,63 @@ const MOCKS = [
 ];
 
 export default function Login() {
-    const { data, setData, post, processing, errors, reset } = useForm({
+    const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         email: '',
         password: '',
-        remember: false,
     });
 
     const [showPassword, setShowPassword] = useState(false);
-    // Chrome autofills saved logins on page load into a protected preview the page can't style (it shows in a
-    // serif font). Keeping the fields read-only until the user interacts stops that; the browser then offers
-    // the saved login from its dropdown instead, and the filled text uses the page font.
-    const [locked, setLocked] = useState(true);
-    const unlock = () => locked && setLocked(false);
     const [active, setActive] = useState(0);
     const [showTerms, setShowTerms] = useState(false);
+    const termsDialog = useRef(null);
+    const termsOpener = useRef(null);
+    const openTerms = (doc) => {
+        termsOpener.current = document.activeElement;
+        setShowTerms(doc);
+    };
+
+    // Legal modal keyboard support: Escape closes, Tab stays inside, focus returns to the link that opened it.
+    useEffect(() => {
+        if (!showTerms) return;
+        const focusable = () => [...termsDialog.current.querySelectorAll('a[href], button:not([disabled])')];
+        focusable()[0]?.focus();
+
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') return setShowTerms(false);
+            if (e.key !== 'Tab') return;
+            const items = focusable();
+            const first = items[0];
+            const last = items[items.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('keydown', onKeyDown);
+            termsOpener.current?.focus();
+        };
+    }, [showTerms]);
 
     useEffect(() => {
         // Re-armed on every change so a manual click restarts the 6s timer (and the progress line).
         const timeout = setTimeout(() => setActive((p) => (p + 1) % MODULES.length), 6000);
         return () => clearTimeout(timeout);
     }, [active]);
+
+    // After too many failed logins the server sends how many seconds the block lasts; tick it down live.
+    const [retryIn, setRetryIn] = useState(0);
+    useEffect(() => {
+        setRetryIn(Number(errors.retry_after) || 0);
+    }, [errors.retry_after]);
+    useEffect(() => {
+        if (retryIn <= 0) return;
+        const timer = setTimeout(() => {
+            if (retryIn === 1) clearErrors();
+            setRetryIn(retryIn - 1);
+        }, 1000);
+        return () => clearTimeout(timer);
+    }, [retryIn]);
+    const countdown = `${Math.floor(retryIn / 60)}:${String(retryIn % 60).padStart(2, '0')}`;
 
     const submit = (e) => {
         e.preventDefault();
@@ -269,7 +306,12 @@ export default function Login() {
                                 {errors.email && (
                                     <div role="alert" className="mb-5 flex items-start gap-2.5 px-3.5 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
                                         <Icon d={ICONS.alert} className="w-5 h-5 shrink-0 text-red-400" sw={2} />
-                                        {errors.email}
+                                        {retryIn > 0 ? (
+                                            <span>
+                                                Too many failed login attempts. Try again in{' '}
+                                                <time className="font-bold tabular-nums">{countdown}</time>.
+                                            </span>
+                                        ) : errors.email}
                                     </div>
                                 )}
 
@@ -284,13 +326,10 @@ export default function Login() {
                                             placeholder="name@rosario.gov.ph"
                                             autoComplete="email"
                                             required
-                                            readOnly={locked}
-                                            onPointerDown={unlock}
-                                            onFocus={unlock}
                                         />
                                     </Field>
 
-                                    <Field id="password" label="Password" icon={ICONS.lock} aside={<Link href="#" className="text-[13px] font-semibold text-blue-600 hover:text-blue-800 transition-colors">Forgot password?</Link>}>
+                                    <Field id="password" label="Password" icon={ICONS.lock}>
                                         <input
                                             type={showPassword ? 'text' : 'password'}
                                             id="password"
@@ -300,9 +339,6 @@ export default function Login() {
                                             placeholder="Enter your password"
                                             autoComplete="current-password"
                                             required
-                                            readOnly={locked}
-                                            onPointerDown={unlock}
-                                            onFocus={unlock}
                                         />
                                         <button
                                             type="button"
@@ -316,7 +352,7 @@ export default function Login() {
 
                                     <button
                                         type="submit"
-                                        disabled={processing}
+                                        disabled={processing || retryIn > 0}
                                         className="w-full h-11 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 active:scale-[.99] disabled:cursor-wait disabled:opacity-90 text-white text-[15px] font-semibold shadow-[0_10px_24px_-8px_rgba(37,99,235,.6),inset_0_1px_0_rgba(255,255,255,.25)] transition inline-flex items-center justify-center gap-2.5"
                                     >
                                         {processing && (
@@ -325,16 +361,20 @@ export default function Login() {
                                                 <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                                             </svg>
                                         )}
-                                        <span role="status">{processing ? 'Logging in…' : 'Log in'}</span>
+                                        <span>{processing ? 'Logging in…' : 'Log in'}</span>
+                                        {/* Announced only while a login is in progress, not as a stray "Log in". */}
+                                        <span role="status" className="sr-only">{processing ? 'Logging in…' : ''}</span>
                                     </button>
+                                    {/* Only administrators reset passwords, so there is no self-service link. */}
+                                    <p className="text-center text-[13px] text-slate-500">Forgot your password? Contact your administrator to reset it.</p>
                                 </form>
 
                                 <div className="mt-6 pt-5 border-t border-slate-100 flex items-start gap-2.5 text-[13px] leading-relaxed text-slate-500">
                                     <Icon d={ICONS.shield} className="w-[18px] h-[18px] mt-0.5 text-blue-600 shrink-0" sw={1.8} />
                                     <p>
                                         Authorized personnel only. By signing in you agree to our{' '}
-                                        <button type="button" onClick={() => setShowTerms('terms')} className="text-blue-600 font-semibold hover:underline">Terms of Service</button>{' '}and{' '}
-                                        <button type="button" onClick={() => setShowTerms('privacy')} className="text-blue-600 font-semibold hover:underline">Privacy Policy</button>.
+                                        <button type="button" onClick={() => openTerms('terms')} className="text-blue-600 font-semibold hover:underline">Terms of Service</button>{' '}and{' '}
+                                        <button type="button" onClick={() => openTerms('privacy')} className="text-blue-600 font-semibold hover:underline">Privacy Policy</button>.
                                     </p>
                                 </div>
                             </div>
@@ -346,7 +386,7 @@ export default function Login() {
 
             {/* Legal document modal (Terms or Privacy) */}
             {showTerms && (() => { const d = DOCS[showTerms]; return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="terms-title">
+                <div ref={termsDialog} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="terms-title">
                     <div className="bg-white text-slate-900 w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl relative overflow-hidden rounded-2xl">
                         <div className="flex justify-between items-start gap-4 px-8 pt-7 pb-5 border-b border-slate-100">
                             <div>

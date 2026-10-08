@@ -17,7 +17,11 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    // Not Laravel's stock 'sqlite' default: an unset DB_CONNECTION used to
+    // silently produce a non-spatial SQLite install (geom columns as TEXT),
+    // which only surfaced when a map query ran. phpunit.xml sets sqlite
+    // explicitly for the test suite.
+    'default' => env('DB_CONNECTION', 'pgsql'),
 
     /*
     |--------------------------------------------------------------------------

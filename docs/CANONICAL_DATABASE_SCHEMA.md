@@ -361,7 +361,14 @@ CREATE TABLE public.application_status_tracks (
     reference_number character varying(255) NOT NULL,
     masked_applicant_name character varying(255) NOT NULL,
     status character varying(255) NOT NULL,
-    created_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    form_number character varying(100),
+    contact_number character varying(30),
+    application_type character varying(255),
+    stage_order integer DEFAULT 1,
+    note text,
+    scheduled_date timestamp(0) without time zone,
+    business_name character varying(255)
 );
 ALTER TABLE ONLY public.application_status_tracks ALTER COLUMN id SET DEFAULT nextval('public.application_status_tracks_id_seq'::regclass);
 
@@ -588,8 +595,8 @@ CREATE TABLE public.site_inspections (
     is_compliant boolean,
     findings text,
     delivery_status character varying(32),
-    last_delivery_attempt_at timestamp without time zone,
-    delivered_at timestamp without time zone,
+    last_delivery_attempt_at timestamp(0) without time zone,
+    delivered_at timestamp(0) without time zone,
     last_delivery_failure_category character varying(48),
     CONSTRAINT site_inspections_delivered_at_present_check CHECK ((((delivery_status)::text IS DISTINCT FROM 'delivered'::text) OR (delivered_at IS NOT NULL))),
     CONSTRAINT site_inspections_delivery_failure_category_check CHECK (((last_delivery_failure_category IS NULL) OR ((last_delivery_failure_category)::text = ANY (ARRAY[('inspector_mapping_unresolved'::character varying)::text, ('supabase_unreachable'::character varying)::text, ('authentication_failure'::character varying)::text, ('remote_constraint_failure'::character varying)::text, ('remote_validation_failure'::character varying)::text, ('configuration_failure'::character varying)::text, ('unknown'::character varying)::text])))),
@@ -662,7 +669,7 @@ CREATE TABLE public.zoning_applications (
     building_area numeric(12,4),
     area_to_develop numeric(12,4),
     number_of_saleable_lots integer,
-    project_type_business_name character varying(255),
+    business_name character varying(255),
     project_cost numeric(15,2),
     right_over_land character varying(100),
     project_tenure character varying(100),
@@ -851,9 +858,9 @@ CREATE TABLE public.inspection_delivery_attempts (
     outcome character varying(16) NOT NULL,
     failure_category character varying(48),
     safe_message text,
-    attempted_at timestamp without time zone DEFAULT now() NOT NULL,
-    completed_at timestamp without time zone,
-    created_at timestamp without time zone DEFAULT now(),
+    attempted_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    completed_at timestamp(0) without time zone,
+    created_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     queue_job_uuid uuid,
     CONSTRAINT inspection_delivery_attempts_attempt_number_check CHECK ((attempt_number >= 1)),
     CONSTRAINT inspection_delivery_attempts_completed_at_check CHECK ((((outcome)::text = 'pending'::text) OR (completed_at IS NOT NULL))),
@@ -1284,8 +1291,8 @@ ALTER TABLE ONLY public.site_inspections
 -- ------------------------------------------------------------
 -- [SCHEMA-CON-054] CONSTRAINT ON site_inspections (FK)
 -- ------------------------------------------------------------
-ALTER TABLE ONLY public.site_inspections
-    ADD CONSTRAINT site_inspections_parcel_id_foreign FOREIGN KEY (parcel_id) REFERENCES public.parcels(id) ON DELETE CASCADE;
+-- RETIRED: site_inspections_parcel_id_foreign no longer exists; parcel_id is an unconstrained bigint.
+-- The marker number is kept so change-log references stay valid.
 
 -- ------------------------------------------------------------
 -- [SCHEMA-CON-055] CONSTRAINT ON site_inspections (FK)
@@ -1474,6 +1481,50 @@ CREATE INDEX technical_reviews_zoning_application_id_index ON public.technical_r
 -- [SCHEMA-IDX-029] INDEX technical_reviews_zoning_application_id_review_round_index
 -- ------------------------------------------------------------
 CREATE INDEX technical_reviews_zoning_application_id_review_round_index ON public.technical_reviews USING btree (zoning_application_id, review_round);
+
+-- ============================================================
+-- TABLE AND COLUMN COMMENTS
+-- ============================================================
+
+COMMENT ON TABLE public.inspection_delivery_attempts
+    IS 'Append-only history of iMAPS -> FieldSync bridge delivery attempts for one exact inspection round. Not the source of truth for current state; site_inspections.delivery_status is.';
+COMMENT ON COLUMN public.inspection_delivery_attempts.attempt_number
+    IS 'Per-inspection sequence starting at 1. Scoped to site_inspection_id, never global.';
+COMMENT ON COLUMN public.inspection_delivery_attempts.source
+    IS 'Who initiated the attempt: initial_dispatch | automatic_retry | planning_officer_retry | legacy_reconciliation.';
+COMMENT ON COLUMN public.inspection_delivery_attempts.outcome
+    IS 'Attempt result: pending | delivered | failed.';
+COMMENT ON COLUMN public.inspection_delivery_attempts.failure_category
+    IS 'Required when outcome = failed; must be NULL when outcome is pending or delivered.';
+COMMENT ON COLUMN public.inspection_delivery_attempts.safe_message
+    IS 'Short normalized user-facing explanation. Never a raw exception dump, credential, token, header, or signed URL.';
+COMMENT ON COLUMN public.inspection_delivery_attempts.queue_job_uuid
+    IS 'Stable Laravel queue payload UUID of the queued PushInspectionToSupabase dispatch that produced this attempt. Automatic retries of one dispatch share this UUID and each create a new attempt_number. NULL for legacy_reconciliation rows and for any synchronous execution that has no queue job.';
+
+COMMENT ON TABLE public.notifications
+    IS E'In-app notifications. user_id NULL = broadcast to every user (AppNotification::notifyAll). Rows are written by App\\Models\\AppNotification; created_at/updated_at are nullable with no default, matching the shipped migration.';
+COMMENT ON COLUMN public.notifications.user_id
+    IS 'Receiving user. NULL means broadcast to all users; scopeForUser() matches both the user id and NULL.';
+COMMENT ON COLUMN public.notifications.type
+    IS 'Free-form category chosen by the writer, e.g. application_created, status_updated, inspection_assigned, inspection_completed, forecast_generated, user_registered. No CHECK constraint: the shipped model accepts any string.';
+COMMENT ON COLUMN public.notifications.action_url
+    IS 'In-app path the notification links to, e.g. /applications/144. A relative path only; never an external or signed URL.';
+COMMENT ON COLUMN public.notifications.is_read
+    IS 'Unread until marked. The header bell polls the unread count every 30 seconds.';
+COMMENT ON COLUMN public.notifications.read_at
+    IS 'Set when the notification is first marked read. NULL while unread.';
+
+COMMENT ON COLUMN public.site_inspections.delivery_status
+    IS 'CURRENT bridge delivery state: pending_delivery | delivered | delivery_failed. NULL means never established (historical pre-bridge row or not yet reconciled). Never backfilled speculatively.';
+COMMENT ON COLUMN public.site_inspections.last_delivery_attempt_at
+    IS 'Timestamp of the most recent delivery attempt. NULL when no attempt has been recorded.';
+COMMENT ON COLUMN public.site_inspections.delivered_at
+    IS 'Timestamp of the most recent CONFIRMED successful delivery. Retained as history and never erased by a later state change.';
+COMMENT ON COLUMN public.site_inspections.last_delivery_failure_category
+    IS 'Normalized category of the most recent failed attempt. NULL unless the most recent attempt failed.';
+
+COMMENT ON COLUMN public.zoning_applications.assigned_planning_officer_id
+    IS 'CURRENT responsible Planning Officer. Null means not yet established; never backfilled speculatively.';
 
 -- ============================================================
 -- CANONICAL CONSTRAINTS & POLICY DEFINITIONS (FieldSync bridge hardening)

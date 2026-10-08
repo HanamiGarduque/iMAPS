@@ -8,10 +8,47 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration
 {
     /**
+     * The geometry(...) columns and the ST_* queries in MapController,
+     * SearchController, TaxMapLookupController and ForecastService need
+     * PostgreSQL + PostGIS. Fail here, with the fix, rather than build a
+     * schema that only breaks once someone opens the map.
+     *
+     * SQLite stores geom as TEXT and is supported for the test suite only.
+     */
+    private function requireSpatialSupport(): void
+    {
+        $driver = DB::getDriverName();
+
+        if ($driver === 'pgsql') {
+            try {
+                DB::statement('CREATE EXTENSION IF NOT EXISTS postgis');
+            } catch (\Throwable $e) {
+                throw new RuntimeException(
+                    'PostGIS is required and could not be enabled automatically. Connect to the iMAPS '
+                    . 'database as a superuser and run: CREATE EXTENSION postgis;  (On Windows, install '
+                    . 'PostGIS first via the EDB installer\'s Stack Builder.) Original error: ' . $e->getMessage()
+                );
+            }
+
+            return;
+        }
+
+        if (! app()->runningUnitTests()) {
+            throw new RuntimeException(
+                "iMAPS requires PostgreSQL with PostGIS, but DB_CONNECTION is '{$driver}'. The spatial "
+                . 'layers (barangay_boundary, land_parcels, land_use_plan, parcels, rosario_boundary) and '
+                . 'every ST_* query depend on it; there is no non-PostGIS fallback. Set DB_CONNECTION=pgsql.'
+            );
+        }
+    }
+
+    /**
      * Run the migrations.
      */
     public function up(): void
     {
+        $this->requireSpatialSupport();
+
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('email', 80)->unique();

@@ -28,6 +28,9 @@ class UserFactory extends Factory
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'password' => static::$password ??= Hash::make('password'),
+            // The column defaults to true in the database, but Eloquent doesn't read defaults back,
+            // so without this the in-memory model looks deactivated to EnsureUserIsActive.
+            'is_active' => true,
         ];
     }
 

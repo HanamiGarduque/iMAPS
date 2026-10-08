@@ -218,7 +218,7 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
     public function test_exact_canonical_role_strings_remain_in_use(): void
     {
         // Registration still validates exactly the three canonical strings.
-        $registration = $this->source('app/Http\Controllers/Auth/RegisteredUserController.php');
+        $registration = $this->source('app/Http/Controllers/Auth/RegisteredUserController.php');
         $this->assertStringContainsString(
             'in:Admin,Planning Officer,Site Inspector',
             $registration,
@@ -368,9 +368,10 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
         }
     }
 
-    public function test_public_portal_and_landing_stay_public(): void
+    // The public portal is a separate project now, so only the landing page is served from here.
+    public function test_landing_page_stays_public(): void
     {
-        foreach ([['GET', '/'], ['GET', '/public-portal']] as [$method, $uri]) {
+        foreach ([['GET', '/']] as [$method, $uri]) {
             $this->assertSame(
                 [],
                 $this->roleParamsFor($method, $uri),
@@ -486,7 +487,7 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
         );
 
         // Preserved login behavior for allowed roles / lockout / rate limiting.
-        $this->assertStringContainsString('RateLimiter::hit($throttleKey)', $store, 'Rate limiting must be preserved.');
+        $this->assertStringContainsString('RateLimiter::hit($throttleKey, 900)', $store, 'Rate limiting must be preserved.');
         $this->assertStringContainsString('RateLimiter::clear($throttleKey)', $store, 'Rate limiter clearing must be preserved.');
         $this->assertStringContainsString('attempts >= 5', $store, 'Lockout behavior must be preserved.');
         $this->assertStringContainsString('$request->session()->regenerate()', $store, 'Allowed-role session regeneration must remain intact.');

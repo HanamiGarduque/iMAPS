@@ -306,10 +306,10 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     
     // User Management
     Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
-    Route::get('/users/{id}/logs', [UserManagementController::class, 'logs'])->name('users.logs');
+    Route::get('/users/{id}/logs', [UserManagementController::class, 'logs'])->whereNumber('id')->name('users.logs');
     Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->name('users.sensitive');
-    Route::post('/users/reset-password', [UserManagementController::class, 'resetPassword'])->name('users.reset-password');
-    Route::post('/users/{id}/update', [UserManagementController::class, 'updateProfile'])->name('users.update-profile');
+    Route::post('/users/reset-password', [UserManagementController::class, 'resetPassword'])->middleware('throttle:10,1')->name('users.reset-password');
+    Route::post('/users/{id}/update', [UserManagementController::class, 'updateProfile'])->whereNumber('id')->name('users.update-profile');
 });
 
 

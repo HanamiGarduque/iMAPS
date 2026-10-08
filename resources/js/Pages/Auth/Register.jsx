@@ -73,7 +73,7 @@ const Section = ({ id, title, onActive, children }) => (
 // staff member's password to the admin's profile). A text field masked with CSS is invisible to password managers.
 const maskedInput = (shown) => ({
     type: 'text',
-    autoComplete: 'off',
+    autoComplete: 'new-password',
     autoCorrect: 'off',
     autoCapitalize: 'off',
     spellCheck: false,
