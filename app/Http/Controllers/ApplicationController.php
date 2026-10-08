@@ -9,6 +9,7 @@ use App\Models\TechnicalReview;
 use App\Services\AuditLogger;
 use App\Models\ApplicationDraft;
 use App\Models\ApplicationPoAssignment;
+use App\Models\InspectionDeliveryAttempt;
 use App\Models\SiteInspection;
 use App\Models\SiteInspectionAssignment;
 use App\Jobs\PushInspectionToSupabase; 
@@ -294,7 +295,16 @@ class ApplicationController extends Controller
             ];
         }
 
-        $state = InspectionDeliveryStatus::state($round->delivery_status);
+        // ISSUE C: a NULL round only earns "not yet delivered" when this caller
+        // can PROVE the recorder was already running when the round was created
+        // and still holds no attempt for it. Silence from an older recorder is
+        // history we do not have, not proof of non-delivery.
+        $neverAttempted = (int) ($round->delivery_attempts_count ?? 0) === 0
+            && InspectionDeliveryStatus::provesNeverDelivered(
+                $round->created_at,
+                InspectionDeliveryAttempt::recorderLiveFrom(),
+            );
+        $state = InspectionDeliveryStatus::state($round->delivery_status, $neverAttempted);
         $isFailed = $state === InspectionDeliveryStatus::STATE_FAILED;
 
         return [
@@ -528,7 +538,7 @@ class ApplicationController extends Controller
             'building_area'              => 'nullable|numeric|min:0',
             'area_to_develop'            => 'nullable|numeric|min:0',
             'number_of_saleable_lots'    => 'nullable|integer|min:0',
-            'project_type_business_name' => 'nullable|string|max:255',
+            'business_name'              => 'nullable|string|max:255',
             'project_cost'               => 'nullable|numeric|min:0',
             'right_over_land'            => 'nullable|string|max:100',
             'project_tenure'             => 'nullable|string|max:100',
@@ -604,7 +614,7 @@ class ApplicationController extends Controller
                 'building_area'              => $validated['building_area'] ?? null,
                 'area_to_develop'            => $validated['area_to_develop'] ?? null,
                 'number_of_saleable_lots'    => $validated['number_of_saleable_lots'] ?? null,
-                'project_type_business_name' => $validated['project_type_business_name'] ?? null,
+                'business_name'              => $validated['business_name'] ?? null,
                 'project_cost'               => $validated['project_cost'] ?? null,
                 'right_over_land'            => $validated['right_over_land'] ?? null,
                 'project_tenure'             => $validated['project_tenure'] ?? null,
@@ -622,9 +632,9 @@ class ApplicationController extends Controller
             ]);
 
             ApplicationStatusTracker::log(
-                $application->reference_number,
-                $application->applicant_name,
-                'Received'
+                applicationOrRef: $application,
+                status: 'Received',
+                note: sprintf('Application encoded by staff with %d parcel(s).', count($validated['parcels']))
             );
 
             AuditLogger::log(
@@ -745,6 +755,14 @@ class ApplicationController extends Controller
 
                         $siteInspectionId = $inspection->id;
                         PushInspectionToSupabase::dispatch($inspection);
+
+                        AppNotification::notifyUser(
+                            $parcelData['inspector_id'],
+                            'Site Inspection Assigned',
+                            "You have been assigned to inspect Application {$application->reference_number} ({$parcel->parcel_code}) scheduled on {$parcelData['scheduled_date']}.",
+                            'inspection_assigned',
+                            '/site-inspections'
+                        );
                     }
 
                     TechnicalReview::create([
@@ -764,29 +782,151 @@ class ApplicationController extends Controller
             $routeToSb = $request->boolean('route_to_sb') || ($validated['application_stream'] === 'amendment');
 
             // 3. Roll up overall status dynamically based on "restrictive precedence"
+            //
+            // ORDER MATTERS: an outstanding inspection requirement is evaluated
+            // BEFORE legislative routing.
+            //
+            // Legislative routing is not bypassed or removed - an amendment still
+            // belongs to the Sangguniang Bayan workflow, and `hasSbRouting()`
+            // still reports it. What must not happen is entering SB while a lot
+            // still has no field evidence, because the application would then
+            // leave Technical Review without the inspection findings the officer
+            // needs, and the Technical Review queue/full-record evaluation would
+            // no longer be reachable for that lot.
+            //
+            // This matches the precedence TechnicalReviewController::submitBatch()
+            // already applies when the officer later records the parcel
+            // evaluations: Declined > Needs Site Inspection > Approved, with SB
+            // routing considered only once nothing further is required.
             if (!empty($decisionsSeen)) {
                 if (in_array('Declined', $decisionsSeen, true)) {
                     $application->update(['status' => 'Denied']);
-                } elseif ($routeToSb) {
-                    $application->update(['status' => 'Under Sangguniang Bayan']);
                 } elseif (in_array('Needs Site Inspection', $decisionsSeen, true)) {
                     $application->update(['status' => 'Technical Review']);
+                } elseif ($routeToSb) {
+                    $application->update(['status' => 'Under Sangguniang Bayan']);
                 } else {
                     $application->update(['status' => 'For Release']);
                 }
 
-                ApplicationStatusTracker::log(
-                    $application->reference_number,
-                    $application->applicant_name,
-                    $application->status
-                );
+                $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+                $recipientIds = array_merge($adminIds, [Auth::id()]);
 
-                AuditLogger::log(
-                    applicationId: $application->id,
-                    action: 'STATUS_UPDATE',
-                    performedBy: Auth::id(),
-                    note: "Application automatically moved to {$application->status} based on encoded parcel evaluations."
-                );
+                if (in_array('Needs Site Inspection', $decisionsSeen, true)) {
+                    $earliestDate = collect($validated['parcels'])
+                        ->where('decision', 'Needs Site Inspection')
+                        ->pluck('scheduled_date')
+                        ->filter()
+                        ->sort()
+                        ->first();
+
+                    $inspectionParcelCodes = collect($validated['parcels'])
+                        ->where('decision', 'Needs Site Inspection')
+                        ->pluck('parcel_code')
+                        ->filter()
+                        ->implode(', ');
+
+                    $approvedParcelCodes = collect($validated['parcels'])
+                        ->where('decision', 'Approved')
+                        ->pluck('parcel_code')
+                        ->filter()
+                        ->implode(', ');
+
+                    $note = "Site inspection scheduled for parcel(s)" . ($inspectionParcelCodes ? " [{$inspectionParcelCodes}]" : "") . " on {$earliestDate}.";
+                    if ($approvedParcelCodes) {
+                        $note .= " Approved parcel(s): [{$approvedParcelCodes}].";
+                    }
+
+                    ApplicationStatusTracker::log(
+                        applicationOrRef: $application,
+                        status: 'Site Inspection Scheduled',
+                        note: $note,
+                        scheduledDate: $earliestDate
+                    );
+
+                    if ($approvedParcelCodes) {
+                        ApplicationStatusTracker::log(
+                            applicationOrRef: $application,
+                            status: 'Approved',
+                            note: "Parcel(s) [{$approvedParcelCodes}] approved upon technical review."
+                        );
+                    }
+
+                    AuditLogger::log(
+                        applicationId: $application->id,
+                        action: 'TECHNICAL_REVIEW_NEEDS_SITE_INSPECTION',
+                        performedBy: Auth::id(),
+                        note: $note
+                    );
+
+                    if ($approvedParcelCodes) {
+                        AuditLogger::log(
+                            applicationId: $application->id,
+                            action: 'TECHNICAL_REVIEW_APPROVED',
+                            performedBy: Auth::id(),
+                            note: "Parcel(s) [{$approvedParcelCodes}] approved upon technical review."
+                        );
+                    }
+
+                    AuditLogger::log(
+                        applicationId: $application->id,
+                        action: 'STATUS_UPDATE',
+                        performedBy: Auth::id(),
+                        note: "Application moved to Technical Review based on encoded parcel evaluations."
+                    );
+
+                    AppNotification::notifyUsers(
+                        $recipientIds,
+                        'Site Inspection Scheduled',
+                        "Application {$application->reference_number} requires Site Inspection on {$earliestDate}." . ($approvedParcelCodes ? " Approved parcel(s): [{$approvedParcelCodes}]." : ""),
+                        'inspection_assigned',
+                        "/applications/{$application->id}"
+                    );
+                } else {
+                    $approvedParcelCodes = collect($validated['parcels'])
+                        ->where('decision', 'Approved')
+                        ->pluck('parcel_code')
+                        ->filter()
+                        ->implode(', ');
+
+                    if ($approvedParcelCodes) {
+                        ApplicationStatusTracker::log(
+                            applicationOrRef: $application,
+                            status: 'Approved',
+                            note: "Parcel(s) [{$approvedParcelCodes}] approved upon technical review."
+                        );
+
+                        AuditLogger::log(
+                            applicationId: $application->id,
+                            action: 'TECHNICAL_REVIEW_APPROVED',
+                            performedBy: Auth::id(),
+                            note: "Parcel(s) [{$approvedParcelCodes}] approved upon technical review. Status: {$application->status}."
+                        );
+
+                        AppNotification::notifyUsers(
+                            $recipientIds,
+                            'Technical Review Decision: Approved',
+                            "Application {$application->reference_number} parcel(s) [{$approvedParcelCodes}] approved upon encoding. Status updated to \"{$application->status}\".",
+                            'status_updated',
+                            "/applications/{$application->id}"
+                        );
+                    }
+
+                    ApplicationStatusTracker::log(
+                        applicationOrRef: $application,
+                        status: $application->status,
+                        note: !empty($approvedParcelCodes)
+                            ? "Technical review completed: parcel(s) [{$approvedParcelCodes}] approved. Status updated to {$application->status}."
+                            : "Application status updated to {$application->status}."
+                    );
+
+                    AuditLogger::log(
+                        applicationId: $application->id,
+                        action: 'STATUS_UPDATE',
+                        performedBy: Auth::id(),
+                        note: "Application automatically moved to {$application->status} based on encoded parcel evaluations."
+                    );
+                }
 
             } else {
                 $targetStatus = $routeToSb ? 'Under Sangguniang Bayan' : 'Technical Review';
@@ -1168,16 +1308,34 @@ class ApplicationController extends Controller
                 note: $note
             );
 
+            $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+            $recipientIds = array_merge($adminIds, array_filter([Auth::id(), $application->assigned_planning_officer_id, $application->encoded_by]));
+
             if ($validated['decision'] === 'Approved') {
                 $targetStatus = ($application->status === 'Under Sangguniang Bayan' || $application->application_stream === 'amendment')
                     ? 'Under Sangguniang Bayan'
                     : 'For Release';
 
-                $application->update(['status' => $targetStatus]);
                 ApplicationStatusTracker::log(
-                    $application->reference_number,
-                    $application->applicant_name,
-                    $targetStatus
+                    applicationOrRef: $application,
+                    status: 'Approved',
+                    note: "Application approved upon technical review."
+                );
+
+                $application->update(['status' => $targetStatus]);
+
+                ApplicationStatusTracker::log(
+                    applicationOrRef: $application,
+                    status: $targetStatus,
+                    note: "Technical review completed: Approved. Status moved to {$targetStatus}."
+                );
+
+                AppNotification::notifyUsers(
+                    $recipientIds,
+                    'Technical Review Decision: Approved',
+                    "Application {$application->reference_number} status updated to \"{$targetStatus}\".",
+                    'status_updated',
+                    "/applications/{$application->id}"
                 );
             } elseif ($validated['decision'] === 'Declined') {
                 $application->update([
@@ -1189,21 +1347,29 @@ class ApplicationController extends Controller
                     $application->applicant_name,
                     'Denied'
                 );
-                // SmsNotifier::applicationDenied(
-                //     $application->contact_number,
-                //     $application->reference_number,
-                //     $validated['decision_reason']
-                // );
+
+                AppNotification::notifyUsers(
+                    $recipientIds,
+                    'Technical Review Decision: Declined',
+                    "Application {$application->reference_number} was declined upon technical review.",
+                    'status_updated',
+                    "/applications/{$application->id}"
+                );
+            } elseif ($validated['decision'] === 'Needs Site Inspection') {
+                ApplicationStatusTracker::log(
+                    applicationOrRef: $application,
+                    status: 'Site Inspection Scheduled',
+                    note: $note
+                );
+
+                AppNotification::notifyUsers(
+                    $recipientIds,
+                    'Site Inspection Flagged',
+                    "Application {$application->reference_number} requires Site Inspection.",
+                    'inspection_assigned',
+                    "/applications/{$application->id}"
+                );
             }
-            // 'Needs Site Inspection' intentionally leaves status as 'Technical
-            // Review' — the application isn't done with this stage, it just
-            // needs an inspector's findings before a final decision is made.
-            //
-            // TODO: once the field inspection task table exists, create the
-            // task here (linked to this application's parcels) and store its
-            // id back on the technical_reviews row, e.g.:
-            //   $inspectionTask = InspectionTask::create([...]);
-            //   $review->update(['site_inspection_task_id' => $inspectionTask->id]);
 
             DB::commit();
             return back()->with('success', "Technical review recorded: {$validated['decision']}.");

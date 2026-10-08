@@ -328,7 +328,7 @@ class PermitExcelService
             'CONTACT_NUMBER'      => (string) $application->contact_number,
             'CORPORATION_NAME'    => $up($application->corporation_name) ?: 'N/A',
             'CORPORATION_ADDRESS' => $up(implode(' / ', array_filter([$application->corporation_address, $application->corporation_contact]))) ?: 'N/A',
-            'PROJECT_NAME'        => $up($application->project_type_business_name ?: $application->purpose),
+            'PROJECT_NAME'        => $up(($application->business_name ?? $application->project_type_business_name ?? null) ?: $application->purpose),
             'PROJECT_TYPE'        => $up($application->purpose),
             'PROPOSED_USE'        => $up($application->purpose),
             'PROJECT_AREA'        => $this->num($application->area_to_develop ?: $lotArea),

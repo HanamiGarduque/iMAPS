@@ -72,6 +72,13 @@ const AUDIT_LABELS = {
     APPLICATION_CREATED: "Application encoded",
     STATUS_UPDATE: "Status changed",
     AMENDMENT_REFS_UPDATED: "SB / DAR references updated",
+    TECHNICAL_REVIEW_APPROVED: "Technical review approved",
+    TECHNICAL_REVIEW_NEEDS_SITE_INSPECTION: "Site inspection flagged",
+    TECHNICAL_REVIEW_REQUIRES_REINSPECTION: "Reinspection flagged",
+    TECHNICAL_REVIEW_DECLINED: "Technical review declined",
+    SITE_INSPECTION_ASSIGNED: "Site inspection assigned",
+    BATCH_TECHNICAL_REVIEW_UPDATED: "Batch review updated",
+    BATCH_TECHNICAL_REVIEW_COMPLETED: "Batch review completed",
 };
 
 // Mon–Fri days elapsed (national holidays not excluded)
@@ -639,7 +646,7 @@ function ShowInner({
     const history = useMemo(
         () =>
             [
-                ...auditTrail.map((a) => ({ at: a.performed_at, who: a.performed_by_name, title: AUDIT_LABELS[a.action] || String(a.action || "").replace(/_/g, " ").toLowerCase(), note: a.note, kind: "audit" })),
+                ...auditTrail.map((a) => ({ at: a.performed_at, who: a.performed_by_name, title: AUDIT_LABELS[a.action] || String(a.action || "").replace(/_/g, " ").toLowerCase(), note: a.note, kind: "audit", action: a.action })),
                 ...technicalReviews.map((r) => ({
                     at: r.reviewed_at,
                     who: r.reviewed_by_name,
@@ -936,7 +943,7 @@ function ShowInner({
 
                                         <div className="rounded-xl border border-slate-200 bg-white px-4 shadow-sm [&>details:first-child]:border-t-0">
                                             <More title="Project details">
-                                                <Row label="Project / business">{app.project_type_business_name}</Row>
+                                                <Row label="Business Name">{app.business_name ?? app.project_type_business_name}</Row>
                                                 <Row label="Building area">{app.building_area && `${Number(app.building_area).toLocaleString()} m²`}</Row>
                                                 <Row label="Area to develop">{app.area_to_develop && `${Number(app.area_to_develop).toLocaleString()} m²`}</Row>
                                                 {app.number_of_saleable_lots != null && <Row label="Saleable lots">{String(app.number_of_saleable_lots)}</Row>}
@@ -1261,7 +1268,17 @@ function ShowInner({
                                                     <li key={i} className="ml-4">
                                                         <span
                                                             className={`absolute -left-[5px] mt-1.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                                                                h.kind === "review" ? DECISIONS.find((d) => d.value === h.decision)?.dot || "bg-slate-400" : "bg-slate-400"
+                                                                h.kind === "review"
+                                                                    ? DECISIONS.find((d) => d.value === h.decision)?.dot || "bg-slate-400"
+                                                                    : h.action === "TECHNICAL_REVIEW_APPROVED"
+                                                                    ? "bg-emerald-500"
+                                                                    : ["TECHNICAL_REVIEW_NEEDS_SITE_INSPECTION", "SITE_INSPECTION_ASSIGNED"].includes(h.action)
+                                                                    ? "bg-amber-500"
+                                                                    : h.action === "TECHNICAL_REVIEW_REQUIRES_REINSPECTION"
+                                                                    ? "bg-violet-500"
+                                                                    : h.action === "TECHNICAL_REVIEW_DECLINED"
+                                                                    ? "bg-rose-500"
+                                                                    : "bg-slate-400"
                                                             }`}
                                                             aria-hidden="true"
                                                         />

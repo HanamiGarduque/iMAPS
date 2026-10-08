@@ -55,6 +55,7 @@ final class InspectionDeliveryStatus
      * the 9A CHECK-constrained `site_inspections.delivery_status` vocabulary.
      */
     public const STATE_NO_RECORD = 'no_delivery_record';
+    public const STATE_NOT_DELIVERED = 'not_yet_delivered';
     public const STATE_PENDING = 'pending_delivery';
     public const STATE_DELIVERED = 'delivered';
     public const STATE_FAILED = 'delivery_failed';
@@ -63,21 +64,33 @@ final class InspectionDeliveryStatus
      * Closed label and message vocabulary, keyed by API-facing state.
      */
     private const PRESENTATION = [
+        // The recorder was demonstrably live when this round was created and
+        // still holds no attempt for it: that is positive proof, not absence.
+        self::STATE_NOT_DELIVERED => [
+            'label'   => 'Not Yet Delivered',
+            'message' => 'This inspection round has not been sent to FieldSync yet.',
+        ],
+        // The recorder cannot speak for this round at all. Deliberately NOT
+        // "never delivered" and NOT "missing": a round predating the recorder
+        // may well have been delivered, and asserting otherwise would be a
+        // claim the records do not support.
         self::STATE_NO_RECORD => [
-            'label'   => 'No Delivery Record',
-            'message' => 'No Loop 9 delivery record exists for this inspection round.',
+            'label'   => 'Delivery History Unavailable',
+            'message' => 'iMAPS has no delivery history for this inspection round. '
+                .'This does not show whether FieldSync received it.',
         ],
         self::STATE_PENDING => [
             'label'   => 'Pending Delivery',
             'message' => 'This inspection round is awaiting or undergoing FieldSync delivery.',
         ],
         self::STATE_DELIVERED => [
-            'label'   => 'Delivered to FieldSync',
+            'label'   => 'Delivered',
             'message' => 'This inspection round was delivered to FieldSync.',
         ],
         self::STATE_FAILED => [
             'label'   => 'Delivery Failed',
-            'message' => 'This inspection round was not delivered to FieldSync.',
+            'message' => 'A recorded attempt to deliver this inspection round to FieldSync failed, '
+                .'and no later attempt has succeeded.',
         ],
     ];
 
@@ -114,14 +127,41 @@ final class InspectionDeliveryStatus
      * no-record presentation rather than guessing. Guessing is the single way
      * this reader could invent a delivery failure that never happened.
      */
-    public static function state(?string $deliveryStatus): string
+    public static function state(?string $deliveryStatus, bool $neverAttempted = false): string
     {
         return match ($deliveryStatus) {
             self::STATE_PENDING  => self::STATE_PENDING,
             self::STATE_DELIVERED => self::STATE_DELIVERED,
             self::STATE_FAILED  => self::STATE_FAILED,
-            default              => self::STATE_NO_RECORD,
+            // A NULL round only earns "not yet delivered" when the caller could
+            // PROVE the recorder was already running when the round was created.
+            // Absence of a row on its own is never that proof.
+            // Only a genuine NULL may be promoted. A junk stored value is unknown
+            // history, and the proof flag must never turn it into a claim.
+            default => $neverAttempted && $deliveryStatus === null
+                ? self::STATE_NOT_DELIVERED
+                : self::STATE_NO_RECORD,
         };
+    }
+
+    /**
+     * Pure predicate: can these two timestamps prove this round was never sent?
+     *
+     * `$recorderLiveFrom` is the earliest delivery attempt ever recorded. When
+     * it exists and is not later than the round's own creation, the recorder was
+     * demonstrably running, so its silence about this round is real evidence
+     * rather than a historical gap. A NULL `$recorderLiveFrom` means no attempt
+     * has ever been recorded anywhere, which proves nothing about this round.
+     */
+    public static function provesNeverDelivered(
+        ?\DateTimeInterface $roundCreatedAt,
+        ?\DateTimeInterface $recorderLiveFrom,
+    ): bool {
+        if ($roundCreatedAt === null || $recorderLiveFrom === null) {
+            return false;
+        }
+
+        return $recorderLiveFrom->getTimestamp() <= $roundCreatedAt->getTimestamp();
     }
 
     /** User-facing label for an API-facing state. */
@@ -143,10 +183,20 @@ final class InspectionDeliveryStatus
      * considered. Pending means a delivery is already in flight, and delivered
      * means nothing failed.
      */
-    public static function isFailure(?string $deliveryStatus): bool
+    public static function isFailure(?string $deliveryStatus, bool $neverAttempted = false): bool
     {
-        return self::state($deliveryStatus) === self::STATE_FAILED;
+        return self::state($deliveryStatus, $neverAttempted) === self::STATE_FAILED;
     }
+
+    /**
+     * Earliest delivery attempt this installation has ever recorded.
+     *
+     * Lives on the model, not on the presenter, so this class stays a pure
+     * function of its arguments. Callers read it ONCE per request and pass the
+     * resulting boolean to {@see state()}.
+     *
+     * @see InspectionDeliveryAttempt::recorderLiveFrom()
+     */
 
     /**
      * LOOP 9D: short human-readable name for each failure category.

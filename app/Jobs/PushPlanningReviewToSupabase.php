@@ -63,6 +63,7 @@ class PushPlanningReviewToSupabase implements ShouldQueue
         public int $reviewedBy,
         public ?string $reviewedByName = null,
         public ?string $reviewedAt = null,
+        public ?string $decisionReason = null,
     ) {
     }
 
@@ -97,6 +98,7 @@ class PushPlanningReviewToSupabase implements ShouldQueue
             'reviewed_by'                 => $this->reviewedBy,
             'reviewed_by_name'            => $this->reviewedByName,
             'reviewed_at'                 => $this->reviewedAt,
+            'decision_reason'             => $this->decisionReason,
         ]);
 
         if (! $ok) {

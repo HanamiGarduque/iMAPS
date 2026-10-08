@@ -94,6 +94,7 @@ import { router, usePage } from "@inertiajs/react";
 // is never the only signal: the server's textual label is always rendered.
 const DELIVERY_TONE = {
     no_delivery_record: { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200" },
+    not_yet_delivered:  { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200" },
     pending_delivery:  { bg: "bg-sky-50", text: "text-sky-700", border: "border-sky-200" },
     delivered:         { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
     delivery_failed:   { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-200" },

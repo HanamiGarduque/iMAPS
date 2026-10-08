@@ -97,6 +97,28 @@ class InspectionDeliveryAttempt extends Model
     public const CORRELATION_COLUMN = 'queue_job_uuid';
 
     /**
+     * When the delivery recorder was demonstrably running, if ever.
+     *
+     * The earliest attempt this installation has ever recorded. A round created
+     * at or after this instant was born with the recorder already live, so the
+     * recorder's silence about that round is real evidence that it was never
+     * dispatched. A round created earlier than this cannot be judged that way,
+     * because it predates the instrumentation entirely.
+     *
+     * NULL means no attempt has ever been recorded anywhere, which proves
+     * nothing about any individual round.
+     *
+     * Lives here rather than on the presentation class so the presenter stays a
+     * pure function of its arguments.
+     */
+    public static function recorderLiveFrom(): ?\DateTimeInterface
+    {
+        $earliest = static::query()->min('attempted_at');
+
+        return $earliest === null ? null : \Illuminate\Support\Carbon::parse($earliest);
+    }
+
+    /**
      * TIMESTAMP CONTRACT (Loop 9B recorder hotfix).
      *
      * `inspection_delivery_attempts` is deliberately created with `created_at`

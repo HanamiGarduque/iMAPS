@@ -187,7 +187,13 @@ class TechnicalReviewController extends Controller
             $this->validateFieldSyncParcelCoordinates($parcel);
         }
 
-        DB::transaction(function () use ($validated) {
+        // Loop 8: transport rows are collected inside the transaction and only
+        // dispatched after it commits, so the review row identity is durable
+        // before any remote write is attempted. Collected by REFERENCE: the
+        // dispatch loop below runs after the closure has returned.
+        $pendingReviewTransports = [];
+
+        DB::transaction(function () use ($validated, &$pendingReviewTransports) {
             // Eager load parcels so we can extract the parcel_id
             $application = ZoningApplication::with('parcels')->findOrFail($validated['id']);
             $oldStatus = $application->status;
@@ -209,11 +215,6 @@ class TechnicalReviewController extends Controller
             // 2. Process Technical Reviews & Site Inspections while ensuring PARCEL_ID is stored
             $currentRound = TechnicalReview::where('zoning_application_id', $application->id)->max('review_round') ?? 0;
             $nextRound = $currentRound + 1;
-
-            // Loop 8: transport rows are collected inside the transaction and only
-            // dispatched after it commits, so the review row identity is durable
-            // before any remote write is attempted.
-            $pendingReviewTransports = [];
 
             // If a specific parcel_id was sent from the frontend, use it. 
             // Otherwise, apply this decision to ALL parcels in the application.
@@ -272,17 +273,32 @@ class TechnicalReviewController extends Controller
             }
 
             // 3. Audit Logs, Trackers, and SMS
-            if (in_array($validated['decision'], ['Approved', 'Declined'])) {
-                ApplicationStatusTracker::log(
-                    $application->reference_number,
-                    $application->applicant_name,
-                    $application->status
-                );
+            $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+            $recipientIds = array_merge($adminIds, array_filter([auth()->id(), $application->assigned_planning_officer_id, $application->encoded_by]));
 
-                $note = "Technical review completed: {$validated['decision']}. Status changed from \"{$oldStatus}\" to \"{$application->status}\".";
+            if (in_array($validated['decision'], ['Approved', 'Declined'])) {
+                $parcelNote = !empty($validated['parcel_id']) && ($p = $application->parcels->firstWhere('id', $validated['parcel_id']))
+                    ? " (Parcel {$p->parcel_code})"
+                    : "";
+
+                $note = "Technical review completed: {$validated['decision']}{$parcelNote}. Status changed from \"{$oldStatus}\" to \"{$application->status}\".";
                 if (!empty($validated['findings'])) {
                     $note .= " Findings: {$validated['findings']}";
                 }
+
+                if ($validated['decision'] === 'Approved') {
+                    ApplicationStatusTracker::log(
+                        applicationOrRef: $application,
+                        status: 'Approved',
+                        note: "Parcel{$parcelNote} approved upon technical review." . (!empty($validated['findings']) ? " Findings: {$validated['findings']}" : "")
+                    );
+                }
+
+                ApplicationStatusTracker::log(
+                    applicationOrRef: $application,
+                    status: $application->status,
+                    note: $note
+                );
 
                 AuditLogger::log(
                     applicationId: $application->id,
@@ -291,52 +307,67 @@ class TechnicalReviewController extends Controller
                     note: $note
                 );
 
-                $adminIds = User::where('role', 'Admin')->pluck('id')->all();
-                $recipientIds = array_merge($adminIds, array_filter([auth()->id(), $application->assigned_planning_officer_id, $application->encoded_by]));
-
                 AppNotification::notifyUsers(
                     $recipientIds,
                     'Technical Review Decision: ' . $validated['decision'],
-                    "Application {$application->reference_number} status updated to \"{$application->status}\".",
+                    "Application {$application->reference_number}{$parcelNote} status updated to \"{$application->status}\".",
                     'status_updated',
                     "/applications/{$application->id}"
                 );
 
                 // Placeholder SMS notification
                 Log::info("PLACEHOLDER SMS - To: {$application->contact_number} | Message: Good day! Your application {$application->reference_number} has completed Technical Review and is now '{$application->status}'.");
-            } elseif ($validated['decision'] === 'Needs Site Inspection') {
-                $note = "Technical review requires site inspection.";
+            } elseif (in_array($validated['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)) {
+                $isReinspection = $validated['decision'] === 'Requires Reinspection';
+                $actionName = $isReinspection ? 'TECHNICAL_REVIEW_REQUIRES_REINSPECTION' : 'TECHNICAL_REVIEW_NEEDS_SITE_INSPECTION';
+                $label = $isReinspection ? 'reinspection' : 'site inspection';
+                $parcelNote = !empty($validated['parcel_id']) && ($p = $application->parcels->firstWhere('id', $validated['parcel_id']))
+                    ? " for parcel {$p->parcel_code}"
+                    : "";
+
+                $note = "Technical review requires {$label}{$parcelNote} scheduled on {$validated['scheduled_date']}.";
                 if (!empty($validated['findings'])) {
                     $note .= " Findings: {$validated['findings']}";
                 }
+                if (!empty($validated['assigned_notes'])) {
+                    $note .= " Instructions: {$validated['assigned_notes']}";
+                }
+
+                ApplicationStatusTracker::log(
+                    applicationOrRef: $application,
+                    status: 'Site Inspection Scheduled',
+                    note: $note,
+                    scheduledDate: $validated['scheduled_date']
+                );
 
                 AuditLogger::log(
                     applicationId: $application->id,
-                    action: 'TECHNICAL_REVIEW_NEEDS_SITE_INSPECTION',
+                    action: $actionName,
                     performedBy: auth()->id(),
                     note: $note
                 );
 
-                $adminIds = User::where('role', 'Admin')->pluck('id')->all();
-                $recipientIds = array_merge($adminIds, array_filter([auth()->id(), $application->assigned_planning_officer_id, $application->encoded_by]));
-
                 AppNotification::notifyUsers(
                     $recipientIds,
-                    'Site Inspection Flagged',
-                    "Application {$application->reference_number} requires Site Inspection on {$validated['scheduled_date']}.",
+                    $isReinspection ? 'Reinspection Scheduled' : 'Site Inspection Flagged',
+                    "Application {$application->reference_number}{$parcelNote} requires {$label} on {$validated['scheduled_date']}.",
                     'inspection_assigned',
                     "/applications/{$application->id}"
                 );
 
                 // Placeholder SMS notification for Site Inspection
-                Log::info("PLACEHOLDER SMS - To: {$application->contact_number} | Message: Good day! Your application {$application->reference_number} requires a Site Inspection scheduled on {$validated['scheduled_date']}.");
+                Log::info("PLACEHOLDER SMS - To: {$application->contact_number} | Message: Good day! Your application {$application->reference_number} requires a {$label} scheduled on {$validated['scheduled_date']}.");
             }
         });
 
         // Loop 8: transport Planning Review metadata only after the review rows
         // are committed. This never reopens or mutates the reviewed task.
         foreach ($pendingReviewTransports as $transport) {
-            PushPlanningReviewToSupabase::dispatch($transport);
+            // The transport is an ALREADY-CONSTRUCTED job. `Job::dispatch()`
+            // forwards its arguments to the constructor, so dispatching it as
+            // `Job::dispatch($transport)` would re-invoke the constructor with
+            // the job itself as argument #1. `dispatch()` takes the instance.
+            dispatch($transport);
         }
 
         return redirect('/applications')->with('success', 'Technical review processed successfully.');
@@ -412,7 +443,12 @@ class TechnicalReviewController extends Controller
             }
         }
 
-        DB::transaction(function () use ($application, $validated) {
+        // Loop 8: dispatch review transports only after the review rows commit.
+        // Collected by REFERENCE: the dispatch loop below runs after the
+        // closure has returned, so an inner declaration would be discarded.
+        $pendingReviewTransports = [];
+
+        DB::transaction(function () use ($application, $validated, &$pendingReviewTransports) {
             $reviews = $validated['reviews'];
             $assigningOfficer = $this->currentPlanningOfficerAssignmentActor();
 
@@ -421,7 +457,6 @@ class TechnicalReviewController extends Controller
             $nextRound = $currentRound + 1;
 
             $decisionsSeen = [];
-            $pendingReviewTransports = [];
 
             foreach ($reviews as $parcelId => $review) {
                 $decisionsSeen[] = $review['decision'];
@@ -448,6 +483,17 @@ class TechnicalReviewController extends Controller
 
                     $siteInspectionId = $inspection->id;
                     PushInspectionToSupabase::dispatch($inspection);
+
+                    $isReinspection = $review['decision'] === 'Requires Reinspection';
+                    $parcelCode = $parcel?->parcel_code ?? "Parcel #{$parcelId}";
+
+                    AppNotification::notifyUser(
+                        $review['inspector_id'],
+                        $isReinspection ? 'Reinspection Assigned' : 'Site Inspection Assigned',
+                        "You have been assigned to inspect Application {$application->reference_number} ({$parcelCode}) scheduled on {$review['scheduled_date']}.",
+                        'inspection_assigned',
+                        '/site-inspections'
+                    );
                 }
 
                 $technicalReview = TechnicalReview::create([
@@ -484,12 +530,130 @@ class TechnicalReviewController extends Controller
 
             $application->save(); // Save the status change immediately
 
-            if ($application->status !== 'Technical Review') {
+            $approvedParcels = [];
+            $inspectionParcels = [];
+            $declinedParcels = [];
+
+            foreach ($reviews as $parcelId => $review) {
+                $parcel = $application->parcels->firstWhere('id', (int) $parcelId);
+                $code = $parcel?->parcel_code ?? "Parcel #{$parcelId}";
+
+                if ($review['decision'] === 'Approved') {
+                    $approvedParcels[] = $code;
+                } elseif (in_array($review['decision'], ['Needs Site Inspection', 'Requires Reinspection'], true)) {
+                    $inspectionParcels[] = [
+                        'code'           => $code,
+                        'decision'       => $review['decision'],
+                        'scheduled_date' => $review['scheduled_date'] ?? null,
+                    ];
+                } elseif ($review['decision'] === 'Declined') {
+                    $declinedParcels[] = $code;
+                }
+            }
+
+            $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+            $recipientIds = array_merge($adminIds, array_filter([auth()->id(), $application->assigned_planning_officer_id, $application->encoded_by]));
+
+            if (!empty($inspectionParcels)) {
+                $earliestDate = collect($inspectionParcels)->pluck('scheduled_date')->filter()->sort()->first();
+                $inspectionCodes = collect($inspectionParcels)->pluck('code')->implode(', ');
+
+                $note = "Site inspection scheduled for parcel(s) [{$inspectionCodes}] on {$earliestDate}.";
+                if (!empty($approvedParcels)) {
+                    $note .= " Approved parcel(s): [" . implode(', ', $approvedParcels) . "].";
+                }
+
                 ApplicationStatusTracker::log(
-                    $application->reference_number,
-                    $application->applicant_name,
-                    $application->status
+                    applicationOrRef: $application,
+                    status: 'Site Inspection Scheduled',
+                    note: $note,
+                    scheduledDate: $earliestDate
                 );
+
+                AuditLogger::log(
+                    applicationId: $application->id,
+                    action: 'TECHNICAL_REVIEW_NEEDS_SITE_INSPECTION',
+                    performedBy: auth()->id(),
+                    note: $note
+                );
+
+                if (!empty($approvedParcels)) {
+                    ApplicationStatusTracker::log(
+                        applicationOrRef: $application,
+                        status: 'Approved',
+                        note: "Parcel(s) [" . implode(', ', $approvedParcels) . "] approved upon technical review."
+                    );
+
+                    AuditLogger::log(
+                        applicationId: $application->id,
+                        action: 'TECHNICAL_REVIEW_APPROVED',
+                        performedBy: auth()->id(),
+                        note: "Parcel(s) [" . implode(', ', $approvedParcels) . "] approved upon technical review."
+                    );
+                }
+
+                AuditLogger::log(
+                    applicationId: $application->id,
+                    action: 'BATCH_TECHNICAL_REVIEW_UPDATED',
+                    performedBy: auth()->id(),
+                    note: "Batch review processed. Application requires Site Inspection for certain parcels."
+                );
+
+                AppNotification::notifyUsers(
+                    $recipientIds,
+                    'Site Inspection Scheduled',
+                    "Application {$application->reference_number} parcel(s) [{$inspectionCodes}] require Site Inspection scheduled on {$earliestDate}." . (!empty($approvedParcels) ? " Approved parcel(s): [" . implode(', ', $approvedParcels) . "]." : ""),
+                    'inspection_assigned',
+                    "/applications/{$application->id}"
+                );
+            } else {
+                if (!empty($approvedParcels)) {
+                    ApplicationStatusTracker::log(
+                        applicationOrRef: $application,
+                        status: 'Approved',
+                        note: "Parcel(s) [" . implode(', ', $approvedParcels) . "] approved upon technical review."
+                    );
+                }
+
+                ApplicationStatusTracker::log(
+                    applicationOrRef: $application,
+                    status: $application->status,
+                    note: !empty($approvedParcels)
+                        ? "Technical review completed: parcel(s) [" . implode(', ', $approvedParcels) . "] approved. Overall status updated to {$application->status}."
+                        : null
+                );
+
+                if (!empty($approvedParcels) && empty($declinedParcels)) {
+                    AuditLogger::log(
+                        applicationId: $application->id,
+                        action: 'TECHNICAL_REVIEW_APPROVED',
+                        performedBy: auth()->id(),
+                        note: "All parcel(s) [" . implode(', ', $approvedParcels) . "] approved upon technical review. Status moved to {$application->status}."
+                    );
+
+                    AppNotification::notifyUsers(
+                        $recipientIds,
+                        'Technical Review Decision: Approved',
+                        "Application {$application->reference_number} parcel(s) approved upon technical review. Status updated to \"{$application->status}\".",
+                        'status_updated',
+                        "/applications/{$application->id}"
+                    );
+                } elseif (!empty($declinedParcels)) {
+                    AuditLogger::log(
+                        applicationId: $application->id,
+                        action: 'TECHNICAL_REVIEW_DECLINED',
+                        performedBy: auth()->id(),
+                        note: "Parcel(s) [" . implode(', ', $declinedParcels) . "] declined upon technical review. Status moved to Denied."
+                    );
+
+                    AppNotification::notifyUsers(
+                        $recipientIds,
+                        'Technical Review Decision: Declined',
+                        "Application {$application->reference_number} declined upon technical review.",
+                        'status_updated',
+                        "/applications/{$application->id}"
+                    );
+                }
 
                 AuditLogger::log(
                     applicationId: $application->id,
@@ -497,20 +661,14 @@ class TechnicalReviewController extends Controller
                     performedBy: auth()->id(),
                     note: "Batch review finalized. Overall application status updated to {$application->status}."
                 );
-            } else {
-                // If it stayed in 'Technical Review' due to pending inspections
-                AuditLogger::log(
-                    applicationId: $application->id,
-                    action: 'BATCH_TECHNICAL_REVIEW_UPDATED',
-                    performedBy: auth()->id(),
-                    note: "Batch review processed. Application requires Site Inspection for certain parcels."
-                );
             }
         }); // <-- Closes DB::transaction
 
         // Loop 8: dispatch review transports only after the review rows commit.
         foreach ($pendingReviewTransports as $transport) {
-            PushPlanningReviewToSupabase::dispatch($transport);
+            // Already-constructed job: `dispatch()` takes the instance, not
+            // constructor arguments.
+            dispatch($transport);
         }
 
         // Updates redirect strictly to /applications
@@ -590,6 +748,43 @@ class TechnicalReviewController extends Controller
         );
 
         PushInspectionToSupabase::dispatch($inspection);
+
+        $application = ZoningApplication::findOrFail($validated['zoning_application_id']);
+        $inspector = User::find($validated['inspector_id']);
+        $parcelCode = $parcel->parcel_code ?? "Parcel #{$parcel->id}";
+
+        ApplicationStatusTracker::log(
+            applicationOrRef: $application,
+            status: 'Site Inspection Scheduled',
+            note: "Site inspection scheduled for {$parcelCode} on {$validated['scheduled_date']}. Assigned inspector: {$inspector?->name}.",
+            scheduledDate: $validated['scheduled_date']
+        );
+
+        AuditLogger::log(
+            applicationId: $application->id,
+            action: 'SITE_INSPECTION_ASSIGNED',
+            performedBy: $request->user()->id,
+            note: "Site inspection assigned to {$inspector?->name} for {$parcelCode} scheduled on {$validated['scheduled_date']}."
+        );
+
+        AppNotification::notifyUser(
+            $validated['inspector_id'],
+            'Site Inspection Assigned',
+            "You have been assigned to inspect Application {$application->reference_number} ({$parcelCode}) scheduled on {$validated['scheduled_date']}.",
+            'inspection_assigned',
+            '/site-inspections'
+        );
+
+        $adminIds = User::where('role', 'Admin')->pluck('id')->all();
+        $recipientIds = array_merge($adminIds, array_filter([$request->user()->id, $application->assigned_planning_officer_id, $application->encoded_by]));
+
+        AppNotification::notifyUsers(
+            $recipientIds,
+            'Site Inspection Assigned',
+            "Application {$application->reference_number} ({$parcelCode}) assigned to {$inspector?->name} for inspection on {$validated['scheduled_date']}.",
+            'inspection_assigned',
+            "/applications/{$application->id}"
+        );
 
         return redirect()->back()->with('success', 'Site Inspector assigned successfully.');
     }
@@ -761,6 +956,7 @@ class TechnicalReviewController extends Controller
             reviewedBy: (int) $technicalReview->reviewed_by,
             reviewedByName: $reviewer?->name,
             reviewedAt: $technicalReview->reviewed_at?->toIso8601String(),
+            decisionReason: $technicalReview->decision_reason,
         );
     }
 

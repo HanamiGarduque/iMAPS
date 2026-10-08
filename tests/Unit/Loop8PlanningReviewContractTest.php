@@ -202,7 +202,7 @@ class Loop8PlanningReviewContractTest extends TestCase
         $source = $this->controllerSource();
 
         $transactionClose = strpos($source, '}); // <-- Closes DB::transaction');
-        $batchDispatch = strpos($source, 'PushPlanningReviewToSupabase::dispatch', $transactionClose);
+        $batchDispatch = strpos($source, 'dispatch($transport)', $transactionClose);
 
         $this->assertNotFalse($transactionClose);
         $this->assertNotFalse($batchDispatch);
@@ -210,6 +210,30 @@ class Loop8PlanningReviewContractTest extends TestCase
             $transactionClose,
             $batchDispatch,
             'Review transport must be dispatched after the review rows are committed.'
+        );
+
+        // The transport list is built INSIDE the transaction and read AFTER it,
+        // so it must be captured by reference. A closure-local declaration is
+        // discarded on return and the dispatch loop then runs on an undefined
+        // variable, which fails the whole Technical Review submission.
+        $this->assertSame(
+            2,
+            substr_count($source, '$pendingReviewTransports = [];'),
+            'Both review paths declare the transport list once, before their transaction.'
+        );
+        $this->assertSame(
+            2,
+            substr_count($source, '&$pendingReviewTransports)'),
+            'The transaction closure must capture the transport list by reference.'
+        );
+
+        // `Job::dispatch()` forwards its arguments to the CONSTRUCTOR, so
+        // passing an already-built job instance would re-invoke the constructor
+        // with the job itself as argument #1.
+        $this->assertStringNotContainsString(
+            'PushPlanningReviewToSupabase::dispatch($transport)',
+            $source,
+            'An already-constructed transport must be dispatched as an instance, not as constructor arguments.'
         );
     }
 

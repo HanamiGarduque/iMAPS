@@ -100,6 +100,7 @@ const LAND_USE_CLASSES = ["Residential", "Commercial", "Industrial", "Agri-Indus
 // server. The browser holds no delivery vocabulary and no business predicate.
 const DELIVERY_STATE_STYLES = {
     no_delivery_record: "bg-slate-100 text-slate-600 border-slate-300",
+    not_yet_delivered:  "bg-slate-100 text-slate-600 border-slate-300",
     pending_delivery: "bg-blue-50 text-blue-700 border-blue-300",
     delivered: "bg-emerald-50 text-emerald-700 border-emerald-300",
     delivery_failed: "bg-red-50 text-red-700 border-red-300",

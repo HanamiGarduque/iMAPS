@@ -48,7 +48,7 @@ class ZoningApplication extends Model
         'building_area',
         'area_to_develop',
         'number_of_saleable_lots',
-        'project_type_business_name',
+        'business_name',
         'project_cost',
         'right_over_land',
         'project_tenure',
