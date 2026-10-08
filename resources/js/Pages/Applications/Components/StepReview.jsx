@@ -75,7 +75,7 @@ export default function StepReview({
         ["Penalty", form.penalty_fee],
     ].filter(([, v]) => Number(v) > 0);
     const projectDetails = [
-        ["Project / business", form.project_type_business_name],
+        ["Business Name", form.business_name],
         ["Building area", form.building_area && `${Number(form.building_area).toLocaleString()} sq.m`],
         ["Area to develop", form.area_to_develop && `${Number(form.area_to_develop).toLocaleString()} sq.m`],
         ["Saleable lots", form.number_of_saleable_lots],

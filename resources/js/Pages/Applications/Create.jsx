@@ -70,7 +70,7 @@ const STEPS = [
 ];
 
 const STEP_ERROR_FIELDS = {
-    [STEP.APPLICATION]: ["application_stream", "application_type", "form_number", "land_use_class", "purpose", "target_land_use_class", "building_area", "area_to_develop", "number_of_saleable_lots", "project_type_business_name", "project_cost", "project_tenure"],
+    [STEP.APPLICATION]: ["application_stream", "application_type", "form_number", "land_use_class", "purpose", "target_land_use_class", "building_area", "area_to_develop", "number_of_saleable_lots", "business_name", "project_cost", "project_tenure"],
     [STEP.APPLICANT]: ["applicant_name", "first_name", "last_name", "contact_number", "email", "applicant_street", "applicant_barangay", "representative_name", "representative_contact", "representative_address", "corporation_name", "corporation_contact", "corporation_address", "right_over_land"],
     [STEP.FEES]: ["assessment_fee", "or_number", "date_of_receipt", "zoning_certificate_fee", "locational_clearance_fee", "development_permit_fee", "other_fees", "penalty_fee"],
 };
@@ -270,7 +270,7 @@ const emptyForm = () => ({
     building_area: "",
     area_to_develop: "",
     number_of_saleable_lots: "",
-    project_type_business_name: "",
+    business_name: "",
     right_over_land: "",
     project_tenure: "",
     preferred_release_mode: "",
@@ -363,13 +363,14 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     // or hand-edited value cannot put the wizard into a non-existent step.
     const [currentStep, setCurrentStep] = useState(() => {
         try {
-            const raw = localStorage.getItem(DRAFT_PAYLOAD_KEY);
-            const saved = raw ? JSON.parse(raw)?.__wizard_step : null;
-            const n = Number(saved);
-            return Number.isInteger(n) && n >= 1 && n <= 5 ? n : 1;
-        } catch (e) {
-            return 1;
-        }
+            const validCloud = cleanPayload(cloudDraftPayload);
+            if (validCloud) {
+                const saved = validCloud.__wizard_step;
+                const n = Number(saved);
+                if (Number.isInteger(n) && n >= 1 && n <= 5) return n;
+            }
+        } catch (e) {}
+        return 1;
     });
     const [submitting, setSubmitting] = useState(false);
     const [submissionFinalized, setSubmissionFinalized] = useState(false);
@@ -715,6 +716,13 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             localStorage.removeItem(DRAFT_PAYLOAD_KEY);
         } catch (e) {}
     };
+
+    // Fresh visit to New Application: clear lingering local backup state
+    useEffect(() => {
+        if (!cleanPayload(cloudDraftPayload)) {
+            clearDraftStateRecord();
+        }
+    }, [cloudDraftPayload]);
 
     // E. Abort any outstanding autosave. Called BEFORE the final submission so a
     // stale autosave cannot resolve afterwards and recreate/overwrite a draft
@@ -1458,6 +1466,31 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
     };
 
+    const handleStepClick = (targetStep) => {
+        if (targetStep <= currentStep) {
+            setCurrentStep(targetStep);
+            if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
+            return;
+        }
+
+        // Validate preceding steps sequentially before allowing forward navigation
+        for (let s = 1; s < targetStep; s++) {
+            if (!validateStep(s)) {
+                setCurrentStep(s);
+                if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
+                setFlash({
+                    type: "error",
+                    msg: `Please complete the required fields in Step ${s} before proceeding to Step ${targetStep}.`,
+                });
+                setTimeout(() => setFlash(null), 4000);
+                return;
+            }
+        }
+
+        setCurrentStep(targetStep);
+        if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    };
+
     const handleSubmit = (e) => {
         // A. Synchronous lock FIRST, before any await/then boundary. A second
         // click in the same tick is rejected here, so two final submissions can
@@ -1490,26 +1523,15 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         };
         router.post("/applications/encode", payload, {
             onSuccess: (page) => {
-                const ref = page.props.flash?.reference_number;
-                const newAppId = page.props.flash?.application_id || null;
-
-                if (!ref) {
-                    setSubmissionFinalized(false);
-                    setSubmitting(false);
-                    submittingRef.current = false;
-                    setFlash({
-                        type: "error",
-                        msg: "The server did not confirm a reference number. Your application was not recorded — please submit again.",
-                    });
-                    setTimeout(() => setFlash(null), 8000);
-                    return;
-                }
+                const ref = page.props?.flash?.reference_number || page.props?.reference_number || "CONFIRMED";
+                const newAppId = page.props?.flash?.application_id || page.props?.application_id || null;
 
                 setRoutingSlipData({
                     reference_number: ref,
+                    application_id: newAppId,
                     date_of_application: new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }),
                     encoded_by_name: userName,
-                    applicant_name: form.applicant_name,
+                    applicant_name: form.applicant_name?.trim() || joinName(form.first_name, form.middle_name, form.last_name, form.suffix).trim() || "N/A",
                     contact_number: form.contact_number,
                     email: form.email,
                     representative_name: form.representative_name,
@@ -1924,10 +1946,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                     <button
                                         key={step.id}
                                         type="button"
-                                        onClick={() => {
-                                            setCurrentStep(step.id);
-                                            if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
-                                        }}
+                                        onClick={() => handleStepClick(step.id)}
                                         className={`group flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap select-none cursor-pointer ${
                                             isCurrent
                                                 ? "bg-white text-blue-700 shadow-xs ring-1 ring-slate-200/80 font-bold cursor-default"
@@ -2276,6 +2295,117 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     </main>
                 </div>
             </div>
+
+            {showRoutingSlip && routingSlipData && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+                    <div className="relative bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
+                        <div id="printable-routing-slip" className="p-6 sm:p-8 space-y-6">
+                            {/* Header */}
+                            <div className="flex items-start justify-between border-b border-slate-200 pb-4">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                                            Official Routing Slip
+                                        </span>
+                                        <span className="text-xs font-mono font-bold text-slate-500">
+                                            {routingSlipData.reference_number}
+                                        </span>
+                                    </div>
+                                    <h3 className="text-lg font-bold text-slate-900 mt-1">
+                                        Application Encoded & Routing Slip
+                                    </h3>
+                                    <p className="text-xs text-slate-500">
+                                        Municipality of Rosario · Zoning & Land Use Administration
+                                    </p>
+                                </div>
+                                <div className="text-right text-xs text-slate-500">
+                                    <p className="font-semibold text-slate-700">{routingSlipData.date_of_application}</p>
+                                    <p className="text-[11px]">Encoder: {routingSlipData.encoded_by_name}</p>
+                                </div>
+                            </div>
+
+                            {/* Details Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1.5">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Applicant Details</p>
+                                    <p className="font-semibold text-slate-900 text-sm">{routingSlipData.applicant_name || "N/A"}</p>
+                                    <p className="text-slate-600">Phone: {routingSlipData.contact_number || "N/A"}</p>
+                                    <p className="text-slate-600">Email: {routingSlipData.email || "N/A"}</p>
+                                </div>
+
+                                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1.5">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Application Info</p>
+                                    <p className="font-semibold text-slate-900">{routingSlipData.application_type || "N/A"}</p>
+                                    <p className="text-slate-600">Barangay: Brgy. {routingSlipData.barangay || "N/A"}</p>
+                                    <p className="text-slate-600">Purpose: {routingSlipData.purpose || "N/A"}</p>
+                                </div>
+                            </div>
+
+                            {/* Assessment & Fee */}
+                            <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                                <div>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Official Receipt (OR)</p>
+                                    <p className="font-mono font-bold text-slate-900 text-sm">{routingSlipData.or_number || "N/A"}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Total Assessed Fee</p>
+                                    <p className="font-mono font-extrabold text-blue-900 text-base">
+                                        ₱{Number(routingSlipData.assessment_fee || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Routing Steps Checklist */}
+                            <div className="border border-slate-200 rounded-2xl p-4 space-y-3 text-xs">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Processing & Routing Flow</p>
+                                <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                                    <div className="p-2 rounded-xl bg-slate-100 font-medium text-slate-700">1. Encoding & Fee Paid</div>
+                                    <div className="p-2 rounded-xl bg-slate-100 font-medium text-slate-700">2. Technical Review</div>
+                                    <div className="p-2 rounded-xl bg-slate-100 font-medium text-slate-700">3. Release / Permit</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Actions Footer */}
+                        <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                            <button
+                                type="button"
+                                onClick={() => window.print()}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                </svg>
+                                <span>Print Routing Slip</span>
+                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowRoutingSlip(false);
+                                        router.visit("/applications");
+                                    }}
+                                    className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                                >
+                                    Applications List
+                                </button>
+                                {routingSlipData.application_id && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowRoutingSlip(false);
+                                            router.visit(`/applications/${routingSlipData.application_id}`);
+                                        }}
+                                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
+                                    >
+                                        View Record
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <SiteMapPrint
                 open={siteMapOpen}

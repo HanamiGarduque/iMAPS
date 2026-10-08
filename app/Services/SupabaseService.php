@@ -522,6 +522,25 @@ class SupabaseService
         return max(60, min(3600, $configured));
     }
 
+    /**
+     * Push application status change to Supabase application_status_tracks table.
+     */
+    public function pushStatusTrack(array $payload): bool
+    {
+        $response = $this->insert('application_status_tracks', $payload);
+
+        if ($response->failed()) {
+            Log::error('Failed to push status track to Supabase', [
+                'reference_number' => $payload['reference_number'] ?? null,
+                'status'           => $response->status(),
+                'body'             => $response->body(),
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+
     public function clientCredentials(): array
     {
         return [

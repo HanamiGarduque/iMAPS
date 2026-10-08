@@ -428,12 +428,12 @@ export default function StepCategory({
                     {numberField("number_of_saleable_lots", "Number of Saleable Lots", "e.g. 10", "1")}
 
                     <div className="sm:col-span-2">
-                        <Label>Project Type / Business Name (Optional)</Label>
+                        <Label>Business Name (Optional)</Label>
                         <Input
                             type="text"
-                            value={form.project_type_business_name || ""}
-                            onChange={set("project_type_business_name")}
-                            placeholder="e.g. Residential Subdivision / Juan's Hardware"
+                            value={form.business_name || ""}
+                            onChange={set("business_name")}
+                            placeholder="e.g. Juan's Hardware Store"
                         />
                     </div>
 
