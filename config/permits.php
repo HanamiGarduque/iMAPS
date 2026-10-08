@@ -39,7 +39,7 @@ return [
     'soffice' => env('PERMIT_SOFFICE_BIN', 'soffice'),
 
     // Defaults for the signatories (editable in the Generate Permit modal)
-    'zoning_administrator' => env('PERMIT_ZONING_ADMIN', ''),
+    'zoning_administrator' => env('PERMIT_ZONING_ADMIN', 'Myralyn A. Luistro, PDO III'),
 
     /*
     | Permit documents. `cells` overrides specific cells with a tag template —
@@ -57,7 +57,12 @@ return [
             'paper'      => 'A4',
             'print_area' => 'A1:N80',
             'fit_height' => 0, // 0 = as many pages as needed
+            // The Zoning Administrator's name box (H74:J74) is too narrow for the name; K-N are empty.
+            // Left-aligned so the name lines up with its caption, like "Prepared by".
+            'merge' => ['H74:N74' => 'left'],
             'cells' => [
+                // Caption under the Zoning Administrator's signature
+                'H75' => 'Zoning Administrator, OIC',
                 'B13' => '${MONTH_TODAY}',
                 'E13' => '${YEAR_TODAY}',
                 'N13' => '${YEAR_TODAY}',
@@ -90,6 +95,8 @@ return [
             'print_area' => 'A1:G54',
             'fit_height' => 1,
             'cells' => [
+                // Caption under the Zoning Administrator's signature
+                'D49' => 'Zoning Administrator, OIC',
                 'B10' => '${DATE_TODAY}',
                 'D14' => '${CORPORATION_ADDRESS}',
                 'D18' => '${PROJECT_LOCATION}',
@@ -110,6 +117,10 @@ return [
             'print_area' => 'A1:I83',
             'fit_height' => 0,
             'cells' => [
+                // Caption under the Zoning Administrator's signature
+                'E34' => 'Zoning Administrator, OIC',
+                'F47' => 'Zoning Administrator, OIC',
+                'E81' => 'Zoning Administrator, OIC',
                 'C8'  => '${APPLICATION_NO}',
                 'H8'  => '${ZC_DN}',
                 'D15' => '${PROJECT_LOCATION}',

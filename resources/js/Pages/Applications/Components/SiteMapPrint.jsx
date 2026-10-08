@@ -100,7 +100,7 @@ export default function SiteMapPrint({ open, onClose, form, parcelMapData, prepa
     const dash = (v) => (v && String(v).trim() ? v : "—");
 
     return createPortal(
-        <div className="fixed inset-0 z-[2000] bg-slate-900/70 overflow-auto print:bg-white print:overflow-visible" role="dialog" aria-modal="true" aria-label="Site and zoning map">
+        <div className="fixed inset-0 z-[2000] bg-slate-900/70 overflow-auto print:bg-white print:overflow-visible animate-fade-in duration-150 print:animate-none" role="dialog" aria-modal="true" aria-label="Site and zoning map">
             <style>{`
                 @media print {
                     @page { size: A4 landscape; margin: 10mm; }

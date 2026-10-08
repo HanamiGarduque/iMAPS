@@ -1388,8 +1388,12 @@ class ApplicationController extends Controller
         $query = DB::table('application_drafts')
             ->where('user_id', Auth::id());
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+        // Activity tabs: "recent" = edited within the last 7 days, "inactive" = older.
+        $inactiveBefore = now()->subDays(7);
+        if ($request->input('activity') === 'recent') {
+            $query->where('updated_at', '>=', $inactiveBefore);
+        } elseif ($request->input('activity') === 'inactive') {
+            $query->where('updated_at', '<', $inactiveBefore);
         }
         if ($request->filled('application_type')) {
             $query->where('application_type', $request->application_type);
@@ -1406,9 +1410,18 @@ class ApplicationController extends Controller
             ->paginate(25)
             ->withQueryString();
 
+        // Totals for the activity tabs (unfiltered, like the registry tabs).
+        $mine = DB::table('application_drafts')->where('user_id', Auth::id());
+        $activityCounts = [
+            'all'      => (clone $mine)->count(),
+            'recent'   => (clone $mine)->where('updated_at', '>=', $inactiveBefore)->count(),
+            'inactive' => (clone $mine)->where('updated_at', '<', $inactiveBefore)->count(),
+        ];
+
         return Inertia::render('Drafts/Index', [
-            'drafts'  => $drafts,
-            'filters' => $request->only(['status', 'application_type', 'search']),
+            'drafts'          => $drafts,
+            'filters'         => $request->only(['activity', 'application_type', 'search']),
+            'activity_counts' => $activityCounts,
         ]);
     }
 
@@ -1521,6 +1534,19 @@ class ApplicationController extends Controller
             'format'   => 'nullable|in:pdf,xlsx',
         ]);
         $format = $validated['format'] ?? 'pdf';
+
+        // A permit is never issued with its decision numbers or Zoning Administrator blank
+        try {
+            $missing = $permits->missingRequired($application, $type, $validated['fields'] ?? []);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+        if ($missing) {
+            return response()->json([
+                'message' => 'Fill in the required fields before generating: ' . implode(', ', $missing),
+                'missing' => $missing,
+            ], 422);
+        }
 
         try {
             $path = $permits->generate($application, $type, $validated, $format);

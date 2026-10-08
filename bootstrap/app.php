@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 use App\Http\Middleware\RoleMiddleware;
@@ -31,6 +32,18 @@ return Application::configure(basePath: dirname(__DIR__))
     })
 
     ->withExceptions(function (Exceptions $exceptions): void {
+        // A background fetch() from an expired session must not redirect:
+        // that stores its JSON URL as url.intended, and the next login lands
+        // on raw JSON ("must receive a valid Inertia response"). Page visits
+        // (Inertia or real navigation) still redirect to login as before.
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            $mode = $request->header('Sec-Fetch-Mode');
+
+            if (! $request->header('X-Inertia') && $mode && $mode !== 'navigate') {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+        });
+
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
             if ($response->getStatusCode() === 419) {
                 // An expired session means the user is already signed out; bouncing "back"

@@ -113,7 +113,7 @@ class Loop6RoleMatrixTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect(route('dashboard', absolute: false));
+        $response->assertRedirect(route('overview', absolute: false));
     }
 
     public function test_planning_officer_can_login(): void
@@ -126,7 +126,7 @@ class Loop6RoleMatrixTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect(route('dashboard', absolute: false));
+        $response->assertRedirect(route('overview', absolute: false));
     }
 
     public function test_site_inspector_web_login_is_rejected_with_fieldsync_guidance(): void

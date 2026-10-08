@@ -4,18 +4,18 @@ import { Link } from "@inertiajs/react";
 /**
  * Persistent Applications sub-navigation.
  *
- * APPLICATIONS is the parent module. All Applications, Technical Review and
+ * REGISTRY is the parent module. All Records, Technical Review and
  * Drafts are SIBLING SECTIONS of it, not three unrelated top-level modules:
  *
  *   APPLICATIONS
- *     |- All Applications
+ *     |- All Records
  *     |- Technical Review
  *     `- Drafts
  *
  * This component is the single owner of that structure so the three subsection
  * pages cannot drift apart. It is rendered by every one of them, which is what
  * lets an officer move between Technical Review and Drafts without going back
- * to All Applications first.
+ * to All Records first.
  *
  * Scope rules:
  *  - The parent MODULE context lives in the header badge (always APPLICATIONS).
@@ -29,7 +29,7 @@ import { Link } from "@inertiajs/react";
  */
 
 const SECTIONS = [
-    { key: "all", label: "All Applications", href: "/applications" },
+    { key: "all", label: "All Records", href: "/applications" },
     { key: "technical-review", label: "Technical Review", href: "/technical-review" },
     { key: "drafts", label: "Drafts", href: "/applications/drafts" },
 ];
@@ -47,7 +47,7 @@ export default function ApplicationsSubNav({ active = "all", userRole = "" }) {
             className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100/70 border border-slate-200/80 shadow-2xs shrink-0"
         >
             <span className="hidden sm:inline px-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 self-center">
-                Applications
+                Registry
             </span>
             {SECTIONS.map((section) => {
                 const isActive = section.key === active;

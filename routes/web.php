@@ -3,6 +3,7 @@
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\TechnicalReviewController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\OverviewController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SettingsController;
@@ -49,7 +50,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/parcels/verify', [SearchController::class, 'verifyParcel'])
         ->middleware('role:Admin,Planning Officer');
 
-    // Landing page after login: KPI/welcome/analytics overview
+    // Landing page after login: welcome, queues and registry summary
+    Route::get('/overview', [OverviewController::class, 'index'])
+        ->name('overview')
+        ->middleware('role:Admin,Planning Officer');
+
+    // Unified GIS dashboard (map, trends, diversity)
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->name('dashboard')
         ->middleware('role:Admin,Planning Officer');
@@ -268,6 +274,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/notifications', [NotificationController::class, 'getUnread'])->name('api.notifications.unread');
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
     Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
+    Route::delete('/notifications/clear-read', [NotificationController::class, 'clearRead'])->name('notifications.clear-read');
     Route::delete('/notifications/clear-all', [NotificationController::class, 'clearAll'])->name('notifications.clear-all');
     Route::delete('/notifications/{id}', [NotificationController::class, 'destroy'])->name('notifications.destroy');
 

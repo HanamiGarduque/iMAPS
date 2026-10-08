@@ -3,12 +3,22 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AppNotification extends Model
 {
-    use HasFactory;
+    use HasFactory, MassPrunable;
+
+    /**
+     * Read notifications older than 90 days are removed by `model:prune`.
+     * Unread ones are never pruned.
+     */
+    public function prunable()
+    {
+        return static::where('is_read', true)->where('read_at', '<', now()->subDays(90));
+    }
 
     protected $table = 'notifications';
 

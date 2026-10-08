@@ -58,7 +58,7 @@ const TYPE_BADGES = {
 
 const AVATAR_PALETTES = [
     "bg-blue-100 text-blue-700 border-blue-200",
-    "bg-indigo-100 text-indigo-700 border-indigo-200",
+    "bg-blue-100 text-blue-700 border-blue-200",
     "bg-emerald-100 text-emerald-700 border-emerald-200",
     "bg-amber-100 text-amber-700 border-amber-200",
     "bg-purple-100 text-purple-700 border-purple-200",
@@ -221,12 +221,76 @@ function getProgressSteps(appOrStatus) {
 
 function StatusBadge({ status }) {
     const s = status || "Received";
-    const cfg = STATUS_CONFIG[s] || { dot: "bg-slate-400", label: s };
+    const cfg = STATUS_CONFIG[s] || { dot: "bg-slate-400", label: s, badge: "bg-slate-50 text-slate-600 border-slate-200" };
     return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold whitespace-nowrap">
-            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} shrink-0`} />
+        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11.5px] font-medium whitespace-nowrap ${s === "Denied" ? "bg-red-50 text-red-700 border-red-200" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${s === "Denied" ? "bg-red-500" : "bg-blue-600"} shrink-0`} />
             {cfg.label}
         </span>
+    );
+}
+
+// Table status: label on top, a segmented progress track below.
+// Filled segments are iMAPS blue; SB-routed applications get 4 steps,
+// others 3, but the track width is fixed so every row lines up.
+// iMAPS blue throughout; red is kept only for Denied.
+const STAGE_TONES = {
+    Released: { bar: "bg-blue-600", text: "text-blue-700" },
+    Denied: { bar: "bg-red-300", text: "text-red-700" },
+};
+const DEFAULT_TONE = { bar: "bg-blue-600", text: "text-slate-700" };
+
+function StageMeter({ item }) {
+    const status = item.status || "Received";
+    const steps = getProgressSteps(item);
+    const denied = status === "Denied";
+    const reached = Math.min(steps.filter((s) => s.state === "done" || s.state === "current").length, steps.length);
+    const label = STATUS_CONFIG[status]?.label || status;
+    const tone = STAGE_TONES[status] || DEFAULT_TONE;
+    return (
+        <span className="flex flex-col gap-1.5 min-w-0 max-w-[132px]" title={denied ? "Denied" : `Step ${reached} of ${steps.length}`}>
+            <span className={`truncate text-[12.5px] font-medium leading-none ${tone.text}`}>
+                {label}
+                {!denied && <span className="sr-only">, step {reached} of {steps.length}</span>}
+            </span>
+            <span className="flex gap-[3px]" aria-hidden="true">
+                {steps.map((s) => (
+                    <span
+                        key={s.key}
+                        className={`h-1 flex-1 rounded-full ${
+                            denied ? tone.bar
+                                : s.state === "done" ? tone.bar
+                                : s.state === "current" ? "bg-blue-300"
+                                : "bg-slate-200"
+                        }`}
+                    />
+                ))}
+            </span>
+        </span>
+    );
+}
+
+// Sortable table header: faint ⇅ when idle, blue arrow when active.
+function SortHeader({ label, dir, onClick, align = "left" }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={`group inline-flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] cursor-pointer transition-colors ${
+                align === "right" ? "flex-row-reverse" : ""
+            } ${dir ? "text-slate-900" : "text-slate-500 hover:text-slate-800"}`}
+        >
+            {label}
+            <svg className={`w-3 h-3 ${dir ? "text-blue-600" : "text-slate-300 group-hover:text-slate-500"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                {dir === "asc" ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 19.5v-15m0 0l-6 6m6-6l6 6" />
+                ) : dir === "desc" ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m0 0l6-6m-6 6l-6-6" />
+                ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+                )}
+            </svg>
+        </button>
     );
 }
 
@@ -377,10 +441,10 @@ function DropdownSelect({
                     onClick={() => setIsOpen(!isOpen)}
                     aria-haspopup="listbox"
                     aria-expanded={isOpen}
-                    className={`h-9 px-3 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                    className={`h-9 px-3 rounded-lg border text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                         isCurrentlyActive
-                            ? "border-blue-300 bg-blue-50 text-blue-800 font-semibold"
-                            : "border-dashed border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-800"
+                            ? "border-blue-200 bg-blue-50 text-blue-800"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-800"
                     }`}
                 >
                     {isCurrentlyActive ? (
@@ -400,7 +464,7 @@ function DropdownSelect({
                     onClick={() => setIsOpen(!isOpen)}
                     aria-haspopup="listbox"
                     aria-expanded={isOpen}
-                    className="h-9 px-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                    className="h-9 px-2.5 rounded-lg text-[13px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
@@ -554,8 +618,20 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     );
 
     const [selectedSort, setSelectedSort] = useState(urlParams.get("sort") || filters?.sort || "newest");
-    const [pageSize, setPageSize] = useState(Number(urlParams.get("size")) || 10);
-    const [currentPage, setCurrentPage] = useState(Number(urlParams.get("page")) || 1);
+
+    // Infinite scroll: the server only ever sends ONE page of 25 rows
+    // (`->paginate(25)` in ApplicationController@index). Scrolling to the
+    // bottom fetches the next server page and appends it here, so the table
+    // can actually reach the totals shown in the status tabs instead of
+    // being capped at the first page forever.
+    const [fullDataset, setFullDataset] = useState(() => applications?.data || []);
+    const [serverPage, setServerPage] = useState(applications?.current_page || 1);
+    const [serverLastPage, setServerLastPage] = useState(applications?.last_page || 1);
+    const [isFetchingMore, setIsFetchingMore] = useState(false);
+    // Set right before a load-more request so the effect below appends the
+    // response instead of treating it as a fresh first page.
+    const isAppendingRef = useRef(false);
+    const loadMoreRef = useRef(null);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [copiedRef, setCopiedRef] = useState(null);
     const [viewMode, setViewMode] = useState("list"); // 'list' | 'folder'
@@ -584,7 +660,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     useEffect(() => {
         const handler = setTimeout(() => {
             setDebouncedSearch(searchInput);
-            setCurrentPage(1);
         }, 150);
         return () => clearTimeout(handler);
     }, [searchInput]);
@@ -628,8 +703,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         if (dateFrom) params.set("date_from", dateFrom);
         if (dateTo) params.set("date_to", dateTo);
         if (dateRangePreset !== "all") params.set("date_preset", dateRangePreset);
-        if (currentPage > 1) params.set("page", String(currentPage));
-        if (pageSize !== 10) params.set("size", String(pageSize));
 
         // LOOP 9D: the delivery filter is SERVER-side. It is pushed into the URL
         // and applied by ApplicationController::applyRegistryFilters(); the
@@ -644,7 +717,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         const queryStr = params.toString();
         const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
         window.history.replaceState({}, "", newUrl);
-    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, currentPage, pageSize, deliveryMonitoringEnabled, selectedDelivery]);
+    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, deliveryMonitoringEnabled, selectedDelivery]);
 
 
 
@@ -661,7 +734,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         setDateTo("");
         // LOOP 9D
         if (deliveryMonitoringEnabled) setSelectedDelivery("all");
-        setCurrentPage(1);
     };
 
     const handleDatePreset = (preset) => {
@@ -683,7 +755,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
             setDateFrom(firstDay.toISOString().split("T")[0]);
             setDateTo(new Date().toISOString().split("T")[0]);
         }
-        setCurrentPage(1);
     };
 
     const formatDate = (d) => {
@@ -735,7 +806,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         } else if (field === "fee") {
             setSelectedSort((prev) => (prev === "fee_desc" ? "fee_asc" : "fee_desc"));
         }
-        setCurrentPage(1);
     };
 
     // Dynamic Status Count Helper
@@ -751,7 +821,40 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     // renders zero rows and the honest empty state. This defect was present
     // identically on the merge base, on origin/master and on the Loop 9 source;
     // it is NOT a Loop 9 merge regression.
-    const fullDataset = applications?.data || [];
+    //
+    // `applications` changes for two different reasons: the server sent a
+    // fresh first page (filters or navigation changed) or we just fetched an
+    // additional page ourselves via loadNextPage(). Only the first case
+    // should replace the accumulated rows; the second case appends.
+    useEffect(() => {
+        if (isAppendingRef.current) {
+            isAppendingRef.current = false;
+            setFullDataset((prev) => {
+                const seen = new Set(prev.map((r) => r.id));
+                const incoming = (applications?.data || []).filter((r) => !seen.has(r.id));
+                return [...prev, ...incoming];
+            });
+        } else {
+            setFullDataset(applications?.data || []);
+        }
+        setServerPage(applications?.current_page || 1);
+        setServerLastPage(applications?.last_page || 1);
+    }, [applications]);
+
+    const loadNextPage = () => {
+        if (isFetchingMore || serverPage >= serverLastPage) return;
+        setIsFetchingMore(true);
+        isAppendingRef.current = true;
+        const next = new URLSearchParams(window.location.search);
+        next.set("page", String(serverPage + 1));
+        router.visit(`${window.location.pathname}?${next.toString()}`, {
+            only: ["applications"],
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+            onFinish: () => setIsFetchingMore(false),
+        });
+    };
 
     const getStatusCount = (s) => {
         if (status_counts && Object.keys(status_counts).length > 0) {
@@ -772,7 +875,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
     // Filter & Sort Dataset
     const filteredList = useMemo(() => {
-        let list = [...(applications?.data || [])];
+        let list = [...fullDataset];
 
         if (selectedStatus) {
             if (selectedStatus === "Released") {
@@ -826,16 +929,24 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         });
 
         return list;
-    }, [applications, selectedStatus, selectedCategory, selectedLandUse, debouncedSearch, selectedBarangay, selectedSort, dateFrom, dateTo]);
+    }, [fullDataset, selectedStatus, selectedCategory, selectedLandUse, debouncedSearch, selectedBarangay, selectedSort, dateFrom, dateTo]);
 
-    // Client-side pagination calculation
-    const totalPages = Math.max(1, Math.ceil(filteredList.length / pageSize));
-    
-    const paginatedRecords = useMemo(() => {
-        if (filteredList.length <= 10) return filteredList;
-        const startIdx = (currentPage - 1) * pageSize;
-        return filteredList.slice(startIdx, startIdx + pageSize);
-    }, [filteredList, currentPage, pageSize]);
+    // Every loaded-and-filtered row is rendered; "more" now means the server
+    // has additional pages we haven't fetched yet, not rows we're hiding.
+    const paginatedRecords = filteredList;
+    const hasMore = serverPage < serverLastPage;
+
+    // Fetch the next server page when the bottom of the list scrolls into view.
+    useEffect(() => {
+        const el = loadMoreRef.current;
+        if (!el || !hasMore) return;
+        const observer = new IntersectionObserver(
+            ([entry]) => { if (entry.isIntersecting) loadNextPage(); },
+            { rootMargin: "200px" }
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [hasMore, isFetchingMore, serverPage, viewMode]);
 
     // Group records by barangay for the Folder view
     const folderGroups = useMemo(() => {
@@ -872,19 +983,9 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         }, {});
     }, [selectedFolder, folderGroups]);
 
-    const startIndex = filteredList.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-    const endIndex = Math.min(currentPage * pageSize, filteredList.length);
 
     const rowKey = (item) => item?.id ?? item?.reference_number;
-    const pageKeys = paginatedRecords.map(rowKey);
-    const allPageSelected = pageKeys.length > 0 && pageKeys.every((k) => selectedIds.includes(k));
     const toggleRow = (key) => setSelectedIds((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
-    const togglePage = () => setSelectedIds((prev) => (allPageSelected ? prev.filter((k) => !pageKeys.includes(k)) : [...new Set([...prev, ...pageKeys])]));
-
-    // Open the first record in the preview panel on load, like the registry concept
-    useEffect(() => {
-        if (paginatedRecords[0]) setPeekItem(paginatedRecords[0]);
-    }, []);
 
     useEffect(() => setMoreOpen(false), [peekItem]);
 
@@ -921,12 +1022,23 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                     document.activeElement?.blur();
                     return;
                 }
+                if (selectedIds.length > 0) {
+                    setSelectedIds([]);
+                    return;
+                }
             }
 
             if (!isInput) {
                 if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
                     e.preventDefault();
                     searchInputRef.current?.focus();
+                    return;
+                }
+
+                // Ctrl/⌘ + A selects every application matching the current filters.
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a" && viewMode === "list" && filteredList.length > 0) {
+                    e.preventDefault();
+                    setSelectedIds(filteredList.map(rowKey));
                     return;
                 }
 
@@ -951,7 +1063,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [viewMode, paginatedRecords, focusedRowIndex, peekItem, dateFilterOpen]);
+    }, [viewMode, paginatedRecords, focusedRowIndex, peekItem, dateFilterOpen, selectedIds, filteredList]);
 
     // Map bounds calculation
     const mapBounds = useMemo(() => {
@@ -960,7 +1072,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
     return (
         <>
-            <Head title="Zoning Applications | iMAPS" />
+            <Head title="Registry | iMAPS" />
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 
@@ -977,7 +1089,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
             `}</style>
 
-            <div id="dashboard-root" className="bg-slate-100/60 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
+            <div id="dashboard-root" className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col overflow-hidden">
                 <Header 
                     userName={userName} 
                     userRole={userRole} 
@@ -1005,110 +1117,98 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                     )}
 
                     <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
-                        <div className="p-4 sm:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1580px] mx-auto w-full gap-3.5">
-                            
-                            {/* ── TOP HEADER SECTION ── */}
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
-                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m6.75 12H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                        </svg>
-                                    </div>
-                                    <h1 className="text-xl font-bold text-slate-900 tracking-tight leading-none">
-                                        Application Registry
-                                    </h1>
-                                    <span className="text-xs font-medium text-slate-500 pt-0.5">
-                                        {filteredList.length} {filteredList.length === 1 ? "record" : "records"}
-                                    </span>
-                                </div>
+                        <div className="p-4 sm:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1580px] mx-auto w-full gap-5">
 
-                                <div className="flex items-center gap-2">
-                                    {userRole === "Planning Officer" && (
-                                        <Link
-                                            href="/applications/drafts"
-                                            className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-slate-200 bg-white shadow-2xs text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-                                        >
-                                            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                            </svg>
-                                            <span>Drafts</span>
-                                            {drafts_count > 0 && (
-                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600" aria-hidden="true"></span>
-                                            )}
-                                        </Link>
-                                    )}
-
-                                    {userRole === "Planning Officer" && (
-                                        <Link
-                                            href="/applications/encode"
-                                            className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-all active:scale-95"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                            </svg>
-                                            <span>New Application</span>
-                                        </Link>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* —— STATUS KPI TILES (also act as status filter) —— */}
-                            <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-1.5 grid grid-cols-2 md:grid-cols-5 gap-1.5 shrink-0 no-print">
-                                {[
-                                    { label: "All filings", status: "", count: getStatusCount(""), dot: "bg-slate-500" },
-                                    { label: "Received", status: "Received", count: receivedCount, dot: "bg-emerald-500" },
-                                    { label: "Technical Review", status: "Technical Review", count: reviewCount, dot: "bg-amber-500" },
-                                    { label: "Sangguniang Bayan", status: "Under Sangguniang Bayan", count: sbCount, dot: "bg-purple-500" },
-                                    { label: "Issued / Ready", status: "Released", count: releasedCount, dot: "bg-blue-600" },
-                                ].map((tile) => {
-                                    const isActive = tile.status === "" ? !selectedStatus : selectedStatus === tile.status;
-                                    const pct = tile.status === "" ? 100 : Math.round((tile.count / totalCount) * 100);
-                                    return (
-                                        <button
-                                            key={tile.label}
-                                            type="button"
-                                            aria-pressed={isActive}
-                                            onClick={() => {
-                                                setSelectedStatus(tile.status === "" || selectedStatus === tile.status ? "" : tile.status);
-                                                setCurrentPage(1);
-                                            }}
-                                            className={`text-left rounded-lg px-3.5 py-2.5 border transition-colors cursor-pointer ${
-                                                isActive ? "border-blue-500 ring-1 ring-blue-500/30 bg-blue-50/30" : "border-transparent hover:bg-slate-50"
-                                            }`}
-                                        >
-                                            <span className="flex items-center gap-2 text-xs font-medium text-slate-700">
-                                                <span className={`w-2 h-2 rounded-full ${tile.dot}`} aria-hidden="true" />
-                                                {tile.label}
-                                            </span>
-                                            <span className="flex items-baseline gap-1.5 mt-1">
-                                                <span className="text-2xl font-bold text-slate-900 tabular-nums">{tile.count}</span>
-                                                <span className="text-[11px] text-slate-400 font-medium">{tile.status === "" ? "total" : `${pct}%`}</span>
-                                            </span>
-                                            <span className="block h-1 rounded-full bg-slate-100 mt-2 overflow-hidden" aria-hidden="true">
-                                                <span className={`block h-full rounded-full ${isActive ? "bg-blue-600" : "bg-slate-300"}`} style={{ width: `${pct}%` }} />
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            {/* —— PAGE HEADER —— */}
 
                             {/* —— MASTER WORKSPACE ROW (TABLE CARD + QUICK PREVIEW PANEL) —— */}
-                            <div className="flex-1 flex gap-3.5 min-h-0 no-print">
+                            <div className="flex-1 flex gap-4 min-h-0 no-print">
 
                             {/* —— UNIFIED MASTER WORKSPACE CARD —— */}
-                            <div className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200/90 shadow-2xs flex flex-col min-h-0 overflow-hidden">
+                            <div className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200 flex flex-col min-h-0 overflow-hidden">
 
-                                {/* —— INTEGRATED FILTER TOOLBAR —— */}
-                                <div className="px-3 py-2.5 bg-white border-b border-slate-200/80 flex flex-wrap items-center gap-2 shrink-0">
-                                    {/* Main Search Input */}
-                                    <div className="relative w-full sm:w-56 shrink-0">
+                                {/* —— FOLDER TABS (status filter) —— */}
+                                <div className="bg-slate-100/80 border-b border-slate-200 shrink-0">
+                                <div className="px-5 pt-3 flex items-center gap-3 min-w-0">
+                                    <div className="flex items-baseline gap-2.5 min-w-0">
+                                        <h1 className="text-[16px] font-bold text-slate-900 tracking-tight">Registry</h1>
+                                        <p className="text-[12px] text-slate-500 truncate">All zoning and land-use filings</p>
+                                    </div>
+                                {userRole === "Planning Officer" && (
+                                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                                        <Link
+                                            href="/applications/drafts"
+                                            aria-label={drafts_count > 0 ? `Drafts, ${drafts_count} unfinished` : "Drafts"}
+                                            className="group inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-slate-300 bg-white shadow-sm shadow-slate-900/5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 hover:text-slate-900 transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                                        >
+                                            <svg className="w-4 h-4 text-slate-500 group-hover:text-slate-700 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                                            </svg>
+                                            Drafts
+                                            {drafts_count > 0 && (
+                                                <span className="min-w-[20px] h-5 px-1.5 rounded-md bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-100 text-[11px] font-semibold flex items-center justify-center tabular-nums" aria-hidden="true">
+                                                    {drafts_count}
+                                                </span>
+                                            )}
+                                        </Link>
+                                        <Link
+                                            href="/applications/encode"
+                                            className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-blue-600 bg-blue-600 shadow-sm shadow-blue-900/10 hover:bg-blue-700 hover:border-blue-700 active:bg-blue-800 text-white text-[13px] font-semibold transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.25" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                            </svg>
+                                            New application
+                                        </Link>
+                                    </div>
+                                )}
+                                </div>
+                                <div className="flex items-end gap-3 px-4 pt-2.5 overflow-x-auto">
+                                <div className="flex items-end gap-1" role="group" aria-label="Filter by status">
+                                    {[
+                                        { label: "All", status: "", count: getStatusCount(""), d: "M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm0 5.25h.007v.008H3.75V12zm0 5.25h.007v.008H3.75v-.008z" },
+                                        { label: "Received", status: "Received", count: receivedCount, d: "M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859M2.25 13.5V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.5M2.25 13.5l2.4-7.2A2.25 2.25 0 016.79 4.5h10.42a2.25 2.25 0 012.14 1.8l2.4 7.2" },
+                                        { label: "Technical review", status: "Technical Review", count: reviewCount, d: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" },
+                                        { label: "Sangguniang Bayan", status: "Under Sangguniang Bayan", count: sbCount, d: "M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0012 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18" },
+                                        { label: "Issued / ready", status: "Released", count: releasedCount, d: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+                                    ].map((tab) => {
+                                        const isActive = tab.status === "" ? !selectedStatus : selectedStatus === tab.status;
+                                        return (
+                                            <button
+                                                key={tab.label}
+                                                type="button"
+                                                aria-pressed={isActive}
+                                                onClick={() => setSelectedStatus(tab.status)}
+                                                className={`relative -mb-px flex items-center gap-2 px-4 py-2.5 rounded-t-xl border text-[12.5px] font-semibold whitespace-nowrap transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                                    isActive
+                                                        ? "bg-white border-slate-200 border-b-white text-blue-700"
+                                                        : "bg-slate-50 border-slate-200/70 text-slate-500 hover:text-slate-800 hover:bg-white/70"
+                                                }`}
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d={tab.d} />
+                                                </svg>
+                                                {tab.label}
+                                                <span className={`text-[10.5px] font-bold tabular-nums px-1.5 py-px rounded-full ${isActive ? "bg-blue-700 text-white" : "bg-slate-200 text-slate-600"}`}>
+                                                    {tab.count}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                </div>
+                                </div>
+
+                                {/* —— FILTER TOOLBAR —— */}
+                                <div className="px-4 py-3 flex flex-wrap items-center gap-2 shrink-0">
+                                    <div className="relative w-full sm:w-72 shrink-0">
                                         <svg
-                                            className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"
+                                            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
                                             fill="none"
                                             viewBox="0 0 24 24"
                                             stroke="currentColor"
                                             strokeWidth="2"
+                                            aria-hidden="true"
                                         >
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                                         </svg>
@@ -1117,135 +1217,137 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                             type="text"
                                             value={searchInput}
                                             onChange={(e) => setSearchInput(e.target.value)}
-                                            placeholder="Search name, reference, barangay"
+                                            placeholder="Search applicant, reference, barangay…"
                                             aria-label="Search applications"
-                                            className="w-full h-9 rounded-lg border border-slate-200 bg-white pl-8 pr-8 text-xs text-slate-800 transition-all focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 placeholder:text-slate-400"
+                                            className="w-full h-9 rounded-lg border border-slate-200 bg-slate-50/60 pl-9 pr-8 text-[13px] text-slate-800 transition-colors focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 placeholder:text-slate-400"
                                         />
-                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
                                             {searchInput ? (
                                                 <button
-                                                    onClick={() => { setSearchInput(""); setDebouncedSearch(""); setCurrentPage(1); }}
+                                                    type="button"
+                                                    onClick={() => { setSearchInput(""); setDebouncedSearch(""); }}
+                                                    aria-label="Clear search"
                                                     className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
                                                 >
-                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                                                     </svg>
                                                 </button>
                                             ) : (
-                                                <span className="text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1 py-0.2 rounded">/</span>
+                                                <kbd className="text-[10px] font-mono text-slate-400 bg-white border border-slate-200 px-1.5 rounded">/</kbd>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* Filters */}
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <DropdownSelect
-                                            variant="pill"
-                                            label="Category"
-                                            value={selectedCategory}
-                                            onChange={(val) => { setSelectedCategory(val); setCurrentPage(1); }}
-                                            options={APP_TYPES}
-                                            allLabel="All categories"
-                                        />
+                                    <DropdownSelect
+                                        variant="pill"
+                                        label="Category"
+                                        value={selectedCategory}
+                                        onChange={(val) => setSelectedCategory(val)}
+                                        options={APP_TYPES}
+                                        allLabel="All categories"
+                                    />
 
-                                        <DropdownSelect
-                                            variant="pill"
-                                            label="Barangay"
-                                            value={selectedBarangay}
-                                            onChange={(val) => { setSelectedBarangay(val); setCurrentPage(1); }}
-                                            options={ROSARIO_BARANGAYS}
-                                            allLabel="All barangays"
-                                            searchPlaceholder="Search 48 barangays..."
-                                            withSearch={true}
-                                        />
+                                    <DropdownSelect
+                                        variant="pill"
+                                        label="Barangay"
+                                        value={selectedBarangay}
+                                        onChange={(val) => setSelectedBarangay(val)}
+                                        options={ROSARIO_BARANGAYS}
+                                        allLabel="All barangays"
+                                        searchPlaceholder="Search 48 barangays..."
+                                        withSearch={true}
+                                    />
 
-                                        {/* Date Range Popover Button */}
-                                        <div className="relative" ref={dateFilterRef}>
-                                            <button
-                                                type="button"
-                                                onClick={() => setDateFilterOpen(!dateFilterOpen)}
-                                                aria-expanded={dateFilterOpen}
-                                                className={`h-9 px-3 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-                                                    dateFrom || dateTo
-                                                        ? "border-blue-300 bg-blue-50 text-blue-800 font-semibold"
-                                                        : "border-dashed border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-800"
-                                                }`}
-                                            >
-                                                {dateFrom || dateTo ? (
-                                                    <span>Filed: {formatDate(dateFrom)} – {formatDate(dateTo)}</span>
-                                                ) : (
-                                                    <>
-                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                                        </svg>
-                                                        <span>Filing date</span>
-                                                    </>
-                                                )}
-                                            </button>
+                                    {/* Date Range Popover Button */}
+                                    <div className="relative" ref={dateFilterRef}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setDateFilterOpen(!dateFilterOpen)}
+                                            aria-expanded={dateFilterOpen}
+                                            className={`h-9 px-3 rounded-lg border text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                                                dateFrom || dateTo
+                                                    ? "border-blue-200 bg-blue-50 text-blue-800"
+                                                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+                                            }`}
+                                        >
+                                            <svg className="w-4 h-4 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                                            </svg>
+                                            {dateFrom || dateTo ? `${formatDate(dateFrom)} – ${formatDate(dateTo)}` : "Filing date"}
+                                        </button>
 
-                                            {dateFilterOpen && (
-                                                <div className="absolute left-0 mt-1 z-50 bg-white rounded-xl shadow-lg border border-slate-200/90 p-3 min-w-[260px] animate-in fade-in zoom-in-95">
-                                                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Filing Date Presets</p>
-                                                    <div className="grid grid-cols-2 gap-1 mb-3">
-                                                        {DATE_PRESETS.map((p) => (
-                                                            <button
-                                                                key={p.value}
-                                                                type="button"
-                                                                onClick={() => handleDatePreset(p.value)}
-                                                                className={`text-xs px-2 py-1.5 rounded-md text-left font-medium transition-all ${
-                                                                    dateRangePreset === p.value
-                                                                        ? "bg-blue-600 text-white font-semibold"
-                                                                        : "bg-slate-50 text-slate-700 hover:bg-slate-100"
-                                                                }`}
-                                                            >
-                                                                {p.label}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-
-                                                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Custom Date Range</p>
-                                                    <div className="space-y-2">
-                                                        <div>
-                                                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Date From</label>
-                                                            <input
-                                                                type="date"
-                                                                value={dateFrom}
-                                                                onChange={(e) => { setDateFrom(e.target.value); setDateRangePreset("custom"); }}
-                                                                className="w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-md outline-none focus:bg-white focus:border-blue-500"
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Date To</label>
-                                                            <input
-                                                                type="date"
-                                                                value={dateTo}
-                                                                onChange={(e) => { setDateTo(e.target.value); setDateRangePreset("custom"); }}
-                                                                className="w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-md outline-none focus:bg-white focus:border-blue-500"
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between">
+                                        {dateFilterOpen && (
+                                            <div className="absolute left-0 mt-1 z-50 bg-white rounded-xl shadow-lg border border-slate-200/90 p-3 min-w-[260px] animate-in fade-in zoom-in-95">
+                                                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Filing Date Presets</p>
+                                                <div className="grid grid-cols-2 gap-1 mb-3">
+                                                    {DATE_PRESETS.map((p) => (
                                                         <button
+                                                            key={p.value}
                                                             type="button"
-                                                            onClick={() => { setDateFrom(""); setDateTo(""); setDateRangePreset("all"); setDateFilterOpen(false); }}
-                                                            className="text-xs text-rose-600 hover:underline font-semibold cursor-pointer"
+                                                            onClick={() => handleDatePreset(p.value)}
+                                                            className={`text-xs px-2 py-1.5 rounded-md text-left font-medium transition-all ${
+                                                                dateRangePreset === p.value
+                                                                    ? "bg-blue-600 text-white font-semibold"
+                                                                    : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                                                            }`}
                                                         >
-                                                            Reset
+                                                            {p.label}
                                                         </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setDateFilterOpen(false)}
-                                                            className="text-xs bg-slate-900 text-white px-3 py-1 rounded-md font-semibold cursor-pointer"
-                                                        >
-                                                            Apply
-                                                        </button>
+                                                    ))}
+                                                </div>
+
+                                                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Custom Date Range</p>
+                                                <div className="space-y-2">
+                                                    <div>
+                                                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Date From</label>
+                                                        <input
+                                                            type="date"
+                                                            value={dateFrom}
+                                                            onChange={(e) => { setDateFrom(e.target.value); setDateRangePreset("custom"); }}
+                                                            className="w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-md outline-none focus:bg-white focus:border-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Date To</label>
+                                                        <input
+                                                            type="date"
+                                                            value={dateTo}
+                                                            onChange={(e) => { setDateTo(e.target.value); setDateRangePreset("custom"); }}
+                                                            className="w-full text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-md outline-none focus:bg-white focus:border-blue-500"
+                                                        />
                                                     </div>
                                                 </div>
-                                            )}
-                                        </div>
 
+                                                <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setDateFrom(""); setDateTo(""); setDateRangePreset("all"); setDateFilterOpen(false); }}
+                                                        className="text-xs text-rose-600 hover:underline font-semibold cursor-pointer"
+                                                    >
+                                                        Reset
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setDateFilterOpen(false)}
+                                                        className="text-xs bg-slate-900 text-white px-3 py-1 rounded-md font-semibold cursor-pointer"
+                                                    >
+                                                        Apply
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
+
+                                    {hasActiveFilters && (
+                                        <button
+                                            type="button"
+                                            onClick={clearFilters}
+                                            className="h-9 px-2 text-[13px] font-medium text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+                                        >
+                                            Reset
+                                        </button>
+                                    )}
 
                                     {/* Sort + View switcher */}
                                     <div className="flex items-center gap-2 ml-auto">
@@ -1254,44 +1356,41 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                             applied server-side, so the browser never decides which
                                             round an application is judged by. */}
                                         {deliveryMonitoringEnabled && (
-                                            <div className="min-w-[165px]">
-                                                <select
-                                                    value={selectedDelivery}
-                                                    onChange={(e) => {
-                                                        setSelectedDelivery(e.target.value);
-                                                        setCurrentPage(1);
-                                                        const next = new URLSearchParams(window.location.search);
-                                                        if (e.target.value && e.target.value !== "all") {
-                                                            next.set("delivery_status", e.target.value);
-                                                        } else {
-                                                            next.delete("delivery_status");
-                                                        }
-                                                        const qs = next.toString();
-                                                        router.visit(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, {
-                                                            preserveScroll: true,
-                                                        });
-                                                    }}
-                                                    title="Filter by FieldSync delivery state (Admin monitoring)"
-                                                    aria-label="Filter by FieldSync delivery state"
-                                                    className="h-9 w-full text-xs font-semibold px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 focus:outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 cursor-pointer"
-                                                >
-                                                    {(delivery_monitoring?.states || []).map((s) => (
-                                                        <option key={s.value} value={s.value}>
-                                                            {s.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
+                                            <select
+                                                value={selectedDelivery}
+                                                onChange={(e) => {
+                                                    setSelectedDelivery(e.target.value);
+                                                    const next = new URLSearchParams(window.location.search);
+                                                    if (e.target.value && e.target.value !== "all") {
+                                                        next.set("delivery_status", e.target.value);
+                                                    } else {
+                                                        next.delete("delivery_status");
+                                                    }
+                                                    const qs = next.toString();
+                                                    router.visit(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, {
+                                                        preserveScroll: true,
+                                                    });
+                                                }}
+                                                title="Filter by FieldSync delivery state (Admin monitoring)"
+                                                aria-label="Filter by FieldSync delivery state"
+                                                className="h-9 text-[13px] font-medium pl-3 pr-8 rounded-lg border border-slate-200 bg-white text-slate-600 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 cursor-pointer"
+                                            >
+                                                {(delivery_monitoring?.states || []).map((s) => (
+                                                    <option key={s.value} value={s.value}>
+                                                        {s.label}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         )}
 
                                         <DropdownSelect
                                             variant="ghost"
                                             value={selectedSort === "newest" ? "" : selectedSort}
-                                            onChange={(val) => { setSelectedSort(val || "newest"); setCurrentPage(1); }}
+                                            onChange={(val) => setSelectedSort(val || "newest")}
                                             options={SORT_OPTIONS.slice(1)}
                                             allLabel="Newest filing"
                                         />
-                                        <div className="bg-slate-100 p-0.5 rounded-lg flex items-center" role="group" aria-label="View mode">
+                                        <div className="border border-slate-200 p-0.5 rounded-lg flex items-center" role="group" aria-label="View mode">
                                             {[
                                                 { mode: "list", label: "List view", d: "M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" },
                                                 { mode: "folder", label: "Folder view", d: "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" },
@@ -1303,8 +1402,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     aria-label={v.label}
                                                     aria-pressed={viewMode === v.mode}
                                                     title={v.label}
-                                                    className={`w-8 h-8 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
-                                                        viewMode === v.mode ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+                                                    className={`w-8 h-7 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
+                                                        viewMode === v.mode ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:text-slate-700"
                                                     }`}
                                                 >
                                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -1316,222 +1415,98 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                     </div>
                                 </div>
 
-                                {/* —— ACTIVE FILTERS CHIP STRIP —— */}
-                                {hasActiveFilters && (
-                                    <div className="flex items-center gap-1.5 flex-wrap px-3.5 py-2 bg-slate-50/70 border-b border-slate-100 text-xs shrink-0">
-                                        <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Active:</span>
-                                        {selectedStatus && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-xs font-semibold">
-                                                Status: {selectedStatus === "Released" ? "Issued / Ready" : selectedStatus}
-                                                <button onClick={() => setSelectedStatus("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
-                                            </span>
-                                        )}
-                                        {selectedCategory && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
-                                                Type: {selectedCategory}
-                                                <button onClick={() => setSelectedCategory("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
-                                            </span>
-                                        )}
-                                        {selectedBarangay && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
-                                                Brgy: {selectedBarangay}
-                                                <button onClick={() => setSelectedBarangay("")} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
-                                            </span>
-                                        )}
-                                        {(dateFrom || dateTo) && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
-                                                Date: {formatDate(dateFrom)} - {formatDate(dateTo)}
-                                                <button onClick={() => { setDateFrom(""); setDateTo(""); setDateRangePreset("all"); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
-                                            </span>
-                                        )}
-                                        {debouncedSearch && (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs font-medium">
-                                                Query: "{debouncedSearch}"
-                                                <button onClick={() => { setSearchInput(""); setDebouncedSearch(""); }} className="hover:text-rose-600 font-bold ml-0.5 cursor-pointer">✕</button>
-                                            </span>
-                                        )}
-                                        <button
-                                            onClick={clearFilters}
-                                            className="text-xs font-semibold text-rose-600 hover:text-rose-700 ml-auto transition-colors cursor-pointer"
-                                        >
-                                            Clear All Filters
-                                        </button>
-                                    </div>
-                                )}
-
                             {/* —— DATA VIEW (LIST / FOLDERS) —— */}
                             {viewMode === "list" ? (
                                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                                     <div className="flex-1 overflow-auto custom-scrollbar">
-                                        <table className="w-full text-left border-collapse min-w-[640px]">
-                                            <thead className="sticky top-0 z-10 bg-white border-b border-slate-200/90">
-                                                <tr className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                                                    <th className="py-3 pl-4 pr-2 w-10">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={allPageSelected}
-                                                            onChange={togglePage}
-                                                            aria-label="Select all applications on this page"
-                                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                                        />
+                                        <table className="tabular-nums w-full text-left border-separate border-spacing-0 min-w-[760px] text-[13px] table-fixed">
+                                            <thead className="sticky top-0 z-10 bg-slate-100">
+                                                <tr className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500 [&>th]:border-y [&>th]:border-slate-200 [&>th]:py-2.5 [&>th]:px-3 [&>th]:whitespace-nowrap [&>th]:font-semibold">
+                                                    <th className="w-11 !pl-4 !pr-2">
+                                                        <span className="sr-only">Select (Ctrl+A selects all, Esc clears)</span>
                                                     </th>
-                                                    <th className="py-3 px-3">
-                                                        <button type="button" onClick={() => handleHeaderSort("applicant")} className="uppercase tracking-wider hover:text-slate-800 cursor-pointer">
-                                                            Applicant{selectedSort === "applicant_asc" ? " ↑" : selectedSort === "applicant_desc" ? " ↓" : ""}
-                                                        </button>
+                                                    <th className="w-[140px]" aria-sort={selectedSort === "ref_asc" ? "ascending" : "none"}>
+                                                        <SortHeader label="Reference no." dir={selectedSort === "ref_asc" ? "asc" : null} onClick={() => handleHeaderSort("ref")} />
                                                     </th>
-                                                    <th className="py-3 px-3">Application</th>
-                                                    <th className="py-3 px-3">Barangay</th>
-                                                    <th className="py-3 pl-3 pr-4">
-                                                        <button type="button" onClick={() => handleHeaderSort("date")} className="uppercase tracking-wider hover:text-slate-800 cursor-pointer">
-                                                            Filed{selectedSort === "newest" ? " ↓" : selectedSort === "oldest" ? " ↑" : ""}
-                                                        </button>
+                                                    <th className="w-[24%]" aria-sort={selectedSort === "applicant_asc" ? "ascending" : selectedSort === "applicant_desc" ? "descending" : "none"}>
+                                                        <SortHeader label="Applicant" dir={selectedSort === "applicant_asc" ? "asc" : selectedSort === "applicant_desc" ? "desc" : null} onClick={() => handleHeaderSort("applicant")} />
                                                     </th>
+                                                    <th>Application type</th>
+                                                    <th className="w-[140px]">Barangay</th>
+                                                    <th className="w-[130px]" aria-sort={selectedSort === "newest" ? "descending" : selectedSort === "oldest" ? "ascending" : "none"}>
+                                                        <SortHeader label="Date filed" dir={selectedSort === "newest" ? "desc" : selectedSort === "oldest" ? "asc" : null} onClick={() => handleHeaderSort("date")} />
+                                                    </th>
+                                                    <th className="w-[180px] !pr-4">Status</th>
                                                 </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-slate-100">
+                                            <tbody>
                                                 {paginatedRecords.map((item, idx) => {
                                                     const refCode = item.reference_number || `APP-${item.id}`;
                                                     const key = rowKey(item);
                                                     const types = splitTypes(item.application_type);
-                                                    const landUse = item.target_land_use_class || item.land_use_class;
-                                                    const subline = types.length > 1
-                                                        ? types.slice(1).join(", ")
-                                                        : landUse
-                                                        ? `Land use · ${landUse}`
-                                                        : item.remarks?.trim()
-                                                        ? `Remark · ${item.remarks}`
-                                                        : "—";
+                                                    const delivery = deliveryMonitoringEnabled ? item.delivery_monitoring : null;
                                                     const isSelected = Boolean(peekItem && rowKey(peekItem) === key);
                                                     const isFocused = focusedRowIndex === idx;
-                                                    const isHighlighted = isSelected || isFocused;
+                                                    const isChecked = selectedIds.includes(key);
 
                                                     return (
                                                         <tr
                                                             key={key ?? idx}
                                                             onClick={() => { setPeekItem(item); setFocusedRowIndex(idx); }}
                                                             aria-selected={isSelected}
-                                                            className={`cursor-pointer transition-colors group ${
-                                                                isSelected ? "bg-blue-50/60" : isFocused ? "bg-blue-50/30" : "hover:bg-slate-50"
-                                                            } ${
-                                                                isHighlighted
-                                                                    ? "[&>td]:border-y [&>td]:border-blue-500 [&>td:first-child]:border-l [&>td:first-child]:border-blue-500 [&>td:last-child]:border-r [&>td:last-child]:border-blue-500"
-                                                                    : ""
+                                                            className={`cursor-pointer transition-colors align-middle [&>td]:border-b [&>td]:border-slate-100 [&>td]:py-2 [&>td]:px-3 ${
+                                                                isSelected || isChecked ? "bg-blue-50/60" : isFocused ? "bg-slate-50" : "bg-white hover:bg-slate-50/80"
                                                             }`}
                                                         >
-                                                            <td className="py-3 pl-4 pr-2" onClick={(e) => e.stopPropagation()}>
+                                                            <td
+                                                                className={`!pl-4 !pr-2 ${isSelected || isChecked ? "shadow-[inset_3px_0_0_#2563eb]" : ""}`}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            >
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={selectedIds.includes(key)}
                                                                     onChange={() => toggleRow(key)}
                                                                     aria-label={`Select ${item.applicant_name || refCode}`}
-                                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                                    className="w-4 h-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500 cursor-pointer"
                                                                 />
                                                             </td>
 
-                                                            <td className="py-3 px-3">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-semibold shrink-0">
-                                                                        {getInitials(item.applicant_name)}
-                                                                    </div>
-                                                                    <div className="min-w-0">
-                                                                        <p className="text-[13px] font-semibold text-slate-900 truncate max-w-[180px]">
-                                                                            {item.applicant_name || "Unknown Applicant"}
-                                                                        </p>
-                                                                        <p className="font-mono text-[11px] text-slate-400">{refCode}</p>
-                                                                    </div>
-                                                                </div>
+                                                            <td className="whitespace-nowrap">
+                                                                <span className="text-[12px] font-medium text-slate-500 tracking-wide">{refCode}</span>
                                                             </td>
 
-                                                            <td className="py-3 px-3">
+                                                            <td>
+                                                                <p className="font-medium text-slate-900 truncate" title={item.applicant_name || undefined}>
+                                                                    {item.applicant_name || "Unknown Applicant"}
+                                                                </p>
+                                                            </td>
+
+                                                            <td>
                                                                 <div className="flex items-center gap-1.5">
-                                                                    <span className="text-[13px] text-slate-800 truncate max-w-[200px]">{types[0] || "—"}</span>
+                                                                    <span className="text-slate-700 truncate" title={[types.join(", "), item.remarks?.trim() && `Remark: ${item.remarks.trim()}`].filter(Boolean).join("\n")}>{types[0] || "—"}</span>
                                                                     {types.length > 1 && (
-                                                                        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded" title={types.slice(1).join(", ")}>
+                                                                        <span className="shrink-0 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 rounded" title={types.slice(1).join(", ")}>
                                                                             +{types.length - 1}
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                <p className="text-[11px] text-slate-400 truncate max-w-[220px]">{subline}</p>
-
-                                                                {/* RESTORED BY THE MASTER MERGE: the inspection line.
-                                                                    ApplicationController::index already computes a
-                                                                    locally-provable inspection_summary per
-                                                                    application and sends it with the payload; the
-                                                                    table simply stopped rendering it. It is shown
-                                                                    directly rather than behind a tooltip or hover
-                                                                    affordance, because it is a provable local fact
-                                                                    and must never be inferred by the browser. */}
-                                                                {item.inspection_summary && (
-                                                                    <p className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/70 rounded-md px-1.5 py-0.5 mt-1 inline-block leading-tight">
-                                                                        {item.inspection_summary}
-                                                                    </p>
-                                                                )}
-
-                                                                {/* LOOP 9D: Admin aggregate delivery monitoring.
-                                                                    Every string here is server-authored: the
-                                                                    state, its label, the failure category label
-                                                                    and the message all come from
-                                                                    InspectionDeliveryStatus. The browser holds no
-                                                                    delivery vocabulary of its own, so a future server
-                                                                    change reaches this row with no React edit, and
-                                                                    this row can never invent a delivery verdict. */}
-                                                                {deliveryMonitoringEnabled && item.delivery_monitoring && (
-                                                                    <div className="mt-1.5 rounded-md border border-slate-200/80 bg-slate-50/70 px-2 py-1.5 text-left">
-                                                                        <div className="flex items-center justify-between gap-2">
-                                                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${DELIVERY_STATE_STYLES[item.delivery_monitoring.state] || DELIVERY_STATE_STYLES.no_delivery_record}`}>
-                                                                                {item.delivery_monitoring.label}
-                                                                            </span>
-                                                                            {item.delivery_monitoring.is_superseded === true && (
-                                                                                <span
-                                                                                    className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-slate-100 text-slate-500 border-slate-300"
-                                                                                    title="A newer inspection round exists for this parcel."
-                                                                                >
-                                                                                    Superseded
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                        <p className="text-[10px] text-slate-500 mt-1 leading-snug">
-                                                                            {item.delivery_monitoring.message}
-                                                                        </p>
-                                                                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-[10px] text-slate-500">
-                                                                            {item.delivery_monitoring.inspector && (
-                                                                                <span>
-                                                                                    Inspector:{" "}
-                                                                                    <span className="font-semibold text-slate-700">
-                                                                                        {item.delivery_monitoring.inspector.name}
-                                                                                    </span>
-                                                                                </span>
-                                                                            )}
-                                                                            <span>
-                                                                                Attempts:{" "}
-                                                                                <span className="font-semibold text-slate-700">
-                                                                                    {item.delivery_monitoring.attempt_count}
-                                                                                </span>
-                                                                            </span>
-                                                                            {item.delivery_monitoring.last_attempt_at && (
-                                                                                <span>Last attempt: {formatDate(item.delivery_monitoring.last_attempt_at)}</span>
-                                                                            )}
-                                                                            {item.delivery_monitoring.delivered_at && (
-                                                                                <span>Delivered: {formatDate(item.delivery_monitoring.delivered_at)}</span>
-                                                                            )}
-                                                                        </div>
-                                                                        {item.delivery_monitoring.failure_label && (
-                                                                            <p className="text-[10px] font-semibold text-red-700 mt-1">
-                                                                                Category: {item.delivery_monitoring.failure_label}
-                                                                            </p>
-                                                                        )}
-                                                                    </div>
-                                                                )}
                                                             </td>
 
-                                                            <td className="py-3 px-3 text-[13px] text-slate-700 whitespace-nowrap">
-                                                                {item.barangay || "—"}
+                                                            <td className="text-slate-700 truncate">
+                                                                {item.barangay || <span className="text-slate-300">—</span>}
                                                             </td>
 
-                                                            <td className="py-3 pl-3 pr-4 whitespace-nowrap">
-                                                                <p className="text-[13px] text-slate-700">{formatDate(item.created_at)}</p>
-                                                                <p className="text-[11px] text-slate-400">{timeAgo(item.created_at)}</p>
+                                                            <td className="whitespace-nowrap">
+                                                                <span className="text-slate-600" title={timeAgo(item.created_at)}>{formatDate(item.created_at)}</span>
+                                                            </td>
+
+                                                            <td className="!pr-4">
+                                                                <StageMeter item={item} />
+                                                                {/* Land use, inspection and delivery details live in the
+                                                                    preview panel; only a delivery failure is surfaced here. */}
+                                                                {delivery?.failure_label && (
+                                                                    <p className="mt-1 text-[11px] font-medium text-red-700">{delivery.failure_label}</p>
+                                                                )}
                                                             </td>
                                                         </tr>
                                                     );
@@ -1552,74 +1527,60 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                 </button>
                                             </div>
                                         )}
+
+                                        {/* End of list: auto-loads the next batch on scroll; the button
+                                            is the keyboard / screen-reader path to the same action. */}
+                                        {filteredList.length > 0 && (
+                                            <div ref={loadMoreRef} className="py-4 flex items-center justify-center gap-3 text-[12px] text-slate-400" aria-live="polite">
+                                                {hasMore ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={loadNextPage}
+                                                        disabled={isFetchingMore}
+                                                        className="inline-flex items-center gap-2 h-8 px-3 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-wait"
+                                                    >
+                                                        <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 border-t-blue-600 animate-spin" aria-hidden="true" />
+                                                        {isFetchingMore ? "Loading…" : `Load more · ${fullDataset.length} of ${applications?.total ?? fullDataset.length} loaded`}
+                                                    </button>
+                                                ) : (
+                                                    <>
+                                                        <span className="h-px w-10 bg-slate-200" aria-hidden="true" />
+                                                        All {filteredList.length} {filteredList.length === 1 ? "application" : "applications"} shown
+                                                        {selectedIds.length > 0 && <span className="text-blue-700 font-medium">· {selectedIds.length} selected</span>}
+                                                        <span className="h-px w-10 bg-slate-200" aria-hidden="true" />
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {/* Table Footer with Summary & Pagination */}
-                                    <div className="px-4 py-3 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 shrink-0">
-                                        <span>
-                                            <strong className="text-slate-900 font-semibold">{startIndex}–{endIndex}</strong> of {filteredList.length} applications
-                                            {selectedIds.length > 0 && <span className="ml-2 text-blue-700 font-medium">· {selectedIds.length} selected</span>}
-                                        </span>
-
-                                        <div className="flex items-center gap-5">
-                                            <div className="flex items-center gap-2">
-                                                <span>Rows per page</span>
-                                                <div className="bg-slate-100 p-0.5 rounded-lg flex items-center" role="group" aria-label="Rows per page">
-                                                    {[10, 25, 50].map((size) => (
-                                                        <button
-                                                            key={size}
-                                                            type="button"
-                                                            aria-pressed={pageSize === size}
-                                                            onClick={() => { setPageSize(size); setCurrentPage(1); }}
-                                                            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
-                                                                pageSize === size ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
-                                                            }`}
-                                                        >
-                                                            {size}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-2">
-                                                <span>Page <strong className="text-slate-900 font-semibold">{currentPage}</strong> of {totalPages}</span>
-                                                <button
-                                                    type="button"
-                                                    disabled={currentPage <= 1}
-                                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                                                    aria-label="Previous page"
-                                                    className="w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                                                >
-                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                                                    </svg>
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    disabled={currentPage >= totalPages}
-                                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                                                    aria-label="Next page"
-                                                    className="w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                                                >
-                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                                                    </svg>
-                                                </button>
-                                            </div>
-
-                                            <span
-                                                className="hidden lg:flex w-8 h-8 items-center justify-center rounded-lg text-slate-400"
-                                                title="Shortcuts: / search · ↑↓ or j/k move · Space preview · Enter open · Esc close"
-                                                aria-label="Keyboard shortcuts: slash to search, arrows to move, space to preview, enter to open, escape to close"
-                                                role="img"
+                                    {selectedIds.length > 0 && (
+                                        <div
+                                            role="status"
+                                            className="absolute left-1/2 -translate-x-1/2 bottom-16 z-20 flex items-center gap-3 pl-2 pr-4 py-2 rounded-full bg-slate-900 text-white shadow-xl shadow-slate-900/30"
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedIds([])}
+                                                aria-label="Clear selection"
+                                                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
                                             >
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                                                    <rect x="2.25" y="6" width="19.5" height="12" rx="2" />
-                                                    <path strokeLinecap="round" d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M7.5 14h9" />
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                                                 </svg>
+                                            </button>
+                                            <span className="min-w-[24px] h-6 px-2 rounded-full bg-white/15 text-[12px] font-bold tabular-nums flex items-center justify-center">
+                                                {selectedIds.length}
+                                            </span>
+                                            <span className="text-[13px] font-medium whitespace-nowrap">
+                                                {selectedIds.length === 1 ? "application selected" : "applications selected"}
+                                            </span>
+                                            <span className="hidden sm:inline text-[11.5px] text-slate-400 whitespace-nowrap">
+                                                <kbd className="font-sans px-1 rounded bg-white/10 text-slate-300">Ctrl A</kbd> all · <kbd className="font-sans px-1 rounded bg-white/10 text-slate-300">Esc</kbd> clear
                                             </span>
                                         </div>
-                                    </div>
+                                    )}
+
                                 </div>
                             ) : (
                                 /* —— FOLDER ARCHIVE VIEW —— */
@@ -1861,57 +1822,56 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
                         {/* —— QUICK PREVIEW PANEL —— */}
                         {viewMode === "list" && peekItem && (
-                            <aside id="quick-preview" aria-label="Quick preview" className="hidden lg:flex w-[300px] shrink-0 bg-white rounded-xl border border-slate-200/90 shadow-2xs flex-col min-h-0 overflow-hidden">
+                            <aside id="quick-preview" aria-label="Quick preview" className="hidden lg:flex w-[288px] shrink-0 bg-white rounded-xl border border-slate-200 flex-col min-h-0 overflow-hidden">
                                 <div className="flex-1 overflow-y-auto custom-scrollbar">
                                     {/* Identity */}
-                                    <div className="p-4 border-b border-slate-100">
-                                        <div className="flex items-start gap-3">
-                                            <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center text-sm font-semibold shrink-0">
-                                                {getInitials(peekItem.applicant_name)}
-                                            </div>
-                                            <div className="min-w-0">
-                                                <h3 className="text-[15px] font-bold text-slate-900 leading-snug">
-                                                    {peekItem.applicant_name || "Unknown Applicant"}
-                                                </h3>
-                                                <div className="flex items-center gap-1.5 mt-0.5">
-                                                    <span className="font-mono text-[11px] text-slate-500">
-                                                        {peekItem.reference_number || `APP-${peekItem.id}`}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => handleCopyRef(e, peekItem.reference_number || `APP-${peekItem.id}`)}
-                                                        aria-label="Copy reference number"
-                                                        className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer"
-                                                    >
-                                                        {copiedRef === (peekItem.reference_number || `APP-${peekItem.id}`) ? (
-                                                            <span className="text-[10px] text-emerald-600 font-semibold">Copied</span>
-                                                        ) : (
-                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v2.25A2.25 2.25 0 0113.5 21.75h-9a2.25 2.25 0 01-2.25-2.25v-9a2.25 2.25 0 012.25-2.25h2.25m3 0v-2.25A2.25 2.25 0 0110.5 3.75h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-2.25" />
-                                                            </svg>
-                                                        )}
-                                                    </button>
-                                                </div>
+                                    <div className="px-4 pt-3 pb-3.5 border-b border-slate-100">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-mono text-[11px] text-slate-500">
+                                                    {peekItem.reference_number || `APP-${peekItem.id}`}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleCopyRef(e, peekItem.reference_number || `APP-${peekItem.id}`)}
+                                                    aria-label="Copy reference number"
+                                                    className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer"
+                                                >
+                                                    {copiedRef === (peekItem.reference_number || `APP-${peekItem.id}`) ? (
+                                                        <span className="text-[10px] text-emerald-600 font-semibold">Copied</span>
+                                                    ) : (
+                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v2.25A2.25 2.25 0 0113.5 21.75h-9a2.25 2.25 0 01-2.25-2.25v-9a2.25 2.25 0 012.25-2.25h2.25m3 0v-2.25A2.25 2.25 0 0110.5 3.75h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-2.25" />
+                                                        </svg>
+                                                    )}
+                                                </button>
                                             </div>
                                             <button
                                                 type="button"
                                                 onClick={() => setPeekItem(null)}
                                                 aria-label="Close preview"
-                                                className="ml-auto -mr-1 -mt-1 w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                                                className="-mr-2 w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                                             >
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                                                 </svg>
                                             </button>
                                         </div>
-                                        <div className="mt-3">
-                                            <StatusBadge status={peekItem.status} />
-                                        </div>
+                                        <h3 className="text-[15px] font-bold text-slate-900 leading-snug mt-0.5">
+                                            {peekItem.applicant_name || "Unknown Applicant"}
+                                        </h3>
+                                        <p className="text-[12px] text-slate-500 mt-0.5">
+                                            {splitTypes(peekItem.application_type)[0] || "—"}
+                                            {peekItem.barangay ? ` · Brgy. ${peekItem.barangay}` : ""}
+                                        </p>
                                     </div>
 
                                     {/* Progress */}
-                                    <div className="p-4 border-b border-slate-100">
-                                        <h4 className="text-xs font-semibold text-slate-900 mb-3">Progress</h4>
+                                    <div className="px-4 py-3 border-b border-slate-100">
+                                        <div className="flex items-center justify-between mb-2.5">
+                                            <h4 className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">Progress</h4>
+                                            <StatusBadge status={peekItem.status} />
+                                        </div>
                                         <ol>
                                             {getProgressSteps(peekItem).map((step, idx, arr) => {
                                                 const isLast = idx === arr.length - 1;
@@ -1925,61 +1885,92 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     ? `Filed ${formatDate(peekItem.created_at)}`
                                                     : "Completed";
                                                 return (
-                                                    <li key={step.key} className="flex gap-3" aria-current={step.state === "current" ? "step" : undefined}>
+                                                    <li key={step.key} className="flex gap-2.5" aria-current={step.state === "current" ? "step" : undefined}>
                                                         <div className="flex flex-col items-center">
                                                             {step.state === "done" ? (
-                                                                <span className="w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
-                                                                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5" aria-hidden="true">
+                                                                <span className="w-3.5 h-3.5 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+                                                                    <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5" aria-hidden="true">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                                                                     </svg>
                                                                 </span>
                                                             ) : step.state === "current" ? (
-                                                                <span className="w-4 h-4 rounded-full border-[3px] border-blue-600 bg-white shrink-0" />
+                                                                <span className="w-3.5 h-3.5 rounded-full border-[3px] border-blue-600 bg-white shrink-0" />
                                                             ) : (
-                                                                <span className={`w-4 h-4 rounded-full border-2 bg-white shrink-0 ${step.state === "denied" ? "border-rose-200" : "border-slate-300"}`} />
+                                                                <span className={`w-3.5 h-3.5 rounded-full border-2 bg-white shrink-0 ${step.state === "denied" ? "border-rose-200" : "border-slate-200"}`} />
                                                             )}
-                                                            {!isLast && <span className={`w-0.5 flex-1 min-h-[20px] ${step.state === "done" ? "bg-blue-600" : "bg-slate-200"}`} />}
+                                                            {!isLast && <span className={`w-px flex-1 min-h-[10px] ${step.state === "done" ? "bg-blue-600" : "bg-slate-200"}`} />}
                                                         </div>
-                                                        <div className={isLast ? "" : "pb-3"}>
-                                                            <p className={`text-xs leading-4 ${step.state === "current" ? "font-bold text-slate-900" : step.state === "done" ? "font-medium text-slate-900" : "font-medium text-slate-500"}`}>
+                                                        <div className={isLast ? "" : "pb-2"}>
+                                                            <p className={`text-[12px] leading-[14px] ${step.state === "current" ? "font-semibold text-slate-900" : step.state === "done" ? "text-slate-800" : "text-slate-400"}`}>
                                                                 {step.label}
                                                             </p>
-                                                            <p className="text-[11px] text-slate-400">{sub}</p>
+                                                            <p className="text-[10.5px] text-slate-400">{sub}</p>
                                                         </div>
                                                     </li>
                                                 );
                                             })}
                                         </ol>
                                         {peekItem.status === "Denied" && (
-                                            <p className="mt-3 text-[11px] font-semibold text-rose-600 bg-rose-50 border border-rose-200/80 rounded-lg px-2.5 py-1.5">
+                                            <p className="mt-3 text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200/80 rounded-lg px-2.5 py-1.5">
                                                 Application denied
                                             </p>
                                         )}
                                     </div>
 
                                     {/* Details */}
-                                    <dl className="p-4 grid grid-cols-[96px_1fr] gap-x-3 gap-y-2.5 text-xs">
+                                    <dl className="px-4 py-3 grid grid-cols-[76px_1fr] gap-x-2 gap-y-1.5 text-[12px]">
                                         <dt className="text-slate-500">Application</dt>
                                         <dd className="text-slate-900">{splitTypes(peekItem.application_type).join(", ") || "—"}</dd>
                                         <dt className="text-slate-500">Land use</dt>
                                         <dd className="text-slate-900">{peekItem.target_land_use_class || peekItem.land_use_class || "—"}</dd>
-                                        <dt className="text-slate-500">Location</dt>
-                                        <dd className="text-slate-900">{peekItem.barangay ? `Brgy. ${peekItem.barangay}` : "—"}</dd>
-                                        <dt className="text-slate-500">Assessment fee</dt>
-                                        <dd className="font-mono font-semibold text-slate-900">{formatFee(peekItem.assessment_fee)}</dd>
+                                        <dt className="text-slate-500">Fee</dt>
+                                        <dd className="font-mono text-slate-900">{formatFee(peekItem.assessment_fee)}</dd>
                                         <dt className="text-slate-500">Filed</dt>
-                                        <dd className="text-slate-900">{formatDate(peekItem.created_at)} <span className="text-slate-400">· {timeAgo(peekItem.created_at)}</span></dd>
+                                        <dd className="text-slate-900 whitespace-nowrap">{formatDate(peekItem.created_at)} <span className="text-slate-400">· {timeAgo(peekItem.created_at)}</span></dd>
                                         <dt className="text-slate-500">Remarks</dt>
                                         <dd className="text-slate-900 break-words">{peekItem.remarks?.trim() || "—"}</dd>
                                     </dl>
+
+                                    {/* Field inspection & LOOP 9D delivery — every string is server-authored */}
+                                    {(peekItem.inspection_summary || (deliveryMonitoringEnabled && peekItem.delivery_monitoring)) && (
+                                        <div className="px-4 py-3 border-t border-slate-100 space-y-2">
+                                            <h4 className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">Field inspection</h4>
+                                            {peekItem.inspection_summary && (
+                                                <p className="text-[12px] text-slate-800">{peekItem.inspection_summary}</p>
+                                            )}
+                                            {deliveryMonitoringEnabled && peekItem.delivery_monitoring && (() => {
+                                                const d = peekItem.delivery_monitoring;
+                                                return (
+                                                    <div className="space-y-1.5">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`text-[11px] font-medium px-1.5 py-px rounded border ${DELIVERY_STATE_STYLES[d.state] || DELIVERY_STATE_STYLES.no_delivery_record}`}>
+                                                                {d.label}
+                                                            </span>
+                                                            {d.is_superseded === true && (
+                                                                <span className="text-[11px] text-slate-400" title="A newer inspection round exists for this parcel.">Superseded</span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 leading-snug">{d.message}</p>
+                                                        <dl className="grid grid-cols-[76px_1fr] gap-x-2 gap-y-1 text-[11px]">
+                                                            {d.inspector && (<><dt className="text-slate-500">Inspector</dt><dd className="text-slate-800">{d.inspector.name}</dd></>)}
+                                                            <dt className="text-slate-500">Attempts</dt><dd className="text-slate-800 tabular-nums">{d.attempt_count}</dd>
+                                                            {d.last_attempt_at && (<><dt className="text-slate-500">Last attempt</dt><dd className="text-slate-800">{formatDate(d.last_attempt_at)}</dd></>)}
+                                                            {d.delivered_at && (<><dt className="text-slate-500">Delivered</dt><dd className="text-slate-800">{formatDate(d.delivered_at)}</dd></>)}
+                                                            {d.failure_label && (<><dt className="text-slate-500">Category</dt><dd className="font-medium text-red-700">{d.failure_label}</dd></>)}
+                                                        </dl>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+                                    )}
                                 </div>
 
-                                <div className="p-3.5 border-t border-slate-200/80 flex items-center gap-2 shrink-0">
+                                <div className="p-3 border-t border-slate-100 flex items-center gap-2 shrink-0">
                                     <button
                                         type="button"
                                         onClick={() => { if (peekItem.id) router.visit(`/applications/${peekItem.id}`); }}
                                         disabled={!peekItem.id}
-                                        className="flex-1 h-10 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+                                        className="flex-1 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold transition-colors disabled:opacity-50 cursor-pointer"
                                     >
                                         Open full record
                                     </button>
@@ -1990,7 +1981,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                             aria-label="More actions"
                                             aria-haspopup="menu"
                                             aria-expanded={moreOpen}
-                                            className="w-10 h-10 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center transition-colors cursor-pointer"
+                                            className="w-8 h-8 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center justify-center transition-colors cursor-pointer"
                                         >
                                             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                                 <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />

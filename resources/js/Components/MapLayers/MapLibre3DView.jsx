@@ -268,6 +268,11 @@ export default function MapLibre3DView({
     hoveredBgy = null,
     onHoverBgy = () => {},
     onParcelsVisible = () => {},
+    // Overrides for embedding in a smaller canvas (the Overview card); the
+    // defaults are the GIS dashboard's framing.
+    baseZoom = 11.5,
+    framePadding = null,
+    controls = true,
 }) {
     const mapContainerRef = useRef(null);
     const mapRef = useRef(null);
@@ -545,6 +550,7 @@ export default function MapLibre3DView({
     // ── Camera ───────────────────────────────────────────────────────────────
 
     const cameraPadding = useCallback(() => {
+        if (framePadding) return framePadding;
         const map = mapRef.current;
         const w = map ? map.getCanvas().clientWidth : 1000;
         const h = map ? map.getCanvas().clientHeight : 800;
@@ -555,7 +561,7 @@ export default function MapLibre3DView({
             left: Math.min(320, w * 0.35),
             right: Math.min(rightPanelOpen ? panelWidth + 50 : 70, w * 0.45),
         };
-    }, [rightPanelOpen, panelWidth]);
+    }, [rightPanelOpen, panelWidth, framePadding]);
 
     const flyToBarangay = useCallback((name) => {
         const map = mapRef.current;
@@ -601,7 +607,7 @@ export default function MapLibre3DView({
         // empty space to deselect would zoom out further than the map's own
         // resting size. A fixed target makes "deselected" always look like
         // the initial view, regardless of panel state.
-        const target = { center: ROSARIO_CENTER, zoom: 11.5, pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING };
+        const target = { center: ROSARIO_CENTER, zoom: baseZoom, pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING };
         target.padding = cameraPadding();
 
         if (!animate || reducedRef.current) {
@@ -610,7 +616,7 @@ export default function MapLibre3DView({
         }
         map.stop();
         map.easeTo({ ...target, duration: FLIGHT_MS, easing: easeSine, essential: true });
-    }, [cameraPadding]);
+    }, [cameraPadding, baseZoom]);
 
     // ── Layer setup ──────────────────────────────────────────────────────────
 
@@ -789,7 +795,7 @@ export default function MapLibre3DView({
                 layers: [{ id: "canvas", type: "background", paint: { "background-color": CANVAS } }],
             },
             center: ROSARIO_CENTER,
-            zoom: 11.5,
+            zoom: baseZoom,
             pitch: DEFAULT_PITCH,
             bearing: DEFAULT_BEARING,
             maxPitch: 75,
@@ -1152,7 +1158,8 @@ export default function MapLibre3DView({
                 </div>
             )}
 
-            {/* Camera dock */}
+            {/* Camera dock (hidden in compact embeds such as the Overview preview) */}
+            {controls && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[450] flex items-center bg-white border border-slate-300 rounded-md shadow-sm pointer-events-auto overflow-hidden">
                 {[
                     { label: "Oblique", pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING, active: currentPitch >= 40 && currentPitch <= 64 },
@@ -1162,7 +1169,7 @@ export default function MapLibre3DView({
                     <button
                         key={preset.label}
                         onClick={() => setCameraPerspective(preset.pitch, preset.bearing)}
-                        className={`px-3 py-1.5 text-[11.5px] font-bold transition-colors cursor-pointer ${
+                        className={`px-3 py-1.5 text-[11.5px] font-bold whitespace-nowrap transition-colors cursor-pointer ${
                             idx > 0 ? "border-l border-slate-300" : ""
                         } ${preset.active ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}
                         title={`${preset.label} view (${preset.pitch}°)`}
@@ -1197,10 +1204,11 @@ export default function MapLibre3DView({
                     Reset
                 </button>
 
-                <span className="px-3 py-1.5 text-[10px] font-mono tabular-nums text-slate-400 border-l border-slate-300 hidden lg:block">
+                <span className="px-3 py-1.5 text-[10px] font-mono tabular-nums whitespace-nowrap text-slate-400 border-l border-slate-300 hidden lg:block">
                     {currentPitch}° / {currentBearing}°
                 </span>
             </div>
+            )}
 
             {/* Hover card. Position is written to this node on a rAF; only the
                 content below is React state, keyed by barangay. */}

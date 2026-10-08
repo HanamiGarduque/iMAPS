@@ -6,7 +6,7 @@ const ACTIVE_PARCEL = [10, 21, 28];
 
 // Mirrors the modules that exist in the app today.
 const MODULES = [
-    { name: 'Applications', title: 'Encode to approval', text: 'Encode zoning applications, save drafts and follow every status change.' },
+    { name: 'Registry', title: 'Encode to approval', text: 'Encode zoning applications, save drafts and follow every status change.' },
     { name: 'Geospatial Mapping', title: 'Land use, mapped', text: 'Check each application against zoning, parcel and barangay layers.' },
     { name: 'Demand Forecasting', title: 'Data to decisions', text: 'Turn approved clearances into trends and forecasted demand by barangay.' },
 ];
@@ -122,7 +122,7 @@ const MockFrame = ({ nav, title, children }) => (
 const Line = ({ w, c = 'bg-slate-200' }) => <span className={`block h-1.5 rounded-full ${c}`} style={{ width: w }} />;
 const STATUS = [['bg-emerald-50 text-emerald-700 border-emerald-200/80', 'Approved'], ['bg-blue-50 text-blue-600 border-blue-200/80', 'In review'], ['bg-amber-50 text-amber-700 border-amber-200/80', 'Pending']];
 const MOCKS = [
-    <MockFrame key="a" nav={0} title="Applications">
+    <MockFrame key="a" nav={0} title="Registry">
         {STATUS.map(([c, s], i) => (
             <span key={s} className="flex items-center justify-between gap-2 py-1 border-b border-slate-100 last:border-0">
                 <span className="flex items-center gap-1.5 flex-1">

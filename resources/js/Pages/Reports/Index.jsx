@@ -291,14 +291,39 @@ function PdfPreview({ paper, title, generatedOn, headers, rows, chart, summary, 
         : 0;
     const totalPages = ranges.length + extraPages;
 
-    // Leave room under the sheet for the page controls.
-    const scale = stage.w > 0 && stage.h > 0 ? Math.min(stage.w / pageW, (stage.h - 80) / pageH) : 0;
+    // Fit the sheet to the viewport itself (whatever space the toolbar leaves), then apply the user's zoom on top.
+    const viewRef = useRef(null);
+    const [view, setView] = useState({ w: 0, h: 0 });
+    useEffect(() => {
+        const el = viewRef.current;
+        const ro = new ResizeObserver(() => setView({ w: el.clientWidth, h: el.clientHeight }));
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+    const PAD = 24; // breathing room so the sheet's shadow isn't clipped
+    const fit = view.w > PAD && view.h > PAD ? Math.min((view.w - PAD) / pageW, (view.h - PAD) / pageH) : 0;
+    const [zoom, setZoom] = useState(1);
+    const scale = fit * zoom;
+    const zoomBy = (f) => setZoom((z) => Math.min(4, Math.max(0.5, +(z * f).toFixed(3))));
+
+    // Ctrl + scroll wheel (and trackpad pinch, which browsers report the same way) zooms smoothly.
+    // Needs a non-passive listener so the browser's own page zoom can be prevented.
+    useEffect(() => {
+        const el = viewRef.current;
+        const onWheel = (e) => {
+            if (!e.ctrlKey) return;
+            e.preventDefault();
+            zoomBy(Math.exp(-e.deltaY * 0.0025));
+        };
+        el.addEventListener("wheel", onWheel, { passive: false });
+        return () => el.removeEventListener("wheel", onWheel);
+    }, []);
     const [from, to] = ranges[page] || [0, 0];
     const first = page === 0;
-    const navBtn = "grid place-items-center w-9 h-8 rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer";
+    const navBtn = "grid place-items-center w-8 h-8 rounded-full text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer transition-colors";
 
     return (
-        <div className="flex flex-col items-center w-full">
+        <div className="flex flex-col items-center w-full" style={{ height: stage.h }}>
             {/* Hidden copies used only for measuring: natural minimum width (for fit), then row heights */}
             <div ref={fitRef} aria-hidden="true" style={{ ...DOC.page, position: "fixed", left: -99999, top: 0, padding: 0 }}>
                 <DocTable headers={headers} rows={rows} style={{ width: "min-content" }} />
@@ -309,8 +334,10 @@ function PdfPreview({ paper, title, generatedOn, headers, rows, chart, summary, 
                 <DocTable headers={headers} rows={rows} fs={fs} />
             </div>
 
+            {/* Scrollable viewport: the sheet fits by default and can be panned once zoomed in */}
+            <div ref={viewRef} className="flex flex-1 min-h-0 w-full overflow-auto custom-scrollbar" title="Ctrl + scroll to zoom">
             <div
-                className={`ring-1 ring-slate-400/70 shadow-[0_8px_24px_-10px_rgba(15,23,42,.4)] bg-white overflow-hidden transition-opacity ${dimmed ? "opacity-60" : ""}`}
+                className={`m-auto shrink-0 rounded-sm ring-1 ring-slate-300 shadow-[0_1px_2px_rgba(15,23,42,.06),0_12px_32px_-12px_rgba(15,23,42,.35)] bg-white overflow-hidden transition-opacity ${dimmed ? "opacity-60" : ""}`}
                 style={{ width: pageW * scale, height: pageH * scale, visibility: scale ? "visible" : "hidden" }}
             >
                 <div style={{ ...DOC.page, width: pageW, height: pageH, transform: `scale(${scale})`, transformOrigin: "top left", overflow: "hidden" }}>
@@ -324,9 +351,10 @@ function PdfPreview({ paper, title, generatedOn, headers, rows, chart, summary, 
                     <DocTable headers={headers} rows={rows.slice(from, to)} fs={fs} />
                 </div>
             </div>
+            </div>
 
-            {/* Page controls: ‹ slider › and "Page X of Y", like a print dialog */}
-            <div className="mt-4 w-full max-w-[420px] flex items-center gap-3">
+            {/* Floating toolbar: ‹ pin slider › · page count · zoom − % + */}
+            <div className="mt-3 shrink-0 flex items-center gap-1 rounded-full bg-white/95 backdrop-blur px-1.5 py-1 ring-1 ring-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,.05),0_8px_24px_-10px_rgba(15,23,42,.3)]">
                 <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} aria-label="Previous page" className={navBtn}>
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
                 </button>
@@ -338,16 +366,27 @@ function PdfPreview({ paper, title, generatedOn, headers, rows, chart, summary, 
                     onChange={(e) => setPage(Number(e.target.value) - 1)}
                     disabled={ranges.length < 2}
                     aria-label="Page"
-                    className="flex-1 accent-blue-600 disabled:opacity-40"
+                    className="pin-range w-28 sm:w-40 mx-1 disabled:opacity-40"
+                    style={{ "--pct": `${ranges.length < 2 ? 0 : (page / (ranges.length - 1)) * 100}%` }}
                 />
                 <button type="button" onClick={() => setPage((p) => Math.min(ranges.length - 1, p + 1))} disabled={page >= ranges.length - 1} aria-label="Next page" className={navBtn}>
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
                 </button>
+                <span className="px-2 text-[12.5px] font-medium text-slate-600 tabular-nums whitespace-nowrap" aria-live="polite">
+                    Page {page + 1} of {extraPages ? `~${totalPages}` : totalPages}
+                </span>
+                <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden="true" />
+                <button type="button" onClick={() => zoomBy(1 / 1.25)} disabled={zoom <= 0.5} aria-label="Zoom out" className={navBtn}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" d="M5 12h14" /></svg>
+                </button>
+                <button type="button" onClick={() => setZoom(1)} title="Fit to view" aria-label={`Zoom ${Math.round(scale * 100)}%, reset to fit`} className="min-w-[52px] h-8 px-2 rounded-full text-[12.5px] font-semibold text-slate-700 tabular-nums hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 transition-colors">
+                    {Math.round(scale * 100)}%
+                </button>
+                <button type="button" onClick={() => zoomBy(1.25)} disabled={zoom >= 4} aria-label="Zoom in" className={navBtn}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" d="M12 5v14M5 12h14" /></svg>
+                </button>
             </div>
-            <p className="mt-2 text-[12.5px] text-slate-700" aria-live="polite">
-                Page {page + 1} of {extraPages ? `about ${totalPages}` : totalPages}
-                {extraPages > 0 && <span className="text-slate-400"> · preview covers the first {shownRows} records</span>}
-            </p>
+            {extraPages > 0 && <p className="mt-1.5 shrink-0 text-[11.5px] text-slate-400">Preview covers the first {shownRows} records</p>}
         </div>
     );
 }
@@ -722,7 +761,7 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
 
     return (
         <>
-            <Head title="Reports | iMAPS" />
+            <Head title="Data Reports | iMAPS" />
 
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
@@ -734,6 +773,18 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
                 ::-webkit-scrollbar-track { background: transparent; }
                 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
                 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+                /* Page slider: pointer thumb (like a classic Windows slider) on a rounded track that fills up to it */
+                .pin-range { -webkit-appearance: none; appearance: none; height: 20px; background: transparent; cursor: pointer; }
+                .pin-range::-webkit-slider-runnable-track { height: 6px; border-radius: 9999px; box-shadow: inset 0 1px 1px rgba(15,23,42,.12);
+                    background: linear-gradient(to right, #3b82f6, #2563eb var(--pct), #e2e8f0 var(--pct)); }
+                .pin-range::-moz-range-track { height: 6px; border-radius: 9999px; background: #e2e8f0; }
+                .pin-range::-moz-range-progress { height: 6px; border-radius: 9999px; background: #2563eb; }
+                .pin-range::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 20px; margin-top: -7px; border: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 20'%3E%3Cpath d='M1 2.5A1.5 1.5 0 0 1 2.5 1h9A1.5 1.5 0 0 1 13 2.5v10.3l-6 6.2-6-6.2Z' fill='%232563eb' stroke='%231d4ed8'/%3E%3Cpath d='M5 6h4M5 9h4' stroke='%23fff' stroke-opacity='.7' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
+                    filter: drop-shadow(0 1px 1.5px rgba(30,64,175,.4)); transition: transform .15s; }
+                .pin-range::-moz-range-thumb { width: 14px; height: 20px; border: 0; border-radius: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 20'%3E%3Cpath d='M1 2.5A1.5 1.5 0 0 1 2.5 1h9A1.5 1.5 0 0 1 13 2.5v10.3l-6 6.2-6-6.2Z' fill='%232563eb' stroke='%231d4ed8'/%3E%3Cpath d='M5 6h4M5 9h4' stroke='%23fff' stroke-opacity='.7' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat; }
+                .pin-range:hover:not(:disabled)::-webkit-slider-thumb { transform: scale(1.1); }
+                .pin-range:focus-visible { outline: 2px solid #2563eb; outline-offset: 4px; border-radius: 4px; }
+                .pin-range:disabled { cursor: default; }
             `}</style>
 
             <div id="analytics-page-root" className="bg-slate-50/75 text-slate-800 h-screen flex flex-col overflow-hidden antialiased">
@@ -763,16 +814,11 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
 
                     <main className="flex-1 w-full h-full flex flex-col overflow-hidden bg-white">
                         {/* ── HEADER STRIP ── */}
-                        {/* Slim title bar, like a dialog's title bar, in the same grey as the panels below */}
-                        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-200 bg-slate-100 shrink-0">
-                            <div className="w-7 h-7 rounded-md bg-blue-600 text-white grid place-items-center shrink-0">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                </svg>
-                            </div>
-                            <div className="flex items-baseline gap-2 min-w-0">
-                                <h1 className="text-[15px] font-bold text-slate-900 tracking-tight whitespace-nowrap">Standard Reports</h1>
-                                <p className="hidden sm:block text-[12px] text-slate-500 truncate">· Set up a report, check the preview, then download.</p>
+                        {/* Page title, matching the other modules' headers */}
+                        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-200 bg-white shrink-0">
+                            <div className="min-w-0">
+                                <h1 className="text-xl font-bold text-slate-900 tracking-tight leading-tight">Data Reports</h1>
+                                <p className="hidden sm:block mt-0.5 text-xs text-slate-500 truncate">Set up a report, check the preview, then download.</p>
                             </div>
                             {/* "Help ?" in the corner, as in a print dialog */}
                             <button

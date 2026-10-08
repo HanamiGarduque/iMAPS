@@ -3,16 +3,77 @@
 // the encoder's GIS step; here the map only frames the lots and lets the
 // officer pick one.
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { MapContainer, TileLayer, GeoJSON, CircleMarker } from "react-leaflet";
+import { MapContainer, TileLayer, GeoJSON, CircleMarker, Marker } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
 import { resolveBarangayName } from "@/utils/mapData";
-import { MAP_MAX_ZOOM, BASEMAPS, CLUP_TILES, BLANK_TILE } from "@/utils/mapGeometry";
+import { MAP_MAX_ZOOM, LOT_FOCUS_ZOOM, BASEMAPS, CLUP_TILES, BLANK_TILE, featureArea, insidePoint } from "@/utils/mapGeometry";
 import { ScaleBar } from "@/Components/MapKit";
 import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
 
-const NAVY = "#0b2a5b";
+const LOT_LINE = "#f97316"; // survey-plan orange for the lot in focus
+
+// Outer rings of a (Multi)Polygon as [{lat, lng}] without the closing duplicate point
+const outerRings = (geometry) => {
+    const polys = geometry?.type === "Polygon" ? [geometry.coordinates] : geometry?.type === "MultiPolygon" ? geometry.coordinates : [];
+    return polys.map((rings) => {
+        const ring = (rings[0] || []).map(([lng, lat]) => ({ lat, lng }));
+        const [first, last] = [ring[0], ring[ring.length - 1]];
+        return first && last && first.lat === last.lat && first.lng === last.lng ? ring.slice(0, -1) : ring;
+    });
+};
+
+// Text-only map label; any rotation is part of its own style, so it survives re-renders
+const textIcon = (html, className, rotate = 0) =>
+    L.divIcon({
+        className: "",
+        html: `<span class="${className}"${rotate ? ` style="transform:translate(-50%,-50%) rotate(${rotate.toFixed(1)}deg)"` : ""}>${html}</span>`,
+        iconSize: [0, 0],
+    });
+
+// Side lengths drawn along each edge, kept upright, like a lot plan
+function LotPlan({ lot, showSides }) {
+    const rings = useMemo(() => outerRings(lot.feature.geometry), [lot.feature]);
+    const area = useMemo(() => featureArea(lot.feature), [lot.feature]);
+    const center = useMemo(() => insidePoint(lot.feature), [lot.feature]);
+    const top = rings.flat().reduce((best, p) => (!best || p.lat > best.lat ? p : best), null);
+
+    const sides = showSides
+        ? rings.flatMap((ring) =>
+              ring.map((a, i) => {
+                  const b = ring[(i + 1) % ring.length];
+                  const meters = L.latLng(a).distanceTo(L.latLng(b));
+                  // On-screen angle of the edge; flipped so the text never reads upside down
+                  let angle = (Math.atan2(b.lat - a.lat, (b.lng - a.lng) * Math.cos((a.lat * Math.PI) / 180)) * 180) / Math.PI;
+                  if (angle > 90) angle -= 180;
+                  if (angle < -90) angle += 180;
+                  return { key: `${a.lat},${a.lng}`, at: { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 }, meters, angle };
+              })
+          ).filter((side) => side.meters >= 2)
+        : [];
+
+    return (
+        <>
+            {rings.flat().map((p, i) => (
+                <CircleMarker key={`v${i}`} center={p} radius={3.5} interactive={false} pathOptions={{ color: "#7c2d12", weight: 1.5, fillColor: "#ffffff", fillOpacity: 1 }} />
+            ))}
+            {sides.map((side) => (
+                <Marker
+                    key={side.key}
+                    position={side.at}
+                    interactive={false}
+                    // the label runs along its edge
+                    icon={textIcon(`${side.meters.toFixed(1)} m`, "lot-side", -side.angle)}
+                />
+            ))}
+            {center && area > 0 && (
+                <Marker position={center} interactive={false} icon={textIcon(`${Math.round(area).toLocaleString()} m²`, "lot-area")} />
+            )}
+            {top && <Marker position={top} interactive={false} icon={textIcon(lot.code, "lot-code")} />}
+        </>
+    );
+}
 
 function Control({ label, onClick, disabled, children }) {
     return (
@@ -22,7 +83,7 @@ function Control({ label, onClick, disabled, children }) {
             disabled={disabled}
             aria-label={label}
             title={label}
-            className="w-8 h-8 flex items-center justify-center text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b]"
+            className="w-8 h-8 flex items-center justify-center text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600"
         >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                 {children}
@@ -79,11 +140,14 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
         return features.length ? { type: "FeatureCollection", features } : null;
     }, [brgyMapData, barangay]);
 
+    // Later moves glide quickly; the first framing on page load is instant (no fly-in from the whole town)
     const fitTo = useCallback(
-        (data, maxZoom = 18) => {
+        (data, maxZoom = 18, animate = true) => {
             if (!map || !data) return;
             const bounds = L.geoJSON(data).getBounds();
-            if (bounds.isValid()) map.fitBounds(bounds, { padding: [70, 70], maxZoom });
+            if (!bounds.isValid()) return;
+            if (animate) map.flyToBounds(bounds, { padding: [48, 48], maxZoom, duration: 0.35, easeLinearity: 0.5 });
+            else map.fitBounds(bounds, { padding: [48, 48], maxZoom, animate: false });
         },
         [map]
     );
@@ -95,12 +159,12 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
             framedLots.current = true;
             const targetLot = lots.find((l) => l.index === selectedIndex && l.feature) || mappedLots[0];
             if (targetLot?.feature) {
-                fitTo(targetLot.feature, 18);
+                fitTo(targetLot.feature, LOT_FOCUS_ZOOM, false);
             } else if (lotsCollection) {
-                fitTo(lotsCollection, 18);
+                fitTo(lotsCollection, LOT_FOCUS_ZOOM, false);
             }
         } else if (!framedLots.current && barangayOutline && mappedLots.length === 0) {
-            fitTo(barangayOutline, 15);
+            fitTo(barangayOutline, 15, false);
         }
     }, [map, mappedLots, lotsCollection, barangayOutline, selectedIndex, fitTo, lots]);
 
@@ -111,9 +175,9 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
         lastSelected.current = selectedIndex;
         if (selectedIndex !== null && selectedIndex !== undefined) {
             const lot = lots.find((l) => l.index === selectedIndex);
-            if (lot?.feature) fitTo(lot.feature, 18);
+            if (lot?.feature) fitTo(lot.feature, LOT_FOCUS_ZOOM);
         } else if (lotsCollection) {
-            fitTo(lotsCollection, 18);
+            fitTo(lotsCollection, LOT_FOCUS_ZOOM);
         }
     }, [selectedIndex, map, fitTo, lots, lotsCollection]);
 
@@ -132,24 +196,39 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
         if (selectedIndex !== null && selectedIndex !== undefined && lots.some((l) => l.index === selectedIndex)) return;
         if (focusedInspection.current) return;
         focusedInspection.current = true;
-        map.flyTo(inspectionPoint, 18, { duration: 1.2 });
+        map.flyTo(inspectionPoint, 18, { duration: 0.6 });
     }, [map, inspectionPoint, selectedIndex, lots]);
 
     const lotStyle = (f) => {
         const lot = lots.find((l) => l.index === f.properties.__index);
-        const selected = lot?.index === selectedIndex;
-        return selected
-            ? { color: "#ffffff", weight: 3, opacity: 1, fillColor: NAVY, fillOpacity: 0.35 }
-            : { color: lot?.color || "#e2e8f0", weight: 2, opacity: 1, fillColor: lot?.color || "#e2e8f0", fillOpacity: 0.18 };
+        const focused = lot && focusLot && lot.index === focusLot.index;
+        return focused
+            ? { color: LOT_LINE, weight: 3, opacity: 1, fillColor: LOT_LINE, fillOpacity: 0.14 }
+            : { color: lot?.color || "#e2e8f0", weight: 2, opacity: 1, fillColor: lot?.color || "#e2e8f0", fillOpacity: 0.12 };
     };
+
+    const [zoom, setZoom] = useState(11);
+    useEffect(() => {
+        if (!map) return;
+        const onZoom = () => setZoom(map.getZoom());
+        onZoom();
+        map.on("zoomend", onZoom);
+        return () => map.off("zoomend", onZoom);
+    }, [map]);
+
+    // The lot drawn as a plan: the selected one, else the first lot on the map
+    const focusLot = mappedLots.find((l) => l.index === selectedIndex) || mappedLots[0] || null;
 
     const loading = !parcelMapData;
 
     return (
         <div className="relative h-full bg-slate-800">
             <style>{`
-                .app-lot-label { background: #fff; border: 1px solid #cbd5e1; border-radius: 3px; box-shadow: 0 1px 3px rgba(15,23,42,.25); padding: 1px 6px; font: 600 11px/1.4 inherit; color: #0f172a; }
-                .app-lot-label.is-selected { background: ${NAVY}; border-color: ${NAVY}; color: #fff; }
+                .lot-side, .lot-area, .lot-code { position: absolute; white-space: nowrap; pointer-events: none; transform: translate(-50%, -50%); }
+                .lot-side { font: 600 10.5px/1 ui-sans-serif, system-ui, sans-serif; color: #7c2d12; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; }
+                .lot-area { font: 600 11.5px/1 ui-sans-serif, system-ui, sans-serif; color: #0f172a; background: rgba(255,255,255,.88); padding: 3px 6px; border-radius: 4px; }
+                .lot-code { transform: translate(-50%, calc(-100% - 8px)); font: 700 11px/1 ui-sans-serif, system-ui, sans-serif; color: #fff; background: ${LOT_LINE}; padding: 4px 7px; border-radius: 4px; box-shadow: 0 1px 3px rgba(15,23,42,.3); }
+                .app-lot-label { background: #fff; border: 1px solid #cbd5e1; border-radius: 3px; padding: 1px 6px; font: 600 11px/1.4 inherit; color: #0f172a; }
                 .app-lot-label::before { display: none; }
             `}</style>
 
@@ -163,23 +242,23 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
                 )}
                 {mappedLots.length > 0 && (
                     <GeoJSON
-                        key={`lots-${selectedIndex}-${lotsKey}`}
+                        key={`lots-${focusLot?.index}-${lotsKey}`}
                         data={lotsCollection}
                         style={lotStyle}
                         onEachFeature={(f, layer) => {
                             const lot = lots.find((l) => l.index === f.properties.__index);
                             if (!lot) return;
-                            layer.bindTooltip(lot.code, {
-                                permanent: true,
-                                direction: "center",
-                                className: `app-lot-label${lot.index === selectedIndex ? " is-selected" : ""}`,
-                            });
+                            // The lot in focus is labelled by its plan; other lots keep a small code label
+                            if (!focusLot || lot.index !== focusLot.index) {
+                                layer.bindTooltip(lot.code, { permanent: true, direction: "center", className: "app-lot-label" });
+                            }
                             layer.on("click", () => onSelectLot(lot.index));
                             layer.on("mouseover", () => layer.setStyle({ weight: 3 }));
                             layer.on("mouseout", () => layer.setStyle(lotStyle(f)));
                         }}
                     />
                 )}
+                {focusLot && <LotPlan key={focusLot.index} lot={focusLot} showSides={zoom >= 17} />}
                 {/* LOOP 7: the confirmed inspection site, marked only when both
                     coordinates validated. */}
                 {inspectionPoint && (
@@ -194,32 +273,34 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
 
             {/* Basemap and overlay */}
             <div className="absolute top-3 left-3 z-[400] flex items-center gap-2">
-                <div className="flex bg-white border border-slate-300 rounded-md overflow-hidden shadow-sm" role="group" aria-label="Basemap">
+                <div className="flex gap-0.5 p-0.5 bg-slate-900/65 backdrop-blur-md ring-1 ring-white/10 rounded-lg shadow-lg" role="group" aria-label="Basemap">
                     {[
                         ["satellite", "Satellite"],
                         ["street", "Map"],
-                    ].map(([key, label], i) => (
+                    ].map(([key, label]) => (
                         <button
                             key={key}
                             type="button"
                             aria-pressed={basemap === key}
                             onClick={() => setBasemap(key)}
-                            className={`h-8 px-3 text-[12px] font-semibold cursor-pointer ${i ? "border-l border-slate-300" : ""} ${
-                                basemap === key ? "bg-[#0b2a5b] text-white" : "text-slate-700 hover:bg-slate-50"
+                            className={`h-7 px-3 rounded-md text-[12px] font-medium cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white ${
+                                basemap === key ? "bg-white text-slate-900 shadow-sm" : "text-white/85 hover:bg-white/10 hover:text-white"
                             }`}
                         >
                             {label}
                         </button>
                     ))}
                 </div>
-                <label className="h-8 px-3 flex items-center gap-2 bg-white border border-slate-300 rounded-md shadow-sm text-[12px] font-semibold text-slate-700 cursor-pointer">
-                    <input type="checkbox" checked={showClup} onChange={(e) => setShowClup(e.target.checked)} className="accent-[#0b2a5b]" />
+                <label className={`h-8 px-3 flex items-center gap-2 backdrop-blur-md rounded-lg shadow-lg text-[12px] font-medium cursor-pointer transition-colors focus-within:outline-2 focus-within:outline-white ${
+                    showClup ? "bg-blue-600 text-white ring-1 ring-blue-400/50" : "bg-slate-900/65 text-white/85 ring-1 ring-white/10 hover:text-white"
+                }`}>
+                    <input type="checkbox" checked={showClup} onChange={(e) => setShowClup(e.target.checked)} className="w-3.5 h-3.5 rounded accent-white" />
                     CLUP 2030
                 </label>
             </div>
 
             {showClup && (
-                <div className="absolute top-14 left-3 z-[400] bg-white/95 border border-slate-300 rounded-md shadow-sm px-2.5 py-2 max-h-[45%] overflow-y-auto">
+                <div className="absolute top-14 left-3 z-[400] bg-white/95 backdrop-blur border border-slate-200 rounded-md shadow-sm px-2.5 py-2 max-h-[45%] overflow-y-auto">
                     <ul className="space-y-0.5" aria-label="CLUP 2030 legend">
                         {ZONE_CATEGORY_LEGEND.map((z) => (
                             <li key={z.id} className="flex items-center gap-1.5 text-[11px] text-slate-700">
@@ -231,8 +312,16 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
                 </div>
             )}
 
+            {/* North arrow (the map is always north-up) */}
+            <div className="absolute top-3 right-3 z-[400] w-8 h-10 flex flex-col items-center justify-center bg-white/95 backdrop-blur border border-slate-200 rounded-md shadow-sm" aria-label="North is up" role="img">
+                <span className="text-[10px] font-bold leading-none text-slate-800">N</span>
+                <svg className="w-3.5 h-4 text-slate-800" viewBox="0 0 14 16" fill="currentColor" aria-hidden="true">
+                    <path d="M7 0l6 15-6-4-6 4z" />
+                </svg>
+            </div>
+
             {/* View controls */}
-            <div className="absolute bottom-8 right-3 z-[400] flex flex-col bg-white border border-slate-300 rounded-md shadow-sm overflow-hidden divide-y divide-slate-200">
+            <div className="absolute bottom-8 right-3 z-[400] flex flex-col bg-white/95 backdrop-blur border border-slate-200 rounded-md shadow-sm overflow-hidden divide-y divide-slate-100">
                 <Control label="Zoom in" onClick={() => map?.zoomIn()}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m7-7H5" />
                 </Control>
@@ -251,7 +340,7 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
 
             {!loading && !mappedLots.length && (
                 <div className="absolute inset-x-0 bottom-8 z-[400] flex justify-center pointer-events-none">
-                    <p className="px-3 py-1.5 bg-white border border-slate-300 rounded-md shadow-sm text-[12px] text-slate-600">
+                    <p className="px-3 py-1.5 bg-white/95 border border-slate-200 rounded-md shadow-sm text-[12px] text-slate-600">
                         This application's lots are not on the tax map yet.
                     </p>
                 </div>

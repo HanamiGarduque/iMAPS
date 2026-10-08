@@ -424,16 +424,22 @@ class DashboardController extends Controller
         if (!empty($parcelIds)) {
             $placeholders = implode(',', array_fill(0, count($parcelIds), '?'));
             $outlines = collect(DB::select(
-                "SELECT DISTINCT ON (p.id) p.id, ST_AsGeoJSON(lp.geom, 7) AS geom
-                 FROM parcels p
-                 JOIN public.land_parcels lp ON (
-                        (p.property_index_number IS NOT NULL AND p.property_index_number <> ''
-                         AND UPPER(REGEXP_REPLACE(lp.property_index_number, '[^A-Za-z0-9]', '', 'g')) = UPPER(REGEXP_REPLACE(p.property_index_number, '[^A-Za-z0-9]', '', 'g')))
-                     OR (p.tct_number IS NOT NULL AND p.tct_number <> ''
-                         AND UPPER(REGEXP_REPLACE(lp.tct_number, '[^A-Za-z0-9]', '', 'g')) = UPPER(REGEXP_REPLACE(p.tct_number, '[^A-Za-z0-9]', '', 'g'))))
-                 WHERE p.id IN ($placeholders) AND lp.geom IS NOT NULL
-                 ORDER BY p.id",
-                $parcelIds
+                "SELECT DISTINCT ON (m.id) m.id, ST_AsGeoJSON(m.geom, 7) AS geom
+                 FROM (
+                     SELECT p.id, lp.geom, 0 AS pref
+                     FROM parcels p
+                     JOIN public.land_parcels lp
+                       ON UPPER(REGEXP_REPLACE(lp.property_index_number, '[^A-Za-z0-9]', '', 'g')) = UPPER(REGEXP_REPLACE(p.property_index_number, '[^A-Za-z0-9]', '', 'g'))
+                     WHERE p.id IN ($placeholders) AND p.property_index_number <> '' AND lp.geom IS NOT NULL
+                     UNION ALL
+                     SELECT p.id, lp.geom, 1 AS pref
+                     FROM parcels p
+                     JOIN public.land_parcels lp
+                       ON UPPER(REGEXP_REPLACE(lp.tct_number, '[^A-Za-z0-9]', '', 'g')) = UPPER(REGEXP_REPLACE(p.tct_number, '[^A-Za-z0-9]', '', 'g'))
+                     WHERE p.id IN ($placeholders) AND p.tct_number <> '' AND lp.geom IS NOT NULL
+                 ) m
+                 ORDER BY m.id, m.pref",
+                [...$parcelIds, ...$parcelIds]
             ))->keyBy('id');
 
             $recent->each(function ($app) use ($outlines) {

@@ -20,7 +20,7 @@ class Loop6AuthTransitionTest extends TestCase
         $this->post('/login', [
             'email' => $planningOfficer->email,
             'password' => 'password',
-        ])->assertRedirect(route('dashboard', absolute: false));
+        ])->assertRedirect(route('overview', absolute: false));
         $this->assertAuthenticatedAs($planningOfficer);
         $this->assertNotNull($planningOfficer->fresh()->last_login);
 
@@ -31,7 +31,7 @@ class Loop6AuthTransitionTest extends TestCase
         $this->post('/login', [
             'email' => $admin->email,
             'password' => 'password',
-        ])->assertRedirect(route('dashboard', absolute: false));
+        ])->assertRedirect(route('overview', absolute: false));
         $this->assertAuthenticatedAs($admin);
 
         $this->post('/logout')->assertRedirect(route('login', absolute: false));
@@ -41,7 +41,7 @@ class Loop6AuthTransitionTest extends TestCase
         $this->post('/login', [
             'email' => $planningOfficer->email,
             'password' => 'password',
-        ])->assertRedirect(route('dashboard', absolute: false));
+        ])->assertRedirect(route('overview', absolute: false));
         $this->assertAuthenticatedAs($planningOfficer);
         $this->assertNotNull($planningOfficer->fresh()->last_login);
 

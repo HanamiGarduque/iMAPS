@@ -30,6 +30,13 @@ use RuntimeException;
 class PermitExcelService
 {
     private const TAG_PATTERN = '/(\$?)\{\s*([A-Za-z0-9_ ]+?)\s*\}/';
+
+    /** Fields a permit cannot be issued without: the decision numbers and the Zoning Administrator.
+     *  Same rule as isRequired() in GeneratePermitModal.jsx. */
+    private const REQUIRED_PATTERN = '/_DN$|^ADMIN$/';
+
+    /** Generated PDFs are reused for identical input for this long (preview, then Generate). */
+    private const PDF_CACHE_TTL = 86400;
     private const CHECK = '√';
 
     public function __construct(private PermitPdfConverter $pdf)
@@ -39,7 +46,7 @@ class PermitExcelService
     /** Which converter produced the last PDF (libreoffice | excel | dompdf). */
     public function lastPdfDriver(): ?string
     {
-        return $this->pdf->lastDriver;
+        return $this->cachedDriver ?? $this->pdf->lastDriver;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -122,6 +129,22 @@ class PermitExcelService
     }
 
     /**
+     * Labels of this permit's required fields that are still blank once the application's
+     * defaults and the submitted values are combined.
+     */
+    public function missingRequired(ZoningApplication $application, string $type, array $fieldsInput): array
+    {
+        $values = $this->values($application, $fieldsInput);
+
+        return collect($this->schema($application, $type)['fields'])
+            ->filter(fn ($f) => $f['type'] !== 'check' && preg_match(self::REQUIRED_PATTERN, $f['key']))
+            ->filter(fn ($f) => trim((string) ($values[$f['key']] ?? '')) === '')
+            ->pluck('label')
+            ->values()
+            ->all();
+    }
+
+    /**
      * Fill the permit and return the absolute path of the generated file.
      *
      * @param array $input  ['fields' => [TAG => value], 'cells' => [A32 => value]]
@@ -131,14 +154,6 @@ class PermitExcelService
         $doc = $this->document($type);
         $values = $this->values($application, $input['fields'] ?? []);
         $cellInput = $input['cells'] ?? [];
-
-        $spreadsheet = $this->loadTemplate();
-        $sheet = $spreadsheet->getSheetByName($doc['sheet'])
-            ?? throw new RuntimeException("Sheet \"{$doc['sheet']}\" was not found in the permit template.");
-
-        $this->fillSheet($sheet, $doc, $values, $cellInput);
-        $this->isolateSheet($spreadsheet, $sheet);
-        $this->applyPageSetup($sheet, $doc);
 
         $dir = storage_path('app/generated_permits');
         if (!is_dir($dir)) {
@@ -151,6 +166,30 @@ class PermitExcelService
             preg_replace('/[^A-Za-z0-9_\-]/', '_', (string) $application->reference_number),
             Str::random(6)
         );
+
+        // Same permit + same values = same PDF: reuse it (the preview already built it, so
+        // Generate is instant). Callers delete or move the returned file, so hand out a copy.
+        $cacheKey = $format === 'pdf' ? $this->pdfCacheKey($type, $values, $cellInput) : null;
+        if ($cacheKey && ($cached = $this->cachedPdf($cacheKey))) {
+            $copy = "{$dir}/{$base}.pdf";
+            if (@copy($cached['path'], $copy)) {
+                $this->cachedDriver = $cached['driver'];
+                return $copy;
+            }
+        }
+        $this->cachedDriver = null;
+
+        // Only the printed sheet is needed: formulas keep their stored values and every other
+        // sheet would be removed anyway (loading all nine sheets costs ~1.6 s)
+        $spreadsheet = $this->loadTemplate($doc['sheet']);
+        $sheet = $spreadsheet->getSheetByName($doc['sheet'])
+            ?? throw new RuntimeException("Sheet \"{$doc['sheet']}\" was not found in the permit template.");
+
+        $this->fillSheet($sheet, $doc, $values, $cellInput);
+        $this->widenMerges($sheet, $doc['merge'] ?? []);
+        $this->isolateSheet($spreadsheet, $sheet);
+        $this->applyPageSetup($sheet, $doc);
+
         $xlsxPath = "{$dir}/{$base}.xlsx";
 
         IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
@@ -161,9 +200,75 @@ class PermitExcelService
         }
 
         try {
-            return $this->convertToPdf($xlsxPath, $dir);
+            $pdfPath = $this->convertToPdf($xlsxPath, $dir);
         } finally {
             @unlink($xlsxPath);
+        }
+
+        $this->storeCachedPdf($cacheKey, $pdfPath, $this->pdf->lastDriver);
+
+        return $pdfPath;
+    }
+
+    /** Driver of a PDF served from the cache (null when it was just converted). */
+    private ?string $cachedDriver = null;
+
+    private function pdfCacheKey(string $type, array $values, array $cellInput): string
+    {
+        $template = config('permits.template');
+
+        return sha1(json_encode([
+            $type,
+            $values,
+            $cellInput,
+            is_file($template) ? filemtime($template) : 0,
+            md5(serialize(config('permits'))),
+            filemtime(__FILE__), // a change to how permits are filled invalidates old PDFs
+        ]));
+    }
+
+    private function pdfCacheDir(): string
+    {
+        return storage_path('app/generated_permits/cache');
+    }
+
+    /** @return array{path: string, driver: string}|null */
+    private function cachedPdf(string $key): ?array
+    {
+        foreach (glob($this->pdfCacheDir() . "/{$key}.*.pdf") ?: [] as $path) {
+            if (filesize($path) > 0 && time() - filemtime($path) < self::PDF_CACHE_TTL) {
+                return ['path' => $path, 'driver' => explode('.', basename($path))[1]];
+            }
+        }
+
+        return null;
+    }
+
+    private function storeCachedPdf(?string $key, string $pdfPath, ?string $driver): void
+    {
+        // Only real office layouts are worth reusing; the Dompdf fallback is a rough draft
+        if (!$key || !in_array($driver, ['excel', 'libreoffice'], true)) {
+            return;
+        }
+
+        $dir = $this->pdfCacheDir();
+        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+            return;
+        }
+
+        // Atomic: write under a temp name, then rename, so a reader never sees a half-written file
+        $tmp = "{$dir}/{$key}." . Str::random(8) . '.tmp';
+        if (@copy($pdfPath, $tmp)) {
+            @rename($tmp, "{$dir}/{$key}.{$driver}.pdf") || @unlink($tmp);
+        }
+
+        // Drop expired entries now and then
+        if (random_int(1, 20) === 1) {
+            foreach (glob("{$dir}/*") ?: [] as $old) {
+                if (time() - filemtime($old) >= self::PDF_CACHE_TTL) {
+                    @unlink($old);
+                }
+            }
         }
     }
 
@@ -409,6 +514,27 @@ class PermitExcelService
         $spreadsheet->setActiveSheetIndex(0);
     }
 
+    /**
+     * Re-merges boxes that are too narrow for their text (config `merge`: range => horizontal
+     * alignment), e.g. a signature line whose name would otherwise shrink to an unreadable size.
+     * Any merge the new range overlaps is undone first, since overlapping merges are invalid.
+     */
+    private function widenMerges(Worksheet $sheet, array $ranges): void
+    {
+        foreach ($ranges as $range => $align) {
+            [$from, $to] = Coordinate::rangeBoundaries($range);
+            foreach ($sheet->getMergeCells() as $existing) {
+                [$a, $b] = Coordinate::rangeBoundaries($existing);
+                $overlaps = $a[0] <= $to[0] && $b[0] >= $from[0] && $a[1] <= $to[1] && $b[1] >= $from[1];
+                if ($overlaps) {
+                    $sheet->unmergeCells($existing);
+                }
+            }
+            $sheet->mergeCells($range);
+            $sheet->getStyle($range)->getAlignment()->setHorizontal($align);
+        }
+    }
+
     private function applyPageSetup(Worksheet $sheet, array $doc): void
     {
         $setup = $sheet->getPageSetup();
@@ -438,14 +564,19 @@ class PermitExcelService
     // Template metadata (cached until the template file changes)
     // ─────────────────────────────────────────────────────────────────────
 
-    private function loadTemplate(): Spreadsheet
+    private function loadTemplate(?string $onlySheet = null): Spreadsheet
     {
         $path = config('permits.template');
         if (!is_file($path)) {
             throw new RuntimeException("Permit template not found at: {$path}");
         }
 
-        return IOFactory::createReader('Xlsx')->load($path);
+        $reader = IOFactory::createReader('Xlsx');
+        if ($onlySheet !== null) {
+            $reader->setLoadSheetsOnly([$onlySheet]);
+        }
+
+        return $reader->load($path);
     }
 
     /**

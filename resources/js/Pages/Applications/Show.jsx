@@ -13,13 +13,12 @@ import { getZoneInfo } from "@/utils/clupZones";
 import { loadBarangayBoundaries } from "@/utils/mapData";
 import ApplicationMap from "./Components/ApplicationMap";
 import SiteMapPrint from "./Components/SiteMapPrint";
-import { PermitExportPanel, getMissingRecommendedPermits } from "./Components/GeneratePermitModal";
+import { PermitExportPanel, getMissingRecommendedPermits, getPermitChecklist } from "./Components/GeneratePermitModal";
 import { confirmSignOut } from "@/utils/signOut";
 
 const STANDARD_STAGES = ["Received", "Technical Review", "For Release", "Released"];
 const SB_STAGES = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released"];
 const STAGES = SB_STAGES;
-const STAGE_SHORT = { "Under Sangguniang Bayan": "SB" };
 const STATUS_DOT = {
     Received: "bg-emerald-500",
     "Technical Review": "bg-amber-500",
@@ -104,63 +103,23 @@ const dash = (v) => (v !== null && v !== undefined && String(v).trim() !== "" ? 
 const today = () => new Date().toISOString().split("T")[0];
 
 
-const NAVY = "#0b2a5b";
+
+// Tinted badge per stage (soft background, matching text and dot)
+const STATUS_TONE = {
+    Received: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+    "Technical Review": "bg-amber-50 text-amber-800 ring-amber-600/20",
+    "Under Sangguniang Bayan": "bg-purple-50 text-purple-700 ring-purple-600/20",
+    "For Release": "bg-sky-50 text-sky-700 ring-sky-600/20",
+    Released: "bg-blue-50 text-blue-700 ring-blue-600/20",
+    Denied: "bg-rose-50 text-rose-700 ring-rose-600/20",
+};
 
 function StatusPill({ status }) {
     return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-slate-200 bg-white text-slate-700 text-[12px] font-medium whitespace-nowrap">
-            <span className={`w-2 h-2 rounded-[2px] ${STATUS_DOT[status] || "bg-slate-400"}`} aria-hidden="true" />
+        <span className={`inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full ring-1 ring-inset text-[12px] font-medium whitespace-nowrap ${STATUS_TONE[status] || "bg-slate-50 text-slate-600 ring-slate-500/20"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[status] || "bg-slate-400"}`} aria-hidden="true" />
             {status || "—"}
         </span>
-    );
-}
-
-// Stepper for the permit's journey; the current stage is filled.
-// Routing to Sangguniang Bayan (SB) is optional and only displayed when the application is routed to SB.
-function StageProgress({ status, stages = STANDARD_STAGES }) {
-    const current = stages.indexOf(status);
-    const denied = status === "Denied";
-    return (
-        <ol className="flex items-center w-full" aria-label="Application stage">
-            {stages.map((s, i) => {
-                const done = !denied && (current > i || status === "Released");
-                const isCurrent = !denied && current === i && status !== "Released";
-                return (
-                    <li key={s} className="flex-1 flex flex-col items-center gap-1 relative" aria-current={isCurrent ? "step" : undefined}>
-                        {i > 0 && (
-                            <span
-                                className={`absolute top-[7px] right-1/2 w-full h-[2px] ${done || isCurrent ? "bg-[#0b2a5b]" : "bg-slate-200"}`}
-                                aria-hidden="true"
-                            />
-                        )}
-                        <span
-                            className={`relative z-[1] w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                                done ? "bg-[#0b2a5b] border-[#0b2a5b]" : isCurrent ? "bg-white border-[#0b2a5b]" : "bg-white border-slate-300"
-                            }`}
-                            aria-hidden="true"
-                        >
-                            {done && (
-                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                            )}
-                            {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-[#0b2a5b]" />}
-                        </span>
-                        <span className={`text-[10.5px] text-center leading-tight ${isCurrent ? "font-semibold text-slate-900" : done ? "text-slate-600" : "text-slate-400"}`}>
-                            {STAGE_SHORT[s] || s}
-                        </span>
-                    </li>
-                );
-            })}
-            {denied && (
-                <li className="flex flex-col items-center gap-1 pl-2">
-                    <span className="w-4 h-4 rounded-full bg-rose-700 flex items-center justify-center" aria-hidden="true">
-                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4"><path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" /></svg>
-                    </span>
-                    <span className="text-[10.5px] font-semibold text-rose-700">Denied</span>
-                </li>
-            )}
-        </ol>
     );
 }
 
@@ -168,9 +127,20 @@ function StageProgress({ status, stages = STANDARD_STAGES }) {
 function Row({ label, children, mono = false }) {
     const empty = children === null || children === undefined || children === "" || children === false;
     return (
-        <div className="grid grid-cols-[128px_1fr] gap-3 py-2 border-b border-slate-100 last:border-b-0">
+        <div className="grid grid-cols-[104px_1fr] gap-3 py-1.5 border-b border-slate-100 last:border-b-0">
             <dt className="text-[12px] text-slate-500">{label}</dt>
             <dd className={`text-[12.5px] text-slate-900 break-words ${mono ? "font-mono text-[12px]" : ""}`}>{empty ? <span className="text-slate-400">—</span> : children}</dd>
+        </div>
+    );
+}
+
+// Lot record field: label above value, laid out in an even grid with no row rules.
+function Spec({ label, children, mono = false }) {
+    const empty = children === null || children === undefined || children === "" || children === false;
+    return (
+        <div className="min-w-0">
+            <dt className="text-[10.5px] font-medium uppercase tracking-wide text-slate-400">{label}</dt>
+            <dd className={`mt-0.5 text-[12.5px] text-slate-900 break-words ${mono ? "font-mono text-[12px]" : ""}`}>{empty ? <span className="text-slate-400">—</span> : children}</dd>
         </div>
     );
 }
@@ -179,18 +149,18 @@ function Row({ label, children, mono = false }) {
 function More({ title, children, open = false }) {
     return (
         <details className="group border-t border-slate-200" open={open || undefined}>
-            <summary className="flex items-center justify-between py-2.5 cursor-pointer list-none text-[12.5px] font-semibold text-slate-700 hover:text-slate-900">
+            <summary className="flex items-center justify-between py-2 cursor-pointer list-none text-[12.5px] font-semibold text-slate-700 hover:text-slate-900">
                 {title}
-                <svg className="w-4 h-4 text-slate-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <svg className="w-4 h-4 text-slate-400 transition-transform duration-200 ease-out group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>
             </summary>
-            <dl className="pb-2">{children}</dl>
+            <dl className="pb-2 animate-in fade-in slide-in-from-top-1 duration-150">{children}</dl>
         </details>
     );
 }
 
-const FIELD = "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] text-slate-800 focus:outline-none focus:border-[#0b2a5b] focus:ring-2 focus:ring-[#0b2a5b]/15";
+const FIELD = "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-[12.5px] text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20";
 
 // Only the transitions the server accepts: the next stage, or Denied
 function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving, missingPermits = [], stages = SB_STAGES }) {
@@ -208,8 +178,8 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving, 
     }, [onClose]);
 
     return (
-        <div className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-950/40" role="dialog" aria-modal="true" aria-labelledby="status-dialog-title">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-md border border-slate-200 overflow-hidden">
+        <div className="fixed inset-0 z-[900] flex items-center justify-center p-4 bg-slate-950/40 animate-fade-in duration-150" role="dialog" aria-modal="true" aria-labelledby="status-dialog-title">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                 <div className="px-5 pt-4 pb-3">
                     <h3 id="status-dialog-title" className="text-[15px] font-semibold text-slate-900">Update application status</h3>
                     <p className="text-[12.5px] text-slate-500 mt-0.5">Currently {currentStatus}. Applications move one stage at a time, or can be denied.</p>
@@ -221,7 +191,7 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving, 
                             {options.map((s, i) => (
                                 <label key={s} className={`relative ${i ? "border-l border-slate-300" : ""}`}>
                                     <input type="radio" name="new-status" value={s} checked={newStatus === s} onChange={() => setNewStatus(s)} className="peer sr-only" />
-                                    <span className="flex justify-center py-2 text-[12.5px] font-semibold text-slate-600 cursor-pointer peer-checked:bg-[#0b2a5b] peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-inset peer-focus-visible:ring-[#0b2a5b]">
+                                    <span className="flex justify-center py-2 text-[12.5px] font-semibold text-slate-600 cursor-pointer peer-checked:bg-blue-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-inset peer-focus-visible:ring-blue-500">
                                         {s === "Under Sangguniang Bayan" ? "Sangguniang Bayan" : s}
                                     </span>
                                 </label>
@@ -238,7 +208,7 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving, 
                                 <span>Permit documents required before release</span>
                             </div>
                             <p className="mt-1 text-[11.5px] text-amber-800">
-                                Generate the required documents in the Export tab before marking as Released:
+                                Generate the required documents in the Next step panel before marking as Released:
                             </p>
                             <ul className="mt-1 list-disc list-inside font-semibold text-[11.5px] text-amber-900">
                                 {missingPermits.map((p) => (
@@ -271,7 +241,7 @@ function UpdateStatusDialog({ currentStatus, preset, onClose, onSubmit, saving, 
                         onClick={() => onSubmit({ new_status: newStatus, remarks })}
                         disabled={saving || !newStatus || (needsReason && !remarks.trim()) || releaseBlocked}
                         className={`px-4 py-2 rounded-md text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed ${
-                            needsReason ? "bg-rose-700 hover:bg-rose-800" : "bg-[#0b2a5b] hover:bg-[#0e3574]"
+                            needsReason ? "bg-rose-700 hover:bg-rose-800" : "bg-blue-600 hover:bg-blue-700"
                         }`}
                     >
                         {saving ? "Saving…" : needsReason ? "Deny application" : `Move to ${newStatus === "Under Sangguniang Bayan" ? "SB" : newStatus}`}
@@ -333,7 +303,7 @@ function ShowInner({
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
-    const [tab, setTab] = useState(app.status === "For Release" || app.status === "Released" ? "export" : app.status === "Technical Review" ? "parcels" : "overview");
+    const [tab, setTab] = useState(app.status === "For Release" || app.status === "Released" ? "export" : "parcels");
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [saving, setSaving] = useState(false);
     const [toast, setToast] = useState(null);
@@ -456,8 +426,7 @@ function ShowInner({
     // module. Normal entry from the registry is unchanged.
     const openedFromTechnicalReview = usePage().url?.split("?")[1]?.includes("from=technical-review");
     const backHref = openedFromTechnicalReview ? "/technical-review" : "/applications";
-    const backLabel = openedFromTechnicalReview ? "Back to technical review" : "Back to applications";
-    const backCrumb = openedFromTechnicalReview ? "Technical Review" : "Applications";
+    const backLabel = openedFromTechnicalReview ? "Back to technical review" : "Back to registry";
 
     // Stable per-parcel callbacks: ParcelInspectionStatus refetches whenever its callback identity changes
     const statusCallbacks = useRef({});
@@ -593,17 +562,11 @@ function ShowInner({
     const handleLogout = confirmSignOut;
 
     // ── What's next ──
-    const stageStart = useMemo(() => {
-        const entries = statusHistory.filter((h) => h.status === app.status);
-        return entries.length ? entries[entries.length - 1].created_at : app.updated_at || app.created_at;
-    }, [statusHistory, app.status]);
-    const daysInStage = workingDaysSince(stageStart);
     const daysSinceFiling = workingDaysSince(app.created_at);
     const overARTA = OFFICE_STAGES.includes(app.status) && daysSinceFiling !== null && daysSinceFiling > ARTA_WORKING_DAYS;
 
     const pendingInspections = lots.filter((l) => inspectionOpen(l.parcel));
     const undecided = lots.filter((l) => !reviews[l.parcel.id]?.decision);
-    const nextStage = stages[stages.indexOf(app.status) + 1];
     const isFinal = app.status === "Released" || app.status === "Denied";
     const deniedReasons = lots.map((l) => latestReview[l.parcel.id]).filter((r) => r?.decision === "Declined" && r.decision_reason);
 
@@ -619,21 +582,14 @@ function ShowInner({
                     if (!app.sb_ordinance_number?.trim()) {
                         Swal.fire({
                             title: "SB Ordinance Required",
-                            text: "Please record and save the approved Sangguniang Bayan Ordinance Number in the Summary tab before marking this application for release.",
+                            text: "Record and save the approved Sangguniang Bayan Ordinance Number in the Next step panel before marking this application for release.",
                             icon: "warning",
-                            confirmButtonColor: "#0b2a5b",
+                            confirmButtonColor: "#2563eb",
                             confirmButtonText: "Go to input field",
                             showCancelButton: true,
                             cancelButtonText: "Close",
                         }).then((result) => {
-                            if (result.isConfirmed) {
-                                setTab("overview");
-                                setTimeout(() => {
-                                    const el = document.getElementById("sb_ordinance_number");
-                                    el?.focus();
-                                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                }, 150);
-                            }
+                            if (result.isConfirmed) document.getElementById("sb_ordinance_number")?.focus();
                         });
                         return;
                     }
@@ -656,23 +612,16 @@ function ShowInner({
                                 <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
                                     ${missingPermits.map((p) => `<div class="text-xs font-bold text-amber-900 flex items-center gap-2"><span>${p.icon || '📄'}</span><span>${p.label}</span></div>`).join("")}
                                 </div>
-                                <p class="text-xs text-slate-500">Please generate the required permit document(s) in the <strong>Export permit/doc</strong> tab before marking this application as released.</p>
+                                <p class="text-xs text-slate-500">Generate the required permit document(s) in the Next step panel before marking this application as released.</p>
                             </div>`,
                             icon: "warning",
-                            confirmButtonColor: "#0b2a5b",
-                            confirmButtonText: "Go to Export Tab",
-                            showCancelButton: true,
-                            cancelButtonText: "Close",
+                            confirmButtonColor: "#2563eb",
+                            confirmButtonText: "OK",
                             customClass: {
                                 popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
                                 title: "text-base font-bold text-slate-900",
-                                confirmButton: "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
-                                cancelButton: "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
+                                confirmButton: "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
                             },
-                        }).then((result) => {
-                            if (result.isConfirmed) {
-                                setTab("export");
-                            }
                         });
                         return;
                     }
@@ -755,7 +704,7 @@ function ShowInner({
         }
         if (app.status === "For Release") {
             if (missingPermits.length > 0) {
-                return `Pending permit generation: ${missingPermits.map((p) => p.label).join(", ")}. Please generate in the Export tab before release.`;
+                return null; // the release checklist below says what is missing
             }
             return `All required permits generated. Release mode: ${dash(app.preferred_release_mode)}`;
         }
@@ -772,12 +721,46 @@ function ShowInner({
     ].filter(([, v]) => Number(v) > 0);
 
     const canExport = app.status === "For Release" || app.status === "Released";
+    const showRefs = isAmendment || hasSbRouting;
+    const refsInNextStep = showRefs && app.status === "Under Sangguniang Bayan";
+    const refsDirty = refs.sb_ordinance_number !== (app.sb_ordinance_number || "") || refs.dar_clearance_ref !== (app.dar_clearance_ref || "");
+    const refsForm = (
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2.5">
+            {[
+                ["sb_ordinance_number", "SB ordinance no.", "e.g. Ord. No. 2026-014"],
+                ["dar_clearance_ref", "DAR clearance ref.", "e.g. DAR-CC-2026-0021"],
+            ].map(([field, label, placeholder]) => (
+                <div key={field} className="flex-1 min-w-0">
+                    <label htmlFor={field} className="text-[12px] font-medium text-slate-700">{label}</label>
+                    <input
+                        id={field}
+                        type="text"
+                        maxLength={100}
+                        value={refs[field]}
+                        onChange={(e) => setRefs((r) => ({ ...r, [field]: e.target.value }))}
+                        placeholder={placeholder}
+                        className={`mt-1 font-mono ${FIELD.replace("py-2", "py-1.5")}`}
+                    />
+                </div>
+            ))}
+            <button
+                type="button"
+                onClick={saveRefs}
+                disabled={saving || !refsDirty}
+                className="h-[34px] px-3.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed shrink-0"
+            >
+                Save references
+            </button>
+        </div>
+    );
+
 
     const tabs = [
-        { id: "overview", label: "Summary" },
+        // Work → output → reference → audit trail
         { id: "parcels", label: `Lots (${lots.length})` },
+        ...(canExport ? [{ id: "export", label: `Documents (${savedPermits.length})` }] : []),
+        { id: "overview", label: "Details" },
         { id: "history", label: "History" },
-        ...(canExport ? [{ id: "export", label: app.status === "Released" ? "Permits" : "Export permit/doc" }] : []),
     ];
 
     return (
@@ -797,60 +780,29 @@ function ShowInner({
                     <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="applications" />
                     {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/20 z-[750]" aria-hidden="true" />}
 
-                    {/* Record bar: where you are and what you can do */}
-                    <div className="h-14 bg-white border-b border-slate-200 px-4 flex items-center justify-between gap-3 shrink-0 z-10">
-                        <div className="flex items-center gap-3 min-w-0">
-                            <Link
-                                href={backHref}
-                                className="w-8 h-8 flex items-center justify-center rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 shrink-0"
-                                aria-label={backLabel}
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                                </svg>
-                            </Link>
-                            <div className="min-w-0">
-                                <p className="text-[11.5px] text-slate-500 leading-tight">
-                                    {backCrumb} / <span className="font-mono text-slate-700">{app.reference_number || `APP-${app.id}`}</span>
-                                </p>
-                                <h1 className="text-[15px] font-semibold text-slate-900 leading-tight truncate">{app.corporation_name || app.applicant_name || "—"}</h1>
+                    {/* Record bar: which record this is and its stage (actions live in the status card) */}
+                    <div className="h-14 bg-white border-b border-slate-200 px-5 flex items-center gap-3.5 shrink-0 z-10">
+                        <Link
+                            href={backHref}
+                            className="w-9 h-9 flex items-center justify-center rounded-full text-slate-500 bg-slate-100/70 hover:bg-slate-200/70 hover:text-slate-900 transition-colors shrink-0 focus-visible:outline-2 focus-visible:outline-blue-600"
+                            aria-label={backLabel}
+                            title={backLabel}
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </Link>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <h1 className="text-[16px] font-semibold tracking-tight text-slate-900 leading-tight truncate">{app.corporation_name || app.applicant_name || "—"}</h1>
+                                <StatusPill status={app.status} />
                             </div>
-                            <StatusPill status={app.status} />
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                            <button
-                                type="button"
-                                onClick={() => setSiteMapOpen(true)}
-                                disabled={!lots.some((l) => l.feature)}
-                                className="h-9 px-3 rounded-md border border-slate-300 bg-white text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                                Print site map
-                            </button>
-                            {!isFinal && app.status !== "Technical Review" && (
-                                <button
-                                    type="button"
-                                    onClick={() => setStatusDialog("Denied")}
-                                    className="h-9 px-3 rounded-md border border-slate-300 bg-white text-[12.5px] font-semibold text-rose-700 hover:bg-rose-50 cursor-pointer"
-                                >
-                                    Deny
-                                </button>
-                            )}
-                            {primaryAction && (
-                                <button
-                                    type="button"
-                                    onClick={primaryAction.onClick}
-                                    disabled={primaryAction.disabled}
-                                    title={primaryAction.title || undefined}
-                                    className="h-9 px-4 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
-                                >
-                                    {primaryAction.label}
-                                </button>
-                            )}
+                            <p className="mt-0.5 font-mono text-[11.5px] text-slate-400 leading-tight">{app.reference_number || `APP-${app.id}`}</p>
                         </div>
                     </div>
 
                     {toast && (
-                        <div className="absolute top-[68px] right-4 z-[999]" role="status">
+                        <div className="absolute top-[68px] right-4 z-[999] animate-in fade-in slide-in-from-top-2 duration-150" role="status">
                             <div className={`flex items-center gap-3 px-4 py-2.5 rounded-md border shadow-lg max-w-sm ${toast.type === "error" ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-slate-900 text-white border-slate-800"}`}>
                                 <p className="text-[12.5px] font-medium flex-1">{toast.msg}</p>
                                 <button type="button" onClick={() => setToast(null)} aria-label="Dismiss" className="opacity-60 hover:opacity-100 cursor-pointer">
@@ -861,95 +813,100 @@ function ShowInner({
                     )}
 
                     <main className="flex-1 flex flex-col lg:flex-row min-h-0">
-                        {/* Map (view only) */}
-                        <div className="h-72 lg:h-auto lg:w-2/5 border-b lg:border-b-0 lg:border-r border-slate-300 shrink-0 min-w-0">
-                            <ApplicationMap
-                                lots={lots}
-                                parcelMapData={parcelMapData}
-                                brgyMapData={brgyMapData}
-                                barangay={app.barangay}
-                                selectedIndex={selectedIndex}
-                inspectionPoint={inspectionPoint}
-                                onSelectLot={(i) => {
-                                    setSelectedIndex(i);
-                                    setTab("parcels");
-                                }}
-                                onPrint={() => setSiteMapOpen(true)}
-                            />
-                        </div>
-
-                        {/* Record */}
-                        <div className="lg:w-3/5 shrink-0 min-h-0 flex flex-col bg-white min-w-0">
-                            <div className="shrink-0 px-5 pt-4 pb-3 border-b border-slate-200">
-                                <p className="text-[12.5px] text-slate-600">
-                                    {dash(app.application_type)} · Brgy. {dash(app.barangay)}
-                                </p>
-                                <div className="mt-3">
-                                    <StageProgress status={app.status} stages={stages} />
-                                </div>
-                                <dl className="mt-3 grid grid-cols-3 border border-slate-200 rounded-md divide-x divide-slate-200">
-                                    {[
-                                        ["Filed", fmtDate(app.created_at)],
-                                        ["In this stage", isFinal ? "—" : daysInStage != null ? `${daysInStage} working day${daysInStage === 1 ? "" : "s"}` : "—"],
-                                        ["Assessment fee", peso(app.assessment_fee)],
-                                    ].map(([k, v]) => (
-                                        <div key={k} className="px-3 py-2 min-w-0">
-                                             <dt className="text-[11px] text-slate-500">{k}</dt>
-                                             <dd className="text-[12.5px] font-semibold text-slate-900 truncate tabular-nums">{v}</dd>
+                        {/* Work column: this stage's status and action, then the record's tabs.
+                            The column is the single scroll area, so short windows scroll the page as a whole
+                            (the tab bar sticks to the top) instead of squeezing the tab content into its own box. */}
+                        <div className="flex-1 min-h-0 overflow-y-auto bg-[#f7f9fc] min-w-0">
+                            <div className="px-6 pt-3 pb-2.5">
+                                {/* Status: where the record is and what happens next, in one place */}
+                                <div className={`rounded-xl border shadow-sm overflow-hidden ${overARTA ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
+                                    <div className="px-5 pt-3 pb-3">
+                                    {(() => {
+                                        const checklist = app.status === "For Release" ? getPermitChecklist(app, savedPermits) : null;
+                                        const total = checklist?.required.length || 0;
+                                        const left = total - (checklist?.readyCount || 0);
+                                        return (
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div className="min-w-0">
+                                                    <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">{nextStep}</h2>
+                                                    {total > 0 && left > 0 ? (
+                                                        <p className="text-[12.5px] text-slate-500 mt-0.5">
+                                                            {left} more required permit{left === 1 ? "" : "s"} before release
+                                                        </p>
+                                                    ) : (
+                                                        nextDetail && <p className="text-[12.5px] text-slate-500 mt-0.5">{nextDetail}</p>
+                                                    )}
+                                                </div>
+                                                {total > 0 && (
+                                                    <div
+                                                        className="shrink-0 flex items-center gap-2 pt-1"
+                                                        role="progressbar"
+                                                        aria-valuemin={0}
+                                                        aria-valuemax={total}
+                                                        aria-valuenow={total - left}
+                                                        aria-label="Required permits ready"
+                                                    >
+                                                        <span className="flex gap-1" aria-hidden="true">
+                                                            {Array.from({ length: total }, (_, i) => (
+                                                                <span key={i} className={`w-6 h-1.5 rounded-full transition-colors duration-300 ${i < total - left ? "bg-emerald-500" : "bg-slate-200"}`} />
+                                                            ))}
+                                                        </span>
+                                                        <span className={`text-[12px] font-medium tabular-nums ${left === 0 ? "text-emerald-700" : "text-slate-500"}`}>
+                                                            {total - left}/{total}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+                                    {refsInNextStep && <div className="mt-2.5">{refsForm}</div>}
+                                    {app.status === "For Release" && (
+                                        <div className="mt-2.5">
+                                            <PermitExportPanel app={app} part="generate" savedPermits={savedPermits} onSavedPermitsChange={setSavedPermits} />
                                         </div>
-                                    ))}
-                                </dl>
-                            </div>
+                                    )}
+                                    {overARTA && (
+                                        <p className="text-[12px] font-medium text-amber-800 mt-2">
+                                            {daysSinceFiling} working days since filing, beyond the {ARTA_WORKING_DAYS}-day processing time for highly technical applications (RA 11032).
+                                        </p>
+                                    )}
+                                    </div>
 
-                            {/* Next step */}
-                            <div className={`shrink-0 px-5 py-3 border-b border-slate-200 ${overARTA ? "bg-amber-50" : "bg-[#f7f9fc]"}`}>
-                                <p className="text-[11px] text-slate-500">Next step</p>
-                                <p className="text-[13px] font-semibold text-slate-900">{nextStep}</p>
-                                {nextDetail && <p className="text-[12px] text-slate-600 mt-0.5">{nextDetail}</p>}
-                                {app.status === "Under Sangguniang Bayan" && (isAmendment || hasSbRouting) && !app.sb_ordinance_number?.trim() && (
-                                    <div className="mt-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setTab("overview");
-                                                setTimeout(() => {
-                                                    const el = document.getElementById("sb_ordinance_number");
-                                                    el?.focus();
-                                                    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                                }, 100);
-                                            }}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-semibold shadow-xs cursor-pointer transition-colors"
-                                        >
-                                            <span>Input SB Ordinance Number</span>
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                )}
-                                {app.status === "For Release" && missingPermits.length > 0 && (
-                                    <div className="mt-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setTab("export")}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12px] font-semibold shadow-xs cursor-pointer transition-colors"
-                                        >
-                                            <span>Generate Required Permits</span>
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                )}
-                                {overARTA && (
-                                    <p className="text-[12px] font-medium text-amber-800 mt-1">
-                                        {daysSinceFiling} working days since filing, beyond the {ARTA_WORKING_DAYS}-day processing time for highly technical applications (RA 11032).
-                                    </p>
-                                )}
+                                    {/* This stage's decision: a footer bar — quiet Deny left, the one main action right */}
+                                    {(primaryAction || (!isFinal && app.status !== "Technical Review")) && (
+                                        <div className={`px-5 py-2 border-t flex items-center justify-between gap-3 ${overARTA ? "border-amber-200 bg-amber-100/40" : "border-slate-100 bg-slate-50/70"}`}>
+                                            {!isFinal && app.status !== "Technical Review" ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setStatusDialog("Denied")}
+                                                    className="h-8 px-2 -ml-2 inline-flex items-center gap-1.5 rounded-md text-[12.5px] font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-rose-600"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                    </svg>
+                                                    Deny application
+                                                </button>
+                                            ) : (
+                                                <span />
+                                            )}
+                                            {primaryAction && (
+                                                <button
+                                                    type="button"
+                                                    onClick={primaryAction.onClick}
+                                                    disabled={primaryAction.disabled}
+                                                    title={primaryAction.title || undefined}
+                                                    className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold shadow-sm shadow-blue-600/20 cursor-pointer transition-colors disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                                                >
+                                                    {primaryAction.label}
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Tabs */}
-                            <div className="shrink-0 flex gap-5 px-5 border-b border-slate-200" role="tablist" aria-label="Record sections">
+                            <div className="sticky top-0 z-10 flex gap-6 px-6 bg-[#f7f9fc]/95 backdrop-blur border-b border-slate-200" role="tablist" aria-label="Record sections">
                                 {tabs.map((t) => (
                                     <button
                                         key={t.id}
@@ -957,8 +914,8 @@ function ShowInner({
                                         role="tab"
                                         aria-selected={tab === t.id}
                                         onClick={() => setTab(t.id)}
-                                        className={`py-2.5 -mb-px border-b-2 text-[13px] cursor-pointer ${
-                                            tab === t.id ? "border-[#0b2a5b] text-slate-900 font-semibold" : "border-transparent text-slate-500 hover:text-slate-800"
+                                        className={`py-2 -mb-px border-b-2 text-[13px] cursor-pointer transition-colors duration-150 ${
+                                            tab === t.id ? "border-blue-600 text-slate-900 font-semibold" : "border-transparent text-slate-500 hover:text-slate-800"
                                         }`}
                                     >
                                         {t.label}
@@ -966,95 +923,18 @@ function ShowInner({
                                 ))}
                             </div>
 
-                            <div className="flex-1 overflow-y-auto px-5 py-3" role="tabpanel">
+                            <div key={tab} className="px-6 pt-2.5 pb-4 animate-in fade-in slide-in-from-bottom-1 duration-150" role="tabpanel">
                                 {tab === "overview" && (
                                     <>
-                                        <dl>
-                                            <Row label="Applicant">{app.applicant_name}</Row>
-                                            {app.corporation_name && <Row label="Corporation">{app.corporation_name}</Row>}
-                                            <Row label="Contact">
-                                                {(app.contact_number || app.email) && (
-                                                    <span className="flex flex-col">
-                                                        {app.contact_number && (
-                                                            <a href={`tel:+63${String(app.contact_number).replace(/^0/, "")}`} className="hover:underline underline-offset-2">
-                                                                +63 {app.contact_number}
-                                                            </a>
-                                                        )}
-                                                        {app.email && (
-                                                            <a href={`mailto:${app.email}`} className="hover:underline underline-offset-2 break-all">
-                                                                {app.email}
-                                                            </a>
-                                                        )}
-                                                    </span>
-                                                )}
-                                            </Row>
-                                            {app.representative_name && (
-                                                <Row label="Representative">
-                                                    {app.representative_name}
-                                                    {(app.representative_contact || app.representative_address) && (
-                                                        <span className="block text-[12px] text-slate-500">
-                                                            {[app.representative_contact && `+63 ${app.representative_contact}`, app.representative_address].filter(Boolean).join(" · ")}
-                                                        </span>
-                                                    )}
-                                                </Row>
-                                            )}
-                                            <Row label="Track">{isAmendment ? "Legislative amendment (Track B)" : hasSbRouting ? "Standard clearance (Track A · SB Routed)" : "Standard clearance (Track A)"}</Row>
-                                            {isAmendment && app.target_land_use_class && (
-                                                <Row label="Target zoning">
-                                                    {app.target_land_use_class}
-                                                    <span className="block text-[12px] text-slate-500">{getZoneInfo(app.target_land_use_class).label}</span>
-                                                </Row>
-                                            )}
-                                            <Row label="Purpose">{app.purpose}</Row>
-                                        </dl>
 
-                                        {(isAmendment || hasSbRouting) && (
-                                            <div className={`mt-4 mb-2 p-3.5 rounded-lg border transition-all ${
-                                                !app.sb_ordinance_number?.trim() && app.status === "Under Sangguniang Bayan"
-                                                    ? "border-blue-300 bg-blue-50/50 shadow-xs ring-1 ring-blue-500/20"
-                                                    : "border-slate-200 bg-slate-50"
-                                            }`}>
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <p className="text-[12.5px] font-semibold text-slate-800">Sangguniang Bayan / DAR references</p>
-                                                    {!app.sb_ordinance_number?.trim() && app.status === "Under Sangguniang Bayan" && (
-                                                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-full">
-                                                            Awaiting Input
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                                    {[
-                                                        ["sb_ordinance_number", "SB ordinance no.", "e.g. Ord. No. 2026-014"],
-                                                        ["dar_clearance_ref", "DAR clearance ref.", "e.g. DAR-CC-2026-0021"],
-                                                    ].map(([field, label, placeholder]) => (
-                                                        <div key={field}>
-                                                            <label htmlFor={field} className="text-[12px] font-medium text-slate-700">{label}</label>
-                                                            <input
-                                                                id={field}
-                                                                type="text"
-                                                                maxLength={100}
-                                                                value={refs[field]}
-                                                                onChange={(e) => setRefs((r) => ({ ...r, [field]: e.target.value }))}
-                                                                placeholder={placeholder}
-                                                                className={`mt-1 font-mono ${FIELD} ${field === 'sb_ordinance_number' && !app.sb_ordinance_number?.trim() && app.status === 'Under Sangguniang Bayan' ? 'border-blue-400 bg-white ring-2 ring-blue-500/10' : ''}`}
-                                                            />
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <div className="flex justify-end mt-2.5">
-                                                    <button
-                                                        type="button"
-                                                        onClick={saveRefs}
-                                                        disabled={saving || (refs.sb_ordinance_number === (app.sb_ordinance_number || "") && refs.dar_clearance_ref === (app.dar_clearance_ref || ""))}
-                                                        className="h-8 px-3.5 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed shadow-2xs"
-                                                    >
-                                                        Save references
-                                                    </button>
-                                                </div>
+                                        {showRefs && !refsInNextStep && (
+                                            <div className="mb-3 p-3.5 rounded-lg border border-slate-200 bg-slate-50">
+                                                <p className="mb-2 text-[12.5px] font-semibold text-slate-800">Sangguniang Bayan / DAR references</p>
+                                                {refsForm}
                                             </div>
                                         )}
 
-                                        <div className="mt-3">
+                                        <div className="rounded-xl border border-slate-200 bg-white px-4 shadow-sm [&>details:first-child]:border-t-0">
                                             <More title="Project details">
                                                 <Row label="Project / business">{app.project_type_business_name}</Row>
                                                 <Row label="Building area">{app.building_area && `${Number(app.building_area).toLocaleString()} m²`}</Row>
@@ -1076,7 +956,6 @@ function ShowInner({
                                             <More title="Record">
                                                 <Row label="Form no." mono>{app.form_number}</Row>
                                                 <Row label="Encoded by">{app.encoded_by_name}</Row>
-                                                <Row label="Filed">{fmtDate(app.created_at, true)}</Row>
                                                 <Row label="Remarks">{app.remarks}</Row>
                                             </More>
                                         </div>
@@ -1086,15 +965,13 @@ function ShowInner({
                                             enumerates every inspection round from the 9C-1
                                             reader, so it must not be nested under a parcel's
                                             latest-only inspection surface.
-                                            Mounted INSIDE the Summary tab so it is mutually
-                                            exclusive with the Lots-branch mount below: these
-                                            tabs are exclusive, so exactly one renders and the
-                                            panel is never duplicated on a page.
+                                            Mounted exactly once, in the Details tab (never in
+                                            the Lots tab), so the panel is never duplicated on a page.
                                             Not gated on any Planning Officer decision control —
                                             delivery status is shared read-only visibility for
                                             Admin and Planning Officer alike. */}
                                         {/* ── MASTER MERGE CORRECTION §5: APPLICATION-LEVEL
-                                            PLANNING OFFICER OWNERSHIP, re-homed into the Summary tab.
+                                            PLANNING OFFICER OWNERSHIP, in the Details tab.
 
                                             Admin-initiated application handover. It is APPLICATION
                                             level, so it deliberately lives outside the parcel list
@@ -1105,6 +982,13 @@ function ShowInner({
                                             is Admin), not a client role guess, and the component
                                             enforces reason requirements itself. No assignment
                                             logic is duplicated on this page. */}
+                                        <details className="group mt-3 rounded-xl border border-slate-200 bg-white px-4 shadow-sm">
+                                            <summary className="flex items-center justify-between py-2 cursor-pointer list-none text-[12.5px] font-semibold text-slate-700 hover:text-slate-900">
+                                                Assignment &amp; inspection delivery
+                                                <svg className="w-4 h-4 text-slate-400 transition-transform duration-200 ease-out group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                                </svg>
+                                            </summary>
                                         <PlanningOfficerAssignment
                                             current={assignedPlanningOfficer}
                                             candidates={planningOfficers}
@@ -1114,23 +998,16 @@ function ShowInner({
                                             applicationId={app.id}
                                         />
 
-                                        <div className="mt-4 p-5 rounded-md border border-slate-200 bg-white">
+                                        <div className="mt-4 mb-3 p-5 rounded-md border border-slate-200 bg-white">
                                             <InspectionDeliveryStatusPanel applicationId={app.id} />
                                         </div>
+                                        </details>
                                     </>
                                 )}
 
                                 {tab === "parcels" && (
                                     <>
-                                        {/* Loop 9C-2, Lots branch (master merge re-home).
-                                            The second mutually exclusive mount site. The two
-                                            branches are exclusive tabs, so only one can render
-                                            on a given page view, and the panel is passed the
-                                            Application model id already supplied to the page. */}
-                                        <div className="mb-3 p-5 rounded-md border border-slate-200 bg-white">
-                                            <InspectionDeliveryStatusPanel applicationId={app.id} />
-                                        </div>
-
+                                        {/* The FieldSync delivery panel is application-level and lives only in Summary. */}
                                         {app.status === "Technical Review" && !canRecordPlanningDecision && (
                                             <p className="mb-3 px-3 py-2 rounded-md bg-slate-50 border border-slate-200 text-[12px] text-slate-600">
                                                 Technical-review decisions are recorded by a Planning Officer. The recorded decisions below are read-only here.
@@ -1155,14 +1032,14 @@ function ShowInner({
                                                 const shownDecision = app.status === "Technical Review" ? review.decision : latest?.decision;
                                                 const decisionDot = DECISIONS.find((d) => d.value === shownDecision)?.dot || "bg-slate-300";
                                                 return (
-                                                    <li key={p.id} className={`rounded-md border ${isOpen ? "border-[#0b2a5b]/40 shadow-sm" : "border-slate-200"}`}>
+                                                    <li key={p.id} className={`rounded-xl border bg-white ${isOpen ? "border-blue-300 shadow-sm" : "border-slate-200"}`}>
                                                         <button
                                                             type="button"
                                                             onClick={() => setSelectedIndex(selectedIndex === l.index ? null : l.index)}
                                                             aria-expanded={isOpen}
-                                                            className="w-full flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer hover:bg-slate-50 rounded-md"
+                                                            className="w-full flex items-center gap-3 px-3 py-1.5 text-left cursor-pointer hover:bg-slate-50 rounded-md"
                                                         >
-                                                            <span className={`text-[12px] font-semibold px-1.5 py-0.5 rounded ${isOpen ? "bg-[#0b2a5b] text-white" : "bg-slate-100 text-slate-700"}`}>{l.code}</span>
+                                                            <span className={`text-[12px] font-semibold px-1.5 py-0.5 rounded ${isOpen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"}`}>{l.code}</span>
                                                             <span className="flex-1 min-w-0">
                                                                 <span className="block font-mono text-[12px] text-slate-800 truncate">{l.pin || "No PIN"}</span>
                                                                 <span className="flex items-center gap-3 text-[11.5px] text-slate-500">
@@ -1176,36 +1053,36 @@ function ShowInner({
                                                                     </span>
                                                                 </span>
                                                             </span>
-                                                            <svg className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                            <svg className={`w-4 h-4 text-slate-400 transition-transform duration-200 ease-out ${isOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                                                             </svg>
                                                         </button>
 
                                                         {isOpen && (
-                                                            <div className="px-3 pb-3 border-t border-slate-100">
-                                                                <dl className="pt-1">
-                                                                    <Row label="Owner">{p.owner_name}</Row>
-                                                                    <Row label="Lot no." mono>{p.lot_number}</Row>
-                                                                    <Row label="TCT / Tax Dec." mono>{[p.tct_number, p.tax_dec_number].filter(Boolean).join(" · ")}</Row>
-                                                                    <Row label="Lot area">
+                                                            <div className="px-3 pb-2.5 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
+                                                                <dl className="py-2.5 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-5 gap-y-2.5">
+                                                                    <Spec label="Owner">{p.owner_name}</Spec>
+                                                                    <Spec label="Lot no." mono>{p.lot_number}</Spec>
+                                                                    <Spec label="TCT / Tax Dec." mono>{[p.tct_number, p.tax_dec_number].filter(Boolean).join(" · ")}</Spec>
+                                                                    <Spec label="Lot area">
                                                                         <AreaComparison declared={p.lot_area_sqm} feature={l.feature} />
-                                                                    </Row>
-                                                                    <Row label="CLUP zone">
+                                                                    </Spec>
+                                                                    <Spec label="CLUP zone">
                                                                         {p.land_use_class && (
                                                                             <>
                                                                                 {p.land_use_class}
                                                                                 {getZoneInfo(p.land_use_class).label !== p.land_use_class && (
-                                                                                    <span className="block text-[12px] text-slate-500">{getZoneInfo(p.land_use_class).label}</span>
+                                                                                    <span className="block text-[11.5px] text-slate-500">{getZoneInfo(p.land_use_class).label}</span>
                                                                                 )}
                                                                             </>
                                                                         )}
-                                                                    </Row>
-                                                                    <Row label="Zoning check">
+                                                                    </Spec>
+                                                                    <Spec label="Zoning check">
                                                                         <span className="inline-flex items-center gap-1.5">
                                                                             <span className="w-2 h-2 rounded-[2px]" style={{ background: l.color }} aria-hidden="true" />
                                                                             {l.feature ? l.check.label : "Lot not on the tax map"}
                                                                         </span>
-                                                                    </Row>
+                                                                    </Spec>
                                                                 </dl>
                                                                 <More title="More lot details">
                                                                     <Row label="PIN" mono>{l.pin}</Row>
@@ -1268,7 +1145,7 @@ function ShowInner({
                                                                                         onChange={() => setReview(p.id, "decision", d)}
                                                                                         className="peer sr-only"
                                                                                     />
-                                                                                    <span className="flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-slate-600 cursor-pointer hover:bg-slate-50 peer-checked:bg-[#0b2a5b] peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-inset peer-focus-visible:ring-[#0b2a5b]">
+                                                                                    <span className="flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold text-slate-600 cursor-pointer hover:bg-slate-50 peer-checked:bg-blue-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-inset peer-focus-visible:ring-blue-500">
                                                                                         <span className={`w-2 h-2 rounded-full ${DECISION_DOT[d] || "bg-slate-300"}`} aria-hidden="true" />
                                                                                         {decisionLabel(d)}
                                                                                     </span>
@@ -1338,7 +1215,7 @@ function ShowInner({
                                                                     </div>
                                                                 ) : (
                                                                     latest && (
-                                                                        <div className="mt-3 px-3 py-2 rounded-md bg-slate-50 border border-slate-200">
+                                                                        <div className="mt-2 px-3 py-1.5 rounded-md bg-slate-50 border border-slate-200">
                                                                             <p className="text-[12.5px] font-semibold text-slate-900">
                                                                                 {latest.decision}
                                                                                 <span className="font-normal text-slate-500">
@@ -1365,7 +1242,7 @@ function ShowInner({
                                                     type="button"
                                                     onClick={submitEvaluation}
                                                     disabled={saving || !canSubmitEvaluation}
-                                                    className="h-9 px-4 rounded-md bg-[#0b2a5b] hover:bg-[#0e3574] text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
+                                                    className="h-9 px-4 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
                                                 >
                                                     {saving ? "Submitting…" : "Submit evaluation"}
                                                 </button>
@@ -1404,12 +1281,89 @@ function ShowInner({
                                 {tab === "export" && (
                                     <PermitExportPanel
                                         app={app}
+                                        part="documents"
                                         savedPermits={savedPermits}
                                         onSavedPermitsChange={setSavedPermits}
                                     />
                                 )}
                             </div>
                         </div>
+
+                        {/* Context column: the case at a glance, visible on every tab */}
+                        <aside className="order-first lg:order-none lg:w-[380px] shrink-0 border-b lg:border-b-0 lg:border-l border-slate-200 bg-[#f7f9fc] lg:overflow-y-auto p-4 space-y-4">
+                            <div className="h-64 lg:h-[21rem] rounded-xl overflow-hidden border border-slate-200 bg-slate-200 shadow-sm">
+                                <ApplicationMap
+                                    lots={lots}
+                                    parcelMapData={parcelMapData}
+                                    brgyMapData={brgyMapData}
+                                    barangay={app.barangay}
+                                    selectedIndex={selectedIndex}
+                                    inspectionPoint={inspectionPoint}
+                                    onSelectLot={(i) => {
+                                        setSelectedIndex(i);
+                                        setTab("parcels");
+                                    }}
+                                    onPrint={() => setSiteMapOpen(true)}
+                                />
+                            </div>
+                            <section aria-labelledby="case-glance" className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                                <div className="px-4 pt-3.5 pb-3 border-b border-slate-100">
+                                    <p className="text-[10.5px] font-medium uppercase tracking-wide text-slate-400">Application</p>
+                                    <h2 id="case-glance" className="mt-0.5 text-[14px] font-semibold tracking-tight text-slate-900 leading-snug">{dash(app.application_type)}</h2>
+                                    <p className="mt-0.5 text-[12px] text-slate-500 tabular-nums">
+                                        Brgy. {dash(app.barangay)} · Filed {fmtDate(app.created_at, true)}
+                                    </p>
+                                </div>
+                                {/* Same label-above-value style as the lot record */}
+                                <dl className="px-4 py-3.5 grid grid-cols-2 gap-x-4 gap-y-3">
+                                    {app.corporation_name && (
+                                        <div className="col-span-2"><Spec label="Contact person">{app.applicant_name}</Spec></div>
+                                    )}
+                                    <div className="col-span-2">
+                                        <Spec label="Contact">
+                                            {(app.contact_number || app.email) && (
+                                                <span className="flex flex-col min-w-0">
+                                                    {app.contact_number && (
+                                                        <a href={`tel:+63${String(app.contact_number).replace(/^0/, "")}`} className="hover:text-blue-700 hover:underline underline-offset-2">
+                                                            +63 {app.contact_number}
+                                                        </a>
+                                                    )}
+                                                    {app.email && (
+                                                        <a href={`mailto:${app.email}`} title={app.email} className="block truncate hover:text-blue-700 hover:underline underline-offset-2">
+                                                            {app.email}
+                                                        </a>
+                                                    )}
+                                                </span>
+                                            )}
+                                        </Spec>
+                                    </div>
+                                    {app.representative_name && (
+                                        <div className="col-span-2">
+                                            <Spec label="Representative">
+                                                {app.representative_name}
+                                                {(app.representative_contact || app.representative_address) && (
+                                                    <span className="block text-[11.5px] text-slate-500">
+                                                        {[app.representative_contact && `+63 ${app.representative_contact}`, app.representative_address].filter(Boolean).join(" · ")}
+                                                    </span>
+                                                )}
+                                            </Spec>
+                                        </div>
+                                    )}
+                                    <Spec label="Track">{isAmendment ? "Amendment (Track B)" : hasSbRouting ? "Clearance (Track A · SB routed)" : "Clearance (Track A)"}</Spec>
+                                    {isAmendment && app.target_land_use_class ? (
+                                        <Spec label="Target zoning">
+                                            {app.target_land_use_class}
+                                            <span className="block text-[11.5px] text-slate-500">{getZoneInfo(app.target_land_use_class).label}</span>
+                                        </Spec>
+                                    ) : (
+                                        <Spec label="Purpose">{app.purpose}</Spec>
+                                    )}
+                                    {isAmendment && app.target_land_use_class && (
+                                        <div className="col-span-2"><Spec label="Purpose">{app.purpose}</Spec></div>
+                                    )}
+                                </dl>
+                            </section>
+                        </aside>
                     </main>
                 </div>
             </div>
@@ -1449,7 +1403,7 @@ class ShowErrorBoundary extends React.Component {
                     <div className="max-w-md w-full bg-white rounded-lg shadow-lg border border-slate-200 p-6 text-center">
                         <h2 className="text-[15px] font-semibold text-slate-900 mb-1">Failed to load application record</h2>
                         <p className="text-[12.5px] text-slate-500 mb-4">{this.state.error?.message || "An unexpected error occurred while rendering this application."}</p>
-                        <button onClick={() => window.location.reload()} className="px-4 py-2 rounded-md bg-[#0b2a5b] text-white text-[12.5px] font-semibold hover:bg-[#0e3574] cursor-pointer">
+                        <button onClick={() => window.location.reload()} className="px-4 py-2 rounded-md bg-blue-600 text-white text-[12.5px] font-semibold hover:bg-blue-700 cursor-pointer">
                             Reload page
                         </button>
                     </div>

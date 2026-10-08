@@ -206,8 +206,8 @@ check(!/diagnosticsSummary\.reports/.test(code),
 //   4. Every supplemental band renders INSIDE it, after the primary content.
 //   5. No band is ever a sibling of the `flex-1` region again.
 
-const columnIdx = src.indexOf('relative overflow-hidden lg:w-7/12');
-check(columnIdx >= 0, 'the right column owner must exist');
+const columnIdx = src.indexOf('id="inspection-record"');
+check(columnIdx >= 0, 'the inspection record column owner must exist');
 
 const scrollDivs = [...code.matchAll(/className="[^"]*overflow-y-auto[^"]*"/g)];
 check(

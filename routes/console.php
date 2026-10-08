@@ -12,6 +12,9 @@ Artisan::command('inspire', function () {
 // The new Laravel 11+ way to schedule tasks directly in the routes file
 Schedule::command('sync:pull-inspections')->everyFiveMinutes();
 
+// Drop read notifications older than 90 days (see AppNotification::prunable).
+Schedule::command('model:prune', ['--model' => [\App\Models\AppNotification::class]])->daily();
+
 // Pre-build the cached map layers. Run after deploying or after restoring the
 // database, so the first dashboard visit doesn't wait on the ~20s cold build of
 // the land-use plan. Uploads through Settings already warm the cache.

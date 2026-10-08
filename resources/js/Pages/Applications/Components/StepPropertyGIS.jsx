@@ -10,6 +10,7 @@ import { getZoneInfo, ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
 import { resolveBarangayName } from "@/utils/mapData";
 import {
     MAP_MAX_ZOOM,
+    LOT_FOCUS_ZOOM,
     BASEMAPS,
     CLUP_TILES,
     BLANK_TILE,
@@ -160,9 +161,17 @@ function Locator({ parcelIndex, brgyIndex, attachedCodes, onPickParcel, onPickBa
     );
 }
 
+// "PDA-SZ (Production Agricultural Sub-Zone)", or just the code when the zone table doesn't know it
+const describeZone = (code) => {
+    const label = getZoneInfo(code).label;
+    return label && label !== code ? `${code} (${label})` : code;
+};
+
 // Fields filled by a PIN lookup; cleared whenever the PIN changes so stale data never stays "verified".
 const LOOKUP_RESET = {
     is_verified: false,
+    is_manual: false,
+    lookup_failed: false,
     owner_name: "",
     cadastral_zone: "",
     land_use_class: "",
@@ -183,6 +192,7 @@ export default function StepPropertyGIS({
     addParcel,
     removeParcel,
     handlePinLookup,
+    setErrors = () => {},
     pinLoading = {},
     errors = {},
     totalLotArea = 0,
@@ -302,6 +312,7 @@ export default function StepPropertyGIS({
     }) && !isAmendmentStream;
 
     const verifiedCount = parcels.filter((p) => p.is_verified).length;
+    const mismatchIndex = parcels.findIndex((p) => getZoningCheck(p, isAmendmentStream).key === "mismatch");
 
     // The parcel panel stays hidden until a lot is verified (or manual encoding is chosen); until then the map is full screen
     const showPanel = verifiedCount > 0 || panelUnlocked;
@@ -381,7 +392,10 @@ export default function StepPropertyGIS({
 
     // Restyle the existing parcel layer on selection instead of rebuilding every polygon
     const activePin = activeParcelFeature?.properties?.property_index_number;
-    const showParcelLayer = showParcels && zoom >= PARCEL_MIN_ZOOM;
+    // Other tax-map lots only matter while a lot is still being looked for; once every slot is filled, show just this application's lots
+    const isPickingLot = parcels.every((p) => !p.is_verified) || parcels.some((p) => !p.is_verified && !p.is_manual);
+    const showOtherLots = showParcels && isPickingLot;
+    const showParcelLayer = showOtherLots && zoom >= PARCEL_MIN_ZOOM;
     useEffect(() => {
         const layer = parcelLayerRef.current;
         if (!layer) return;
@@ -413,7 +427,7 @@ export default function StepPropertyGIS({
                     const feature = p.is_verified && pin ? featureByPin.get(pin) : null;
                     if (!feature) return null;
                     const check = getZoningCheck(p, isAmendmentStream);
-                    return { index: i, pin, code: p.parcel_code || `P-${String(i + 1).padStart(2, "0")}`, feature, check };
+                    return { index: i, pin, code: p.parcel_code || `P-${String(i + 1).padStart(2, "0")}`, feature, check, zone: p.land_use_class?.trim() || "" };
                 })
                 .filter(Boolean),
         [parcels, featureByPin, isAmendmentStream]
@@ -431,7 +445,7 @@ export default function StepPropertyGIS({
             attached
                 .map((a) => {
                     const latlng = labelPoint(a.feature.geometry);
-                    return latlng ? { key: a.pin, text: `${a.code} · ${a.check.label}`, latlng, color: CHECK_COLORS[a.check.key] } : null;
+                    return latlng ? { key: a.pin, text: [a.code, a.zone, a.check.label].filter(Boolean).join(" · "), latlng, color: CHECK_COLORS[a.check.key] } : null;
                 })
                 .filter(Boolean),
         [attached]
@@ -506,6 +520,9 @@ export default function StepPropertyGIS({
         [zoneData]
     );
 
+    // The identified lot is already in the application: its record lives in the parcel panel, not here
+    const identifyIsAttached = Boolean(attachedCodes[identify?.feature?.properties?.property_index_number?.trim()]);
+
     const identifyPreview = (() => {
         if (!identify?.feature || identify.areaZone === undefined) return null;
         const assessor = identify.feature.properties?.land_use_class || "";
@@ -539,8 +556,8 @@ export default function StepPropertyGIS({
         if (bounds.isValid()) map.fitBounds(bounds, { padding: [padding, padding], maxZoom });
     };
 
-    // Zoom to a lot without zooming out when the officer is already closer in
-    const zoomToLot = (feature) => fitGeoJSON(feature, 80, Math.max(map?.getZoom() ?? 18, 18));
+    // Close in on the lot but stop at 19 (the CLUP tiles' native zoom) so the surrounding zone stays in view
+    const zoomToLot = (feature) => fitGeoJSON(feature, 120, LOT_FOCUS_ZOOM);
 
     const selectParcel = (index) => {
         setActiveParcelIndex(index);
@@ -560,7 +577,8 @@ export default function StepPropertyGIS({
     };
 
     const handlePinChange = (index, value) => {
-        if (!value.trim() || parcels[index]?.is_verified) {
+        const p = parcels[index];
+        if (!value.trim() || p?.is_verified || p?.is_manual || p?.lookup_failed) {
             setForm((prev) => ({
                 ...prev,
                 parcels: prev.parcels.map((p, i) => (i === index ? { ...p, ...LOOKUP_RESET, property_index_number: value } : p)),
@@ -568,6 +586,37 @@ export default function StepPropertyGIS({
             if (selectedIndex === index) setActiveParcelFeature(null);
         } else {
             setParcelField(index, "property_index_number")({ target: { value } });
+        }
+    };
+
+    // The PIN isn't on the tax map: keep it as typed and let the officer supply the barangay by hand
+    const encodeManually = (index) => {
+        setForm((prev) => ({
+            ...prev,
+            parcels: prev.parcels.map((p, i) => (i === index ? { ...p, is_manual: true, lookup_failed: false } : p)),
+        }));
+        setErrors((prev) => {
+            const next = { ...prev };
+            delete next[`parcels.${index}.property_index_number`];
+            return next;
+        });
+        setPanelUnlocked(true);
+        setActiveParcelIndex(index);
+        setLastLookupIndex(null);
+    };
+
+    const setManualBarangay = (index, value) => {
+        setForm((prev) => ({
+            ...prev,
+            barangay: index === 0 ? value : prev.barangay,
+            parcels: prev.parcels.map((p, i) => (i === index ? { ...p, barangay: value } : p)),
+        }));
+        if (index === 0) {
+            setErrors((prev) => {
+                const next = { ...prev };
+                delete next.barangay;
+                return next;
+            });
         }
     };
 
@@ -930,6 +979,27 @@ export default function StepPropertyGIS({
                                             {identify.feature && (() => {
                                                 const pin = identify.feature.properties?.property_index_number?.trim();
                                                 const attached = pin && attachedCodes[pin];
+                                                if (attached) {
+                                                    const attachedIndex = parcels.findIndex((p) => p.is_verified && p.property_index_number?.trim() === pin);
+                                                    return (
+                                                        <div className="m-1 mb-2 p-2.5 rounded-md border border-slate-300 bg-slate-50">
+                                                            <p className="text-[10px] uppercase tracking-wider text-slate-400">Identified lot</p>
+                                                            <p className="font-mono font-semibold text-slate-900 text-xs break-all">{pin}</p>
+                                                            <p className="mt-1.5 text-slate-600">
+                                                                ✓ This lot is {attached} in this application. Its record and zoning check are in the parcel panel.
+                                                            </p>
+                                                            {attachedIndex !== -1 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => selectParcel(attachedIndex)}
+                                                                    className="mt-2 h-7 px-2.5 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                                                                >
+                                                                    Show {attached} in the panel
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                }
                                                 return (
                                                     <div className="m-1 mb-2 p-2.5 rounded-md border border-slate-300 bg-slate-50">
                                                         <p className="text-[10px] uppercase tracking-wider text-slate-400">Identified lot</p>
@@ -967,9 +1037,7 @@ export default function StepPropertyGIS({
                                                                 </span>
                                                             </div>
                                                         )}
-                                                        {attached ? (
-                                                            <p className="mt-1.5 text-slate-600">✓ Attached to this application as {attached}</p>
-                                                        ) : pin ? (
+                                                        {pin ? (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => startEncode({ type: "map", feature: identify.feature })}
@@ -1003,6 +1071,8 @@ export default function StepPropertyGIS({
                                                     Copy
                                                 </button>
                                             </div>
+                                            {!identifyIsAttached && (
+                                            <>
                                             <details open className="mb-1">
                                                 <summary className="px-1.5 py-1 font-semibold text-slate-800 cursor-pointer hover:bg-slate-100 rounded">Barangay boundaries</summary>
                                                 <div className="px-1.5 pl-5 py-1 text-slate-800">
@@ -1071,6 +1141,8 @@ export default function StepPropertyGIS({
                                             ) : (
                                                 <p className="px-1.5 py-1 text-slate-400">No land parcel at this point.</p>
                                             )}
+                                            </>
+                                            )}
                                         </>
                                     )}
                                 </div>
@@ -1082,6 +1154,9 @@ export default function StepPropertyGIS({
                                 <div className="pl-7 pb-1 flex items-center gap-1.5 text-[10px] text-slate-500">
                                     <span className="w-2.5 h-2.5 bg-yellow-300/60 border border-yellow-400" aria-hidden="true" /> Selected lot
                                 </div>
+                                {showParcels && !isPickingLot && (
+                                    <p className="pl-7 pb-1 text-[10px] text-slate-500">Other lots are hidden. Add a parcel to show them again.</p>
+                                )}
                                 <LayerRow checked={showBarangays} onChange={setShowBarangays} swatch="bg-transparent border-slate-600">
                                     Barangay boundaries
                                 </LayerRow>
@@ -1154,7 +1229,7 @@ export default function StepPropertyGIS({
                         parcelLabels={parcelLabels}
                         brgyLabels={brgyLabels}
                         selectedPin={activePin}
-                        showParcels={showParcels}
+                        showParcels={showOtherLots}
                         showBarangays={showBarangays}
                     />
 
@@ -1182,7 +1257,7 @@ export default function StepPropertyGIS({
                                 )}
                             </span>
                             {lookupError && (
-                                <button type="button" onClick={() => setPanelUnlocked(true)} className="shrink-0 h-6 px-2.5 rounded border border-amber-300 bg-white font-semibold hover:bg-amber-100 cursor-pointer">
+                                <button type="button" onClick={() => encodeManually(lastLookupIndex)} className="shrink-0 h-6 px-2.5 rounded border border-amber-300 bg-white font-semibold hover:bg-amber-100 cursor-pointer">
                                     Encode manually
                                 </button>
                             )}
@@ -1247,7 +1322,7 @@ export default function StepPropertyGIS({
                                     </span>
                                     {form.barangay && <span className="text-slate-500">Brgy. {form.barangay}</span>}
                                 </div>
-                                {errors.barangay && <p className="text-xs font-medium text-rose-500 -mt-1.5">Verify a PIN to detect the barangay.</p>}
+                                {errors.barangay && <p className="text-xs font-medium text-rose-500 -mt-1.5">{errors.barangay}</p>}
 
                                 {/* Parcel rows */}
                                 <ul className="rounded-xl border border-slate-200 divide-y divide-slate-200 overflow-hidden">
@@ -1274,6 +1349,7 @@ export default function StepPropertyGIS({
                                                         </span>
                                                         <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-slate-600 shrink-0">
                                                             {hasRowError && <span className="text-rose-500 font-semibold">Needs attention ·</span>}
+                                                            {parcel.is_manual && <span className="text-amber-700 font-semibold">Manual ·</span>}
                                                             <span className={`w-1.5 h-1.5 rounded-full ${check.dot}`} aria-hidden="true" />
                                                             {check.label}
                                                         </span>
@@ -1336,11 +1412,42 @@ export default function StepPropertyGIS({
                                                                 )}
                                                             </div>
                                                             {pinError ? (
-                                                                <p className="text-xs font-medium text-rose-500 mt-1">{pinError}</p>
+                                                                <p className="text-xs font-medium text-rose-500 mt-1">
+                                                                    {pinError}
+                                                                    {parcel.lookup_failed && (
+                                                                        <button type="button" onClick={() => encodeManually(index)} className="ml-2 underline font-semibold text-slate-700 hover:text-slate-900 cursor-pointer">
+                                                                            Encode manually
+                                                                        </button>
+                                                                    )}
+                                                                </p>
+                                                            ) : parcel.is_manual ? (
+                                                                <p className="text-[11px] text-amber-700 mt-1.5">Not on the tax map · encoded manually. Press Verify to try the tax map again.</p>
                                                             ) : !parcel.is_verified ? (
                                                                 <p className="text-[11px] text-slate-400 mt-1.5">Press Enter to verify, or use Identify on the map.</p>
                                                             ) : null}
                                                         </div>
+
+                                                        {(parcel.is_manual || (parcel.is_verified && !parcel.barangay)) && (
+                                                            <div>
+                                                                <label htmlFor={`parcel-${index}-barangay`} className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                                                    Barangay
+                                                                </label>
+                                                                <select
+                                                                    id={`parcel-${index}-barangay`}
+                                                                    value={parcel.barangay || ""}
+                                                                    onChange={(e) => setManualBarangay(index, e.target.value)}
+                                                                    aria-invalid={index === 0 && !!errors.barangay}
+                                                                    className={`mt-1 w-full h-9 rounded-lg border bg-white px-2.5 text-xs text-slate-800 focus:outline-none focus:ring-1 ${
+                                                                        index === 0 && errors.barangay ? "border-rose-400 focus:ring-rose-400/30" : "border-slate-300 focus:border-blue-500 focus:ring-blue-500/30"
+                                                                    }`}
+                                                                >
+                                                                    <option value="">Select barangay…</option>
+                                                                    {[...new Set(brgyIndex.map((b) => b.name))].sort().map((name) => (
+                                                                        <option key={name} value={name}>{name}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        )}
 
                                                         {/* Identify results */}
                                                         {parcel.is_verified && (
@@ -1377,9 +1484,13 @@ export default function StepPropertyGIS({
 
                                                                 {check.key === "mismatch" && (
                                                                     <div className="mt-2 pl-3 border-l-2 border-amber-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                                                        <p className="text-[11px] text-slate-600 leading-relaxed">
-                                                                            Recorded use doesn't match the zoning plan, so this can't proceed as a clearance.
-                                                                        </p>
+                                                                        <div id={`parcel-${index}-mismatch`} className="text-[11px] text-slate-600 leading-relaxed space-y-1">
+                                                                            <p>
+                                                                                Assessor records this lot as <b className="text-slate-800">{describeZone(parcel.cadastral_zone?.trim())}</b>, but CLUP 2030 zones it{" "}
+                                                                                <b className="text-slate-800">{describeZone(parcel.land_use_class?.trim())}</b>. Because the recorded use differs from the zone, it can't proceed as a standard zoning clearance.
+                                                                            </p>
+                                                                            <p className="font-semibold text-amber-800">Next is locked until this is resolved.</p>
+                                                                        </div>
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => handleSwitchStream(check.action.type, index)}
@@ -1418,13 +1529,20 @@ export default function StepPropertyGIS({
 
                     {/* Bottom Navigation */}
                     <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                        {isProgressionLocked && (
-                            <span className="text-[11px] text-slate-500 text-right">Resolve the zoning mismatch to continue</span>
+                        {isProgressionLocked && mismatchIndex !== -1 && (
+                            <button
+                                type="button"
+                                onClick={() => selectParcel(mismatchIndex)}
+                                className="text-[11px] font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-900 cursor-pointer"
+                            >
+                                Why is Next locked?
+                            </button>
                         )}
                         <button
                             type="button"
                             onClick={handleNext}
                             disabled={isProgressionLocked}
+                            aria-describedby={isProgressionLocked && mismatchIndex === selectedIndex ? `parcel-${mismatchIndex}-mismatch` : undefined}
                             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-white text-xs font-semibold shadow-sm transition-all bg-blue-600 hover:bg-blue-700 active:scale-98 cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed disabled:opacity-70"
                         >
                             Next: Application details

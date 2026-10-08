@@ -4,6 +4,8 @@ import L from "leaflet";
 // maxNativeZoom lets Leaflet upscale the last available tiles instead of leaving the canvas blank
 // when zoomed past the imagery's native resolution. mt0–mt3 spread requests across hosts.
 export const MAP_MAX_ZOOM = 20;
+// Zoom used when focusing a lot: close, but wide enough to keep neighbouring lots and zone lines in view
+export const LOT_FOCUS_ZOOM = 19;
 export const BASEMAPS = {
     satellite: { label: "Google Satellite", url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", maxNativeZoom: 18 },
     street: { label: "Google Road", url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", maxNativeZoom: 20 },

@@ -9,19 +9,35 @@ use Inertia\Inertia;
 class NotificationController extends Controller
 {
     /**
-     * Display the notifications page.
+     * History page categories => notification types they cover.
+     */
+    private const CATEGORIES = [
+        'applications' => ['application_created', 'status_updated'],
+        'inspections'  => ['inspection_assigned', 'inspection_completed'],
+        'permits'      => ['permit_generated'],
+        'users'        => ['user_registered'],
+        'analytics'    => ['forecast_generated'],
+        'support'      => ['application_support'],
+    ];
+
+    /**
+     * Display the notification history page.
      */
     public function index(Request $request)
     {
         $user = auth()->user();
-        $filter = $request->input('filter', 'all'); // 'all' or 'unread'
+        $category = $request->input('category');
+        if (!is_string($category) || !array_key_exists($category, self::CATEGORIES)) {
+            $category = 'all';
+        }
         $search = $request->input('search');
+        $search = is_string($search) ? mb_substr(trim($search), 0, 100) : null;
 
         $query = AppNotification::query()
             ->forUser($user->id);
 
-        if ($filter === 'unread') {
-            $query->unread();
+        if ($category !== 'all') {
+            $query->whereIn('type', self::CATEGORIES[$category]);
         }
 
         if ($search) {
@@ -37,17 +53,24 @@ class NotificationController extends Controller
             ->paginate(15)
             ->withQueryString();
 
-        $unreadCount = AppNotification::forUser($user->id)->unread()->count();
-        $totalCount = AppNotification::forUser($user->id)->count();
+        $typeCounts = AppNotification::forUser($user->id)
+            ->selectRaw('type, COUNT(*) as aggregate')
+            ->groupBy('type')
+            ->pluck('aggregate', 'type');
+
+        $categoryCounts = ['all' => (int) $typeCounts->sum()];
+        foreach (self::CATEGORIES as $key => $types) {
+            $categoryCounts[$key] = (int) $typeCounts->only($types)->sum();
+        }
 
         return Inertia::render('Notifications/Index', [
-            'notifications' => $notifications,
-            'filters'       => [
-                'filter' => $filter,
-                'search' => $search,
+            'notifications'  => $notifications,
+            'filters'        => [
+                'category' => $category,
+                'search'   => $search,
             ],
-            'unreadCount'   => $unreadCount,
-            'totalCount'    => $totalCount,
+            'categoryCounts' => $categoryCounts,
+            'unreadCount'    => AppNotification::forUser($user->id)->unread()->count(),
         ]);
     }
 
@@ -64,9 +87,11 @@ class NotificationController extends Controller
 
         $unreadCount = AppNotification::forUser($userId)->unread()->count();
 
+        // The bell is an inbox: unread only. History lives on /notifications.
         $recent = AppNotification::forUser($userId)
+            ->unread()
             ->orderByDesc('created_at')
-            ->limit(5)
+            ->limit(8)
             ->get();
 
         return response()->json([
@@ -132,6 +157,22 @@ class NotificationController extends Controller
         }
 
         return redirect()->back()->with('success', 'Notification deleted.');
+    }
+
+    /**
+     * Delete only the current user's read notifications; unread ones are kept.
+     */
+    public function clearRead(Request $request)
+    {
+        AppNotification::forUser(auth()->id())
+            ->where('is_read', true)
+            ->delete();
+
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true]);
+        }
+
+        return redirect()->back()->with('success', 'Read notifications cleared.');
     }
 
     /**

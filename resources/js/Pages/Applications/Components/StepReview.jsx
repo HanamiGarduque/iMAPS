@@ -146,6 +146,7 @@ export default function StepReview({
                                             <div className="flex flex-col">
                                                 <span className="font-semibold text-slate-800">{parcel.parcel_code || `Lot ${idx + 1}`} · {parcel.owner_name || "Owner not recorded"}</span>
                                                 <span className="text-[10px] text-slate-500 font-mono">PIN: {parcel.property_index_number || "—"}</span>
+                                                {parcel.is_manual && <span className="text-[10px] font-semibold text-amber-700">Manual · not on the tax map</span>}
                                             </div>
                                             <div className="text-right mt-1 sm:mt-0">
                                                 <span className="font-mono font-medium text-slate-700">{parcel.lot_area_sqm ? `${Number(parcel.lot_area_sqm).toLocaleString()} m²` : "—"}</span>

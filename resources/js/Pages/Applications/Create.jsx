@@ -9,6 +9,7 @@ import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Label, Input, Textarea, Select } from "./Components/FormControls";
+import { LOT_FOCUS_ZOOM } from "@/utils/mapGeometry";
 import StepCategory from "./Components/StepCategory";
 import StepApplicant from "./Components/StepApplicant";
 import StepPropertyGIS from "./Components/StepPropertyGIS";
@@ -324,12 +325,9 @@ function MapController({ brgyData, activeParcelFeature }) {
                     const layer = L.geoJSON(activeParcelFeature);
                     const bounds = layer.getBounds();
 
-                    if (bounds.isValid()) {
-                        const currentBounds = map.getBounds();
-                        // Only fit bounds if the parcel isn't already fully visible in viewport
-                        if (!isSameFeature && (!currentBounds.isValid() || !currentBounds.contains(bounds))) {
-                            map.fitBounds(bounds, { padding: [60, 60], maxZoom: 18, animate: false });
-                        }
+                    // A newly verified lot is always zoomed to, stopping at a zoom that keeps its surrounding zone in view
+                    if (bounds.isValid() && !isSameFeature) {
+                        map.fitBounds(bounds, { padding: [120, 120], maxZoom: LOT_FOCUS_ZOOM, animate: false });
                     }
                 } else if (brgyData && !isSameFeature) {
                     const layer = L.geoJSON(brgyData);
@@ -445,8 +443,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             return {
                 ...baseForm,
                 ...validCloud,
+                // A draft saved mid-lookup must not restore a zoning check that will never finish
                 parcels: Array.isArray(validCloud.parcels) && validCloud.parcels.length > 0
-                         ? validCloud.parcels
+                         ? validCloud.parcels.map((p) => ({ ...p, is_zoning_loading: false }))
                          : baseForm.parcels
             };
         }
@@ -1050,6 +1049,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                   land_use_class: "",
                                   is_zoning_loading: Boolean(pin),
                                   is_verified: true,
+                                  is_manual: false,
+                                  lookup_failed: false,
                                   coordinates: coordsStr || p.coordinates,
                               }
                             : p,
@@ -1095,7 +1096,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             });
         } catch (err) {
             setErrors((prev) => ({ ...prev, [`parcels.${index}.property_index_number`]: err?.message || "PIN not found in approved records" }));
-            setForm((prev) => ({ ...prev, parcels: (prev.parcels || []).map((p, i) => i === index ? { ...p, is_verified: false, is_zoning_loading: false } : p) }));
+            setForm((prev) => ({ ...prev, parcels: (prev.parcels || []).map((p, i) => i === index ? { ...p, is_verified: false, is_manual: false, lookup_failed: true, is_zoning_loading: false } : p) }));
         } finally {
             setPinLoading((prev) => ({ ...prev, [index]: false }));
         }
@@ -1149,6 +1150,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                               land_use_class: clupZoningClass,
                               is_zoning_loading: isChecking,
                               is_verified: Boolean(pin),
+                              is_manual: false,
+                              lookup_failed: false,
                               coordinates: centroid ? `${centroid.lat.toFixed(6)},${centroid.lng.toFixed(6)}` : p.coordinates,
                           }
                         : p
@@ -1316,7 +1319,11 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         const newErrors = {};
 
         if (step === STEP.PROPERTY) {
-            if (!form.barangay?.trim()) newErrors.barangay = "Barangay is required";
+            // An unverified P-01 already gets a PIN error below; this covers lots whose barangay must be chosen by hand
+            const first = form.parcels?.[0];
+            if (!form.barangay?.trim() && (first?.is_verified || first?.is_manual)) {
+                newErrors.barangay = "Select the barangay of P-01.";
+            }
 
             if (!form.parcels || form.parcels.length === 0) {
                 newErrors.parcels = "At least one parcel is required";
@@ -1330,13 +1337,23 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                         newErrors[`parcels.${index}.property_index_number`] = "Duplicate PIN";
                     } else {
                         seenPins.add(pin);
+                        if (!parcel.is_verified && !parcel.is_manual) {
+                            newErrors[`parcels.${index}.property_index_number`] = parcel.lookup_failed
+                                ? "PIN not found on the tax map. Check it for typos, or choose Encode manually."
+                                : "PIN not verified yet. Press Verify, or choose Encode manually if it isn't on the tax map.";
+                        }
                     }
                 });
             }
 
             // A standard clearance can't proceed on a lot whose recorded use contradicts the CLUP
             if (form.application_stream !== "amendment" && hasZoningMismatch(form.parcels)) {
-                newErrors.parcels = "Resolve the zoning mismatch (switch to a rezoning or reclassification petition) before continuing";
+                newErrors.parcels = "Resolve the zoning mismatch first: open the lot and use its switch button to file a rezoning or reclassification petition.";
+            }
+
+            // Continuing mid-lookup would skip a mismatch that hasn't been detected yet
+            if (Object.values(pinLoading).some(Boolean) || (form.parcels || []).some((p) => p.is_zoning_loading)) {
+                newErrors.parcels = "Still checking the lot and its zoning. Wait for the check to finish, then continue.";
             }
         }
 
@@ -1547,7 +1564,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     iconHtml: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
                     showCancelButton: true,
                     confirmButtonText: "View Application Details",
-                    cancelButtonText: "Applications List",
+                    cancelButtonText: "Open Registry",
                     buttonsStyling: false,
                     customClass: {
                         popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans max-w-md",
@@ -1981,6 +1998,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                     addParcel={addParcel}
                                     removeParcel={removeParcel}
                                     handlePinLookup={handlePinLookup}
+                                    setErrors={setErrors}
                                     pinLoading={pinLoading}
                                     errors={errors}
                                     totalLotArea={totalLotArea}

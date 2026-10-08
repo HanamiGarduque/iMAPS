@@ -774,8 +774,6 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
      *
      * Returns the id of the Application Detail branch (`tab === "<id>"`) that
      * encloses the given line, or '' when the line is not inside any branch.
-     * Used instead of the deleted old-layout sentinels so the mount-placement
-     * invariants are checked against the structure master actually ships.
      */
     private function enclosingTabBranch(int $lineIndex): string
     {
@@ -813,14 +811,13 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
         );
     }
 
-    public function test_the_panel_is_mounted_exactly_twice_with_the_canonical_application_id(): void
+    public function test_the_panel_is_mounted_exactly_once_with_the_canonical_application_id(): void
     {
         $mounts = $this->mountIndexes();
 
-        // Two SITES, one per mutually exclusive branch. Only ONE can render on a
-        // given page, which the browser verification confirmed after the panel
-        // duplication regression was corrected.
-        $this->assertCount(2, $mounts, 'One mount site per Application Detail branch.');
+        // One SITE, in the Summary tab. The Lots-tab copy was removed as a
+        // duplicate of the same application-level panel.
+        $this->assertCount(1, $mounts, 'Exactly one mount site, in the Summary tab.');
 
         foreach ($mounts as $i) {
             $this->assertStringContainsString(
@@ -865,45 +862,23 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
      * risk is two mounts inside the same tab, or two mounts in a branch that can
      * co-render. Both are now checked structurally rather than by old markup.
      */
-    public function test_the_two_mounts_are_mutually_exclusive_branches(): void
+    public function test_the_single_mount_sits_inside_the_details_branch(): void
     {
         $mounts = $this->mountIndexes();
-        $this->assertCount(2, $mounts, 'One mount site per Application Detail branch.');
+        $this->assertCount(1, $mounts, 'Exactly one mount site, in the Details tab.');
 
-        $branches = [];
-        foreach ($mounts as $index) {
-            $branch = $this->enclosingTabBranch($index);
-            $this->assertNotSame(
-                '',
-                $branch,
-                "Mount at line " . ($index + 1) . ' must sit inside a named Application Detail branch. '
-                . 'A mount outside every branch selector would render unconditionally and could duplicate the panel.'
-            );
-            $branches[] = $branch;
-        }
-
-        // The two mounts must be in DIFFERENT branches, and those branches must be
-        // distinct tab ids, which are mutually exclusive by construction.
-        $this->assertNotSame(
-            $branches[0],
-            $branches[1],
-            'Both mounts are in the same branch (' . $branches[0] . '). The panel would render twice on that page.'
-        );
-
+        // Inside a named branch: a mount outside every branch selector would render on every tab
         $this->assertSame(
-            ['overview', 'parcels'],
-            array_values(array_unique($branches)),
-            "The two mount branches must be exactly the Summary and Lots tabs. Got: " . implode(', ', $branches)
+            'overview',
+            $this->enclosingTabBranch($mounts[0]),
+            'The delivery panel must be mounted inside the Details (overview) branch only.'
         );
 
-        // Mutual exclusivity of the two branch selectors themselves.
-        foreach ($branches as $branch) {
-            $this->assertMatchesRegularExpression(
-                '/\{tab === "' . preg_quote($branch, '/') . '" && \(/',
-                $this->showSource(),
-                "Branch '{$branch}' must be selected by a single-valued tab condition, which is what makes it exclusive."
-            );
-        }
+        $this->assertMatchesRegularExpression(
+            '/\{tab === "overview" && \(/',
+            $this->showSource(),
+            'The Details branch must be selected by a single-valued tab condition, which is what makes it exclusive.'
+        );
     }
 
     /**
@@ -935,7 +910,7 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
         $this->assertGreaterThan(-1, $ownership, 'The ownership mount must be locatable.');
 
         $mounts = $this->mountIndexes();
-        $this->assertCount(2, $mounts);
+        $this->assertCount(1, $mounts);
 
         // 2. Both are application-level, so the delivery panel follows the
         //    application-level ownership card rather than preceding it.
@@ -946,39 +921,11 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
         );
 
         // 3. Neither may be parcel-scoped: an application-level control has no
-        //    business inside the per-lot list.
-        $this->assertLessThan(
-            $this->indexOf('<ul className="space-y-2">'),
-            $ownership,
-            'Application-level PO ownership must sit outside the per-lot list.'
-        );
-    }
-
-    /**
-     * MASTER MERGE CORRECTION - STRUCTURAL REWRITE.
-     *
-     * Was anchored on the deleted "Application Dossier" heading.
-     * The surviving intent is that the second mount belongs to the OTHER branch
-     * than the first, and that both sit in a real branch rather than outside all
-     * of them. Both are asserted in the rewritten exclusivity test above; this
-     * test now pins the specific branch assignment of each mount so a future
-     * edit cannot quietly move a mount between tabs.
-     */
-    public function test_the_second_mount_sits_in_the_other_application_detail_branch(): void
-    {
-        $mounts = $this->mountIndexes();
-        $this->assertCount(2, $mounts);
-
+        //    business inside the per-lot list, so it lives in the Details tab.
         $this->assertSame(
             'overview',
-            $this->enclosingTabBranch($mounts[0]),
-            'Mount 1 belongs to the Summary branch.'
-        );
-
-        $this->assertSame(
-            'parcels',
-            $this->enclosingTabBranch($mounts[1]),
-            'Mount 2 belongs to the Lots branch, mirroring the first branch in the other context.'
+            $this->enclosingTabBranch($ownership),
+            'Application-level PO ownership must sit in the Details tab, outside the per-lot list.'
         );
     }
 
@@ -1074,9 +1021,8 @@ class Loop9c2DeliveryPanelContractTest extends TestCase
     {
         $source = $this->showSource();
 
-        // Two application-level mounts, both keyed on app.id, and neither inside
-        // a parcel iteration.
-        $this->assertSame(2, substr_count($source, '<InspectionDeliveryStatusPanel applicationId={app.id} />'));
+        // One application-level mount, keyed on app.id, not inside a parcel iteration.
+        $this->assertSame(1, substr_count($source, '<InspectionDeliveryStatusPanel applicationId={app.id} />'));
         $this->assertSame(0, substr_count($source, 'applicationId={parcel'));
         $this->assertSame(0, substr_count($source, 'applicationId={activeParcel'));
     }

@@ -115,7 +115,7 @@ class AuthenticatedSessionController extends Controller
             $authUser->save();
         }
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended(route('overview', absolute: false));
     }
 
     public function destroy(Request $request): RedirectResponse

@@ -23,6 +23,37 @@ const HighlightMatch = ({ text, query }) => {
     );
 };
 
+// Ticks in its own component so the rest of the header doesn't re-render every second.
+// Always Philippine Standard Time, whatever the viewer's machine is set to.
+function MunicipalClock() {
+    const [now, setNow] = useState(() => new Date());
+    useEffect(() => {
+        const id = setInterval(() => setNow(new Date()), 1000);
+        return () => clearInterval(id);
+    }, []);
+    const opts = { timeZone: 'Asia/Manila' };
+    const time = now.toLocaleTimeString('en-PH', { ...opts, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const date = now.toLocaleDateString('en-PH', { ...opts, month: 'short', day: 'numeric', year: 'numeric' });
+    // Built like the profile button: a 28px tile, then two lines (time over date) at the same
+    // sizes as name-over-role, so the two read as a matched pair in the navbar.
+    return (
+        <div className="hidden xl:flex items-center gap-2.5 p-1 pr-2 rounded-xl select-none" title="Municipal time · Philippine Standard Time (UTC+8)">
+            <div className="w-7 h-7 rounded-lg bg-slate-100 ring-1 ring-slate-200/80 grid place-items-center text-slate-500 shrink-0" aria-hidden="true">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="9" />
+                    <polyline points="12 7 12 12 15.5 14" />
+                </svg>
+            </div>
+            {/* Screen readers get the time once, not a new announcement every second. */}
+            <span className="sr-only">{`Municipal time ${now.toLocaleTimeString('en-PH', { ...opts, hour: '2-digit', minute: '2-digit' })}, ${date}, Philippine Standard Time`}</span>
+            <div className="flex flex-col text-left tabular-nums" aria-hidden="true">
+                <span className="text-xs font-bold text-slate-800 leading-tight">{time}</span>
+                <span className="text-[11px] text-slate-500 font-semibold leading-none mt-0.5">{date} <span className="text-slate-400">· PHT</span></span>
+            </div>
+        </div>
+    );
+}
+
 export default function Header({ 
     userName = 'Staff Member', 
     userRole = 'Planning Officer', 
@@ -37,8 +68,8 @@ export default function Header({
 }) {
     // Dynamic navigation badge determination (Zero redundancy, automatically syncs with route)
     //
-    // The badge represents the MODULE, not the subsection. All Applications,
-    // Technical Review and Drafts are sibling sections of the APPLICATIONS
+    // The badge represents the MODULE, not the subsection. All Records,
+    // Technical Review and Drafts are sibling sections of the REGISTRY
     // module, so every one of them resolves to the same parent badge; the page
     // H1 names the subsection. Technical Review is deliberately NOT badged as
     // its own top-level module.
@@ -52,13 +83,16 @@ export default function Header({
             const normalized = raw.toLowerCase();
             if (normalized === 'audit' || normalized === 'audit-log' || normalized === 'audittrail') return 'AUDIT TRAIL';
             // Applications subsections share the parent module badge.
-            if (normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review') return 'APPLICATIONS';
+            if (normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review') return 'REGISTRY';
             // The module is named Reports & Support; the route, the route names
             // and the notification deep links all still say `diagnostics`, which
             // is deliberate compatibility. Without this the context chip would
             // display the retired product name DIAGNOSTICS on every page of
             // this surface, including both report types and both details.
             if (normalized === 'diagnostics') return 'REPORTS & SUPPORT';
+            // The module is labelled Inspections; `site-inspections` stays the
+            // route/activePage key for compatibility.
+            if (normalized === 'site-inspections' || normalized === 'site inspections') return 'INSPECTIONS';
             return raw.toUpperCase();
         }
 
@@ -74,7 +108,7 @@ export default function Header({
             case 'applications':
             case 'drafts':
             case 'technical-review':
-                return 'APPLICATIONS';
+                return 'REGISTRY';
             case 'analytics':
                 return 'ANALYTICS';
             case 'audit-log':
@@ -91,13 +125,15 @@ export default function Header({
                 return 'PROFILE';
             case 'diagnostics':
                 return 'REPORTS & SUPPORT';
+            case 'site-inspections':
+                return 'INSPECTIONS';
         }
 
         if (currentComponent) {
             const comp = currentComponent.toLowerCase();
             if (comp.startsWith('dashboard')) return 'DASHBOARD';
             if (comp.startsWith('maps')) return 'MAPS';
-            if (comp.startsWith('applications') || comp.startsWith('drafts') || comp.startsWith('technicalreview')) return 'APPLICATIONS';
+            if (comp.startsWith('applications') || comp.startsWith('drafts') || comp.startsWith('technicalreview')) return 'REGISTRY';
             if (comp.startsWith('analytics')) return 'ANALYTICS';
             if (comp.startsWith('audittrail') || comp.startsWith('audit')) return 'AUDIT TRAIL';
             if (comp.startsWith('settings')) return 'SETTINGS';
@@ -155,7 +191,9 @@ export default function Header({
 
     // Fetch Notifications for Header
     const fetchNotifications = () => {
-        fetch('/api/notifications')
+        // Accept: JSON makes an expired session return 401 instead of
+        // redirecting, so /api/notifications never becomes the post-login URL.
+        fetch('/api/notifications', { headers: { Accept: 'application/json' } })
             .then((res) => res.ok ? res.json() : { unread_count: 0, recent: [] })
             .then((data) => {
                 setUnreadCount(data.unread_count || 0);
@@ -552,32 +590,8 @@ export default function Header({
             {/* â”€â”€ RIGHT SECTION: PST Clock, Shortcuts, Notifications & Profile â”€â”€ */}
             <div className="flex items-center gap-1.5 sm:gap-2.5">
                 {/* Philippine Standard Time Display */}
-                {clock && (() => {
-                    // Pages pass "Oct 6, 2026 · 12:36 AM"; show the time first and the date muted.
-                    const [datePart, timePart] = clock.split(' · ');
-                    // Built like the profile button: a 28px tile, then two lines (time over date) at the same
-                    // sizes as name-over-role, so the two read as a matched pair in the navbar.
-                    return (
-                        <div className="hidden xl:flex items-center gap-2.5 p-1 pr-2 rounded-xl select-none" aria-label={`Current time ${clock}`}>
-                            <div className="w-7 h-7 rounded-lg bg-slate-100 ring-1 ring-slate-200/80 grid place-items-center text-slate-500 shrink-0" aria-hidden="true">
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <circle cx="12" cy="12" r="9" />
-                                    <polyline points="12 7 12 12 15.5 14" />
-                                </svg>
-                            </div>
-                            <div className="flex flex-col text-left tabular-nums">
-                                {timePart ? (
-                                    <>
-                                        <span className="text-xs font-bold text-slate-800 leading-tight">{timePart}</span>
-                                        <span className="text-[11px] text-slate-500 font-semibold leading-none mt-0.5">{datePart}</span>
-                                    </>
-                                ) : (
-                                    <span className="text-xs font-semibold text-slate-700">{clock}</span>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })()}
+                {/* Municipal time, ticking every second (Philippine Standard Time) */}
+                {clock && <MunicipalClock />}
 
                 {/* Keyboard Shortcuts Trigger */}
                 <button
@@ -595,7 +609,15 @@ export default function Header({
                 <div className="relative" ref={notifRef}>
                     <button 
                         type="button"
-                        onClick={() => setNotifMenuOpen(!notifMenuOpen)}
+                        onClick={() => {
+                            // On the history page the dropdown would repeat the page; jump to the top of the feed instead.
+                            if (activePage === 'notifications') {
+                                document.querySelector('[data-notification-feed]')?.scrollTo({ top: 0, behavior: 'smooth' });
+                                return;
+                            }
+                            setNotifMenuOpen(!notifMenuOpen);
+                        }}
+                        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
                         className={`relative w-8 h-8 flex items-center justify-center rounded-xl transition-colors focus:outline-none ${
                             notifMenuOpen ? 'bg-slate-100 text-blue-700 ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                         }`}
@@ -605,9 +627,8 @@ export default function Header({
                             <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
                         </svg>
                         {unreadCount > 0 && (
-                            <span className="absolute top-1 right-1 flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600" />
+                            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-blue-600 ring-2 ring-white text-white text-[9.5px] font-bold leading-4 text-center tabular-nums" aria-hidden="true">
+                                {unreadCount > 9 ? '9+' : unreadCount}
                             </span>
                         )}
                     </button>
@@ -639,8 +660,13 @@ export default function Header({
                             <div className="max-h-80 overflow-y-auto p-1.5 space-y-0.5">
                                 {recentNotifs.length === 0 ? (
                                     <div className="px-4 py-8 text-center">
-                                        <p className="text-[12.5px] font-medium text-slate-700">You're all caught up</p>
-                                        <p className="mt-0.5 text-[11.5px] text-slate-500">No recent notifications.</p>
+                                        <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 mx-auto flex items-center justify-center mb-2.5">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                            </svg>
+                                        </div>
+                                        <p className="text-[12.5px] font-semibold text-slate-800">You're all caught up</p>
+                                        <p className="mt-0.5 text-[11.5px] text-slate-500">No unread notifications. Past activity is in your history.</p>
                                     </div>
                                 ) : (
                                     recentNotifs.map((item) => (
@@ -704,7 +730,7 @@ export default function Header({
                                     <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
                                     </svg>
-                                    View all notifications
+                                    View notification history
                                 </Link>
                             </div>
                         </div>
