@@ -1075,7 +1075,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         <>
             <Head title="Registry | iMAPS" />
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 
                 #dashboard-root {
                     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

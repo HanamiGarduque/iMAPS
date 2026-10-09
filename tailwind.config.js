@@ -94,7 +94,7 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                // One typeface across iMAPS (matches User Management). Loaded in resources/views/app.blade.php.
+                // One typeface across iMAPS (matches User Management). Self-hosted via @fontsource, imported in resources/js/app.jsx (no internet needed).
                 sans: ['"Plus Jakarta Sans"', ...defaultTheme.fontFamily.sans],
             },
         },

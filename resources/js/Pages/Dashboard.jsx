@@ -317,10 +317,37 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
     const forecastMetrics = useMemo(() => {
         if (customForecastData?.metrics) {
             const m = customForecastData.metrics;
-            return { mae: Number(m.validation_mae ?? m.mae ?? 2.155), wmape: Number(m.validation_wmape ?? m.wmape ?? 0.302) };
+            return {
+                mae: Number(m.validation_mae ?? m.mae ?? 2.155),
+                wmape: Number(m.validation_wmape ?? m.wmape ?? 0.302),
+                r2: m.validation_r2 != null ? Number(m.validation_r2) : (m.r2 != null ? Number(m.r2) : 0.785),
+            };
         }
-        return apiQuarterData.metrics || { mae: 2.155, wmape: 0.302 };
+        return apiQuarterData.metrics || { mae: 2.155, wmape: 0.302, r2: 0.785 };
     }, [customForecastData, apiQuarterData]);
+
+    const forecastRangeByBgy = useMemo(() => {
+        if (!activeQuarter?.isForecast) return {};
+        const map = {};
+        const raw = customForecastData?.forecasts;
+        if (Array.isArray(raw)) {
+            const expectedLabel = activeQuarter ? `${activeQuarter.year} Q${activeQuarter.quarter}` : null;
+            raw.forEach((fc) => {
+                if (expectedLabel && fc.Quarter_Label && fc.Quarter_Label !== expectedLabel) return;
+                const b = (fc.Barangay || "").trim().toLowerCase();
+                if (b && fc.Lower_80 != null && fc.Upper_80 != null) {
+                    map[b] = `${fc.Lower_80} – ${fc.Upper_80}`;
+                }
+            });
+        }
+        (activeHistoricalPins || []).forEach((p) => {
+            const b = (p.barangay || "").trim().toLowerCase();
+            if (b && !map[b] && p.lower_80 != null && p.upper_80 != null) {
+                map[b] = `${p.lower_80} – ${p.upper_80}`;
+            }
+        });
+        return map;
+    }, [activeQuarter, customForecastData, activeHistoricalPins]);
 
     const demandByBgy = useMemo(() => {
         const counts = {};
@@ -554,7 +581,12 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         if (!hoveredBgy) return "";
         const stat = bgyStats?.[hoveredBgy] || {};
         if (activeLayer === "trends") {
-            const n = demandByBgy[hoveredBgy.trim().toLowerCase()] || 0;
+            const key = hoveredBgy.trim().toLowerCase();
+            const n = demandByBgy[key] || 0;
+            const rangeStr = forecastRangeByBgy[key];
+            if (activeQuarter?.isForecast && rangeStr) {
+                return `${hoveredBgy}: ${rangeStr} LC projected (${n} expected), ${activeQuarter?.label}`;
+            }
             return `${hoveredBgy}: ${n} LC ${activeQuarter?.isForecast ? "projected" : "filed"}, ${activeQuarter?.label}`;
         }
         if (activeLayer === "diversity") {
@@ -564,13 +596,12 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         }
         const n = stat.Total ?? 0;
         return `${hoveredBgy}: ${n} application${n === 1 ? "" : "s"}${stat.Primary_Zone ? ` · ${stat.Primary_Zone}` : ""}`;
-    }, [hoveredBgy, hoveredAppId, applications, bgyStats, activeLayer, demandByBgy, activeQuarter, diversityLens]);
+    }, [hoveredBgy, hoveredAppId, applications, bgyStats, activeLayer, demandByBgy, forecastRangeByBgy, activeQuarter, diversityLens]);
 
     return (
         <>
             <Head title="Dashboard | iMAPS" />
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 #dashboard-root { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
                 #dashboard-root .font-mono { font-family: 'JetBrains Mono', monospace !important; }
                 #dashboard-root ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -803,6 +834,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                                                         stat={bgyStats?.[selectedBgy.name] || selectedBgy.data || {}}
                                                         apps={selectedBgyApps || {}}
                                                         demand={demandByBgy[selectedBgy.name.trim().toLowerCase()] || 0}
+                                                        forecastRange={activeQuarter?.isForecast ? forecastRangeByBgy[selectedBgy.name.trim().toLowerCase()] : null}
                                                         activeQuarter={activeQuarter}
                                                         activeLayer={activeLayer}
                                                         onSwitch={(id) => {
@@ -825,6 +857,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                                                     <TrendsPanel
                                                         activeQuarter={activeQuarter}
                                                         forecastMetrics={forecastMetrics}
+                                                        forecastData={customForecastData}
                                                         urbanGrowthData={urbanGrowthData}
                                                         selectedBgy={selectedBgy}
                                                         onSelectBgy={selectBarangay}

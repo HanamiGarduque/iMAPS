@@ -200,6 +200,9 @@ class SettingsController extends Controller
 
         $zipFile = $request->file('tiles_zip');
 
+        // Extracting and checking tens of thousands of tiles easily exceeds PHP's default 30s limit.
+        set_time_limit(0);
+
         // Define destination in the public directory (accessible to the browser)
         $publicPath = public_path('tiles/clup_tiles');
         $backupPath = $this->tilesBackupPath();

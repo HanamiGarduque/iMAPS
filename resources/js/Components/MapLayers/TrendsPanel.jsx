@@ -8,10 +8,91 @@ const formatWmape = (val) => {
     return (n > 1 ? n.toFixed(1) : (n * 100).toFixed(1)) + '%';
 };
 
+const formatR2 = (val) => {
+    const n = Number(val);
+    if (!Number.isFinite(n)) return '—';
+    return n.toFixed(2);
+};
+
+function MetricCard({ label, value, tooltip, align = 'center', hasBorder = true }) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <div
+            className={`relative px-2 py-2 group hover:bg-slate-50/80 transition-colors cursor-pointer select-none ${
+                hasBorder ? 'border-l border-slate-200' : ''
+            }`}
+            onClick={() => setOpen((prev) => !prev)}
+            onMouseEnter={() => setOpen(true)}
+            onMouseLeave={() => setOpen(false)}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setOpen(false)}
+            tabIndex={0}
+            role="button"
+            aria-expanded={open}
+            title={tooltip ? `${tooltip.title}: ${tooltip.explanation}` : undefined}
+        >
+            <span className="block text-[15px] sm:text-[16px] font-semibold tabular-nums leading-none text-slate-900 truncate">
+                {value}
+            </span>
+            <div className="flex items-center gap-0.5 mt-1 text-slate-500">
+                <span className="block text-[9px] sm:text-[9.5px] font-medium uppercase tracking-[0.03em] truncate">
+                    {label}
+                </span>
+                <svg
+                    className="w-2.5 h-2.5 text-slate-400 group-hover:text-[#0b2a5b] transition-colors shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    aria-hidden="true"
+                >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="16" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+            </div>
+
+            {open && tooltip && (
+                <div
+                    className={`absolute z-[999] top-full mt-1.5 w-64 p-2.5 bg-slate-900/95 text-white rounded-md shadow-xl backdrop-blur-xs text-left pointer-events-none transition-all duration-150 ${
+                        align === 'left' ? 'left-0' : align === 'right' ? 'right-0' : 'left-1/2 -translate-x-1/2'
+                    }`}
+                    role="tooltip"
+                >
+                    <div className="flex items-center justify-between gap-1.5 pb-1 mb-1.5 border-b border-slate-700/60">
+                        <div className="min-w-0">
+                            <span className="block text-[11px] font-bold text-white leading-tight truncate">{tooltip.title}</span>
+                            {tooltip.subtitle && (
+                                <span className="block text-[9px] text-slate-400 leading-tight truncate">{tooltip.subtitle}</span>
+                            )}
+                        </div>
+                        {tooltip.badge && (
+                            <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 shrink-0">
+                                {tooltip.badge}
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-[10px] leading-relaxed text-slate-200">
+                        {tooltip.explanation}
+                    </p>
+                    {tooltip.takeaway && (
+                        <div className="mt-1.5 pt-1.5 border-t border-slate-800 text-[9.5px] text-slate-300/90 leading-normal">
+                            <span className="font-semibold text-amber-300/90">In plain terms: </span>
+                            {tooltip.takeaway}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function TrendsPanel({
     urbanGrowthData = null,
     activeQuarter = null,
     forecastMetrics = null,
+    forecastData = null,
     selectedBgy = null,
     onSelectBgy,
     onHoverBgy = () => {},
@@ -24,6 +105,7 @@ export default function TrendsPanel({
 }) {
     const isBgy = Boolean(selectedBgy?.name);
     const bgyName = selectedBgy?.name || '';
+    const isForecast = Boolean(activeQuarter?.isForecast);
 
     // Model intake state
     const [selectedFile, setSelectedFile] = useState(null);
@@ -37,23 +119,85 @@ export default function TrendsPanel({
     });
     const [intakeError, setIntakeError] = useState(null);
 
+    const effectiveForecast = forecastData || intakeResult;
+
     // Run the default forecast once if nothing is cached yet.
     useEffect(() => {
         if (!intakeResult) handleExecuteForecast(true);
     }, []);
 
-    // Ranking for the active quarter, counted from the same pins the map
-    // draws, so the list and the choropleth always agree.
+    // Forecast details lookup for the active forecast quarter
+    const forecastByBgy = useMemo(() => {
+        if (!isForecast) return {};
+        const list = effectiveForecast?.forecasts;
+        if (!Array.isArray(list)) return {};
+        const map = {};
+        const expectedLabel = activeQuarter ? `${activeQuarter.year} Q${activeQuarter.quarter}` : null;
+        list.forEach((fc) => {
+            if (expectedLabel && fc.Quarter_Label && fc.Quarter_Label !== expectedLabel) return;
+            const b = (fc.Barangay || '').trim().toLowerCase();
+            if (b) map[b] = fc;
+        });
+        return map;
+    }, [isForecast, effectiveForecast, activeQuarter]);
+
+    // Ranking for the active quarter.
+    // In forecast mode: reflects predicted ranges (Lower_80 – Upper_80) from microservice.
+    // In historical mode: counts filings from the active pins.
     const ranking = useMemo(() => {
+        if (isForecast && Object.keys(forecastByBgy).length > 0) {
+            return Object.values(forecastByBgy).map((fc) => {
+                const count = Number(fc.Predicted_Quarterly_Clearances ?? fc.Expected ?? 0);
+                const lower = fc.Lower_80 != null ? Number(fc.Lower_80) : null;
+                const upper = fc.Upper_80 != null ? Number(fc.Upper_80) : null;
+                const range = (lower != null && upper != null) ? `${lower} – ${upper}` : null;
+                return {
+                    name: fc.Barangay,
+                    count: Math.round(count),
+                    expected: fc.Expected != null ? Number(fc.Expected) : count,
+                    lower,
+                    upper,
+                    range,
+                    confidence: fc.Confidence || null,
+                };
+            }).sort((a, b) => b.count - a.count || (b.upper ?? 0) - (a.upper ?? 0));
+        }
+
         const counts = {};
+        const meta = {};
         (activePins || []).forEach((pin) => {
             const name = (pin.barangay || '').trim();
-            if (name) counts[name] = (counts[name] || 0) + 1;
+            if (name) {
+                counts[name] = (counts[name] || 0) + 1;
+                if (!meta[name] && (pin.lower_80 != null || pin.upper_80 != null)) {
+                    meta[name] = {
+                        lower: pin.lower_80,
+                        upper: pin.upper_80,
+                        expected: pin.expected,
+                        confidence: pin.confidence,
+                    };
+                }
+            }
         });
         return Object.entries(counts)
-            .map(([name, count]) => ({ name, count }))
+            .map(([name, count]) => {
+                const m = meta[name];
+                const lower = m?.lower != null ? Number(m.lower) : null;
+                const upper = m?.upper != null ? Number(m.upper) : null;
+                const range = (lower != null && upper != null) ? `${lower} – ${upper}` : null;
+                return {
+                    name,
+                    count,
+                    lower,
+                    upper,
+                    range,
+                    expected: m?.expected,
+                    confidence: m?.confidence,
+                };
+            })
             .sort((a, b) => b.count - a.count);
-    }, [activePins]);
+    }, [activePins, isForecast, forecastByBgy]);
+
     const rankingMax = Math.max(1, ...ranking.map((r) => r.count));
     const quarterTotal = ranking.reduce((sum, r) => sum + r.count, 0);
 
@@ -69,8 +213,25 @@ export default function TrendsPanel({
     const bgyTrend = useMemo(() => {
         if (!isBgy) return [];
         const key = bgyName.trim().toLowerCase();
-        return series.map((q) => ({ ...q, value: q.total === null ? null : q.byBgy?.[key] || 0 }));
-    }, [series, isBgy, bgyName]);
+        return series.map((q) => {
+            const val = q.total === null ? null : q.byBgy?.[key] || 0;
+            let range = null;
+            if (q.isForecast) {
+                const rawForecasts = effectiveForecast?.forecasts;
+                if (Array.isArray(rawForecasts)) {
+                    const match = rawForecasts.find(
+                        (f) =>
+                            (f.Quarter_Label === q.label || (f.Date && f.Date.startsWith(String(q.year)))) &&
+                            (f.Barangay || '').trim().toLowerCase() === key
+                    );
+                    if (match && match.Lower_80 != null && match.Upper_80 != null) {
+                        range = `${match.Lower_80} – ${match.Upper_80}`;
+                    }
+                }
+            }
+            return { ...q, value: val, range };
+        });
+    }, [series, isBgy, bgyName, effectiveForecast]);
     const bgyTrendMax = Math.max(1, ...bgyTrend.map((q) => q.value || 0));
 
     // Historical LC records for the selected barangay
@@ -86,8 +247,9 @@ export default function TrendsPanel({
         return records.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     }, [urbanGrowthData, isBgy, bgyName]);
 
-    const mae = forecastMetrics?.mae ?? intakeResult?.metrics?.validation_mae;
-    const wmape = forecastMetrics?.wmape ?? intakeResult?.metrics?.validation_wmape;
+    const mae = forecastMetrics?.mae ?? effectiveForecast?.metrics?.validation_mae;
+    const wmape = forecastMetrics?.wmape ?? effectiveForecast?.metrics?.validation_wmape;
+    const r2 = forecastMetrics?.r2 ?? effectiveForecast?.metrics?.validation_r2;
 
     const handleExecuteForecast = async (isAutoRun = false) => {
         setIsExecuting(true);
@@ -120,19 +282,77 @@ export default function TrendsPanel({
         }
     };
 
-    const isForecast = Boolean(activeQuarter?.isForecast);
+    const metricsConfig = [
+        {
+            label: isForecast ? 'Projected LC' : 'LC filed',
+            value: quarterTotal,
+            align: 'left',
+            tooltip: {
+                title: isForecast ? 'Expected Applications' : 'Actual Clearances Filed',
+                subtitle: isForecast ? 'Town-wide Quarterly Total' : 'Recorded Historical Total',
+                badge: isForecast ? 'Town volume' : 'Recorded volume',
+                explanation: isForecast
+                    ? 'How many locational clearances we expect people to apply for this quarter across the entire municipality.'
+                    : 'The actual number of clearance applications officially filed and recorded with the zoning office during this past quarter.',
+                takeaway: isForecast
+                    ? 'Tells you how busy the zoning office will be so you can assign site inspectors and prepare fee collection ahead of time.'
+                    : 'Compare against other quarters to see whether building activity in town is growing or slowing down.',
+            },
+        },
+        {
+            label: 'MAE',
+            value: mae != null ? Number(mae).toFixed(2) : '—',
+            align: 'center',
+            tooltip: {
+                title: 'Average Miss per Barangay',
+                subtitle: 'Mean Absolute Error (MAE)',
+                badge: 'Smaller is better',
+                explanation: mae != null
+                    ? `On average, the prediction is off by about ±${Number(mae).toFixed(1)} clearances per barangay (usually just 1 application up or down).`
+                    : 'Shows how many clearance applications the prediction typically misses by in each individual barangay.',
+                takeaway: 'Smaller is better. Use this as a ±1 clearance safety buffer when planning barangay inspection schedules.',
+            },
+        },
+        {
+            label: 'WMAPE',
+            value: wmape != null ? formatWmape(wmape) : '—',
+            align: 'center',
+            tooltip: {
+                title: 'Town-wide Error Rate',
+                subtitle: 'Weighted Error Rate (WMAPE)',
+                badge: 'Lower is better',
+                explanation: 'The overall percentage margin of error for the entire municipality. It shows how close the town-wide total forecast was to reality.',
+                takeaway: 'Lower is better. Any score below 40% means the town-wide forecast is dependable enough for municipal budgeting and annual planning.',
+            },
+        },
+        {
+            label: 'R-squared',
+            value: r2 != null ? formatR2(r2) : '—',
+            align: 'right',
+            tooltip: {
+                title: 'Forecast Trust Score',
+                subtitle: 'R-squared (R²)',
+                badge: 'Closer to 1.0 is better',
+                explanation: r2 != null
+                    ? `A score from 0 to 1 (or 0% to 100%) showing how closely future demand follows past records. A score of ${formatR2(r2)} means 79% of future filings follow clear historical trends.`
+                    : 'Shows how trustworthy this forecast is based on historical zoning patterns (scale of 0 to 1).',
+                takeaway: 'Higher is better. A score above 0.70 means past growth in Rosario is consistent and predictable, so you can trust this forecast for official decision-making.',
+            },
+        },
+    ];
+
     return (
         <div className="flex-1 min-h-0 flex flex-col">
-            <div className="shrink-0 grid grid-cols-3 border-b border-slate-200">
-                {[
-                    { label: isForecast ? 'Projected LC' : 'LC filed', value: quarterTotal },
-                    { label: 'MAE', value: mae != null ? Number(mae).toFixed(2) : '—', title: 'Mean absolute error of the model on held-out quarters' },
-                    { label: 'WMAPE', value: wmape != null ? formatWmape(wmape) : '—', title: 'Weighted mean absolute percentage error' },
-                ].map((k, i) => (
-                    <div key={k.label} title={k.title} className={`px-3 py-2 ${i > 0 ? 'border-l border-slate-200' : ''}`}>
-                        <span className="block text-[18px] font-semibold tabular-nums leading-none text-slate-900">{k.value}</span>
-                        <span className="block text-[10.5px] text-slate-500 mt-1">{k.label}</span>
-                    </div>
+            <div className="shrink-0 grid grid-cols-4 border-b border-slate-200">
+                {metricsConfig.map((k, i) => (
+                    <MetricCard
+                        key={k.label}
+                        label={k.label}
+                        value={k.value}
+                        tooltip={k.tooltip}
+                        align={k.align}
+                        hasBorder={i > 0}
+                    />
                 ))}
             </div>
 
@@ -152,7 +372,11 @@ export default function TrendsPanel({
                                         key={`${q.year}-${q.quarter}`}
                                         type="button"
                                         onClick={() => onSelectQuarter(i)}
-                                        title={`${q.label}${q.isForecast ? ' (forecast)' : ''}: ${known ? `${q.value} LC` : 'not loaded'}`}
+                                        title={`${q.label}${q.isForecast ? ' (forecast)' : ''}: ${
+                                            q.range
+                                                ? `${q.range} LC projected (expected ${q.value})`
+                                                : (known ? `${q.value} LC` : 'not loaded')
+                                        }`}
                                         aria-label={`${q.label}, ${known ? `${q.value} LC` : 'not loaded'}`}
                                         className="flex-1 h-full flex items-end cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
                                     >
@@ -198,7 +422,9 @@ export default function TrendsPanel({
                         <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">
                             {isForecast ? 'Projected demand by barangay' : 'Filings by barangay'}
                         </h3>
-                        <span className="text-[10.5px] text-slate-400">Click to open</span>
+                        <span className="text-[10.5px] text-slate-400">
+                            {isForecast ? 'Range (80% confidence)' : 'Click to open'}
+                        </span>
                     </div>
                     <ol className="flex-1 min-h-0 overflow-y-auto border-t border-slate-200" onMouseLeave={() => onHoverBgy(null)}>
                         {loading && ranking.length === 0 && [0, 1, 2, 3, 4, 5].map((n) => (
@@ -241,7 +467,16 @@ export default function TrendsPanel({
                                         >
                                             {delta === null || delta === 0 ? '' : `${delta > 0 ? '+' : '−'}${Math.abs(delta)}`}
                                         </span>
-                                        <span className="text-[12px] font-semibold tabular-nums text-slate-900">{r.count}</span>
+                                        <span
+                                            className="text-[12px] font-semibold tabular-nums text-slate-900 whitespace-nowrap text-right"
+                                            title={
+                                                isForecast && r.range
+                                                    ? `Estimated range: ${r.range} clearances (Most likely: ${r.expected ?? r.count}${r.confidence ? ` · Confidence: ${r.confidence}` : ''})`
+                                                    : undefined
+                                            }
+                                        >
+                                            {isForecast && r.range ? r.range : r.count}
+                                        </span>
                                     </button>
                                 </li>
                             );

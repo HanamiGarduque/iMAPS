@@ -550,7 +550,6 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
             <Head title="Settings | iMAPS" />
 
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 
                 #settings-page-root, .swal2-popup {
                     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;

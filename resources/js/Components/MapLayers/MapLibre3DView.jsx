@@ -790,7 +790,7 @@ export default function MapLibre3DView({
             // basemap.
             style: {
                 version: 8,
-                glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+                glyphs: "/fonts/{fontstack}/{range}.pbf",
                 sources: {},
                 layers: [{ id: "canvas", type: "background", paint: { "background-color": CANVAS } }],
             },

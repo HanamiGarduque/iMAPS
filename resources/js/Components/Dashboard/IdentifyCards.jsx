@@ -108,10 +108,11 @@ export function ApplicationDetails({ app, barangayZone, onClose }) {
 
 // One barangay seen through all three modules at once. Each row switches the
 // map to that module, so the numbers here are also the way in.
-export function BarangayCard({ name, stat = {}, apps = {}, demand = 0, activeQuarter, activeLayer, onSwitch, onClose }) {
+export function BarangayCard({ name, stat = {}, apps = {}, demand = 0, forecastRange = null, activeQuarter, activeLayer, onSwitch, onClose }) {
     const diversity = typeof stat.diversity === "number" ? stat.diversity : null;
     const tier = diversity !== null ? getDiversityTheme(diversity) : null;
     const demandClass = getTrendsDemandColor(demand);
+    const isForecast = Boolean(activeQuarter?.isForecast);
 
     const rows = [
         {
@@ -123,8 +124,10 @@ export function BarangayCard({ name, stat = {}, apps = {}, demand = 0, activeQua
         {
             id: "trends",
             label: "LC demand",
-            value: demand,
-            detail: `${activeQuarter?.label || ""} ${activeQuarter?.isForecast ? "forecast" : "filed"} · ${demandClass.label}`,
+            value: isForecast && forecastRange ? forecastRange : demand,
+            detail: isForecast && forecastRange
+                ? `${activeQuarter?.label || ""} forecast (expected ${demand}) · ${demandClass.label}`
+                : `${activeQuarter?.label || ""} ${isForecast ? "forecast" : "filed"} · ${demandClass.label}`,
             swatch: demandClass.color,
         },
         {

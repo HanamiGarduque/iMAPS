@@ -34,6 +34,9 @@ abstract class ReportingTestCase extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // phpunit.xml defaults to Postgres; these suites build their own schema on in-memory SQLite.
+        config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:']);
+        DB::purge('sqlite');
         $this->assertSame('sqlite', config('database.default'));
         $this->assertSame(':memory:', config('database.connections.sqlite.database'));
         config(['bridge.source_id' => 'source-a', 'services.supabase.url' => 'https://reporting.test',
