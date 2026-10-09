@@ -174,7 +174,6 @@ export default function DraftsIndex({ drafts, filters = {}, activity_counts = {}
         <>
             <Head title="Drafts | iMAPS" />
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
                 #dashboard-root {
                     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

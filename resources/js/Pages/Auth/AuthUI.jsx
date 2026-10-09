@@ -109,7 +109,6 @@ export const inputClass = 'block w-full h-11 rounded-xl border border-slate-200 
 // Shared global CSS for the Plus Jakarta Sans auth look, rise-in animations and scrollbar styling.
 export const AuthStyles = ({ lockScroll = false }) => (
     <style dangerouslySetInnerHTML={{__html: `
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
         * { font-family: 'Plus Jakarta Sans', sans-serif !important; }
         /* Browser autofill: the suggestion preview otherwise renders in the browser's default (serif) font,
            and the filled field gets a blue tint. ::first-line is the only hook that styles the preview text. */

@@ -115,7 +115,6 @@ export default function TechnicalReviewIndex({ applications, filters = {} }) {
             <Head title="Technical Review | iMAPS" />
 
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
                 #technical-review-page-root {
                     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;

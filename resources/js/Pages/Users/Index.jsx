@@ -387,7 +387,6 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
         <Head title="User Management | iMAPS" />
 
         <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 
                 #users-page-root, .imaps-users-scope {
                     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;

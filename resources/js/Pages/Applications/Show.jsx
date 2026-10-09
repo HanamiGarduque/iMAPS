@@ -775,7 +775,6 @@ function ShowInner({
             <Head title={`${app.reference_number || "Application"} | iMAPS`} />
 
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 #dashboard-root { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
                 #dashboard-root .font-mono { font-family: 'JetBrains Mono', monospace !important; }
                 .leaflet-container { width: 100%; height: 100%; z-index: 0; }

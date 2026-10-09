@@ -224,11 +224,13 @@ inspection, permits, maps) works without the service.
 default, and that value is in this repo's history (`e4a5160`, `2f81b3d`). The fallback is
 removed and the service now fails closed when the key is unset.
 
-**The committed value is not the key the microservice accepts.** It is byte-identical to the
-one hardcoded in the service's own committed `run_server.sh` (217 chars, same digest), while
-the live `API_KEY` in `iMAPS-forecasting-service/.env` is a different 219-char value that has
-never been committed in either repo. So the leaked value grants no access to the current
-deployment and there is no rotation emergency.
+**That value was a live credential, and it has already been rotated.** It is byte-identical to
+the key that was also hardcoded in the service's own committed `run_server.sh` (217 chars, same
+digest) and bundled into the shared zip archives. The service's `.env` records the remediation:
+rotated **2026-10-09**, for exactly that reason. The current `API_KEY` is a different 219-char
+value that has never been committed in either repo, so the leaked key now grants no access.
+
+The leak was real; the response is done. What remains is keeping it that way.
 
 Two follow-ups anyway: clean the dead key out of the service's `run_server.sh` (read it from
 the environment) so nobody copies it back into `.env`, and never reintroduce a fallback

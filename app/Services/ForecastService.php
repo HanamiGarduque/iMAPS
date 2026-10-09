@@ -197,6 +197,10 @@ class ForecastService
                         'created_at' => "{$year}-" . str_pad(($quarter * 3), 2, '0', STR_PAD_LEFT) . "-15",
                         'quarter' => $quarter,
                         'year' => $year,
+                        'lower_80' => $fc['Lower_80'] ?? null,
+                        'upper_80' => $fc['Upper_80'] ?? null,
+                        'expected' => $fc['Expected'] ?? null,
+                        'confidence' => $fc['Confidence'] ?? null,
                     ];
                     $pinIdx++;
                 }
@@ -275,6 +279,7 @@ class ForecastService
                 'metrics' => [
                     'mae' => 2.155,
                     'wmape' => 0.302,
+                    'r2' => 0.785,
                 ]
             ];
         } catch (Exception $e) {

@@ -764,7 +764,6 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
             <Head title="Data Reports | iMAPS" />
 
             <style>{`
-                @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
                 #analytics-page-root, .swal2-popup {
                     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
                 }
