@@ -193,17 +193,19 @@ Running it without Docker starts uvicorn on **port 8000**, which collides with
 | --- | --- |
 | Request | `POST {FORECAST_SERVICE_URL}` — multipart `file`, header `X-API-Key` |
 | Default URL | `http://localhost:8002/api/v1/forecast` |
-| CSV columns required | `Encoding Date`, `Barangay`, `Application Type` — all present in `storage/app/rosario_zoning_apps_2021_2026.csv`, which iMAPS sends when no file is uploaded |
+| CSV columns required | `Encoding Date`, `Barangay`, `Application Type`. iMAPS builds the CSV from the `historical_data` table — the same recorded clearances the dashboard shows. There is no upload: the endpoint takes no body and ignores one. An empty table answers **HTTP 422** with "no recorded clearance history", not a forecast |
 | Data precondition | the CSV must contain a **fully completed quarter**; the service trains on a rolling 60 months from it and predicts the next two quarters, then rejects the request if that precondition fails |
 | Response | `{ forecasts: [{Date, Quarter_Label, Barangay, Predicted_Quarterly_Clearances}], metrics: {validation_mae, validation_wmape, validation_r2}, summary: {q<N>_<YEAR>_total, combined_total} }` |
 | Runtime | **~24s warm, over 30s cold** (it trains an XGBoost model per request and loads the shapefiles on first call). `FORECAST_SERVICE_TIMEOUT` defaults to 180s; Guzzle's 30s default used to abort the request mid-forecast. Match it in nginx (`fastcgi_read_timeout`) and php-fpm (`request_terminate_timeout`). |
 
-`ForecastService` parses `Quarter_Label` (`"2026 Q4"`) and passes `metrics` straight through,
-so the MAE/WMAPE shown in the Trends panel are the model's real validation figures whenever
-the service answers. Verified end-to-end against the running service with the default CSV:
-96 forecast rows over `2026 Q4` / `2027 Q1`, `validation_mae` 1.379, `validation_wmape` 42.3,
-`validation_r2` 0.785, expanded to 490 map pins on real barangay centroids. (`validation_wmape`
-is a percentage, not a fraction; `formatWmape` in `TrendsPanel.jsx` handles both.)
+`ForecastService` parses `Quarter_Label` (`"2026 Q4"`) into a `demand` array of
+`{barangay, year, quarter, label, predicted}` and passes `metrics` straight through, so the
+MAE/WMAPE shown in the Trends panel are the model's real validation figures and the map shows
+the predicted count per barangay. A row whose quarter label cannot be parsed is dropped and
+logged rather than filed under a guessed year, and no application records are generated from a
+count. `validation_wmape` is a percentage (e.g. 42.3), which is how `formatWmape` in
+`TrendsPanel.jsx` renders it. Where there is no run to show, the panel shows `—`, not a
+stand-in figure.
 
 ### When it is not deployed
 
@@ -213,10 +215,10 @@ numbers — the previous fallback did exactly that, fabricating pins and reporti
 MAE 2.155 / WMAPE 30.2% as if a model had run. Everything else in iMAPS (intake, review,
 inspection, permits, maps) works without the service.
 
-> **Still outstanding:** `ForecastService::getQuarterData()` — used by the Dashboard timeline
-> for future quarters — still synthesises pins with `mt_rand()` and falls back to those same
-> fixed MAE/WMAPE constants. It never calls the microservice. Replacing it is Phase 1 of
-> `LC_DEMAND_FORECAST_PLAN.md`.
+`ForecastService::getQuarterData()` and its `GET /api/forecast/{year}/{quarter}` route are
+gone. They never called the microservice: they invented 14–22 `mt_rand()` pins per future
+quarter and reported those same fixed MAE/WMAPE/R² constants. A forecast quarter with no
+model run now shows an empty bar and "no LC forecast available".
 
 ### About the key that was hardcoded
 

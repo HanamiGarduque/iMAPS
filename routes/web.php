@@ -40,8 +40,6 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:Admin,Planning Officer');
 
     // â”€â”€ Forecasting + geospatial data (upstream) â”€â”€
-    Route::get('/api/forecast/{year}/{quarter}', [\App\Http\Controllers\ForecastController::class, 'getQuarterData'])
-        ->middleware('role:Admin,Planning Officer');
     Route::post('/api/forecast/generate', [\App\Http\Controllers\ForecastController::class, 'generate'])
         ->middleware('role:Admin,Planning Officer');
     Route::get('/maps/urban-growth-data', [MapController::class, 'getUrbanGrowthData'])

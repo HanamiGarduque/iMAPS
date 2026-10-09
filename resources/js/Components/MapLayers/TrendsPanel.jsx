@@ -2,10 +2,11 @@ import { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
 import { getTrendsDemandColor } from '@/Components/Dashboard/LeafletMap';
 
+// The service reports validation_wmape as a percentage (e.g. 42.3).
 const formatWmape = (val) => {
     const n = Number(val);
     if (!Number.isFinite(n)) return '—';
-    return (n > 1 ? n.toFixed(1) : (n * 100).toFixed(1)) + '%';
+    return n.toFixed(1) + '%';
 };
 
 const formatR2 = (val) => {
@@ -99,7 +100,6 @@ export default function TrendsPanel({
     onForecastGenerated = null,
     activePins = [],
     series = [],
-    loading = false,
     activeIndex = 0,
     onSelectQuarter = () => {},
 }) {
@@ -108,95 +108,33 @@ export default function TrendsPanel({
     const isForecast = Boolean(activeQuarter?.isForecast);
 
     // Model intake state
-    const [selectedFile, setSelectedFile] = useState(null);
     const [isExecuting, setIsExecuting] = useState(false);
-    const [intakeResult, setIntakeResult] = useState(() => {
-        try {
-            const saved = localStorage.getItem('imaps_forecast_data');
-            if (saved) return JSON.parse(saved);
-        } catch (e) {}
-        return null;
-    });
     const [intakeError, setIntakeError] = useState(null);
 
-    const effectiveForecast = forecastData || intakeResult;
-
-    // Run the default forecast once if nothing is cached yet.
+    // Run the forecast once if there is no run to show yet.
     useEffect(() => {
-        if (!intakeResult) handleExecuteForecast(true);
+        if (!forecastData) handleExecuteForecast(true);
     }, []);
 
-    // Forecast details lookup for the active forecast quarter
-    const forecastByBgy = useMemo(() => {
-        if (!isForecast) return {};
-        const list = effectiveForecast?.forecasts;
-        if (!Array.isArray(list)) return {};
-        const map = {};
-        const expectedLabel = activeQuarter ? `${activeQuarter.year} Q${activeQuarter.quarter}` : null;
-        list.forEach((fc) => {
-            if (expectedLabel && fc.Quarter_Label && fc.Quarter_Label !== expectedLabel) return;
-            const b = (fc.Barangay || '').trim().toLowerCase();
-            if (b) map[b] = fc;
-        });
-        return map;
-    }, [isForecast, effectiveForecast, activeQuarter]);
-
-    // Ranking for the active quarter.
-    // In forecast mode: reflects predicted ranges (Lower_80 – Upper_80) from microservice.
-    // In historical mode: counts filings from the active pins.
+    // Ranking for the active quarter: the model's predicted count per barangay
+    // on a forecast quarter, filings on a recorded one.
     const ranking = useMemo(() => {
-        if (isForecast && Object.keys(forecastByBgy).length > 0) {
-            return Object.values(forecastByBgy).map((fc) => {
-                const count = Number(fc.Predicted_Quarterly_Clearances ?? fc.Expected ?? 0);
-                const lower = fc.Lower_80 != null ? Number(fc.Lower_80) : null;
-                const upper = fc.Upper_80 != null ? Number(fc.Upper_80) : null;
-                const range = (lower != null && upper != null) ? `${lower} – ${upper}` : null;
-                return {
-                    name: fc.Barangay,
-                    count: Math.round(count),
-                    expected: fc.Expected != null ? Number(fc.Expected) : count,
-                    lower,
-                    upper,
-                    range,
-                    confidence: fc.Confidence || null,
-                };
-            }).sort((a, b) => b.count - a.count || (b.upper ?? 0) - (a.upper ?? 0));
+        if (isForecast) {
+            return (forecastData?.demand || [])
+                .filter((d) => Number(d.year) === Number(activeQuarter?.year) && Number(d.quarter) === Number(activeQuarter?.quarter))
+                .map((d) => ({ name: d.barangay, count: Math.round(Number(d.predicted) || 0) }))
+                .sort((a, b) => b.count - a.count);
         }
 
         const counts = {};
-        const meta = {};
         (activePins || []).forEach((pin) => {
             const name = (pin.barangay || '').trim();
-            if (name) {
-                counts[name] = (counts[name] || 0) + 1;
-                if (!meta[name] && (pin.lower_80 != null || pin.upper_80 != null)) {
-                    meta[name] = {
-                        lower: pin.lower_80,
-                        upper: pin.upper_80,
-                        expected: pin.expected,
-                        confidence: pin.confidence,
-                    };
-                }
-            }
+            if (name) counts[name] = (counts[name] || 0) + 1;
         });
         return Object.entries(counts)
-            .map(([name, count]) => {
-                const m = meta[name];
-                const lower = m?.lower != null ? Number(m.lower) : null;
-                const upper = m?.upper != null ? Number(m.upper) : null;
-                const range = (lower != null && upper != null) ? `${lower} – ${upper}` : null;
-                return {
-                    name,
-                    count,
-                    lower,
-                    upper,
-                    range,
-                    expected: m?.expected,
-                    confidence: m?.confidence,
-                };
-            })
+            .map(([name, count]) => ({ name, count }))
             .sort((a, b) => b.count - a.count);
-    }, [activePins, isForecast, forecastByBgy]);
+    }, [activePins, isForecast, forecastData, activeQuarter]);
 
     const rankingMax = Math.max(1, ...ranking.map((r) => r.count));
     const quarterTotal = ranking.reduce((sum, r) => sum + r.count, 0);
@@ -213,25 +151,8 @@ export default function TrendsPanel({
     const bgyTrend = useMemo(() => {
         if (!isBgy) return [];
         const key = bgyName.trim().toLowerCase();
-        return series.map((q) => {
-            const val = q.total === null ? null : q.byBgy?.[key] || 0;
-            let range = null;
-            if (q.isForecast) {
-                const rawForecasts = effectiveForecast?.forecasts;
-                if (Array.isArray(rawForecasts)) {
-                    const match = rawForecasts.find(
-                        (f) =>
-                            (f.Quarter_Label === q.label || (f.Date && f.Date.startsWith(String(q.year)))) &&
-                            (f.Barangay || '').trim().toLowerCase() === key
-                    );
-                    if (match && match.Lower_80 != null && match.Upper_80 != null) {
-                        range = `${match.Lower_80} – ${match.Upper_80}`;
-                    }
-                }
-            }
-            return { ...q, value: val, range };
-        });
-    }, [series, isBgy, bgyName, effectiveForecast]);
+        return series.map((q) => ({ ...q, value: q.total === null ? null : q.byBgy?.[key] || 0 }));
+    }, [series, isBgy, bgyName]);
     const bgyTrendMax = Math.max(1, ...bgyTrend.map((q) => q.value || 0));
 
     // Historical LC records for the selected barangay
@@ -247,28 +168,17 @@ export default function TrendsPanel({
         return records.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     }, [urbanGrowthData, isBgy, bgyName]);
 
-    const mae = forecastMetrics?.mae ?? effectiveForecast?.metrics?.validation_mae;
-    const wmape = forecastMetrics?.wmape ?? effectiveForecast?.metrics?.validation_wmape;
-    const r2 = forecastMetrics?.r2 ?? effectiveForecast?.metrics?.validation_r2;
+    // Whatever the model measured on its own holdout quarters, or nothing.
+    const { mae = null, wmape = null, r2 = null } = forecastMetrics || {};
 
     const handleExecuteForecast = async (isAutoRun = false) => {
         setIsExecuting(true);
         setIntakeError(null);
         try {
-            const formData = new FormData();
-            if (selectedFile) formData.append('file', selectedFile);
-
-            const response = await axios.post('/api/forecast/generate', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
+            const response = await axios.post('/api/forecast/generate');
 
             if (response.data?.status === 'success') {
-                const resData = response.data.data;
-                setIntakeResult(resData);
-                try {
-                    localStorage.setItem('imaps_forecast_data', JSON.stringify(resData));
-                } catch (e) {}
-                onForecastGenerated?.(resData);
+                onForecastGenerated?.(response.data.data);
             } else if (!isAutoRun) {
                 setIntakeError(response.data?.message || 'Failed to run the forecast.');
             }
@@ -372,11 +282,7 @@ export default function TrendsPanel({
                                         key={`${q.year}-${q.quarter}`}
                                         type="button"
                                         onClick={() => onSelectQuarter(i)}
-                                        title={`${q.label}${q.isForecast ? ' (forecast)' : ''}: ${
-                                            q.range
-                                                ? `${q.range} LC projected (expected ${q.value})`
-                                                : (known ? `${q.value} LC` : 'not loaded')
-                                        }`}
+                                        title={`${q.label}${q.isForecast ? ' (forecast)' : ''}: ${known ? `${q.value} LC` : 'not loaded'}`}
                                         aria-label={`${q.label}, ${known ? `${q.value} LC` : 'not loaded'}`}
                                         className="flex-1 h-full flex items-end cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
                                     >
@@ -423,11 +329,11 @@ export default function TrendsPanel({
                             {isForecast ? 'Projected demand by barangay' : 'Filings by barangay'}
                         </h3>
                         <span className="text-[10.5px] text-slate-400">
-                            {isForecast ? 'Range (80% confidence)' : 'Click to open'}
+                            {isForecast ? 'Predicted clearances' : 'Click to open'}
                         </span>
                     </div>
                     <ol className="flex-1 min-h-0 overflow-y-auto border-t border-slate-200" onMouseLeave={() => onHoverBgy(null)}>
-                        {loading && ranking.length === 0 && [0, 1, 2, 3, 4, 5].map((n) => (
+                        {isExecuting && ranking.length === 0 && [0, 1, 2, 3, 4, 5].map((n) => (
                             <li key={n} className="px-4 py-2 flex items-center gap-2 animate-pulse" aria-hidden="true">
                                 <span className="w-3 h-2.5 rounded-sm bg-slate-200" />
                                 <span className="flex-1">
@@ -437,7 +343,7 @@ export default function TrendsPanel({
                                 <span className="w-5 h-2.5 rounded-sm bg-slate-200" />
                             </li>
                         ))}
-                        {!loading && ranking.length === 0 && (
+                        {!isExecuting && ranking.length === 0 && (
                             <li className="px-4 py-6 text-center text-[12px] text-slate-500">
                                 {isForecast ? 'No forecast output for this quarter yet. Run the model below.' : 'No locational clearances were filed this quarter.'}
                             </li>
@@ -467,15 +373,8 @@ export default function TrendsPanel({
                                         >
                                             {delta === null || delta === 0 ? '' : `${delta > 0 ? '+' : '−'}${Math.abs(delta)}`}
                                         </span>
-                                        <span
-                                            className="text-[12px] font-semibold tabular-nums text-slate-900 whitespace-nowrap text-right"
-                                            title={
-                                                isForecast && r.range
-                                                    ? `Estimated range: ${r.range} clearances (Most likely: ${r.expected ?? r.count}${r.confidence ? ` · Confidence: ${r.confidence}` : ''})`
-                                                    : undefined
-                                            }
-                                        >
-                                            {isForecast && r.range ? r.range : r.count}
+                                        <span className="text-[12px] font-semibold tabular-nums text-slate-900 whitespace-nowrap text-right">
+                                            {r.count}
                                         </span>
                                     </button>
                                 </li>
@@ -494,37 +393,9 @@ export default function TrendsPanel({
                 </summary>
                 <div className="px-4 pb-3.5 space-y-2">
                     <p className="text-[11px] text-slate-500">
-                        The forecast is trained on historical zoning applications. Upload a CSV to retrain it on a different dataset.
+                        The forecast is trained on the locational clearances recorded in iMAPS. It runs on those
+                        records only — there is no dataset to swap in.
                     </p>
-                    <div className="flex items-center gap-1.5">
-                        <label
-                            htmlFor="historical-csv-file"
-                            className="flex-1 min-w-0 h-7 px-2 flex items-center text-[11.5px] bg-white border border-slate-300 rounded-[3px] cursor-pointer hover:bg-slate-50 truncate focus-within:ring-1 focus-within:ring-[#0b2a5b]"
-                        >
-                            <input
-                                id="historical-csv-file"
-                                type="file"
-                                accept=".csv"
-                                onChange={(e) => {
-                                    if (e.target.files?.[0]) {
-                                        setSelectedFile(e.target.files[0]);
-                                        setIntakeError(null);
-                                    }
-                                }}
-                                className="sr-only"
-                            />
-                            <span className="truncate">{selectedFile ? selectedFile.name : 'Default dataset (2021–2026)'}</span>
-                        </label>
-                        {selectedFile && (
-                            <button
-                                type="button"
-                                onClick={() => setSelectedFile(null)}
-                                className="h-7 px-2 text-[11px] text-slate-600 border border-slate-300 rounded-[3px] hover:bg-slate-50 cursor-pointer"
-                            >
-                                Reset
-                            </button>
-                        )}
-                    </div>
                     <button
                         type="button"
                         onClick={() => handleExecuteForecast(false)}
@@ -536,9 +407,9 @@ export default function TrendsPanel({
                     {intakeError && (
                         <p role="alert" className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-[3px] px-2 py-1.5">{intakeError}</p>
                     )}
-                    {intakeResult?.summary && (
+                    {forecastData?.summary && (
                         <dl className="grid grid-cols-3 gap-2 text-[11px] pt-1">
-                            {Object.entries(intakeResult.summary).map(([k, v]) => {
+                            {Object.entries(forecastData.summary).map(([k, v]) => {
                                 const label = k.replace(/_total$/, '').replace('_', ' ').toUpperCase();
                                 return (
                                     <div key={k}>

@@ -62,6 +62,10 @@ class MapsErrorBoundary extends Component {
     }
 }
 
+// Bumped when the forecast payload shape changes, so a cached run from an
+// older shape is ignored rather than read as empty.
+const FORECAST_CACHE_KEY = "imaps_forecast_data_v2";
+
 // Quarters the LC timeline can scrub through: 2021 Q1 up to the current
 // quarter (recorded), then the next two quarters (forecast).
 function buildTimelineQuarters(urbanGrowthData) {
@@ -206,12 +210,9 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
     const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
     const activeQuarter = timelineQuarters[activeQuarterIndex] || timelineQuarters[timelineQuarters.length - 1];
 
-    const [apiQuarterData, setApiQuarterData] = useState({ pins: [], metrics: null });
-    const [forecastQuarterMap, setForecastQuarterMap] = useState({});
-    const [quarterLoading, setQuarterLoading] = useState(false);
     const [customForecastData, setCustomForecastData] = useState(() => {
         try {
-            const saved = localStorage.getItem("imaps_forecast_data");
+            const saved = localStorage.getItem(FORECAST_CACHE_KEY);
             if (saved) return JSON.parse(saved);
         } catch (e) {}
         return null;
@@ -221,74 +222,35 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         if (!data) return;
         setCustomForecastData(data);
         try {
-            localStorage.setItem("imaps_forecast_data", JSON.stringify(data));
+            localStorage.setItem(FORECAST_CACHE_KEY, JSON.stringify(data));
         } catch (e) {}
     };
 
-    // Pre-fetch all forecast quarters so every forecast quarter in the timeline displays filled bars
-    useEffect(() => {
-        const forecastQuarters = timelineQuarters.filter((q) => q.isForecast);
-        forecastQuarters.forEach((q) => {
-            const key = `${q.year}-${q.quarter}`;
-            if (!forecastQuarterMap[key]) {
-                fetch(`/api/forecast/${q.year}/${q.quarter}`)
-                    .then((res) => res.json())
-                    .then((res) => {
-                        if (res.status === "success" && Array.isArray(res.data?.pins)) {
-                            setForecastQuarterMap((prev) => ({ ...prev, [key]: res.data.pins }));
-                        }
-                    })
-                    .catch(() => {});
-            }
+    // The model predicts a count per barangay-quarter. Nothing is invented from
+    // it: a forecast quarter has counts, not application records.
+    const forecastDemand = useMemo(() => {
+        const rows = Array.isArray(customForecastData?.demand) ? customForecastData.demand : [];
+        const byQuarter = {};
+        rows.forEach((d) => {
+            const key = `${d.year}-${d.quarter}`;
+            const name = (d.barangay || "").trim();
+            if (!name) return;
+            (byQuarter[key] ||= {})[name.toLowerCase()] = Math.round(Number(d.predicted) || 0);
         });
-    }, [timelineQuarters]);
+        return byQuarter;
+    }, [customForecastData]);
 
-    useEffect(() => {
-        if (!activeQuarter) return;
-        let cancelled = false;
-        setQuarterLoading(true);
-        fetch(`/api/forecast/${activeQuarter.year}/${activeQuarter.quarter}`)
-            .then((res) => res.json())
-            .then((res) => {
-                if (!cancelled && res.status === "success") {
-                    setApiQuarterData(res.data);
-                    setForecastQuarterMap((prev) => ({
-                        ...prev,
-                        [`${activeQuarter.year}-${activeQuarter.quarter}`]: res.data?.pins || [],
-                    }));
-                }
-            })
-            .catch((err) => {
-                console.error("Forecast API error", err);
-                if (!cancelled) setApiQuarterData({ pins: [], metrics: null });
-            })
-            .finally(() => {
-                if (!cancelled) setQuarterLoading(false);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [activeQuarter]);
-
+    // Recorded filings for the active quarter. A forecast quarter has none —
+    // its numbers live in forecastDemand.
     const activeHistoricalPins = useMemo(() => {
-        if (!activeQuarter) return [];
-        if (activeQuarter.isForecast) {
-            const custom = customForecastData?.pins;
-            if (Array.isArray(custom) && custom.length > 0) {
-                const qPins = custom.filter((p) => Number(p.year) === Number(activeQuarter.year) && Number(p.quarter) === Number(activeQuarter.quarter));
-                if (qPins.length > 0) return qPins;
-            }
-            const mapped = forecastQuarterMap[`${activeQuarter.year}-${activeQuarter.quarter}`];
-            if (Array.isArray(mapped) && mapped.length > 0) return mapped;
-            return apiQuarterData.pins || [];
-        }
+        if (!activeQuarter || activeQuarter.isForecast) return [];
         const start = new Date(activeQuarter.year, (activeQuarter.quarter - 1) * 3, 1);
         const end = new Date(activeQuarter.year, activeQuarter.quarter * 3, 0, 23, 59, 59, 999);
         return (urbanGrowthData?.historicalPins?.[activeQuarter.year] ?? []).filter((p) => {
             const d = p?.created_at ? new Date(p.created_at) : null;
             return d && !isNaN(d.getTime()) && d >= start && d <= end;
         });
-    }, [urbanGrowthData, activeQuarter, apiQuarterData, customForecastData, forecastQuarterMap]);
+    }, [urbanGrowthData, activeQuarter]);
 
     const quarterSeries = useMemo(() => {
         const recorded = {};
@@ -297,66 +259,50 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
             if (!d || isNaN(d.getTime())) return;
             (recorded[`${d.getFullYear()}-${Math.floor(d.getMonth() / 3) + 1}`] ||= []).push(p);
         });
-        const custom = Array.isArray(customForecastData?.pins) ? customForecastData.pins : [];
-        return timelineQuarters.map((q, i) => {
-            let pins = recorded[`${q.year}-${q.quarter}`] || [];
+        return timelineQuarters.map((q) => {
+            const key = `${q.year}-${q.quarter}`;
             if (q.isForecast) {
-                const own = custom.filter((p) => Number(p.year) === Number(q.year) && Number(p.quarter) === Number(q.quarter));
-                const mapped = forecastQuarterMap[`${q.year}-${q.quarter}`];
-                pins = own.length > 0 ? own : (mapped && mapped.length > 0 ? mapped : (i === activeQuarterIndex ? activeHistoricalPins : null));
+                // null total = nothing to show for this quarter yet, which the
+                // timeline draws as an empty bar rather than a zero.
+                const byBgy = forecastDemand[key];
+                const total = byBgy ? Object.values(byBgy).reduce((sum, n) => sum + n, 0) : null;
+                return { ...q, total, byBgy: byBgy || {} };
             }
             const byBgy = {};
-            (pins || []).forEach((p) => {
+            (recorded[key] || []).forEach((p) => {
                 const b = (p.barangay || "").trim().toLowerCase();
                 if (b) byBgy[b] = (byBgy[b] || 0) + 1;
             });
-            return { ...q, total: pins ? pins.length : null, byBgy };
+            return { ...q, total: (recorded[key] || []).length, byBgy };
         });
-    }, [urbanGrowthData, customForecastData, timelineQuarters, activeQuarterIndex, activeHistoricalPins, forecastQuarterMap]);
+    }, [urbanGrowthData, timelineQuarters, forecastDemand]);
 
+    // The model's own validation figures, or nothing. There is no stand-in:
+    // a fixed MAE/WMAPE here read as accuracy no model had measured.
     const forecastMetrics = useMemo(() => {
-        if (customForecastData?.metrics) {
-            const m = customForecastData.metrics;
-            return {
-                mae: Number(m.validation_mae ?? m.mae ?? 2.155),
-                wmape: Number(m.validation_wmape ?? m.wmape ?? 0.302),
-                r2: m.validation_r2 != null ? Number(m.validation_r2) : (m.r2 != null ? Number(m.r2) : 0.785),
-            };
-        }
-        return apiQuarterData.metrics || { mae: 2.155, wmape: 0.302, r2: 0.785 };
-    }, [customForecastData, apiQuarterData]);
+        const m = customForecastData?.metrics;
+        if (!m) return null;
+        const num = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+        return {
+            mae: num(m.validation_mae),
+            wmape: num(m.validation_wmape),
+            r2: num(m.validation_r2),
+        };
+    }, [customForecastData]);
 
-    const forecastRangeByBgy = useMemo(() => {
-        if (!activeQuarter?.isForecast) return {};
-        const map = {};
-        const raw = customForecastData?.forecasts;
-        if (Array.isArray(raw)) {
-            const expectedLabel = activeQuarter ? `${activeQuarter.year} Q${activeQuarter.quarter}` : null;
-            raw.forEach((fc) => {
-                if (expectedLabel && fc.Quarter_Label && fc.Quarter_Label !== expectedLabel) return;
-                const b = (fc.Barangay || "").trim().toLowerCase();
-                if (b && fc.Lower_80 != null && fc.Upper_80 != null) {
-                    map[b] = `${fc.Lower_80} – ${fc.Upper_80}`;
-                }
-            });
-        }
-        (activeHistoricalPins || []).forEach((p) => {
-            const b = (p.barangay || "").trim().toLowerCase();
-            if (b && !map[b] && p.lower_80 != null && p.upper_80 != null) {
-                map[b] = `${p.lower_80} – ${p.upper_80}`;
-            }
-        });
-        return map;
-    }, [activeQuarter, customForecastData, activeHistoricalPins]);
-
+    // What the choropleth colours: predicted counts on a forecast quarter,
+    // filing counts on a recorded one.
     const demandByBgy = useMemo(() => {
+        if (activeQuarter?.isForecast) {
+            return forecastDemand[`${activeQuarter.year}-${activeQuarter.quarter}`] || {};
+        }
         const counts = {};
         activeHistoricalPins.forEach((p) => {
             const b = (p.barangay || "").trim().toLowerCase();
             if (b) counts[b] = (counts[b] || 0) + 1;
         });
         return counts;
-    }, [activeHistoricalPins]);
+    }, [activeHistoricalPins, activeQuarter, forecastDemand]);
 
     // ── 3D (diversity only) ──
     const [is3DMode, setIs3DMode] = useState(true);
@@ -556,7 +502,9 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
 
     // ── What the canvas is showing, in words ──
     const moduleInfo = MODULES.find((m) => m.id === activeLayer);
-    const quarterCount = activeHistoricalPins.length;
+    const quarterCount = activeQuarter?.isForecast
+        ? Object.values(demandByBgy).reduce((sum, n) => sum + n, 0)
+        : activeHistoricalPins.length;
     const mapSubtitle = activeLayer === "status"
         ? `${appTypeFilter === "All" ? "All permit types" : appTypeFilter} · ${visibleAppCount} application${visibleAppCount === 1 ? "" : "s"}${statusFilter !== "All" ? ` · ${STATUS_MARKER_CONFIG[statusFilter]?.label}` : ""}`
         : activeLayer === "trends"
@@ -583,10 +531,6 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         if (activeLayer === "trends") {
             const key = hoveredBgy.trim().toLowerCase();
             const n = demandByBgy[key] || 0;
-            const rangeStr = forecastRangeByBgy[key];
-            if (activeQuarter?.isForecast && rangeStr) {
-                return `${hoveredBgy}: ${rangeStr} LC projected (${n} expected), ${activeQuarter?.label}`;
-            }
             return `${hoveredBgy}: ${n} LC ${activeQuarter?.isForecast ? "projected" : "filed"}, ${activeQuarter?.label}`;
         }
         if (activeLayer === "diversity") {
@@ -596,7 +540,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
         }
         const n = stat.Total ?? 0;
         return `${hoveredBgy}: ${n} application${n === 1 ? "" : "s"}${stat.Primary_Zone ? ` · ${stat.Primary_Zone}` : ""}`;
-    }, [hoveredBgy, hoveredAppId, applications, bgyStats, activeLayer, demandByBgy, forecastRangeByBgy, activeQuarter, diversityLens]);
+    }, [hoveredBgy, hoveredAppId, applications, bgyStats, activeLayer, demandByBgy, activeQuarter, diversityLens]);
 
     return (
         <>
@@ -735,7 +679,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                                             onHoverApp={setHoveredAppId}
                                             onInspectApp={handleInspectApp}
                                             insets={mapInsets}
-                                            historicalPins={activeHistoricalPins}
+                                            demandCounts={demandByBgy}
                                             onFeatureClick={(name) => selectBarangay(name)}
                                             onMapClick={handleMapClick}
                                         />
@@ -758,12 +702,6 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                                                     onParcelsVisible={setParcels3D}
                                                 />
                                             </Suspense>
-                                        </div>
-                                    )}
-
-                                    {activeLayer === "trends" && quarterLoading && (
-                                        <div className="absolute top-0 inset-x-0 z-[520] h-0.5 overflow-hidden bg-slate-200" role="progressbar" aria-label="Loading quarter">
-                                            <div className="imaps-loading-bar h-full w-1/3 bg-[#fd8d3c]" />
                                         </div>
                                     )}
 
@@ -834,7 +772,6 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                                                         stat={bgyStats?.[selectedBgy.name] || selectedBgy.data || {}}
                                                         apps={selectedBgyApps || {}}
                                                         demand={demandByBgy[selectedBgy.name.trim().toLowerCase()] || 0}
-                                                        forecastRange={activeQuarter?.isForecast ? forecastRangeByBgy[selectedBgy.name.trim().toLowerCase()] : null}
                                                         activeQuarter={activeQuarter}
                                                         activeLayer={activeLayer}
                                                         onSwitch={(id) => {
@@ -864,7 +801,6 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                                                         onHoverBgy={setHoveredBgy}
                                                         onForecastGenerated={handleForecastGenerated}
                                                         activePins={activeHistoricalPins}
-                                                        loading={quarterLoading}
                                                         series={quarterSeries}
                                                         activeIndex={activeQuarterIndex}
                                                         onSelectQuarter={setActiveQuarterIndex}

@@ -195,7 +195,7 @@ export default function LeafletMap({
     onHoverApp = () => {},
     insets = { right: 0, bottom: 0 },
     verifiedParcel = null,
-    historicalPins = [],
+    demandCounts = {},
 }) {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
@@ -245,21 +245,12 @@ export default function LeafletMap({
         return map;
     }, [bgyStats]);
 
-    const bgyDemandCounts = useMemo(() => {
-        const counts = {};
-        (historicalPins || []).forEach((pin) => {
-            const b = (pin.barangay || "").trim().toLowerCase();
-            if (b) counts[b] = (counts[b] || 0) + 1;
-        });
-        return counts;
-    }, [historicalPins]);
-
     // Leaflet keeps the style and event callbacks it was given at creation, so
     // they read the latest props through this ref rather than a stale closure.
     const live = useRef({});
     live.current = {
         currentLayer, selectedBgy, showClup, showLabels,
-        diversityLens, diversityBandFilter, staticBgyData, bgyDemandCounts,
+        diversityLens, diversityBandFilter, staticBgyData, bgyDemandCounts: demandCounts,
         onFeatureClick, onMapClick, onHoverBgy, onCursorMove, onZoomChange, onInspectApp, onHoverApp,
     };
 
@@ -546,7 +537,7 @@ export default function LeafletMap({
 
         geoLayerRef.current?.bringToFront();
         raiseSelected();
-    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, bgyDemandCounts, diversityLens, diversityBandFilter, zoningReady, barangaysReady]);
+    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, demandCounts, diversityLens, diversityBandFilter, zoningReady, barangaysReady]);
 
     // ── Camera follows the selected barangay ──
     useEffect(() => {
@@ -685,7 +676,7 @@ export default function LeafletMap({
 
     useEffect(() => {
         renderLabels();
-    }, [currentLayer, diversityLens, diversityBandFilter, selectedBgy, showLabels, staticBgyData, bgyDemandCounts, barangaysReady, renderLabels]);
+    }, [currentLayer, diversityLens, diversityBandFilter, selectedBgy, showLabels, staticBgyData, demandCounts, barangaysReady, renderLabels]);
 
     useEffect(() => {
         const map = mapInstanceRef.current;

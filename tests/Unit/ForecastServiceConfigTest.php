@@ -80,10 +80,56 @@ class ForecastServiceConfigTest extends TestCase
             $source,
             'generateForecast() must fail closed, not substitute invented numbers.'
         );
-        // getQuarterData() still synthesises pins and reuses these constants; that is
-        // tracked as Phase 1 of LC_DEMAND_FORECAST_PLAN.md. What must stay gone is the
-        // path that reported them as the microservice's answer.
         $this->assertStringNotContainsString("'validation_mae' => 2.155", $source);
         $this->assertStringNotContainsString("'validation_wmape' => 0.302", $source);
+    }
+
+    public function test_no_accuracy_figure_is_hardcoded_anywhere(): void
+    {
+        // getQuarterData() used to report a fixed MAE 2.155 / WMAPE 0.302 /
+        // R2 0.785 for every quarter, which read as measured accuracy.
+        foreach (['2.155', '0.302', '0.785'] as $constant) {
+            $this->assertStringNotContainsString($constant, $this->forecastServiceSource());
+        }
+        $this->assertStringNotContainsString(
+            'function getQuarterData',
+            $this->forecastServiceSource(),
+            'getQuarterData() produced no model output at all; it must stay deleted.'
+        );
+    }
+
+    public function test_no_application_records_are_invented_from_a_predicted_count(): void
+    {
+        $source = $this->forecastServiceSource();
+
+        // A count per barangay-quarter was expanded into that many pins, each
+        // with a cycled purpose and mt_rand() lot area, and those showed up as
+        // if they were filings.
+        $this->assertStringNotContainsString('mt_rand', $source);
+        $this->assertStringNotContainsString('Forecasted Application #', $source);
+        $this->assertStringNotContainsString('lot_area_sqm', $source);
+    }
+
+    public function test_the_forecast_cannot_be_run_against_an_uploaded_file(): void
+    {
+        $service = $this->forecastServiceSource();
+        $controller = file_get_contents(__DIR__ . '/../../app/Http/Controllers/ForecastController.php');
+
+        // The model's output is presented as evidence about Rosario, so it runs
+        // on the recorded clearances and nothing else.
+        $this->assertStringNotContainsString('UploadedFile', $service);
+        $this->assertStringNotContainsString('getClientOriginalName', $service);
+        $this->assertStringNotContainsString("\$request->file(", $controller);
+        $this->assertStringNotContainsString("'file' =>", $controller);
+    }
+
+    public function test_the_run_uses_recorded_history_not_a_bundled_csv(): void
+    {
+        $source = $this->forecastServiceSource();
+
+        // The bundled CSV could drift from — or never have matched — the
+        // clearances the dashboard shows as recorded.
+        $this->assertStringNotContainsString('rosario_zoning_apps_2021_2026.csv', $source);
+        $this->assertStringContainsString("DB::table('historical_data')", $source);
     }
 }

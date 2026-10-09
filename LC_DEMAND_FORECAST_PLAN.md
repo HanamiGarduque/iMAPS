@@ -10,11 +10,11 @@ The most important finding is that **most of what the layer shows as "forecast" 
 - Today is Q4 '26, so the timeline marks **Q1 '27 and Q2 '27** as the forecast quarters (`resources/js/Pages/Dashboard.jsx`, `buildTimelineQuarters`).
 - The model returns **2026 Q3/Q4**. Its output lands on quarters the timeline now treats as recorded history.
 - For the real forecast quarters, the filter finds nothing and falls back to showing *every* model pin (`Dashboard.jsx`, `activeHistoricalPins`), or to `getQuarterData()`.
-- `ForecastService::getQuarterData()` makes up 14–22 random pins (`mt_rand`) spread evenly across barangays, and reports a fixed MAE of 2.155 and WMAPE of 30.2%.
-- The quarter parsing in `ForecastService::generateForecast()` assumes every label is in 2026 or 2027, and in Q3 or Q4.
+- ~~`ForecastService::getQuarterData()` makes up 14–22 random pins (`mt_rand`)… and reports a fixed MAE of 2.155 and WMAPE of 30.2%~~ — **fixed**: the method and its route are deleted.
+- ~~The quarter parsing in `ForecastService::generateForecast()` assumes every label is in 2026 or 2027, and in Q3 or Q4~~ — **fixed**: an unparseable `Quarter_Label` is dropped and logged instead of guessed.
 
 ### 1.2 Real counts get turned into fake records
-The model's per-barangay counts are split into N invented pins. Each pin gets a cycled category, a made-up purpose ("Commercial Complex & Retail Development…") and a random lot area. The frontend then counts those pins back up. The fake details also show up in drill-downs as if they were real.
+~~The model's per-barangay counts are split into N invented pins. Each pin gets a cycled category, a made-up purpose ("Commercial Complex & Retail Development…") and a random lot area.~~ — **fixed**: `generateForecast()` now returns a `demand` array of `{barangay, year, quarter, label, predicted}` and the map and timeline read those counts directly. No records are invented.
 
 ### 1.3 The map shows only one thing
 It's a count choropleth (colored map) with arbitrary cut-offs (3/6/10/16, `DEMAND_CLASSES` in `LeafletMap.jsx`). A forecast quarter looks exactly like a recorded one on the map; only a text label is different. The map doesn't show change from earlier quarters, uncertainty, or any link to the land-use plan.
@@ -22,7 +22,7 @@ It's a count choropleth (colored map) with arbitrary cut-offs (3/6/10/16, `DEMAN
 ### 1.4 Security and reliability problems
 - ~~`POST /api/forecast/generate` in `routes/api.php` needs no login~~ — **stale/incorrect**: the route is in `routes/web.php` inside the auth group with `role:Admin,Planning Officer`.
 - ~~A real-looking API key is hardcoded as the fallback in `ForecastService.php`~~ — **fixed**: fallback removed, the call fails closed when the key is unset, and the key was rotated service-side on 2026-10-09 (the committed value authenticates nothing).
-- ~~The default CSV is missing~~ — **stale**: `storage/app/rosario_zoning_apps_2021_2026.csv` is present (746 KB, 6,638 rows) and has the three columns the service requires.
+- ~~The default CSV is missing~~ — **moot**: the default run no longer reads a file. It builds the CSV from the `historical_data` table (the 6,638 imported rows) and fails closed when that is empty. `storage/app/rosario_zoning_apps_2021_2026.csv` is kept only as the import source for that table.
 - Forecast results are stored in localStorage by two separate components (`Dashboard.jsx` and `TrendsPanel.jsx`), and they never expire. Meanwhile the `forecast_runs` and `forecast_outputs` tables already exist and go unused.
 
 ### 1.5 Map points aren't real locations
@@ -84,8 +84,10 @@ service is. The real service was located, read and run end-to-end.
 
 ### Phase 1: Use the real forecast (do this first)
 
-- Have `generateForecast` return totals per barangay and quarter (`{barangay, year, quarter, predicted}`), with the quarter label parsed by regex (`(\d{4})\s*Q(\d)`). Remove the pin-splitting.
-- Delete `getQuarterData()`, its route and the hardcoded metrics.
+- ~~Have `generateForecast` return totals per barangay and quarter… Remove the pin-splitting.~~ — **done**.
+- ~~Delete `getQuarterData()`, its route and the hardcoded metrics.~~ — **done**. The Trends panel shows `—` where there is no run.
+- ~~The default run sends a bundled synthetic CSV.~~ — **done**: it is built from the `historical_data` clearances, and fails closed when none are recorded. CSV upload is removed altogether — the run has one input, and it is the recorded history.
+- ~~Two components cache the run in localStorage independently.~~ — **done**: `Dashboard.jsx` owns the run (`imaps_forecast_data_v2`) and `TrendsPanel.jsx` reports results up to it. Persisting to `forecast_runs` / `forecast_outputs` is still open.
 - Save each run to the existing `forecast_runs` and `forecast_outputs` tables. This needs one migration to add `barangay`, `year` and `quarter` columns. It replaces localStorage and records who ran the forecast and when.
 - Base the timeline's forecast quarters on what the model actually returned, not on today's date. If the model's horizon is already in the past, show "Forecast outdated: last run covers Q3–Q4 '26".
 - ~~Move the route into the authenticated group, remove the hardcoded API key, restore the default CSV~~ — **all three done** (see §1.4). What remains in this bullet: nothing.
