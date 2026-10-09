@@ -2,7 +2,9 @@
 
 namespace App\Support;
 
+use App\Models\SiteInspection;
 use App\Services\DiagnosticReportReader;
+use Illuminate\Support\Facades\Schema;
 
 /** Shared list/count/detail/notification/inspection authority. Never cache current ownership. */
 class ReportingVisibility
@@ -28,14 +30,44 @@ class ReportingVisibility
         return $type;
     }
 
+    /**
+     * READ access only. A Planning Officer may read a report on an application
+     * they own OR on one where they assigned an inspection round (the same rule
+     * as the Inspections page, SiteInspection::visibleTo). Handling, notifying
+     * and escalating still require current ownership; see handlingStatuses().
+     */
     public function canViewReport($viewer, array $report, ?array $context = null): bool
     {
         if (! in_array($report['report_type'] ?? null, $this->allowedTypes($viewer), true)) {
             return false;
         }
-        return $viewer->role === 'Admin' || (($context['resolved'] ?? false)
-            && ($context['application']['assigned_planning_officer_id'] ?? null) !== null
-            && (int) $context['application']['assigned_planning_officer_id'] === (int) $viewer->id);
+        if ($viewer->role === 'Admin') {
+            return true;
+        }
+        if (! ($context['resolved'] ?? false)) {
+            return false;
+        }
+        $ownerId = $context['application']['assigned_planning_officer_id'] ?? null;
+        if ($ownerId !== null && (int) $ownerId === (int) $viewer->id) {
+            return true;
+        }
+        return in_array((int) ($context['application']['id'] ?? 0), $this->inspectionApplicationIds($viewer), true);
+    }
+
+    /** @var array<int, int[]> Per-instance only, so one list scan costs one query, never stale across requests. */
+    private array $inspectionApplications = [];
+
+    /** Local application ids where this viewer assigned at least one inspection round. */
+    private function inspectionApplicationIds($viewer): array
+    {
+        if (isset($this->inspectionApplications[$viewer->id])) {
+            return $this->inspectionApplications[$viewer->id];
+        }
+        // Fail closed: without the provenance column nothing extra is visible.
+        $ids = Schema::hasColumn('site_inspections', 'assigned_by_imaps_user_id')
+            ? SiteInspection::visibleTo($viewer)->distinct()->pluck('zoning_application_id')->map(fn ($id) => (int) $id)->all()
+            : [];
+        return $this->inspectionApplications[$viewer->id] = $ids;
     }
 
     public function canNotify($viewer, array $report, array $context): bool

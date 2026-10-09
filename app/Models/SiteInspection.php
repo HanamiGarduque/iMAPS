@@ -48,6 +48,21 @@ class SiteInspection extends Model
     ];
 
     /**
+     * Rounds the viewer may open on the Inspections pages: an Admin sees every
+     * round, a Planning Officer only the rounds they assigned (recorded in
+     * assigned_by_imaps_user_id), anyone else none. A round with no recorded
+     * assigner is therefore Admin-only rather than guessed at.
+     */
+    public function scopeVisibleTo($query, ?User $viewer)
+    {
+        return match ($viewer?->role) {
+            'Admin' => $query,
+            'Planning Officer' => $query->where('assigned_by_imaps_user_id', $viewer->id),
+            default => $query->whereRaw('1 = 0'),
+        };
+    }
+
+    /**
      * The attributes that should be cast.
      *
      * @var array<string, string>

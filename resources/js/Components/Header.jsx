@@ -360,7 +360,7 @@ export default function Header({
 
     const handleSignOutClick = () => {
         setProfileMenuOpen(false);
-        (onLogout || confirmSignOut)();
+        (onLogout || confirmSignOut)(page?.props?.auth?.user);
     };
 
     return (

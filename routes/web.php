@@ -96,10 +96,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/tax-map/lookup/{pin}', [TaxMapLookupController::class, 'lookup'])
         ->middleware('role:Admin,Planning Officer');
 
-    // Site Inspections List
+    // Site Inspections List. A Planning Officer is admitted, but the controller
+    // scopes the rounds to the ones they assigned (SiteInspection::visibleTo).
     Route::get('/site-inspections', [\App\Http\Controllers\SiteInspectionController::class, 'index'])
         ->name('site-inspections.index')
-        ->middleware('role:Admin');
+        ->middleware('role:Admin,Planning Officer');
     // PHASE 2A: the previous global `POST /site-inspections/sync` is REMOVED.
     // It invoked `sync:pull-inspections` with no `--local-inspection-id`, so one
     // click from the list could write EVERY completed inspection in the namespace,
@@ -111,7 +112,7 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:Admin');
     Route::get('/site-inspections/{id}', [\App\Http\Controllers\SiteInspectionController::class, 'show'])
         ->name('site-inspections.show')
-        ->middleware('role:Admin');
+        ->middleware('role:Admin,Planning Officer');
 
     // â”€â”€ Application Creation Form (Must be placed before wildcard {id} route) â”€â”€
     // Loop 6: application encoding is Planning Officer-only (Admin excluded).
