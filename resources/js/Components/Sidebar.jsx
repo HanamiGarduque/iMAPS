@@ -12,7 +12,6 @@ export default function Sidebar({
     const page = usePage();
     const effectiveRole = page?.props?.auth?.user?.role || userRole;
     const isAdmin = effectiveRole === 'Admin';
-    const isPlanningOfficer = effectiveRole === 'Planning Officer';
     // Loop 6 / Loop 9 merge: Site Inspectors operate exclusively through
     // FieldSync — they must never see internal operational navigation
     // (frontend hygiene only; the server-side role middleware remains the
@@ -70,10 +69,10 @@ export default function Sidebar({
             href: '/site-inspections',
             label: 'Inspections',
             badge: null,
-            // Loop 6 correction: routes/web.php protects every /site-inspections
-            // route with role:Admin. Align the nav visibility with the enforced
-            // route middleware.
-            adminOnly: true,
+            // The list and detail routes admit Admin and Planning Officer; the
+            // server scopes a Planning Officer to the rounds they assigned.
+            // PRESENTATION ONLY, not the security boundary.
+            adminOnly: false,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -148,8 +147,7 @@ export default function Sidebar({
     ];
 
     // Master integration (Loop 9 merge): BOTH role rules are preserved.
-    //   * master hides Admin-only items from non-Admins, and additionally hides
-    //     /site-inspections from a Planning Officer;
+    //   * master hides Admin-only items from non-Admins;
     //   * Loop 9 gives a Site Inspector no internal navigation at all, and
     //     renders the FieldSync guidance panel instead.
     // Dropping either regresses a Loop 6 authorization contract.
@@ -157,7 +155,6 @@ export default function Sidebar({
         ? []
         : navItems.filter(item => {
               if (item.adminOnly && !isAdmin) return false;
-              if (item.href === '/site-inspections' && isPlanningOfficer) return false;
               return true;
           });
 

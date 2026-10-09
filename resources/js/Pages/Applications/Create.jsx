@@ -19,7 +19,7 @@ import SiteMapPrint from "./Components/SiteMapPrint";
 import { splitFullName, joinName } from "@/utils/names";
 import { getZoneInfo } from "@/utils/clupZones";
 import { getRecommendedPetition } from "@/Components/MapKit";
-import { confirmSignOut } from "@/utils/signOut";
+import { confirmSignOut, confirmDialog, dialogHeader } from "@/utils/signOut";
 const AMENDMENT_TYPES = [
     {
         id: "Petition for Rezoning",
@@ -805,23 +805,14 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     const handleRestart = () => {
-        Swal.fire({
-            title: "Reset Application Form?",
-            text: "This will clear all entered application fields and draft data. You can start fresh from Step 1.",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonText: "Yes, Reset Form",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans",
-                title: "text-lg font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500",
-                actions: "flex items-center justify-center gap-3 mt-5",
-                confirmButton: "inline-flex items-center justify-center px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
-                cancelButton: "inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
-            },
-        }).then((res) => {
+        confirmDialog(
+            dialogHeader(
+                '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>',
+                "Reset application form?"
+            ),
+            "This clears all entered fields and draft data. You'll start fresh from Step 1.",
+            "Reset form"
+        ).then((res) => {
             if (res.isConfirmed) {
                 clearDraftStateRecord();
                 setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());
@@ -1804,11 +1795,11 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 .leaflet-container { width: 100%; height: 100%; z-index: 0; }
 
                 /* SweetAlert Modern iMAPS Theme Overrides */
-                .swal2-container {
+                .swal2-container:not(:has(.imaps-confirm)) {
                     backdrop-filter: blur(4px) !important;
                     background-color: rgba(15, 23, 42, 0.4) !important;
                 }
-                .swal2-popup {
+                .swal2-popup:not(.imaps-confirm) {
                     font-family: 'Plus Jakarta Sans', sans-serif !important;
                     border-radius: 1.5rem !important;
                     border: 1px solid #e2e8f0 !important;
@@ -1835,20 +1826,20 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     align-items: center !important;
                     justify-content: center !important;
                 }
-                .swal2-title {
+                .swal2-popup:not(.imaps-confirm) .swal2-title {
                     font-size: 1.25rem !important;
                     font-weight: 700 !important;
                     color: #0f172a !important;
                     padding: 0 !important;
                     margin-bottom: 0.5rem !important;
                 }
-                .swal2-html-container {
+                .swal2-popup:not(.imaps-confirm) .swal2-html-container {
                     font-size: 0.8125rem !important;
                     color: #64748b !important;
                     margin: 0 0 1.25rem !important;
                     line-height: 1.5 !important;
                 }
-                .swal2-actions {
+                .swal2-popup:not(.imaps-confirm) .swal2-actions {
                     gap: 0.75rem !important;
                     margin-top: 1rem !important;
                 }

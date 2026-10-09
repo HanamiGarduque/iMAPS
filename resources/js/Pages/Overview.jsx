@@ -16,8 +16,8 @@ const TZ = "Asia/Manila";
 // The preview is far smaller than the dashboard canvas: centre Rosario rather
 // than leaving room for the dashboard's side panels, and pull the camera back
 // one zoom level for every halving of the canvas height.
-const MAP_FRAME = { top: 0, bottom: 80, left: 10, right: 10 };
-const zoomForHeight = (h) => Math.min(11, Math.max(9.4, 10.5 + Math.log2(Math.max(160, h) / 440)));
+const MAP_FRAME = { top: 0, bottom: 60, left: 10, right: 10 };
+const zoomForHeight = (h) => Math.min(11, Math.max(9.2, 10.5 + Math.log2(Math.max(160, h) / 440)));
 
 const ICONS = {
     plus: "M12 4.5v15m7.5-7.5h-15",
@@ -25,14 +25,13 @@ const ICONS = {
     draft: "M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10",
     registry: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z",
     inspect: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z",
-    bell: "M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0",
-    check: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-    inbox: "M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859M2.25 13.5V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.5M2.25 13.5l2.4-7.2A2.25 2.25 0 016.79 4.5h10.42a2.25 2.25 0 012.14 1.8l2.4 7.2",
     calendar: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5",
     cube: "M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9",
+    spark: "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z",
     alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z",
     trend: "M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941",
-    spark: "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z",
+    bell: "M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0",
+    check: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
     arrow: "M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3",
     chevron: "M8.25 4.5l7.5 7.5-7.5 7.5",
     close: "M6 18L18 6M6 6l12 12",
@@ -51,7 +50,7 @@ const num = (n) => Number(n || 0).toLocaleString("en-PH");
 const plural = (n, word) => `${num(n)} ${word}${n === 1 ? "" : "s"}`;
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white";
-// Inner tiles: white and bordered like the header's own pills and panels.
+// One tile surface for every block on the page.
 const TILE = "rounded-2xl bg-white/80 border border-slate-200/70 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(30,58,138,0.25)]";
 
 // A WebGL failure in the 3D view must not take the rest of the overview down.
@@ -62,29 +61,34 @@ class MapBoundary extends Component {
     }
     render() {
         if (this.state.failed) {
-            return (
-                <p className="absolute inset-0 grid place-items-center px-6 text-center text-[12px] text-slate-500">
-                    The 3D preview isn't available on this device.
-                </p>
-            );
+            return <p className="absolute inset-0 grid place-items-center px-6 text-center text-[12px] text-slate-500">The 3D preview isn't available on this device.</p>;
         }
         return this.props.children;
     }
 }
 
-function MiniTile({ icon, title, chip, href, children }) {
-    const Box = href ? Link : "div";
+function TileHead({ icon, title, extra, children }) {
     return (
-        <Box href={href} className={`${TILE} p-3.5 flex flex-col min-w-0 ${href ? `hover:bg-white hover:border-blue-200 transition-colors ${FOCUS}` : ""}`}>
-            <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 min-w-0">
-                    <Icon name={icon} className="w-3.5 h-3.5 text-blue-600 shrink-0" strokeWidth={2} />
-                    <span className="text-[11.5px] font-semibold text-slate-600 truncate">{title}</span>
-                </span>
-                {chip && <span className="hidden sm:inline shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-slate-500">{chip}</span>}
-            </div>
-            <div className="mt-3">{children}</div>
-        </Box>
+        <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 min-w-0">
+                <Icon name={icon} className="w-3.5 h-3.5 text-blue-600 shrink-0" strokeWidth={2} />
+                <h2 className="text-[11.5px] font-semibold text-slate-600 truncate">{title}</h2>
+                {extra && <span className="hidden sm:inline text-[11px] text-slate-400 truncate">· {extra}</span>}
+            </span>
+            {children}
+        </div>
+    );
+}
+
+function StatTile({ href, icon, title, chip, value, valueClass = "text-slate-900", children }) {
+    return (
+        <Link href={href} className={`${TILE} p-3.5 flex flex-col min-w-0 hover:bg-white hover:border-blue-200 transition-colors ${FOCUS}`}>
+            <TileHead icon={icon} title={title}>
+                <span className="hidden sm:inline shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-slate-500">{chip}</span>
+            </TileHead>
+            <p className={`mt-3 text-[22px] leading-none font-bold tracking-tight tabular-nums ${valueClass}`}>{value}</p>
+            <p className="mt-1 text-[11px] text-slate-500 truncate">{children}</p>
+        </Link>
     );
 }
 
@@ -181,7 +185,7 @@ export default function Overview({
                     activePage="overview"
                 />
 
-                <div className="flex-1 relative overflow-hidden flex flex-col min-w-0">
+                <div className="flex-1 relative overflow-hidden flex flex-col min-w-0 min-h-0">
                     <Sidebar
                         userName={userName}
                         userRole={userRole}
@@ -192,34 +196,33 @@ export default function Overview({
                     />
                     {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-900/20 z-[750]" aria-hidden="true" />}
 
-<main className="relative flex-1 overflow-y-auto bg-gradient-to-br from-[#fbfcff] via-[#f5f8fd] to-[#edf2fb]">
+                    <main className="relative flex-1 min-h-0 overflow-y-auto bg-gradient-to-br from-[#fbfcff] via-[#f5f8fd] to-[#edf2fb]">
                         {/* Faint depth behind the tiles: the header's blue, diffused */}
                         <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
                             <div className="absolute -top-48 -left-40 w-[640px] h-[640px] rounded-full bg-sky-100/80 blur-[120px]" />
                             <div className="absolute top-[20%] right-[-10%] w-[560px] h-[560px] rounded-full bg-indigo-100/70 blur-[120px]" />
                         </div>
 
-                        <section aria-labelledby="overview-greeting" className="relative min-h-full flex flex-col animate-in fade-in duration-500">
-                            <div className="flex-1 w-full max-w-[1600px] mx-auto flex flex-col gap-5 px-4 sm:px-6 lg:px-8 py-5 lg:py-6">
+                        <div className="relative min-h-full flex flex-col">
+                            {/* Content keeps a readable width; the page around it stays one surface. */}
+                            <div className="flex-1 w-full max-w-[1440px] mx-auto flex flex-col gap-4 2xl:gap-5 px-4 sm:px-6 lg:px-8 py-5 2xl:py-7">
                                 <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-5 lg:gap-8">
-                                    {/* ── Welcome: centred against the map so neither column ends in empty space ── */}
-                                    <div className="min-w-0 flex flex-col lg:justify-center lg:pb-6">
+                                    {/* ── Welcome ── */}
+                                    <section aria-labelledby="overview-greeting" className="min-w-0 flex flex-col lg:justify-center">
                                         <div className="flex flex-wrap items-center gap-2">
                                             <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200/70 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
                                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500" aria-hidden="true" />
                                                 MPDO Rosario, Batangas
                                             </span>
-                                            <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                                                {userRole}
-                                            </span>
+                                            <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700">{userRole}</span>
                                         </div>
 
-                                        <p className="mt-5 inline-flex items-center gap-1.5 text-[12px] text-slate-500">
+                                        <p className="mt-4 inline-flex items-center gap-1.5 text-[12px] text-slate-500">
                                             <Icon name="calendar" className="w-3.5 h-3.5" />
                                             {fmt(now, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
                                         </p>
 
-                                        <h1 id="overview-greeting" className="mt-2 text-[34px] sm:text-[42px] 2xl:text-[54px] leading-[1.06] font-extrabold tracking-tight text-slate-800">
+                                        <h1 id="overview-greeting" className="mt-2 text-[32px] sm:text-[38px] 2xl:text-[46px] leading-[1.06] font-extrabold tracking-tight text-slate-800">
                                             Welcome back,
                                             <span className="block">
                                                 <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-sky-500 bg-clip-text text-transparent">{firstName}</span>{" "}
@@ -227,37 +230,33 @@ export default function Overview({
                                             </span>
                                         </h1>
 
-                                        {/* ── Today's briefing: what this page is showing, in a sentence or three ── */}
-                                        <section aria-label="Today's briefing" className="mt-5 2xl:mt-7 max-w-xl rounded-2xl bg-gradient-to-br from-blue-50/90 to-indigo-50/70 border border-blue-100/80 px-4 py-3.5 2xl:px-5 2xl:py-4">
+                                        {/* Today's briefing: what this page is showing, in a few lines */}
+                                        <div className="mt-4 2xl:mt-5 rounded-2xl bg-gradient-to-br from-blue-50/90 to-indigo-50/70 border border-blue-100/80 px-4 py-3">
                                             <div className="flex items-start gap-3">
-                                                <span className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-white text-blue-600 border border-blue-100 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-                                                    <Icon name="spark" className="w-4 h-4" strokeWidth={1.9} />
+                                                <span className="grid place-items-center w-7 h-7 shrink-0 rounded-lg bg-white text-blue-600 border border-blue-100">
+                                                    <Icon name="spark" className="w-3.5 h-3.5" strokeWidth={1.9} />
                                                 </span>
-                                                <div className="min-w-0 text-[13px] 2xl:text-[14px] leading-relaxed text-slate-600">
-                                                    <p className="font-semibold text-slate-800">Here's Rosario at a glance today.</p>
-                                                    <p className="mt-1">
-                                                        {pastSla > 0 ? (
-                                                            <>
-                                                                <b className="font-semibold text-rose-600">{plural(pastSla, "application")}</b> {pastSla === 1 ? "is" : "are"} past the 14-day processing window
-                                                            </>
-                                                        ) : (
-                                                            "Every open application is within the 14-day processing window"
-                                                        )}
-                                                        {reviewCount > 0 ? (
-                                                            <>
-                                                                , and <b className="font-semibold text-slate-800">{num(reviewCount)}</b> {reviewCount === 1 ? "waits" : "wait"} in technical review.
-                                                            </>
-                                                        ) : (
-                                                            "."
-                                                        )}{" "}
-                                                        <b className="font-semibold text-slate-800">{num(thisMonth)}</b> {thisMonth === 1 ? "was" : "were"} filed this month, and the municipality's land-use mix stands at{" "}
-                                                        <b className="font-semibold text-slate-800">{Number(municipalDiversity).toFixed(2)}</b> ({municipalTier.shortLabel.toLowerCase()}) — explore it barangay by barangay on the map.
-                                                    </p>
-                                                </div>
+                                                <p className="min-w-0 text-[12.5px] 2xl:text-[13.5px] leading-relaxed text-slate-600">
+                                                    {pastSla > 0 ? (
+                                                        <>
+                                                            <b className="font-semibold text-rose-600">{plural(pastSla, "application")}</b> {pastSla === 1 ? "is" : "are"} past the 14-day processing window
+                                                        </>
+                                                    ) : (
+                                                        "Every open application is within the 14-day processing window"
+                                                    )}
+                                                    {reviewCount > 0 ? (
+                                                        <>
+                                                            , and <b className="font-semibold text-slate-800">{num(reviewCount)}</b> {reviewCount === 1 ? "waits" : "wait"} in technical review.
+                                                        </>
+                                                    ) : (
+                                                        "."
+                                                    )}{" "}
+                                                    Rosario's land-use mix stands at <b className="font-semibold text-slate-800">{Number(municipalDiversity).toFixed(2)}</b> ({municipalTier.shortLabel.toLowerCase()}).
+                                                </p>
                                             </div>
-                                        </section>
+                                        </div>
 
-                                        <nav aria-label="Quick actions" className="mt-4 2xl:mt-5 max-w-xl">
+                                        <nav aria-label="Quick actions" className="mt-3">
                                             <ul className="flex flex-col gap-2">
                                                 {actions.map((a) => (
                                                     <li key={a.href}>
@@ -278,34 +277,27 @@ export default function Overview({
                                                 ))}
                                             </ul>
                                         </nav>
+                                    </section>
 
-
-                                    </div>
-
-                                    {/* ── Today + Rosario preview ── */}
+                                    {/* ── Today's figures + Rosario preview ── */}
                                     <div className="min-w-0 flex flex-col gap-3">
                                         <div className="grid grid-cols-2 gap-3">
-                                            <MiniTile icon="alert" title="Needs attention" chip="SLA" href="/applications">
-                                                <p className={`text-[22px] leading-none font-bold tracking-tight tabular-nums ${pastSla > 0 ? "text-rose-600" : "text-slate-900"}`}>{num(pastSla)}</p>
-                                                <p className="mt-1 text-[11px] text-slate-500">
-                                                    Past the 14-day SLA
-                                                    <span className="text-slate-400"> · {num(ageing)} ageing</span>
-                                                </p>
-                                            </MiniTile>
-                                            <MiniTile icon="trend" title="Filed this month" chip={fmt(now, { month: "short" })} href="/applications">
-                                                <p className="text-[22px] leading-none font-bold tracking-tight tabular-nums text-slate-900">{num(thisMonth)}</p>
-                                                <p className={`mt-1 text-[11px] ${delta > 0 ? "text-emerald-700" : "text-slate-500"}`}>
+                                            <StatTile href="/applications" icon="alert" title="Needs attention" chip="SLA" value={num(pastSla)} valueClass={pastSla > 0 ? "text-rose-600" : "text-slate-900"}>
+                                                Past the 14-day SLA <span className="text-slate-400">· {num(ageing)} ageing</span>
+                                            </StatTile>
+                                            <StatTile href="/applications" icon="trend" title="Filed this month" chip={fmt(now, { month: "short" })} value={num(thisMonth)}>
+                                                <span className={delta > 0 ? "text-emerald-700" : undefined}>
                                                     {delta === 0 ? `Same as ${lastMonthShort}` : `${delta > 0 ? "▲" : "▼"} ${num(Math.abs(delta))} vs ${lastMonthShort}`}
-                                                    <span className="text-slate-400"> · {num(total)} total</span>
-                                                </p>
-                                            </MiniTile>
+                                                </span>
+                                                <span className="text-slate-400"> · {num(total)} total</span>
+                                            </StatTile>
                                         </div>
 
-                                        <div className={`${TILE} flex-1 p-3.5 flex flex-col min-h-[300px]`}>
+                                        <section aria-labelledby="map-heading" className={`${TILE} flex-1 p-3.5 flex flex-col min-h-[300px]`}>
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="flex items-center gap-1.5 min-w-0">
                                                     <Icon name="cube" className="w-3.5 h-3.5 text-blue-600 shrink-0" strokeWidth={2} />
-                                                    <h2 className="text-[11.5px] font-semibold text-slate-600 truncate">Land-use diversity</h2>
+                                                    <h2 id="map-heading" className="text-[11.5px] font-semibold text-slate-600 truncate">Land-use diversity</h2>
                                                     <span className="hidden sm:inline text-[11px] text-slate-400 truncate">
                                                         · Rosario <b className="font-bold text-slate-800 tabular-nums">{Number(municipalDiversity).toFixed(2)}</b> {municipalTier.shortLabel}
                                                     </span>
@@ -316,7 +308,7 @@ export default function Overview({
                                                 </Link>
                                             </div>
 
-                                            <div ref={mapBoxRef} className="relative mt-2.5 flex-1 min-h-[200px] rounded-xl overflow-hidden bg-[#f8f9fa] border border-slate-200/60">
+                                            <div ref={mapBoxRef} className="relative mt-2.5 flex-1 min-h-[220px] rounded-xl overflow-hidden bg-[#f8f9fa] border border-slate-200/60">
                                                 {mapZoom !== null && (
                                                     <MapBoundary>
                                                         <Suspense fallback={<MapSkeleton visible label="Loading 3D view…" tone="#f8f9fa" />}>
@@ -354,14 +346,11 @@ export default function Overview({
                                                         </button>
                                                     </div>
                                                 ) : (
-                                                    <p className="absolute bottom-2 left-2 z-[460] rounded-md bg-white/85 px-2 py-1 text-[10.5px] text-slate-500 pointer-events-none">
-                                                        Drag to orbit · click a barangay
-                                                    </p>
+                                                    <p className="absolute bottom-2 left-2 z-[460] rounded-md bg-white/85 px-2 py-1 text-[10.5px] text-slate-500 pointer-events-none">Drag to orbit · click a barangay</p>
                                                 )}
 
-                                                {/* Legend */}
                                                 <div className="absolute bottom-2 right-2 z-[460] rounded-md bg-white/90 px-2 py-1.5 pointer-events-none">
-                                                    <div className="flex h-1.5 w-28 rounded-full overflow-hidden" aria-hidden="true">
+                                                    <div className="flex h-1.5 w-24 rounded-full overflow-hidden" aria-hidden="true">
                                                         {[...DIVERSITY_TIERS].reverse().map((t) => (
                                                             <span key={t.id} className="flex-1" style={{ background: t.fill }} />
                                                         ))}
@@ -372,9 +361,39 @@ export default function Overview({
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
+                                        </section>
                                     </div>
                                 </div>
+
+                                {/* ── Registry status, one strip across the page ── */}
+                                <section aria-labelledby="status-heading" className={`${TILE} overflow-hidden shrink-0`}>
+                                    <div className="px-3.5 py-2.5">
+                                        <TileHead icon="registry" title={<span id="status-heading">Registry status</span>} extra={`${plural(total, "application")}`}>
+                                            <Link href="/applications" className={`shrink-0 inline-flex items-center gap-0.5 rounded-md text-[11.5px] font-semibold text-blue-600 hover:text-blue-700 ${FOCUS}`}>
+                                                View all
+                                                <Icon name="chevron" className="w-3 h-3" strokeWidth={2.4} />
+                                            </Link>
+                                        </TileHead>
+                                    </div>
+                                    <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px bg-slate-200/60 border-t border-slate-200/60">
+                                        {pipeline.map((s) => (
+                                            <li key={s.key} className="bg-white/95">
+                                                <Link
+                                                    href={`/applications?status=${encodeURIComponent(s.key)}`}
+                                                    className="group relative flex flex-col gap-1 px-3.5 py-2.5 hover:bg-white transition-colors focus-visible:outline-none focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/60"
+                                                >
+                                                    <span className="flex items-center gap-1.5 text-[11px] text-slate-500 group-hover:text-slate-800 min-w-0">
+                                                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: s.color }} aria-hidden="true" />
+                                                        <span className="truncate">{s.label}</span>
+                                                    </span>
+                                                    <span className="text-[18px] leading-none font-bold text-slate-900 tabular-nums">{num(s.count)}</span>
+                                                    {/* Share of the registry, as a hairline under the figure */}
+                                                    <span className="absolute left-0 bottom-0 h-[2px]" style={{ width: `${total ? (s.count / total) * 100 : 0}%`, background: s.color }} aria-hidden="true" />
+                                                </Link>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </section>
                             </div>
 
                             {/* ── Notification bar ── */}
@@ -384,7 +403,7 @@ export default function Overview({
                                     unreadCount > 0 ? "border-blue-100 bg-blue-50/70 text-slate-700 hover:bg-blue-50" : "border-slate-200/70 bg-white/60 text-slate-600 hover:bg-white"
                                 }`}
                             >
-                                <span className="w-full max-w-[1600px] mx-auto flex items-center gap-2.5 px-4 sm:px-6 lg:px-8 py-2.5">
+                                <span className="w-full max-w-[1440px] mx-auto flex items-center gap-2.5 px-4 sm:px-6 lg:px-8 py-2.5">
                                     <span className="relative shrink-0 text-blue-600">
                                         <Icon name={unreadCount > 0 ? "bell" : "check"} className="w-4 h-4" strokeWidth={2} />
                                         {unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" aria-hidden="true" />}
@@ -405,7 +424,7 @@ export default function Overview({
                                     </span>
                                 </span>
                             </Link>
-                        </section>
+                        </div>
                     </main>
                 </div>
             </div>

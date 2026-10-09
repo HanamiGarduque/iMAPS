@@ -20,6 +20,8 @@ function load(name) {
         if (id === '@inertiajs/react') return inertia;
         if (id.startsWith('@/Components/')) return () => null;
         if (id === 'sweetalert2') return {};
+        if (id === '@/utils/signOut') return { confirmSignOut: () => {} };
+        if (id === './DevelopmentSupport') return () => null;
         if (id === 'axios') return {};
         if (id === './ReportUi') return load('ReportUi');
         throw new Error('Unexpected import ' + id);
@@ -36,9 +38,11 @@ let html = render('Show', { report, canNotify: false });
 check(!html.includes('Notify '), 'Technical detail has no notification control');
 check(!html.includes('Planning Officer'), 'Technical detail has no PO relationship');
 check(html.includes('&lt;script&gt;not markup&lt;/script&gt;'), 'Remote text renders inertly');
-check(html.indexOf('Report identity') < html.indexOf('Issue context')
-    && html.indexOf('Issue context') < html.indexOf('Problem')
-    && html.indexOf('Problem') < html.indexOf('Technical review'), 'Technical hierarchy');
+// Two-column layout: the inspector's problem leads the content column, and
+// Report identity sits in the status/handling column that follows it.
+check(html.indexOf('Problem') < html.indexOf('Issue context')
+    && html.indexOf('Issue context') < html.indexOf('Technical review')
+    && html.indexOf('Technical review') < html.indexOf('Report identity'), 'Technical hierarchy');
 check(html.indexOf('Reproduction steps (inspector-authored)') < html.indexOf('Technical review'), 'Reproduction belongs to inspector problem section');
 check(!/Development \/ support contact/i.test(html) && !/has not been configured/i.test(html),
     'the development/support contact section is not rendered');

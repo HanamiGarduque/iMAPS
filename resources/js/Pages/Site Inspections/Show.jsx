@@ -1008,15 +1008,14 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 </p>
                                             ) : (
                                                 <ul className="-mx-2 space-y-0.5">
-                                                    {roundHistory.rounds.map((r) => (
-                                                        <li key={r.inspection_id}>
-                                                            <Link
-                                                                href={`/site-inspections/${r.inspection_id}`}
-                                                                className={`flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition-colors ${
-                                                                    r.is_current ? "bg-blue-50" : "hover:bg-slate-50"
-                                                                }`}
-                                                                aria-current={r.is_current ? "true" : undefined}
-                                                            >
+                                                    {roundHistory.rounds.map((r) => {
+                                                        // A round assigned by another Planning Officer is listed
+                                                        // for context but not linked: the server would refuse it.
+                                                        const rowClass = `flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition-colors ${
+                                                            r.is_current ? "bg-blue-50" : r.viewable === false ? "" : "hover:bg-slate-50"
+                                                        }`;
+                                                        const content = (
+                                                            <>
                                                                 <span className="min-w-0">
                                                                     <span className="block text-[13px] font-semibold text-slate-900">
                                                                         {r.round_number != null
@@ -1044,9 +1043,26 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                                         INS-{r.inspection_id}
                                                                     </span>
                                                                 </span>
-                                                            </Link>
+                                                            </>
+                                                        );
+                                                        return (
+                                                        <li key={r.inspection_id}>
+                                                            {r.viewable === false ? (
+                                                                <div className={rowClass} aria-current={r.is_current ? "true" : undefined}>
+                                                                    {content}
+                                                                </div>
+                                                            ) : (
+                                                                <Link
+                                                                    href={`/site-inspections/${r.inspection_id}`}
+                                                                    className={rowClass}
+                                                                    aria-current={r.is_current ? "true" : undefined}
+                                                                >
+                                                                    {content}
+                                                                </Link>
+                                                            )}
                                                         </li>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </ul>
                                             )}
                                         </div>
@@ -1100,7 +1116,10 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                         FieldSync result that already exists for THIS ONE
                                         inspection round. It cannot approve, decline, request a
                                         reinspection, assign an inspector, schedule or create a
-                                        round, or edit findings. */}
+                                        round, or edit findings.
+                                        Admin only: the sync route is role:Admin, so a Planning
+                                        Officer is never offered a control the server refuses. */}
+                                    {userRole === "Admin" && (
                                     <div className="bg-white border border-slate-200 rounded-xl p-3.5">
                                         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                                             Admin Support Actions
@@ -1127,6 +1146,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                             </span>
                                         </button>
                                     </div>
+                                    )}
                                 </aside>
                             </div>
                         </div>

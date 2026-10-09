@@ -45,14 +45,21 @@ class SiteInspectionController extends Controller
      */
     public function index()
     {
+        // Admin sees every round; a Planning Officer only the rounds they assigned.
+        // Counters, review visibility and the overview below are all computed from
+        // these two filtered lists, so nothing on the page reflects other rounds.
+        $viewer = request()->user();
+
         // Get pending inspections
         $pendingInspections = SiteInspection::with(['zoningApplication', 'inspector'])
+            ->visibleTo($viewer)
             ->whereIn('status', ['assigned', 'pending', 'in-progress'])
             ->orderBy('scheduled_date', 'asc')
             ->get();
 
         // Get completed inspections
         $completedInspections = SiteInspection::with(['zoningApplication', 'inspector'])
+            ->visibleTo($viewer)
             ->where('status', 'completed')
             ->orderBy('completed_at', 'desc')
             ->get();
@@ -271,7 +278,10 @@ class SiteInspectionController extends Controller
      */
     public function show($id)
     {
-        $inspection = SiteInspection::with([
+        // Same rule as the list: a round the viewer may not see is a 404, so a
+        // Planning Officer cannot open another officer's round by URL.
+        $viewer = request()->user();
+        $inspection = SiteInspection::visibleTo($viewer)->with([
             'zoningApplication.parcels',
             'inspector',
             'parcel',
@@ -296,13 +306,26 @@ class SiteInspectionController extends Controller
         // Application Support is resolved separately by exact namespaced mirror
         // identity. Technical Issues and global report counts never enter this payload.
 
+        // This parcel's history stays complete as context, but each round says
+        // whether the viewer may open it, so the page never links to a 404.
+        $roundHistory = InspectionOperationsContext::roundHistory($inspection);
+        if (! empty($roundHistory['rounds'])) {
+            $viewable = SiteInspection::visibleTo($viewer)
+                ->whereIn('id', array_column($roundHistory['rounds'], 'inspection_id'))
+                ->pluck('id')->map(fn ($roundId) => (int) $roundId)->all();
+            foreach ($roundHistory['rounds'] as &$round) {
+                $round['viewable'] = in_array((int) $round['inspection_id'], $viewable, true);
+            }
+            unset($round);
+        }
+
         return Inertia::render('Site Inspections/Show', [
             'inspection' => $inspection,
             'poReview' => $poReview[(int) $inspection->id] ?? null,
             'delivery' => InspectionOperationsContext::delivery($inspection),
-            'roundHistory' => InspectionOperationsContext::roundHistory($inspection),
+            'roundHistory' => $roundHistory,
             'applicationSupport' => app(\App\Support\ReportingVisibility::class)->applicationSummary(
-                request()->user(), (int) $inspection->zoning_application_id
+                $viewer, (int) $inspection->zoning_application_id
             ),
         ]);
     }
