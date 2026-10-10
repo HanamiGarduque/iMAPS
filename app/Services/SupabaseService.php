@@ -96,10 +96,15 @@ class SupabaseService
      * fails in seconds with an honest error instead of holding the browser open
      * for the framework default. It shortens the worst case; it never lengthens
      * a wait to hide a failure.
+     *
+     * Reads share one curl handler so consecutive reads in a request reuse the
+     * open TLS connection; a fresh handshake cost ~0.3s per call.
      */
-    public function select(string $table, string $query = '*', array $params = [], ?int $timeout = null): Response
+    public function select(string $table, string $query = '*', array $params = [], ?int $timeout = null, array $headers = []): Response
     {
-        $request = Http::withHeaders($this->serviceHeaders());
+        static $handler;
+        $request = Http::withHeaders($this->serviceHeaders($headers))
+            ->setHandler($handler ??= \GuzzleHttp\Utils::chooseHandler());
 
         if ($timeout !== null) {
             $request = $request->timeout($timeout);

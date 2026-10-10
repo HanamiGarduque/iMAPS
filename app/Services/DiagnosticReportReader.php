@@ -68,9 +68,11 @@ class DiagnosticReportReader
             do {
                 $response = $this->supabase->select(
                     'diagnostic_reports',
-                    implode(',', self::SAFE_COLUMNS),
+                    // `summary` is read only to build the list's one-line preview; see shape().
+                    implode(',', [...self::SAFE_COLUMNS, 'summary']),
                     $params + ['offset' => (string) $offset],
-                    self::READ_TIMEOUT_SECONDS
+                    self::READ_TIMEOUT_SECONDS,
+                    ['Prefer' => 'count=exact']
                 );
                 if (! $response->successful() || ! is_array($rows = $response->json())) {
                     throw new \RuntimeException('Report read failed.');
@@ -83,17 +85,19 @@ class DiagnosticReportReader
                 }
                 $pageSize ??= count($rows);
                 $offset += count($rows);
-                // A page shorter than the established page size is the last
-                // page. Continuing past it buys an extra remote round trip that
-                // returns nothing.
-            } while ($pageSize > 0 && count($rows) === $pageSize);
+                // The exact total ("0-8/9") ends the scan without a round trip.
+                // Without it, a page shorter than the established page size is
+                // the last page - but a first page that fits entirely looks
+                // "full" by that rule and costs one extra empty request.
+                $total = preg_match('#/(\d+)$#', (string) $response->header('Content-Range'), $m) ? (int) $m[1] : null;
+            } while (count($rows) > 0 && ($total !== null ? $offset < $total : count($rows) === $pageSize));
             // Reporter identity is resolved ONCE for the whole result set, after
             // the scan, so the cost stays bounded instead of per report.
             $reporters = $this->reporters->mapFor($raw);
             $reports = array_map(fn ($row) => $this->shape($row, false, $sanitize, $reporters), $raw);
             return ['ok' => true, 'reports' => $reports, 'message' => null];
         } catch (Throwable) {
-            return ['ok' => false, 'reports' => [], 'message' => 'Reports & Support could not be loaded. Please try again.'];
+            return ['ok' => false, 'reports' => [], 'message' => 'Support Desk could not be loaded. Please try again.'];
         }
     }
 
@@ -149,6 +153,13 @@ class DiagnosticReportReader
             } catch (Throwable) {
                 $payload[$key] = null;
             }
+        }
+        if (! $detail) {
+            // The list carries one line of the inspector's own words, never the full
+            // text: sanitized whole first (so a redaction is never split), then cut.
+            $line = preg_split('/\R/', trim($sanitize($row['summary'] ?? '')))[0];
+            $line = trim(preg_replace('/\s+/u', ' ', $line) ?? '');
+            $payload['preview'] = $line === '' ? null : mb_strimwidth($line, 0, 140, '…');
         }
         $payload['support_category_label'] = self::CATEGORIES[$row['support_category'] ?? ''] ?? 'Not provided';
         $uuid = Str::isUuid($row['inspector_id'] ?? '') ? $row['inspector_id'] : null;

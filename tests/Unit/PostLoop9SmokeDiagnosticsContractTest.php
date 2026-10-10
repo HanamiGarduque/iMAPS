@@ -560,7 +560,7 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
 
     public function test_diagnostics_index_uses_the_shared_authenticated_shell(): void
     {
-        $this->assertStringContainsString('<ReportShell>', $this->code('resources/js/Pages/Diagnostics/Index.jsx'));
+        $this->assertMatchesRegularExpression('/<ReportShell\b/', $this->code('resources/js/Pages/Diagnostics/Index.jsx'));
         $index = $this->code('resources/js/Pages/Diagnostics/ReportUi.jsx');
 
         $this->assertStringContainsString('import Header from "@/Components/Header";', $index);
@@ -601,7 +601,7 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
             'The detail page must link back to the report list.'
         );
         $this->assertStringContainsString(
-            'Back to Reports &amp; Support',
+            'Back to Support Desk',
             $show,
             'The back control must be labelled so its destination is unambiguous.'
         );

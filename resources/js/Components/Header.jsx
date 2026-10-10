@@ -84,12 +84,12 @@ export default function Header({
             if (normalized === 'audit' || normalized === 'audit-log' || normalized === 'audittrail') return 'AUDIT TRAIL';
             // Applications subsections share the parent module badge.
             if (normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review') return 'REGISTRY';
-            // The module is named Reports & Support; the route, the route names
+            // The module is named Support Desk; the route, the route names
             // and the notification deep links all still say `diagnostics`, which
             // is deliberate compatibility. Without this the context chip would
             // display the retired product name DIAGNOSTICS on every page of
             // this surface, including both report types and both details.
-            if (normalized === 'diagnostics') return 'REPORTS & SUPPORT';
+            if (normalized === 'diagnostics') return 'SUPPORT DESK';
             // The module is labelled Inspections; `site-inspections` stays the
             // route/activePage key for compatibility.
             if (normalized === 'site-inspections' || normalized === 'site inspections') return 'INSPECTIONS';
@@ -124,7 +124,7 @@ export default function Header({
             case 'profile':
                 return 'PROFILE';
             case 'diagnostics':
-                return 'REPORTS & SUPPORT';
+                return 'SUPPORT DESK';
             case 'site-inspections':
                 return 'INSPECTIONS';
         }
@@ -142,13 +142,13 @@ export default function Header({
             if (comp.startsWith('profile')) return 'PROFILE';
             // Both report pages resolve here, so the product name is correct
             // even where a caller supplies no `activePage` at all.
-            if (comp.startsWith('diagnostics')) return 'REPORTS & SUPPORT';
+            if (comp.startsWith('diagnostics')) return 'SUPPORT DESK';
         }
 
         if (firstSegment) {
             // Retired product name, never shown: `diagnostics` is a URL, not a
             // product label.
-            if (firstSegment === 'diagnostics') return 'REPORTS & SUPPORT';
+            if (firstSegment === 'diagnostics') return 'SUPPORT DESK';
             return firstSegment.replace(/[-_]+/g, ' ').toUpperCase();
         }
 

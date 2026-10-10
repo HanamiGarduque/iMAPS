@@ -8,22 +8,51 @@
     outline: none !important;
 }
 
-/* Custom minimal scrollbar */
+/* Custom minimal scrollbar: a slim floating pill, no arrow buttons */
 .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 10px;
+    height: 10px;
 }
-.custom-scrollbar::-webkit-scrollbar-track {
+.custom-scrollbar::-webkit-scrollbar-track,
+.custom-scrollbar::-webkit-scrollbar-corner {
     background: transparent;
 }
+.custom-scrollbar::-webkit-scrollbar-button {
+    display: none;
+}
+/* The transparent border insets the thumb, so it reads as 4px floating off the edge. */
 .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: #cbd5e1;
-    border-radius: 20px;
+    background-color: rgb(148 163 184 / 0.45);
+    background-clip: padding-box;
+    border: 3px solid transparent;
+    border-radius: 9999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: #94a3b8;
+    background-color: rgb(100 116 139 / 0.7);
+}
+/* Firefox has no ::-webkit-scrollbar; Chromium ignores those rules once these are set, so scope them. */
+@supports not selector(::-webkit-scrollbar) {
+    .custom-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: rgb(148 163 184 / 0.55) transparent;
+    }
 }
 
+
+/* Support Desk report reveal: each pane drifts in from the right and sharpens
+   out of a soft blur; the details pane follows the conversation a beat later. */
+@keyframes report-reveal {
+    from { opacity: 0; transform: translate3d(14px, 0, 0); filter: blur(6px); }
+}
+.report-reveal > * {
+    animation: report-reveal 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.report-reveal > :nth-child(2) {
+    animation-delay: 110ms;
+}
+@media (prefers-reduced-motion: reduce) {
+    .report-reveal > * { animation: none; }
+}
 
 .historical-data { color: gray; }
 .forecast-data { color: #1E90FF; }

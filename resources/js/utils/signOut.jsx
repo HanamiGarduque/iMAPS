@@ -34,7 +34,7 @@ const header = (user) => {
 // stylesheet out-ranks utility classes, so dialog content is styled inline and
 // only the frame and buttons use classes. (Kept in a .jsx file so Tailwind
 // scans these class names.)
-export const confirmDialog = (title, html, confirmButtonText) =>
+export const confirmDialog = (title, html, confirmButtonText, options = {}) =>
     Swal.fire({
         title,
         html,
@@ -53,10 +53,12 @@ export const confirmDialog = (title, html, confirmButtonText) =>
             closeButton: '!w-8 !h-8 !mt-4 !mr-4 !-mb-12 !rounded-lg !text-2xl !text-slate-400 hover:!text-slate-600 hover:!bg-slate-100 !shadow-none focus-visible:!outline focus-visible:!outline-2 focus-visible:!outline-blue-600',
             title: '!m-0 !px-6 !pt-8 !pb-0 !bg-gradient-to-b !from-blue-50/70 !to-white',
             htmlContainer: '!m-0 !px-7 !pt-4 !pb-0 !text-center !text-[13.5px] !leading-relaxed !text-slate-600',
-            actions: '!grid !grid-cols-2 !gap-2.5 !w-full !m-0 !px-6 !pt-6 !pb-6',
+            // One column per visible button, so a lone button spans the full width.
+            actions: '!grid !grid-flow-col !auto-cols-fr !gap-2.5 !w-full !m-0 !px-6 !pt-6 !pb-6',
             cancelButton: '!m-0 w-full h-10 px-5 rounded-xl bg-white hover:bg-blue-50 text-blue-700 text-[13.5px] font-semibold border border-blue-200 cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
             confirmButton: '!m-0 w-full h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[13.5px] font-semibold shadow-md shadow-blue-600/25 cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
         },
+        ...options,
     });
 
 // Icon badge + title, matching the sign-out header without the avatar.

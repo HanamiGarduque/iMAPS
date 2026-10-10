@@ -129,7 +129,10 @@ class ReportingVisibility
     {
         $type = $this->authorizeRequestedType($viewer, $filters['type'] ?? null);
         $allowed = $this->allowedTypes($viewer);
-        $query = array_filter(['supabase_application_id' => $filters['application'] ?? null, 'status' => $filters['status'] ?? null]);
+        // Status is filtered here, not remotely, so the inbox counts can always
+        // report the open (still unanswered) reports whatever status is shown.
+        $query = array_filter(['supabase_application_id' => $filters['application'] ?? null]);
+        $status = $filters['status'] ?? 'all';
         // A PO's remote query never even requests Technical Issue rows.
         if (count($allowed) === 1 || ($filters['only_type'] ?? false)) {
             $query['report_type'] = $type;
@@ -143,8 +146,12 @@ class ReportingVisibility
             if (! $this->canViewReport($viewer, $r, $context)) {
                 continue;
             }
-            $counts[$r['report_type']]++;
-            if ($r['report_type'] === $type) {
+            $open = in_array($r['status'] ?? null, ['submitted', 'in_review'], true);
+            if ($open) {
+                $counts[$r['report_type']]++;
+            }
+            $shown = match ($status) { 'all' => true, 'open' => $open, 'closed' => ! $open, default => ($r['status'] ?? null) === $status };
+            if ($r['report_type'] === $type && $shown) {
                 $r['context'] = $context;
                 $visible[] = $r;
             }
@@ -172,7 +179,7 @@ class ReportingVisibility
             // an empty list, which reads as a broken control rather than an
             // honest zero state.
             $summary['url'] = $summary['total'] > 0
-                ? '/diagnostics?type=application_support&application='.$uuid
+                ? '/diagnostics?type=application_support&status=all&application='.$uuid
                 : null;
 
             return $summary;

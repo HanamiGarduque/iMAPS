@@ -17,7 +17,7 @@ class ReportingVisibilityTest extends ReportingTestCase
         $summary = app(ReportingVisibility::class)->applicationSummary($this->admin, 1);
         $this->assertSame(1, $summary['total']);
         $this->assertSame('Clarification Needed', $summary['latest']['support_category_label']);
-        $this->assertSame('/diagnostics?type=application_support&application='.self::APP, $summary['url']);
+        $this->assertSame('/diagnostics?type=application_support&status=all&application='.self::APP, $summary['url']);
         $this->assertNull($summary['latest']['context']['origin']);
         foreach ($this->calls as [$table, $params]) {
             if ($table === 'diagnostic_reports') {
@@ -83,6 +83,22 @@ class ReportingVisibilityTest extends ReportingTestCase
         $this->assertStringNotContainsString('do-not-disclose', json_encode($result));
         $this->assertArrayNotHasKey('secret_future_column', $result['report']);
         $this->assertStringNotContainsString('*', $this->calls[0][1]['select']);
+    }
+
+    public function test_list_rows_carry_only_a_sanitized_one_line_summary_preview(): void
+    {
+        $this->remote['diagnostic_reports'][0]['summary'] = "  Token Bearer do-not-disclose  leaked\nsecond line stays private";
+        $this->remote['diagnostic_reports'][] = $this->support(['id' => '30000000-0000-4000-8000-000000000002', 'summary' => str_repeat('a', 300)]);
+        $this->remote['diagnostic_reports'][] = $this->support(['id' => '30000000-0000-4000-8000-000000000003', 'summary' => null]);
+        $rows = collect(app(DiagnosticReportReader::class)->all()['reports'])->keyBy('id');
+
+        $first = $rows[self::REPORT];
+        $this->assertArrayNotHasKey('summary', $first, 'The full summary stays on the detail page.');
+        $this->assertStringNotContainsString('do-not-disclose', json_encode($rows->all()));
+        $this->assertStringNotContainsString('second line', $first['preview']);
+        $this->assertStringStartsWith('Token ', $first['preview']);
+        $this->assertSame(140, mb_strwidth($rows['30000000-0000-4000-8000-000000000002']['preview']));
+        $this->assertNull($rows['30000000-0000-4000-8000-000000000003']['preview']);
     }
 
     public function test_remote_failure_is_not_a_successful_empty_state(): void

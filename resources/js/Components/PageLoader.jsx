@@ -44,29 +44,35 @@ export default function PageLoader() {
             aria-live="polite"
         >
             <span className="sr-only">Loading…</span>
-            {/* Ring of 8 dots fading and shrinking around the circle, turning one position at a time */}
-            <div aria-hidden="true">
-                <svg
-                    className="w-12 h-12 motion-reduce:!animate-none"
-                    viewBox="0 0 44 44"
-                    style={{ animation: 'spin 0.8s steps(8) infinite' }}
-                >
-                    {Array.from({ length: 8 }).map((_, i) => {
-                        // Dot 0 (largest, solid) leads at the top; the fading tail trails counter-clockwise behind it.
-                        const angle = (-i * 45 - 90) * (Math.PI / 180);
-                        return (
-                            <circle
-                                key={i}
-                                cx={22 + 16 * Math.cos(angle)}
-                                cy={22 + 16 * Math.sin(angle)}
-                                r={3.6 - i * 0.28}
-                                fill="#475569"
-                                fillOpacity={1 - i * 0.115}
-                            />
-                        );
-                    })}
-                </svg>
-            </div>
+            <LoadingDots />
+        </div>
+    );
+}
+
+/** Ring of 8 dots fading and shrinking around the circle, turning one position at a time. */
+export function LoadingDots() {
+    return (
+        <div aria-hidden="true">
+            <svg
+                className="w-12 h-12 motion-reduce:!animate-none"
+                viewBox="0 0 44 44"
+                style={{ animation: 'spin 0.8s steps(8) infinite' }}
+            >
+                {Array.from({ length: 8 }).map((_, i) => {
+                    // Dot 0 (largest, solid) leads at the top; the fading tail trails counter-clockwise behind it.
+                    const angle = (-i * 45 - 90) * (Math.PI / 180);
+                    return (
+                        <circle
+                            key={i}
+                            cx={22 + 16 * Math.cos(angle)}
+                            cy={22 + 16 * Math.sin(angle)}
+                            r={3.6 - i * 0.28}
+                            fill="#475569"
+                            fillOpacity={1 - i * 0.115}
+                        />
+                    );
+                })}
+            </svg>
         </div>
     );
 }

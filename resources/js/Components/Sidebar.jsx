@@ -92,7 +92,7 @@ export default function Sidebar({
             // This file is a known upstream-contested merge point, so the entry
             // is a single self-contained object appended after an existing one.
             href: '/diagnostics',
-            label: 'Reports & Support',
+            label: 'Support Desk',
             badge: null,
             // POST-LOOP-9 SMOKE FIX: a Planning Officer now has READ access to
             // diagnostic reports, because they are the role that resolves
@@ -112,7 +112,7 @@ export default function Sidebar({
         },
         {
             href: '/reports',
-            label: 'Data Reports',
+            label: 'Export Reports',
             badge: null,
             adminOnly: true,
             icon: (
@@ -244,7 +244,7 @@ export default function Sidebar({
         '/applications': 'Zoning clearances',
         '/site-inspections': 'Field schedules',
         '/diagnostics': 'FieldSync issues',
-        '/reports': 'Exports & summaries',
+        '/reports': 'PDF, Excel & CSV',
         '/users': 'Staff & access',
         '/settings': 'Map data & system',
     };

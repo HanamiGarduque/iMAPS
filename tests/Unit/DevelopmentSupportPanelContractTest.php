@@ -40,7 +40,7 @@ class DevelopmentSupportPanelContractTest extends TestCase
     {
         $code = $this->code($this->panelSource());
         $this->assertMatchesRegularExpression(
-            '/\{episode\.recommendation\s*&&.*Recommendation.*episode\.recommendation/s',
+            '/\{episode\.recommendation\s*&&.*>Advice<.*episode\.recommendation/s',
             $code,
             'A closed episode with a recommendation must render a labelled Recommendation block.'
         );
@@ -50,7 +50,7 @@ class DevelopmentSupportPanelContractTest extends TestCase
     {
         $code = $this->code($this->panelSource());
         $this->assertMatchesRegularExpression(
-            '/\{episode\.closure_note\s*&&.*Closure note.*episode\.closure_note/s',
+            '/\{episode\.closure_note\s*&&.*>Note<.*episode\.closure_note/s',
             $code,
             'A closed episode closed WITHOUT a recommendation is explained only by its closure note, '
             .'so the note must be rendered under its own label.'
@@ -100,8 +100,7 @@ class DevelopmentSupportPanelContractTest extends TestCase
     {
         $view = $this->panelSource();
         $this->assertStringContainsString(
-            'Development Support contact is not configured. Please ask the system administrator to '
-            .'configure the support contact for future consultations.',
+            'No dev team contact set. Ask your system admin.',
             $view,
             'The Admin-facing notice must use the exact approved user-facing copy.'
         );
@@ -134,9 +133,9 @@ class DevelopmentSupportPanelContractTest extends TestCase
         $code = $this->code($this->panelSource());
         // The open-episode surface must be untouched by the history change.
         $this->assertStringContainsString('{open.recommendation', $code);
-        $this->assertStringContainsString('Record recommendation', $code);
-        $this->assertStringContainsString('Close escalation', $code);
-        $this->assertStringContainsString('Escalate to Development Support', $code);
+        $this->assertStringContainsString('Save advice', $code);
+        $this->assertStringContainsString('Close request', $code);
+        $this->assertStringContainsString('Send to dev team', $code);
         // Its recommendation block keeps its own recorded-at stamp.
         $this->assertStringContainsString('Recorded {stamp(open.recommendation_at)}', $code);
     }

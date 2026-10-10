@@ -217,7 +217,8 @@ class ReporterIdentityResolutionTest extends ReportingTestCase
         $this->assertFalse($report['inspector']['resolved']);
         $this->assertSame(substr(self::INSPECTOR_UUID, 0, 8), $report['inspector']['short_uuid']);
 
-        // Byte-for-byte what ReportUi renders today: label + short prefix.
+        // The payload still carries label + short prefix; the pages show it as
+        // "Unknown inspector" with the ID only in the report details panel.
         $rendered = $report['inspector']['label']
             .($report['inspector']['short_uuid'] ? ' ('.$report['inspector']['short_uuid'].'…)' : '');
         $this->assertSame('Unresolved inspector ('.substr(self::INSPECTOR_UUID, 0, 8).'…)', $rendered);

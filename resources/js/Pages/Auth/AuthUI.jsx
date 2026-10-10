@@ -134,6 +134,10 @@ export const AuthStyles = ({ lockScroll = false }) => (
         .rise-2 { animation-delay: .1s; }
         @keyframes fill { from { transform: scaleY(0); } to { transform: scaleY(1); } }
         .fill { transform-origin: top; animation: fill 6s linear forwards; }
-        @media (prefers-reduced-motion: reduce) { .rise { animation: none; } .fill { animation: none; transform: scaleY(1); } .parcel, .step { transition: none !important; } }
+        @keyframes dialog-in { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: none; } }
+        @keyframes dialog-out { to { opacity: 0; transform: translateY(8px) scale(.98); } }
+        .dialog-in { animation: dialog-in .35s cubic-bezier(.16,1,.3,1) both; }
+        .dialog-out { animation: dialog-out .2s ease-in both; }
+        @media (prefers-reduced-motion: reduce) { .rise, .dialog-in, .dialog-out { animation: none; } .fill { animation: none; transform: scaleY(1); } .parcel, .step { transition: none !important; } }
     `}} />
 );

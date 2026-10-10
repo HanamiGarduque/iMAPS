@@ -21,23 +21,80 @@ class DiagnosticReportController extends Controller
     {
         $filters = $request->validate([
             'type' => 'nullable|string', 'application' => 'nullable|uuid',
-            'status' => 'nullable|in:submitted,in_review,resolved,wont_fix', 'page' => 'nullable|integer|min:1',
+            'status' => 'nullable|in:open,closed,all,submitted,in_review,resolved,wont_fix', 'page' => 'nullable|integer|min:1',
+            'q' => 'nullable|string|max:100', 'sort' => 'nullable|in:reference,title,reporter,status,date', 'dir' => 'nullable|in:asc,desc',
+            'report' => 'nullable|uuid',
         ]);
+        // The open report is not a list filter: changing a filter closes it.
+        $open = $filters['report'] ?? null;
+        unset($filters['report']);
         $type = $this->visibility->authorizeRequestedType($request->user(), $filters['type'] ?? null);
         $filters['type'] = $type;
-        $result = $this->visibility->scopeVisibleReports($request->user(), $filters);
-        $total = count($result['reports']);
-        $last = max(1, (int) ceil($total / 20));
-        $page = min((int) ($filters['page'] ?? 1), $last);
+        // The inbox opens on every report; "open" (what still needs an answer) is one choice away.
+        $filters['status'] ??= 'all';
+        // Built lazily and once: opening a report reloads only `selected`, so the
+        // remote list read is skipped entirely on that request.
+        $cache = null;
+        $list = function () use (&$cache, $request, $filters) {
+            if ($cache === null) {
+                $result = $this->visibility->scopeVisibleReports($request->user(), $filters);
+                $reports = $this->searchAndSort($result['reports'], $filters);
+                $total = count($reports);
+                $last = max(1, (int) ceil($total / 20));
+                $page = min((int) ($filters['page'] ?? 1), $last);
+                $cache = ['reports' => array_slice($reports, ($page - 1) * 20, 20), 'counts' => $result['counts'],
+                    'pagination' => ['page' => $page, 'last' => $last, 'total' => $total], 'loadError' => $result['message']];
+            }
+            return $cache;
+        };
         return Inertia::render('Diagnostics/Index', [
-            'reports' => array_slice($result['reports'], ($page - 1) * 20, 20),
-            'counts' => $result['counts'], 'allowedTypes' => $this->visibility->allowedTypes($request->user()),
-            'filters' => $filters, 'pagination' => ['page' => $page, 'last' => $last, 'total' => $total],
-            'loadError' => $result['message'], 'readOnly' => true,
+            'reports' => fn () => $list()['reports'],
+            'counts' => fn () => $list()['counts'], 'allowedTypes' => $this->visibility->allowedTypes($request->user()),
+            'filters' => $filters, 'pagination' => fn () => $list()['pagination'],
+            'loadError' => fn () => $list()['loadError'], 'readOnly' => true,
+            // Same props and the same authorization as the standalone report page.
+            'selected' => fn () => $open ? $this->detail($request, $open) : null,
         ]);
     }
 
+    /** Runs on the already visibility-scoped rows, so search can never surface a hidden report. */
+    private function searchAndSort(array $reports, array $filters): array
+    {
+        $q = mb_strtolower(trim($filters['q'] ?? ''));
+        if ($q !== '') {
+            $reports = array_values(array_filter($reports, fn ($r) => str_contains(mb_strtolower(implode(' ', array_filter([
+                $r['reference_code'] ?? null, $r['title'] ?? null, $r['module'] ?? null, $r['inspector']['label'] ?? null,
+                // The pages call an unresolved reporter "Unknown inspector"; let that find it too.
+                ($r['inspector']['resolved'] ?? false) ? null : 'Unknown inspector',
+                $r['support_category_label'] ?? null, $r['context']['application']['reference_number'] ?? null,
+                $r['context']['application']['applicant_name'] ?? null, $r['context']['owner']['name'] ?? null,
+            ], 'is_string'))), $q)));
+        }
+        $sort = $filters['sort'] ?? 'date';
+        $desc = ($filters['dir'] ?? ($sort === 'date' ? 'desc' : 'asc')) === 'desc';
+        $technical = $filters['type'] === 'technical_issue';
+        $rank = ['submitted' => 0, 'in_review' => 1, 'resolved' => 2, 'wont_fix' => 3];
+        $key = match ($sort) {
+            'reference' => fn ($r) => (string) ($r['reference_code'] ?? ''),
+            'title' => fn ($r) => (string) ($r['title'] ?? ''),
+            'reporter' => fn ($r) => (string) ($r['inspector']['label'] ?? ''),
+            'status' => fn ($r) => $rank[$r['status'] ?? ''] ?? 9,
+            'date' => fn ($r) => strtotime(($technical ? $r['occurred_at'] ?? null : null) ?? $r['created_at'] ?? '') ?: 0,
+        };
+        // usort is stable, so ties keep the reader's newest-first order.
+        usort($reports, function ($a, $b) use ($key, $desc) {
+            [$x, $y] = [$key($a), $key($b)];
+            return ($desc ? -1 : 1) * (is_string($x) ? strnatcasecmp($x, $y) : $x <=> $y);
+        });
+        return $reports;
+    }
+
     public function show(Request $request, string $report)
+    {
+        return Inertia::render('Diagnostics/Show', $this->detail($request, $report));
+    }
+
+    private function detail(Request $request, string $report): array
     {
         $row = $this->readReport($report);
         $context = $row['report_type'] === 'application_support' ? $this->resolution->resolve($row) : null;
@@ -49,10 +106,10 @@ class DiagnosticReportController extends Controller
         // not merely a hidden section - and no configuration value is read on
         // those paths. The contact block carries only the four documented safe
         // fields from config/imaps.php; it can never contain a key or token.
-        return Inertia::render('Diagnostics/Show', ['report' => $row, 'context' => $context,
+        return ['report' => $row, 'context' => $context,
             'canNotify' => $this->visibility->canNotify($request->user(), $row, $context ?? []),
             'handlingActions' => $this->visibility->handlingActions($request->user(), $row, $context),
-            'developmentSupport' => $this->developmentSupport($request->user(), $row)]);
+            'developmentSupport' => $this->developmentSupport($request->user(), $row)];
     }
 
     /**

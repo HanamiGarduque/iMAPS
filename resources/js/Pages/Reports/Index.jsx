@@ -761,7 +761,7 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
 
     return (
         <>
-            <Head title="Data Reports | iMAPS" />
+            <Head title="Export Reports | iMAPS" />
 
             <style>{`
                 #analytics-page-root, .swal2-popup {
@@ -816,7 +816,7 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
                         {/* Page title, matching the other modules' headers */}
                         <div className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-200 bg-white shrink-0">
                             <div className="min-w-0">
-                                <h1 className="text-xl font-bold text-slate-900 tracking-tight leading-tight">Data Reports</h1>
+                                <h1 className="text-xl font-bold text-slate-900 tracking-tight leading-tight">Export Reports</h1>
                                 <p className="hidden sm:block mt-0.5 text-xs text-slate-500 truncate">Set up a report, check the preview, then download.</p>
                             </div>
                             {/* "Help ?" in the corner, as in a print dialog */}

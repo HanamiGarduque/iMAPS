@@ -1,6 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 import { Head, useForm } from '@inertiajs/react';
 import { Icon, ICONS, PARCELS, CadastralBackground, Navbar, Field, inputClass, AuthStyles } from './AuthUI';
+import { confirmDialog } from '@/utils/signOut';
+
+const keySvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>';
+
+// Swal shows newlines as line breaks, so this markup stays on single lines.
+const resetHelpHeader =
+    '<div style="display:flex;flex-direction:column;align-items:center;text-align:center">' +
+        '<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;width:60px;height:60px;border-radius:18px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;box-shadow:0 14px 28px -10px rgba(37,99,235,.65),inset 0 1px 0 rgba(255,255,255,.3),0 0 0 7px rgba(219,234,254,.55)">' + keySvg + '</span>' +
+        '<span style="display:block;margin-top:20px;font-size:19px;font-weight:700;letter-spacing:-0.015em;line-height:1.3;color:#0f172a">Forgot your password?</span>' +
+    '</div>';
+
+// Only administrators reset passwords, so there is no self-service link.
+const showResetHelp = () =>
+    confirmDialog(
+        resetHelpHeader,
+        '<p style="margin:0;padding-bottom:30px;text-wrap:balance">For security, passwords aren\'t changed online. Contact your administrator to reset it.</p>',
+        '',
+        {
+            // No buttons: the close button, Esc and a backdrop click dismiss it.
+            showCancelButton: false,
+            showConfirmButton: false,
+            width: 360,
+            // Gentle fade-and-rise instead of Swal's default bounce; keyframes live in AuthStyles.
+            showClass: { popup: 'dialog-in', backdrop: 'swal2-backdrop-show' },
+            hideClass: { popup: 'dialog-out', backdrop: 'swal2-backdrop-hide' },
+        },
+    );
 
 const ACTIVE_PARCEL = [10, 21, 28];
 
@@ -329,7 +356,21 @@ export default function Login() {
                                         />
                                     </Field>
 
-                                    <Field id="password" label="Password" icon={ICONS.lock}>
+                                    <Field
+                                        id="password"
+                                        label="Password"
+                                        icon={ICONS.lock}
+                                        aside={
+                                            <button
+                                                type="button"
+                                                onClick={showResetHelp}
+                                                aria-haspopup="dialog"
+                                                className="rounded-md text-[13px] font-semibold text-blue-600 transition-colors hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/30"
+                                            >
+                                                Forgot your password?
+                                            </button>
+                                        }
+                                    >
                                         <input
                                             type={showPassword ? 'text' : 'password'}
                                             id="password"
@@ -365,8 +406,6 @@ export default function Login() {
                                         {/* Announced only while a login is in progress, not as a stray "Log in". */}
                                         <span role="status" className="sr-only">{processing ? 'Logging in…' : ''}</span>
                                     </button>
-                                    {/* Only administrators reset passwords, so there is no self-service link. */}
-                                    <p className="text-center text-[13px] text-slate-500">Forgot your password? Contact your administrator to reset it.</p>
                                 </form>
 
                                 <div className="mt-6 pt-5 border-t border-slate-100 flex items-start gap-2.5 text-[13px] leading-relaxed text-slate-500">

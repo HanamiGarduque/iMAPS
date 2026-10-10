@@ -24,6 +24,7 @@ function load(name) {
         if (id === './DevelopmentSupport') return () => null;
         if (id === 'axios') return {};
         if (id === './ReportUi') return load('ReportUi');
+        if (id === './Show') return load('Show');
         throw new Error('Unexpected import ' + id);
     } }, { filename });
     cache[name] = mod.exports;
@@ -38,11 +39,13 @@ let html = render('Show', { report, canNotify: false });
 check(!html.includes('Notify '), 'Technical detail has no notification control');
 check(!html.includes('Planning Officer'), 'Technical detail has no PO relationship');
 check(html.includes('&lt;script&gt;not markup&lt;/script&gt;'), 'Remote text renders inertly');
-// Two-column layout: the inspector's problem leads the content column, and
-// Report identity sits in the status/handling column that follows it.
-check(html.indexOf('Problem') < html.indexOf('Issue context')
-    && html.indexOf('Issue context') < html.indexOf('Technical review')
-    && html.indexOf('Technical review') < html.indexOf('Report identity'), 'Technical hierarchy');
+// Conversation + properties layout: the inspector's problem leads the
+// conversation, and the properties pane that follows opens with Report identity,
+// then the technical context and review.
+check(html.indexOf('Problem') > -1
+    && html.indexOf('Problem') < html.indexOf('Report identity')
+    && html.indexOf('Report identity') < html.indexOf('Issue context')
+    && html.indexOf('Issue context') < html.indexOf('Technical review'), 'Technical hierarchy');
 check(html.indexOf('Reproduction steps (inspector-authored)') < html.indexOf('Technical review'), 'Reproduction belongs to inspector problem section');
 check(!/Development \/ support contact/i.test(html) && !/has not been configured/i.test(html),
     'the development/support contact section is not rendered');
@@ -64,21 +67,21 @@ html = render('Show', { report: { ...report, status: 'in_review' }, handlingActi
 check(!html.includes('Mark In Review') && html.includes('<textarea'), 'in-review handler sees terminal actions only');
 html = render('Show', { report: { ...report, status: 'resolved', response_message: '<b>Official plain text</b>', responded_by_name: 'Official Admin', responded_at: '2026-10-04T09:30:00Z' }, handlingActions: ['in_review', 'resolved', 'wont_fix'] });
 check(!html.includes('<textarea') && !html.includes('Mark In Review'), 'terminal status hides controls even if a stale capability is supplied');
-check(html.includes('&lt;b&gt;Official plain text&lt;/b&gt;') && html.includes('Official Admin') && html.includes('Responded at'), 'terminal response and attribution render as plain text');
+check(html.includes('&lt;b&gt;Official plain text&lt;/b&gt;') && html.includes('Resolved by') && html.includes('Official Admin') && !html.includes('Responded at'), 'terminal response renders as plain text, attributed once on the divider');
 check(!html.includes('Reopen') && !html.includes('Edit response'), 'terminal lifecycle offers no editing');
 
 // The upper-left context chip derives its label from `activePage`, which is the
-// route-compatible value "diagnostics". The chip must still read REPORTS &
-// SUPPORT, on every resolution path the header can take.
+// route-compatible value "diagnostics". The chip must still read SUPPORT DESK,
+// on every resolution path the header can take.
 const header = fs.readFileSync('resources/js/Components/Header.jsx', 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const chipLabels = [...header.matchAll(/return '([A-Z][A-Z &]+)';/g)].map((m) => m[1]);
-check(chipLabels.includes('REPORTS & SUPPORT'), 'the header resolves a REPORTS & SUPPORT chip label');
+check(chipLabels.includes('SUPPORT DESK'), 'the header resolves a SUPPORT DESK chip label');
 // Four resolution paths: explicit activePage, URL segment, Inertia component
 // name, and the path-only fallback. All four must name the product, because the
 // pages here always pass activePage="diagnostics" but a caller that does not
 // must still never see the retired name.
-check((header.match(/return 'REPORTS & SUPPORT';/g) || []).length === 4,
+check((header.match(/return 'SUPPORT DESK';/g) || []).length === 4,
     'every header resolution path handles the diagnostics module: activePage, URL segment, component name, and path fallback');
 check(!chipLabels.includes('DIAGNOSTICS'), 'the retired product name is never a chip label');
 report.report_type = 'application_support';
@@ -139,4 +142,4 @@ check(html.includes('application=10000000-0000-4000-8000-000000000001'), 'Exact 
 check(!html.includes('technical_issue') && !html.includes('Round '), 'No technical metadata or round inference');
 const executable = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 check(executable.indexOf('Round History') < executable.indexOf('aria-label="Application Support"') && executable.indexOf('aria-label="Application Support"') < executable.indexOf('Admin Support Actions'), 'Support follows history and precedes operational recovery');
-console.log(`Reports & Support rendered UI: ${checks} assertions PASS`);
+console.log(`Support Desk rendered UI: ${checks} assertions PASS`);

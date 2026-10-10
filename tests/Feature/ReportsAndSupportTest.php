@@ -91,4 +91,44 @@ class ReportsAndSupportTest extends ReportingTestCase
             ->assertJsonPath('props.pagination.total', 25)->assertJsonPath('props.counts', ['application_support' => 25]);
         $this->page('/diagnostics?status=resolved')->assertOk()->assertJsonCount(0, 'props.reports')->assertJsonPath('props.pagination.total', 0);
     }
+
+    public function test_search_and_sort_apply_after_ownership_scope(): void
+    {
+        $this->remote['diagnostic_reports'] = [
+            $this->support(['id' => '30000000-0000-4000-8000-000000000001', 'reference_code' => 'DR-2026-0002', 'title' => 'Boundary unclear']),
+            $this->support(['id' => '30000000-0000-4000-8000-000000000002', 'reference_code' => 'DR-2026-0010', 'title' => 'Missing lot number', 'status' => 'resolved']),
+            $this->support(['id' => '30000000-0000-4000-8000-000000000003', 'reference_code' => 'DR-2026-0003', 'title' => 'Boundary hidden', 'bridge_source_id' => 'source-b']),
+        ];
+        $this->actingAs($this->po);
+        $this->page('/diagnostics?q=boundary')->assertOk()->assertJsonCount(1, 'props.reports')
+            ->assertJsonPath('props.reports.0.title', 'Boundary unclear')->assertJsonPath('props.pagination.total', 1);
+        $this->page('/diagnostics?status=all&sort=reference&dir=desc')->assertOk()->assertJsonPath('props.reports.0.reference_code', 'DR-2026-0010');
+        $this->page('/diagnostics?sort=status&dir=asc')->assertOk()->assertJsonPath('props.reports.0.status', 'submitted');
+        $this->page('/diagnostics?sort=bogus')->assertRedirect();
+    }
+
+    public function test_inbox_opens_on_all_reports_and_counts_only_open_ones(): void
+    {
+        $this->remote['diagnostic_reports'] = [
+            $this->support(['id' => '30000000-0000-4000-8000-000000000001', 'reference_code' => 'DR-2026-0001']),
+            $this->support(['id' => '30000000-0000-4000-8000-000000000002', 'reference_code' => 'DR-2026-0002', 'status' => 'in_review']),
+            $this->support(['id' => '30000000-0000-4000-8000-000000000003', 'reference_code' => 'DR-2026-0003', 'status' => 'resolved']),
+            $this->support(['id' => '30000000-0000-4000-8000-000000000004', 'reference_code' => 'DR-2026-0004', 'status' => 'wont_fix']),
+        ];
+        $this->actingAs($this->po);
+        // Default: every report, and the filter says so.
+        $this->page('/diagnostics')->assertOk()->assertJsonPath('props.filters.status', 'all')->assertJsonPath('props.pagination.total', 4)
+            ->assertJsonPath('props.counts', ['application_support' => 2]);
+        // "Open": only what still needs an answer.
+        $this->page('/diagnostics?status=open')->assertOk()->assertJsonPath('props.pagination.total', 2);
+        // The count stays "open reports" whatever status is being shown.
+        $this->page('/diagnostics?status=all')->assertOk()->assertJsonPath('props.pagination.total', 4)
+            ->assertJsonPath('props.counts', ['application_support' => 2]);
+        $this->page('/diagnostics?status=resolved')->assertOk()->assertJsonPath('props.pagination.total', 1)
+            ->assertJsonPath('props.reports.0.reference_code', 'DR-2026-0003')->assertJsonPath('props.counts', ['application_support' => 2]);
+        // "Done": everything that no longer needs an answer.
+        $this->page('/diagnostics?status=closed')->assertOk()->assertJsonPath('props.pagination.total', 2)
+            ->assertJsonPath('props.counts', ['application_support' => 2]);
+        $this->page('/diagnostics?status=done')->assertRedirect();
+    }
 }
