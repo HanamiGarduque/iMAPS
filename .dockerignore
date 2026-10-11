@@ -10,6 +10,7 @@ public/storage
 storage/logs
 storage/framework/sessions/*
 storage/framework/cache/data/*
-storage/app/temp*
+storage/app/temp
+storage/app/temp_*
 scratch
 response.txt
