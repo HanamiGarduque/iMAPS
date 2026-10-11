@@ -1,0 +1,60 @@
+{
+    "EVALUATION_OF_FACTS": [
+        "COMPATIBLE",
+        "CONFORMING"
+    ],
+    "ZONING_CLASSIFICATION": [
+        "PROTECTION AGRICULTURAL SUB-ZONE (PTA-SZ)",
+        "PROTECTION AGRICULTURAL SUB-ZONE RICE AREA (PTA-SZ-RA)",
+        "PRODUCTION AGRICULTURAL SUB-ZONE (PDA-SZ)",
+        "AGRI-INDUSTRIAL ZONE (AgIndZ)",
+        "RESIDENTIAL-1 ZONE (R1-Z)",
+        "RESIDENTIAL-2 ZONE (R2-Z)",
+        "BASIC R-2 SUB-ZONE (BR2-SZ)",
+        "MAXIMUM R-2 SUB ZONE (MR2-SZ)",
+        "COMMERCIAL-1 ZONE (C1-Z)",
+        "COMMERCIAL-2 ZONE (C2-Z)",
+        "INDUSTRIAL-1 ZONE (I1-Z)",
+        "INDUSTRIAL-2 ZONE (I2-Z)",
+        "INDUSTRIAL-3 ZONE (I3-Z)",
+        "GENERAL INSTITUTIONAL ZONE (GI-Z)",
+        "PARKS AND RECREATIONAL ZONE (PR-Z)",
+        "CEMETERY\/ MEMORIAL PARK ZONE (C\/MP-Z)",
+        "BUFFER\/ GREENBELT ZONE (B\/G-Z)",
+        "UTILITIES, TRANSPORTATION, AND SERVICES ZONE (UTS-SZ)",
+        "TOURISM ZONE (T-Z)",
+        "PROTECTION FOREST SUB-ZONES",
+        "FOREST RESERVE SUB-ZONE (FR-SZ)",
+        "NIPAS: STRICT PROTECTION SUB-ZONE (NSP-SZ)",
+        "PROPOSED ROAD",
+        "PRODUCTION FOREST SUB-ZONES)",
+        "URBAN CORRIDOR OVERLAY ZONE (UCD-OZ)"
+    ],
+    "CERTIFICATION_PURPOSE": [
+        "LOCATIONAL CLEARANCE",
+        "BUSINESS PERMIT",
+        "TITLING",
+        "DAR CLEARANCE"
+    ],
+    "ZC_AMOUNT": [
+        "-",
+        "720.00",
+        "1,440.00",
+        "2,160.00",
+        "2,880.00",
+        "3,600.00",
+        "4,320.00",
+        "5,040.00",
+        "5,760.00",
+        "6,480.00",
+        "7,200.00",
+        "7,920.00",
+        "8,640.00",
+        "9,360.00",
+        "10,080.00",
+        "10,800.00",
+        "11,520.00",
+        "12,240.00",
+        "12,960.00"
+    ]
+}

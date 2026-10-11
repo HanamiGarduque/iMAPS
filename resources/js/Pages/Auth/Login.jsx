@@ -104,6 +104,25 @@ const TERMS = [
     ]],
 ];
 
+const COOKIES = [
+    ['What Cookies Are', [
+        ['DEFINITION', 'Cookies are small pieces of data a website asks your browser to store, then sends back on later requests so the site can recognize your browser.'],
+        ['WHY WE USE THEM', 'iMAPS uses cookies only to keep you securely signed in and to protect the system against cross-site request forgery. We do not use cookies for advertising, analytics or tracking.'],
+    ]],
+    ['Cookies We Use', [
+        ['SESSION COOKIE', 'Identifies your logged-in session on the server so the system knows who you are between page requests. It is essential: without it you cannot stay signed in. It expires after a period of inactivity or when you log out.'],
+        ['CSRF PROTECTION COOKIE (XSRF-TOKEN)', 'A security cookie used to verify that form submissions and requests genuinely come from your browser session, preventing cross-site request forgery attacks. It is essential and contains no personal data.'],
+    ]],
+    ['Cookies We Do Not Use', [
+        ['NO ANALYTICS OR ADVERTISING', 'iMAPS does not set analytics, advertising or social-media cookies, and does not share browsing data with third parties.'],
+        ['NO CROSS-SITE TRACKING', 'Because iMAPS is an internal government system, no cookie set here is used to track you across other websites.'],
+    ]],
+    ['Managing Cookies', [
+        ['BROWSER CONTROLS', 'You can block or delete cookies through your browser settings. Because the session and CSRF cookies are essential to signing in, disabling them will prevent you from using iMAPS.'],
+        ['QUESTIONS', 'For questions about this Cookie Policy, contact the Data Protection Officer below.'],
+    ]],
+];
+
 const DOCS = {
     terms: {
         title: 'Terms and Conditions of Use',
@@ -115,6 +134,12 @@ const DOCS = {
         title: 'Privacy Policy',
         summary: 'The Municipal Government of Rosario is committed to protecting the personal data entrusted to it. This policy describes what personal data iMAPS processes, why it is processed, how it is protected, and the rights you have under the Data Privacy Act of 2012.',
         sections: PRIVACY,
+        contact: ['Data Protection Officer', 'dpo@imaps-rosario.gov.ph'],
+    },
+    cookies: {
+        title: 'Cookie Policy',
+        summary: 'This Cookie Policy explains the cookies iMAPS sets in your browser, why it sets them, and how you can control them. iMAPS only uses cookies essential to signing in securely — it does not use analytics, advertising or tracking cookies.',
+        sections: COOKIES,
         contact: ['Data Protection Officer', 'dpo@imaps-rosario.gov.ph'],
     },
 };
@@ -412,8 +437,9 @@ export default function Login() {
                                     <Icon d={ICONS.shield} className="w-[18px] h-[18px] mt-0.5 text-blue-600 shrink-0" sw={1.8} />
                                     <p>
                                         Authorized personnel only. By signing in you agree to our{' '}
-                                        <button type="button" onClick={() => openTerms('terms')} className="text-blue-600 font-semibold hover:underline">Terms of Service</button>{' '}and{' '}
-                                        <button type="button" onClick={() => openTerms('privacy')} className="text-blue-600 font-semibold hover:underline">Privacy Policy</button>.
+                                        <button type="button" onClick={() => openTerms('terms')} className="text-blue-600 font-semibold hover:underline">Terms of Service</button>,{' '}
+                                        <button type="button" onClick={() => openTerms('privacy')} className="text-blue-600 font-semibold hover:underline">Privacy Policy</button>{' '}and{' '}
+                                        <button type="button" onClick={() => openTerms('cookies')} className="text-blue-600 font-semibold hover:underline">Cookie Policy</button>.
                                     </p>
                                 </div>
                             </div>

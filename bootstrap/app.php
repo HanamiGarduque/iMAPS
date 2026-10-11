@@ -17,6 +17,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
 
     ->withMiddleware(function (Middleware $middleware): void {
+        // Behind Railway + Cloudflare: trust forwarded proto/IP headers.
+        $middleware->trustProxies(at: '*');
+        $middleware->prepend(\App\Http\Middleware\RequireOriginSecret::class);
+
         $middleware->validateCsrfTokens(except: [
             'logout',
         ]);
