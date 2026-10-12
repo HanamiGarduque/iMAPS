@@ -28,7 +28,7 @@ COPY --from=assets /app/public/build ./public/build
 RUN composer install --no-dev --optimize-autoloader --no-interaction \
     # templates are code: keep a pristine copy, the volume-backed storage/app gets it on boot
     && mv storage/app/templates /opt/templates \
-    && mv public/tiles /opt/tiles
+    && mkdir -p public/tiles && mv public/tiles /opt/tiles
 
 COPY docker/php.ini /usr/local/etc/php/conf.d/zz-imaps.ini
 COPY docker/Caddyfile /etc/caddy/Caddyfile

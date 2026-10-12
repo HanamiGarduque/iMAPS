@@ -1,0 +1,2 @@
+# Map tiles live on the Railway volume (/data/tiles); do not upload them on every deploy
+public/tiles
