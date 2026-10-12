@@ -67,4 +67,4 @@ Cloudflare adds (`app/Http/Middleware/RequireOriginSecret.php`).
 - Runs a single instance (volume + in-container queue). Don't scale replicas.
 - Logs go to stderr (Railway log viewer); `storage/logs` is not used.
 - Updates: push to GitHub; Railway rebuilds, runs migrations, restarts. Take a Postgres backup first for risky migrations.
-- Fonts/basemaps still load from Google/OSM/ArcGIS: office PCs need internet (see `PRE_DEPLOYMENT.md` section 7).
+- Fonts load from Google and basemaps from OSM/ArcGIS, so users need internet. The site itself is only reachable online.
