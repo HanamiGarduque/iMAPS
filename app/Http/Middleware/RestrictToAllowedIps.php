@@ -19,11 +19,34 @@ class RestrictToAllowedIps
     {
         $allowed = config('app.allowed_ips');
 
-        if ($allowed && ! $request->is('ping') && ! IpUtils::checkIp((string) $request->ip(), $allowed)) {
-            Log::warning('Blocked by ALLOWED_IPS', ['ip' => $request->ip()]);
-            abort(403);
+        if ($allowed && ! $request->is('ping')) {
+            $ip = $this->clientIp($request);
+
+            if (! IpUtils::checkIp($ip, $allowed)) {
+                Log::warning('Blocked by ALLOWED_IPS', ['ip' => $ip]);
+                abort(403);
+            }
         }
 
         return $next($request);
+    }
+
+    /**
+     * Railway reaches the app through internal proxies (100.64.0.0/10), so
+     * $request->ip() is a proxy. Walk X-Forwarded-For from the right (the part
+     * Railway wrote, which a visitor cannot forge) and take the first address
+     * that is not internal infrastructure.
+     */
+    private function clientIp(Request $request): string
+    {
+        $chain = array_reverse(array_map('trim', explode(',', (string) $request->header('X-Forwarded-For'))));
+
+        foreach ($chain as $ip) {
+            if (filter_var($ip, FILTER_VALIDATE_IP) && ! IpUtils::isPrivateIp($ip)) {
+                return $ip;
+            }
+        }
+
+        return (string) $request->ip();
     }
 }
