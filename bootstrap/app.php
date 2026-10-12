@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Behind Railway + Cloudflare: trust forwarded proto/IP headers.
         $middleware->trustProxies(at: '*');
         $middleware->prepend(\App\Http\Middleware\RequireOriginSecret::class);
+        $middleware->prepend(\App\Http\Middleware\RestrictToAllowedIps::class);
 
         $middleware->validateCsrfTokens(except: [
             'logout',

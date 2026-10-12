@@ -19,7 +19,8 @@ lets the office IPs through.
 | `DB_HOST` / `DB_PORT` / `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` | reference the PostGIS service: `${{Postgres.PGHOST}}` etc. |
 | `SESSION_SECURE_COOKIE` | `true` |
 | `SESSION_ENCRYPT` | `true` |
-| `QUEUE_CONNECTION` / `SESSION_DRIVER` / `CACHE_STORE` | `database` |
+| `QUEUE_CONNECTION` / `SESSION_DRIVER` | `database` |
+| `CACHE_STORE` | `file` (no migration creates a `cache` table, so `database` crashes the queue worker) |
 | `LOG_LEVEL` | `warning` |
 | `IMAPS_BRIDGE_SOURCE_ID` | unique for this install, e.g. `rosario-imaps-railway-a` |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` | from Supabase (one line each, no wrapping) |
@@ -44,6 +45,13 @@ lets the office IPs through.
    Replace host and IPs with the real ones. Office IPs must be static; check with the ISP.
 4. **Rules → Transform Rules → Modify Request Header → Set static**: `X-Origin-Secret` = the same value as `ORIGIN_SECRET`.
    Without this step the app returns 403 to everyone (only `/ping` is exempt).
+
+## 2b. Office-only access without Cloudflare (temporary)
+
+Until a domain is on Cloudflare, set `ALLOWED_IPS` on the app service (comma-separated, CIDR allowed,
+e.g. `203.0.113.10,198.51.100.0/24`) and leave `ORIGIN_SECRET` **unset**. Anyone else gets 403 (`/ping` stays open).
+Blocked IPs are logged as `Blocked by ALLOWED_IPS`; if you are blocked, copy the IP from the logs.
+Once Cloudflare's WAF rule is live, remove `ALLOWED_IPS` and set `ORIGIN_SECRET`.
 
 ## 3. Why the origin secret
 

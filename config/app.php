@@ -17,6 +17,8 @@ return [
 
     'origin_secret' => env('ORIGIN_SECRET'),
 
+    'allowed_ips' => array_filter(array_map('trim', explode(',', (string) env('ALLOWED_IPS')))),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment
