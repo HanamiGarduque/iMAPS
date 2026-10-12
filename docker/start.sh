@@ -11,6 +11,10 @@ cp -rf /opt/templates storage/app/templates          # code: overwrite every dep
 ln -sfn /data/tiles public/tiles
 php artisan storage:link --force
 
+# File cache (map data uses rememberForever) lives on the volume so deploys don't wipe it
+mkdir -p /data/cache
+rm -rf storage/framework/cache && ln -s /data/cache storage/framework/cache
+
 # Postgres must have PostGIS (use Railway's PostGIS template, not the plain one)
 php artisan migrate --force
 php artisan config:cache && php artisan route:cache && php artisan view:cache
