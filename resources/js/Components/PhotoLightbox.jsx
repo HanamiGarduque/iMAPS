@@ -3,40 +3,46 @@ import React, { useCallback, useEffect, useState } from "react";
 /**
  * Inspection photo lightbox.
  *
- * WHY THIS RE-FETCHES INSTEAD OF REUSING THE THUMBNAIL URL
+ * THUMBNAIL URL FIRST, RE-SIGN ONLY ON FAILURE
  *
  * The authorized photo URL is a short-lived signed URL, deliberately not a
- * permanent object URL and never a public bucket URL. The server signs each one
- * with a short expiry, so a URL captured when the page loaded can already be
- * dead by the time somebody opens a photo. Reusing a stale URL would show a
- * broken image and look like a delivery failure.
+ * permanent object URL and never a public bucket URL. The thumbnail grid has
+ * already downloaded each photo through its signed URL, so the viewer opens on
+ * that same URL and the browser serves it from cache: no round trip, no second
+ * download.
  *
- * So opening the viewer asks the server for FRESH signed URLs through the same
- * authorized endpoint the thumbnails came from, and only renders once they have
- * arrived. The signed-URL contract is unchanged: this component never sees a raw
+ * The server signs each URL with a short expiry, so a URL captured when the page
+ * loaded can be dead by the time somebody opens a photo. When the image fails,
+ * the viewer asks the server ONCE for fresh signed URLs through the same
+ * authorized endpoint the thumbnails came from, bypassing the browser cache, and
+ * retries. The signed-URL contract is unchanged: this component never sees a raw
  * storage path, never constructs a URL itself, and never widens who can read a
- * photo. The browser's own cache is bypassed on the refresh so a re-signed URL
- * is genuinely re-fetched.
+ * photo.
  *
- * A photo that still fails to load is reported honestly as unavailable. A broken
- * image is never substituted, and a photo is never invented.
+ * A photo that still fails after the refresh is reported honestly as
+ * unavailable. A broken image is never substituted, and a photo is never invented.
  */
 export default function PhotoLightbox({ photos = [], index, onClose, onIndexChange }) {
-    const [urls, setUrls] = useState(null);
-    const [loadError, setLoadError] = useState(null);
+    const [urls, setUrls] = useState(() => photos.map((p) => p.signed_url || null));
+    const [refreshState, setRefreshState] = useState("idle"); // idle | loading | done | failed
     const [imageError, setImageError] = useState(false);
 
     const inspectionId = photos?.[0]?.inspectionId ?? null;
     const current = index != null && photos[index] ? photos[index] : null;
 
-    // Ask the server for freshly signed URLs every time the viewer opens.
+    // A new photo gets a fresh chance to load.
     useEffect(() => {
-        if (index == null || !inspectionId) return;
-
-        let cancelled = false;
-        setUrls(null);
-        setLoadError(null);
         setImageError(false);
+    }, [index]);
+
+    // Re-sign every URL once, the first time an image fails (normally because
+    // its signed URL expired while the page sat open).
+    const refreshUrls = useCallback(() => {
+        if (!inspectionId || refreshState !== "idle") {
+            setImageError(true);
+            return;
+        }
+        setRefreshState("loading");
 
         fetch(`/api/inspections/${inspectionId}/supabase-data`, { cache: "no-store" })
             .then((res) => {
@@ -44,18 +50,16 @@ export default function PhotoLightbox({ photos = [], index, onClose, onIndexChan
                 return res.json();
             })
             .then((data) => {
-                if (cancelled) return;
                 const list = Array.isArray(data?.field_job_photos) ? data.field_job_photos : [];
                 setUrls(list.map((p) => p.signed_url || null));
+                setImageError(false);
+                setRefreshState("done");
             })
             .catch(() => {
-                if (!cancelled) setLoadError("This photo could not be loaded.");
+                setImageError(true);
+                setRefreshState("failed");
             });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [index, inspectionId]);
+    }, [inspectionId, refreshState]);
 
     const showPrev = useCallback(() => {
         if (index == null || index <= 0) return;
@@ -81,9 +85,10 @@ export default function PhotoLightbox({ photos = [], index, onClose, onIndexChan
 
     if (index == null || !current) return null;
 
-    const signed = urls ? urls[index] : null;
+    const signed = urls[index] ?? null;
     const hasMultiple = photos.length > 1;
-    const unreadable = Boolean(loadError) || imageError || (urls !== null && !signed);
+    const refreshing = refreshState === "loading";
+    const unreadable = !refreshing && (imageError || !signed);
 
     return (
         <div
@@ -157,16 +162,17 @@ export default function PhotoLightbox({ photos = [], index, onClose, onIndexChan
                             This image could not be loaded from FieldSync. The inspection record is unaffected.
                         </p>
                     </div>
-                ) : !signed ? (
+                ) : refreshing ? (
                     <div className="flex flex-col items-center justify-center px-12 py-16">
                         <div className="w-9 h-9 rounded-full border-2 border-white/25 border-t-white animate-spin" />
                         <p className="mt-4 text-xs text-white/70 font-medium">Loading photo…</p>
                     </div>
                 ) : (
                     <img
+                        key={signed}
                         src={signed}
                         alt={current.alt || "Inspection photo"}
-                        onError={() => setImageError(true)}
+                        onError={refreshUrls}
                         className="max-h-[82vh] max-w-full object-contain rounded-xl shadow-2xl bg-slate-900"
                     />
                 )}
