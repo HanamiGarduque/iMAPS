@@ -21,7 +21,6 @@
 - **📋 Zoning Application Docket (`/applications`)**
   - **End-to-End Workflow**: Complete lifecycle tracking: Application Encoding → Parcel Verification → Technical Review → Field Inspection Scheduling → Final Decision (Approval/Disapproval).
   - **Offline & Draft Storage**: Local storage backup and draft manager enabling Planning Officers to prepare application details offline.
-  - **Public Reference Tracking**: Automatic generation of public tracking reference links for applicants.
 
 - **🔍 Technical Review & Field Inspections (`/site-inspections`)**
   - **Inspector Allocation & Scheduling**: Assign field inspectors to specific pending applications with geographic provenance.
@@ -34,9 +33,6 @@
 - **🔐 Security, Audit Trail & Role-Based Access (`/users`)**
   - **Granular RBAC**: Role middleware distinguishing `Admin` and `Planning Officer` capabilities.
   - **Comprehensive Audit Logging**: Event logging (`AuditTrail`) tracking sensitive data access, password resets, status transitions, and system activities.
-
-- **🌐 Citizen Public Portal (`/public-portal`)**
-  - Public-facing lookup for verifying zoning permit status and reference tracking.
 
 ---
 
@@ -51,7 +47,9 @@
 | **GIS & Mapping** | [MapLibre GL v6](https://maplibre.org), [Leaflet v1.9](https://leafletjs.com), `react-leaflet` |
 | **Data Visualization** | [Chart.js v4](https://www.chartjs.org), [Recharts v3](https://recharts.org) |
 | **Cloud & Mobile Sync** | [Supabase JS Client](https://supabase.com) (`@supabase/supabase-js`) |
-| **Export Engines** | `barryvdh/laravel-dompdf`, `shuchkin/simplexlsxgen` |
+| **Export Engines** | `barryvdh/laravel-dompdf`, `shuchkin/simplexlsxgen`; permit documents via `phpoffice/phpword` / `phpspreadsheet` (PDF through headless LibreOffice) |
+| **Database** | PostgreSQL + PostGIS |
+| **Production Runtime** | Docker image on [Railway](https://railway.com): [FrankenPHP](https://frankenphp.dev) (Caddy) + `supervisord` (web, queue worker, scheduler), behind Cloudflare |
 
 ---
 
@@ -240,7 +238,100 @@ default here — `tests/Unit/ForecastServiceConfigTest.php` enforces that.
 
 ---
 
-## 🔑 Default Credentials (Seeded)
+## 🚂 Production Deployment (Railway)
+
+iMAPS is deployed on **[Railway](https://railway.com)** as a single Docker service plus a PostGIS
+database and one persistent volume, fronted by **Cloudflare**, which restricts access to office IPs.
+The full step-by-step guide is [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md); this
+section is the overview.
+
+### Access model
+
+iMAPS is **hosted on the internet but restricted to authorized office IP addresses** — it is not
+open to the public. Cloudflare's WAF (or `ALLOWED_IPS` before Cloudflare is set up) blocks every
+other address with a 403, and only `/ping` (Railway's health check) is exempt. In practice it
+behaves like an intranet system for municipal staff, but it is not network-isolated: the server
+has a public address, so the IP allowlist and `ORIGIN_SECRET` are what keep it private.
+
+### Architecture
+
+```text
+Users ──► Cloudflare (WAF: office IPs only, adds X-Origin-Secret)
+              │
+              ▼
+        Railway app service  (Dockerfile, FrankenPHP/Caddy on $PORT)
+        ├── supervisord
+        │   ├── web        frankenphp + Caddy
+        │   ├── queue      php artisan queue:work
+        │   └── scheduler  php artisan schedule:work
+        ├── Volume  /data  (uploads, generated permits, map tiles, file cache)
+        └──► Railway PostGIS database
+                 ╲
+                  └──► Supabase (FieldSync bridge for mobile inspectors)
+```
+
+| File | Purpose |
+| --- | --- |
+| [railway.json](railway.json) | Tells Railway to build the `Dockerfile`; health check on `/ping` (300s timeout); restart on failure, max 5 retries |
+| [Dockerfile](Dockerfile) | Two stages: Node 22 builds the Vite assets, then `dunglas/frankenphp` (PHP 8.3) with `pdo_pgsql`, `gd`, `zip`, `intl`, `postgis` (`shp2pgsql`) and LibreOffice Calc (permit PDFs) |
+| [docker/start.sh](docker/start.sh) | Entrypoint: links `storage/app`, tiles and cache onto the `/data` volume, runs `php artisan migrate --force`, caches config/routes/views, starts supervisord |
+| [docker/supervisord.conf](docker/supervisord.conf) | Runs the web server, queue worker and scheduler in one container |
+| [docker/Caddyfile](docker/Caddyfile) | Serves `public/` on `$PORT`, 260 MB request body cap |
+| [.railwayignore](.railwayignore) | Keeps `public/tiles` out of uploads; tiles live on the volume |
+
+### Deploying
+
+1. **New project → Deploy from GitHub repo** — Railway picks up `railway.json` and builds the `Dockerfile`.
+2. **Add the PostGIS database** from Railway's *PostGIS* template. The plain Postgres plugin has no
+   PostGIS and migrations will fail.
+3. **Add a Volume** to the app service, mounted at **`/data`**.
+4. **Set variables** on the app service (never commit them):
+
+   | Variable | Notes |
+   | --- | --- |
+   | `APP_KEY`, `APP_URL` | `php artisan key:generate --show` locally; `https://<your-domain>` |
+   | `DB_*` | Reference the PostGIS service, e.g. `${{Postgres.PGHOST}}` |
+   | `SESSION_SECURE_COOKIE`, `SESSION_ENCRYPT` | `true` |
+   | `QUEUE_CONNECTION`, `SESSION_DRIVER` | `database` |
+   | `CACHE_STORE` | `file` — no `cache` table migration exists, `database` crashes the queue worker |
+   | `IMAPS_BRIDGE_SOURCE_ID` | Unique per install, e.g. `rosario-imaps-railway-a` |
+   | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` | From Supabase |
+   | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Same values; needed at **build** time, so set before the first deploy |
+   | `ORIGIN_SECRET` | `openssl rand -hex 32`; must match Cloudflare's `X-Origin-Secret` header |
+   | `ALLOWED_IPS` | Temporary office-IP allowlist until Cloudflare is live; leave `ORIGIN_SECRET` unset while using it |
+   | `FORECAST_SERVICE_URL`, `FORECAST_SERVICE_API_KEY` | Only if the forecasting microservice is hosted |
+
+   Do **not** set `PORT` (Railway injects it) and do **not** run the seeders in production.
+5. **Networking:** add your custom domain (proxied through Cloudflare, SSL mode *Full (strict)*) and
+   then delete the generated `*.up.railway.app` domain.
+6. **First boot** runs migrations automatically. Create the first admin through `railway ssh` →
+   `php artisan tinker`, log in, import shapefiles on the **Settings** page, then run `php artisan map:warm`.
+
+### Updating
+
+Push to GitHub; Railway rebuilds, runs migrations on boot and restarts. Take a Postgres backup
+before risky migrations.
+
+### Operational notes
+
+- **Single instance only.** The volume and in-container queue worker mean replicas must not be scaled.
+- **Logs** go to stderr and appear in Railway's log viewer; `storage/logs` is unused.
+- **Permits** are stored on the private disk and are not publicly reachable.
+- **Uploads:** Cloudflare's free plan caps requests at 100 MB while the Settings tile upload allows
+  200 MB; upload large tile sets via `railway ssh` into `/data/tiles/clup_tiles`.
+- **Backups are not automatic.** Enable Railway volume backups for Postgres and `/data`, and keep an
+  off-site `pg_dump`. Test a restore once.
+- Users need internet access (Google Fonts, OSM/ArcGIS basemaps).
+
+See the go-live checklist in [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md#5-go-live-checklist)
+before opening the site to staff.
+
+---
+
+## 🔑 Default Credentials (Local Development Only)
+
+> ⚠️ These accounts are created by the seeders for **local development**. Never run the seeders
+> in production; the Railway deployment must have no `admin@imaps.com` account.
 
 | Role | Email | Password | Access Rights |
 | --- | --- | --- | --- |
@@ -281,6 +372,10 @@ iMAPS/
 │   ├── Models/                 # Eloquent models (ZoningApplication, Parcel, SiteInspection, AuditTrail)
 │   └── Services/               # Audit logger & status tracker services
 ├── config/                     # Application configurations
+├── docker/                     # Production container config (Caddyfile, supervisord, start.sh, php.ini)
+├── docs/                       # Deployment guide, FieldSync bridge & schema documentation
+├── Dockerfile                  # Production image (Railway)
+├── railway.json                # Railway build & health-check configuration
 ├── database/
 │   ├── factories/              # Model factories
 │   ├── migrations/             # Schema migrations
