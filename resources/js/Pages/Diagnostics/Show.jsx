@@ -116,7 +116,7 @@ export default function Show(props) {
         </div>
         {/* —— WORKSPACE: fills the viewport; only the inner panes scroll —— */}
         <div className="report-reveal flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_4px_16px_-8px_rgba(15,23,42,0.08)] lg:min-h-0 lg:flex-1 lg:flex-row">
-            <ReportWorkspace {...props} reload={["report", "context", "canNotify", "handlingActions"]} />
+            <ReportWorkspace {...props} reload={["report", "context", "canNotify", "handlingActions", "developmentSupport"]} />
         </div>
     </ReportShell>;
 }
@@ -135,6 +135,7 @@ const needsReading = (data) => (data.remote_updated && !data.audit_recorded) || 
  */
 export function ReportWorkspace({ report, context = null, canNotify = false, handlingActions = [], developmentSupport = null, reload, onClose, onHandled }) {
     const { auth } = usePage().props;
+    const reloadProps = reload?.includes("reports") && !reload.includes("loadError") ? [...reload, "loadError"] : reload;
     const isAdmin = auth?.user?.role === "Admin";
     const support = report.report_type === "application_support";
     const [notifying, setNotifying] = useState(false);
@@ -170,7 +171,7 @@ export function ReportWorkspace({ report, context = null, canNotify = false, han
                     // Preloaded lists/reports now hold the old status; drop them.
                     router.flushAll();
                     const done = data.outcome === "success" && status !== "in_review" && !needsReading(data);
-                    router.reload({ only: reload, preserveScroll: true, onSuccess: (page) => { if (done) onHandled?.(status, page.props); } });
+                    router.reload({ only: reloadProps, preserveScroll: true, onSuccess: (page) => { if (done) onHandled?.(status, page.props); } });
                 }
             } else {
                 setBlocked(true);
@@ -194,12 +195,14 @@ export function ReportWorkspace({ report, context = null, canNotify = false, han
         ? report.status === "resolved"
             ? { tone: "emerald", label: "Answered", text: "No further action needed." }
             : { tone: "slate", label: "Closed as won’t fix", text: "No further action needed." }
+        : !support && developmentSupport?.open
+            ? { tone: "amber", label: "Developer escalation open", text: "Close the developer escalation before issuing the official response." }
         : canRespond
             // Same words and colour as the status badge, so the banner never contradicts it.
             ? report.status === "in_review"
                 ? { tone: "amber", label: "In review", text: "Write the official response below to close this report." }
                 : { tone: "blue", label: "Needs your response", text: canTriage ? "Mark it in review, or write the official response below." : "Read the inspector’s report, then write the official response below." }
-            : handlingActions.length
+            : support && handlingActions.length
                 ? { tone: "amber", label: "Waiting for a Planning Officer", text: "A current Planning Officer must be assigned before an official response can be issued." }
                 : { tone: "slate", label: "Awaiting response", text: "No official response yet. You can view this report but not respond to it." };
     const tone = stateTones[state.tone];
@@ -384,7 +387,7 @@ export function ReportWorkspace({ report, context = null, canNotify = false, han
                         Technical Issue and null for every Planning Officer and every
                         Application Support report, so the section cannot exist elsewhere -
                         and it sits outside the inspector-facing "Official response" block. */}
-                    {developmentSupport && <div className="mt-4 border-t border-slate-100 pt-4"><DevelopmentSupport report={report} panel={developmentSupport} /></div>}
+                    {isAdmin && !support && developmentSupport && <div className="mt-4 border-t border-slate-100 pt-4"><DevelopmentSupport report={report} panel={developmentSupport} reload={reloadProps} /></div>}
                 </div>
             </aside>
     </>;

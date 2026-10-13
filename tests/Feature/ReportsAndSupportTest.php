@@ -79,6 +79,60 @@ class ReportsAndSupportTest extends ReportingTestCase
         $this->assertSame([$this->other->id], DB::table('notifications')->pluck('user_id')->all());
     }
 
+    public function test_admin_reminder_preserves_report_status_and_targets_only_the_verified_po_with_cooldown(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 13)->setTime(9, 30));
+        $before = $this->remote['diagnostic_reports'];
+        $url = '/diagnostics/'.self::REPORT.'/notify-planning-officers';
+        $this->actingAs($this->admin);
+        $this->post($url)->assertRedirect()->assertSessionHas('success', 'Notified Current PO.');
+        $this->travel(29)->minutes();
+        $this->post($url)->assertRedirect()->assertSessionHas('success', 'Current PO already received this support notice recently.');
+        $this->assertSame([$this->po->id], DB::table('notifications')->pluck('user_id')->all());
+        $this->travel(2)->minutes();
+        $this->post($url)->assertRedirect()->assertSessionHas('success', 'Notified Current PO.');
+        $this->assertSame([$this->po->id, $this->po->id], DB::table('notifications')->pluck('user_id')->all());
+        $this->assertSame($before, $this->remote['diagnostic_reports']);
+        $this->assertNotContains('activity_log', array_column($this->calls, 0));
+    }
+
+    public function test_po_inbox_projects_context_lookup_failure_as_load_error_instead_of_a_true_zero(): void
+    {
+        $this->actingAs($this->po);
+        $this->remoteTableFails = ['field_jobs'];
+        $response = $this->page('/diagnostics')->assertOk()->assertJsonCount(0, 'props.reports');
+        $this->assertNotEmpty($response->json('props.loadError'));
+        $this->page('/diagnostics/'.self::REPORT)->assertForbidden();
+        $this->remoteTableFails = [];
+        $this->remote['diagnostic_reports'] = [];
+        $this->page('/diagnostics')->assertOk()->assertJsonPath('props.loadError', null)->assertJsonCount(0, 'props.reports');
+    }
+
+    public function test_embedded_partial_props_include_context_failure_and_recovery_while_selected_remains_authorized(): void
+    {
+        $selected = '30000000-0000-4000-8000-000000000002';
+        $this->remote['diagnostic_reports'][] = $this->support(['id' => $selected, 'field_job_id' => null]);
+        $url = '/diagnostics?type=application_support&report='.$selected;
+        $this->actingAs($this->po);
+        $this->page($url)->assertOk()->assertJsonCount(2, 'props.reports')->assertJsonPath('props.loadError', null);
+        $version = app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create($url));
+        $headers = ['X-Inertia' => 'true', 'X-Inertia-Version' => $version ?? '',
+            'X-Inertia-Partial-Component' => 'Diagnostics/Index',
+            'X-Inertia-Partial-Data' => 'selected,reports,counts,pagination,loadError'];
+        // The retained selection needs no field_jobs lookup. The LIST still
+        // fails that lookup for its other report; selected success cannot hide it.
+        $this->remoteTableFails = ['field_jobs'];
+        $failed = $this->get($url, $headers)->assertOk()->assertJsonCount(0, 'props.reports')
+            ->assertJsonPath('props.counts.application_support', 0)->assertJsonPath('props.pagination.total', 0)
+            ->assertJsonPath('props.selected.report.id', $selected)->assertJsonPath('props.selected.context.resolved', true)
+            ->assertJsonMissingPath('props.allowedTypes');
+        $this->assertNotEmpty($failed->json('props.loadError'));
+        $this->remoteTableFails = [];
+        $this->get($url, $headers)->assertOk()->assertJsonCount(2, 'props.reports')
+            ->assertJsonPath('props.counts.application_support', 2)->assertJsonPath('props.pagination.total', 2)
+            ->assertJsonPath('props.loadError', null)->assertJsonPath('props.selected.report.id', $selected);
+    }
+
     public function test_pagination_and_status_filters_apply_after_ownership_scope(): void
     {
         $this->remote['diagnostic_reports'] = [$this->technical()];

@@ -190,26 +190,28 @@ class ReportHandlingTest extends ReportingTestCase
         $this->assertDatabaseHas('report_action_audit', ['performed_by' => $this->other->id, 'performed_by_name' => 'Next PO']);
     }
 
-    public function test_unowned_admin_is_review_only_without_assignment_side_effect(): void
+    public function test_unowned_support_is_read_only_for_admin_and_forged_posts_cannot_assign_or_handle(): void
     {
         DB::table('zoning_applications')->update(['assigned_planning_officer_id' => null]);
         $this->actingAs($this->admin);
-        $this->page(self::REPORT)->assertJsonPath('props.handlingActions', ['in_review'])->assertJsonPath('props.canNotify', false);
-        foreach (['resolved', 'wont_fix'] as $to) {
-            $this->handle(self::REPORT, $to, ['response_message' => 'Not allowed'])->assertForbidden();
+        $this->page(self::REPORT)->assertOk()->assertJsonPath('props.handlingActions', [])->assertJsonPath('props.canNotify', false);
+        foreach (['in_review', 'resolved', 'wont_fix'] as $to) {
+            $this->handle(self::REPORT, $to, ['owner_id' => $this->admin->id,
+                'assigned_planning_officer_id' => $this->admin->id, 'response_message' => 'Not allowed'])->assertForbidden();
         }
         $this->actingAs($this->po);
         foreach (['in_review', 'resolved', 'wont_fix'] as $to) {
             $this->handle(self::REPORT, $to, ['response_message' => 'Not allowed'])->assertForbidden();
         }
-        $this->actingAs($this->admin);
-        $this->handle(self::REPORT, 'in_review')->assertOk();
-        $this->page(self::REPORT)->assertJsonPath('props.handlingActions', []);
+        $this->assertSame([], $this->patches);
+        $this->assertSame([], $this->activityPosts);
+        $this->assertSame(0, DB::table('report_action_audit')->count());
+        $this->assertSame('submitted', $this->remote['diagnostic_reports'][0]['status']);
         $this->assertNull(DB::table('zoning_applications')->value('assigned_planning_officer_id'));
         DB::table('zoning_applications')->update(['assigned_planning_officer_id' => $this->po->id]);
         $this->actingAs($this->po);
         $this->handle(self::REPORT, 'resolved', ['response_message' => 'Now assigned.'])->assertOk();
-        $this->assertSame(['submitted', 'in_review'], DB::table('report_action_audit')->orderBy('id')->pluck('from_status')->all());
+        $this->assertSame(['submitted'], DB::table('report_action_audit')->pluck('from_status')->all());
     }
 
     public function test_broken_exact_identity_chain_never_authorizes_a_mutation(): void

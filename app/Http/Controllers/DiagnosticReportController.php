@@ -137,20 +137,37 @@ class DiagnosticReportController extends Controller
             $value = $contact[$key] ?? null;
             $safe[$key] = is_string($value) && trim($value) !== '' ? $value : null;
         }
-        $episodes = $escalatable
-            ? ReportEscalation::query()->where('report_id', (string) $row['id'])->orderByDesc('created_at')->get()
-            : collect();
+        $episodes = ReportEscalation::query()->where('report_id', (string) $row['id'])->orderByDesc('created_at')->get();
 
         return [
-            'open' => $episodes->firstWhere('status', ReportEscalation::OPEN)?->only([
+            'open' => $escalatable ? $episodes->firstWhere('status', ReportEscalation::OPEN)?->only([
                 'id', 'status', 'created_at', 'recommendation', 'recommendation_at', 'closure_note',
-            ]) ?? null,
+            ]) : null,
             'closed' => $episodes->where('status', ReportEscalation::CLOSED)->values()
                 ->map(fn ($e) => $e->only(['id', 'created_at', 'closed_at', 'recommendation', 'closure_note']))->all(),
             'contact' => $safe,
             'contactConfigured' => (bool) array_filter($safe),
+            'composeEmailHref' => $this->composeEmailHref($safe['email'], $row),
             'escalatable' => $escalatable,
         ];
+    }
+
+    /** Only a validated recipient, canonical reference and status enter the external draft. */
+    private function composeEmailHref(?string $email, array $row): ?string
+    {
+        if (! $email || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+        $reference = $row['reference_code'] ?? '';
+        $reference = preg_match('/\ADR-[0-9]{4}-[0-9]{4,10}\z/', $reference) ? $reference : 'Unreferenced report';
+        $status = match ($row['status'] ?? null) {
+            'submitted' => 'Submitted', 'in_review' => 'In Review', 'resolved' => 'Resolved', 'wont_fix' => 'Won’t Fix',
+            default => 'Unknown',
+        };
+        return 'mailto:'.rawurlencode($email).'?'.http_build_query([
+            'subject' => 'iMAPS / FieldSync Technical Issue — '.$reference,
+            'body' => "Reference: {$reference}\nType: Technical Issue\nStatus: {$status}\n\nPlease advise on this technical issue.\nReview details before sharing; attach sanitized files manually if needed.",
+        ], '', '&', PHP_QUERY_RFC3986);
     }
 
     public function handle(Request $request, string $report, DiagnosticReportHandling $handling)

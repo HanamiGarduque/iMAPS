@@ -90,11 +90,8 @@ class ReportingVisibility
             return [];
         }
         $ownerId = $context['application']['assigned_planning_officer_id'] ?? null;
-        if ($ownerId === null) {
-            return $viewer?->role === 'Admin' ? ['in_review'] : [];
-        }
         return $viewer?->role === 'Planning Officer' && ($context['owner']['id'] ?? null) === $viewer->id
-            && (int) $ownerId === (int) $viewer->id ? $all : [];
+            && $ownerId !== null && (int) $ownerId === (int) $viewer->id ? $all : [];
     }
 
     public function handlingActions($viewer, array $report, ?array $context): array
@@ -139,6 +136,10 @@ class ReportingVisibility
         }
         $result = $this->reader->all($query);
         $contexts = $this->resolution->resolveMany(array_values(array_filter($result['reports'], fn ($r) => $r['report_type'] === 'application_support')));
+        if (array_filter($contexts, fn ($context) => $context['lookup_failed'] ?? false)) {
+            $result['ok'] = false;
+            $result['message'] ??= 'Application support context could not be loaded. Please try again.';
+        }
         $visible = [];
         $counts = array_fill_keys(($filters['only_type'] ?? false) ? [$type] : $allowed, 0);
         foreach ($result['reports'] as $r) {
