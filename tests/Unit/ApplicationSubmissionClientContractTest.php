@@ -232,9 +232,9 @@ class ApplicationSubmissionClientContractTest extends TestCase
             'Every draft save must persist the current wizard step.'
         );
         $this->assertStringContainsString(
-            'localStorage.getItem(DRAFT_PAYLOAD_KEY)',
+            'validCloud.__wizard_step',
             $this->createSource,
-            'The saved step must be read back to seed the initial step.'
+            'The saved step must be read back from the saved draft to seed the initial step.'
         );
         $this->assertMatchesRegularExpression(
             '/useState\(\(\) => \{[\s\S]{0,400}?__wizard_step/',

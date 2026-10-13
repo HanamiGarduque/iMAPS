@@ -170,7 +170,10 @@ class ApplicationController extends Controller
         // rather than a placeholder. Wording is owned by InspectionSummary so
         // the "never claim field progress from a local assignment" rule is
         // enforced in one testable place.
-        $applications->getCollection()->transform(function ($application) use ($isAdminMonitoring) {
+        // One read per request, not one per row.
+        $recorderLiveFrom = $isAdminMonitoring ? InspectionDeliveryAttempt::recorderLiveFrom() : null;
+
+        $applications->getCollection()->transform(function ($application) use ($isAdminMonitoring, $recorderLiveFrom) {
             $line = null;
 
             // PHASE 2B2B: the round number is now resolved from the canonical
@@ -221,7 +224,7 @@ class ApplicationController extends Controller
             // LOOP 9D. Present for Admin only, and NULL for every other role so
             // the Planning Officer payload is byte-identical to what 9C shipped.
             $application->delivery_monitoring = $isAdminMonitoring
-                ? $this->buildDeliveryMonitoring($application)
+                ? $this->buildDeliveryMonitoring($application, $recorderLiveFrom)
                 : null;
 
             return $application;
@@ -264,7 +267,7 @@ class ApplicationController extends Controller
      * Entirely local PostgreSQL. No Supabase call, no FieldSync call, no device
      * dependency, and no attempt rows are loaded.
      */
-    private function buildDeliveryMonitoring($application): array
+    private function buildDeliveryMonitoring($application, ?\DateTimeInterface $recorderLiveFrom): array
     {
         $round = null;
 
@@ -302,7 +305,7 @@ class ApplicationController extends Controller
         $neverAttempted = (int) ($round->delivery_attempts_count ?? 0) === 0
             && InspectionDeliveryStatus::provesNeverDelivered(
                 $round->created_at,
-                InspectionDeliveryAttempt::recorderLiveFrom(),
+                $recorderLiveFrom,
             );
         $state = InspectionDeliveryStatus::state($round->delivery_status, $neverAttempted);
         $isFailed = $state === InspectionDeliveryStatus::STATE_FAILED;

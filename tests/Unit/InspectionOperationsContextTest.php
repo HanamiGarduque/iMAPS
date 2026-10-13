@@ -5,7 +5,8 @@ namespace Tests\Unit;
 use App\Models\SiteInspection;
 use App\Support\InspectionOperationsContext;
 use Illuminate\Support\Facades\DB;
-use PHPUnit\Framework\TestCase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
 
 /**
  * PHASE 2B2D - read-only operations context for the inspection detail page.
@@ -24,6 +25,8 @@ use PHPUnit\Framework\TestCase;
  */
 class InspectionOperationsContextTest extends TestCase
 {
+    use RefreshDatabase;
+
     // ================================================================
     // DELIVERY
     // ================================================================
@@ -31,9 +34,9 @@ class InspectionOperationsContextTest extends TestCase
     public function test_each_canonical_delivery_state_renders_its_own_label(): void
     {
         $expected = [
-            null => 'No Delivery Record',
+            null => 'Delivery History Unavailable',
             'pending_delivery' => 'Pending Delivery',
-            'delivered' => 'Delivered to FieldSync',
+            'delivered' => 'Delivered',
             'delivery_failed' => 'Delivery Failed',
         ];
 

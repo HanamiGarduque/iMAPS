@@ -1509,7 +1509,19 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         };
         router.post("/applications/encode", payload, {
             onSuccess: (page) => {
-                const ref = page.props?.flash?.reference_number || page.props?.reference_number || "CONFIRMED";
+                const ref = page.props.flash?.reference_number;
+                // No server reference means the record is unconfirmed: never show a
+                // success or print a slip for it. The form and draft are kept.
+                if (!ref) {
+                    setSubmissionFinalized(false);
+                    submittingRef.current = false;
+                    Swal.fire({
+                        icon: "error",
+                        title: "Submission not confirmed",
+                        text: "The server did not confirm this application. Your entries are kept. Check the registry before submitting again.",
+                    });
+                    return;
+                }
                 const newAppId = page.props?.flash?.application_id || page.props?.application_id || null;
 
                 setRoutingSlipData({
