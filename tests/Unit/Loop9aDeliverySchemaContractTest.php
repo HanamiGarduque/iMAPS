@@ -548,10 +548,13 @@ class Loop9aDeliverySchemaContractTest extends TestCase
             'app/Http/Controllers/TechnicalReviewController.php',
             'app/Http/Controllers/WorkReassignmentController.php',
         ] as $controller) {
-            $this->assertStringNotContainsString(
-                'InspectionDeliveryAttempt',
+            // Issue C's read-only recorder start date is the one sanctioned use.
+            $source = str_replace(
+                ['use App\\Models\\InspectionDeliveryAttempt;', 'InspectionDeliveryAttempt::recorderLiveFrom()'],
+                '',
                 (string) file_get_contents(base_path($controller))
             );
+            $this->assertStringNotContainsString('InspectionDeliveryAttempt', $source, $controller);
         }
 
         // The 9E/9F controller is authorized now, but it is a READER for a remote

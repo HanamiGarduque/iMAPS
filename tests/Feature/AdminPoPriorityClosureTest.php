@@ -47,6 +47,12 @@ class AdminPoPriorityClosureTest extends TestCase
         return User::factory()->create(['role' => $role]);
     }
 
+    /** Inertia props as the browser receives them. */
+    private function props($response): array
+    {
+        return $response->viewData('page')['props'];
+    }
+
     private function makeApplication(): ZoningApplication
     {
         return ZoningApplication::factory()->create([
@@ -91,7 +97,7 @@ class AdminPoPriorityClosureTest extends TestCase
 
         $response = $this->actingAs($po)->get('/technical-review')->assertOk();
 
-        $ids = collect($response->viewData('applications')->items())->pluck('id');
+        $ids = collect($this->props($response)['applications']['data'])->pluck('id');
         $this->assertTrue($ids->contains($waiting->id));
         $this->assertFalse($ids->contains($released->id));
     }
@@ -123,10 +129,10 @@ class AdminPoPriorityClosureTest extends TestCase
 
         $response = $this->actingAs($po)->get("/applications/{$application->id}")->assertOk();
 
-        $parcels = $response->viewData('parcels');
+        $parcels = $this->props($response)['parcels'];
         $this->assertSame(
             $inspector->name,
-            $parcels->first()->siteInspection->inspector->name,
+            $parcels[0]['site_inspection']['inspector']['name'],
             'The detail payload must carry the human-readable inspector name.'
         );
     }
@@ -148,12 +154,12 @@ class AdminPoPriorityClosureTest extends TestCase
         ]);
 
         $response = $this->actingAs($po)->get('/applications')->assertOk();
-        $row = collect($response->viewData('applications')->items())->firstWhere('id', $application->id);
+        $row = collect($this->props($response)['applications']['data'])->firstWhere('id', $application->id);
 
         $this->assertNotNull($row);
-        $this->assertStringContainsString($inspector->name, (string) $row->inspection_summary);
-        $this->assertStringNotContainsStringIgnoringCase('ongoing', (string) $row->inspection_summary);
-        $this->assertStringNotContainsStringIgnoringCase('in progress', (string) $row->inspection_summary);
+        $this->assertStringContainsString($inspector->name, (string) $row['inspection_summary']);
+        $this->assertStringNotContainsStringIgnoringCase('ongoing', (string) $row['inspection_summary']);
+        $this->assertStringNotContainsStringIgnoringCase('in progress', (string) $row['inspection_summary']);
     }
 
     public function test_application_without_inspection_has_no_summary_line(): void
@@ -163,9 +169,9 @@ class AdminPoPriorityClosureTest extends TestCase
         Parcel::factory()->create(['zoning_application_id' => $application->id]);
 
         $response = $this->actingAs($po)->get('/applications')->assertOk();
-        $row = collect($response->viewData('applications')->items())->firstWhere('id', $application->id);
+        $row = collect($this->props($response)['applications']['data'])->firstWhere('id', $application->id);
 
-        $this->assertNull($row->inspection_summary);
+        $this->assertNull($row['inspection_summary']);
     }
 
     public function test_reinspection_round_is_reported_with_its_round_number(): void
@@ -186,10 +192,10 @@ class AdminPoPriorityClosureTest extends TestCase
         ]);
 
         $response = $this->actingAs($po)->get('/applications')->assertOk();
-        $row = collect($response->viewData('applications')->items())->firstWhere('id', $application->id);
+        $row = collect($this->props($response)['applications']['data'])->firstWhere('id', $application->id);
 
-        $this->assertStringContainsString('Reinspection (Round 2)', (string) $row->inspection_summary);
-        $this->assertStringContainsString($inspector->name, (string) $row->inspection_summary);
+        $this->assertStringContainsString('Reinspection (Round 2)', (string) $row['inspection_summary']);
+        $this->assertStringContainsString($inspector->name, (string) $row['inspection_summary']);
     }
 
     // ── Tests 14 + 15 + 16: report endpoint authorization over HTTP ──

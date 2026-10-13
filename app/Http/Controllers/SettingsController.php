@@ -31,6 +31,19 @@ class SettingsController extends Controller
         ]);
     }
 
+    /** Zip-bomb guard: cap entry count and total uncompressed size before extracting. */
+    private function zipWithinLimits(ZipArchive $zip, int $maxEntries, int $maxBytes): bool
+    {
+        if ($zip->numFiles > $maxEntries) {
+            return false;
+        }
+        $total = 0;
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $total += $zip->statIndex($i)['size'] ?? 0;
+        }
+        return $total <= $maxBytes;
+    }
+
     public function uploadShapefile(Request $request)
     {
         $request->validate([
@@ -45,9 +58,14 @@ class SettingsController extends Controller
         // 1. Extract the ZIP
         $zip = new ZipArchive;
         if ($zip->open($zipFile->path()) === TRUE) {
+            if (!$this->zipWithinLimits($zip, 1000, 500 * 1024 * 1024)) {
+                $zip->close();
+                File::deleteDirectory($extractPath);
+                return back()->withErrors(['shapefile_zip' => 'The archive is too large or has too many files.']);
+            }
             for ($index = 0; $index < $zip->numFiles; $index++) {
                 $entryName = $zip->getNameIndex($index);
-                if ($entryName === false || str_contains(str_replace('\\', '/', $entryName), '../') || str_starts_with($entryName, '/')) {
+                if ($entryName === false || str_contains(str_replace('\\', '/', $entryName), '../') || str_starts_with($entryName, '/') || str_contains($entryName, ':')) {
                     $zip->close();
                     File::deleteDirectory($extractPath);
                     return back()->withErrors(['shapefile_zip' => 'The archive contains an unsafe file path.']);
@@ -210,11 +228,15 @@ class SettingsController extends Controller
         // Validate the archive before replacing the currently active tile set.
         $zip = new ZipArchive;
         if ($zip->open($zipFile->path()) === TRUE) {
+            if (!$this->zipWithinLimits($zip, 300000, 3 * 1024 * 1024 * 1024)) {
+                $zip->close();
+                return back()->withErrors(['tiles_zip' => 'The archive is too large or has too many files.']);
+            }
             $tileEntries = [];
             for ($index = 0; $index < $zip->numFiles; $index++) {
                 $entryName = $zip->getNameIndex($index);
                 $normalizedName = str_replace('\\', '/', (string) $entryName);
-                if ($entryName === false || str_contains($normalizedName, '../') || str_starts_with($normalizedName, '/')) {
+                if ($entryName === false || str_contains($normalizedName, '../') || str_starts_with($normalizedName, '/') || str_contains($normalizedName, ':')) {
                     $zip->close();
                     return back()->withErrors(['tiles_zip' => 'The archive contains an unsafe file path.']);
                 }

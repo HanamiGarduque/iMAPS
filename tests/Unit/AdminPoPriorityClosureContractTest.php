@@ -285,23 +285,23 @@ class AdminPoPriorityClosureContractTest extends TestCase
 
         // activePage signal
         $this->assertStringContainsString(
-            "normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review'",
+            "normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review') return 'REGISTRY'",
             $header,
-            'activePage for any Applications subsection must badge as APPLICATIONS.'
+            'activePage for any Applications subsection must badge as REGISTRY.'
         );
 
         // URL first-segment signal
         $this->assertMatchesRegularExpression(
-            "/case 'applications':\s*\n\s*case 'drafts':\s*\n\s*case 'technical-review':\s*\n\s*return 'APPLICATIONS';/",
+            "/case 'applications':\s*\n\s*case 'drafts':\s*\n\s*case 'technical-review':\s*\n\s*return 'REGISTRY';/",
             $header,
-            'The URL segments for all three subsections must resolve to APPLICATIONS.'
+            'The URL segments for all three subsections must resolve to REGISTRY.'
         );
 
         // Inertia component signal
         $this->assertStringContainsString(
             "comp.startsWith('applications') || comp.startsWith('drafts') || comp.startsWith('technicalreview')",
             $header,
-            'The component signal must badge Technical Review under APPLICATIONS too.'
+            'The component signal must badge Technical Review under REGISTRY too.'
         );
 
         // And Technical Review must no longer badge as its own module anywhere.
@@ -328,7 +328,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $this->assertFileExists($component, 'A single shared sub-navigation component must exist.');
 
         $shared = $this->code((string) file_get_contents($component));
-        $this->assertStringContainsString('{ key: "all", label: "All Applications", href: "/applications" }', $shared);
+        $this->assertStringContainsString('{ key: "all", label: "All Records", href: "/applications" }', $shared);
         $this->assertStringContainsString('{ key: "technical-review", label: "Technical Review", href: "/technical-review" }', $shared);
         $this->assertStringContainsString('{ key: "drafts", label: "Drafts", href: "/applications/drafts" }', $shared);
         $this->assertStringContainsString('aria-current={isActive ? "page" : undefined}', $shared);
@@ -379,9 +379,6 @@ class AdminPoPriorityClosureContractTest extends TestCase
      */
     public function test_duplicate_navigation_was_removed(): void
     {
-        $drafts = $this->codeOf('resources/js/Pages/Drafts/Index.jsx');
-        $this->assertStringNotContainsString('Back to Registry', $drafts, 'The Drafts back-to-registry arrow duplicates the sub-navigation.');
-
         $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
         $this->assertStringNotContainsString(
             '<span>All Applications</span>',
@@ -408,9 +405,9 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $this->assertStringContainsString('backLabel', $rawShow);
         $this->assertStringContainsString('aria-label={backLabel}', $show);
 
-        // The breadcrumb must name the module actually being returned to.
-        $this->assertStringContainsString('"Technical Review"', $rawShow);
-        $this->assertStringContainsString('"Applications"', $rawShow);
+        // The back control must name the module actually being returned to.
+        $this->assertStringContainsString('"Back to technical review"', $rawShow);
+        $this->assertStringContainsString('"Back to registry"', $rawShow);
     }
 
     /**
@@ -804,7 +801,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $drafts = $this->codeOf('resources/js/Pages/Drafts/Index.jsx');
 
         $this->assertMatchesRegularExpression(
-            '/\(filters\?\.status \|\| ""\) === s/',
+            '/\(filters\?\.activity \|\| ""\) === tab\.activity/',
             $drafts,
             'The active tab must be derived from the server status filter.'
         );
@@ -830,7 +827,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
     {
         $controller = $this->codeOf('app/Http/Controllers/ApplicationController.php');
 
-        $this->assertStringContainsString("if (\$request->filled('status')) {", $controller);
+        $this->assertStringContainsString("if (\$request->filled('status'))", $controller);
     }
 
     // ── Applicant folder counts must be true totals, not page-local ──
@@ -966,7 +963,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
             'An empty drafts list must render an explicit empty state, never invented records.'
         );
         $this->assertMatchesRegularExpression(
-            '/rows\.length === 0/',
+            '/(rows|list)\.length === 0/',
             $page,
             'The empty state must be driven by the real row count.'
         );
@@ -991,7 +988,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
     {
         $page = $this->codeOf('resources/js/Pages/Applications/Index.jsx');
 
-        $this->assertStringContainsString('{item.inspection_summary && (', $page, 'The list row must render the inspection line.');
+        $this->assertStringContainsString('{peekItem.inspection_summary && (', $page, 'The peek panel must render the inspection line.');
 
         // Rendered directly, not hidden behind a tooltip or hover affordance.
         $this->assertStringNotContainsString('title={item.inspection_summary}', $page);

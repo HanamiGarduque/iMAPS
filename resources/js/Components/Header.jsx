@@ -157,7 +157,7 @@ export default function Header({
 
     const navigationBadge = getNavigationBadge();
 
-    // Loop 6: internal search is an Admin/Planning Officer capability only â€”
+    // Loop 6: internal search is an Admin/Planning Officer capability only —
     // never shown to Site Inspectors (server middleware still enforces it).
     const shouldShowSearch = (showSearch || Boolean(onSelectLocation)) && userRole !== 'Site Inspector';
     const [searchQuery, setSearchQuery] = useState('');
@@ -216,7 +216,7 @@ export default function Header({
         });
     };
 
-    // â”€â”€ Predictive Search Effect â”€â”€
+    // ── Predictive Search Effect ──
     useEffect(() => {
         if (!searchQuery.trim()) {
             setSuggestions([]);
@@ -365,7 +365,7 @@ export default function Header({
 
     return (
         <header className="h-14 bg-white border-b border-slate-200/90 shadow-[0_1px_4px_rgba(0,0,0,0.03)] flex items-center justify-between px-3.5 sm:px-5 shrink-0 z-[700] relative select-none">
-            {/* â”€â”€ LEFT SECTION: Interactive Brand Capsule Menu Trigger â”€â”€ */}
+            {/* ── LEFT SECTION: Interactive Brand Capsule Menu Trigger ── */}
             <div className="flex items-center h-full">
                 <button
                     id="imaps-brand-trigger"
@@ -443,7 +443,7 @@ export default function Header({
                 </button>
             </div>
 
-            {/* â”€â”€ CENTER SECTION: Interactive Spatial Command Search Bar â”€â”€ */}
+            {/* ── CENTER SECTION: Interactive Spatial Command Search Bar ── */}
             {shouldShowSearch ? (
                 <div className="hidden md:flex items-center flex-1 max-w-xs lg:max-w-md mx-4 relative" ref={searchRef}>
                     <div className="relative w-full group">
@@ -483,7 +483,7 @@ export default function Header({
                         ) : (
                             <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
                                 <span className="text-[10px] font-mono font-semibold text-slate-400 bg-white border border-slate-200/80 rounded px-1.5 py-0.5 shadow-2xs">
-                                    âŒ˜K
+                                    ⌘K
                                 </span>
                             </div>
                         )}
@@ -587,7 +587,7 @@ export default function Header({
                 <div className="flex-1" />
             )}
 
-            {/* â”€â”€ RIGHT SECTION: PST Clock, Shortcuts, Notifications & Profile â”€â”€ */}
+            {/* ── RIGHT SECTION: PST Clock, Shortcuts, Notifications & Profile ── */}
             <div className="flex items-center gap-1.5 sm:gap-2.5">
                 {/* Philippine Standard Time Display */}
                 {/* Municipal time, ticking every second (Philippine Standard Time) */}
@@ -808,7 +808,7 @@ export default function Header({
                 </div>
             </div>
 
-            {/* â”€â”€ KEYBOARD SHORTCUTS & HELP MODAL â”€â”€ */}
+            {/* ── KEYBOARD SHORTCUTS & HELP MODAL ── */}
             {shortcutsModalOpen && (
                 <div 
                     className="fixed inset-0 z-[9999] bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
@@ -821,7 +821,7 @@ export default function Header({
                         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                             <div className="flex items-center gap-2.5">
                                 <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm border border-blue-200/60">
-                                    âŒ¨
+                                    ⌨
                                 </div>
                                 <div>
                                     <h3 className="text-sm font-bold text-slate-900">Spatial Keyboard Shortcuts</h3>
@@ -842,7 +842,7 @@ export default function Header({
                             <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
                                 <span className="text-slate-800 font-semibold">Quick Command Search</span>
                                 <div className="flex gap-1 font-mono font-bold text-[11px]">
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">âŒ˜ / Ctrl</kbd>
+                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">⌘ / Ctrl</kbd>
                                     <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">K</kbd>
                                 </div>
                             </div>

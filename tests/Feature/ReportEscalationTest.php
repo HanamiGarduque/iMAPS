@@ -187,7 +187,7 @@ class ReportEscalationTest extends ReportingTestCase
         $noteOnly = $this->openEpisode();
         $this->close($noteOnly, 'Acceptance test - escalation closed without recommendation.')->assertOk();
 
-        $version = app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
+        $version = (string) app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
         $props = $this->get('/diagnostics/'.self::LEGACY, ['X-Inertia' => 'true', 'X-Inertia-Version' => $version])
             ->assertOk()->assertJsonPath('props.developmentSupport.open', null);
 
@@ -221,7 +221,7 @@ class ReportEscalationTest extends ReportingTestCase
         $id = $this->episode()->id;
         $this->close($id, 'Support channel unavailable; escalation cancelled.')->assertOk();
 
-        $version = app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
+        $version = (string) app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
         $this->get('/diagnostics/'.self::LEGACY, ['X-Inertia' => 'true', 'X-Inertia-Version' => $version])
             ->assertOk()->assertJsonPath('props.developmentSupport.contactConfigured', false);
     }
@@ -402,7 +402,7 @@ class ReportEscalationTest extends ReportingTestCase
     public function test_open_escalation_removes_only_the_terminal_actions(): void
     {
         $this->actingAsAdmin();
-        $version = app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
+        $version = (string) app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
         $this->get('/diagnostics/'.self::LEGACY, ['X-Inertia' => 'true', 'X-Inertia-Version' => $version])
             ->assertOk()->assertJsonPath('props.handlingActions', ['in_review', 'resolved', 'wont_fix']);
 
@@ -480,7 +480,7 @@ class ReportEscalationTest extends ReportingTestCase
 
     public function test_development_support_prop_is_produced_only_for_an_admin_technical_issue(): void
     {
-        $version = app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
+        $version = (string) app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
         $this->actingAsAdmin();
         $props = fn () => $this->get('/diagnostics/'.self::LEGACY, ['X-Inertia' => 'true', 'X-Inertia-Version' => $version])->assertOk();
 
@@ -506,7 +506,7 @@ class ReportEscalationTest extends ReportingTestCase
     {
         config(['imaps.contact' => ['name' => 'Dev Team', 'email' => 'dev@example.test',
             'channel' => 'Ext 12', 'instructions' => 'Call during office hours.', 'api_key' => 'must-never-appear']]);
-        $version = app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
+        $version = (string) app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
         $this->actingAsAdmin();
         $this->get('/diagnostics/'.self::LEGACY, ['X-Inertia' => 'true', 'X-Inertia-Version' => $version])
             ->assertOk()->assertJsonPath('props.developmentSupport.contactConfigured', true)

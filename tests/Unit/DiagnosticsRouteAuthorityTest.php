@@ -340,7 +340,7 @@ class DiagnosticsRouteAuthorityTest extends TestCase
         // The escalation panel must be reached only through the scoped prop, and
         // never rendered unconditionally for every viewer of every report.
         $this->assertMatchesRegularExpression(
-            '/\{developmentSupport\s*&&\s*<DevelopmentSupport/',
+            '/\{developmentSupport\s*&&\s*(<div[^>]*>\s*)?<DevelopmentSupport/',
             $show,
             'The escalation panel must render only when the prop exists. An unconditional'
             .' <DevelopmentSupport element is the defect this assertion exists to prevent.'

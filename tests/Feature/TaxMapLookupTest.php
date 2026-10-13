@@ -38,6 +38,7 @@ class TaxMapLookupTest extends TestCase
             'name' => 'Synthetic Site Inspector',
             'email' => 'synthetic.inspector@example.test',
             'role' => 'Site Inspector',
+            'is_active' => true,
         ]);
 
         $this->actingAs($inspector)
@@ -63,6 +64,7 @@ class TaxMapLookupTest extends TestCase
                 'name' => "Synthetic {$role}",
                 'email' => strtolower(str_replace(' ', '.', $role)) . '@example.test',
                 'role' => $role,
+                'is_active' => true,
             ]);
 
             $query = Mockery::mock(Builder::class);

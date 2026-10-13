@@ -648,7 +648,7 @@ class PostLoop9SmokeDiagnosticsContractTest extends TestCase
             'The original placeholder text must stay removed with it.'
         );
         $this->assertMatchesRegularExpression(
-            '/\{developmentSupport\s*&&\s*<DevelopmentSupport/',
+            '/\{developmentSupport\s*&&\s*(<div[^>]*>\s*)?<DevelopmentSupport/',
             $show,
             'Any escalation UI must be gated on the server-produced prop.'
         );

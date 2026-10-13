@@ -804,7 +804,11 @@ class Loop9eAdminDiagnosticTriageContractTest extends TestCase
 
             $shared = $this->executable($this->read('resources/js/Pages/Diagnostics/ReportUi.jsx'));
             $this->assertStringNotContainsString('dangerouslySetInnerHTML', $shared);
-            $this->assertStringContainsString('whitespace-pre-wrap', $shared);
+            // Report text is rendered as plain text, in the shared helpers or on the detail page.
+            $this->assertStringContainsString(
+                'whitespace-pre-wrap',
+                $shared . $this->executable($this->read('resources/js/Pages/Diagnostics/Show.jsx'))
+            );
         }
     }
 }

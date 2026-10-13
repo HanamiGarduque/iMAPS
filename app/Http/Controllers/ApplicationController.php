@@ -170,7 +170,10 @@ class ApplicationController extends Controller
         // rather than a placeholder. Wording is owned by InspectionSummary so
         // the "never claim field progress from a local assignment" rule is
         // enforced in one testable place.
-        $applications->getCollection()->transform(function ($application) use ($isAdminMonitoring) {
+        // One read per request, not one per row.
+        $recorderLiveFrom = $isAdminMonitoring ? InspectionDeliveryAttempt::recorderLiveFrom() : null;
+
+        $applications->getCollection()->transform(function ($application) use ($isAdminMonitoring, $recorderLiveFrom) {
             $line = null;
 
             // PHASE 2B2B: the round number is now resolved from the canonical
@@ -221,7 +224,7 @@ class ApplicationController extends Controller
             // LOOP 9D. Present for Admin only, and NULL for every other role so
             // the Planning Officer payload is byte-identical to what 9C shipped.
             $application->delivery_monitoring = $isAdminMonitoring
-                ? $this->buildDeliveryMonitoring($application)
+                ? $this->buildDeliveryMonitoring($application, $recorderLiveFrom)
                 : null;
 
             return $application;
@@ -264,7 +267,7 @@ class ApplicationController extends Controller
      * Entirely local PostgreSQL. No Supabase call, no FieldSync call, no device
      * dependency, and no attempt rows are loaded.
      */
-    private function buildDeliveryMonitoring($application): array
+    private function buildDeliveryMonitoring($application, ?\DateTimeInterface $recorderLiveFrom): array
     {
         $round = null;
 
@@ -302,7 +305,7 @@ class ApplicationController extends Controller
         $neverAttempted = (int) ($round->delivery_attempts_count ?? 0) === 0
             && InspectionDeliveryStatus::provesNeverDelivered(
                 $round->created_at,
-                InspectionDeliveryAttempt::recorderLiveFrom(),
+                $recorderLiveFrom,
             );
         $state = InspectionDeliveryStatus::state($round->delivery_status, $neverAttempted);
         $isFailed = $state === InspectionDeliveryStatus::STATE_FAILED;
@@ -1727,8 +1730,8 @@ class ApplicationController extends Controller
         $fileName = sprintf('%s_%s_%s.%s', \Illuminate\Support\Str::slug($label, '_'), preg_replace('/[^A-Za-z0-9_\-]/', '_', (string) $application->reference_number), \Illuminate\Support\Str::random(6), $format);
         $storagePath = "{$storageDir}/{$fileName}";
 
-        Storage::disk('public')->makeDirectory($storageDir);
-        Storage::disk('public')->put($storagePath, file_get_contents($path));
+        Storage::disk('local')->makeDirectory($storageDir);
+        Storage::disk('local')->put($storagePath, file_get_contents($path));
 
         $savedPermit = GeneratedPermit::create([
             'zoning_application_id' => $application->id,
@@ -1769,7 +1772,7 @@ class ApplicationController extends Controller
             ? 'application/pdf'
             : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-        $fullStoragePath = Storage::disk('public')->path($storagePath);
+        $fullStoragePath = Storage::disk('local')->path($storagePath);
 
         // Remove temporary generated file
         @unlink($path);
@@ -1796,11 +1799,11 @@ class ApplicationController extends Controller
         $application = ZoningApplication::findOrFail($id);
         $permit = GeneratedPermit::where('zoning_application_id', $application->id)->findOrFail($permitId);
 
-        if (!Storage::disk('public')->exists($permit->file_path)) {
+        if (!Storage::disk('local')->exists($permit->file_path)) {
             abort(404, 'Stored permit file not found.');
         }
 
-        $fullPath = Storage::disk('public')->path($permit->file_path);
+        $fullPath = Storage::disk('local')->path($permit->file_path);
         $mime = $permit->file_format === 'pdf'
             ? 'application/pdf'
             : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -1816,8 +1819,8 @@ class ApplicationController extends Controller
         $application = ZoningApplication::findOrFail($id);
         $permit = GeneratedPermit::where('zoning_application_id', $application->id)->findOrFail($permitId);
 
-        if (Storage::disk('public')->exists($permit->file_path)) {
-            Storage::disk('public')->delete($permit->file_path);
+        if (Storage::disk('local')->exists($permit->file_path)) {
+            Storage::disk('local')->delete($permit->file_path);
         }
 
         $permitName = $permit->permit_name;

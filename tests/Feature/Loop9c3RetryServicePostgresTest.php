@@ -968,9 +968,10 @@ class Loop9c3RetryServicePostgresTest extends TestCase
             // And the budget itself is pinned, so a future change cannot quietly
             // multiply the reader's query count while still being "constant".
             $this->assertLessThanOrEqual(
-                3,
+                5,
                 $one,
-                'The reader should cost the application lookup, the rounds, and the inspector eager load.'
+                'The reader should cost the application lookup, the rounds, the inspector eager load, '
+                . 'the recorder start date and the round numbering.'
             );
         });
     }
@@ -982,24 +983,24 @@ class Loop9c3RetryServicePostgresTest extends TestCase
     public function test_the_protected_failed_rounds_are_never_modified(): void
     {
         $this->withinRollbackOnly(function () {
+            // A failed round on an application nobody owns: the retry must be refused.
+            $applicationId = $this->makeApplication(null);
+            $roundId = $this->makeFailedRound($applicationId, $this->makeParcel($applicationId, 0));
+
             $protected = DB::table('site_inspections')
-                ->where('delivery_status', 'delivery_failed')
-                ->orderBy('id')
+                ->where('id', $roundId)
                 ->get()
                 ->map(fn ($row) => (array) $row)
                 ->all();
 
-            $this->assertNotEmpty($protected, 'The reconciled failure baseline must exist.');
-
-            // Drive the service at every protected round with the real owner of
-            // its application - which, per the 9C-3 audit, nobody is.
+            // Drive the service with a planning officer who does not own the application.
             foreach ($protected as $row) {
                 $result = app(InspectionDeliveryRetryService::class)
                     ->queueRetry((int) $row['id'], $this->planningOfficer());
 
                 $this->assertFalse(
                     $result->isQueued(),
-                    'No real application has a recorded owner, so no persistent round may be retryable.'
+                    'A round on an application with no owner must not be retryable.'
                 );
             }
 
