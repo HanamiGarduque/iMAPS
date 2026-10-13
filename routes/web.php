@@ -130,24 +130,28 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:Planning Officer');
     // ── Single-View & Standard Status Transitions ──
     Route::get('/applications/{id}/permit-schema/{type}', [ApplicationController::class, 'permitSchema'])
+        ->middleware('role:Admin,Planning Officer')
         ->whereNumber('id')
         ->name('applications.permit-schema');
 
-    Route::post('/applications/{id}/export-preview/{type}', [ApplicationController::class, 'exportPreview'])->whereNumber('id')->name('applications.export-preview');
+    Route::post('/applications/{id}/export-preview/{type}', [ApplicationController::class, 'exportPreview'])->middleware('role:Admin,Planning Officer')->whereNumber('id')->name('applications.export-preview');
     Route::post('/applications/{id}/export-document/{type}', [ApplicationController::class, 'exportDocument'])
-        ->middleware('throttle:20,1')
+        ->middleware(['role:Admin,Planning Officer', 'throttle:20,1'])
         ->whereNumber('id')
         ->name('applications.export-document');
 
     // ── Saved Permits Management ──
     Route::get('/applications/{id}/saved-permits', [ApplicationController::class, 'savedPermits'])
+        ->middleware('role:Admin,Planning Officer')
         ->whereNumber('id')
         ->name('applications.saved-permits');
     Route::get('/applications/{id}/saved-permits/{permitId}/download', [ApplicationController::class, 'downloadSavedPermit'])
+        ->middleware('role:Admin,Planning Officer')
         ->whereNumber('id')
         ->whereNumber('permitId')
         ->name('applications.saved-permits.download');
     Route::delete('/applications/{id}/saved-permits/{permitId}', [ApplicationController::class, 'deleteSavedPermit'])
+        ->middleware('role:Admin,Planning Officer')
         ->whereNumber('id')
         ->whereNumber('permitId')
         ->name('applications.saved-permits.delete');
