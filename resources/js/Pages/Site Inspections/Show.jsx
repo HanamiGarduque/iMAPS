@@ -550,6 +550,24 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
     const stepsDoneCount = steps.filter((s) => s.state === "done").length;
     const doneLine = allStepsDone ? "bg-emerald-600" : "bg-blue-600";
 
+    // A completed round's steps are history, so the tracker gives way to one
+    // line in the header: "Assigned Oct 11 → Completed Oct 11".
+    const showTracker = !roundDone;
+    const shortDay = (d) => {
+        const dt = d ? new Date(d) : null;
+        if (!dt || Number.isNaN(dt.getTime())) return null;
+        return dt.toLocaleDateString("en-PH", {
+            month: "short",
+            day: "numeric",
+            ...(dt.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
+        });
+    };
+    const assignedDay = shortDay(ins.created_at);
+    const completedDay = shortDay(ins.completed_at);
+    const roundSummary = roundDone
+        ? [assignedDay && `Assigned ${assignedDay}`, completedDay ? `Completed ${completedDay}` : "Completed"].filter(Boolean).join(" → ")
+        : null;
+
     const hasFindings = Boolean(
         ins.findings || ins.recommendation || ins.remarks || ins.inspection_result || ins.observations ||
         ins.discrepancies || ins.recommendations || ins.inspector_notes
@@ -874,12 +892,20 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                             </h1>
                                             <span className="shrink-0"><StatusBadge status={ins.status} /></span>
                                         </div>
-                                        {app.application_type && (
+                                        {(app.application_type || roundSummary) && (
                                             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[12.5px] text-slate-500">
-                                                <span className="inline-flex items-center gap-1.5 min-w-0">
-                                                    <Icon name="briefcase" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                                    <span className="truncate">{app.application_type}</span>
-                                                </span>
+                                                {app.application_type && (
+                                                    <span className="inline-flex items-center gap-1.5 min-w-0">
+                                                        <Icon name="briefcase" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                        <span className="truncate">{app.application_type}</span>
+                                                    </span>
+                                                )}
+                                                {roundSummary && (
+                                                    <span className="inline-flex items-center gap-1.5 shrink-0 tabular-nums">
+                                                        <Icon name="history" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                        {roundSummary}
+                                                    </span>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1001,11 +1027,17 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                     </div>
                                 </div>
 
-                                <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[210px_minmax(0,1fr)_340px] 2xl:grid-cols-[220px_minmax(0,1fr)_380px]">
+                                <div className={`flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] ${
+                                    showTracker
+                                        ? "xl:grid-cols-[210px_minmax(0,1fr)_340px] 2xl:grid-cols-[220px_minmax(0,1fr)_380px]"
+                                        : "xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]"
+                                }`}>
 
                                     {/* ── PROGRESS (wide screens): a vertical journey ──
                                         From recorded facts only; a step with no evidence is
-                                        shown as not reached, nothing is inferred. */}
+                                        shown as not reached, nothing is inferred. Open
+                                        rounds only; a completed one is summed up in the header. */}
+                                    {showTracker && (
                                     <aside aria-label="Inspection progress" className="hidden xl:block min-h-0 overflow-y-auto border-r border-slate-200 p-4 short:p-3">
                                         <div className="flex items-baseline justify-between gap-2 mb-4 short:mb-3">
                                             <h2 className="text-[13px] font-bold text-slate-900">Progress</h2>
@@ -1041,10 +1073,12 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                             ))}
                                         </ol>
                                     </aside>
+                                    )}
 
                                     {/* ── PRIMARY RECORD ── */}
                                     <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto p-4 short:p-3 space-y-3">
                                         {/* Progress (narrower screens): the same steps, across */}
+                                        {showTracker && (
                                         <ol className="xl:hidden grid grid-cols-4 rounded-lg border border-slate-200 px-4 py-3" aria-label="Inspection progress">
                                             {steps.map((step, idx) => (
                                                 <li key={step.key} className="min-w-0" aria-current={step.state === "current" ? "step" : undefined}>
@@ -1065,6 +1099,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 </li>
                                             ))}
                                         </ol>
+                                        )}
 
                                         {/* ── Overview Tab ── */}
                                         {activeTab === "inspection" && (
