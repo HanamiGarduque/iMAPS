@@ -41,6 +41,22 @@ class Loop6AccessBoundaryTest extends TestCase
         $this->actingAs($inspector);
     }
 
+    public function test_existing_site_inspector_session_is_denied_on_permit_routes(): void
+    {
+        $this->establishSiteInspectorSession();
+
+        foreach ([
+            ['get', '/applications/1/permit-schema/lc'],
+            ['post', '/applications/1/export-preview/lc'],
+            ['post', '/applications/1/export-document/lc'],
+            ['get', '/applications/1/saved-permits'],
+            ['get', '/applications/1/saved-permits/1/download'],
+            ['delete', '/applications/1/saved-permits/1'],
+        ] as [$method, $uri]) {
+            $this->{$method}($uri)->assertForbidden();
+        }
+    }
+
     // ─── Existing SI session denied on internal read routes (defense in depth) ───
 
     public function test_existing_site_inspector_session_is_denied_on_internal_read_routes(): void
