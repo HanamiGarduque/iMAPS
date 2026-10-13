@@ -475,16 +475,15 @@ function ShowInner({
     const [reviews, setReviews] = useState(() => {
         const init = {};
         (app.parcels || []).forEach((p) => {
-            const r = latestReview[p.id] || {};
-            const si = p.site_inspection || {};
+            // A new evaluation is a draft, not a replay of the previous round.
             init[p.id] = {
-                decision: r.decision || "",
-                decision_reason: r.decision_reason || "",
-                findings: r.findings || "",
-                inspector_id: si.inspector_id || "",
-                scheduled_date: si.scheduled_date ? String(si.scheduled_date).split("T")[0] : "",
-                deadline_date: si.deadline_date ? String(si.deadline_date).split("T")[0] : "",
-                assigned_notes: si.assigned_notes || "",
+                decision: "",
+                decision_reason: "",
+                findings: "",
+                inspector_id: "",
+                scheduled_date: "",
+                deadline_date: "",
+                assigned_notes: "",
             };
         });
         return init;
@@ -502,6 +501,8 @@ function ShowInner({
                 ? `Choose an evaluation decision for ${code}.`
                 : r.decision === "Declined" && !r.decision_reason?.trim()
                 ? `Give the reason for declining ${code}.`
+                : r.decision === REINSPECTION_DECISION && !r.decision_reason?.trim()
+                ? `Give the reason for reinspection of ${code}.`
                 : // LOOP 4: scheduling a reinspection needs the same inspector
                   // / date / deadline as a first inspection, AND explicit
                   // instructions — otherwise the officer is sent back to a lot
@@ -519,10 +520,16 @@ function ShowInner({
                 return;
             }
         }
+        const evaluationReviews = Object.fromEntries(Object.entries(reviews).map(([parcelId, r]) => [
+            parcelId,
+            ["Needs Site Inspection", REINSPECTION_DECISION].includes(r.decision)
+                ? r
+                : { decision: r.decision, decision_reason: r.decision_reason, findings: r.findings },
+        ]));
         setSaving(true);
         router.post(
             "/technical-review/submit-batch",
-            { application_id: app.id, reviews },
+            { application_id: app.id, reviews: evaluationReviews },
             {
                 preserveScroll: true,
                 onSuccess: () => showToast("Evaluation submitted."),
@@ -1159,29 +1166,37 @@ function ShowInner({
                                                                             ))}
                                                                         </div>
 
-                                                                        {review.decision === "Declined" && (
+                                                                        {["Declined", REINSPECTION_DECISION].includes(review.decision) && (
                                                                             <div>
                                                                                 <label htmlFor={`reason-${p.id}`} className="text-[12px] font-semibold text-slate-700">
-                                                                                    Reason for declining <span className="text-rose-600">*</span>
+                                                                                    {review.decision === REINSPECTION_DECISION ? "Reason for Reinspection" : "Reason for declining"} <span className="text-rose-600">*</span>
                                                                                 </label>
                                                                                 <textarea
                                                                                     id={`reason-${p.id}`}
                                                                                     rows={2}
+                                                                                    required
+                                                                                    aria-required={true}
+                                                                                    aria-describedby={review.decision === REINSPECTION_DECISION ? `reason-help-${p.id}` : undefined}
                                                                                     value={review.decision_reason}
                                                                                     onChange={(e) => setReview(p.id, "decision_reason", e.target.value)}
-                                                                                    placeholder="Regulatory basis for declining this lot…"
+                                                                                    placeholder={review.decision === REINSPECTION_DECISION ? "Why does this lot need another inspection round?" : "Regulatory basis for declining this lot…"}
                                                                                     className={`mt-1 resize-none ${FIELD}`}
                                                                                 />
+                                                                                {review.decision === REINSPECTION_DECISION && (
+                                                                                    <p id={`reason-help-${p.id}`} className="mt-1 text-[11.5px] text-slate-500">
+                                                                                        Explain why another inspection round is needed. Use the inspector instructions below to describe what to verify on site.
+                                                                                    </p>
+                                                                                )}
                                                                             </div>
                                                                         )}
 
-                                                                        {review.decision === "Needs Site Inspection" && (
+                                                                        {["Needs Site Inspection", REINSPECTION_DECISION].includes(review.decision) && (
                                                                             <div className="grid grid-cols-2 gap-2.5">
                                                                                 <div className="col-span-2">
                                                                                     <label htmlFor={`inspector-${p.id}`} className="text-[12px] font-semibold text-slate-700">
                                                                                         Inspector <span className="text-rose-600">*</span>
                                                                                     </label>
-                                                                                    <select id={`inspector-${p.id}`} value={review.inspector_id} onChange={(e) => setReview(p.id, "inspector_id", e.target.value)} className={`mt-1 ${FIELD}`}>
+                                                                                    <select id={`inspector-${p.id}`} required value={review.inspector_id} onChange={(e) => setReview(p.id, "inspector_id", e.target.value)} className={`mt-1 ${FIELD}`}>
                                                                                         <option value="">Choose inspector</option>
                                                                                         {inspectors.map((i) => (
                                                                                             <option key={i.id} value={i.id}>{i.name}</option>
@@ -1192,13 +1207,13 @@ function ShowInner({
                                                                                     <label htmlFor={`sched-${p.id}`} className="text-[12px] font-semibold text-slate-700">
                                                                                         Inspection date <span className="text-rose-600">*</span>
                                                                                     </label>
-                                                                                    <input id={`sched-${p.id}`} type="date" min={today()} value={review.scheduled_date} onChange={(e) => setReview(p.id, "scheduled_date", e.target.value)} className={`mt-1 ${FIELD}`} />
+                                                                                    <input id={`sched-${p.id}`} type="date" required min={today()} value={review.scheduled_date} onChange={(e) => setReview(p.id, "scheduled_date", e.target.value)} className={`mt-1 ${FIELD}`} />
                                                                                 </div>
                                                                                 <div>
                                                                                     <label htmlFor={`deadline-${p.id}`} className="text-[12px] font-semibold text-slate-700">
                                                                                         Deadline <span className="text-rose-600">*</span>
                                                                                     </label>
-                                                                                    <input id={`deadline-${p.id}`} type="date" min={review.scheduled_date || today()} value={review.deadline_date} onChange={(e) => setReview(p.id, "deadline_date", e.target.value)} className={`mt-1 ${FIELD}`} />
+                                                                                    <input id={`deadline-${p.id}`} type="date" required min={review.scheduled_date || today()} value={review.deadline_date} onChange={(e) => setReview(p.id, "deadline_date", e.target.value)} className={`mt-1 ${FIELD}`} />
                                                                                 </div>
                                                                                 <div className="col-span-2">
                                                                                     {/* LOOP 4: reinspection REQUIRES explicit instructions.
@@ -1209,7 +1224,7 @@ function ShowInner({
                                                                                         Instructions for the inspector
                                                                                         {review.decision === REINSPECTION_DECISION && <span className="text-rose-600">*</span>}
                                                                                     </label>
-                                                                                    <textarea id={`notes-${p.id}`} rows={2} value={review.assigned_notes} onChange={(e) => setReview(p.id, "assigned_notes", e.target.value)} placeholder="What to verify on site…" className={`mt-1 resize-none ${FIELD}`} aria-required={review.decision === REINSPECTION_DECISION} />
+                                                                                    <textarea id={`notes-${p.id}`} rows={2} value={review.assigned_notes} onChange={(e) => setReview(p.id, "assigned_notes", e.target.value)} placeholder="What to verify on site…" className={`mt-1 resize-none ${FIELD}`} required={review.decision === REINSPECTION_DECISION} aria-required={review.decision === REINSPECTION_DECISION} />
                                                                                 </div>
                                                                             </div>
                                                                         )}

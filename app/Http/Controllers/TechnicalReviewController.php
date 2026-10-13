@@ -156,17 +156,18 @@ class TechnicalReviewController extends Controller
             'id'                 => 'required|exists:zoning_applications,id',
             'decision'           => 'required|string',
             'findings'           => 'nullable|string',
-            'decision_reason'    => 'required_if:decision,Declined|nullable|string',
+            'decision_reason'    => 'required_if:decision,Declined,Requires Reinspection|nullable|string',
 
             // Validation for Site Inspection assignment
             'inspector_id'       => [
+                'exclude_unless:decision,Needs Site Inspection,Requires Reinspection',
                 'required_if:decision,Needs Site Inspection,Requires Reinspection',
                 'nullable',
                 User::activeSiteInspectorRule(),
             ],
-            'scheduled_date'     => 'required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:today',
-            'deadline_date'      => 'required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:scheduled_date',
-            'assigned_notes'     => 'nullable|string',
+            'scheduled_date'     => 'exclude_unless:decision,Needs Site Inspection,Requires Reinspection|required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:today',
+            'deadline_date'      => 'exclude_unless:decision,Needs Site Inspection,Requires Reinspection|required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:scheduled_date',
+            'assigned_notes'     => 'exclude_unless:decision,Needs Site Inspection,Requires Reinspection|required_if:decision,Requires Reinspection|nullable|string',
 
             'parcel_id'          => 'required_if:decision,Needs Site Inspection,Requires Reinspection|nullable|exists:parcels,id',
         ], [
@@ -242,7 +243,7 @@ class TechnicalReviewController extends Controller
                         $assigningOfficer,
                     );
                     $siteInspectionId = $inspection->id;
-                    PushInspectionToSupabase::dispatch($inspection);
+                    PushInspectionToSupabase::dispatch($inspection)->afterCommit();
 
                     AppNotification::notifyUser(
                         $validated['inspector_id'],
@@ -389,14 +390,15 @@ class TechnicalReviewController extends Controller
             'reviews'                            => 'required|array|min:1',
             'reviews.*.decision'                 => 'required|string|in:Approved,Needs Site Inspection,Requires Reinspection,Declined',
             'reviews.*.findings'                 => 'nullable|string',
-            'reviews.*.decision_reason'          => 'nullable|string',
+            'reviews.*.decision_reason'          => 'required_if:reviews.*.decision,Requires Reinspection|nullable|string',
             'reviews.*.inspector_id'             => [
+                'exclude_unless:reviews.*.decision,Needs Site Inspection,Requires Reinspection',
                 'nullable',
                 User::activeSiteInspectorRule(),
             ],
-            'reviews.*.scheduled_date'           => 'nullable|date|after_or_equal:today',
-            'reviews.*.deadline_date'            => 'nullable|date|after_or_equal:reviews.*.scheduled_date', 
-            'reviews.*.assigned_notes'           => 'nullable|string',
+            'reviews.*.scheduled_date'           => 'exclude_unless:reviews.*.decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:today',
+            'reviews.*.deadline_date'            => 'exclude_unless:reviews.*.decision,Needs Site Inspection,Requires Reinspection|nullable|date|after_or_equal:reviews.*.scheduled_date',
+            'reviews.*.assigned_notes'           => 'exclude_unless:reviews.*.decision,Needs Site Inspection,Requires Reinspection|nullable|string',
         ], [
             'reviews.*.inspector_id.exists' => 'The selected inspector must be an active Site Inspector with a FieldSync account.',
         ]);
@@ -482,7 +484,7 @@ class TechnicalReviewController extends Controller
                     );
 
                     $siteInspectionId = $inspection->id;
-                    PushInspectionToSupabase::dispatch($inspection);
+                    PushInspectionToSupabase::dispatch($inspection)->afterCommit();
 
                     $isReinspection = $review['decision'] === 'Requires Reinspection';
                     $parcelCode = $parcel?->parcel_code ?? "Parcel #{$parcelId}";
@@ -1017,4 +1019,4 @@ class TechnicalReviewController extends Controller
             ], 503);
         }
     }
-}   
+}
