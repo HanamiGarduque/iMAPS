@@ -107,12 +107,6 @@ class OverviewController extends Controller
             return round(1 - array_sum(array_map(fn ($a) => ($a / $total) ** 2, $areas)), 2);
         };
 
-        // Still-open applications, aged against the same 14-day SLA the registry
-        // badges use ("past SLA" after 14 days, "pending" from day 6).
-        $open = ZoningApplication::whereRaw("NOT (status ILIKE '%released%' OR status ILIKE '%approved%' OR status ILIKE '%denied%' OR status ILIKE '%reject%')");
-        $pastSla = (clone $open)->where('created_at', '<', now()->subDays(14));
-        $pastSlaByBgy = (clone $pastSla)->whereNotNull('barangay')->selectRaw("$bgy AS b, COUNT(*) AS cnt")->groupByRaw('1')->pluck('cnt', 'b');
-
         // Filing-to-release time, from the status history the public tracker reads.
         $releaseSpans = "
             SELECT reference_number, EXTRACT(EPOCH FROM r.t - s.t) / 86400 AS days
@@ -141,7 +135,6 @@ class OverviewController extends Controller
                 'statusCounts' => $statusByBgy[$k] ?? [],
                 'quarterly'    => $series($quarterlyByBgy[$k] ?? []),
                 'forecast'     => $forecastByBgy[$k] ?? [],
-                'pastSla'      => (int) ($pastSlaByBgy[$k] ?? 0),
                 'releaseTime'  => $releaseTime($releaseByBgy[$k] ?? null),
             ];
         }
@@ -154,7 +147,6 @@ class OverviewController extends Controller
                 'synced'    => SiteInspection::whereNotNull('submitted_at')->count(),
                 'failed'    => SiteInspection::where('delivery_status', 'failed')->count(),
             ] : null,
-            'pastSla'      => $pastSla->count(),
             'statusCounts' => $statusCounts,
             'quarterly'    => $quarterly,
             'topBarangays' => $topBarangays,
