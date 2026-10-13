@@ -67,7 +67,6 @@ class Loop6AccessBoundaryTest extends TestCase
             '/maps',
             '/applications',
             '/applications/1',
-            '/technical-review',
         ] as $uri) {
             $this->get($uri)->assertForbidden("{$uri} must return 403 for an existing Site Inspector session.");
         }

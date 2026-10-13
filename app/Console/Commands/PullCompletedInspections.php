@@ -106,6 +106,9 @@ class PullCompletedInspections extends Command
                             ? Carbon::parse($value)->setTimezone(config('app.timezone'))
                             : $value;
 
+                    // Notify only on the first transition, so re-pulling a finished round never re-alerts.
+                    $justCompleted = $localInspection->status !== 'completed';
+
                     $submittedAt = $localInspection->submitted_at
                         ?? $remoteTime('submitted_at', $localInspection->submitted_at);
 
@@ -140,6 +143,10 @@ class PullCompletedInspections extends Command
                     if ($localInspection->isDirty()) {
                         $localInspection->save();
                         $syncedCount++;
+
+                        if ($justCompleted) {
+                            $localInspection->notifyCompleted();
+                        }
                     }
                 } else {
                     Log::warning("Supabase sync issue: Local inspection ID {$localInspectionId} not found.");

@@ -63,45 +63,6 @@ class AdminPoPriorityClosureTest extends TestCase
 
     // ── Test 2: the Planning Officer can actually reach the queue ──
 
-    public function test_planning_officer_can_open_the_technical_review_queue(): void
-    {
-        $po = $this->makeUser('Planning Officer');
-        $this->makeApplication();
-
-        $this->actingAs($po)->get('/technical-review')->assertOk();
-    }
-
-    public function test_admin_may_read_the_queue_but_it_offers_no_decision_endpoint(): void
-    {
-        $admin = $this->makeUser('Admin');
-        $this->makeApplication();
-
-        // Route policy intentionally allows Admin read access; the queue itself
-        // is navigation only, so an Admin gains no decision authority here.
-        $this->actingAs($admin)->get('/technical-review')->assertOk();
-    }
-
-    public function test_site_inspector_cannot_open_the_queue(): void
-    {
-        $si = $this->makeUser('Site Inspector');
-        $this->makeApplication();
-
-        $this->actingAs($si)->get('/technical-review')->assertForbidden();
-    }
-
-    public function test_queue_lists_only_applications_awaiting_technical_review(): void
-    {
-        $po = $this->makeUser('Planning Officer');
-        $waiting = $this->makeApplication();
-        $released = ZoningApplication::factory()->create(['status' => 'Released']);
-
-        $response = $this->actingAs($po)->get('/technical-review')->assertOk();
-
-        $ids = collect($this->props($response)['applications']['data'])->pluck('id');
-        $this->assertTrue($ids->contains($waiting->id));
-        $this->assertFalse($ids->contains($released->id));
-    }
-
     // ── Test 6: an unknown application id is an ordinary 404 ──
 
     public function test_unknown_application_returns_404_instead_of_a_sample_dossier(): void

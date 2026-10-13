@@ -327,7 +327,6 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
             ['GET', '/maps'],
             ['GET', '/applications'],
             ['GET', '/applications/1'],
-            ['GET', '/technical-review'],
             ['GET', '/api/global-search'],
             ['GET', '/api/map/zoning-lookup'],
             ['GET', '/api/map/zoning-area-lookup'],

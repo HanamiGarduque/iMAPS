@@ -221,15 +221,15 @@ export default function Index({ reports = [], counts = {}, allowedTypes = [], fi
     const sortLabel = (sorts.find(([value]) => value === sortValue) || sorts[0])[1];
 
     return <ReportShell fill>
-        <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_24px_48px_-24px_rgba(15,23,42,0.18)] lg:min-h-0 lg:flex-1 lg:flex-row">
+        <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:min-h-0 lg:flex-1 lg:flex-row">
 
             {/* —— INBOX: report types, filters and the list, in one mail-style column —— */}
             {/* Below xl a click navigates to the report page instead, so the column takes the full width. */}
             <section aria-labelledby="report-list-title" className={`${openId ? "hidden xl:flex" : "flex"} min-w-0 flex-1 flex-col border-slate-200/70 lg:min-h-0 xl:w-[27rem] xl:flex-none xl:border-r 2xl:w-[28rem]`}>
-                <header className={`shrink-0 border-b border-slate-200/80 bg-slate-50 px-5 pt-5 ${allowedTypes.length > 1 ? "" : "pb-4"}`}>
+                <header className={`shrink-0 border-b border-slate-200 bg-slate-100/80 px-5 pt-3 ${allowedTypes.length > 1 ? "" : "pb-3"}`}>
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                            <h1 className="text-[19px] font-bold leading-tight tracking-[-0.03em] text-slate-900">Support Desk</h1>
+                            <h1 className="text-[16px] font-bold text-slate-900 tracking-tight">Support Desk</h1>
                             {/* With one inbox there is no tab bar, so its name shows here instead. */}
                             <h2 id="report-list-title" className={allowedTypes.length > 1 ? "sr-only" : "mt-0.5 text-xs font-medium text-slate-500"}>{typeLabel}</h2>
                             {/* The count is announced, not shown. */}

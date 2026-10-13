@@ -403,10 +403,6 @@ class FinalUxCorrectnessContractTest extends TestCase
 
         $this->assertStringContainsString("export const FOLDER_ORIGIN = 'folder'", $origin);
         $this->assertStringContainsString("from === FOLDER_ORIGIN", $origin);
-
-        // The Technical Review queue still emits the origin it always did.
-        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-        $this->assertStringContainsString('from=technical-review', $queue);
     }
 
     // ══════════════════════════════════════════════════════════════════════

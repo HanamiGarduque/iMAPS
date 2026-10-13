@@ -77,29 +77,6 @@ class AdminPoPriorityClosureContractTest extends TestCase
 
     // ── Test 1: the Technical Review route renders a component that exists ──
 
-    public function test_technical_review_route_is_registered_for_planning_officer(): void
-    {
-        $route = $this->matchRoute('GET', '/technical-review');
-
-        $this->assertStringContainsString('TechnicalReviewController', $route->getActionName());
-        $this->assertStringContainsString('role:Admin,Planning Officer', implode(',', $route->gatherMiddleware()));
-    }
-
-    public function test_technical_review_renders_a_component_that_exists_on_disk(): void
-    {
-        $this->assertMatchesRegularExpression(
-            "/Inertia::render\(\s*'TechnicalReview\/Index'/",
-            $this->codeOf('app/Http/Controllers/TechnicalReviewController.php'),
-            'TechnicalReviewController@index must render TechnicalReview/Index.'
-        );
-
-        // This was the P0: the render target had no file behind it.
-        $this->assertFileExists(
-            base_path('resources/js/Pages/TechnicalReview/Index.jsx'),
-            'The rendered page component must exist; this was the P0 defect.'
-        );
-    }
-
     public function test_every_inertia_page_named_by_a_routed_controller_exists_on_disk(): void
     {
         $missing = [];
@@ -137,20 +114,6 @@ class AdminPoPriorityClosureContractTest extends TestCase
     }
 
     // ── Test 3: the queue navigates to the existing Application Detail workflow ──
-
-    public function test_queue_navigates_to_application_detail_and_has_no_decision_controls(): void
-    {
-        $page = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-
-        $this->assertStringContainsString('/applications/${application.id}', $page);
-
-        // Navigation only: the queue must not post a decision.
-        foreach (['technical-review/update-status', 'technical-review/submit-batch', 'technical-review/assign-inspector'] as $endpoint) {
-            $this->assertStringNotContainsString($endpoint, $page);
-        }
-
-        $this->assertStringNotContainsString('Schedule Reinspection', $page);
-    }
 
     public function test_sidebar_does_not_advertise_technical_review_as_a_module(): void
     {
@@ -192,72 +155,6 @@ class AdminPoPriorityClosureContractTest extends TestCase
         // The invariant that survives: this page must not re-declare the sibling
         // module's nav items as a private copy.
         $this->assertStringNotContainsString('label: "Technical Review", href: "/technical-review"', $page);
-    }
-
-    public function test_queue_action_wording_is_role_aware(): void
-    {
-        $page = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-
-        $this->assertStringContainsString('const isPlanningOfficer = userRole === "Planning Officer";', $page);
-        $this->assertStringContainsString('{isPlanningOfficer ? "Review" : "View"}', $page);
-    }
-
-    /**
-     * MASTER MERGE CORRECTION - ASSERT A REAL BACK LINK, NOT A COMPONENT.
-     *
-     * The contract is that a record opened from the Technical Review queue can be
-     * navigated back out of, and that a record opened from the registry returns
-     * to the registry. That is now satisfied by master's own breadcrumb/back
-     * control, so the assertions target the working destination rather than the
-     * removed `folderOrigin` plumbing and the old ad-hoc origin flag.
-     */
-    public function test_queue_carries_its_origin_into_application_detail(): void
-    {
-        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-        $show = $this->codeOf('resources/js/Pages/Applications/Show.jsx');
-
-        // The queue opens a record with an explicit origin in the query string.
-        $this->assertStringContainsString('?from=technical-review', $queue);
-
-        // RESTORED BY THE MERGE: the record honours that origin, so an officer
-        // working the review queue can return to the queue they came from.
-        // Asserted against the RAW source because the origin check is written
-        // inline in the expression; the comment-stripped view is used elsewhere.
-        $rawShow = $this->source('resources/js/Pages/Applications/Show.jsx');
-        $this->assertStringContainsString('from=technical-review', $rawShow);
-        $this->assertStringContainsString('openedFromTechnicalReview', $rawShow);
-        $this->assertStringContainsString('href={backHref}', $show);
-
-        // Normal entry from the registry still lands on the registry.
-        $this->assertStringContainsString('"/applications"', $rawShow);
-    }
-
-    public function test_pagination_is_in_normal_flow_after_the_list(): void
-    {
-        $page = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-
-        // The list must not be a shrinkable flex child: that let the card column
-        // overflow its box and paint over the pagination footer.
-        $this->assertStringNotContainsString('px-4 flex-1 min-h-0"', $page);
-        $this->assertStringContainsString('<div className="px-4">', $page);
-
-        // Footer sits after the list, separated by a rule and real spacing, and
-        // wraps instead of squeezing on a narrow viewport.
-        $this->assertStringContainsString('border-t border-slate-200/80 flex flex-wrap items-center justify-between', $page);
-        $this->assertStringContainsString('mt-4 pt-4', $page);
-
-        // The footer itself must not be taken out of flow, and must not use a
-        // negative-offset hack to sit over the list.
-        $this->assertSame(
-            1,
-            preg_match('/<div className="px-4 mt-4 pt-4[^"]*">/', $page, $footerMatch),
-            'The pagination footer must be a normal-flow container.'
-        );
-        $footer = $footerMatch[0];
-        $this->assertStringNotContainsString('absolute', $footer);
-        $this->assertStringNotContainsString('fixed', $footer);
-        $this->assertStringNotContainsString('-translate-y', $footer);
-        $this->assertStringNotContainsString('-mt-', $footer);
     }
 
     public function test_reassignment_placement_is_documented(): void
@@ -309,191 +206,12 @@ class AdminPoPriorityClosureContractTest extends TestCase
     }
 
     /**
-     * Test 4 + 5: one shared component owns the sibling navigation, and every
-     * subsection page renders it with its own active key.
-     */
-    /**
-     * MASTER MERGE CORRECTION - SCOPED TO THE PAGES THAT STILL USE IT.
-     *
-     * The shared component is retained and must stay internally consistent: one
-     * component, three destinations, no duplicate copies. What is retired is the
-     * requirement that the Applications and Drafts pages render it, because
-     * master replaced that navigation with its own per-page toolbar. The
-     * Technical Review queue still uses it, so the "single shared component"
-     * invariant is asserted where it is still true.
-     */
-    public function test_subsections_share_one_sub_navigation_component(): void
-    {
-        $component = base_path('resources/js/Components/ApplicationsSubNav.jsx');
-        $this->assertFileExists($component, 'A single shared sub-navigation component must exist.');
-
-        $shared = $this->code((string) file_get_contents($component));
-        $this->assertStringContainsString('{ key: "all", label: "All Records", href: "/applications" }', $shared);
-        $this->assertStringContainsString('{ key: "technical-review", label: "Technical Review", href: "/technical-review" }', $shared);
-        $this->assertStringContainsString('{ key: "drafts", label: "Drafts", href: "/applications/drafts" }', $shared);
-        $this->assertStringContainsString('aria-current={isActive ? "page" : undefined}', $shared);
-
-        // The queue still consumes the shared component rather than owning a copy.
-        $code = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-        $this->assertStringContainsString('import ApplicationsSubNav from "@/Components/ApplicationsSubNav"', $code);
-        $this->assertStringContainsString('<ApplicationsSubNav active="technical-review"', $code);
-
-        // And no page re-declares the same nav items privately.
-        foreach (['resources/js/Pages/Applications/Index.jsx', 'resources/js/Pages/Drafts/Index.jsx'] as $file) {
-            $this->assertStringNotContainsString(
-                'label: "Technical Review", href: "/technical-review"',
-                $this->codeOf($file),
-                "{$file} must not carry a private copy of the shared navigation."
-            );
-        }
-    }
-
-    /**
-     * Test 6: the sibling entries are Planning Officer workflow. A read-only
-     * role must receive nothing rather than a partial or misleading set.
-     */
-    public function test_sub_navigation_is_planning_officer_only(): void
-    {
-        $shared = $this->code((string) file_get_contents(base_path('resources/js/Components/ApplicationsSubNav.jsx')));
-
-        $this->assertStringContainsString('if (userRole !== "Planning Officer") {', $shared);
-        $this->assertStringContainsString('return null;', $shared);
-
-        foreach ([
-            'resources/js/Pages/Applications/Index.jsx',
-            'resources/js/Pages/TechnicalReview/Index.jsx',
-            'resources/js/Pages/Drafts/Index.jsx',
-        ] as $file) {
-            $this->assertStringContainsString(
-                'userRole={userRole}',
-                $this->codeOf($file),
-                "{$file} must pass the role through to the shared sub-navigation."
-            );
-        }
-    }
-
-    /**
-     * Test 7 + 9: no duplicate navigation. The standalone Drafts back-to-registry
-     * arrow and the Technical Review "All Applications" button are both
-     * superseded by the persistent sub-navigation.
-     */
-    public function test_duplicate_navigation_was_removed(): void
-    {
-        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-        $this->assertStringNotContainsString(
-            '<span>All Applications</span>',
-            $queue,
-            'The Technical Review All Applications button duplicates the sub-navigation.'
-        );
-    }
-
-    /**
-     * Test 8: the Technical Review -> Application Detail origin context must
-     * survive this pass.
-     */
-    public function test_review_to_detail_origin_context_is_preserved(): void
-    {
-        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-        $show = $this->codeOf('resources/js/Pages/Applications/Show.jsx');
-
-        $this->assertStringContainsString('?from=technical-review', $queue);
-
-        // The origin drives BOTH the destination and the label, so the control
-        // never claims to return somewhere it does not actually return to.
-        $rawShow = $this->source('resources/js/Pages/Applications/Show.jsx');
-        $this->assertStringContainsString('backHref', $rawShow);
-        $this->assertStringContainsString('backLabel', $rawShow);
-        $this->assertStringContainsString('aria-label={backLabel}', $show);
-
-        // The back control must name the module actually being returned to.
-        $this->assertStringContainsString('"Back to technical review"', $rawShow);
-        $this->assertStringContainsString('"Back to registry"', $rawShow);
-    }
-
-    /**
-     * Additional pagination requirement: the review queue pages 10 rows per
-     * page, server-side, and the page-size contract is a named constant.
-     */
-    public function test_review_queue_uses_ten_rows_per_page_server_side(): void
-    {
-        $controller = $this->codeOf('app/Http/Controllers/TechnicalReviewController.php');
-
-        $this->assertStringContainsString('public const QUEUE_PAGE_SIZE = 10;', $controller);
-        $this->assertStringContainsString('->paginate(self::QUEUE_PAGE_SIZE)', $controller);
-        $this->assertStringContainsString('->withQueryString()', $controller, 'Search and filter parameters must survive page changes.');
-
-        // The previous 25-row page size must be gone from this queue.
-        $this->assertStringNotContainsString('paginate(25)', $controller);
-    }
-
-    public function test_review_queue_pagination_reads_server_ranges_not_a_client_slice(): void
-    {
-        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-
-        // Ranges come from the server paginator, so the page size is server-owned.
-        $this->assertStringContainsString('Showing {applications.from}–{applications.to} of {applications.total}', $queue);
-        $this->assertStringNotContainsString('.slice(', $queue, 'The queue must not slice a larger client-side list.');
-
-        // Page links come from the server paginator and are followed as-is, so
-        // search and filter parameters persist.
-        $this->assertStringContainsString('applications.links?.map(', $queue);
-        $this->assertStringContainsString('router.get(link.url', $queue);
-    }
-
-    /**
      * The applications list keeps its own page size; this pass must not have
      * changed unrelated pagination.
      */
     public function test_unrelated_pagination_is_untouched(): void
     {
         $this->assertStringContainsString('paginate(25)', $this->codeOf('app/Http/Controllers/ApplicationController.php'));
-    }
-
-    /**
-     * The queue search must not call a builder method that does not exist.
-     *
-     * `orWhereILike()` is not available on the Eloquent builder in this Laravel
-     * version, so the previous implementation threw a 500 and the queue search
-     * never worked. Both arms now use the explicit operator form.
-     */
-    public function test_queue_search_uses_only_available_builder_methods(): void
-    {
-        $controller = $this->codeOf('app/Http/Controllers/TechnicalReviewController.php');
-
-        $this->assertStringNotContainsString('orWhereILike(', $controller);
-        $this->assertStringContainsString(
-            "'zoning_applications.applicant_name', 'ILIKE', \$term",
-            $controller
-        );
-        $this->assertStringContainsString(
-            "'zoning_applications.reference_number', 'ILIKE', \$term",
-            $controller
-        );
-    }
-
-    /**
-     * The debounced search effect must not re-query on mount, because doing so
-     * dropped any ?page= the officer arrived with and silently reset pagination.
-     */
-    public function test_queue_search_effect_does_not_reset_the_page_on_mount(): void
-    {
-        $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
-
-        $this->assertStringContainsString('const isFirstSearchRun = useRef(true);', $queue);
-        $this->assertStringContainsString('if (isFirstSearchRun.current) {', $queue);
-        $this->assertStringContainsString('isFirstSearchRun.current = false;', $queue);
-    }
-
-    /**
-     * An out-of-range page must be resolved server-side rather than rendering an
-     * empty queue.
-     */
-    public function test_out_of_range_queue_page_resolves_to_the_last_page(): void
-    {
-        $controller = $this->codeOf('app/Http/Controllers/TechnicalReviewController.php');
-
-        $this->assertStringContainsString('$applications->currentPage() > $applications->lastPage()', $controller);
-        $this->assertStringContainsString("redirect()->route('technicalreview.index', \$query)", $controller);
     }
 
     // ── Application vs Site Inspection record identity ──

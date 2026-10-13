@@ -811,13 +811,15 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
                         <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-900/20 backdrop-blur-xs z-[750] transition-opacity duration-200" />
                     )}
 
-                    <main className="flex-1 w-full h-full flex flex-col overflow-hidden bg-white">
+                    <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
+                        <div className="p-4 sm:p-6 flex-1 flex flex-col min-h-0 max-w-[1580px] mx-auto w-full">
+                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex-1 min-h-0 flex flex-col">
                         {/* ── HEADER STRIP ── */}
                         {/* Page title, matching the other modules' headers */}
-                        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-200 bg-white shrink-0">
-                            <div className="min-w-0">
-                                <h1 className="text-xl font-bold text-slate-900 tracking-tight leading-tight">Export Reports</h1>
-                                <p className="hidden sm:block mt-0.5 text-xs text-slate-500 truncate">Set up a report, check the preview, then download.</p>
+                        <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200 bg-slate-100/80 shrink-0">
+                            <div className="flex items-baseline gap-2.5 min-w-0">
+                                <h1 className="text-[16px] font-bold text-slate-900 tracking-tight">Export Reports</h1>
+                                <p className="hidden sm:block text-[12px] text-slate-500 truncate">Set up a report, check the preview, then download.</p>
                             </div>
                             {/* "Help ?" in the corner, as in a print dialog */}
                             <button
@@ -1086,6 +1088,8 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
                             <Link href="/maps" className="inline-flex items-center justify-center min-w-[96px] h-8 px-4 rounded-md border border-slate-300 bg-white text-[12.5px] text-slate-700 hover:bg-slate-50 shrink-0">
                                 Cancel
                             </Link>
+                        </div>
+                        </div>
                         </div>
                     </main>
                 </div>

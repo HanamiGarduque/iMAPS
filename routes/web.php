@@ -5,6 +5,7 @@ use App\Http\Controllers\TechnicalReviewController;
 use App\Http\Controllers\MapsController;
 use App\Http\Controllers\OverviewController;
 use App\Http\Controllers\MapController; 
+use App\Http\Controllers\AuditTrailController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SearchController;
@@ -69,11 +70,6 @@ Route::middleware('auth')->group(function () {
     // Applications Docket List
     Route::get('/applications', [ApplicationController::class, 'index'])
         ->name('applications.index')
-        ->middleware('role:Admin,Planning Officer');
-
-    // Technical Reviews List
-    Route::get('/technical-review', [TechnicalReviewController::class, 'index'])
-        ->name('technicalreview.index')
         ->middleware('role:Admin,Planning Officer');
 
     // ── Internal tax-map lookup (Loop 6: moved from routes/api.php so the
@@ -304,6 +300,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     
     // User Management
     Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
+    Route::get('/audit-trail', [AuditTrailController::class, 'index'])->name('audit-trail.index');
     Route::get('/users/{id}/logs', [UserManagementController::class, 'logs'])->whereNumber('id')->name('users.logs');
     Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->middleware('throttle:30,1')->name('users.sensitive');
     Route::post('/users/reset-password', [UserManagementController::class, 'resetPassword'])->middleware('throttle:10,1')->name('users.reset-password');

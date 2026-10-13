@@ -47,6 +47,30 @@ class SiteInspection extends Model
         'gps_confirmed_at',
     ];
 
+    /** Tell every active Admin, and the Planning Officer who assigned the round, that it is done. */
+    public function notifyCompleted(): void
+    {
+        $reference = ZoningApplication::whereKey($this->zoning_application_id)->value('reference_number');
+        $inspector = User::whereKey($this->inspector_id)->value('name') ?? 'The site inspector';
+
+        $recipients = User::where('role', 'Admin')->where('is_active', true)->pluck('id')
+            ->when($this->assigned_by_imaps_user_id, fn ($ids, $assigner) => $ids->push(
+                User::whereKey($assigner)->where('is_active', true)->value('id')
+            ))
+            ->filter()
+            ->unique();
+
+        foreach ($recipients as $userId) {
+            AppNotification::notifyUser(
+                $userId,
+                'Site Inspection Completed',
+                "{$inspector} completed the inspection for Application " . ($reference ?? "#{$this->zoning_application_id}") . '.',
+                'inspection_completed',
+                "/site-inspections/{$this->id}"
+            );
+        }
+    }
+
     /**
      * Rounds the viewer may open on the Inspections pages: an Admin sees every
      * round, a Planning Officer only the rounds they assigned (recorded in
