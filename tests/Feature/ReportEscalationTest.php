@@ -519,4 +519,96 @@ class ReportEscalationTest extends ReportingTestCase
             ->assertOk()->assertJsonPath('props.developmentSupport.escalatable', false)
             ->assertJsonPath('props.developmentSupport.closed', []);
     }
+
+    public function test_email_draft_uses_only_allowlisted_context_and_the_configured_recipient(): void
+    {
+        config(['imaps.contact' => ['email' => 'support+desk@example.test']]);
+        foreach (['title', 'summary', 'module', 'app_version', 'os_version', 'repro_steps', 'response_message', 'technical_description'] as $key) {
+            $this->remote['diagnostic_reports'][1][$key] = 'PRIVATE_APPLICANT Bearer fake-private-token';
+        }
+        $this->actingAsAdmin();
+        $episode = $this->openEpisode();
+        $this->recommend($episode, 'PRIVATE_INTERNAL_NOTE')->assertOk();
+        $version = (string) app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
+        foreach (['/diagnostics/'.self::LEGACY, '/diagnostics?report='.self::LEGACY] as $url) {
+            $response = $this->get($url, ['X-Inertia' => 'true', 'X-Inertia-Version' => $version])->assertOk();
+            $prefix = str_contains($url, '?') ? 'props.selected.developmentSupport' : 'props.developmentSupport';
+            $href = $response->json($prefix.'.composeEmailHref');
+            $this->assertIsString($href);
+            [$recipient, $query] = explode('?', $href, 2);
+            $this->assertSame('mailto:support+desk@example.test', rawurldecode($recipient));
+            parse_str($query, $draft);
+            $this->assertSame(['subject', 'body'], array_keys($draft));
+            $this->assertStringContainsString('DR-2026-0001', $draft['subject']);
+            $this->assertStringContainsString('Technical Issue', $draft['body']);
+            $this->assertStringContainsString('Submitted', $draft['body']);
+            foreach (['PRIVATE', 'fake-private-token', self::LEGACY, self::APP, 'Test Applicant', 'inspector', 'api_key'] as $excluded) {
+                $this->assertStringNotContainsString($excluded, rawurldecode($href));
+            }
+        }
+        $this->assertSame([], $this->patches);
+        $this->assertNotContains('activity_log', array_column($this->calls, 0));
+    }
+
+    public function test_email_draft_drops_malformed_reference_and_refuses_recipient_header_injection(): void
+    {
+        $this->actingAsAdmin();
+        $version = (string) app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
+        $page = fn () => $this->get('/diagnostics/'.self::LEGACY, ['X-Inertia' => 'true', 'X-Inertia-Version' => $version])->assertOk();
+        config(['imaps.contact.email' => 'dev@example.test']);
+        $this->remote['diagnostic_reports'][1]['reference_code'] = "DR-2026-0001\r\nBcc: PRIVATE@example.test";
+        $href = rawurldecode($page()->json('props.developmentSupport.composeEmailHref'));
+        $this->assertStringContainsString('Unreferenced report', $href);
+        $this->assertStringNotContainsString('Bcc', $href);
+        $this->assertStringNotContainsString('PRIVATE', $href);
+        foreach ([null, '', 'not-an-email', "dev@example.test\r\nBcc: other@example.test", 'dev@example.test?bcc=other@example.test'] as $email) {
+            config(['imaps.contact.email' => $email]);
+            $page()->assertJsonPath('props.developmentSupport.composeEmailHref', null);
+        }
+    }
+
+    public function test_support_email_default_and_environment_override_are_explicit(): void
+    {
+        $key = 'IMAPS_SUPPORT_CONTACT_EMAIL';
+        $original = [getenv($key), $_ENV[$key] ?? null, $_SERVER[$key] ?? null];
+        putenv($key);
+        unset($_ENV[$key], $_SERVER[$key]);
+        try {
+            $config = require base_path('config/imaps.php');
+            $this->assertSame('ralphlaurexo01@gmail.com', $config['contact']['email']);
+            putenv($key.'=override@example.test');
+            $_ENV[$key] = $_SERVER[$key] = 'override@example.test';
+            $config = require base_path('config/imaps.php');
+            $this->assertSame('override@example.test', $config['contact']['email']);
+        } finally {
+            putenv($original[0] === false ? $key : $key.'='.$original[0]);
+            foreach (['_ENV' => $original[1], '_SERVER' => $original[2]] as $global => $value) {
+                if ($value === null) unset($GLOBALS[$global][$key]);
+                else $GLOBALS[$global][$key] = $value;
+            }
+        }
+    }
+
+    #[DataProvider('terminalStatuses')]
+    public function test_terminal_admin_detail_retains_closed_history_without_any_open_episode_controls(string $terminal): void
+    {
+        $this->actingAsAdmin();
+        $id = $this->openEpisode();
+        $this->recommend($id, 'Recorded advice.')->assertOk();
+        $this->close($id, 'Recorded closure.')->assertOk();
+        $this->remote['diagnostic_reports'][1]['status'] = $terminal;
+        $version = (string) app(\App\Http\Middleware\HandleInertiaRequests::class)->version(\Illuminate\Http\Request::create('/diagnostics/'.self::LEGACY));
+        foreach (['/diagnostics/'.self::LEGACY, '/diagnostics?report='.self::LEGACY] as $url) {
+            $response = $this->get($url, ['X-Inertia' => 'true', 'X-Inertia-Version' => $version])->assertOk();
+            $prefix = str_contains($url, '?') ? 'props.selected' : 'props';
+            $response->assertJsonPath($prefix.'.handlingActions', [])
+                ->assertJsonPath($prefix.'.developmentSupport.escalatable', false)
+                ->assertJsonPath($prefix.'.developmentSupport.open', null)
+                ->assertJsonCount(1, $prefix.'.developmentSupport.closed')
+                ->assertJsonPath($prefix.'.developmentSupport.closed.0.recommendation', 'Recorded advice.')
+                ->assertJsonPath($prefix.'.developmentSupport.closed.0.closure_note', 'Recorded closure.');
+        }
+        $this->assertSame([], $this->patches);
+        $this->assertSame('closed', $this->episode()->fresh()->status);
+    }
 }

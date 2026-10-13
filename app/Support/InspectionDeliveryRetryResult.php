@@ -63,6 +63,9 @@ final class InspectionDeliveryRetryResult
     /** Rule E failed: the assigned inspector is not locally eligible. */
     public const INSPECTOR_INVALID = 'inspector_invalid';
 
+    /** Today is the scheduled inspection date or later. */
+    public const TOO_LATE = 'too_late_to_resend';
+
     /**
      * Closed, authored refusal prose. Anything unmapped degrades to a neutral
      * sentence that reveals nothing, so a future outcome can never leak a
@@ -79,6 +82,7 @@ final class InspectionDeliveryRetryResult
         self::SUPERSEDED_ROUND => 'A newer inspection round has superseded this one, so it is no longer the current round for that parcel.',
         self::PARCEL_UNKNOWN => 'This inspection round is not linked to a parcel, so its position in the round sequence cannot be confirmed.',
         self::INSPECTOR_INVALID => 'The Site Inspector assigned to this round is not currently able to receive FieldSync work, so a retry was not queued.',
+        self::TOO_LATE => 'Resending is only possible until the day before the scheduled inspection date.',
     ];
 
     private function __construct(

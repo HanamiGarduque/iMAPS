@@ -11,10 +11,9 @@
 | they cannot, an ADMIN escalates to the iMAPS development/support team, so
 | the diagnostic detail page needs somewhere to show that team.
 |
-| DELIBERATELY EMPTY BY DEFAULT. No contact details are invented and none are
-| hardcoded. Until an operator sets the environment variables below, the page
-| renders a configuration-backed placeholder that says the contact has not been
-| configured yet, rather than displaying a fabricated or guessed address.
+| The approved developer email is the default. IMAPS_SUPPORT_CONTACT_EMAIL
+| overrides it; an empty override disables email composition. Other contact
+| fields remain empty until configured.
 |
 | ONLY SAFE CONTACT FIELDS ARE EXPOSED. There is deliberately no key, token,
 | password, service-role value or API credential here, and the values below
@@ -38,14 +37,14 @@ return [
     |----------------------------------------------------------------------
     |
     | Shown to an ADMIN only, on diagnostic report detail, as the escalation
-    | path when a Planning Officer cannot resolve the issue. Each value is
-    | null until configured, and the page degrades to a clear placeholder.
+| path for a Technical Issue. The mailto action only opens a draft; it does
+| not send a message or attach any files.
     |
     */
 
     'contact' => [
         'name' => env('IMAPS_SUPPORT_CONTACT_NAME'),
-        'email' => env('IMAPS_SUPPORT_CONTACT_EMAIL'),
+        'email' => env('IMAPS_SUPPORT_CONTACT_EMAIL', 'ralphlaurexo01@gmail.com'),
         'channel' => env('IMAPS_SUPPORT_CONTACT_CHANNEL'),
         'instructions' => env('IMAPS_SUPPORT_INSTRUCTIONS'),
     ],

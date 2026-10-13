@@ -24,7 +24,7 @@ import { control, stamp } from "./ReportUi";
  * Collapsed by default (a native <details>) so it costs one row of the sidebar;
  * it starts expanded only while an escalation is open and needs attention.
  */
-export default function DevelopmentSupport({ report, panel }) {
+export default function DevelopmentSupport({ report, panel, reload }) {
     const [busy, setBusy] = useState(false);
     const [result, setResult] = useState(null);
     const [errors, setErrors] = useState({});
@@ -41,7 +41,8 @@ export default function DevelopmentSupport({ report, panel }) {
                 setResult(reply.data);
                 // The episode rows are the authority. Re-read them instead of
                 // guessing the new state locally.
-                router.reload({ only: ["report", "context", "canNotify", "handlingActions", "developmentSupport"], preserveScroll: true });
+                router.flushAll();
+                router.reload({ only: reload, preserveScroll: true });
             } else {
                 setResult({ outcome: "error", message: "The request could not be completed. Refresh to check the current state." });
             }
@@ -51,7 +52,7 @@ export default function DevelopmentSupport({ report, panel }) {
     };
 
     const base = `/diagnostics/${report.id}/escalations`;
-    const open = panel.open;
+    const open = panel.escalatable ? panel.open : null;
     const alert = (message, tone = "amber") => <p role="alert" className={`rounded-lg px-3 py-2 text-xs leading-relaxed ring-1 ring-inset ${tone === "red" ? "bg-red-50 text-red-800 ring-red-200" : "bg-amber-50 text-amber-800 ring-amber-200"}`}>{message}</p>;
     const input = "mt-1.5 w-full rounded-lg border-slate-300 text-[13px] focus:border-blue-500 focus:ring-blue-500 disabled:opacity-60";
     const label = "block text-xs font-semibold text-slate-700";
@@ -65,13 +66,13 @@ export default function DevelopmentSupport({ report, panel }) {
     return <details open={Boolean(open)} className="group rounded-xl bg-white ring-1 ring-slate-200/70 [&[open]>summary]:border-b [&[open]>summary]:border-slate-100">
         <summary className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-xl px-3.5 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 [&::-webkit-details-marker]:hidden">
             <span aria-hidden="true" className="row-span-2 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-100"><svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" /></svg></span>
-            <h2 id="development-support-heading" className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-slate-900">{open ? "With the dev team" : "Need the dev team?"}</h2>
+            <h2 id="development-support-heading" className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-slate-900">{open ? "Developer escalation open" : "Developer escalation"}</h2>
             <svg aria-hidden="true" className="row-span-2 h-4 w-4 shrink-0 text-slate-400 transition group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
             <span className="col-start-2 flex">{chip}</span>
         </summary>
 
         <section aria-labelledby="development-support-heading" className="space-y-3 px-3.5 py-3">
-            <p className="text-[13px] leading-relaxed text-slate-700">Send this to the developers. <span className="text-slate-500">Inspectors won’t see it.</span></p>
+            <p className="text-[13px] leading-relaxed text-slate-700">Track developer support internally. <span className="text-slate-500">Inspectors won’t see it. Email is composed separately.</span></p>
 
             {result && alert(result.message, result.outcome === "opened" || result.outcome === "closed" || result.outcome === "recommended" ? "amber" : "red")}
             {panel.contactConfigured && <dl className="space-y-1.5 rounded-lg bg-slate-50 px-3 py-2.5 text-xs">
@@ -79,14 +80,19 @@ export default function DevelopmentSupport({ report, panel }) {
                     .filter(([, value]) => value).map(([label, value]) => <div key={label} className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2"><dt className="text-slate-500">{label}</dt><dd className="whitespace-pre-wrap break-words font-medium text-slate-800">{value}</dd></div>)}
             </dl>}
 
+            {panel.composeEmailHref && <div>
+                <a href={panel.composeEmailHref} aria-describedby="developer-email-help" className={`${control} w-full`}>Compose Email</a>
+                <p id="developer-email-help" className={`${hint} mt-1.5`}>Opens a draft in your email app; it does not send an email. Review before sending and attach sanitized files manually.</p>
+            </div>}
+
             {!panel.escalatable && <p className="text-xs text-slate-500">This report is final.</p>}
 
             {panel.escalatable && !open && <div className="space-y-2.5">
                 <p className="flex gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
                     <svg aria-hidden="true" className="mt-px h-4 w-4 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" /></svg>
-                    <span>Resolve and Won’t fix are locked until this is closed.</span></p>
+                    <span>An open escalation blocks Resolve and Won’t fix until it is closed.</span></p>
                 <button type="button" className={`${control} w-full`} disabled={busy} onClick={() => post(base, {})}>
-                    {busy ? "Sending…" : "Send to dev team"}</button>
+                    {busy ? "Opening…" : "Open Developer Escalation"}</button>
             </div>}
 
             {!panel.contactConfigured && <p role="alert" className="flex gap-1.5 text-[11px] leading-relaxed text-amber-800">

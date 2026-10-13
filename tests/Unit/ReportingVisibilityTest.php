@@ -109,4 +109,35 @@ class ReportingVisibilityTest extends ReportingTestCase
         $this->assertNotEmpty($result['message']);
         $this->assertSame([], $result['reports']);
     }
+
+    public function test_context_lookup_failure_is_not_a_successful_zero_count_or_authorization(): void
+    {
+        foreach (['field_jobs', 'supabase_zoning_applications'] as $table) {
+            $this->remoteTableFails = [$table];
+            $visibility = app(ReportingVisibility::class);
+            $result = $visibility->scopeVisibleReports($this->po);
+            $this->assertFalse($result['ok'], $table);
+            $this->assertNotEmpty($result['message']);
+            $this->assertSame([], $result['reports']);
+            $this->assertSame(['application_support' => 0], $result['counts']);
+            $summary = $visibility->applicationSummary($this->po, 1);
+            $this->assertFalse($summary['ok']);
+            $this->assertNull($summary['url']);
+            $this->assertNull($summary['latest']);
+        }
+    }
+
+    public function test_true_empty_and_unverifiable_identity_remain_successful_but_grant_no_visibility(): void
+    {
+        $this->remote['field_jobs'] = [];
+        $result = app(ReportingVisibility::class)->scopeVisibleReports($this->po);
+        $this->assertTrue($result['ok']);
+        $this->assertNull($result['message']);
+        $this->assertSame([], $result['reports']);
+        $this->remote['diagnostic_reports'] = [];
+        $result = app(ReportingVisibility::class)->scopeVisibleReports($this->po);
+        $this->assertTrue($result['ok']);
+        $this->assertNull($result['message']);
+        $this->assertSame([], $result['reports']);
+    }
 }

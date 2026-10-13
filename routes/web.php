@@ -125,14 +125,15 @@ Route::middleware('auth')->group(function () {
         ->name('applications.applicantLookup')
         ->middleware('role:Planning Officer');
     // ── Single-View & Standard Status Transitions ──
+    // Generating a permit (schema, preview, document) is Planning Officer only; Admin can still read saved permits below.
     Route::get('/applications/{id}/permit-schema/{type}', [ApplicationController::class, 'permitSchema'])
-        ->middleware('role:Admin,Planning Officer')
+        ->middleware('role:Planning Officer')
         ->whereNumber('id')
         ->name('applications.permit-schema');
 
-    Route::post('/applications/{id}/export-preview/{type}', [ApplicationController::class, 'exportPreview'])->middleware('role:Admin,Planning Officer')->whereNumber('id')->name('applications.export-preview');
+    Route::post('/applications/{id}/export-preview/{type}', [ApplicationController::class, 'exportPreview'])->middleware('role:Planning Officer')->whereNumber('id')->name('applications.export-preview');
     Route::post('/applications/{id}/export-document/{type}', [ApplicationController::class, 'exportDocument'])
-        ->middleware(['role:Admin,Planning Officer', 'throttle:20,1'])
+        ->middleware(['role:Planning Officer', 'throttle:20,1'])
         ->whereNumber('id')
         ->name('applications.export-document');
 

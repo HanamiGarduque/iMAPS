@@ -15,9 +15,9 @@ class SupportReportResolution
 {
     public function __construct(private SupabaseService $supabase) {}
 
-    public static function unavailable(): array
+    public static function unavailable(bool $lookupFailed = false): array
     {
-        return ['resolved' => false, 'message' => 'Application context unavailable',
+        return ['resolved' => false, 'lookup_failed' => $lookupFailed, 'message' => 'Application context unavailable',
             'application' => null, 'owner' => null, 'origin' => null];
     }
 
@@ -117,7 +117,11 @@ class SupportReportResolution
                     'origin' => $origin];
             }
         } catch (Throwable) {
-            // Remote failures and malformed identity never authorize a local lookup fallback.
+            // A failed lookup is not proof of a missing record or an empty PO inbox.
+            // Discard any partial contexts; no failure may grant ownership authority.
+            foreach ($out as $id => $context) {
+                $out[$id] = self::unavailable(true);
+            }
         }
         return $out;
     }

@@ -35,13 +35,11 @@ use Illuminate\Validation\ValidationException;
  *   2. one strict `audit_trail` row
  *   3. one `jobs` row, from the database queue INSERT
  *
- * The queue connection is `env('DB_QUEUE_CONNECTION')`, which is UNSET, so the
- * database queue resolves to the same default `pgsql` connection object the
- * transaction runs on. `DatabaseQueue::pushToDatabase()` is a plain
- * `insertGetId` on that connection, so the `jobs` row is part of the same
- * transaction and a rollback removes it. That property has been proved against
- * the real queue with a rollback-only probe: the transaction saw the row, a
- * separate connection saw nothing, and ROLLBACK returned the count to baseline.
+ * The shared atomicQueue() guard requires the native database connector/queue
+ * on the exact active transaction connection. Explicit beforeCommit() makes
+ * the queue INSERT transactional even when its after_commit default is true.
+ * DatabaseQueue::pushToDatabase() uses insertGetId on that connection, so a
+ * rollback removes the intent together with the pending state and audit row.
  *
  * Because all three commit together, there is NO compensation logic anywhere in
  * this class. There is no "revert pending on dispatch failure" path, and there
@@ -226,6 +224,7 @@ final class InspectionDeliveryRetryService
                     'inspector_eligible' => $this->inspectorIsEligible(
                         $inspection->inspector_id === null ? null : (int) $inspection->inspector_id,
                     ),
+                    'scheduled_date' => $inspection->scheduled_date,
                 ],
                 $this->latestRoundIdsByParcelFor($application),
             );
@@ -237,6 +236,8 @@ final class InspectionDeliveryRetryService
                     (int) $application->getKey(),
                 );
             }
+
+            $queue = PushInspectionToSupabase::atomicQueue();
 
             // ---------------------------------------------------------------
             // 1. The pending transition. ONE column, and nothing else.
@@ -280,7 +281,7 @@ final class InspectionDeliveryRetryService
             // THIS environment's row, converges on it, and can never overwrite
             // another environment's job that happens to share the local id.
             // ---------------------------------------------------------------
-            PushInspectionToSupabase::dispatch($inspection, self::DELIVERY_SOURCE);
+            $queue->push((new PushInspectionToSupabase($inspection, self::DELIVERY_SOURCE))->beforeCommit());
 
             // COMMIT happens here, atomically with all three writes. An
             // infrastructure failure - queue insert, serialization, lost
@@ -336,6 +337,8 @@ final class InspectionDeliveryRetryService
                 => InspectionDeliveryRetryResult::SUPERSEDED_ROUND,
             in_array(InspectionDeliveryRetryEligibility::BLOCKER_INSPECTOR_INVALID, $blockers, true)
                 => InspectionDeliveryRetryResult::INSPECTOR_INVALID,
+            in_array(InspectionDeliveryRetryEligibility::BLOCKER_TOO_LATE, $blockers, true)
+                => InspectionDeliveryRetryResult::TOO_LATE,
             default => InspectionDeliveryRetryResult::WRONG_DELIVERY_STATE,
         };
     }

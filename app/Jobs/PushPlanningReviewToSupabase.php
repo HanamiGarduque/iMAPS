@@ -43,6 +43,10 @@ class PushPlanningReviewToSupabase implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    // A reviewed mirror can arrive later; never rely on worker/FIFO ordering.
+    public int $tries = 5;
+    public array $backoff = [5, 30, 120, 300];
+
     /**
      * Planning Review decisions that are transports to FieldSync.
      *
@@ -81,13 +85,13 @@ class PushPlanningReviewToSupabase implements ShouldQueue
         $fieldJobId = $supabase->findFieldJobIdByLocalInspectionId($this->reviewedSiteInspectionId);
 
         if ($fieldJobId === null) {
-            Log::warning('Loop 8 planning review transport skipped: no field job for reviewed round', [
+            Log::warning('Loop 8 planning review transport awaiting reviewed field job', [
                 'technical_review_id'         => $this->technicalReviewId,
                 'reviewed_site_inspection_id' => $this->reviewedSiteInspectionId,
                 'decision'                    => $this->decision,
             ]);
 
-            return;
+            throw new \RuntimeException('Planning review target is not yet available.');
         }
 
         $ok = $supabase->upsertFieldJobReview([
@@ -107,6 +111,7 @@ class PushPlanningReviewToSupabase implements ShouldQueue
                 'reviewed_site_inspection_id' => $this->reviewedSiteInspectionId,
                 'field_job_id'                => $fieldJobId,
             ]);
+            throw new \RuntimeException('Planning review delivery failed.');
         }
     }
 }

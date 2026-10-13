@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Support\SupportReportResolution;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\ReportingTestCase;
 
 class SupportReportResolutionTest extends ReportingTestCase
@@ -65,5 +66,32 @@ class SupportReportResolutionTest extends ReportingTestCase
         $this->assertNull($r['origin']['id']);
         DB::table('zoning_applications')->delete();
         $this->assertFalse(app(SupportReportResolution::class)->resolve($this->support())['resolved']);
+    }
+
+    public function test_lookup_failures_are_distinct_from_missing_identity_and_never_carry_authority(): void
+    {
+        foreach (['field_jobs', 'supabase_zoning_applications'] as $table) {
+            $this->remoteTableFails = [$table];
+            $context = app(SupportReportResolution::class)->resolve($this->support());
+            $this->assertTrue($context['lookup_failed'], $table);
+            $this->assertFalse($context['resolved']);
+            $this->assertNull($context['application']);
+            $this->assertNull($context['owner']);
+            $this->assertNull($context['origin']);
+        }
+        $this->remoteTableFails = [];
+        $this->remote['field_jobs'] = [];
+        $context = app(SupportReportResolution::class)->resolve($this->support());
+        $this->assertFalse($context['lookup_failed']);
+        $this->assertFalse($context['resolved']);
+    }
+
+    public function test_local_context_query_failure_is_also_unavailable_not_a_proven_missing_record(): void
+    {
+        Schema::drop('zoning_applications');
+        $context = app(SupportReportResolution::class)->resolve($this->support());
+        $this->assertTrue($context['lookup_failed']);
+        $this->assertFalse($context['resolved']);
+        $this->assertNull($context['owner']);
     }
 }

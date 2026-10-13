@@ -268,10 +268,6 @@ export default function StepReview({
                             <p className="font-mono font-semibold text-slate-900">{form.or_number || "—"}</p>
                         </div>
                         
-                        <div className="sm:col-span-3">
-                            <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">Selected Allowable Use</p>
-                            <p className="font-semibold text-slate-900 bg-slate-50 p-2 rounded-lg border border-slate-100">{form.allowable_use || form.parcels?.[0]?.allowable_use || "—"}</p>
-                        </div>
                         <div>
                             <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">Date of Receipt</p>
                             <p className="font-semibold text-slate-900">{form.date_of_receipt || "—"}</p>

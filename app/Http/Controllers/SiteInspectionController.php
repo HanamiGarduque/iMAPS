@@ -9,6 +9,8 @@ use App\Support\InspectionOperationsSummary;
 use App\Support\InspectionRoundNumbering;
 use App\Support\InspectionReviewVisibility;
 use App\Support\InspectionOperationsContext;
+use App\Support\InspectionDeliveryRetryEligibility;
+use App\Support\InspectionDeliveryStatus;
 use App\Models\AppNotification;
 use Illuminate\Support\Facades\Artisan;
 
@@ -87,7 +89,43 @@ class SiteInspectionController extends Controller
             // PHASE 2B1: read-only operations enrichment + page counters.
             'operations' => $this->enrichForOperationsOverview($all),
             'counters' => $this->summary->counters($all),
+            'retryableIds' => array_keys(array_filter($this->retryability($all, $viewer))),
         ]);
+    }
+
+    /**
+     * inspection id => may this viewer resend it, for the failed rounds only.
+     *
+     * The same single contract the delivery reader and the retry POST use, so a
+     * button here is never one the server would refuse. One query for the
+     * supersession map, however many rounds are listed.
+     */
+    private function retryability($inspections, $viewer): array
+    {
+        $failed = collect($inspections)->filter(fn ($i) => InspectionDeliveryStatus::isFailure($i->delivery_status));
+        if ($failed->isEmpty() || $viewer === null) {
+            return [];
+        }
+
+        $latestByApplication = SiteInspection::query()
+            ->whereIn('zoning_application_id', $failed->pluck('zoning_application_id')->unique())
+            ->get(['id', 'zoning_application_id', 'parcel_id'])
+            ->groupBy('zoning_application_id')
+            ->map(fn ($rounds) => InspectionDeliveryRetryEligibility::latestRoundIdsByParcel($rounds));
+
+        return $failed->mapWithKeys(fn ($i) => [(int) $i->id => InspectionDeliveryRetryEligibility::canRetry(
+            [
+                'round_id' => (int) $i->id,
+                'parcel_id' => $i->parcel_id === null ? null : (int) $i->parcel_id,
+                'delivery_status' => $i->delivery_status,
+                'inspector_eligible' => InspectionDeliveryRetryEligibility::inspectorIsLocallyEligible($i->inspector),
+                'scheduled_date' => $i->scheduled_date,
+            ],
+            $latestByApplication[$i->zoning_application_id] ?? [],
+            $viewer->role,
+            $i->zoningApplication?->assigned_planning_officer_id === null ? null : (int) $i->zoningApplication->assigned_planning_officer_id,
+            (int) $viewer->id,
+        )])->all();
     }
 
 
@@ -323,6 +361,10 @@ class SiteInspectionController extends Controller
             'inspection' => $inspection,
             'poReview' => $poReview[(int) $inspection->id] ?? null,
             'delivery' => InspectionOperationsContext::delivery($inspection),
+            'canRetry' => $this->retryability([$inspection], $viewer)[(int) $inspection->id] ?? false,
+            // A failed round past the resend window gets an explanation instead of a button.
+            'resendClosed' => InspectionDeliveryStatus::isFailure($inspection->delivery_status)
+                && ! InspectionDeliveryRetryEligibility::withinResendWindow($inspection->scheduled_date),
             'roundHistory' => $roundHistory,
             'applicationSupport' => app(\App\Support\ReportingVisibility::class)->applicationSummary(
                 $viewer, (int) $inspection->zoning_application_id

@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\User;
+use Illuminate\Support\Carbon;
 
 /**
  * Loop 9C-3 - THE ONE canonical server-side retry eligibility contract.
@@ -29,6 +30,8 @@ use App\Models\User;
  *   D. the round is not superseded by a newer round
  *   E. the round's assigned inspector satisfies the repository's canonical
  *      LOCAL FieldSync eligibility rule
+ *   F. today is at least one day before the round's scheduled inspection date,
+ *      so a resend still reaches the inspector in time
  *
  * AUTHORITY IS A SINGLE STORED POINTER
  * ------------------------------------
@@ -82,6 +85,22 @@ final class InspectionDeliveryRetryEligibility
 
     /** The assigned inspector is not locally eligible for FieldSync work. */
     public const BLOCKER_INSPECTOR_INVALID = 'inspector_invalid';
+
+    /** Today is the scheduled inspection date or later, or the round has no date. */
+    public const BLOCKER_TOO_LATE = 'too_late_to_resend';
+
+    /**
+     * Rule F: resending closes on the scheduled date. A round with no date
+     * fails closed, because the window cannot be proven.
+     */
+    public static function withinResendWindow(mixed $scheduledDate): bool
+    {
+        if (blank($scheduledDate)) {
+            return false;
+        }
+
+        return Carbon::parse($scheduledDate)->startOfDay()->gt(Carbon::today());
+    }
 
     /**
      * Rule A + B: the application-level actor and ownership gate.
@@ -232,7 +251,7 @@ final class InspectionDeliveryRetryEligibility
      * which rules exist, in what order, and what each refusal is called - is
      * decided here and only here.
      *
-     * @param  array{round_id: int, parcel_id: ?int, delivery_status: ?string, inspector_eligible: bool}  $round
+     * @param  array{round_id: int, parcel_id: ?int, delivery_status: ?string, inspector_eligible: bool, scheduled_date: mixed}  $round
      * @param  array<int, int>  $latestRoundIdsByParcel
      * @return array{eligible: bool, blockers: list<string>}
      */
@@ -256,6 +275,10 @@ final class InspectionDeliveryRetryEligibility
             $blockers[] = self::BLOCKER_INSPECTOR_INVALID;
         }
 
+        if (! self::withinResendWindow($round['scheduled_date'] ?? null)) {
+            $blockers[] = self::BLOCKER_TOO_LATE;
+        }
+
         return [
             'eligible' => $blockers === [],
             'blockers' => $blockers,
@@ -263,12 +286,12 @@ final class InspectionDeliveryRetryEligibility
     }
 
     /**
-     * The single authoritative retry decision: rules A through E together.
+     * The single authoritative retry decision: rules A through F together.
      *
      * The Loop 9C-1 reader exposes exactly this value as `delivery.can_retry`,
      * so a browser can never offer a control the future POST would refuse.
      *
-     * @param  array{round_id: int, parcel_id: ?int, delivery_status: ?string, inspector_eligible: bool}  $round
+     * @param  array{round_id: int, parcel_id: ?int, delivery_status: ?string, inspector_eligible: bool, scheduled_date: mixed}  $round
      * @param  array<int, int>  $latestRoundIdsByParcel
      */
     public static function canRetry(array $round, array $latestRoundIdsByParcel, ?string $actorRole, ?int $ownerId, ?int $actorId): bool
