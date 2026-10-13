@@ -288,18 +288,6 @@ export default function StatusPanel({
         { label: "Released this month", value: stats.releasedThisMonth },
     ];
 
-    // Status mix of what is in scope, as one thin bar under the numbers.
-    const breakdown = useMemo(() => {
-        const counts = {};
-        baseList.forEach((app) => {
-            const cfg = getStatusMarkerConfig(app.status);
-            counts[cfg.label] = (counts[cfg.label] || 0) + 1;
-        });
-        return Object.values(STATUS_MARKER_CONFIG)
-            .map((cfg) => ({ cfg, n: counts[cfg.label] || 0 }))
-            .filter((x) => x.n > 0);
-    }, [baseList]);
-
     return (
         <div className="shrink-0 flex flex-col">
             <div className="shrink-0 border-b border-slate-200">
@@ -311,14 +299,6 @@ export default function StatusPanel({
                         </div>
                     ))}
                 </div>
-                {breakdown.length > 0 && (
-                    <div className="flex h-1.5 mx-3 mb-2.5 rounded-full overflow-hidden bg-slate-100" role="img"
-                        aria-label={breakdown.map((b) => `${b.cfg.label} ${b.n}`).join(", ")}>
-                        {breakdown.map((b) => (
-                            <span key={b.cfg.label} title={`${b.cfg.label}: ${b.n}`} style={{ width: `${(b.n / stats.total) * 100}%`, backgroundColor: b.cfg.color }} />
-                        ))}
-                    </div>
-                )}
             </div>
 
         </div>

@@ -1,25 +1,21 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { getStatusMarkerConfig, getSLAInfo } from "@/Components/MapLayers/StatusPanel";
+import { getStatusMarkerConfig } from "@/Components/MapLayers/StatusPanel";
 
 // Attribute table for the Application Tracking layer, docked under the map
 // like QGIS's: one row per feature, sortable columns, and a selection that
 // is shared with the map (click a row to select it there, hover to find it).
 
-const ageInDays = (app) =>
-    app?.created_at ? Math.max(1, Math.floor((Date.now() - new Date(app.created_at).getTime()) / 86400000)) : null;
 const fmtDate = (d) =>
     d ? new Date(d).toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" }) : "";
 
 const COLUMNS = [
-    { key: "reference_number", label: "reference_no", width: 128, mono: true },
-    { key: "applicant_name", label: "applicant", width: 170 },
-    { key: "application_type", label: "application_type", width: 190 },
-    { key: "barangay", label: "barangay", width: 130 },
-    { key: "status", label: "status", width: 138 },
-    { key: "created_at", label: "date_filed", width: 100, format: fmtDate, numeric: true },
-    { key: "__age", label: "days_open", width: 78, numeric: true },
-    { key: "__lot", label: "lot_no", width: 96, mono: true },
-    { key: "__tct", label: "tax_dec_no", width: 132, mono: true },
+    { key: "reference_number", label: "Reference No.", width: 128, mono: true },
+    { key: "applicant_name", label: "Applicant Name", width: 170 },
+    { key: "application_type", label: "Application Type", width: 190 },
+    { key: "barangay", label: "Barangay", width: 130 },
+    { key: "status", label: "Status", width: 138 },
+    { key: "created_at", label: "Date Filed", width: 100, format: fmtDate, numeric: true },
+    { key: "__tct", label: "Tax Dec. No.", width: 132, mono: true },
 ];
 const ROW_NO_WIDTH = 40;
 const TABLE_WIDTH = ROW_NO_WIDTH + COLUMNS.reduce((sum, c) => sum + c.width, 0);
@@ -37,18 +33,13 @@ export default function AttributeTable({ apps = [], total = 0, selectedAppId, on
 
     const rows = useMemo(() => {
         const q = query.trim().toLowerCase();
-        const withDerived = apps.map((a) => {
-            const done = getSLAInfo(a.created_at, a.status).status === "completed";
-            return {
-                ...a,
-                __age: done ? null : ageInDays(a),
-                __lot: a.parcels?.[0]?.lot_number || "",
-                __tct: a.parcels?.[0]?.tax_dec_number || "",
-            };
-        });
+        const withDerived = apps.map((a) => ({
+            ...a,
+            __tct: a.parcels?.[0]?.tax_dec_number || "",
+        }));
         const filtered = q
             ? withDerived.filter((a) =>
-                  [a.reference_number, a.applicant_name, a.barangay, a.application_type, a.status, a.__lot, a.__tct].some((v) => String(v || "").toLowerCase().includes(q))
+                  [a.reference_number, a.applicant_name, a.barangay, a.application_type, a.status, a.__tct].some((v) => String(v || "").toLowerCase().includes(q))
               )
             : withDerived;
         const dir = sort.dir === "asc" ? 1 : -1;
@@ -85,7 +76,7 @@ export default function AttributeTable({ apps = [], total = 0, selectedAppId, on
     };
 
     const toggleSort = (key) =>
-        setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "created_at" || key === "__age" ? "desc" : "asc" }));
+        setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "created_at" ? "desc" : "asc" }));
 
     const selectedVisible = rows.some((r) => r.id === selectedAppId);
 

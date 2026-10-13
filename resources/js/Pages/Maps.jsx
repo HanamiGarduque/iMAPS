@@ -177,7 +177,7 @@ function DockHeader({ title, onClose, closeLabel }) {
 
 function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiversity, urbanGrowthData }) {
     const [activeLayer, setActiveLayer] = useState("status");
-    const [mapStyle, setMapStyle] = useState("light");
+    const [mapStyle, setMapStyle] = useState("standard");
     const [appTypeFilter, setAppTypeFilter] = useState(filters?.application_type || "All");
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [layersOpen, setLayersOpen] = useState(isDesktop);
@@ -963,7 +963,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Scale 1:{mapScale(scaleLat, mapZoom).toLocaleString("en-PH")}</span>
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Zoom {mapZoom}</span>
                             <span className="px-3 border-l border-slate-300 hidden md:block">EPSG:4326</span>
-                            <span className="ml-auto pl-3 border-l border-slate-300 truncate">{statusSummary}</span>
+                            <div className="ml-auto min-w-0 flex items-center gap-1.5 pl-3 border-l border-slate-300">
                             {activeLayer === "status" && (
                                 <button
                                     type="button"
@@ -975,7 +975,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                     aria-pressed={tableOpen}
                                     aria-label="Attribute table"
                                     title={`${tableOpen ? "Close" : "Open"} attribute table · ${selectedBgy?.name || "All barangays"}`}
-                                    className={`ml-1.5 w-5 h-5 shrink-0 flex items-center justify-center rounded-[3px] border cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b] ${
+                                    className={`w-5 h-5 shrink-0 flex items-center justify-center rounded-[3px] border cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b] ${
                                         tableOpen ? "bg-[#dce6f3] border-[#9fb4d3] text-[#0b2a5b]" : "border-transparent text-slate-600 hover:bg-white hover:border-slate-300"
                                     }`}
                                 >
@@ -984,6 +984,8 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                     </svg>
                                 </button>
                             )}
+                            <span className="truncate">{statusSummary}</span>
+                            </div>
                         </div>
                     </div>
                 </div>

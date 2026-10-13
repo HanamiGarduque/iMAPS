@@ -135,7 +135,9 @@ export function BarangayCard({ name, stat = {}, apps = {}, demand = 0, activeQua
             detail: tier ? tier.classification : "No score on record",
             swatch: tier?.fill,
         },
-    ];
+    // On the Application Tracking layer the card shows applications only; the
+    // demand and land-use rows belong to their own layers.
+    ].filter((r) => activeLayer !== "status" || r.id === "status");
 
     return (
         <section className="shrink-0 border-b-4 border-slate-200 bg-white" aria-label={`Barangay ${name}`}>
