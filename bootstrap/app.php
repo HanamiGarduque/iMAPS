@@ -22,10 +22,6 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(\App\Http\Middleware\RequireOriginSecret::class);
         $middleware->prepend(\App\Http\Middleware\RestrictToAllowedIps::class);
 
-        $middleware->validateCsrfTokens(except: [
-            'logout',
-        ]);
-
         $middleware->web(append: [
             \App\Http\Middleware\EnsureUserIsActive::class,
             \App\Http\Middleware\HandleInertiaRequests::class,

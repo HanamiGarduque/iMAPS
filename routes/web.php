@@ -41,7 +41,7 @@ Route::middleware('auth')->group(function () {
 
     // â”€â”€ Forecasting + geospatial data (upstream) â”€â”€
     Route::post('/api/forecast/generate', [\App\Http\Controllers\ForecastController::class, 'generate'])
-        ->middleware('role:Admin,Planning Officer');
+        ->middleware(['role:Admin,Planning Officer', 'throttle:10,1']);
     Route::get('/maps/urban-growth-data', [MapController::class, 'getUrbanGrowthData'])
         ->name('maps.urban_growth')
         ->middleware('role:Admin,Planning Officer');
@@ -147,6 +147,7 @@ Route::middleware('auth')->group(function () {
 
     Route::post('/applications/{id}/export-preview/{type}', [ApplicationController::class, 'exportPreview'])->whereNumber('id')->name('applications.export-preview');
     Route::post('/applications/{id}/export-document/{type}', [ApplicationController::class, 'exportDocument'])
+        ->middleware('throttle:20,1')
         ->whereNumber('id')
         ->name('applications.export-document');
 
@@ -289,15 +290,16 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     // â”€â”€ Standard Reports â”€â”€
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
     Route::post('/api/analytics/report/preview', [ReportController::class, 'previewReport'])->name('reports.preview');
-    Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->name('reports.generate');
+    Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->middleware('throttle:20,1')->name('reports.generate');
 
     Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');
         
     Route::post('/settings/upload-shapefile', [SettingsController::class, 'uploadShapefile'])
+        ->middleware('throttle:10,1')
         ->name('settings.upload-shapefile');
 
-    Route::post('/settings/upload-tiles', [SettingsController::class, 'uploadRasterTiles']);
+    Route::post('/settings/upload-tiles', [SettingsController::class, 'uploadRasterTiles'])->middleware('throttle:10,1');
     Route::post('/settings/restore-layer', [SettingsController::class, 'restoreLayer'])
         ->name('settings.restore-layer');
     Route::post('/settings/restore-tiles', [SettingsController::class, 'restoreRasterTiles'])
@@ -306,7 +308,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     // User Management
     Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
     Route::get('/users/{id}/logs', [UserManagementController::class, 'logs'])->whereNumber('id')->name('users.logs');
-    Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->name('users.sensitive');
+    Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->middleware('throttle:30,1')->name('users.sensitive');
     Route::post('/users/reset-password', [UserManagementController::class, 'resetPassword'])->middleware('throttle:10,1')->name('users.reset-password');
     Route::post('/users/{id}/update', [UserManagementController::class, 'updateProfile'])->whereNumber('id')->name('users.update-profile');
 });

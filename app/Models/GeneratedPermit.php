@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 
 class GeneratedPermit extends Model
 {
@@ -30,7 +29,7 @@ class GeneratedPermit extends Model
         'file_size'  => 'integer',
     ];
 
-    protected $appends = ['public_url', 'formatted_file_size'];
+    protected $appends = ['formatted_file_size'];
 
     public function zoningApplication(): BelongsTo
     {
@@ -40,11 +39,6 @@ class GeneratedPermit extends Model
     public function generatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'generated_by');
-    }
-
-    public function getPublicUrlAttribute(): string
-    {
-        return Storage::disk('public')->url($this->file_path);
     }
 
     public function getFormattedFileSizeAttribute(): string

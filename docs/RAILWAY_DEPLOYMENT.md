@@ -68,3 +68,14 @@ Cloudflare adds (`app/Http/Middleware/RequireOriginSecret.php`).
 - Logs go to stderr (Railway log viewer); `storage/logs` is not used.
 - Updates: push to GitHub; Railway rebuilds, runs migrations, restarts. Take a Postgres backup first for risky migrations.
 - Fonts load from Google and basemaps from OSM/ArcGIS, so users need internet. The site itself is only reachable online.
+
+## 5. Go-live checklist
+
+- [ ] `ORIGIN_SECRET` set (or `ALLOWED_IPS` until Cloudflare is live); generated `*.up.railway.app` domain deleted.
+- [ ] Seeders never run; no `admin@imaps.com` / `password123` account exists (`User::where('email','admin@imaps.com')->count()` is 0).
+- [ ] `APP_DEBUG=false`, `SESSION_SECURE_COOKIE=true`, `SESSION_ENCRYPT=true`.
+- [ ] The Postgres service and the app's `/data` volume both exist (permits, uploads and tiles live on the volume).
+- [ ] Backups: Railway does not back up Postgres or volumes for you by default. Enable Railway's volume backups on both,
+      and keep an off-site `pg_dump` (`pg_dump "$DATABASE_PUBLIC_URL" -Fc -f imaps-$(date +%F).dump`) before risky migrations.
+      Do a test restore once.
+- [ ] Logged out, `/storage/permits/...` returns 404 (permits are on the private disk).
