@@ -5,7 +5,7 @@ namespace Tests\Unit;
 use Tests\TestCase;
 
 /**
- * Loop 9A-R â€” exact legacy delivery failure reconciliation (inspections 25-30).
+ * Loop 9A-R — exact legacy delivery failure reconciliation (inspections 25-30).
  *
  * This is a DATA-ONLY reconciliation of the existing 0921 database. It is
  * deliberately NOT a migration and must never appear in fresh-install

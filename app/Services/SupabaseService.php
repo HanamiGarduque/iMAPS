@@ -64,7 +64,7 @@ class SupabaseService
         return BridgeSourceIdentity::COLUMN . ',' . $localColumn;
     }
 
-    // â”€â”€ Headers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Headers ──────────────────────────────────────────
 
     private function serviceHeaders(array $extra = []): array
     {
@@ -75,7 +75,7 @@ class SupabaseService
         ], $extra);
     }
 
-    // â”€â”€ Generic helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Generic helpers ───────────────────────────────────
 
     /**
      * Insert data into a Supabase table.
@@ -156,7 +156,7 @@ class SupabaseService
             ->delete("{$this->url}/rest/v1/{$table}?{$column}=eq.{$value}");
     }
 
-    // â”€â”€ Domain methods â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Domain methods ────────────────────────────────────
 
     /**
      * Push full Zoning Application and returns the newly generated Supabase Application UUID.
