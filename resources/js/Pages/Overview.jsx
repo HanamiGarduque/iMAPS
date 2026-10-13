@@ -760,12 +760,8 @@ export default function Overview({
                                 and the area in focus at the bottom ── */}
                             <div ref={rightRef} className="flex flex-col gap-3 xl:gap-2.5 short:gap-2 xl:absolute xl:z-10 xl:top-2.5 xl:bottom-2.5 xl:right-2.5 xl:w-[var(--r)]">
                                 <nav aria-label="Quick actions" className={`${PANE} shrink-0 p-3 short:p-2.5`}>
-                                    <div className="flex items-center justify-between gap-2 px-0.5">
+                                    <div className="px-0.5">
                                         <span className="text-[13px] font-bold text-slate-900">Quick actions</span>
-                                        <span className="text-right leading-tight">
-                                            <span className="block text-[11px] font-semibold text-slate-700 tabular-nums">{fmt(now, { hour: "numeric", minute: "2-digit" })} PHT</span>
-                                            <span className="block text-[10px] text-slate-500">{fmt(now, { weekday: "short", day: "numeric", month: "short" })}</span>
-                                        </span>
                                     </div>
                                     <ul className="mt-2.5 short:mt-2 grid grid-cols-3 gap-2">
                                         {actions.map((a) => (

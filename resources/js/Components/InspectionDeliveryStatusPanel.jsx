@@ -267,6 +267,12 @@ function DeliveryRoundRow({ inspection, queueingId, onRetry, isAdmin, onToggleHi
                 </p>
             )}
 
+            {delivery.resend_closed && (
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                    Resending is only possible until the day before the scheduled inspection date.
+                </p>
+            )}
+
             {isAdmin && delivery.failure_label && (
                 <p className="text-[11px] font-semibold text-rose-700">
                     Category: {delivery.failure_label}

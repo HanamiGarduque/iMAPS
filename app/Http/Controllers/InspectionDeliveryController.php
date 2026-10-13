@@ -420,6 +420,10 @@ class InspectionDeliveryController extends Controller
                 ? InspectionDeliveryStatus::failureMessage($round->last_delivery_failure_category)
                 : null,
 
+            // A failed round past the resend window gets an explanation instead of a button.
+            'resend_closed' => $isFailed
+                && ! InspectionDeliveryRetryEligibility::withinResendWindow($round->scheduled_date),
+
             // THE AUTHORITATIVE RETRY DECISION. Server-computed, and now the
             // output of the ONE shared eligibility contract that
             // `InspectionDeliveryRetryService` will also enforce, so a future
@@ -442,6 +446,7 @@ class InspectionDeliveryController extends Controller
                     'parcel_id' => $round->parcel_id === null ? null : (int) $round->parcel_id,
                     'delivery_status' => $round->delivery_status,
                     'inspector_eligible' => InspectionDeliveryRetryEligibility::inspectorIsLocallyEligible($round->inspector),
+                    'scheduled_date' => $round->scheduled_date,
                 ],
                 $latestRoundIdsByParcel,
                 $viewerRole,
@@ -594,7 +599,8 @@ class InspectionDeliveryController extends Controller
                 InspectionDeliveryRetryResult::SUPERSEDED_ROUND,
                 InspectionDeliveryRetryResult::PARCEL_UNKNOWN,
                 InspectionDeliveryRetryResult::APPLICATION_MISMATCH,
-                InspectionDeliveryRetryResult::INSPECTOR_INVALID => 409,
+                InspectionDeliveryRetryResult::INSPECTOR_INVALID,
+                InspectionDeliveryRetryResult::TOO_LATE => 409,
 
                 // Unreachable: a non-queued result always carries a refusal
                 // outcome. Fail closed rather than fall through to a success.

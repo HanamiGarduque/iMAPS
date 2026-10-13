@@ -162,8 +162,9 @@ class Loop9c3RetryServicePostgresTest extends TestCase
             'submitted_at' => '2025-12-01 00:00:00',
             'findings' => 'existing field findings that must survive a retry',
             'recommendations' => 'existing recommendations that must survive a retry',
-            'scheduled_date' => '2026-02-01',
-            'deadline_date' => '2026-02-05',
+            // Inside the resend window (Rule F): the day before or earlier.
+            'scheduled_date' => now()->addDays(2)->toDateString(),
+            'deadline_date' => now()->addDays(5)->toDateString(),
             'assigned_notes' => 'original assignment instructions',
             'created_at' => now(),
             'updated_at' => now(),

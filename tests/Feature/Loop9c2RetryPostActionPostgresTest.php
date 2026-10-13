@@ -146,6 +146,8 @@ class Loop9c2RetryPostActionPostgresTest extends TestCase
             'inspector_id' => $inspectorId,
             'status' => 'assigned',
             'delivery_status' => $deliveryStatus,
+            // Inside the resend window (Rule F): the day before or earlier.
+            'scheduled_date' => now()->addDays(2)->toDateString(),
             // Populated on purpose: a POST must preserve all of it.
             'last_delivery_attempt_at' => '2026-01-02 03:04:05',
             'last_delivery_failure_category' => 'supabase_unreachable',

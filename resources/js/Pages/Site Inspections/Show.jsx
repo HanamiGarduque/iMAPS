@@ -10,6 +10,7 @@ import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
+import RetryDeliveryButton from "@/Components/RetryDeliveryButton";
 import { confirmSignOut } from "@/utils/signOut";
 
 // ── Status Badge Configuration ──
@@ -182,7 +183,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
     //   roundHistory - THIS parcel's canonical chain, navigable
     // The global diagnostics count the server may still send is deliberately
     // NOT read: it has no application-specific meaning on one lot's record.
-    const { delivery = null, roundHistory = null } = usePage().props || {};
+    const { delivery = null, roundHistory = null, canRetry = false, resendClosed = false } = usePage().props || {};
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
@@ -985,6 +986,18 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 <p className="mt-3 text-[12px] text-rose-700 leading-relaxed bg-rose-50 rounded-lg px-3 py-2">
                                                     <span className="font-semibold capitalize">{delivery.failure_category.replace(/_/g, " ")}</span>
                                                     {delivery.failure_message ? ` — ${delivery.failure_message}` : ""}
+                                                </p>
+                                            )}
+
+                                            {/* Only where the server said this viewer may resend. */}
+                                            {canRetry && (
+                                                <div className="mt-3 flex justify-end">
+                                                    <RetryDeliveryButton inspectionId={inspection.id} />
+                                                </div>
+                                            )}
+                                            {resendClosed && (
+                                                <p className="mt-3 text-[11.5px] text-slate-500 leading-relaxed">
+                                                    Resending is only possible until the day before the scheduled inspection date.
                                                 </p>
                                             )}
                                         </div>
