@@ -383,7 +383,7 @@ class SettingsController extends Controller
         // The map API serves layers from cache; retire it so the next request
         // rebuilds from the table that was just replaced — then rebuild it
         // straight away, after this response is sent, so the next person to open
-        // the dashboard isn't the one who waits ~20s for land_use_plan.
+        // the Maps page isn't the one who waits ~20s for land_use_plan.
         MapController::flushLayerCache();
         dispatch(fn () => MapController::warmLayerCache())->afterResponse();
     }

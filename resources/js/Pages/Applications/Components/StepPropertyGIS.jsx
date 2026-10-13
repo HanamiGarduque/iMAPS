@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { MapContainer, TileLayer, GeoJSON, Polyline, Polygon, CircleMarker, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
+import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import { Input } from "./FormControls";
 import Swal from "sweetalert2";
 import { getZoneInfo, ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";

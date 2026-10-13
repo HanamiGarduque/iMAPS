@@ -48,7 +48,7 @@ class Loop6AccessBoundaryTest extends TestCase
         $this->establishSiteInspectorSession();
 
         foreach ([
-            '/dashboard',
+            '/maps',
             '/applications',
             '/applications/1',
             '/technical-review',
@@ -100,8 +100,9 @@ class Loop6AccessBoundaryTest extends TestCase
 
         // Upstream replaced the retired /analytics page with /reports and the
         // /audit-log page with the per-user Activity Log endpoint. The Loop 6
-        // security rule is unchanged: these Admin-only surfaces must still
-        // return 403 for an existing Site Inspector session.
+        // security rule is unchanged: these surfaces (Admin-only, plus /reports
+        // which Planning Officers share) must still return 403 for an existing
+        // Site Inspector session.
         foreach ([
             '/register-new-account',
             '/reports',
@@ -117,7 +118,7 @@ class Loop6AccessBoundaryTest extends TestCase
 
     public function test_guest_is_redirected_to_login_from_internal_routes(): void
     {
-        $this->get('/dashboard')->assertRedirect('/login');
+        $this->get('/maps')->assertRedirect('/login');
         $this->get('/applications')->assertRedirect('/login');
         $this->get('/api/global-search?q=test')->assertRedirect('/login');
     }

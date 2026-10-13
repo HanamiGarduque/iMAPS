@@ -9,7 +9,7 @@ import PhotoLightbox from "@/Components/PhotoLightbox";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
+import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import { confirmSignOut } from "@/utils/signOut";
 
 // ── Status Badge Configuration ──

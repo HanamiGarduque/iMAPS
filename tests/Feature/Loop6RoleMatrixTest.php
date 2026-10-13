@@ -285,12 +285,12 @@ class Loop6RoleMatrixTest extends TestCase
 
     // ───────────────────────────── ADMIN ─────────────────────────────
 
-    public function test_admin_can_view_dashboard_and_applications(): void
+    public function test_admin_can_view_maps_and_applications(): void
     {
         $admin = $this->admin();
         $application = ZoningApplication::factory()->create(['encoded_by' => $admin->id]);
 
-        $this->actingAs($admin)->get('/dashboard')->assertOk();
+        $this->actingAs($admin)->get('/maps')->assertOk();
         $this->actingAs($admin)->get('/applications')->assertOk();
         $this->actingAs($admin)->get('/applications/'.$application->id)->assertOk();
     }
@@ -347,12 +347,12 @@ class Loop6RoleMatrixTest extends TestCase
 
     // ─────────────────────── PLANNING OFFICER ───────────────────────
 
-    public function test_planning_officer_can_view_dashboard_and_applications(): void
+    public function test_planning_officer_can_view_maps_and_applications(): void
     {
         $officer = $this->planningOfficer();
         $application = ZoningApplication::factory()->create(['encoded_by' => $officer->id]);
 
-        $this->actingAs($officer)->get('/dashboard')->assertOk();
+        $this->actingAs($officer)->get('/maps')->assertOk();
         $this->actingAs($officer)->get('/applications')->assertOk();
         $this->actingAs($officer)->get('/applications/'.$application->id)->assertOk();
     }

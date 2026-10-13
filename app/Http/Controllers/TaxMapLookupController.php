@@ -54,7 +54,10 @@ class TaxMapLookupController extends Controller
             ], 422);
         }
 
+        // A point guaranteed inside the lot: it becomes the application parcel's
+        // pin, which the inspection push needs as `supabase_parcels.geom`.
         $parcel = DB::table('public.land_parcels')
+            ->selectRaw('*, ST_Y(ST_PointOnSurface(geom)) AS pin_lat, ST_X(ST_PointOnSurface(geom)) AS pin_lng')
             ->where(function ($query) use ($pin, $normalizedPin) {
                 $query->whereRaw(
                     'UPPER(REPLACE(REPLACE(REPLACE(property_index_number, ?, ?), ?, ?), ?, ?)) = ?',
@@ -92,7 +95,7 @@ class TaxMapLookupController extends Controller
                 'owner_name' => $parcel->owner_name ?? null,
                 'arp_number' => $parcel->arp_number ?? null,
                 'survey_number' => $parcel->survey_number ?? null,
-                'coordinates' => null,
+                'coordinates' => isset($parcel->pin_lat, $parcel->pin_lng) ? "{$parcel->pin_lat},{$parcel->pin_lng}" : null,
             ],
         ]);
     }

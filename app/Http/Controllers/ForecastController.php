@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\ForecastService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 
@@ -23,6 +24,13 @@ class ForecastController extends Controller
     {
         try {
             $forecastData = $this->forecastService->generateForecast();
+
+            // The Overview shows the latest run; it never calls the service itself.
+            Cache::forever('forecast.latest', [
+                'generated_at' => now()->toIso8601String(),
+                'demand'       => $forecastData['demand'] ?? [],
+                'metrics'      => $forecastData['metrics'] ?? null,
+            ]);
 
             return response()->json([
                 'status'  => 'success',

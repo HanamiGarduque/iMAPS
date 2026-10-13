@@ -104,7 +104,7 @@ export const Field = ({ id, label, icon, aside, children }) => (
     </div>
 );
 
-export const inputClass = 'block w-full h-11 rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-[15px] font-normal text-slate-900 placeholder:text-slate-400 shadow-sm transition hover:border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 focus:outline-none';
+export const inputClass = 'block w-full h-11 rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-[15px] font-normal text-slate-900 placeholder:text-slate-400 shadow-sm transition hover:border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 focus:outline-none aria-[invalid=true]:border-red-300 aria-[invalid=true]:focus:border-red-400 aria-[invalid=true]:focus:ring-red-500/10';
 
 // Shared global CSS for the Plus Jakarta Sans auth look, rise-in animations and scrollbar styling.
 export const AuthStyles = ({ lockScroll = false }) => (

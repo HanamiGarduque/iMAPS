@@ -289,7 +289,7 @@ iMAPS/
 │   └── js/
 │       ├── Components/         # React UI components & GIS map panels
 │       ├── Layouts/            # App layout shells (Authenticated, Guest)
-│       └── Pages/              # Inertia views (Dashboard, Maps, Applications, Reports, Users)
+│       └── Pages/              # Inertia views (Overview, Maps, Applications, Reports, Users)
 ├── routes/
 │   ├── web.php                 # Web and API endpoint routes
 │   └── auth.php                # Authentication routes

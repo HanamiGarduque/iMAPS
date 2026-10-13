@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\TechnicalReviewController;
-use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\MapsController;
 use App\Http\Controllers\OverviewController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
@@ -53,27 +53,15 @@ Route::middleware('auth')->group(function () {
         ->name('overview')
         ->middleware('role:Admin,Planning Officer');
 
-    // Unified GIS dashboard (map, trends, diversity)
-    Route::get('/dashboard', [DashboardController::class, 'index'])
-        ->name('dashboard')
+    // Unified GIS map (status, trends, diversity)
+    Route::get('/maps', [MapsController::class, 'index'])
+        ->name('maps')
         ->middleware('role:Admin,Planning Officer');
 
-    // ── /maps product decision ─────────────────────────────────────────────
-    // MASTER'S DIRECTION WINS. origin/master deliberately replaced the separate
-    // geospatial Maps page with a single unified GIS Dashboard and deleted both
-    // `app/Http/Controllers/MapsController.php` and `resources/js/Pages/Maps.jsx`.
-    // Master also has no link to `/maps` anywhere.
-    //
-    // The Loop 9 side of this conflict pointed at MapsController@index, a class
-    // master no longer ships. Taking the Loop 9 side would therefore register a
-    // route whose controller does not exist (a runtime 500), and would
-    // reintroduce a deleted product surface.
-    //
-    // This is a master product decision, NOT a Loop 9 contract: no Loop 9 phase
-    // depends on /maps. Loop 9's own routes below are unaffected and are
-    // preserved exactly.
-    Route::get('/maps', fn () => redirect()->route('dashboard'))
-        ->name('maps.index');
+    // The GIS page was renamed Dashboard -> Maps. Old bookmarks and any
+    // `route('dashboard')` call still land on it.
+    Route::get('/dashboard', fn () => redirect()->route('maps'))
+        ->name('dashboard');
 
     // Search
     Route::get('/api/global-search', [SearchController::class, 'globalSearch'])
@@ -269,6 +257,16 @@ Route::middleware('auth')->group(function () {
         ->name('work-reassignment.reasons')
         ->middleware('role:Admin,Planning Officer');
 
+    // ── Standard Reports ──
+    // Admin and Planning Officer see the same reports and the same data; the
+    // controller applies no per-role scoping. Site Inspectors stay refused.
+    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index')
+        ->middleware('role:Admin,Planning Officer');
+    Route::post('/api/analytics/report/preview', [ReportController::class, 'previewReport'])->name('reports.preview')
+        ->middleware('role:Admin,Planning Officer');
+    Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->name('reports.generate')
+        ->middleware(['role:Admin,Planning Officer', 'throttle:20,1']);
+
     // ── Notifications ──
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::get('/api/notifications', [NotificationController::class, 'getUnread'])->name('api.notifications.unread');
@@ -286,11 +284,6 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     // Override Default Registration to be Admin-Only
     Route::get('register-new-account', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('register-new-account', [RegisteredUserController::class, 'store']);
-
-    // ── Standard Reports ──
-    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
-    Route::post('/api/analytics/report/preview', [ReportController::class, 'previewReport'])->name('reports.preview');
-    Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->middleware('throttle:20,1')->name('reports.generate');
 
     Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');

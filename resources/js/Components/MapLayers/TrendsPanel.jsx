@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
-import { getTrendsDemandColor } from '@/Components/Dashboard/LeafletMap';
+import { getTrendsDemandColor } from '@/Components/Maps/LeafletMap';
 
 // The service reports validation_wmape as a percentage (e.g. 42.3).
 const formatWmape = (val) => {

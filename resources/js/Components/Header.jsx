@@ -102,7 +102,6 @@ export default function Header({
 
         switch (firstSegment) {
             case 'dashboard':
-                return 'DASHBOARD';
             case 'maps':
                 return 'MAPS';
             case 'applications':
@@ -131,8 +130,7 @@ export default function Header({
 
         if (currentComponent) {
             const comp = currentComponent.toLowerCase();
-            if (comp.startsWith('dashboard')) return 'DASHBOARD';
-            if (comp.startsWith('maps')) return 'MAPS';
+            if (comp.startsWith('dashboard') || comp.startsWith('maps')) return 'MAPS';
             if (comp.startsWith('applications') || comp.startsWith('drafts') || comp.startsWith('technicalreview')) return 'REGISTRY';
             if (comp.startsWith('analytics')) return 'ANALYTICS';
             if (comp.startsWith('audittrail') || comp.startsWith('audit')) return 'AUDIT TRAIL';
@@ -152,7 +150,7 @@ export default function Header({
             return firstSegment.replace(/[-_]+/g, ' ').toUpperCase();
         }
 
-        return 'DASHBOARD';
+        return 'MAPS';
     };
 
     const navigationBadge = getNavigationBadge();

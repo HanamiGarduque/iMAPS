@@ -206,12 +206,14 @@ class AdminPoPriorityClosureTest extends TestCase
         $this->post('/api/analytics/report', [])->assertRedirect();
     }
 
-    public function test_planning_officer_cannot_generate_reports(): void
+    public function test_planning_officer_is_allowed_to_generate_reports(): void
     {
         $po = $this->makeUser('Planning Officer');
+        $this->makeApplication();
 
-        $this->actingAs($po)->post('/api/analytics/report/preview', [])->assertForbidden();
-        $this->actingAs($po)->post('/api/analytics/report', [])->assertForbidden();
+        // Same access as Admin: the page and the preview both reach the controller.
+        $this->actingAs($po)->get('/reports')->assertOk();
+        $this->actingAs($po)->post('/api/analytics/report/preview', [])->assertOk();
     }
 
     public function test_admin_is_allowed_to_generate_reports(): void

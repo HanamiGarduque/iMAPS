@@ -1121,26 +1121,23 @@ class AdminPoPriorityClosureContractTest extends TestCase
     /**
      * @dataProvider reportEndpointProvider
      */
-    public function test_report_endpoints_are_admin_only_at_runtime(string $method, string $uri): void
+    public function test_report_endpoints_are_admin_and_planning_officer_at_runtime(string $method, string $uri): void
     {
         $middleware = $this->matchRoute($method, $uri)->gatherMiddleware();
 
         $this->assertContains('web', $middleware, 'The endpoint must run in the session/CSRF group.');
         $this->assertContains('auth', $middleware, 'The endpoint must require authentication (guest denied).');
-        $this->assertContains('role:Admin', $middleware, 'The endpoint must be restricted to Admin.');
 
-        foreach ($middleware as $entry) {
-            $this->assertStringNotContainsString(
-                'Planning Officer',
-                $entry,
-                'A Planning Officer must not be authorized for report generation.'
-            );
-        }
+        // Exactly one role gate, admitting Admin and Planning Officer only
+        // (a stacked `role:Admin` would silently lock the Planning Officer out).
+        $roles = array_values(array_filter($middleware, fn ($entry) => str_starts_with($entry, 'role:')));
+        $this->assertSame(['role:Admin,Planning Officer'], $roles);
     }
 
     public static function reportEndpointProvider(): array
     {
         return [
+            'page' => ['GET', '/reports'],
             'preview' => ['POST', '/api/analytics/report/preview'],
             'generate' => ['POST', '/api/analytics/report'],
         ];
@@ -1177,19 +1174,19 @@ class AdminPoPriorityClosureContractTest extends TestCase
      * assertions no longer have anything to match. The requirement that survives
      * is the negative one: those claims must not come back in any phrasing.
      */
-    public function test_dashboard_labels_do_not_claim_field_progress(): void
+    public function test_maps_labels_do_not_claim_field_progress(): void
     {
-        $dashboard = $this->codeOf('resources/js/Pages/Dashboard.jsx');
+        $maps = $this->codeOf('resources/js/Pages/Maps.jsx');
 
-        $this->assertStringNotContainsString('Active schedule', $dashboard);
-        $this->assertStringNotContainsString('Approved & issued', $dashboard);
-        $this->assertStringNotContainsString('Awaiting action', $dashboard);
+        $this->assertStringNotContainsString('Active schedule', $maps);
+        $this->assertStringNotContainsString('Approved & issued', $maps);
+        $this->assertStringNotContainsString('Awaiting action', $maps);
 
         // The dashboard must still show real, server-derived figures.
         $this->assertMatchesRegularExpression(
             '/(kpi|Kpi|KPI|stat|Stat)/',
-            $dashboard,
-            'The dashboard must still present aggregate figures.'
+            $maps,
+            'The Maps page must still present aggregate figures.'
         );
     }
 }

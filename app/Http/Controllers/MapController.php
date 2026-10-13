@@ -38,10 +38,10 @@ class MapController extends Controller
         Cache::forever(self::VERSION_KEY, (string) microtime(true));
     }
 
-    // Builds and caches the layers the dashboard opens with, so no user is the
+    // Builds and caches the layers the Maps page opens with, so no user is the
     // one who pays for a cold build. Measured cold: rosario_boundary ~2s,
     // barangay_boundary ~0.3s, land_use_plan ~19.5s — that last one used to be
-    // part of every dashboard load.
+    // part of every Maps page load.
     // land_parcels (~4.2k lots, ~1.6s cold) is warmed too: the application encoder's map loads it on every visit.
     public static function warmLayerCache(array $layers = ['rosario_boundary', 'barangay_boundary', 'land_use_plan', 'land_parcels']): array
     {

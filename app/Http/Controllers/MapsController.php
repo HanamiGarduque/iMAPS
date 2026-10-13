@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
-class DashboardController extends Controller
+class MapsController extends Controller
 {
     public function index(Request $request)
     {
@@ -450,7 +450,7 @@ class DashboardController extends Controller
             });
         }
 
-        return Inertia::render('Dashboard', [
+        return Inertia::render('Maps', [
             'userName'  => Auth::user()->name ?? 'Staff',
             'userRole'  => Auth::user()->role ?? 'User',
             'total'     => $total,

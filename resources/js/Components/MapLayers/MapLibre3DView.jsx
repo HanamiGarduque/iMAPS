@@ -4,9 +4,10 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { getLens, resolveLensValue, DIVERSITY_LENSES } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
-import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
+import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import useReducedMotion from "@/utils/useReducedMotion";
 import { loadBarangayBoundaries, resolveBarangayName } from "@/utils/mapData";
+import { ensureRFC7946Winding } from "@/utils/polygonWinding";
 
 // Configure MapLibre Web Worker for Vite bundling
 try {
@@ -46,41 +47,6 @@ const ORBIT_DEG_PER_SEC = 7.5;
 const PARCEL_HEIGHT = 190;
 
 const easeSine = (t) => 0.5 - 0.5 * Math.cos(Math.PI * t);
-
-// RFC 7946 Right-Hand Rule Polygon Winding Fix for MapLibre 3D
-function signedArea(ring) {
-    let sum = 0;
-    for (let i = 0; i < ring.length - 1; i++) {
-        const p1 = ring[i];
-        const p2 = ring[i + 1];
-        sum += (p2[0] - p1[0]) * (p2[1] + p1[1]);
-    }
-    return sum;
-}
-
-function ensureRFC7946Winding(geojson) {
-    if (!geojson || !geojson.features) return geojson;
-
-    for (const f of geojson.features) {
-        if (!f.geometry || !f.geometry.coordinates) continue;
-        const coords = f.geometry.coordinates;
-
-        if (f.geometry.type === "Polygon") {
-            if (coords.length > 0 && signedArea(coords[0]) > 0) coords[0].reverse();
-            for (let i = 1; i < coords.length; i++) {
-                if (signedArea(coords[i]) < 0) coords[i].reverse();
-            }
-        } else if (f.geometry.type === "MultiPolygon") {
-            for (const poly of coords) {
-                if (poly.length > 0 && signedArea(poly[0]) > 0) poly[0].reverse();
-                for (let i = 1; i < poly.length; i++) {
-                    if (signedArea(poly[i]) < 0) poly[i].reverse();
-                }
-            }
-        }
-    }
-    return geojson;
-}
 
 // Area-weighted centroid of a polygon ring (the standard shoelace formula).
 //
@@ -269,7 +235,7 @@ export default function MapLibre3DView({
     onHoverBgy = () => {},
     onParcelsVisible = () => {},
     // Overrides for embedding in a smaller canvas (the Overview card); the
-    // defaults are the GIS dashboard's framing.
+    // defaults are the Maps page's framing.
     baseZoom = 11.5,
     framePadding = null,
     controls = true,

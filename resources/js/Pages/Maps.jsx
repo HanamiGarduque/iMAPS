@@ -17,12 +17,12 @@ import {
 import StatusPanel, { STATUS_MARKER_CONFIG, getStatusMarkerConfig, matchesAppFilters } from "@/Components/MapLayers/StatusPanel";
 import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
-import LeafletMap, { getAppCoordinates, PIN_ZOOM } from "@/Components/Dashboard/LeafletMap";
-import LayersPanel, { MODULES } from "@/Components/Dashboard/LayersPanel";
-import TimelineBar from "@/Components/Dashboard/TimelineBar";
-import AttributeTable from "@/Components/Dashboard/AttributeTable";
-import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
-import { ApplicationDetails, BarangayCard } from "@/Components/Dashboard/IdentifyCards";
+import LeafletMap, { getAppCoordinates, PIN_ZOOM } from "@/Components/Maps/LeafletMap";
+import LayersPanel, { MODULES } from "@/Components/Maps/LayersPanel";
+import TimelineBar from "@/Components/Maps/TimelineBar";
+import AttributeTable from "@/Components/Maps/AttributeTable";
+import MapSkeleton from "@/Components/Maps/MapSkeleton";
+import { ApplicationDetails, BarangayCard } from "@/Components/Maps/IdentifyCards";
 import { getLens } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
 import { confirmSignOut } from "@/utils/signOut";
@@ -48,7 +48,7 @@ class MapsErrorBoundary extends Component {
         if (this.state.hasError) {
             return (
                 <div style={{ padding: "2rem", background: "#fee2e2", color: "#991b1b", minHeight: "100vh", fontFamily: "monospace" }}>
-                    <h2 style={{ fontSize: "1.5rem", fontWeight: "bold" }}>Dashboard component crashed!</h2>
+                    <h2 style={{ fontSize: "1.5rem", fontWeight: "bold" }}>Maps page crashed!</h2>
                     <br />
                     <strong style={{ fontSize: "1.2rem" }}>{this.state.error && this.state.error.toString()}</strong>
                     <br /><br />
@@ -132,6 +132,7 @@ const ICONS = {
     extent: "M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15",
     panel: "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z",
     fullscreen: "M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4",
+    table: "M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M3.75 14.25h16.5M9 9.75v9",
 };
 
 function ToolButton({ icon, label, onClick, pressed, disabled }) {
@@ -174,7 +175,7 @@ function DockHeader({ title, onClose, closeLabel }) {
     );
 }
 
-function DashboardInner({ userName, userRole, bgyStats, recent, filters, overallDiversity, urbanGrowthData }) {
+function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiversity, urbanGrowthData }) {
     const [activeLayer, setActiveLayer] = useState("status");
     const [mapStyle, setMapStyle] = useState("light");
     const [appTypeFilter, setAppTypeFilter] = useState(filters?.application_type || "All");
@@ -340,9 +341,15 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
     const visibleApps = useMemo(() => scopedApps.filter((a) => matchesAppFilters(a, null, statusFilter)), [scopedApps, statusFilter]);
     const visibleAppCount = visibleApps.length;
 
-    // The attribute table appears once a barangay is picked; the tracking panel
-    // shrinks to its content so the map shows through below it.
-    const showTable = activeLayer === "status" && Boolean(selectedBgy?.name);
+    // The attribute table opens when a barangay is picked and closes when it is
+    // cleared; the status-bar button toggles it, listing every barangay when
+    // none is picked. The tracking panel shrinks to its content so the map
+    // shows through below it.
+    const [tableOpen, setTableOpen] = useState(false);
+    useEffect(() => {
+        setTableOpen(Boolean(selectedBgy?.name));
+    }, [selectedBgy?.name]);
+    const showTable = activeLayer === "status" && tableOpen;
     const compactPanel = activeLayer === "status";
     // An open application takes the whole tracking panel: it gets the full map
     // height and the table narrows beside it instead of pushing it to scroll.
@@ -544,7 +551,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
 
     return (
         <>
-            <Head title="Dashboard | iMAPS" />
+            <Head title="Maps | iMAPS" />
             <style>{`
                 #dashboard-root { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
                 #dashboard-root .font-mono { font-family: 'JetBrains Mono', monospace !important; }
@@ -572,7 +579,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                         sidebarOpen={sidebarOpen}
                         setSidebarOpen={setSidebarOpen}
                         onLogout={handleLogout}
-                        activePage="dashboard"
+                        activePage="maps"
                     />
                     {sidebarOpen && (
                         <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/20 z-[750]" aria-hidden="true" />
@@ -734,7 +741,7 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                                     {showTable && (
                                         <div className={`absolute bottom-0 left-0 z-[610] ${panelOpen && panelNeedsRoom ? "right-0 sm:right-[372px]" : "right-0"}`}>
                                             <AttributeTable
-                                                title={`applications · ${selectedBgy.name}`}
+                                                title={`applications · ${selectedBgy?.name || "All barangays"}`}
                                                 apps={visibleApps}
                                                 total={scopedApps.length}
                                                 selectedAppId={inspectedApp?.id ?? null}
@@ -855,6 +862,26 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Zoom {mapZoom}</span>
                             <span className="px-3 border-l border-slate-300 hidden md:block">EPSG:4326</span>
                             <span className="ml-auto pl-3 border-l border-slate-300 truncate">{statusSummary}</span>
+                            {activeLayer === "status" && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        // Closing the table closes the application it had open, as collapsing it does.
+                                        if (tableOpen) setInspectedApp(null);
+                                        setTableOpen(!tableOpen);
+                                    }}
+                                    aria-pressed={tableOpen}
+                                    aria-label="Attribute table"
+                                    title={`${tableOpen ? "Close" : "Open"} attribute table · ${selectedBgy?.name || "All barangays"}`}
+                                    className={`ml-1.5 w-5 h-5 shrink-0 flex items-center justify-center rounded-[3px] border cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b] ${
+                                        tableOpen ? "bg-[#dce6f3] border-[#9fb4d3] text-[#0b2a5b]" : "border-transparent text-slate-600 hover:bg-white hover:border-slate-300"
+                                    }`}
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d={ICONS.table} />
+                                    </svg>
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -863,10 +890,10 @@ function DashboardInner({ userName, userRole, bgyStats, recent, filters, overall
     );
 }
 
-export default function Dashboard(props) {
+export default function Maps(props) {
     return (
         <MapsErrorBoundary>
-            <DashboardInner {...props} />
+            <MapsInner {...props} />
         </MapsErrorBoundary>
     );
 }

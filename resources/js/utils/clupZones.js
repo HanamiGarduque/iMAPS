@@ -1,6 +1,6 @@
 // Official CLUP 2030 zoning codes → label, category and map colour.
 //
-// Single source of truth for zone colour. Dashboard.jsx used to keep its own
+// Single source of truth for zone colour. Maps.jsx used to keep its own
 // `zoningPlanColors` table in parallel with the panel's `ZONE_MAP`, so the same
 // parcel could render one colour on the map and another in the breakdown.
 //

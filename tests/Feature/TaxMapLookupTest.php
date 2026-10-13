@@ -68,6 +68,7 @@ class TaxMapLookupTest extends TestCase
             ]);
 
             $query = Mockery::mock(Builder::class);
+            $query->shouldReceive('selectRaw')->once()->andReturn($query);
             $query->shouldReceive('where')->once()->andReturnUsing(function ($callback) use ($query) {
                 $callback($query);
                 return $query;
@@ -87,6 +88,7 @@ class TaxMapLookupTest extends TestCase
     public function test_formatted_pin_uses_bound_string_literals_and_returns_not_found(): void
     {
         $query = Mockery::mock(Builder::class);
+        $query->shouldReceive('selectRaw')->once()->andReturn($query);
         $query->shouldReceive('where')->once()->andReturnUsing(function ($callback) use ($query) {
             $callback($query);
             return $query;
@@ -127,6 +129,7 @@ class TaxMapLookupTest extends TestCase
         ];
 
         $query = Mockery::mock(Builder::class);
+        $query->shouldReceive('selectRaw')->once()->andReturn($query);
         $query->shouldReceive('where')->once()->andReturnUsing(function ($callback) use ($query) {
             $callback($query);
             return $query;
