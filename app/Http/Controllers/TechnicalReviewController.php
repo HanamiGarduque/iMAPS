@@ -20,6 +20,7 @@ use App\Services\WorkAssignmentService;
 
 use Illuminate\Support\Facades\Log; // For placeholder SMS logic
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -185,6 +186,15 @@ class TechnicalReviewController extends Controller
             }
 
             $this->validateFieldSyncParcelCoordinates($parcel);
+        }
+
+        if (in_array($validated['decision'], PushPlanningReviewToSupabase::TRANSPORTABLE_DECISIONS, true)) {
+            $this->pullPendingInspectionResults(
+                (int) $validated['id'],
+                !empty($validated['parcel_id'])
+                    ? [(int) $validated['parcel_id']]
+                    : Parcel::where('zoning_application_id', $validated['id'])->pluck('id')->all(),
+            );
         }
 
         // Loop 8: transport rows are collected inside the transaction and only
@@ -442,6 +452,14 @@ class TechnicalReviewController extends Controller
                 ]);
             }
         }
+
+        $this->pullPendingInspectionResults(
+            $application->id,
+            array_keys(array_filter(
+                $validated['reviews'],
+                fn (array $review) => in_array($review['decision'], PushPlanningReviewToSupabase::TRANSPORTABLE_DECISIONS, true),
+            )),
+        );
 
         // Loop 8: dispatch review transports only after the review rows commit.
         // Collected by REFERENCE: the dispatch loop below runs after the
@@ -896,6 +914,41 @@ class TechnicalReviewController extends Controller
         }
 
         app(WorkAssignmentService::class)->recordInitialInspectorAssignment($inspection, $actor);
+    }
+
+    /**
+     * Import any FieldSync result the scheduled pull hasn't brought back yet.
+     *
+     * The Planning Officer sees an inspector's submission through the remote
+     * evidence view as soon as it lands, but the local round only becomes
+     * `completed` on the next `sync:pull-inspections` run. A decision saved in
+     * that gap resolved no reviewed round, so it was stored unlinked and never
+     * reached FieldSync. Pulling the open rounds under review first closes the
+     * gap; a round FieldSync hasn't completed is left exactly as it is.
+     */
+    private function pullPendingInspectionResults(int $applicationId, array $parcelIds): void
+    {
+        $openRoundIds = SiteInspection::query()
+            ->where('zoning_application_id', $applicationId)
+            ->whereIn('parcel_id', $parcelIds)
+            ->where('status', '!=', 'completed')
+            ->pluck('id');
+
+        foreach ($openRoundIds as $id) {
+            try {
+                $exitCode = Artisan::call('sync:pull-inspections', ['--local-inspection-id' => $id]);
+            } catch (\Throwable $e) {
+                report($e);
+                $exitCode = 1;
+            }
+
+            // Saving anyway would store the same unlinked decision this guards against.
+            if ($exitCode !== 0) {
+                throw ValidationException::withMessages([
+                    'decision' => "Couldn't check FieldSync for Inspection {$id}'s result, so the decision was not saved. Please try again.",
+                ]);
+            }
+        }
     }
 
     /**
