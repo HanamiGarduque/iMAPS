@@ -14,13 +14,17 @@
 // ramp paints the score. Keeping the two separate is what stops the map's
 // colour and the legend's filter from meaning two different things.
 
+// Cut-offs are on the normalised Shannon index (0–1 over the 11 CLUP
+// categories). Entropy runs lower than the Simpson index the bands were first
+// drawn for, so they sit lower: across Rosario's barangays the recorded mix
+// spans roughly 0.10–0.70.
 export const DIVERSITY_TIERS = [
     {
         id: "high",
         tier: "high",
-        min: 0.75,
+        min: 0.60,
         max: Infinity,
-        label: "High Mix (≥ 0.75)",
+        label: "High Mix (≥ 0.60)",
         shortLabel: "High Mix",
         fill: "#253494",
         stroke: "#1a2570",
@@ -31,9 +35,9 @@ export const DIVERSITY_TIERS = [
     {
         id: "diverse",
         tier: "diverse",
-        min: 0.60,
-        max: 0.75,
-        label: "Diverse (0.60–0.74)",
+        min: 0.45,
+        max: 0.60,
+        label: "Diverse (0.45–0.59)",
         shortLabel: "Diverse",
         fill: "#2a76ab",
         stroke: "#1d5578",
@@ -44,9 +48,9 @@ export const DIVERSITY_TIERS = [
     {
         id: "moderate",
         tier: "moderate",
-        min: 0.40,
-        max: 0.60,
-        label: "Balanced (0.40–0.59)",
+        min: 0.30,
+        max: 0.45,
+        label: "Balanced (0.30–0.44)",
         shortLabel: "Balanced",
         fill: "#31a0a9",
         stroke: "#217680",
@@ -57,9 +61,9 @@ export const DIVERSITY_TIERS = [
     {
         id: "developing",
         tier: "developing",
-        min: 0.20,
-        max: 0.40,
-        label: "Rural (0.20–0.39)",
+        min: 0.15,
+        max: 0.30,
+        label: "Rural (0.15–0.29)",
         shortLabel: "Rural",
         fill: "#7fcdbb",
         stroke: "#4aa392",
@@ -71,8 +75,8 @@ export const DIVERSITY_TIERS = [
         id: "monoculture",
         tier: "monoculture",
         min: -Infinity,
-        max: 0.20,
-        label: "Specialized Ag (< 0.20)",
+        max: 0.15,
+        label: "Specialized Ag (< 0.15)",
         shortLabel: "Specialized Ag",
         fill: "#c7e9b4",
         stroke: "#7ab648",
@@ -90,6 +94,19 @@ export const DIVERSITY_BLUES = {
     moderate: "#3b82f6",
     developing: "#93c5fd",
     monoculture: "#dbeafe",
+};
+
+// A period with too few filings to score. Drawn grey, never as a low score.
+export const NO_DATA_TIER = {
+    id: "nodata",
+    tier: "nodata",
+    label: "Too few records",
+    shortLabel: "No data",
+    fill: "#e2e8f0",
+    stroke: "#94a3b8",
+    onFill: "#334155",
+    classification: "Too few records",
+    summary: "Fewer than five filings with a lot area in this period, too few to score.",
 };
 
 export function getDiversityTheme(score) {
@@ -129,7 +146,9 @@ export function findRank(rankedList, name) {
 //
 // A lens binds one backend metric to a colour scale, a prism height, and the
 // copy that explains it, so the map, the legend and the side panel can never
-// disagree. The mix lens reads the live Simpson index MapsController computes.
+// disagree. The mix lens reads the normalised Shannon index LandUseMixService
+// computes from recorded filings (the CLUP 2030 plan mix is its baseline). A
+// null score means too few records, and resolves to NO_DATA_TIER.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Prism heights in metres, kept low enough that the town reads as a massing
@@ -145,6 +164,8 @@ function lerpHeight(t) {
     return Math.round(HEIGHT_FLOOR + clamp(t, 0, 1) * (HEIGHT_CEIL - HEIGHT_FLOOR));
 }
 
+const isScore = (value) => typeof value === "number" && !Number.isNaN(value);
+
 function toNumber(value, fallback = 0) {
     if (typeof value === "number" && !Number.isNaN(value)) return value;
     const parsed = parseFloat(value);
@@ -158,15 +179,19 @@ export const DIVERSITY_LENSES = [
         shortLabel: "Mix",
         tabLabel: "Overview",
         metricLabel: "Mix Score",
-        question: "How varied is this barangay's land use right now?",
-        caption: "Current Mix Score, calculated from the CLUP 2030 map and all approved zoning permits.",
-        heightNote: "Height & colour = current mix (0.00 – 1.00)",
+        question: "How varied is the land being developed in this barangay?",
+        caption: "Mix Score (normalised Shannon index over the 11 CLUP land-use categories) of the lot area recorded in clearances, certificates and permits, compared with the CLUP 2030 plan mix.",
+        heightNote: "Height & colour = recorded mix (0.00 – 1.00)",
         bands: DIVERSITY_TIERS,
         domain: [0, 1],
-        getValue: (stat) => toNumber(stat?.diversity),
-        format: (value) => toNumber(value).toFixed(2),
-        getBand: (value) => getDiversityTheme(value),
-        getHeight: (value) => lerpHeight(clamp(toNumber(value), 0, 1)),
+        getValue: (stat) => {
+            const v = stat?.diversity;
+            return v === null || v === undefined || v === "" ? null : toNumber(v);
+        },
+        format: (value) => (isScore(value) ? value.toFixed(2) : "—"),
+        getBand: (value) => (isScore(value) ? getDiversityTheme(value) : NO_DATA_TIER),
+        // No score: a flat footprint rather than the shortest prism.
+        getHeight: (value) => (isScore(value) ? lerpHeight(clamp(value, 0, 1)) : 20),
     },
 ];
 

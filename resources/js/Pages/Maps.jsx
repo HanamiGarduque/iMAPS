@@ -305,6 +305,66 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         return counts;
     }, [activeHistoricalPins, activeQuarter, forecastDemand]);
 
+    // ── Diversity timeline ──
+    // One step per quarter, each scored over the five years ending that
+    // quarter (a rolling five-year window). The latest step is the headline
+    // score and the default. Picking a quarter re-scores every barangay on the
+    // map and in the panel. Steps whose five years reach back before the first
+    // recorded filing are partial and drawn dimmed.
+    const mixTimeline = useMemo(() => overallDiversity?.timeline || [], [overallDiversity]);
+    const diversitySteps = useMemo(
+        () => mixTimeline.map((s) => ({ year: s.year, quarter: s.quarter, label: s.label, from: s.from, to: s.to, quarters: s.quarters, isPartial: s.partial })),
+        [mixTimeline]
+    );
+    const lastStep = diversitySteps.length - 1;
+    const [diversityStepIndex, setDiversityStepIndex] = useState(() => lastStep);
+    const [isDiversityPlaying, setIsDiversityPlaying] = useState(false);
+    const stepIndex = Math.min(diversityStepIndex, lastStep);
+    const diversityStep = diversitySteps[stepIndex];
+    // The latest step is the headline window, which bgyStats already carries
+    // (with its plan fallback), so only earlier steps are swapped in.
+    const stepData = stepIndex < lastStep ? mixTimeline[stepIndex] : null;
+
+    const diversityStats = useMemo(() => {
+        if (!stepData) return bgyStats;
+        const out = {};
+        Object.entries(bgyStats || {}).forEach(([name, stat]) => {
+            const s = stepData.barangays?.[name];
+            out[name] = {
+                ...stat,
+                diversity: s ? s.diversity : null,
+                distribution: s?.distribution || [],
+                mixRecords: s?.records ?? 0,
+                developedHa: s?.developedHa ?? 0,
+                mixSource: "records",
+            };
+        });
+        return out;
+    }, [bgyStats, stepData]);
+
+    const diversityOverall = useMemo(() => {
+        if (!stepData) return overallDiversity;
+        const m = stepData.municipal || {};
+        return { ...overallDiversity, score: m.diversity, distribution: m.distribution || [], records: m.records ?? 0, developedHa: m.developedHa ?? 0, source: "records" };
+    }, [overallDiversity, stepData]);
+
+    // The bars follow the selected barangay, or Rosario when none is picked.
+    const diversitySeries = useMemo(() => {
+        const name = selectedBgy?.name;
+        return mixTimeline.map((s) => {
+            const entry = name ? s.barangays?.[name] : s.municipal;
+            return { total: entry ? entry.diversity : null, records: entry?.records ?? 0 };
+        });
+    }, [mixTimeline, selectedBgy]);
+
+    // "Oct 2021 – Sep 2026", and how much of the five years it covers.
+    const mixPeriod = (step) => {
+        if (!step?.from) return "";
+        const m = (d) => new Date(`${d}T00:00:00`).toLocaleDateString("en-PH", { month: "short", year: "numeric" });
+        const span = step.isPartial ? ` · ${(step.quarters / 4).toFixed(2).replace(/\.?0+$/, "")} of 5 yrs recorded` : "";
+        return `${m(step.from)} – ${m(step.to)}${span}`;
+    };
+
     // ── 3D (diversity only) ──
     const [is3DMode, setIs3DMode] = useState(true);
     const show3D = is3DMode && activeLayer === "diversity";
@@ -468,6 +528,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     useEffect(() => {
         if (activeLayer !== "diversity") setDiversityBandFilter("all");
         if (activeLayer !== "trends") setIsTimelinePlaying(false);
+        if (activeLayer !== "diversity") setIsDiversityPlaying(false);
         if (activeLayer !== "status") setInspectedApp(null);
         const carried = carryBgyRef.current;
         carryBgyRef.current = null;
@@ -484,6 +545,14 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         }, 1400);
         return () => clearInterval(id);
     }, [isTimelinePlaying, activeLayer, timelineQuarters.length]);
+
+    useEffect(() => {
+        if (!isDiversityPlaying || activeLayer !== "diversity" || diversitySteps.length <= 1) return;
+        const id = setInterval(() => {
+            setDiversityStepIndex((i) => (i >= diversitySteps.length - 1 ? 0 : i + 1));
+        }, 1400);
+        return () => clearInterval(id);
+    }, [isDiversityPlaying, activeLayer, diversitySteps.length]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -507,6 +576,10 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
     const handleLogout = confirmSignOut;
 
+    // Barangay figures as the active module shows them: the diversity index
+    // reads the period picked on its timeline.
+    const mapStats = activeLayer === "diversity" ? diversityStats : bgyStats;
+
     // ── What the canvas is showing, in words ──
     const moduleInfo = MODULES.find((m) => m.id === activeLayer);
     const quarterCount = activeQuarter?.isForecast
@@ -518,12 +591,12 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             ? quarterCount
                 ? `${activeQuarter?.label} · ${quarterCount} LC ${activeQuarter?.isForecast ? "projected" : "filed"}`
                 : `${activeQuarter?.label} · no LC ${activeQuarter?.isForecast ? "forecast available" : "records"} for this quarter`
-            : `Mix score, 0 to 1 · higher is more varied${show3D ? " · 3D" : ""}`;
+            : `5 years to ${diversityStep?.label}${diversityStep?.isPartial ? " (partial)" : ""} · mix 0 to 1${show3D ? " · 3D" : ""}`;
     const statusSummary = activeLayer === "status"
         ? `${visibleAppCount} application${visibleAppCount === 1 ? "" : "s"}`
         : activeLayer === "trends"
             ? `${quarterCount} LC · ${activeQuarter?.label}`
-            : `${Object.keys(bgyStats || {}).length} barangays`;
+            : `${Object.keys(bgyStats || {}).length} barangays · ${mixPeriod(diversityStep)}`;
 
     const scaleLat = cursor?.lat ?? 13.845;
 
@@ -534,7 +607,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             if (app) return `${app.applicant_name || "Applicant"} · ${getStatusMarkerConfig(app.status).label} · ${app.barangay || ""}`;
         }
         if (!hoveredBgy) return "";
-        const stat = bgyStats?.[hoveredBgy] || {};
+        const stat = mapStats?.[hoveredBgy] || {};
         if (activeLayer === "trends") {
             const key = hoveredBgy.trim().toLowerCase();
             const n = demandByBgy[key] || 0;
@@ -547,7 +620,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         }
         const n = stat.Total ?? 0;
         return `${hoveredBgy}: ${n} application${n === 1 ? "" : "s"}${stat.Primary_Zone ? ` · ${stat.Primary_Zone}` : ""}`;
-    }, [hoveredBgy, hoveredAppId, applications, bgyStats, activeLayer, demandByBgy, activeQuarter, diversityLens]);
+    }, [hoveredBgy, hoveredAppId, applications, mapStats, activeLayer, demandByBgy, activeQuarter, diversityLens]);
 
     return (
         <>
@@ -638,7 +711,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             activeQuarter={activeQuarter}
                                             diversityBandFilter={diversityBandFilter}
                                             onSelectBand={setDiversityBandFilter}
-                                            bgyStats={bgyStats}
+                                            bgyStats={mapStats}
                                             parcelsVisible={parcelsVisible}
                                             showClup={showClup}
                                             onToggleClup={setShowClup}
@@ -660,7 +733,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                         `visibility`, so neither is rebuilt on a 2D/3D switch. */}
                                     <div className="absolute inset-0" style={{ visibility: show3D ? "hidden" : "visible" }} aria-hidden={show3D}>
                                         <LeafletMap
-                                            bgyStats={bgyStats}
+                                            bgyStats={mapStats}
                                             applications={applications}
                                             currentLayer={activeLayer}
                                             mapStyle={mapStyle}
@@ -700,7 +773,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     selectedBgy={selectedBgy}
                                                     onFeatureClick={(name) => selectBarangay(name)}
                                                     onMapClick={handleMapClick}
-                                                    bgyStats={bgyStats}
+                                                    bgyStats={diversityStats}
                                                     rightPanelOpen={panelOpen}
                                                     panelWidth={372}
                                                     bandFilter={diversityBandFilter}
@@ -776,7 +849,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                 {selectedBgy?.name && !showAppDetails && (
                                                     <BarangayCard
                                                         name={selectedBgy.name}
-                                                        stat={bgyStats?.[selectedBgy.name] || selectedBgy.data || {}}
+                                                        stat={mapStats?.[selectedBgy.name] || selectedBgy.data || {}}
                                                         apps={selectedBgyApps || {}}
                                                         demand={demandByBgy[selectedBgy.name.trim().toLowerCase()] || 0}
                                                         activeQuarter={activeQuarter}
@@ -817,10 +890,11 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                 {activeLayer === "diversity" && (
                                                     <div className="flex-1 min-h-0 flex flex-col">
                                                         <DiversityPanel
-                                                            overallDiversity={overallDiversity}
+                                                            overallDiversity={diversityOverall}
+                                                            period={diversityStep}
                                                             selectedBgy={selectedBgy}
                                                             onSelectBgy={selectBarangay}
-                                                            bgyStats={bgyStats}
+                                                            bgyStats={diversityStats}
                                                             lens={diversityLens}
                                                             bandFilter={diversityBandFilter}
                                                             onSelectBand={setDiversityBandFilter}
@@ -847,6 +921,34 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                         onTogglePlay={() => setIsTimelinePlaying((p) => !p)}
                                         count={quarterCount}
                                         series={quarterSeries}
+                                    />
+                                )}
+
+                                {activeLayer === "diversity" && diversitySteps.length > 1 && (
+                                    <TimelineBar
+                                        quarters={diversitySteps}
+                                        series={diversitySeries}
+                                        index={stepIndex}
+                                        onIndex={(i) => {
+                                            setDiversityStepIndex(i);
+                                            setIsDiversityPlaying(false);
+                                        }}
+                                        playing={isDiversityPlaying}
+                                        onTogglePlay={() => setIsDiversityPlaying((p) => !p)}
+                                        max={1}
+                                        summary={(() => {
+                                            const cur = diversitySeries[stepIndex] || {};
+                                            const who = selectedBgy?.name || "Rosario";
+                                            return cur.total == null
+                                                ? `${who} · too few filings (${cur.records}) · ${mixPeriod(diversityStep)}`
+                                                : `${who} · mix ${cur.total.toFixed(2)} · ${cur.records} filings · ${mixPeriod(diversityStep)}`;
+                                        })()}
+                                        describe={(q, total, known) =>
+                                            `5 years to ${q.label} (${mixPeriod(q)}): ${known ? `mix ${total.toFixed(2)}` : "too few filings to score"}`
+                                        }
+                                        colorFor={(q, total) => (total == null ? undefined : getLens(diversityLens).getBand(total).fill)}
+                                        ariaLabel="Diversity index timeline"
+                                        seriesLabel="Land-use mix per period"
                                     />
                                 )}
                             </main>

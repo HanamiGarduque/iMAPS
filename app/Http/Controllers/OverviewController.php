@@ -6,6 +6,7 @@ use App\Models\AppNotification;
 use App\Models\ApplicationDraft;
 use App\Models\SiteInspection;
 use App\Models\ZoningApplication;
+use App\Services\LandUseMixService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -85,27 +86,12 @@ class OverviewController extends Controller
             ];
         }
 
-        // Land-use mix per barangay (Simpson index over CLUP zone area), the
-        // same score the Maps page's diversity view extrudes in 3D.
-        $zoneAreas = [];
-        $municipalAreas = [];
-        $rows = DB::table('land_use_plan')
-            ->select('location', 'lup_2030', DB::raw('SUM(shape_area) as area'))
-            ->whereNotNull('location')
-            ->groupBy('location', 'lup_2030')
-            ->get();
-        foreach ($rows as $row) {
-            $b = trim($row->location);
-            $zoneAreas[$b][$row->lup_2030] = ($zoneAreas[$b][$row->lup_2030] ?? 0) + (float) $row->area;
-            $municipalAreas[$row->lup_2030] = ($municipalAreas[$row->lup_2030] ?? 0) + (float) $row->area;
-        }
-        $simpson = function (array $areas): float {
-            $total = array_sum($areas);
-            if ($total <= 0) {
-                return 0.0;
-            }
-            return round(1 - array_sum(array_map(fn ($a) => ($a / $total) ** 2, $areas)), 2);
-        };
+        // Land-use mix per barangay (normalised Shannon index), the same score
+        // the Maps page's diversity view extrudes in 3D: five years of recorded
+        // filings, with the CLUP 2030 zone areas as the plan baseline.
+        $mixService = app(LandUseMixService::class);
+        $zoneAreas = $mixService->planAreas();
+        $mix = $mixService->compute($zoneAreas);
 
         // Filing-to-release time, from the status history the public tracker reads.
         $releaseSpans = "
@@ -129,7 +115,8 @@ class OverviewController extends Controller
         foreach ($zoneAreas as $name => $areas) {
             $k = $key($name);
             $bgyStats[$name] = [
-                'diversity'    => $simpson($areas),
+                'diversity'    => $mix['barangays'][$name]['diversity'] ?? null,
+                'planDiversity' => $mix['barangays'][$name]['planDiversity'] ?? null,
                 // CLUP 2030 zone code => area, for the zoning composition beside the map.
                 'zones'        => array_map('round', $areas),
                 'statusCounts' => $statusByBgy[$k] ?? [],
@@ -152,8 +139,11 @@ class OverviewController extends Controller
             'topBarangays' => $topBarangays,
             'forecast'     => $forecast,
             'bgyStats'     => $bgyStats,
-            'municipalDiversity' => $simpson($municipalAreas),
-            'municipalZones' => array_map('round', $municipalAreas),
+            'municipalDiversity' => $mix['municipal']['diversity'],
+            'municipalPlanDiversity' => $mix['municipal']['planDiversity'],
+            'mixWindow'    => $mix['window'],
+            // CLUP 2030 zone code => area, for the zoning composition beside the map.
+            'municipalZones' => array_map('round', $mix['municipal']['planZones']),
             'unreadCount'  => AppNotification::forUser($user->id)->unread()->count(),
             'latestUnread' => AppNotification::forUser($user->id)->unread()->latest()->value('title'),
             // Each role only gets the queue it can open (drafts are Planning

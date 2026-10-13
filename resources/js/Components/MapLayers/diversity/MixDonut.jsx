@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { getZoneInfo } from "@/utils/clupZones";
+import { getZoneInfo, ZONE_CATEGORIES } from "@/utils/clupZones";
 import useReducedMotion from "@/utils/useReducedMotion";
 
 const RADIUS = 32;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 // Land-use mix ring, coloured with the official flat CLUP categories so the
-// breakdown here and the parcels on the map read as the same palette.
+// breakdown here and the parcels on the map read as the same palette. Entries
+// are named by CLUP category id (the mix is scored per category) or, for older
+// callers, by zone code.
 //
 // The ring replays its draw-in entrance every time `replayKey` changes
 // (selecting a different barangay, or returning to the municipal view) rather
@@ -56,7 +58,7 @@ export default function MixDonut({ distribution = [], replayKey, centerValue, ce
                 dash,
                 remainder: Math.max(0, CIRCUMFERENCE - dash),
                 offset: -cumulative,
-                zone: getZoneInfo(item.name),
+                zone: ZONE_CATEGORIES[item.name] || getZoneInfo(item.name),
             };
             cumulative += dash;
             return seg;

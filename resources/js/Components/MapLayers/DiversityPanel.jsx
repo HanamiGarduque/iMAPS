@@ -4,11 +4,14 @@ import MixDonut from './diversity/MixDonut';
 import useAnimatedNumber from '@/utils/useAnimatedNumber';
 import { getLens, resolveLensValue, rankByLens, matchesBand, computeDiversityAggregates, findRank } from '@/utils/diversityTheme';
 
-// Land-use mix for the municipality or the selected barangay: the score, what
-// the land is made of, and every barangay ranked. Hovering a row lights the
+// Land-use mix for the municipality or the selected barangay, over the rolling
+// five-year window picked on the map's timeline (the latest by default): the
+// score, how it compares with the CLUP 2030 plan, what the
+// filed land is made of, and every barangay ranked. Hovering a row lights the
 // barangay on the map; clicking opens it.
 export default function DiversityPanel({
     overallDiversity,
+    period = null,
     selectedBgy,
     onSelectBgy = () => {},
     bgyStats = {},
@@ -31,25 +34,36 @@ export default function DiversityPanel({
         () => computeDiversityAggregates(Object.entries(bgyStats || {}).map(([name, s]) => ({ name, diversity: s?.diversity }))),
         [bgyStats]
     );
-    const municipalMean = typeof overallDiversity?.score === 'number' ? overallDiversity.score : aggregates.mean;
+    const municipalScore = typeof overallDiversity?.score === 'number' ? overallDiversity.score : null;
     const rankInfo = useMemo(() => findRank(aggregates.ranked, bgyName), [aggregates, bgyName]);
 
-    const score = isBgy && typeof bgyStat.diversity === 'number' ? bgyStat.diversity : municipalMean;
+    // null = too few filings in this period to score.
+    const score = isBgy ? (typeof bgyStat.diversity === 'number' ? bgyStat.diversity : null) : municipalScore;
     const headline = resolveLensValue("mix", { diversity: score });
-    const shown = lens.format(useAnimatedNumber(score));
+    const animated = useAnimatedNumber(score ?? 0);
+    const shown = score == null ? "—" : lens.format(animated);
 
     const distribution = isBgy ? bgyStat.distribution || matchedGeoBgy?.dist || [] : overallDiversity?.distribution || [];
-    const areaHa = isBgy ? bgyStat.areaHa ?? matchedGeoBgy?.area_ha ?? 0 : overallDiversity?.totalAreaHa ?? 0;
+    const fromRecords = (isBgy ? bgyStat.mixSource : overallDiversity?.source) === 'records';
+    const records = isBgy ? bgyStat.mixRecords ?? 0 : overallDiversity?.records ?? 0;
+    const developedHa = isBgy ? bgyStat.developedHa ?? 0 : overallDiversity?.developedHa ?? 0;
+    const planScore = isBgy ? bgyStat.clupTargetDiversity : overallDiversity?.planScore;
+    const month = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', year: 'numeric' }) : '');
+    const periodLabel = period?.from ? `${month(period.from)} – ${month(period.to)}` : 'the last five years';
 
     const ranking = useMemo(
         () => rankByLens("mix", bgyStats).filter((r) => matchesBand("mix", bandFilter, r.stat)),
         [bgyStats, bandFilter]
     );
 
-    const diff = score - municipalMean;
+    const unscored = Object.values(bgyStats || {}).filter((st) => typeof st?.diversity !== 'number').length;
+
+    const signed = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
     const context = isBgy
-        ? `${rankInfo ? `Rank ${rankInfo.rank} of ${rankInfo.total} · ` : ""}${diff >= 0 ? "+" : ""}${diff.toFixed(2)} vs Rosario average`
-        : `Average of ${aggregates.count} barangays`;
+        ? score == null
+            ? `${records} filing${records === 1 ? "" : "s"} in this period`
+            : `${rankInfo ? `Rank ${rankInfo.rank} of ${rankInfo.total} · ` : ""}${municipalScore == null ? "" : `${signed(score - municipalScore)} vs all of Rosario`}`
+        : `All of Rosario · ${aggregates.count} barangays scored`;
 
     return (
         <div className="flex-1 min-h-0 flex flex-col bg-white">
@@ -68,16 +82,41 @@ export default function DiversityPanel({
                 </div>
             </div>
 
+            {typeof planScore === 'number' && (
+                <div className="shrink-0 flex items-baseline justify-between gap-2 px-4 py-2 border-b border-slate-200 text-[11px]">
+                    <span className="text-slate-500">CLUP 2030 plan mix</span>
+                    <span className="tabular-nums text-slate-700">
+                        {lens.format(planScore)}
+                        {fromRecords && score != null && (
+                            <span className="ml-1.5 text-slate-500">({signed(score - planScore)} recorded vs plan)</span>
+                        )}
+                    </span>
+                </div>
+            )}
+
             <div className="shrink-0 px-4 py-3 border-b border-slate-200">
                 <div className="flex items-baseline justify-between mb-2">
                     <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                        Land use · {isBgy ? bgyName : "Rosario"}
+                        {fromRecords ? "Recorded development" : "CLUP 2030 zoning"} · {isBgy ? bgyName : "Rosario"}
                     </h3>
                     <span className="text-[10.5px] tabular-nums text-slate-400">
-                        {areaHa ? `${Number(areaHa).toLocaleString('en-PH')} ha · ` : ""}{distribution.length} zones
+                        {fromRecords
+                            ? `${Number(records).toLocaleString('en-PH')} filings · ${Number(developedHa).toLocaleString('en-PH')} ha`
+                            : `${distribution.length} categories`}
                     </span>
                 </div>
-                <MixDonut distribution={distribution} replayKey={bgyName || "__all__"} centerValue={shown} centerLabel="Mix" />
+                {score == null ? (
+                    <p className="text-[11px] text-slate-500 py-3 text-center">
+                        Too few filings with a lot area in {periodLabel} to score.
+                    </p>
+                ) : (
+                    <MixDonut distribution={distribution} replayKey={bgyName || "__all__"} centerValue={shown} centerLabel="Mix" />
+                )}
+                <p className="mt-2 text-[10.5px] text-slate-400 leading-snug">
+                    {fromRecords
+                        ? `Lot area filed per CLUP land-use category over the five years to ${period?.label || "the latest filing"} (${periodLabel}${period?.isPartial ? `; records start ${month(period.from)}, so only ${period.quarters} of 20 quarters` : ""}). Score: Shannon index ÷ ln 11.`
+                        : "Too few recorded filings in the last five years; showing the plan."}
+                </p>
             </div>
 
             <div className="shrink-0 flex items-baseline px-4 pt-2.5 pb-2">
@@ -113,6 +152,11 @@ export default function DiversityPanel({
                         </li>
                     );
                 })}
+                {unscored > 0 && bandFilter === "all" && (
+                    <li className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-100">
+                        {unscored} barangay{unscored === 1 ? "" : "s"} with too few filings in this period, not ranked.
+                    </li>
+                )}
             </ol>
         </div>
     );

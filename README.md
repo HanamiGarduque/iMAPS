@@ -14,7 +14,7 @@
 
 - **🗺️ Geospatial & Map Analytics (`/maps`)**
   - **Interactive GIS Viewport**: Built with MapLibre GL 3D & Leaflet for rendering barangay boundaries, zoning classification overlays, and land parcel boundaries.
-  - **Land-Use Diversity & Plan Drift**: Shannon Diversity Index calculation and plan drift detection comparing permitted usage against municipal Comprehensive Land Use Plans (CLUP).
+  - **Land-Use Mix Monitoring**: normalised Shannon entropy index per barangay (−Σ p ln p ÷ ln 11 over the CLUP land-use categories), computed from the lot area filed in the last five years of recorded clearances, certificates and permits (`historical_data`) and compared against the CLUP 2030 plan mix. A time slider steps quarter by quarter through rolling five-year windows; the window is anchored on the latest filing, so each new import moves it forward.
   - **Urban Growth Forecasting**: Integration with a predictive forecasting service to project quarter-by-quarter land-use transitions and urban expansion. **Requires a separate FastAPI + XGBoost microservice that lives in its own repository** — see [Urban Growth Forecasting](#-urban-growth-forecasting-external-microservice).
   - **Tax Dec & Parcel Lookup**: Live verification of Tax Declaration numbers (Tax Dec / TCT) against spatial parcel boundaries.
 

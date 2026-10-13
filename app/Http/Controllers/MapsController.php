@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ZoningApplication;
+use App\Services\LandUseMixService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -53,16 +54,13 @@ class MapsController extends Controller
             $bgyStats[$b]['Total'] += (int) $row->cnt;
         }
 
-        // ── Real-Time Permit Integration & Dynamic Diversity Index ──
-        $landUseQuery = DB::table('land_use_plan')
-            ->select('location', 'lup_2030', DB::raw('SUM(shape_area) as feature_area'))
-            ->whereNotNull('location')
-            ->groupBy('location', 'lup_2030')
-            ->get();
-
-        $bgyDiversity = [];
-        $municipalTotal = 0;
-        $municipalZones = [];
+        // ── Land-use mix (normalised Shannon index) ──
+        // Headline score: lot area filed per land-use category over the last
+        // five years of recorded clearances, certificates and permits, so it
+        // moves as development is recorded. The CLUP 2030 zone areas are the
+        // plan baseline it is compared against (variance = recorded − plan).
+        // The timeline cuts the same five years into rolling twelve months.
+        $mix = app(LandUseMixService::class)->compute();
 
         $bgyLandArea = [];
         $municipalAreaSqm = 0.0;
@@ -74,81 +72,28 @@ class MapsController extends Controller
             $municipalAreaSqm += $sqm;
         }
 
-        foreach ($landUseQuery as $lu) {
-            $b = trim($lu->location);
-            $area = (float) $lu->feature_area;
-            
-            $bgyDiversity[$b]['total'] = ($bgyDiversity[$b]['total'] ?? 0) + $area;
-            $bgyDiversity[$b]['zones'][$lu->lup_2030] = ($bgyDiversity[$b]['zones'][$lu->lup_2030] ?? 0) + $area;
-
-            $municipalTotal += $area;
-            $municipalZones[$lu->lup_2030] = ($municipalZones[$lu->lup_2030] ?? 0) + $area;
-        }
-
-        $maxPermits = max(1, count($bgyStats) > 0 ? max(array_column($bgyStats, 'Total')) : 1);
-
-        foreach ($bgyDiversity as $b => $data) {
-            $baselineN = $data['total'];
-            $baseSumOfSquares = 0;
-            $baseDistribution = [];
-
-            if ($baselineN > 0) {
-                foreach ($data['zones'] as $zone => $area) {
-                    $p = $area / $baselineN;
-                    $baseSumOfSquares += ($p * $p);
-                    $baseDistribution[] = ['name' => $zone, 'value' => round($p * 100, 1)];
-                }
-            }
-            usort($baseDistribution, fn($a, $b) => $b['value'] <=> $a['value']);
-            $targetDiversity = round(1 - $baseSumOfSquares, 2);
-
-            $liveZones = $data['zones'];
-            $liveTotal = $baselineN;
+        foreach ($mix['barangays'] as $b => $m) {
             $bgyPCount = $bgyStats[$b]['Total'] ?? 0;
-
-            $liveSumOfSquares = 0;
-            $liveDistribution = [];
-            if ($liveTotal > 0) {
-                foreach ($liveZones as $zone => $area) {
-                    $p = $area / $liveTotal;
-                    $liveSumOfSquares += ($p * $p);
-                    $liveDistribution[] = ['name' => $zone, 'value' => round($p * 100, 1)];
-                }
-            }
-            usort($liveDistribution, fn($a, $b) => $b['value'] <=> $a['value']);
-            $liveDiversity = round(1 - $liveSumOfSquares, 2);
-
-            $variance = round($liveDiversity - $targetDiversity, 3);
-            
             if (!isset($bgyStats[$b])) {
                 $bgyStats[$b] = [
                     'Total' => $bgyPCount,
                     'Technical Review' => 0,
                     'Released' => 0,
-                    'Primary_Zone' => $liveDistribution[0]['name'] ?? 'Residential'
+                    'Primary_Zone' => $m['distribution'][0]['name'] ?? 'Residential'
                 ];
             }
 
-            $bgyStats[$b]['diversity'] = $liveDiversity;
-            $bgyStats[$b]['liveDiversity'] = $liveDiversity;
-            $bgyStats[$b]['clupTargetDiversity'] = $targetDiversity;
-            $bgyStats[$b]['variance'] = $variance;
-            $bgyStats[$b]['distribution'] = $liveDistribution;
-            $bgyStats[$b]['baselineDistribution'] = $baseDistribution;
+            $bgyStats[$b]['diversity'] = $m['diversity'];
+            $bgyStats[$b]['liveDiversity'] = $m['diversity'];
+            $bgyStats[$b]['clupTargetDiversity'] = $m['planDiversity'];
+            $bgyStats[$b]['variance'] = $m['variance'];
+            $bgyStats[$b]['distribution'] = $m['distribution'];
+            $bgyStats[$b]['baselineDistribution'] = $m['planDistribution'];
+            $bgyStats[$b]['mixSource'] = $m['source'];
+            $bgyStats[$b]['mixRecords'] = $m['records'];
+            $bgyStats[$b]['developedHa'] = $m['developedHa'];
             $bgyStats[$b]['permitCount'] = $bgyPCount;
             $bgyStats[$b]['areaHa'] = round(($bgyLandArea[$b] ?? 0) / 10000, 1);
-        }
-
-        // Apply Simpson's Diversity Index Formula (Municipal Level)
-        $munSumOfSquares = 0;
-        $munDistribution = [];
-        if ($municipalTotal > 0) {
-            foreach ($municipalZones as $zone => $count) {
-                $p = $count / $municipalTotal;
-                $munSumOfSquares += ($p * $p);
-                $munDistribution[] = ['name' => $zone, 'value' => round($p * 100)];
-            }
-            usort($munDistribution, fn($a, $b) => $b['value'] <=> $a['value']);
         }
 
         $rankedBgys = [];
@@ -165,10 +110,18 @@ class MapsController extends Controller
         }
         usort($rankedBgys, fn($a, $b) => $b['score'] <=> $a['score']);
 
+        $mun = $mix['municipal'];
         $overallDiversity = [
-            'score' => round(1 - $munSumOfSquares, 2),
-            'primary' => $munDistribution[0]['name'] ?? 'Multi-Sector',
-            'distribution' => array_slice($munDistribution, 0, 4),
+            'score' => $mun['diversity'],
+            'planScore' => $mun['planDiversity'],
+            'variance' => $mun['variance'],
+            'source' => $mun['source'],
+            'records' => $mun['records'],
+            'developedHa' => $mun['developedHa'],
+            'window' => $mix['window'],
+            'timeline' => $mix['timeline'],
+            'primary' => $mun['distribution'][0]['name'] ?? 'Multi-Sector',
+            'distribution' => $mun['distribution'],
             'topBarangays' => array_slice($rankedBgys, 0, 8),
             'lowBarangays' => array_slice(array_reverse($rankedBgys), 0, 5),
             'totalAreaHa' => round($municipalAreaSqm / 10000, 1),

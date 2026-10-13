@@ -235,7 +235,8 @@ export default function LeafletMap({
             map[name] = {
                 total: stat.Total ?? 0,
                 landUse: stat.Primary_Zone || stat.primaryZone || "",
-                diversity: stat.diversity ?? 0,
+                // null = too few records to score; the lens draws it as no data.
+                diversity: stat.diversity ?? null,
                 distribution: stat.distribution || [],
                 variance: stat.variance ?? 0,
                 varianceStatus: stat.varianceStatus || "",
