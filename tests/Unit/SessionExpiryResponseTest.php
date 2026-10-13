@@ -60,23 +60,26 @@ class SessionExpiryResponseTest extends TestCase
         $this->assertNotSame('', trim((string) $payload['message']));
     }
 
-    public function test_a_browser_request_is_redirected_to_login(): void
+    public function test_a_browser_request_is_redirected_back_with_a_message(): void
     {
-        $response = $this->render419(Request::create('/site-inspections', 'GET'));
+        $response = $this->render419(Request::create('/site-inspections', 'POST'));
 
-        // The merged handler redirects a browser to the login screen, so the status
-        // is the redirect's 302 - it deliberately does not preserve 419 for HTML.
+        // A browser is sent back to the page it came from, not shown a JSON body.
         $this->assertInstanceOf(
             RedirectResponse::class,
             $response,
             'A plain browser request must be redirected rather than shown a JSON body.'
         );
         $this->assertSame(302, $response->getStatusCode());
-        $this->assertStringContainsString(
-            'login',
-            (string) $response->headers->get('Location'),
-            'Session expiry must send a browser to the login route.'
-        );
+        $this->assertSame('The page expired, please try again.', $response->getSession()?->get('message'));
+    }
+
+    public function test_an_expired_logout_goes_to_login(): void
+    {
+        $response = $this->render419(Request::create('/logout', 'POST'));
+
+        $this->assertSame(302, $response->getStatusCode());
+        $this->assertStringContainsString('login', (string) $response->headers->get('Location'));
     }
 
     public function test_the_merged_handler_branches_on_expects_json(): void

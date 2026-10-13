@@ -52,7 +52,7 @@ class InspectionDeliveryStatusReaderTest extends TestCase
         $this->assertSame('pgsql', config('database.default'), 'This suite requires the disposable PostgreSQL.');
         $this->withoutVite();
 
-        $this->officer = User::create(['name' => 'Delivery Officer', 'email' => 'delivery-'.uniqid().'@example.test',
+        $this->officer = User::forceCreate(['name' => 'Delivery Officer', 'email' => 'delivery-'.uniqid().'@example.test',
             'password' => 'test-only', 'role' => 'Planning Officer', 'is_active' => true]);
         $this->application = ZoningApplication::create([
             'reference_number' => 'APP-DELIVERY-'.uniqid(), 'application_type' => 'Locational Clearance',
@@ -80,7 +80,7 @@ class InspectionDeliveryStatusReaderTest extends TestCase
         $round = SiteInspection::create($extra + [
             'zoning_application_id' => $this->application->id,
             'parcel_id'             => $this->parcel->id,
-            'inspector_id'          => User::create(['name' => 'Inspector', 'email' => 'insp-'.uniqid().'@example.test',
+            'inspector_id'          => User::forceCreate(['name' => 'Inspector', 'email' => 'insp-'.uniqid().'@example.test',
                 'password' => 'test-only', 'role' => 'Site Inspector', 'is_active' => true,
                 'handshake_key' => 'hk-'.uniqid()])->id,
             'status'                => 'assigned',

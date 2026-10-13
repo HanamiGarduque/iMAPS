@@ -59,6 +59,7 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
             'name'  => 'Loop 6 Contract Tester',
             'email' => 'loop6.contract@example.test',
             'role'  => $role,
+            'is_active' => true,
         ]);
 
         return $user;

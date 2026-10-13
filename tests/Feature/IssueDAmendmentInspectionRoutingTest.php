@@ -245,7 +245,7 @@ class IssueDAmendmentInspectionRoutingTest extends TestCase
 
     private function encode(array $overrides, array $parcels): ZoningApplication
     {
-        $officer = User::create(['name' => 'Routing Officer', 'email' => 'routing-'.uniqid().'@example.test',
+        $officer = User::forceCreate(['name' => 'Routing Officer', 'email' => 'routing-'.uniqid().'@example.test',
             'password' => 'test-only', 'role' => 'Planning Officer', 'is_active' => true]);
 
         $payload = array_merge([
@@ -288,7 +288,7 @@ class IssueDAmendmentInspectionRoutingTest extends TestCase
         }
 
         if (($parcel['decision'] ?? null) === 'Needs Site Inspection') {
-            $inspector = User::create([
+            $inspector = User::forceCreate([
                 'name' => 'Routing Inspector', 'email' => 'inspector-'.uniqid().'@example.test',
                 'password' => 'test-only', 'role' => 'Site Inspector', 'is_active' => true,
                 'handshake_key' => 'hk-'.uniqid(),

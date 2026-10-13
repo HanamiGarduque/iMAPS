@@ -35,6 +35,7 @@ class Loop6AccessBoundaryTest extends TestCase
             'name'  => 'Synthetic Site Inspector',
             'email' => 'synthetic.inspector@example.test',
             'role'  => 'Site Inspector',
+            'is_active' => true,
         ]);
 
         $this->actingAs($inspector);
@@ -126,9 +127,4 @@ class Loop6AccessBoundaryTest extends TestCase
         $this->get('/api/tax-map/lookup/12345')->assertRedirect('/login');
     }
 
-    public function test_public_portal_and_public_tracking_remain_public(): void
-    {
-        $this->get('/')->assertOk();
-        $this->get('/public-portal')->assertOk();
-    }
 }

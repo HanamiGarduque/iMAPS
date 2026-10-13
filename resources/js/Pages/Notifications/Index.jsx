@@ -520,8 +520,9 @@ export default function Index({
                                                         ? "opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400"
                                                         : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                                                     }`}
-                                                dangerouslySetInnerHTML={{ __html: link.label }}
-                                            />
+                                            >
+                                                {link.label.replace("&laquo;", "«").replace("&raquo;", "»")}
+                                            </button>
                                         ))}
                                     </div>
                                 </div>

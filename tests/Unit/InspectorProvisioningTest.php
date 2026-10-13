@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Auth\RegisteredUserController;
 use Illuminate\Auth\GenericUser;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
@@ -19,6 +20,9 @@ use Tests\TestCase;
 #[PreserveGlobalState(false)]
 class InspectorProvisioningTest extends TestCase
 {
+    // The success path writes an audit row; it must not leak into other tests.
+    use DatabaseTransactions;
+
     private const UUID = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
     private array $created = [];
     private string $mode = 'success';
@@ -86,6 +90,8 @@ class InspectorProvisioningTest extends TestCase
             'role' => 'Site Inspector', 'password' => 'isolated-passcode',
             'password_confirmation' => 'isolated-passcode']);
         $request->shouldReceive('validate')->once()->andReturn($request->all());
+        // The route sits behind auth + Admin, so a real request always has an actor.
+        $request->setUserResolver(fn () => (object) ['id' => 1, 'role' => 'Admin']);
         return (new RegisteredUserController())->store($request);
     }
 

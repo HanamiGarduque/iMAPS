@@ -352,14 +352,16 @@ export default function TechnicalReviewIndex({ applications, filters = {} }) {
                                                             ? "bg-blue-600 text-white border-blue-600"
                                                             : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                                                     }`}
-                                                    dangerouslySetInnerHTML={{ __html: link.label }}
-                                                />
+                                                >
+                                                    {link.label.replace("&laquo;", "«").replace("&raquo;", "»")}
+                                                </button>
                                             ) : (
                                                 <span
                                                     key={i}
                                                     className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-300 border border-slate-100"
-                                                    dangerouslySetInnerHTML={{ __html: link.label }}
-                                                />
+                                                >
+                                                    {link.label.replace("&laquo;", "«").replace("&raquo;", "»")}
+                                                </span>
                                             )
                                         )}
                                     </nav>

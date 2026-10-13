@@ -9,6 +9,11 @@ rm -rf storage/app && ln -s /data/app storage/app
 cp -rf /opt/templates storage/app/templates          # code: overwrite every deploy
 [ -d /data/tiles ] || cp -r /opt/tiles /data/tiles   # seed once; Settings uploads then persist
 ln -sfn /data/tiles public/tiles
+# Permits used to live on the public disk (world-readable); move them to the private one
+if [ -d storage/app/public/permits ]; then
+  mkdir -p storage/app/private/permits
+  cp -rn storage/app/public/permits/. storage/app/private/permits/ && rm -rf storage/app/public/permits
+fi
 php artisan storage:link --force
 
 # File cache (map data uses rememberForever) lives on the volume so deploys don't wipe it
