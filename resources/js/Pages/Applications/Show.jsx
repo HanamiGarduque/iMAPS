@@ -732,20 +732,21 @@ function ShowInner({
                         type="text"
                         maxLength={100}
                         value={refs[field]}
+                        disabled={!canRecordPlanningDecision}
                         onChange={(e) => setRefs((r) => ({ ...r, [field]: e.target.value }))}
                         placeholder={placeholder}
                         className={`mt-1 font-mono ${FIELD.replace("py-2", "py-1.5")}`}
                     />
                 </div>
             ))}
-            <button
+            {canRecordPlanningDecision && <button
                 type="button"
                 onClick={saveRefs}
                 disabled={saving || !refsDirty}
                 className="h-[34px] px-3.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed shrink-0"
             >
                 Save references
-            </button>
+            </button>}
         </div>
     );
 
@@ -855,8 +856,8 @@ function ShowInner({
                                             </div>
                                         );
                                     })()}
-                                    {refsInNextStep && <div className="mt-2.5">{refsForm}</div>}
-                                    {app.status === "For Release" && (
+                                    {refsInNextStep && canRecordPlanningDecision && <div className="mt-2.5">{refsForm}</div>}
+                                    {app.status === "For Release" && userRole === "Planning Officer" && (
                                         <div className="mt-2.5">
                                             <PermitExportPanel app={app} part="generate" savedPermits={savedPermits} onSavedPermitsChange={setSavedPermits} />
                                         </div>
@@ -869,7 +870,7 @@ function ShowInner({
                                     </div>
 
                                     {/* This stage's decision: a footer bar — quiet Deny left, the one main action right */}
-                                    {(primaryAction || (!isFinal && app.status !== "Technical Review")) && (
+                                    {canRecordPlanningDecision && (primaryAction || (!isFinal && app.status !== "Technical Review")) && (
                                         <div className={`px-5 py-2 border-t flex items-center justify-between gap-3 ${overARTA ? "border-amber-200 bg-amber-100/40" : "border-slate-100 bg-slate-50/70"}`}>
                                             {!isFinal && app.status !== "Technical Review" ? (
                                                 <button
@@ -924,7 +925,7 @@ function ShowInner({
                                 {tab === "overview" && (
                                     <>
 
-                                        {showRefs && !refsInNextStep && (
+                                        {showRefs && !refsInNextStep && (canRecordPlanningDecision || app.sb_ordinance_number || app.dar_clearance_ref) && (
                                             <div className="mb-3 p-3.5 rounded-lg border border-slate-200 bg-slate-50">
                                                 <p className="mb-2 text-[12.5px] font-semibold text-slate-800">Sangguniang Bayan / DAR references</p>
                                                 {refsForm}
