@@ -59,6 +59,7 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
             'name'  => 'Loop 6 Contract Tester',
             'email' => 'loop6.contract@example.test',
             'role'  => $role,
+            'is_active' => true,
         ]);
 
         return $user;
@@ -73,7 +74,7 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
         $continued = false;
 
         (new RoleMiddleware())->handle(
-            Request::create('/dashboard', 'GET'),
+            Request::create('/maps', 'GET'),
             function () use (&$continued) {
                 $continued = true;
 
@@ -92,7 +93,7 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
     {
         try {
             (new RoleMiddleware())->handle(
-                Request::create('/dashboard', 'GET'),
+                Request::create('/maps', 'GET'),
                 function () {
                     $this->fail('Pipeline continued for an unauthorized role.');
                 },
@@ -201,7 +202,7 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
     {
         // Fresh application instance per test: no user is authenticated.
         $response = (new RoleMiddleware())->handle(
-            Request::create('/dashboard', 'GET'),
+            Request::create('/maps', 'GET'),
             function () {
                 $this->fail('A guest request must not pass the role gate.');
             },
@@ -301,8 +302,6 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
         $adminOnlyRoutes = [
             ['GET', '/register-new-account'],
             ['POST', '/register-new-account'],
-            ['GET', '/reports'],
-            ['POST', '/api/analytics/report'],
             ['GET', '/users/1/logs'],
             ['GET', '/settings'],
             ['POST', '/settings/upload-shapefile'],
@@ -325,7 +324,7 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
     public function test_internal_shared_routes_use_admin_and_planning_officer(): void
     {
         $sharedRoutes = [
-            ['GET', '/dashboard'],
+            ['GET', '/maps'],
             ['GET', '/applications'],
             ['GET', '/applications/1'],
             ['GET', '/technical-review'],
@@ -335,6 +334,9 @@ class Loop6SiteInspectorAccessContractTest extends TestCase
             ['GET', '/api/map/land_use'],
             ['GET', '/api/inspections/1/supabase-data'],
             ['GET', '/api/tax-map/lookup/12345'],
+            ['GET', '/reports'],
+            ['POST', '/api/analytics/report/preview'],
+            ['POST', '/api/analytics/report'],
         ];
 
         foreach ($sharedRoutes as [$method, $uri]) {

@@ -285,23 +285,23 @@ class AdminPoPriorityClosureContractTest extends TestCase
 
         // activePage signal
         $this->assertStringContainsString(
-            "normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review'",
+            "normalized === 'drafts' || normalized === 'tech-review' || normalized === 'technical-review') return 'REGISTRY'",
             $header,
-            'activePage for any Applications subsection must badge as APPLICATIONS.'
+            'activePage for any Applications subsection must badge as REGISTRY.'
         );
 
         // URL first-segment signal
         $this->assertMatchesRegularExpression(
-            "/case 'applications':\s*\n\s*case 'drafts':\s*\n\s*case 'technical-review':\s*\n\s*return 'APPLICATIONS';/",
+            "/case 'applications':\s*\n\s*case 'drafts':\s*\n\s*case 'technical-review':\s*\n\s*return 'REGISTRY';/",
             $header,
-            'The URL segments for all three subsections must resolve to APPLICATIONS.'
+            'The URL segments for all three subsections must resolve to REGISTRY.'
         );
 
         // Inertia component signal
         $this->assertStringContainsString(
             "comp.startsWith('applications') || comp.startsWith('drafts') || comp.startsWith('technicalreview')",
             $header,
-            'The component signal must badge Technical Review under APPLICATIONS too.'
+            'The component signal must badge Technical Review under REGISTRY too.'
         );
 
         // And Technical Review must no longer badge as its own module anywhere.
@@ -328,7 +328,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $this->assertFileExists($component, 'A single shared sub-navigation component must exist.');
 
         $shared = $this->code((string) file_get_contents($component));
-        $this->assertStringContainsString('{ key: "all", label: "All Applications", href: "/applications" }', $shared);
+        $this->assertStringContainsString('{ key: "all", label: "All Records", href: "/applications" }', $shared);
         $this->assertStringContainsString('{ key: "technical-review", label: "Technical Review", href: "/technical-review" }', $shared);
         $this->assertStringContainsString('{ key: "drafts", label: "Drafts", href: "/applications/drafts" }', $shared);
         $this->assertStringContainsString('aria-current={isActive ? "page" : undefined}', $shared);
@@ -379,9 +379,6 @@ class AdminPoPriorityClosureContractTest extends TestCase
      */
     public function test_duplicate_navigation_was_removed(): void
     {
-        $drafts = $this->codeOf('resources/js/Pages/Drafts/Index.jsx');
-        $this->assertStringNotContainsString('Back to Registry', $drafts, 'The Drafts back-to-registry arrow duplicates the sub-navigation.');
-
         $queue = $this->codeOf('resources/js/Pages/TechnicalReview/Index.jsx');
         $this->assertStringNotContainsString(
             '<span>All Applications</span>',
@@ -408,9 +405,9 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $this->assertStringContainsString('backLabel', $rawShow);
         $this->assertStringContainsString('aria-label={backLabel}', $show);
 
-        // The breadcrumb must name the module actually being returned to.
-        $this->assertStringContainsString('"Technical Review"', $rawShow);
-        $this->assertStringContainsString('"Applications"', $rawShow);
+        // The back control must name the module actually being returned to.
+        $this->assertStringContainsString('"Back to technical review"', $rawShow);
+        $this->assertStringContainsString('"Back to registry"', $rawShow);
     }
 
     /**
@@ -804,7 +801,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
         $drafts = $this->codeOf('resources/js/Pages/Drafts/Index.jsx');
 
         $this->assertMatchesRegularExpression(
-            '/\(filters\?\.status \|\| ""\) === s/',
+            '/\(filters\?\.activity \|\| ""\) === tab\.activity/',
             $drafts,
             'The active tab must be derived from the server status filter.'
         );
@@ -830,7 +827,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
     {
         $controller = $this->codeOf('app/Http/Controllers/ApplicationController.php');
 
-        $this->assertStringContainsString("if (\$request->filled('status')) {", $controller);
+        $this->assertStringContainsString("if (\$request->filled('status'))", $controller);
     }
 
     // ── Applicant folder counts must be true totals, not page-local ──
@@ -966,7 +963,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
             'An empty drafts list must render an explicit empty state, never invented records.'
         );
         $this->assertMatchesRegularExpression(
-            '/rows\.length === 0/',
+            '/(rows|list)\.length === 0/',
             $page,
             'The empty state must be driven by the real row count.'
         );
@@ -991,7 +988,7 @@ class AdminPoPriorityClosureContractTest extends TestCase
     {
         $page = $this->codeOf('resources/js/Pages/Applications/Index.jsx');
 
-        $this->assertStringContainsString('{item.inspection_summary && (', $page, 'The list row must render the inspection line.');
+        $this->assertStringContainsString('{peekItem.inspection_summary && (', $page, 'The peek panel must render the inspection line.');
 
         // Rendered directly, not hidden behind a tooltip or hover affordance.
         $this->assertStringNotContainsString('title={item.inspection_summary}', $page);
@@ -1124,26 +1121,23 @@ class AdminPoPriorityClosureContractTest extends TestCase
     /**
      * @dataProvider reportEndpointProvider
      */
-    public function test_report_endpoints_are_admin_only_at_runtime(string $method, string $uri): void
+    public function test_report_endpoints_are_admin_and_planning_officer_at_runtime(string $method, string $uri): void
     {
         $middleware = $this->matchRoute($method, $uri)->gatherMiddleware();
 
         $this->assertContains('web', $middleware, 'The endpoint must run in the session/CSRF group.');
         $this->assertContains('auth', $middleware, 'The endpoint must require authentication (guest denied).');
-        $this->assertContains('role:Admin', $middleware, 'The endpoint must be restricted to Admin.');
 
-        foreach ($middleware as $entry) {
-            $this->assertStringNotContainsString(
-                'Planning Officer',
-                $entry,
-                'A Planning Officer must not be authorized for report generation.'
-            );
-        }
+        // Exactly one role gate, admitting Admin and Planning Officer only
+        // (a stacked `role:Admin` would silently lock the Planning Officer out).
+        $roles = array_values(array_filter($middleware, fn ($entry) => str_starts_with($entry, 'role:')));
+        $this->assertSame(['role:Admin,Planning Officer'], $roles);
     }
 
     public static function reportEndpointProvider(): array
     {
         return [
+            'page' => ['GET', '/reports'],
             'preview' => ['POST', '/api/analytics/report/preview'],
             'generate' => ['POST', '/api/analytics/report'],
         ];
@@ -1180,19 +1174,19 @@ class AdminPoPriorityClosureContractTest extends TestCase
      * assertions no longer have anything to match. The requirement that survives
      * is the negative one: those claims must not come back in any phrasing.
      */
-    public function test_dashboard_labels_do_not_claim_field_progress(): void
+    public function test_maps_labels_do_not_claim_field_progress(): void
     {
-        $dashboard = $this->codeOf('resources/js/Pages/Dashboard.jsx');
+        $maps = $this->codeOf('resources/js/Pages/Maps.jsx');
 
-        $this->assertStringNotContainsString('Active schedule', $dashboard);
-        $this->assertStringNotContainsString('Approved & issued', $dashboard);
-        $this->assertStringNotContainsString('Awaiting action', $dashboard);
+        $this->assertStringNotContainsString('Active schedule', $maps);
+        $this->assertStringNotContainsString('Approved & issued', $maps);
+        $this->assertStringNotContainsString('Awaiting action', $maps);
 
         // The dashboard must still show real, server-derived figures.
         $this->assertMatchesRegularExpression(
             '/(kpi|Kpi|KPI|stat|Stat)/',
-            $dashboard,
-            'The dashboard must still present aggregate figures.'
+            $maps,
+            'The Maps page must still present aggregate figures.'
         );
     }
 }

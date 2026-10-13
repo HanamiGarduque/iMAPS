@@ -10,7 +10,7 @@ import { ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
 import { resolveBarangayName } from "@/utils/mapData";
 import { MAP_MAX_ZOOM, LOT_FOCUS_ZOOM, BASEMAPS, CLUP_TILES, BLANK_TILE, featureArea, insidePoint } from "@/utils/mapGeometry";
 import { ScaleBar } from "@/Components/MapKit";
-import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
+import MapSkeleton from "@/Components/Maps/MapSkeleton";
 
 const LOT_LINE = "#f97316"; // survey-plan orange for the lot in focus
 

@@ -38,6 +38,7 @@ class TaxMapLookupTest extends TestCase
             'name' => 'Synthetic Site Inspector',
             'email' => 'synthetic.inspector@example.test',
             'role' => 'Site Inspector',
+            'is_active' => true,
         ]);
 
         $this->actingAs($inspector)
@@ -63,9 +64,11 @@ class TaxMapLookupTest extends TestCase
                 'name' => "Synthetic {$role}",
                 'email' => strtolower(str_replace(' ', '.', $role)) . '@example.test',
                 'role' => $role,
+                'is_active' => true,
             ]);
 
             $query = Mockery::mock(Builder::class);
+            $query->shouldReceive('selectRaw')->once()->andReturn($query);
             $query->shouldReceive('where')->once()->andReturnUsing(function ($callback) use ($query) {
                 $callback($query);
                 return $query;
@@ -85,6 +88,7 @@ class TaxMapLookupTest extends TestCase
     public function test_formatted_pin_uses_bound_string_literals_and_returns_not_found(): void
     {
         $query = Mockery::mock(Builder::class);
+        $query->shouldReceive('selectRaw')->once()->andReturn($query);
         $query->shouldReceive('where')->once()->andReturnUsing(function ($callback) use ($query) {
             $callback($query);
             return $query;
@@ -125,6 +129,7 @@ class TaxMapLookupTest extends TestCase
         ];
 
         $query = Mockery::mock(Builder::class);
+        $query->shouldReceive('selectRaw')->once()->andReturn($query);
         $query->shouldReceive('where')->once()->andReturnUsing(function ($callback) use ($query) {
             $callback($query);
             return $query;

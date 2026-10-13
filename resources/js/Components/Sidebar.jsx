@@ -42,8 +42,8 @@ export default function Sidebar({
             ),
         },
         {
-            href: '/dashboard',
-            label: 'Dashboard',
+            href: '/maps',
+            label: 'Maps',
             badge: null,
             adminOnly: false,
             icon: (
@@ -114,7 +114,7 @@ export default function Sidebar({
             href: '/reports',
             label: 'Export Reports',
             badge: null,
-            adminOnly: true,
+            adminOnly: false,
             icon: (
                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
@@ -161,12 +161,11 @@ export default function Sidebar({
     const isActive = (href) => {
         if (activePage) {
             const normalized = activePage.toLowerCase();
-            // Master integration (Loop 9 merge): master folds the retired /maps
-            // page into the Dashboard active state, which matches the merged
-            // route that redirects /maps -> dashboard. Loop 9 additionally
+            // The GIS page was renamed Dashboard -> Maps; `dashboard` still marks
+            // it active for any caller passing the old key. Loop 9 additionally
             // treated the Technical Review list as part of Applications, which
             // is preserved because that route still exists.
-            if (href === '/dashboard' && (normalized === 'dashboard' || normalized === 'maps')) return true;
+            if (href === '/maps' && (normalized === 'maps' || normalized === 'dashboard')) return true;
             if (href === '/applications' && (normalized === 'applications' || normalized === 'drafts' || normalized === 'technical-review')) return true;
             if (href === '/reports-and-forecasting' && (normalized === 'reports-and-forecasting' || normalized === 'analytics')) return true;
             if (href === '/settings' && normalized === 'settings') return true;
@@ -175,7 +174,7 @@ export default function Sidebar({
             if (href === '/notifications' && normalized === 'notifications') return true;
         }
         if (currentPath === href) return true;
-        if (href !== '/dashboard' && href !== '/' && currentPath.startsWith(href)) return true;
+        if (href !== '/maps' && href !== '/' && currentPath.startsWith(href)) return true;
         return false;
     };
 
@@ -240,7 +239,7 @@ export default function Sidebar({
     const ADMIN_SECTION = ['/users', '/settings'];
     const DESCRIPTIONS = {
         '/overview': 'Today at a glance',
-        '/dashboard': 'GIS map & analytics',
+        '/maps': 'Permits, growth & land use',
         '/applications': 'Zoning clearances',
         '/site-inspections': 'Field schedules',
         '/diagnostics': 'FieldSync issues',

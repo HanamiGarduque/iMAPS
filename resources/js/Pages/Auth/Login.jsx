@@ -356,8 +356,8 @@ export default function Login() {
                                 <p className="mt-1.5 mb-6 text-sm leading-6 text-slate-500">Enter your official staff credentials to continue.</p>
 
                                 {errors.email && (
-                                    <div role="alert" className="mb-5 flex items-start gap-2.5 px-3.5 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-                                        <Icon d={ICONS.alert} className="w-5 h-5 shrink-0 text-red-400" sw={2} />
+                                    <div id="login-error" role="alert" className="-mt-2 mb-4 flex items-start gap-2.5 rounded-lg border border-red-100 bg-red-50/60 px-3 py-2 text-[12.5px] leading-[18px] text-red-700 shadow-[inset_3px_0_0_#ef4444]">
+                                        <Icon d={ICONS.alert} className="w-4 h-4 mt-px shrink-0 text-red-500" sw={2} />
                                         {retryIn > 0 ? (
                                             <span>
                                                 Too many failed login attempts. Try again in{' '}
@@ -377,6 +377,8 @@ export default function Login() {
                                             className={inputClass}
                                             placeholder="name@rosario.gov.ph"
                                             autoComplete="email"
+                                            aria-invalid={!!errors.email}
+                                            aria-describedby={errors.email ? 'login-error' : undefined}
                                             required
                                         />
                                     </Field>
@@ -404,6 +406,8 @@ export default function Login() {
                                             className={`${inputClass} pr-12`}
                                             placeholder="Enter your password"
                                             autoComplete="current-password"
+                                            aria-invalid={!!errors.email}
+                                            aria-describedby={errors.email ? 'login-error' : undefined}
                                             required
                                         />
                                         <button

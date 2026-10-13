@@ -201,7 +201,7 @@ class InspectionRoundNumberingFeatureTest extends TestCase
     {
         $user = User::factory()->create();
 
-        return ZoningApplication::factory()->create(['created_by' => $user->id]);
+        return ZoningApplication::factory()->create(['encoded_by' => $user->id]);
     }
 
     private function makeParcel(ZoningApplication $app): Parcel

@@ -1,40 +1,45 @@
-import { Component, Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Component, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { Head, Link, usePage } from "@inertiajs/react";
+import "@fontsource-variable/inter";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
-import MapSkeleton from "@/Components/Dashboard/MapSkeleton";
+import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import { STATUS_MARKER_CONFIG, getStatusMarkerConfig } from "@/Components/MapLayers/StatusPanel";
-import { DIVERSITY_TIERS, getDiversityTheme } from "@/utils/diversityTheme";
+import { DIVERSITY_BLUES, DIVERSITY_TIERS, getDiversityTheme } from "@/utils/diversityTheme";
+import { ZONE_CATEGORIES, getZoneInfo } from "@/utils/clupZones";
 import { confirmSignOut } from "@/utils/signOut";
-
-// The same 3D diversity view the GIS dashboard uses; its own chunk (maplibre-gl).
-const MapLibre3DView = lazy(() => import("@/Components/MapLayers/MapLibre3DView"));
 
 // Rosario's own clock, whatever the viewer's machine is set to.
 const TZ = "Asia/Manila";
 
-// The preview is far smaller than the dashboard canvas: centre Rosario rather
-// than leaving room for the dashboard's side panels, and pull the camera back
-// one zoom level for every halving of the canvas height.
-const MAP_FRAME = { top: 0, bottom: 60, left: 10, right: 10 };
-const zoomForHeight = (h) => Math.min(11, Math.max(9.2, 10.5 + Math.log2(Math.max(160, h) / 440)));
+// Rosario's barangays as 3D prisms of their land-use mix; its own chunk (maplibre-gl).
+const Rosario3D = lazy(() => import("@/Components/Maps/Rosario3D"));
+
+// Rosario, Batangas: the extent of its municipal boundary (public.rosario_boundary), [west, south], [east, north].
+const ROSARIO_BOUNDS = [
+    [121.165, 13.685],
+    [121.37, 13.875],
+];
+const PITCH = 55;
+const BEARING = -18;
+const WIDE = "(min-width: 1280px)";
+const GREETING_MS = 3000;
+const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const ICONS = {
     plus: "M12 4.5v15m7.5-7.5h-15",
+    minus: "M19.5 12h-15",
+    fit: "M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5m0 9V18A2.25 2.25 0 0118 20.25h-1.5m-9 0H6A2.25 2.25 0 013.75 18v-1.5M15 12a3 3 0 11-6 0 3 3 0 016 0z",
     search: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z",
     draft: "M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10",
     registry: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z",
     inspect: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z",
     calendar: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5",
-    cube: "M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9",
-    spark: "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z",
-    alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z",
-    trend: "M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941",
-    bell: "M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0",
-    check: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-    arrow: "M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3",
+    clock: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z",
+    expand: "M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15",
     chevron: "M8.25 4.5l7.5 7.5-7.5 7.5",
-    close: "M6 18L18 6M6 6l12 12",
+    chevronDown: "M19.5 8.25l-7.5 7.5-7.5-7.5",
+    info: "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z",
 };
 
 function Icon({ name, className = "w-4 h-4", strokeWidth = 1.8 }) {
@@ -48,12 +53,31 @@ function Icon({ name, className = "w-4 h-4", strokeWidth = 1.8 }) {
 const fmt = (date, opts) => new Intl.DateTimeFormat("en-PH", { timeZone: TZ, ...opts }).format(date);
 const num = (n) => Number(n || 0).toLocaleString("en-PH");
 const plural = (n, word) => `${num(n)} ${word}${n === 1 ? "" : "s"}`;
+const qLabel = (q) => `Q${q.quarter} ${q.year}`;
+const pct = (s) => (s < 0.01 ? "<1%" : `${Math.round(s * 100)}%`);
 
-const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-white";
-// One tile surface for every block on the page.
-const TILE = "rounded-2xl bg-white/80 border border-slate-200/70 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(30,58,138,0.25)]";
+const days = (v) => {
+    const n = Number(v);
+    if (v == null || !Number.isFinite(n)) return "—";
+    return n < 1 ? "< 1 day" : plural(Math.round(n), "day");
+};
 
-// A WebGL failure in the 3D view must not take the rest of the overview down.
+// Neutral frosted glass in the header's blue.
+const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-1 focus-visible:ring-offset-white";
+// A pane floating over the map: the map shows through, blurred.
+const GLASS =
+    "rounded-[18px] bg-[#f7f9fd]/60 backdrop-blur-2xl backdrop-saturate-150 border border-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_14px_34px_-16px_rgba(30,58,138,0.32)]";
+// The left column: the same glass, nearly solid.
+const PANEL =
+    "rounded-[20px] bg-[#f5f7fb]/[0.92] backdrop-blur-2xl border border-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_14px_34px_-18px_rgba(30,58,138,0.3)]";
+// A white card set inside a pane.
+const CARD = "rounded-[12px] bg-white/85 border border-slate-900/[0.05] shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
+const CHIP = "inline-flex items-center gap-1.5 h-[26px] px-3 rounded-full bg-white/90 border border-slate-900/[0.06] shadow-[0_1px_2px_rgba(15,23,42,0.04)] text-[11.5px] font-medium text-slate-700";
+const BLUE_FILL = "bg-gradient-to-b from-blue-500 to-blue-700";
+// Zoning categories by share, darkest first: one blue family instead of the CLUP palette.
+const BLUES = ["#1e3a8a", "#2563eb", "#60a5fa", "#a5c8fb", "#dbe7fd"];
+
+// A WebGL failure in the 3D model must not take the rest of the overview down.
 class MapBoundary extends Component {
     state = { failed: false };
     static getDerivedStateFromError() {
@@ -61,49 +85,324 @@ class MapBoundary extends Component {
     }
     render() {
         if (this.state.failed) {
-            return <p className="absolute inset-0 grid place-items-center px-6 text-center text-[12px] text-slate-500">The 3D preview isn't available on this device.</p>;
+            return <p className="absolute inset-0 grid place-items-center px-6 text-center text-[12px] text-slate-500">The 3D map of Rosario isn't available on this device.</p>;
         }
         return this.props.children;
     }
 }
 
-function TileHead({ icon, title, extra, children }) {
+function PanelHead({ id, title, children }) {
     return (
         <div className="flex items-center justify-between gap-2">
-            <span className="flex items-center gap-1.5 min-w-0">
-                <Icon name={icon} className="w-3.5 h-3.5 text-blue-600 shrink-0" strokeWidth={2} />
-                <h2 className="text-[11.5px] font-semibold text-slate-600 truncate">{title}</h2>
-                {extra && <span className="hidden sm:inline text-[11px] text-slate-400 truncate">· {extra}</span>}
-            </span>
+            <h2 id={id} className="text-[12.5px] font-medium text-slate-800 truncate">
+                {title}
+            </h2>
             {children}
         </div>
     );
 }
 
-function StatTile({ href, icon, title, chip, value, valueClass = "text-slate-900", children }) {
+const MoreLink = ({ href, children }) => (
+    <Link href={href} className={`shrink-0 inline-flex items-center gap-0.5 rounded-md text-[11px] font-medium text-blue-600 hover:text-blue-700 ${FOCUS}`}>
+        {children}
+        <Icon name="chevron" className="w-3 h-3" strokeWidth={2.4} />
+    </Link>
+);
+
+// Zone areas (CLUP code => m²) folded into categories, largest first; past five fold into "Other".
+function zoneShares(zones) {
+    const byCat = {};
+    Object.entries(zones || {}).forEach(([code, area]) => {
+        const cat = getZoneInfo(code).category;
+        byCat[cat] = (byCat[cat] || 0) + Number(area || 0);
+    });
+    const sum = Object.values(byCat).reduce((a, b) => a + b, 0);
+    if (!sum) return [];
+    const rows = Object.entries(byCat)
+        .map(([id, area]) => ({ id, label: ZONE_CATEGORIES[id]?.label || id, share: area / sum }))
+        .sort((a, b) => b.share - a.share);
+    const top = rows.length <= 5 ? rows : [...rows.slice(0, 4), { id: "other", label: "Other zones", share: rows.slice(4).reduce((a, r) => a + r.share, 0) }];
+    return top.map((r, i) => ({ ...r, fill: BLUES[i] }));
+}
+
+// Applications per stage as columns that fill whatever height the panel leaves;
+// the busiest stage carries the accent and a callout.
+function PipelineChart({ pipeline }) {
+    const max = Math.max(1, ...pipeline.map((s) => s.count));
+    const peak = pipeline.reduce((a, s) => (s.count > a.count ? s : a), pipeline[0]);
+
     return (
-        <Link href={href} className={`${TILE} p-3.5 flex flex-col min-w-0 hover:bg-white hover:border-blue-200 transition-colors ${FOCUS}`}>
-            <TileHead icon={icon} title={title}>
-                <span className="hidden sm:inline shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-slate-500">{chip}</span>
-            </TileHead>
-            <p className={`mt-3 text-[22px] leading-none font-bold tracking-tight tabular-nums ${valueClass}`}>{value}</p>
-            <p className="mt-1 text-[11px] text-slate-500 truncate">{children}</p>
-        </Link>
+        <ol className="flex-1 min-h-0 flex items-stretch gap-0.5" aria-label="Applications by stage">
+            {pipeline.map((s) => {
+                const top = s === peak && s.count > 0;
+                return (
+                    <li key={s.key} className="flex-1 min-w-0">
+                        <Link
+                            href={`/applications?status=${encodeURIComponent(s.key)}`}
+                            aria-label={`${s.label}: ${num(s.count)}`}
+                            className={`group h-full flex flex-col items-center gap-1 rounded-lg ${FOCUS}`}
+                        >
+                            {/* Bar and spacer split the column by flex-grow, so bars scale with whatever height the panel has */}
+                            <span className="w-full flex-1 min-h-0 flex flex-col items-center" aria-hidden="true">
+                                <span className="basis-0" style={{ flexGrow: 1 - s.count / max }} />
+                                <span
+                                    className={`mb-1 tabular-nums text-[10.5px] ${
+                                        top ? "rounded-md bg-white px-1.5 py-px font-semibold text-slate-900 shadow-[0_4px_12px_-4px_rgba(15,23,42,0.28)] ring-1 ring-slate-900/[0.04]" : "font-medium text-slate-500"
+                                    }`}
+                                >
+                                    {num(s.count)}
+                                </span>
+                                <span
+                                    className={`w-full max-w-[24px] basis-0 min-h-[3px] rounded-[6px] transition-[flex-grow,background-color] duration-500 ${
+                                        top ? `${BLUE_FILL} shadow-[0_8px_16px_-8px_rgba(37,99,235,0.7)]` : "bg-blue-100 group-hover:bg-blue-200"
+                                    }`}
+                                    style={{ flexGrow: s.count / max }}
+                                />
+                            </span>
+                            <span className={`w-full h-[22px] text-center text-[9.5px] leading-[1.15] line-clamp-2 ${top ? "font-medium text-slate-900" : "text-slate-500 group-hover:text-slate-800"}`} aria-hidden="true">
+                                {s.shortLabel}
+                            </span>
+                        </Link>
+                    </li>
+                );
+            })}
+        </ol>
+    );
+}
+
+// Zoning composition as a ring, with its legend beside it.
+function ZoningDonut({ shares }) {
+    let offset = 0;
+    return (
+        <div className="flex items-center gap-4">
+            <svg viewBox="0 0 42 42" className="w-[68px] h-[68px] short:w-[56px] short:h-[56px] shrink-0 -rotate-90" aria-hidden="true">
+                <circle cx="21" cy="21" r="15.915" fill="none" stroke="#eef2f8" strokeWidth="7" />
+                {shares.map((s) => {
+                    const len = s.share * 100;
+                    const seg = (
+                        <circle
+                            key={s.id}
+                            cx="21"
+                            cy="21"
+                            r="15.915"
+                            fill="none"
+                            stroke={s.fill}
+                            strokeWidth="7"
+                            strokeDasharray={`${Math.max(0, len - 0.8)} ${100 - len + 0.8}`}
+                            strokeDashoffset={-offset}
+                        />
+                    );
+                    offset += len;
+                    return seg;
+                })}
+            </svg>
+            <ul className="flex-1 min-w-0 flex flex-col gap-[3px] text-[11px]">
+                {shares.map((s) => (
+                    <li key={s.id} className="flex items-center gap-2 min-w-0">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.fill }} aria-hidden="true" />
+                        <span className="text-slate-600 truncate">{s.label}</span>
+                        <span className="ml-auto font-medium text-slate-900 tabular-nums">{pct(s.share)}</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
+// Filings per quarter as a smooth line, continued dashed by the latest model run's
+// next quarters; hovering a quarter reads it out. The counts come from the MPDO's
+// imported filing record (historical_data: LC, zoning certificates and development
+// permits since 2021, ~1,000-1,200 a year), the history the forecast trains on. It is
+// not the iMAPS registry, which only holds applications encoded here, so the two
+// don't add up and the chart says where its numbers come from.
+function FilingsChart({ area, quarterly, forecast }) {
+    const [hover, setHover] = useState(null);
+    const last = quarterly[quarterly.length - 1];
+    const ahead = (forecast?.quarters || []).filter((q) => !last || q.year * 4 + q.quarter > last.year * 4 + last.quarter);
+    const pts = [...quarterly.map((q) => ({ ...q, projected: false })), ...ahead.map((q) => ({ ...q, projected: true }))];
+    const max = Math.max(1, ...pts.map((p) => p.count));
+    // A round axis fitted to the data: four equal steps of 1, 2, 2.5 or 5 × a power of ten
+    // (whole numbers only, these are counts), with a little headroom over the peak.
+    const raw = (max * 1.05) / 4;
+    const mag = 10 ** Math.floor(Math.log10(raw || 1));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw && Number.isInteger(s)) || Math.ceil(raw);
+    const ceil = step * 4;
+
+    const xy = pts.map((p, i) => ({ ...p, x: pts.length > 1 ? 4 + (i / (pts.length - 1)) * 92 : 50, y: 100 - (p.count / ceil) * 100 }));
+    const curve = (list) =>
+        list.reduce((d, p, i) => {
+            if (!i) return `M${p.x} ${p.y}`;
+            const prev = list[i - 1];
+            const mid = (prev.x + p.x) / 2;
+            return `${d} C${mid} ${prev.y}, ${mid} ${p.y}, ${p.x} ${p.y}`;
+        }, "");
+    const filed = xy.filter((p) => !p.projected);
+    const projected = filed.length ? [filed[filed.length - 1], ...xy.filter((p) => p.projected)] : [];
+    const active = xy[hover ?? (ahead.length ? quarterly.length : quarterly.length - 1)];
+    const metric = (label, v, f) => (v == null || !Number.isFinite(Number(v)) ? null : `${label} ${f(Number(v))}`);
+    const metrics = forecast && [metric("R²", forecast.r2, (n) => n.toFixed(2)), metric("WMAPE", forecast.wmape, (n) => `${n.toFixed(1)}%`)].filter(Boolean);
+
+    return (
+        <section aria-labelledby="filings-heading" className={`${GLASS} w-full px-4 pt-3.5 pb-3 flex flex-col min-w-0 h-[260px] xl:h-[clamp(196px,30vh,290px)]`}>
+            <PanelHead id="filings-heading" title={<>Filings per quarter <span className="font-normal text-slate-400">· {area}</span></>}>
+                <span className="flex items-center gap-3 text-[10.5px] text-slate-500">
+                    <span className="hidden sm:inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-600" aria-hidden="true" />
+                        Filed
+                    </span>
+                    {ahead.length > 0 && (
+                        <span className="hidden sm:inline-flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-indigo-400" aria-hidden="true" />
+                            Projected
+                        </span>
+                    )}
+                    {pts.length > 0 && (
+                        <span className="inline-flex items-center h-[24px] px-2.5 rounded-full bg-slate-900/[0.045] text-[10.5px] font-medium text-slate-700">{`${qLabel(pts[0])} – ${qLabel(pts[pts.length - 1])}`}</span>
+                    )}
+                </span>
+            </PanelHead>
+            <p className="mt-0.5 flex items-center gap-1 text-[10.5px] text-slate-500">
+                MPDO filing record · all types
+                {/* The full note on hover or keyboard focus, read out as the button's description */}
+                <span className="group relative inline-flex">
+                    <button type="button" aria-describedby="filings-source" className={`grid place-items-center rounded-full text-slate-400 hover:text-blue-600 cursor-help ${FOCUS}`}>
+                        <Icon name="info" className="w-3.5 h-3.5" strokeWidth={2} />
+                        <span className="sr-only">About this data</span>
+                    </button>
+                    <span
+                        id="filings-source"
+                        role="tooltip"
+                        className="invisible opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 absolute left-1/2 top-full z-20 mt-1.5 w-60 -translate-x-1/2 rounded-lg bg-slate-900 px-2.5 py-2 text-[10.5px] leading-snug text-white shadow-lg"
+                    >
+                        Every filing in the MPDO's record: locational clearances, zoning certificates and development permits. It is separate from the applications encoded in iMAPS, so the totals differ.
+                    </span>
+                </span>
+            </p>
+
+            {pts.length ? (
+                <>
+                    <ul className="sr-only" aria-label={`Filings per quarter, ${area}`}>
+                        {pts.map((p) => (
+                            <li key={`${p.year}-${p.quarter}`}>{`${qLabel(p)}: ${p.projected ? `about ${num(p.count)} projected` : `${num(p.count)} filed`}`}</li>
+                        ))}
+                    </ul>
+
+                    <div className="mt-3 flex-1 min-h-0 flex gap-2" aria-hidden="true">
+                        <div className="w-8 flex flex-col justify-between text-right text-[10px] text-slate-400 tabular-nums -my-1.5">
+                            {[4, 3, 2, 1, 0].map((k) => (
+                                <span key={k}>{num(step * k)}</span>
+                            ))}
+                        </div>
+                        <div className="relative flex-1 min-w-0">
+                            {/* Gridlines at each axis step */}
+                            {[0, 1, 2, 3, 4].map((k) => (
+                                <span key={k} className={`absolute inset-x-0 h-px ${k === 4 ? "bg-slate-900/[0.1]" : "bg-slate-900/[0.05]"}`} style={{ top: `${(k / 4) * 100}%` }} />
+                            ))}
+
+                            {/* Hover columns, one per quarter */}
+                            <div className="absolute inset-0 flex" onMouseLeave={() => setHover(null)}>
+                                {xy.map((p, i) => (
+                                    <span key={`${p.year}-${p.quarter}`} className="flex-1 h-full" onMouseEnter={() => setHover(i)} />
+                                ))}
+                            </div>
+
+                            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full overflow-visible pointer-events-none">
+                                <defs>
+                                    <linearGradient id="filings-area" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0" stopColor="#2563eb" stopOpacity="0.16" />
+                                        <stop offset="1" stopColor="#2563eb" stopOpacity="0" />
+                                    </linearGradient>
+                                </defs>
+                                {filed.length > 1 && <path d={`${curve(filed)} L${filed[filed.length - 1].x} 100 L${filed[0].x} 100 Z`} fill="url(#filings-area)" />}
+                                {filed.length > 1 && <path d={curve(filed)} fill="none" stroke="#2563eb" strokeWidth="1.75" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+                                {projected.length > 1 && <path d={curve(projected)} fill="none" stroke="#818cf8" strokeWidth="1.75" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
+                                {active && <line x1={active.x} x2={active.x} y1="0" y2="100" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />}
+                            </svg>
+
+                            {/* The marker as HTML so it stays round on a stretched chart */}
+                            {active && (
+                                <span
+                                    className={`absolute w-2.5 h-2.5 -ml-[5px] -mt-[5px] rounded-full ring-2 ring-white shadow pointer-events-none ${active.projected ? "bg-indigo-400" : "bg-blue-600"}`}
+                                    style={{ left: `${active.x}%`, top: `${active.y}%` }}
+                                />
+                            )}
+
+                            {active && (
+                                <div
+                                    className="absolute z-10 pointer-events-none rounded-xl bg-white/95 px-3 py-2 shadow-[0_12px_28px_-12px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/[0.05] whitespace-nowrap"
+                                    style={{
+                                        left: `${active.x}%`,
+                                        top: `${Math.min(Math.max(active.y, 30), 62)}%`,
+                                        transform: `translate(${active.x > 70 ? "calc(-100% - 12px)" : "12px"}, -50%)`,
+                                    }}
+                                >
+                                    <p className="text-[10px] font-medium text-slate-500">{qLabel(active)}</p>
+                                    <p className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-slate-500">
+                                        <span className={`w-1.5 h-1.5 rounded-full ${active.projected ? "bg-indigo-400" : "bg-blue-600"}`} />
+                                        <b className="font-semibold text-slate-900 tabular-nums">{`${active.projected ? "~" : ""}${num(active.count)}`}</b>
+                                        {active.projected ? "projected" : "filed"}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="mt-1.5 ml-10 relative h-[18px] text-[10px] text-slate-400 tabular-nums" aria-hidden="true">
+                        {xy.map((p) => (
+                            <span
+                                key={`${p.year}-${p.quarter}`}
+                                className={`absolute top-0 -translate-x-1/2 whitespace-nowrap leading-[18px] ${
+                                    active === p ? "px-2 rounded-full bg-white font-medium text-slate-900 shadow-[0_2px_6px_-2px_rgba(15,23,42,0.2)]" : p.projected ? "text-indigo-500" : ""
+                                }`}
+                                style={{ left: `${p.x}%` }}
+                            >
+                                {p.quarter === 1 || p === xy[0] ? `Q${p.quarter} '${String(p.year).slice(2)}` : `Q${p.quarter}`}
+                            </span>
+                        ))}
+                    </div>
+                </>
+            ) : (
+                <p className="flex-1 grid place-items-center text-[12px] text-slate-500">No recorded filings yet.</p>
+            )}
+
+            <p className="mt-1.5 flex items-center gap-2 min-w-0 text-[10.5px] text-slate-500">
+                {forecast ? (
+                    <>
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" aria-hidden="true" />
+                        <span className="truncate">
+                            XGBoost run {fmt(new Date(forecast.generated_at), { month: "short", day: "numeric" })}
+                            {metrics.length > 0 && ` · ${metrics.join(" · ")}`}
+                        </span>
+                    </>
+                ) : (
+                    <>
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" aria-hidden="true" />
+                        <span className="truncate">No forecast run yet</span>
+                    </>
+                )}
+                <span className="ml-auto">
+                    <MoreLink href="/maps">{forecast ? "Forecast on Maps" : "Run it on Maps"}</MoreLink>
+                </span>
+            </p>
+        </section>
     );
 }
 
 export default function Overview({
     statusCounts = {},
-    thisMonth = 0,
-    lastMonth = 0,
+    quarterly = [],
+    topBarangays = [],
+    forecast = null,
     bgyStats = {},
     municipalDiversity = 0,
+    municipalZones = {},
     unreadCount = 0,
     latestUnread = null,
     draftCount = null,
     upcomingInspections = null,
     pastSla = 0,
-    ageing = 0,
+    releaseTime = { median_days: null, released: 0 },
+    inspections = null,
 }) {
     const { auth } = usePage().props;
     const userName = auth?.user?.name || "Staff";
@@ -113,23 +412,83 @@ export default function Overview({
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [selectedBgy, setSelectedBgy] = useState(null);
-    const [hoveredBgy, setHoveredBgy] = useState(null);
     const [now, setNow] = useState(() => new Date());
     useEffect(() => {
         const id = setInterval(() => setNow(new Date()), 30000);
         return () => clearInterval(id);
     }, []);
     const headerClock = `${fmt(now, { month: "short", day: "numeric", year: "numeric" })} · ${fmt(now, { hour: "2-digit", minute: "2-digit" })}`;
+    const hour = Number(fmt(now, { hour: "numeric", hourCycle: "h23" }));
+    const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
-    // The preview's zoom depends on its height, so measure the box before the
-    // lazy 3D view mounts into it.
-    const mapBoxRef = useRef(null);
-    const [mapZoom, setMapZoom] = useState(null);
-    useLayoutEffect(() => {
-        if (mapBoxRef.current) setMapZoom(zoomForHeight(mapBoxRef.current.clientHeight));
+    // The title greets the user first, then settles on "Overview".
+    const [greetingShown, setGreetingShown] = useState(true);
+    useEffect(() => {
+        const id = setTimeout(() => setGreetingShown(false), GREETING_MS);
+        return () => clearTimeout(id);
     }, []);
 
-    // Escape steps back out of a barangay the preview flew into.
+    // The 3D map, once its model is built; the page owns its camera and the map bar's buttons.
+    const [map, setMap] = useState(null);
+    const [boundsOf, setBoundsOf] = useState(null);
+    // The panels around the map, measured so the model sits in the gap they leave.
+    const stageRef = useRef(null);
+    const titleRef = useRef(null);
+    const asideRef = useRef(null);
+    const rightRef = useRef(null);
+    const bottomRef = useRef(null);
+
+    const fitPadding = () => {
+        if (!window.matchMedia(WIDE).matches) return { top: 16, bottom: 16, left: 16, right: 16 };
+        const s = stageRef.current.getBoundingClientRect();
+        const r = (ref) => ref.current.getBoundingClientRect();
+        return {
+            top: r(titleRef).bottom - s.top + 12,
+            bottom: s.bottom - r(bottomRef).top + 12,
+            left: r(asideRef).right - s.left + 16,
+            right: s.right - r(rightRef).left + 16,
+        };
+    };
+
+    // Frames the picked barangay, else all of Rosario.
+    const frame = (animate) => {
+        if (!map) return;
+        const target = (selectedBgy && boundsOf?.(selectedBgy.name)) || ROSARIO_BOUNDS;
+        // Null when the panels leave no room at all; the camera then stays put.
+        const cam = map.cameraForBounds(target, { padding: fitPadding(), bearing: BEARING });
+        if (!cam) return;
+        // The fit is computed top-down; tilted, the model looks shorter, so win back some zoom. Only
+        // the wide layout is height-bound enough to take a full level (the boundary is also well inside
+        // its bounding box); a phone is width-bound.
+        // A single barangay is pulled back instead: its prism is as tall as the town's, so a tight
+        // fit fills the screen and loses the neighbours it is being compared with.
+        const boost = target !== ROSARIO_BOUNDS ? -0.9 : window.matchMedia(WIDE).matches ? 1 : 0.1;
+        const view = { ...cam, zoom: Math.min(cam.zoom + boost, 12.4), bearing: BEARING, pitch: PITCH };
+        if (animate && !reducedMotion()) map.easeTo({ ...view, duration: 700 });
+        else map.jumpTo(view);
+    };
+
+    // Reframe once the map exists, whenever the pick changes, and after every
+    // resize, since the panels (and so the gap) change with the window.
+    const framed = useRef(false);
+    useEffect(() => {
+        if (!map) return;
+        frame(framed.current);
+        framed.current = true;
+        let timer;
+        const onResize = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => frame(false), 200);
+        };
+        window.addEventListener("resize", onResize);
+        return () => {
+            window.removeEventListener("resize", onResize);
+            clearTimeout(timer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [map, selectedBgy]);
+
+    // Escape steps back out to all of Rosario.
     useEffect(() => {
         if (!selectedBgy) return;
         const onKey = (e) => e.key === "Escape" && !sidebarOpen && setSelectedBgy(null);
@@ -137,44 +496,72 @@ export default function Overview({
         return () => window.removeEventListener("keydown", onKey);
     }, [selectedBgy, sidebarOpen]);
 
+    // Everything the panels show, for all of Rosario or for the picked barangay.
+    const bgyNames = useMemo(() => Object.keys(bgyStats || {}).sort((a, b) => a.localeCompare(b)), [bgyStats]);
+    const mixRank = useMemo(() => Object.entries(bgyStats || {}).sort((a, b) => b[1].diversity - a[1].diversity).map(([n]) => n), [bgyStats]);
+    const stat = selectedBgy ? bgyStats?.[selectedBgy.name] : null;
+    const view = stat
+        ? { area: selectedBgy.name, ...stat, forecast: forecast && { ...forecast, quarters: stat.forecast } }
+        : { area: "All of Rosario", statusCounts, quarterly, forecast, pastSla, releaseTime, diversity: municipalDiversity, zones: municipalZones };
+
     // Raw status strings grouped the same way the map and registry colour them.
     const pipeline = useMemo(() => {
         const keyByConfig = new Map(Object.entries(STATUS_MARKER_CONFIG).map(([k, v]) => [v, k]));
         const counts = {};
-        Object.entries(statusCounts || {}).forEach(([status, n]) => {
+        Object.entries(view.statusCounts || {}).forEach(([status, n]) => {
             const key = keyByConfig.get(getStatusMarkerConfig(status));
             counts[key] = (counts[key] || 0) + Number(n || 0);
         });
         return Object.keys(STATUS_MARKER_CONFIG).map((key) => ({ key, ...STATUS_MARKER_CONFIG[key], count: counts[key] || 0 }));
-    }, [statusCounts]);
+    }, [view.statusCounts]);
 
     const total = pipeline.reduce((sum, s) => sum + s.count, 0);
     const reviewCount = pipeline.find((s) => s.key === "Technical Review")?.count || 0;
-    const delta = thisMonth - lastMonth;
-    const lastMonthShort = fmt(new Date(now.getFullYear(), now.getMonth() - 1, 15), { month: "short" });
+    const releasedCount = pipeline.find((s) => s.key === "Released")?.count || 0;
+    const tier = view.diversity == null ? null : getDiversityTheme(view.diversity);
+    const shares = zoneShares(view.zones);
+    // Filing records spell barangays their own way; match them to zoning names ignoring case.
+    const mapName = useMemo(() => new Map(Object.keys(bgyStats || {}).map((k) => [k.toLowerCase(), k])), [bgyStats]);
+    const topMax = Math.max(1, ...topBarangays.map((r) => Number(r.count)));
+    const pick = (name) => setSelectedBgy(name ? { name } : null);
 
-    const municipalTier = getDiversityTheme(municipalDiversity);
-    const selectedStat = selectedBgy ? bgyStats?.[selectedBgy.name] : null;
-    const selectedTier = selectedStat ? getDiversityTheme(selectedStat.diversity) : null;
-
+    // Each role only gets the shortcuts it can open (drafts are Planning Officer-only, inspections Admin-only).
+    // Shortcut badges stay municipal: they count the queues the pages open on.
+    const municipalReview = Object.entries(statusCounts || {}).reduce((n, [s, c]) => n + (getStatusMarkerConfig(s) === STATUS_MARKER_CONFIG["Technical Review"] ? Number(c) : 0), 0);
     const actions = isAdmin
         ? [
-              { href: "/applications", icon: "registry", label: "Open the registry", meta: `${plural(total, "record")} on file` },
-              { href: "/technical-review", icon: "search", label: "Technical review queue", meta: reviewCount ? `${num(reviewCount)} awaiting evaluation` : "Queue is clear" },
-              { href: "/site-inspections", icon: "inspect", label: "Site inspections", meta: upcomingInspections ? `${num(upcomingInspections)} scheduled ahead` : "None scheduled ahead" },
+              { href: "/applications", icon: "registry", label: "Registry" },
+              { href: "/technical-review", icon: "search", label: "Review", count: municipalReview },
+              { href: "/site-inspections", icon: "inspect", label: "Inspections", count: upcomingInspections },
           ]
         : [
-              { href: "/applications/encode", icon: "plus", label: "Encode a new application", meta: "Start a zoning clearance record" },
-              { href: "/technical-review", icon: "search", label: "Technical review queue", meta: reviewCount ? `${num(reviewCount)} awaiting evaluation` : "Queue is clear" },
-              { href: "/applications/drafts", icon: "draft", label: "Resume saved drafts", meta: draftCount ? `${plural(draftCount, "draft")} in progress` : "No drafts saved" },
+              { href: "/applications/encode", icon: "plus", label: "Encode" },
+              { href: "/technical-review", icon: "search", label: "Review", count: municipalReview },
+              { href: "/applications/drafts", icon: "draft", label: "Drafts", count: draftCount },
           ];
+
+    const attention = [
+        { href: "/applications", label: "Past the 14-day window", count: view.pastSla, tone: view.pastSla > 0 ? "text-rose-600" : "text-blue-600" },
+        { href: "/technical-review", label: "In technical review", count: reviewCount },
+        { href: "/notifications", label: "Unread notifications", count: unreadCount, sub: unreadCount > 0 ? latestUnread : null },
+        ...(inspections
+            ? [
+                  {
+                      href: "/site-inspections",
+                      label: "Inspections open",
+                      count: inspections.open,
+                      sub: `${num(inspections.synced)} synced${inspections.failed > 0 ? ` · ${num(inspections.failed)} failed to send` : ""}`,
+                      subTone: inspections.failed > 0 ? "text-rose-600" : "",
+                  },
+              ]
+            : []),
+    ];
 
     return (
         <>
             <Head title="Overview | iMAPS" />
-            <style>{`@keyframes wave { 0%, 60%, 100% { transform: rotate(0deg); } 15%, 45% { transform: rotate(14deg); } 30% { transform: rotate(-8deg); } }`}</style>
 
-            <div className="h-screen flex flex-col overflow-hidden bg-[#f5f7fb] text-slate-800 antialiased">
+            <div className="h-screen flex flex-col overflow-hidden bg-[#e7ecf4] text-slate-800 antialiased">
                 <Header
                     userName={userName}
                     userRole={userRole}
@@ -196,234 +583,324 @@ export default function Overview({
                     />
                     {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-900/20 z-[750]" aria-hidden="true" />}
 
-                    <main className="relative flex-1 min-h-0 overflow-y-auto bg-gradient-to-br from-[#fbfcff] via-[#f5f8fd] to-[#edf2fb]">
-                        {/* Faint depth behind the tiles: the header's blue, diffused */}
-                        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-                            <div className="absolute -top-48 -left-40 w-[640px] h-[640px] rounded-full bg-sky-100/80 blur-[120px]" />
-                            <div className="absolute top-[20%] right-[-10%] w-[560px] h-[560px] rounded-full bg-indigo-100/70 blur-[120px]" />
-                        </div>
+                    {/* Wide screens: one framed stage, Rosario in 3D filling it and every panel
+                        floating over it, sized to fit without scrolling. Smaller screens: the map
+                        is a block and the panels stack beneath it. */}
+                    <main className="relative flex-1 min-h-0 overflow-y-auto xl:overflow-hidden p-3 sm:p-4 xl:p-2.5">
+                        <div
+                            ref={stageRef}
+                            className="flex flex-col gap-3 xl:block xl:relative xl:h-full xl:rounded-[24px] xl:overflow-hidden xl:border xl:border-white/80 xl:shadow-[0_1px_3px_rgba(15,23,42,0.06)] [--l:300px] [--r:288px] 2xl:[--l:332px] 2xl:[--r:316px]"
+                        >
+                            {/* ── Title over the map: the greeting, then the page's name ── */}
+                            <div ref={titleRef} className="xl:absolute xl:z-10 xl:top-5 xl:left-[calc(var(--l)+30px)] xl:pointer-events-none">
+                                <h1 className="grid text-[24px] 2xl:text-[28px] leading-tight font-bold tracking-[-0.025em] text-slate-900 [text-shadow:0_0_16px_rgba(255,255,255,0.95)]">
+                                    <span
+                                        aria-hidden="true"
+                                        className={`[grid-area:1/1] whitespace-nowrap transition duration-700 ease-out motion-reduce:transition-none ${greetingShown ? "opacity-100" : "opacity-0 -translate-y-2 pointer-events-none"}`}
+                                    >
+                                        {greeting}, <span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent [text-shadow:none]">{firstName}</span>
+                                    </span>
+                                    <span className={`[grid-area:1/1] whitespace-nowrap transition duration-700 ease-out motion-reduce:transition-none ${greetingShown ? "opacity-0 translate-y-2" : "opacity-100"}`}>
+                                        Overview
+                                    </span>
+                                </h1>
+                                <div className="mt-2 flex flex-wrap items-center gap-2 xl:pointer-events-auto">
+                                    {/* The keyboard's way to the same pick a click on the map makes */}
+                                    <label className={`${CHIP} relative !pr-2 focus-within:ring-2 focus-within:ring-blue-500/60`}>
+                                        <Icon name="inspect" className="w-3.5 h-3.5 text-blue-600" strokeWidth={2} />
+                                        <span className="sr-only">Area shown</span>
+                                        <select
+                                            value={selectedBgy?.name ?? ""}
+                                            onChange={(e) => pick(e.target.value)}
+                                            className="appearance-none bg-none bg-transparent border-0 p-0 pr-5 text-[11.5px] font-medium text-slate-700 focus:ring-0 focus:outline-none cursor-pointer"
+                                        >
+                                            <option value="">All of Rosario</option>
+                                            {bgyNames.map((n) => (
+                                                <option key={n} value={n}>
+                                                    {n}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <Icon name="chevronDown" className="absolute right-2.5 w-3 h-3 text-slate-400 pointer-events-none" strokeWidth={2.4} />
+                                    </label>
+                                    <span className={CHIP}>
+                                        <Icon name="calendar" className="w-3.5 h-3.5 text-blue-600" strokeWidth={2} />
+                                        {fmt(now, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                                    </span>
+                                    {!selectedBgy && <span className="hidden xl:inline text-[11px] text-slate-500">Click a barangay to focus on it</span>}
+                                </div>
+                            </div>
 
-                        <div className="relative min-h-full flex flex-col">
-                            {/* Content keeps a readable width; the page around it stays one surface. */}
-                            <div className="flex-1 w-full max-w-[1440px] mx-auto flex flex-col gap-4 2xl:gap-5 px-4 sm:px-6 lg:px-8 py-5 2xl:py-7">
-                                <div className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-5 lg:gap-8">
-                                    {/* ── Welcome ── */}
-                                    <section aria-labelledby="overview-greeting" className="min-w-0 flex flex-col lg:justify-center">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <span className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200/70 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" aria-hidden="true" />
-                                                MPDO Rosario, Batangas
-                                            </span>
-                                            <span className="inline-flex items-center rounded-full bg-blue-50 border border-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-700">{userRole}</span>
-                                        </div>
+                            {/* ── The map ── */}
+                            <div className="relative isolate shrink-0 h-[380px] rounded-[20px] overflow-hidden border border-white/80 xl:absolute xl:inset-0 xl:h-auto xl:rounded-none xl:border-0">
+                                <MapBoundary>
+                                    <Suspense fallback={<MapSkeleton visible label="Loading Rosario…" tone="#f3f6fb" />}>
+                                        <Rosario3D
+                                            stats={bgyStats}
+                                            selected={selectedBgy?.name ?? null}
+                                            onSelect={pick}
+                                            onReady={(m, b) => {
+                                                setMap(m);
+                                                setBoundsOf(() => b);
+                                            }}
+                                        />
+                                    </Suspense>
+                                </MapBoundary>
+                                {/* Daylight at the centre, a blue haze toward the edges for the glass to catch */}
+                                <div
+                                    className="hidden xl:block absolute inset-0 z-[1000] pointer-events-none"
+                                    style={{
+                                        background:
+                                            "radial-gradient(ellipse 55% 60% at 50% 42%, transparent 50%, rgba(196,212,240,0.6) 100%), linear-gradient(180deg, rgba(255,255,255,0.35), transparent 30%, transparent 70%, rgba(201,216,242,0.5))",
+                                    }}
+                                    aria-hidden="true"
+                                />
+                            </div>
 
-                                        <p className="mt-4 inline-flex items-center gap-1.5 text-[12px] text-slate-500">
-                                            <Icon name="calendar" className="w-3.5 h-3.5" />
-                                            {fmt(now, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-                                        </p>
-
-                                        <h1 id="overview-greeting" className="mt-2 text-[32px] sm:text-[38px] 2xl:text-[46px] leading-[1.06] font-extrabold tracking-tight text-slate-800">
-                                            Welcome back,
-                                            <span className="block">
-                                                <span className="bg-gradient-to-r from-blue-600 via-indigo-500 to-sky-500 bg-clip-text text-transparent">{firstName}</span>{" "}
-                                                <span className="inline-block origin-[70%_70%] motion-safe:animate-[wave_1.8s_ease-in-out_1]" aria-hidden="true">👋</span>
-                                            </span>
-                                        </h1>
-
-                                        {/* Today's briefing: what this page is showing, in a few lines */}
-                                        <div className="mt-4 2xl:mt-5 rounded-2xl bg-gradient-to-br from-blue-50/90 to-indigo-50/70 border border-blue-100/80 px-4 py-3">
-                                            <div className="flex items-start gap-3">
-                                                <span className="grid place-items-center w-7 h-7 shrink-0 rounded-lg bg-white text-blue-600 border border-blue-100">
-                                                    <Icon name="spark" className="w-3.5 h-3.5" strokeWidth={1.9} />
-                                                </span>
-                                                <p className="min-w-0 text-[12.5px] 2xl:text-[13.5px] leading-relaxed text-slate-600">
-                                                    {pastSla > 0 ? (
-                                                        <>
-                                                            <b className="font-semibold text-rose-600">{plural(pastSla, "application")}</b> {pastSla === 1 ? "is" : "are"} past the 14-day processing window
-                                                        </>
-                                                    ) : (
-                                                        "Every open application is within the 14-day processing window"
-                                                    )}
-                                                    {reviewCount > 0 ? (
-                                                        <>
-                                                            , and <b className="font-semibold text-slate-800">{num(reviewCount)}</b> {reviewCount === 1 ? "waits" : "wait"} in technical review.
-                                                        </>
-                                                    ) : (
-                                                        "."
-                                                    )}{" "}
-                                                    Rosario's land-use mix stands at <b className="font-semibold text-slate-800">{Number(municipalDiversity).toFixed(2)}</b> ({municipalTier.shortLabel.toLowerCase()}).
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <nav aria-label="Quick actions" className="mt-3">
-                                            <ul className="flex flex-col gap-2">
-                                                {actions.map((a) => (
-                                                    <li key={a.href}>
-                                                        <Link
-                                                            href={a.href}
-                                                            className={`group flex items-center gap-3 w-full rounded-xl bg-white/80 border border-slate-200/70 pl-2 pr-3.5 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-all hover:bg-white hover:border-blue-200 hover:shadow-[0_8px_20px_-12px_rgba(37,99,235,0.45)] ${FOCUS}`}
-                                                        >
-                                                            <span className="grid place-items-center w-8 h-8 shrink-0 rounded-lg bg-blue-600 text-white shadow-[0_4px_10px_-4px_rgba(37,99,235,0.7)]">
-                                                                <Icon name={a.icon} className="w-4 h-4" strokeWidth={2} />
-                                                            </span>
-                                                            <span className="min-w-0 flex-1">
-                                                                <span className="block text-[13px] font-semibold text-slate-800 leading-tight">{a.label}</span>
-                                                                <span className="block mt-0.5 text-[11.5px] text-slate-500 leading-tight truncate">{a.meta}</span>
-                                                            </span>
-                                                            <Icon name="arrow" className="w-4 h-4 shrink-0 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-600" strokeWidth={2} />
-                                                        </Link>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </nav>
-                                    </section>
-
-                                    {/* ── Today's figures + Rosario preview ── */}
-                                    <div className="min-w-0 flex flex-col gap-3">
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <StatTile href="/applications" icon="alert" title="Needs attention" chip="SLA" value={num(pastSla)} valueClass={pastSla > 0 ? "text-rose-600" : "text-slate-900"}>
-                                                Past the 14-day SLA <span className="text-slate-400">· {num(ageing)} ageing</span>
-                                            </StatTile>
-                                            <StatTile href="/applications" icon="trend" title="Filed this month" chip={fmt(now, { month: "short" })} value={num(thisMonth)}>
-                                                <span className={delta > 0 ? "text-emerald-700" : undefined}>
-                                                    {delta === 0 ? `Same as ${lastMonthShort}` : `${delta > 0 ? "▲" : "▼"} ${num(Math.abs(delta))} vs ${lastMonthShort}`}
-                                                </span>
-                                                <span className="text-slate-400"> · {num(total)} total</span>
-                                            </StatTile>
-                                        </div>
-
-                                        <section aria-labelledby="map-heading" className={`${TILE} flex-1 p-3.5 flex flex-col min-h-[300px]`}>
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span className="flex items-center gap-1.5 min-w-0">
-                                                    <Icon name="cube" className="w-3.5 h-3.5 text-blue-600 shrink-0" strokeWidth={2} />
-                                                    <h2 id="map-heading" className="text-[11.5px] font-semibold text-slate-600 truncate">Land-use diversity</h2>
-                                                    <span className="hidden sm:inline text-[11px] text-slate-400 truncate">
-                                                        · Rosario <b className="font-bold text-slate-800 tabular-nums">{Number(municipalDiversity).toFixed(2)}</b> {municipalTier.shortLabel}
-                                                    </span>
-                                                </span>
-                                                <Link href="/dashboard" className={`shrink-0 inline-flex items-center gap-0.5 rounded-md text-[11.5px] font-semibold text-blue-600 hover:text-blue-700 ${FOCUS}`}>
-                                                    Open GIS map
-                                                    <Icon name="chevron" className="w-3 h-3" strokeWidth={2.4} />
-                                                </Link>
-                                            </div>
-
-                                            <div ref={mapBoxRef} className="relative mt-2.5 flex-1 min-h-[220px] rounded-xl overflow-hidden bg-[#f8f9fa] border border-slate-200/60">
-                                                {mapZoom !== null && (
-                                                    <MapBoundary>
-                                                        <Suspense fallback={<MapSkeleton visible label="Loading 3D view…" tone="#f8f9fa" />}>
-                                                            <MapLibre3DView
-                                                                active
-                                                                controls={false}
-                                                                bgyStats={bgyStats}
-                                                                selectedBgy={selectedBgy}
-                                                                onFeatureClick={(name) => setSelectedBgy(name ? { name } : null)}
-                                                                onMapClick={() => setSelectedBgy(null)}
-                                                                rightPanelOpen={false}
-                                                                hoveredBgy={hoveredBgy}
-                                                                onHoverBgy={setHoveredBgy}
-                                                                baseZoom={mapZoom}
-                                                                framePadding={MAP_FRAME}
-                                                            />
-                                                        </Suspense>
-                                                    </MapBoundary>
-                                                )}
-
-                                                {selectedBgy ? (
-                                                    <div className="absolute top-2 left-2 right-2 z-[460] flex items-center gap-2 rounded-lg bg-white/95 border border-slate-200/70 shadow-sm px-2.5 py-1.5 text-[11.5px]" aria-live="polite">
-                                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: selectedTier?.fill || "#94a3b8" }} aria-hidden="true" />
-                                                        <b className="font-semibold text-slate-900 truncate">{selectedBgy.name}</b>
-                                                        <span className="text-slate-500 truncate">
-                                                            {selectedStat ? `${Number(selectedStat.diversity).toFixed(2)} · ${selectedTier.shortLabel} · ${plural(selectedStat.Total, "application")}` : "No zoning data"}
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setSelectedBgy(null)}
-                                                            aria-label="Back to all of Rosario"
-                                                            className={`ml-auto grid place-items-center w-5 h-5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer shrink-0 ${FOCUS}`}
-                                                        >
-                                                            <Icon name="close" className="w-3 h-3" strokeWidth={2.4} />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <p className="absolute bottom-2 left-2 z-[460] rounded-md bg-white/85 px-2 py-1 text-[10.5px] text-slate-500 pointer-events-none">Drag to orbit · click a barangay</p>
-                                                )}
-
-                                                <div className="absolute bottom-2 right-2 z-[460] rounded-md bg-white/90 px-2 py-1.5 pointer-events-none">
-                                                    <div className="flex h-1.5 w-24 rounded-full overflow-hidden" aria-hidden="true">
-                                                        {[...DIVERSITY_TIERS].reverse().map((t) => (
-                                                            <span key={t.id} className="flex-1" style={{ background: t.fill }} />
-                                                        ))}
-                                                    </div>
-                                                    <div className="mt-0.5 flex justify-between text-[9.5px] font-medium text-slate-500">
-                                                        <span>Low mix</span>
-                                                        <span>High mix</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </section>
+                            {/* ── Left column: the registry and the area's zoning ── */}
+                            <aside
+                                ref={asideRef}
+                                aria-label={`Summary, ${view.area}`}
+                                className={`${PANEL} p-3 short:p-2.5 flex flex-col gap-2 short:gap-1.5 xl:absolute xl:z-10 xl:top-2.5 xl:bottom-2.5 xl:left-2.5 xl:w-[var(--l)] xl:overflow-hidden`}
+                            >
+                                <div className="px-1 pt-0.5 pb-2 short:pb-1.5 border-b border-slate-900/[0.06]">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <h2 className="text-[12.5px] font-medium text-slate-800 truncate">Application overview</h2>
+                                        <span className="shrink-0 inline-flex items-center h-[22px] px-2.5 rounded-full bg-white border border-slate-900/[0.07] text-[10.5px] font-medium text-slate-700">
+                                            {stat ? view.area : userRole}
+                                        </span>
                                     </div>
+                                    <dl className="mt-2 short:mt-1.5">
+                                        <dt className="text-[10.5px] text-slate-500">Applications on file</dt>
+                                        <dd className="mt-0.5 text-[32px] short:text-[26px] leading-none font-medium tracking-[-0.035em] tabular-nums text-slate-900">{num(total)}</dd>
+                                    </dl>
                                 </div>
 
-                                {/* ── Registry status, one strip across the page ── */}
-                                <section aria-labelledby="status-heading" className={`${TILE} overflow-hidden shrink-0`}>
-                                    <div className="px-3.5 py-2.5">
-                                        <TileHead icon="registry" title={<span id="status-heading">Registry status</span>} extra={`${plural(total, "application")}`}>
-                                            <Link href="/applications" className={`shrink-0 inline-flex items-center gap-0.5 rounded-md text-[11.5px] font-semibold text-blue-600 hover:text-blue-700 ${FOCUS}`}>
-                                                View all
-                                                <Icon name="chevron" className="w-3 h-3" strokeWidth={2.4} />
-                                            </Link>
-                                        </TileHead>
+                                {/* Takes whatever height the column has left, so the bars grow on tall screens */}
+                                <section aria-labelledby="pipeline-heading" className={`${CARD} p-3 short:p-2.5 flex-1 min-h-[150px] short:min-h-[96px] flex flex-col`}>
+                                    <PanelHead id="pipeline-heading" title="Pipeline">
+                                        <MoreLink href="/applications">Registry</MoreLink>
+                                    </PanelHead>
+                                    <div className="relative mt-2 flex-1 min-h-0 flex flex-col">
+                                        <PipelineChart pipeline={pipeline} />
+                                        {total === 0 && <p className="absolute inset-x-0 top-1/3 text-center text-[11.5px] text-slate-400">No applications on file in {view.area}</p>}
                                     </div>
-                                    <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-px bg-slate-200/60 border-t border-slate-200/60">
-                                        {pipeline.map((s) => (
-                                            <li key={s.key} className="bg-white/95">
+                                </section>
+
+                                <dl className="shrink-0 grid grid-cols-2 gap-2.5 short:gap-2">
+                                    {[
+                                        ["clock", "To release", view.releaseTime?.released ? days(view.releaseTime.median_days) : "—"],
+                                        ["registry", "Released", num(releasedCount)],
+                                    ].map(([icon, label, value]) => (
+                                        <div key={label} className={`${CARD} px-3 py-2.5 short:py-1.5`}>
+                                            <dt className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                                                <span className="grid place-items-center w-5 h-5 rounded-full bg-blue-50 text-blue-600">
+                                                    <Icon name={icon} className="w-3 h-3" strokeWidth={2.2} />
+                                                </span>
+                                                {label}
+                                            </dt>
+                                            <dd className="mt-1.5 short:mt-1 text-[18px] short:text-[15px] font-medium tracking-[-0.02em] tabular-nums text-slate-900 whitespace-nowrap">{value}</dd>
+                                        </div>
+                                    ))}
+                                </dl>
+
+                                <section aria-labelledby="zoning-heading" className={`${CARD} shrink-0 p-3 short:p-2.5`}>
+                                    <PanelHead id="zoning-heading" title="Zoning composition">
+                                        <span className="text-[10.5px] text-slate-400 truncate">{stat ? view.area : "CLUP 2030"}</span>
+                                    </PanelHead>
+                                    <div className="mt-2 short:mt-1.5">{shares.length ? <ZoningDonut shares={shares} /> : <p className="text-[11.5px] text-slate-500">No CLUP zones mapped here.</p>}</div>
+                                </section>
+                            </aside>
+
+                            {/* ── Bottom centre: the map's key and controls over the filings trend ── */}
+                            <div
+                                ref={bottomRef}
+                                className="flex flex-col gap-2.5 xl:absolute xl:z-10 xl:bottom-2.5 xl:left-[calc(var(--l)+20px)] xl:right-[calc(var(--r)+20px)]"
+                            >
+                                <div className="flex flex-wrap items-center justify-between gap-2.5">
+                                <div
+                                    className={`${GLASS} !rounded-[14px] hidden sm:flex items-center gap-2.5 px-3 h-11`}
+                                    role="img"
+                                    aria-label="Map key: land-use mix, from specialized farming (light) to high mix (dark)"
+                                >
+                                    <span className="text-[11px] font-medium text-slate-700">Land-use mix</span>
+                                    <span className="text-[10.5px] text-slate-500">Low</span>
+                                    <span className="flex h-2.5 rounded-full overflow-hidden ring-1 ring-slate-900/[0.06]">
+                                        {[...DIVERSITY_TIERS].reverse().map((t) => (
+                                            <span key={t.id} className="w-6 h-full" style={{ background: DIVERSITY_BLUES[t.id] }} />
+                                        ))}
+                                    </span>
+                                    <span className="text-[10.5px] text-slate-500">High</span>
+                                </div>
+                                <div role="group" aria-label="Map controls" className={`${GLASS} !rounded-[14px] flex flex-wrap items-center gap-1.5 p-1.5 ml-auto`}>
+                                    <span className="inline-flex items-center gap-1.5 px-2 text-[11.5px] font-medium text-slate-700">
+                                        <Icon name="inspect" className="w-3.5 h-3.5 text-blue-600" strokeWidth={2} />
+                                        {stat ? `${view.area}, Rosario` : "Rosario, Batangas"}
+                                    </span>
+                                    <span className="h-5 w-px bg-slate-900/[0.08]" aria-hidden="true" />
+                                    {[
+                                        { icon: "minus", label: "Zoom out", run: () => map?.zoomOut() },
+                                        { icon: "plus", label: "Zoom in", run: () => map?.zoomIn() },
+                                        { icon: "fit", label: stat ? `Fit ${view.area} in view` : "Fit Rosario in view", run: () => frame(true) },
+                                    ].map((b) => (
+                                        <button
+                                            key={b.icon}
+                                            type="button"
+                                            onClick={b.run}
+                                            aria-label={b.label}
+                                            title={b.label}
+                                            className={`grid place-items-center w-8 h-8 rounded-[10px] bg-white/80 border border-slate-900/[0.05] text-slate-600 hover:bg-white hover:text-blue-700 cursor-pointer ${FOCUS}`}
+                                        >
+                                            <Icon name={b.icon} className="w-4 h-4" strokeWidth={2} />
+                                        </button>
+                                    ))}
+                                    <Link
+                                        href="/maps"
+                                        aria-label="Open in Maps"
+                                        title="Open in Maps"
+                                        className={`grid place-items-center w-8 h-8 rounded-[10px] text-slate-600 hover:bg-white hover:text-blue-700 ${FOCUS}`}
+                                    >
+                                        <Icon name="expand" className="w-4 h-4" strokeWidth={2} />
+                                    </Link>
+                                </div>
+                                </div>
+
+                                <FilingsChart area={view.area} quarterly={view.quarterly} forecast={view.forecast} />
+                            </div>
+
+                            {/* ── Right column: shortcuts on top; what needs you, where filings come from
+                                and the area in focus at the bottom ── */}
+                            <div ref={rightRef} className="flex flex-col gap-3 xl:gap-2.5 short:gap-2 xl:absolute xl:z-10 xl:top-2.5 xl:bottom-2.5 xl:right-2.5 xl:w-[var(--r)]">
+                                <nav aria-label="Quick actions" className={`${GLASS} shrink-0 p-3 short:p-2.5`}>
+                                    <div className="flex items-center justify-between gap-2 px-0.5">
+                                        <span className="text-[12.5px] font-medium text-slate-800">Quick actions</span>
+                                        <span className="text-right leading-tight">
+                                            <span className="block text-[11px] font-medium text-slate-800 tabular-nums">{fmt(now, { hour: "numeric", minute: "2-digit" })} PHT</span>
+                                            <span className="block text-[10px] text-slate-500">{fmt(now, { weekday: "short", day: "numeric", month: "short" })}</span>
+                                        </span>
+                                    </div>
+                                    <ul className="mt-2.5 short:mt-2 grid grid-cols-3 gap-2">
+                                        {actions.map((a) => (
+                                            <li key={a.href}>
                                                 <Link
-                                                    href={`/applications?status=${encodeURIComponent(s.key)}`}
-                                                    className="group relative flex flex-col gap-1 px-3.5 py-2.5 hover:bg-white transition-colors focus-visible:outline-none focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/60"
+                                                    href={a.href}
+                                                    className={`group relative h-[58px] short:h-[44px] flex flex-col items-center justify-center gap-1.5 short:gap-1 rounded-[12px] bg-white/80 border border-slate-900/[0.05] text-[11px] font-medium text-slate-700 transition hover:bg-white hover:text-blue-700 hover:shadow-[0_8px_18px_-12px_rgba(30,58,138,0.5)] ${FOCUS}`}
                                                 >
-                                                    <span className="flex items-center gap-1.5 text-[11px] text-slate-500 group-hover:text-slate-800 min-w-0">
-                                                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: s.color }} aria-hidden="true" />
-                                                        <span className="truncate">{s.label}</span>
-                                                    </span>
-                                                    <span className="text-[18px] leading-none font-bold text-slate-900 tabular-nums">{num(s.count)}</span>
-                                                    {/* Share of the registry, as a hairline under the figure */}
-                                                    <span className="absolute left-0 bottom-0 h-[2px]" style={{ width: `${total ? (s.count / total) * 100 : 0}%`, background: s.color }} aria-hidden="true" />
+                                                    <Icon name={a.icon} className="w-[18px] h-[18px] text-slate-700 group-hover:text-blue-600" strokeWidth={1.8} />
+                                                    {a.label}
+                                                    {a.count > 0 && (
+                                                        <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full bg-blue-600 text-[9.5px] font-semibold text-white tabular-nums">
+                                                            {a.count > 99 ? "99+" : a.count}
+                                                        </span>
+                                                    )}
                                                 </Link>
                                             </li>
                                         ))}
                                     </ul>
-                                </section>
-                            </div>
+                                </nav>
 
-                            {/* ── Notification bar ── */}
-                            <Link
-                                href="/notifications"
-                                className={`border-t text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500/60 ${
-                                    unreadCount > 0 ? "border-blue-100 bg-blue-50/70 text-slate-700 hover:bg-blue-50" : "border-slate-200/70 bg-white/60 text-slate-600 hover:bg-white"
-                                }`}
-                            >
-                                <span className="w-full max-w-[1440px] mx-auto flex items-center gap-2.5 px-4 sm:px-6 lg:px-8 py-2.5">
-                                    <span className="relative shrink-0 text-blue-600">
-                                        <Icon name={unreadCount > 0 ? "bell" : "check"} className="w-4 h-4" strokeWidth={2} />
-                                        {unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-rose-500" aria-hidden="true" />}
-                                    </span>
-                                    <span className="min-w-0 truncate">
-                                        {unreadCount > 0 ? (
-                                            <>
-                                                <b className="font-semibold text-slate-900">{plural(unreadCount, "unread notification")}</b>
-                                                {latestUnread && <span className="text-slate-500"> — {latestUnread}</span>}
-                                            </>
+                                <div className="flex flex-col gap-3 xl:gap-2.5 short:gap-2 xl:flex-1 xl:min-h-0">
+                                    <section aria-labelledby="attention-heading" className={`${GLASS} shrink-0 p-3 short:p-2.5`}>
+                                        <PanelHead id="attention-heading" title="Needs attention">
+                                            <span className="inline-flex items-center gap-1 h-[20px] rounded-full bg-blue-600 px-2 text-[10px] font-medium text-white">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-white motion-safe:animate-pulse" aria-hidden="true" />
+                                                Live
+                                            </span>
+                                        </PanelHead>
+                                        <ul className="mt-1.5 flex flex-col divide-y divide-slate-900/[0.05]">
+                                            {attention.map((a) => (
+                                                <li key={a.label}>
+                                                    <Link href={a.href} className={`group flex items-center gap-3 rounded-lg px-1.5 -mx-1.5 py-1.5 short:py-[3px] hover:bg-white/70 ${FOCUS}`}>
+                                                        <span className="flex-1 min-w-0">
+                                                            <span className="block text-[11.5px] text-slate-600 group-hover:text-slate-900 truncate">{a.label}</span>
+                                                            {a.sub && <span className={`block text-[10px] truncate short:hidden ${a.subTone || "text-slate-400"}`}>{a.sub}</span>}
+                                                        </span>
+                                                        <span className={`text-[15px] font-medium tracking-[-0.02em] tabular-nums ${a.tone || "text-slate-900"}`}>{num(a.count)}</span>
+                                                    </Link>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </section>
+
+                                    {/* Fills the column between the attention list and In focus; its rows stay
+                                        packed at the top. Rows that don't fit wrap into a second column the card
+                                        clips, so a short screen shows fewer whole rows, never half of one. */}
+                                    <section aria-labelledby="busiest-heading" className={`${GLASS} shrink-0 p-3 short:p-2.5 flex flex-col xl:flex-1 xl:min-h-0 xl:overflow-hidden`}>
+                                        <PanelHead id="busiest-heading" title="Busiest barangays">
+                                            <span className="text-[10.5px] text-slate-400">{plural(quarterly.length, "quarter")}</span>
+                                        </PanelHead>
+                                        {topBarangays.length ? (
+                                            <ol className="mt-1.5 flex flex-col xl:flex-1 xl:min-h-0 xl:flex-wrap xl:content-start xl:overflow-hidden">
+                                                {topBarangays.map((r, i) => {
+                                                    const name = mapName.get(String(r.name).toLowerCase());
+                                                    const picked = Boolean(name) && selectedBgy?.name === name;
+                                                    const row = (
+                                                        <>
+                                                            <span className="flex items-baseline justify-between gap-2">
+                                                                <span className={`text-[11.5px] truncate ${i === 0 || picked ? "font-medium text-slate-900" : "text-slate-600"}`}>{r.name}</span>
+                                                                <span className="text-[11.5px] font-medium tabular-nums text-slate-900">{num(r.count)}</span>
+                                                            </span>
+                                                            <span className="mt-1 block h-[5px] rounded-full bg-slate-900/[0.06] overflow-hidden" aria-hidden="true">
+                                                                <span
+                                                                    className={`block h-full rounded-full ${i === 0 || picked ? "bg-gradient-to-r from-blue-600 to-indigo-500" : "bg-blue-200"}`}
+                                                                    style={{ width: `${(Number(r.count) / topMax) * 100}%` }}
+                                                                />
+                                                            </span>
+                                                        </>
+                                                    );
+                                                    return (
+                                                        <li key={r.name} className="w-full">
+                                                            {name ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => pick(picked ? null : name)}
+                                                                    aria-pressed={picked}
+                                                                    title={picked ? "Back to all of Rosario" : `Focus on ${name}`}
+                                                                    className={`block w-full text-left rounded-lg px-1.5 py-1 short:py-0.5 cursor-pointer ${picked ? "bg-blue-50" : "hover:bg-white/70"} ${FOCUS}`}
+                                                                >
+                                                                    {row}
+                                                                </button>
+                                                            ) : (
+                                                                <div className="px-1.5 py-1 short:py-0.5">{row}</div>
+                                                            )}
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ol>
                                         ) : (
-                                            "You're all caught up. No unread notifications."
+                                            <p className="mt-1.5 text-[11.5px] text-slate-500">No recorded filings in these quarters.</p>
                                         )}
-                                    </span>
-                                    <span className="ml-auto shrink-0 inline-flex items-center gap-0.5 font-semibold text-blue-600">
-                                        Open inbox
-                                        <Icon name="chevron" className="w-3 h-3" strokeWidth={2.4} />
-                                    </span>
-                                </span>
-                            </Link>
+                                    </section>
+
+                                    <section aria-labelledby="focus-heading" className={`${GLASS} shrink-0 p-3 short:p-2.5`} aria-live="polite">
+                                        <PanelHead id="focus-heading" title="In focus">
+                                            <MoreLink href="/maps">Maps</MoreLink>
+                                        </PanelHead>
+                                        <div className="mt-2 short:mt-1.5 flex items-center gap-3">
+                                            <div
+                                                className="w-[64px] h-[64px] short:w-[56px] short:h-[56px] shrink-0 rounded-[12px] grid place-items-center shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)] transition-colors duration-500"
+                                                style={{ background: tier ? `linear-gradient(135deg, ${DIVERSITY_BLUES[tier.id]}, ${DIVERSITY_BLUES[tier.id]}cc)` : "#cbd5e1", color: tier?.onFill || "#fff" }}
+                                            >
+                                                <span className="text-[17px] font-semibold tracking-[-0.02em] tabular-nums">{view.diversity == null ? "—" : Number(view.diversity).toFixed(2)}</span>
+                                            </div>
+                                            <dl className="flex-1 min-w-0 flex flex-col gap-1 short:gap-0 text-[11px]">
+                                                {[
+                                                    ["Area", view.area],
+                                                    ["Mix", tier ? tier.shortLabel : "No zoning data"],
+                                                    stat ? ["Mix rank", `#${mixRank.indexOf(selectedBgy.name) + 1} of ${mixRank.length}`] : ["Barangays", num(bgyNames.length)],
+                                                    ["Applications", num(total)],
+                                                    ["Mostly", shares[0] ? `${shares[0].label} ${pct(shares[0].share)}` : "—"],
+                                                ].map(([label, value]) => (
+                                                    <div key={label} className="flex justify-between gap-2">
+                                                        <dt className="text-slate-500">{label}</dt>
+                                                        <dd className="font-medium text-slate-900 tabular-nums truncate">{value}</dd>
+                                                    </div>
+                                                ))}
+                                            </dl>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
                         </div>
                     </main>
                 </div>

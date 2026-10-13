@@ -82,6 +82,16 @@ export const DIVERSITY_TIERS = [
     },
 ];
 
+// The same five tiers as a single blue family, for the Overview page's all-blue
+// palette. Keyed by tier id; each tier's `onFill` still reads on these.
+export const DIVERSITY_BLUES = {
+    high: "#1e3a8a",
+    diverse: "#1d4ed8",
+    moderate: "#3b82f6",
+    developing: "#93c5fd",
+    monoculture: "#dbeafe",
+};
+
 export function getDiversityTheme(score) {
     const s = typeof score === "number" ? score : parseFloat(score) || 0;
     return DIVERSITY_TIERS.find((t) => s >= t.min) || DIVERSITY_TIERS[DIVERSITY_TIERS.length - 1];
@@ -119,7 +129,7 @@ export function findRank(rankedList, name) {
 //
 // A lens binds one backend metric to a colour scale, a prism height, and the
 // copy that explains it, so the map, the legend and the side panel can never
-// disagree. The mix lens reads the live Simpson index DashboardController computes.
+// disagree. The mix lens reads the live Simpson index MapsController computes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Prism heights in metres, kept low enough that the town reads as a massing

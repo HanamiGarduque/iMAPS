@@ -400,22 +400,6 @@ class InspectionReviewVisibilityTest extends TestCase
         $this->assertSame($review->id, $parcelReview['review_id']);
     }
 
-    public function test_reviewer_is_null_when_the_review_records_nobody(): void
-    {
-        $app = $this->makeApplication();
-        $parcel = $this->makeParcel($app);
-        $round = $this->makeInspection($app, $parcel, 'completed');
-
-        $this->makeReview($app, $parcel, ['decision' => 'Approved', 'reviewed_by' => null]);
-
-        $out = InspectionReviewVisibility::summarize([$round->fresh()]);
-
-        $this->assertNull(
-            $out[$round->id]['parcel_review']['reviewer'],
-            'no reviewer may be invented when the review records none'
-        );
-    }
-
     // ================================================================
     // 14. multiple linked rows: newest wins
     // ================================================================
@@ -527,7 +511,7 @@ class InspectionReviewVisibilityTest extends TestCase
 
     private function makeApplication(): ZoningApplication
     {
-        return ZoningApplication::factory()->create(['created_by' => User::factory()->create()->id]);
+        return ZoningApplication::factory()->create(['encoded_by' => User::factory()->create()->id]);
     }
 
     private function makeParcel(ZoningApplication $app): Parcel

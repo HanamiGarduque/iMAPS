@@ -416,7 +416,7 @@ class Loop9c2RetryActionContractTest extends TestCase
     public function test_a_site_inspector_is_refused_before_any_controller_runs(): void
     {
         $inspector = new \App\Models\User();
-        $inspector->forceFill(['id' => 501, 'name' => 'SI', 'email' => 'si@example.test', 'role' => 'Site Inspector']);
+        $inspector->forceFill(['id' => 501, 'name' => 'SI', 'email' => 'si@example.test', 'role' => 'Site Inspector', 'is_active' => true]);
 
         $this->actingAs($inspector)
             ->post('/site-inspections/1/retry-delivery')
@@ -426,7 +426,7 @@ class Loop9c2RetryActionContractTest extends TestCase
     public function test_an_admin_is_refused_before_any_controller_runs(): void
     {
         $admin = new \App\Models\User();
-        $admin->forceFill(['id' => 1, 'name' => 'Admin', 'email' => 'admin@example.test', 'role' => 'Admin']);
+        $admin->forceFill(['id' => 1, 'name' => 'Admin', 'email' => 'admin@example.test', 'role' => 'Admin', 'is_active' => true]);
 
         $this->actingAs($admin)
             ->post('/site-inspections/1/retry-delivery')

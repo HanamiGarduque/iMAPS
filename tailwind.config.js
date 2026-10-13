@@ -93,6 +93,8 @@ export default {
 
     theme: {
         extend: {
+            // Laptop-height viewports (1366×768 and 125%-scaled 1080p): the Overview compacts so it never scrolls.
+            screens: { short: { raw: '(max-height: 780px)' } },
             fontFamily: {
                 // One typeface across iMAPS (matches User Management). Self-hosted via @fontsource, imported in resources/js/app.jsx (no internet needed).
                 sans: ['"Plus Jakarta Sans"', ...defaultTheme.fontFamily.sans],

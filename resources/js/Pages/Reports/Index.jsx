@@ -1083,7 +1083,7 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
                                 )}
                                 {downloading ? "Preparing…" : `Download ${formatName}`}
                             </button>
-                            <Link href="/dashboard" className="inline-flex items-center justify-center min-w-[96px] h-8 px-4 rounded-md border border-slate-300 bg-white text-[12.5px] text-slate-700 hover:bg-slate-50 shrink-0">
+                            <Link href="/maps" className="inline-flex items-center justify-center min-w-[96px] h-8 px-4 rounded-md border border-slate-300 bg-white text-[12.5px] text-slate-700 hover:bg-slate-50 shrink-0">
                                 Cancel
                             </Link>
                         </div>

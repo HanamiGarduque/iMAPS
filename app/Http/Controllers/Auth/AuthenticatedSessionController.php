@@ -8,8 +8,8 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -19,7 +19,6 @@ class AuthenticatedSessionController extends Controller
     public function create(): Response
     {
         return Inertia::render('Auth/Login', [
-            'canResetPassword' => Route::has('password.request'),
             'status' => session('status'),
         ]);
     }
@@ -105,8 +104,8 @@ class AuthenticatedSessionController extends Controller
             throw ValidationException::withMessages([
                 // The same hint goes to every wrong-password response, so a legitimately deactivated user
                 // knows where to look without the page revealing which emails are deactivated.
-                'email' => trans('auth.failed') . " You have {$attemptsLeft} attempt(s) remaining."
-                    . ' If you still cannot sign in, your account may be deactivated; contact an administrator.',
+                'email' => 'Incorrect email or password. ' . $attemptsLeft . ' ' . Str::plural('attempt', $attemptsLeft) . ' left.'
+                    . ' Still locked out? Contact an administrator.',
             ]);
         }
 
@@ -122,7 +121,10 @@ class AuthenticatedSessionController extends Controller
             $authUser->save();
         }
 
-        return redirect()->intended(route('overview', absolute: false));
+        // Always land on Overview; drop any pre-login URL so it can't resurface later.
+        $request->session()->forget('url.intended');
+
+        return redirect(route('overview', absolute: false));
     }
 
     // retry_after (seconds) lets the login page show a live countdown; the email message is the plain-text fallback.

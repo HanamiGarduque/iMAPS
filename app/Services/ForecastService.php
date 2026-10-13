@@ -28,7 +28,7 @@ class ForecastService
      * The clearance history this system actually holds, as the CSV the
      * microservice expects: Encoding Date, Barangay, Application Type.
      *
-     * Read from historical_data — the same table the dashboard shows as
+     * Read from historical_data — the same table the Maps page shows as
      * recorded history — so the forecast is never trained on a bundled file
      * that has drifted from the records on screen.
      */

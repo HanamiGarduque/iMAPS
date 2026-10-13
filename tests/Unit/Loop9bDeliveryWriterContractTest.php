@@ -10,7 +10,7 @@ use Tests\TestCase;
 use Throwable;
 
 /**
- * Loop 9B â€” delivery writer instrumentation.
+ * Loop 9B — delivery writer instrumentation.
  *
  * UNIT coverage for the recorder's pure decisions (failure normalization,
  * source derivation) and CONTRACT coverage proving the established Loops 1-8

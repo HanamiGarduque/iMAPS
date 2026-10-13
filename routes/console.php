@@ -16,7 +16,7 @@ Schedule::command('sync:pull-inspections')->everyFiveMinutes();
 Schedule::command('model:prune', ['--model' => [\App\Models\AppNotification::class]])->daily();
 
 // Pre-build the cached map layers. Run after deploying or after restoring the
-// database, so the first dashboard visit doesn't wait on the ~20s cold build of
+// database, so the first Maps page visit doesn't wait on the ~20s cold build of
 // the land-use plan. Uploads through Settings already warm the cache.
 Artisan::command('map:warm {--fresh : Discard the current cache first}', function () {
     if ($this->option('fresh')) {

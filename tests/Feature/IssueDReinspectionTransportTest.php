@@ -127,6 +127,29 @@ class IssueDReinspectionTransportTest extends TestCase
         $this->assertSame('completed', $old->fresh()->status);
     }
 
+    public function test_approval_before_the_scheduled_pull_still_links_the_completed_round(): void
+    {
+        $round = SiteInspection::create(['zoning_application_id' => $this->application->id,
+            'parcel_id' => $this->parcel->id, 'inspector_id' => $this->inspector->id, 'status' => 'assigned']);
+        $this->rest->seed('field_jobs', ['id' => 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            'bridge_source_id' => 'issue-d-isolated', 'local_inspection_id' => $round->id, 'status' => 'completed',
+            'submitted_at' => '2026-10-11T05:47:21+00:00', 'gps_confirmed_at' => '2026-10-11T05:46:30+00:00']);
+
+        $this->post('/technical-review/update-status', ['id' => $this->application->id,
+            'parcel_id' => $this->parcel->id, 'decision' => 'Approved'])
+            ->assertSessionHasNoErrors()->assertRedirect('/applications');
+
+        $this->assertSame($round->id, TechnicalReview::firstOrFail()->reviewed_site_inspection_id);
+        $this->assertSame($round->id, $this->queuedJobs(PushPlanningReviewToSupabase::class)->sole()->reviewedSiteInspectionId);
+        // FieldSync's UTC instants are stored as app-timezone wall-clock, and
+        // completion is when the inspector submitted, not when the pull ran.
+        $stored = DB::table('site_inspections')->where('id', $round->id)->first();
+        $this->assertSame('completed', $stored->status);
+        $this->assertSame('2026-10-11 13:47:21', $stored->submitted_at);
+        $this->assertSame('2026-10-11 13:47:21', $stored->completed_at);
+        $this->assertSame('2026-10-11 13:46:30', $stored->gps_confirmed_at);
+    }
+
     private function decision(int $round): array
     {
         return ['decision' => $round === 1 ? 'Needs Site Inspection' : 'Requires Reinspection',

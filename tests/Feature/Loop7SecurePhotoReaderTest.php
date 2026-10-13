@@ -218,6 +218,7 @@ class Loop7SecurePhotoReaderTest extends TestCase
             'name' => "Loop 7 {$role}",
             'email' => strtolower(str_replace(' ', '.', $role)) . '@example.test',
             'role' => $role,
+            'is_active' => true,
         ]);
 
         return $user;

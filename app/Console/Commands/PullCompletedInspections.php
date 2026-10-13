@@ -4,6 +4,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 use App\Models\SiteInspection;
 use App\Services\SupabaseService;
 use Illuminate\Support\Facades\DB;
@@ -58,8 +59,6 @@ class PullCompletedInspections extends Command
 
         $response = $supabase->select('field_jobs', $fields, $filters);
 
-        $response = $supabase->select('field_jobs', $fields, $filters);
-
         if ($response->failed()) {
             $this->error("Failed to connect to Supabase.");
             $this->line('SYNC_RESULT=FAILED');
@@ -98,10 +97,21 @@ class PullCompletedInspections extends Command
                     $remoteOrExisting = static fn (string $key, mixed $existing): mixed =>
                         array_key_exists($key, $job) ? $job[$key] : $existing;
 
+                    // Supabase returns UTC instants ("...+00:00") but the local
+                    // columns are `timestamp without time zone` read in the app
+                    // timezone. Eloquent stores a parsed string's wall-clock as-is,
+                    // so convert first or the value lands 8 hours early.
+                    $remoteTime = static fn (string $key, mixed $existing): mixed =>
+                        is_string($value = $remoteOrExisting($key, $existing)) && $value !== ''
+                            ? Carbon::parse($value)->setTimezone(config('app.timezone'))
+                            : $value;
+
+                    $submittedAt = $localInspection->submitted_at
+                        ?? $remoteTime('submitted_at', $localInspection->submitted_at);
+
                     $localInspection->fill([
                         'status'              => 'completed',
-                        'submitted_at'        => $localInspection->submitted_at
-                            ?? $remoteOrExisting('submitted_at', $localInspection->submitted_at),
+                        'submitted_at'        => $submittedAt,
                         'inspection_result'   => $remoteOrExisting('inspection_result', $localInspection->inspection_result),
                         'is_compliant'        => $remoteOrExisting('is_compliant', $localInspection->is_compliant),
                         'findings'            => $remoteOrExisting('findings', $localInspection->findings),
@@ -113,8 +123,10 @@ class PullCompletedInspections extends Command
                         'confirmed_latitude'  => $remoteOrExisting('confirmed_latitude', $localInspection->confirmed_latitude),
                         'confirmed_longitude' => $remoteOrExisting('confirmed_longitude', $localInspection->confirmed_longitude),
                         'gps_accuracy_m'      => $remoteOrExisting('gps_accuracy_m', $localInspection->gps_accuracy_m),
-                        'gps_confirmed_at'    => $remoteOrExisting('gps_confirmed_at', $localInspection->gps_confirmed_at),
-                        'completed_at'        => $localInspection->completed_at ?? now(),
+                        'gps_confirmed_at'    => $remoteTime('gps_confirmed_at', $localInspection->gps_confirmed_at),
+                        // When the inspector finished, not when this pull ran: a
+                        // late pull must not move the round's completion date.
+                        'completed_at'        => $localInspection->completed_at ?? $submittedAt ?? now(),
                     ]);
 
                     $scannedCount++;

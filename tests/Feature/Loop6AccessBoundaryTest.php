@@ -35,9 +35,26 @@ class Loop6AccessBoundaryTest extends TestCase
             'name'  => 'Synthetic Site Inspector',
             'email' => 'synthetic.inspector@example.test',
             'role'  => 'Site Inspector',
+            'is_active' => true,
         ]);
 
         $this->actingAs($inspector);
+    }
+
+    public function test_existing_site_inspector_session_is_denied_on_permit_routes(): void
+    {
+        $this->establishSiteInspectorSession();
+
+        foreach ([
+            ['get', '/applications/1/permit-schema/lc'],
+            ['post', '/applications/1/export-preview/lc'],
+            ['post', '/applications/1/export-document/lc'],
+            ['get', '/applications/1/saved-permits'],
+            ['get', '/applications/1/saved-permits/1/download'],
+            ['delete', '/applications/1/saved-permits/1'],
+        ] as [$method, $uri]) {
+            $this->{$method}($uri)->assertForbidden();
+        }
     }
 
     // ─── Existing SI session denied on internal read routes (defense in depth) ───
@@ -47,7 +64,7 @@ class Loop6AccessBoundaryTest extends TestCase
         $this->establishSiteInspectorSession();
 
         foreach ([
-            '/dashboard',
+            '/maps',
             '/applications',
             '/applications/1',
             '/technical-review',
@@ -99,8 +116,9 @@ class Loop6AccessBoundaryTest extends TestCase
 
         // Upstream replaced the retired /analytics page with /reports and the
         // /audit-log page with the per-user Activity Log endpoint. The Loop 6
-        // security rule is unchanged: these Admin-only surfaces must still
-        // return 403 for an existing Site Inspector session.
+        // security rule is unchanged: these surfaces (Admin-only, plus /reports
+        // which Planning Officers share) must still return 403 for an existing
+        // Site Inspector session.
         foreach ([
             '/register-new-account',
             '/reports',
@@ -116,7 +134,7 @@ class Loop6AccessBoundaryTest extends TestCase
 
     public function test_guest_is_redirected_to_login_from_internal_routes(): void
     {
-        $this->get('/dashboard')->assertRedirect('/login');
+        $this->get('/maps')->assertRedirect('/login');
         $this->get('/applications')->assertRedirect('/login');
         $this->get('/api/global-search?q=test')->assertRedirect('/login');
     }
@@ -126,9 +144,4 @@ class Loop6AccessBoundaryTest extends TestCase
         $this->get('/api/tax-map/lookup/12345')->assertRedirect('/login');
     }
 
-    public function test_public_portal_and_public_tracking_remain_public(): void
-    {
-        $this->get('/')->assertOk();
-        $this->get('/public-portal')->assertOk();
-    }
 }

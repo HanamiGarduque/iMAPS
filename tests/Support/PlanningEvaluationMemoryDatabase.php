@@ -93,7 +93,7 @@ trait PlanningEvaluationMemoryDatabase
                 'inspector_id' => 'unsignedBigInteger', 'assigned_by_imaps_user_id' => 'unsignedBigInteger',
                 'assigned_by_name' => 'string', 'status' => 'string', 'scheduled_date' => 'date', 'deadline_date' => 'date',
                 'assigned_notes' => 'text', 'completed_at' => 'timestamp', 'submitted_at' => 'timestamp',
-                'findings' => 'text', 'observations' => 'text', 'discrepancies' => 'text', 'recommendations' => 'text',
+                'findings' => 'text', 'is_compliant' => 'boolean', 'observations' => 'text', 'discrepancies' => 'text', 'recommendations' => 'text',
                 'inspector_notes' => 'text', 'inspection_result' => 'string', 'checklist_data' => 'json',
                 'confirmed_latitude' => 'double', 'confirmed_longitude' => 'double', 'gps_accuracy_m' => 'double',
                 'gps_confirmed_at' => 'timestamp', 'delivery_status' => 'string', 'last_delivery_attempt_at' => 'timestamp',

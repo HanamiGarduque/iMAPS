@@ -42,6 +42,10 @@ const LAYER_METADATA = {
 };
 
 // Section ids in state ↔ friendly names in the URL (?section=vector|raster|system).
+// File names are interpolated into Swal's html, so they must be escaped.
+const esc = (v) =>
+    String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 const SECTION_PARAMS = { spatial: "vector", raster: "raster", diagnostics: "system" };
 
 // Reads the file names inside a .zip from its central directory, without extracting
@@ -425,7 +429,7 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
             title: `Replace ${layerInfo.title}?`,
             html: `
                 <div class="text-left text-xs text-slate-600 space-y-2 mt-2">
-                    <p>This will replace the <b>${layerInfo.title}</b> layer with the contents of <b>${selectedFile.name}</b>.</p>
+                    <p>This will replace the <b>${layerInfo.title}</b> layer with the contents of <b>${esc(selectedFile.name)}</b>.</p>
                     <p class="text-slate-400">The current version is kept, so you can restore it if something looks wrong.</p>
                 </div>
             `,
@@ -496,7 +500,7 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
             title: "Deploy Raster Overlay?",
             html: `
                 <div class="text-left text-xs text-slate-600 space-y-2 mt-2">
-                    <p>This will replace the CLUP map tiles with the contents of <b>${selectedTileFile.name}</b>.</p>
+                    <p>This will replace the CLUP map tiles with the contents of <b>${esc(selectedTileFile.name)}</b>.</p>
                     <p class="text-slate-400">The current tiles are kept, so you can restore them if something looks wrong.</p>
                 </div>
             `,

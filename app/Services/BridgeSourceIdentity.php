@@ -167,28 +167,19 @@ class BridgeSourceIdentity
     /**
      * Read the configured value without inventing one.
      *
-     * `config()` is authoritative because it survives `config:cache`. `env()`
-     * is a deliberate fallback for a worker booted before config caching, which
-     * is the same reason the existing Supabase writer reads both.
+     * `config()` is the only source: config/bridge.php already reads the env
+     * var, and a direct `env()` read returns null once config is cached.
      */
     private static function rawConfiguredValue(): ?string
     {
-        if (function_exists('config')) {
-            try {
-                $fromConfig = config(self::CONFIG_KEY);
-
-                if (is_string($fromConfig) && trim($fromConfig) !== '') {
-                    return $fromConfig;
-                }
-            } catch (\Throwable $e) {
-                // A boot that cannot read config must still fail closed below,
-                // never silently fall through to an unvalidated identity.
-            }
+        try {
+            $value = config(self::CONFIG_KEY);
+        } catch (\Throwable $e) {
+            // A boot that cannot read config must fail closed.
+            return null;
         }
 
-        $fromEnv = env(self::ENV_KEY);
-
-        return is_string($fromEnv) && trim($fromEnv) !== '' ? $fromEnv : null;
+        return is_string($value) && trim($value) !== '' ? $value : null;
     }
 
     private static function normalize(?string $value): ?string

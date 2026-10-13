@@ -48,6 +48,7 @@ class Loop9c1DeliveryStatusReaderTest extends TestCase
             'name'  => $name,
             'email' => strtolower(str_replace(' ', '.', $name)) . '@example.test',
             'role'  => $role,
+            'is_active' => true,
         ]);
 
         return $user;

@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\ApplicationController;
 use App\Http\Controllers\TechnicalReviewController;
-use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\MapsController;
 use App\Http\Controllers\OverviewController;
 use App\Http\Controllers\MapController; 
 use App\Http\Controllers\UserManagementController;
@@ -15,7 +15,7 @@ use App\Http\Controllers\TaxMapLookupController;
 use App\Http\Controllers\WorkReassignmentController;
 use Illuminate\Support\Facades\Route;
 
-// â”€â”€ Session Keep-Alive Ping â”€â”€
+// ── Session Keep-Alive Ping ──
 Route::get('/ping', function () {
     return response()->json(['status' => 'ok', 'timestamp' => now()->toIso8601String()]);
 })->name('ping');
@@ -23,7 +23,7 @@ Route::get('/ping', function () {
 // ── Public Landing Page ──
 Route::redirect('/', '/login');
 
-// â”€â”€ Internal Authenticated Routes (Loop 6: Admin + Planning Officer only) â”€â”€
+// ── Internal Authenticated Routes (Loop 6: Admin + Planning Officer only) ──
 // Site Inspectors are FieldSync-only and receive 403 here even with an
 // existing session. Per-role exceptions are declared on individual routes.
 Route::middleware('auth')->group(function () {
@@ -39,9 +39,9 @@ Route::middleware('auth')->group(function () {
         ->name('api.map.layer') // Generic layer access (whitelisted inside controller)
         ->middleware('role:Admin,Planning Officer');
 
-    // â”€â”€ Forecasting + geospatial data (upstream) â”€â”€
+    // ── Forecasting + geospatial data (upstream) ──
     Route::post('/api/forecast/generate', [\App\Http\Controllers\ForecastController::class, 'generate'])
-        ->middleware('role:Admin,Planning Officer');
+        ->middleware(['role:Admin,Planning Officer', 'throttle:10,1']);
     Route::get('/maps/urban-growth-data', [MapController::class, 'getUrbanGrowthData'])
         ->name('maps.urban_growth')
         ->middleware('role:Admin,Planning Officer');
@@ -53,27 +53,15 @@ Route::middleware('auth')->group(function () {
         ->name('overview')
         ->middleware('role:Admin,Planning Officer');
 
-    // Unified GIS dashboard (map, trends, diversity)
-    Route::get('/dashboard', [DashboardController::class, 'index'])
-        ->name('dashboard')
+    // Unified GIS map (status, trends, diversity)
+    Route::get('/maps', [MapsController::class, 'index'])
+        ->name('maps')
         ->middleware('role:Admin,Planning Officer');
 
-    // â”€â”€ /maps product decision â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // MASTER'S DIRECTION WINS. origin/master deliberately replaced the separate
-    // geospatial Maps page with a single unified GIS Dashboard and deleted both
-    // `app/Http/Controllers/MapsController.php` and `resources/js/Pages/Maps.jsx`.
-    // Master also has no link to `/maps` anywhere.
-    //
-    // The Loop 9 side of this conflict pointed at MapsController@index, a class
-    // master no longer ships. Taking the Loop 9 side would therefore register a
-    // route whose controller does not exist (a runtime 500), and would
-    // reintroduce a deleted product surface.
-    //
-    // This is a master product decision, NOT a Loop 9 contract: no Loop 9 phase
-    // depends on /maps. Loop 9's own routes below are unaffected and are
-    // preserved exactly.
-    Route::get('/maps', fn () => redirect()->route('dashboard'))
-        ->name('maps.index');
+    // The GIS page was renamed Dashboard -> Maps. Old bookmarks and any
+    // `route('dashboard')` call still land on it.
+    Route::get('/dashboard', fn () => redirect()->route('maps'))
+        ->name('dashboard');
 
     // Search
     Route::get('/api/global-search', [SearchController::class, 'globalSearch'])
@@ -88,9 +76,9 @@ Route::middleware('auth')->group(function () {
         ->name('technicalreview.index')
         ->middleware('role:Admin,Planning Officer');
 
-    // â”€â”€ Internal tax-map lookup (Loop 6: moved from routes/api.php so the
+    // ── Internal tax-map lookup (Loop 6: moved from routes/api.php so the
     // session guard works; Admin + Planning Officer only. Sole caller is the
-    // application encode form â€” public portal does not use it.) â”€â”€
+    // application encode form — public portal does not use it.) ──
     Route::get('/api/tax-map/lookup/{pin}', [TaxMapLookupController::class, 'lookup'])
         ->middleware('role:Admin,Planning Officer');
 
@@ -112,7 +100,7 @@ Route::middleware('auth')->group(function () {
         ->name('site-inspections.show')
         ->middleware('role:Admin,Planning Officer');
 
-    // â”€â”€ Application Creation Form (Must be placed before wildcard {id} route) â”€â”€
+    // ── Application Creation Form (Must be placed before wildcard {id} route) ──
     // Loop 6: application encoding is Planning Officer-only (Admin excluded).
     Route::get('/applications/encode', [ApplicationController::class, 'create'])
         ->name('applications.create')
@@ -122,7 +110,7 @@ Route::middleware('auth')->group(function () {
         ->name('applications.store')
         ->middleware('role:Planning Officer');
 
-    // â”€â”€ Drafts / Offline Storage (Loop 6: Planning Officer-only) â”€â”€
+    // ── Drafts / Offline Storage (Loop 6: Planning Officer-only) ──
     // Placed correctly before the /applications/{id} route to avoid wildcard conflicts
     Route::get('/applications/drafts', [ApplicationController::class, 'draftsIndex'])
         ->name('drafts.index')
@@ -142,23 +130,28 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:Planning Officer');
     // ── Single-View & Standard Status Transitions ──
     Route::get('/applications/{id}/permit-schema/{type}', [ApplicationController::class, 'permitSchema'])
+        ->middleware('role:Admin,Planning Officer')
         ->whereNumber('id')
         ->name('applications.permit-schema');
 
-    Route::post('/applications/{id}/export-preview/{type}', [ApplicationController::class, 'exportPreview'])->whereNumber('id')->name('applications.export-preview');
+    Route::post('/applications/{id}/export-preview/{type}', [ApplicationController::class, 'exportPreview'])->middleware('role:Admin,Planning Officer')->whereNumber('id')->name('applications.export-preview');
     Route::post('/applications/{id}/export-document/{type}', [ApplicationController::class, 'exportDocument'])
+        ->middleware(['role:Admin,Planning Officer', 'throttle:20,1'])
         ->whereNumber('id')
         ->name('applications.export-document');
 
     // ── Saved Permits Management ──
     Route::get('/applications/{id}/saved-permits', [ApplicationController::class, 'savedPermits'])
+        ->middleware('role:Admin,Planning Officer')
         ->whereNumber('id')
         ->name('applications.saved-permits');
     Route::get('/applications/{id}/saved-permits/{permitId}/download', [ApplicationController::class, 'downloadSavedPermit'])
+        ->middleware('role:Admin,Planning Officer')
         ->whereNumber('id')
         ->whereNumber('permitId')
         ->name('applications.saved-permits.download');
     Route::delete('/applications/{id}/saved-permits/{permitId}', [ApplicationController::class, 'deleteSavedPermit'])
+        ->middleware('role:Admin,Planning Officer')
         ->whereNumber('id')
         ->whereNumber('permitId')
         ->name('applications.saved-permits.delete');
@@ -173,12 +166,12 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:Planning Officer');
 
     // Handles Approved / Declined standard status changes from the show docket
-    // Loop 6 (Leader correction): status update is Planning Officer-only â€” NOT Admin.
+    // Loop 6 (Leader correction): status update is Planning Officer-only — NOT Admin.
     Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])
         ->name('applications.updateStatus')
         ->middleware('role:Planning Officer');
 
-    // â”€â”€ Technical Review & Field Scheduling Transitions â”€â”€
+    // ── Technical Review & Field Scheduling Transitions ──
     // Handles changing technical review status (e.g., transition to Site Inspection)
     Route::post('/technical-review/update-status', [TechnicalReviewController::class, 'updateStatus'])
         ->name('technical-review.update')
@@ -194,7 +187,7 @@ Route::middleware('auth')->group(function () {
         ->name('technical-review.assign-inspector')
         ->middleware('role:Planning Officer');
 
-    // â”€â”€ Loop 9C-1: read-only Loop 9 delivery state per inspection round â”€â”€â”€â”€â”€
+    // ── Loop 9C-1: read-only Loop 9 delivery state per inspection round ─────
     // READ-ONLY. It reports `can_retry` as a server-computed authorization
     // fact. 9C-1 itself added no action, no dispatch and no UI; the retry
     // ROUTE that consumes that fact arrived later, in Loop 9C-2, directly below.
@@ -248,7 +241,7 @@ Route::middleware('auth')->group(function () {
         ->name('api.inspections.supabase')
         ->middleware('role:Admin,Planning Officer');
 
-    // â”€â”€ Work Reassignment (business continuity, no account sharing) â”€â”€
+    // ── Work Reassignment (business continuity, no account sharing) ──
     // Two SEPARATE responsibilities that are deliberately not merged:
     //   * Application ownership is Admin-initiated. Handing an application to
     //     another active Planning Officer keeps the work moving WITHOUT giving
@@ -268,7 +261,17 @@ Route::middleware('auth')->group(function () {
         ->name('work-reassignment.reasons')
         ->middleware('role:Admin,Planning Officer');
 
-    // â”€â”€ Notifications â”€â”€
+    // ── Standard Reports ──
+    // Admin and Planning Officer see the same reports and the same data; the
+    // controller applies no per-role scoping. Site Inspectors stay refused.
+    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index')
+        ->middleware('role:Admin,Planning Officer');
+    Route::post('/api/analytics/report/preview', [ReportController::class, 'previewReport'])->name('reports.preview')
+        ->middleware('role:Admin,Planning Officer');
+    Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->name('reports.generate')
+        ->middleware(['role:Admin,Planning Officer', 'throttle:20,1']);
+
+    // ── Notifications ──
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::get('/api/notifications', [NotificationController::class, 'getUnread'])->name('api.notifications.unread');
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
@@ -279,25 +282,21 @@ Route::middleware('auth')->group(function () {
 
 });
 
-// â”€â”€ Admin-Only Routes (Loop 6: preserved Admin-only; not broadened to Planning Officer) â”€â”€
+// ── Admin-Only Routes (Loop 6: preserved Admin-only; not broadened to Planning Officer) ──
 Route::middleware(['auth', 'role:Admin'])->group(function () {
 
     // Override Default Registration to be Admin-Only
     Route::get('register-new-account', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('register-new-account', [RegisteredUserController::class, 'store']);
 
-    // â”€â”€ Standard Reports â”€â”€
-    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
-    Route::post('/api/analytics/report/preview', [ReportController::class, 'previewReport'])->name('reports.preview');
-    Route::post('/api/analytics/report', [ReportController::class, 'generateReport'])->name('reports.generate');
-
     Route::get('/settings', [SettingsController::class, 'index'])
         ->name('settings.index');
         
     Route::post('/settings/upload-shapefile', [SettingsController::class, 'uploadShapefile'])
+        ->middleware('throttle:10,1')
         ->name('settings.upload-shapefile');
 
-    Route::post('/settings/upload-tiles', [SettingsController::class, 'uploadRasterTiles']);
+    Route::post('/settings/upload-tiles', [SettingsController::class, 'uploadRasterTiles'])->middleware('throttle:10,1');
     Route::post('/settings/restore-layer', [SettingsController::class, 'restoreLayer'])
         ->name('settings.restore-layer');
     Route::post('/settings/restore-tiles', [SettingsController::class, 'restoreRasterTiles'])
@@ -306,7 +305,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
     // User Management
     Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
     Route::get('/users/{id}/logs', [UserManagementController::class, 'logs'])->whereNumber('id')->name('users.logs');
-    Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->name('users.sensitive');
+    Route::post('/users/sensitive-data', [UserManagementController::class, 'fetchSensitiveData'])->middleware('throttle:30,1')->name('users.sensitive');
     Route::post('/users/reset-password', [UserManagementController::class, 'resetPassword'])->middleware('throttle:10,1')->name('users.reset-password');
     Route::post('/users/{id}/update', [UserManagementController::class, 'updateProfile'])->whereNumber('id')->name('users.update-profile');
 });
@@ -321,7 +320,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
 // delivery monitoring (that is 9D, on local PostgreSQL) and it shares no
 // vocabulary with the delivery state machine.
 //
-// âš  WHY THESE ROUTES ARE NOT INSIDE THE `role:Admin` GROUP ABOVE
+// ⚠ WHY THESE ROUTES ARE NOT INSIDE THE `role:Admin` GROUP ABOVE
 // ------------------------------------------------------------
 // THIS IS A REAL, USER-PROVEN BUG FIX, NOT A STYLE PREFERENCE.
 //
@@ -371,7 +370,7 @@ Route::middleware(['auth', 'role:Admin,Planning Officer'])->group(function () {
 
 });
 
-// â”€â”€ Admin â†’ Notify Planning Officers (post-Loop 9 smoke fix) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Admin → Notify Planning Officers (post-Loop 9 smoke fix) ────────────────
 //
 // THE NOTIFICATION POST REMAINS ADMIN-ONLY.
 //

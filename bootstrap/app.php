@@ -22,15 +22,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(\App\Http\Middleware\RequireOriginSecret::class);
         $middleware->prepend(\App\Http\Middleware\RestrictToAllowedIps::class);
 
-        $middleware->validateCsrfTokens(except: [
-            'logout',
-        ]);
-
         $middleware->web(append: [
             \App\Http\Middleware\EnsureUserIsActive::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
+
+        // Signed-in users hitting guest pages (/, /login) go to Overview, not
+        // Laravel's default `dashboard` route (which now redirects to Maps).
+        $middleware->redirectUsersTo(fn () => route('overview', absolute: false));
 
         $middleware->alias([
             'role' => RoleMiddleware::class,
@@ -52,6 +52,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
             if ($response->getStatusCode() === 419) {
+                // fetch/axios callers need a status they can handle, not an HTML redirect.
+                if ($request->expectsJson()) {
+                    return response()->json(['message' => 'Session expired. Please refresh and log in again.'], 419);
+                }
+
                 // An expired session means the user is already signed out; bouncing "back"
                 // to the same stale page made Sign Out look like it did nothing.
                 if ($request->is('logout')) {
