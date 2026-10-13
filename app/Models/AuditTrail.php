@@ -36,9 +36,9 @@ class AuditTrail extends Model
     public function scopeSearch(Builder $query, string $search): Builder
     {
         return $query->where(fn($q) => $q
-            ->whereILike('za.reference_number', "%{$search}%")
-            ->orWhereILike('za.applicant_name', "%{$search}%")
-            ->orWhereILike('u.name', "%{$search}%")
+            ->where('za.reference_number', 'ilike', "%{$search}%")
+            ->orWhere('za.applicant_name', 'ilike', "%{$search}%")
+            ->orWhere('u.name', 'ilike', "%{$search}%")
         );
     }
 

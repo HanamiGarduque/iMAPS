@@ -33,6 +33,7 @@ const ICONS = {
     search: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z",
     draft: "M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10",
     registry: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z",
+    support: "M16.712 4.33a9.027 9.027 0 011.652 1.306c.51.51.944 1.064 1.306 1.652M16.712 4.33l-3.448 4.138m3.448-4.138a9.014 9.014 0 00-9.424 0M19.67 7.288l-4.138 3.448m4.138-3.448a9.014 9.014 0 010 9.424m-4.138-5.976a3.736 3.736 0 00-.88-1.388 3.737 3.737 0 00-1.388-.88m2.268 2.268a3.765 3.765 0 010 2.528m-2.268-4.796a3.765 3.765 0 00-2.528 0m4.796 4.796c-.181.506-.475.982-.88 1.388a3.736 3.736 0 01-1.388.88m2.268-2.268l4.138 3.448m0 0a9.027 9.027 0 01-1.306 1.652c-.51.51-1.064.944-1.652 1.306m0 0l-3.448-4.138m3.448 4.138a9.014 9.014 0 01-9.424 0m5.976-4.138a3.765 3.765 0 01-2.528 0m0 0a3.736 3.736 0 01-1.388-.88 3.737 3.737 0 01-.88-1.388m2.268 2.268L7.288 19.67m0 0a9.024 9.024 0 01-1.652-1.306 9.027 9.027 0 01-1.306-1.652m0 0l4.138-3.448M4.33 16.712a9.014 9.014 0 010-9.424m4.138 5.976a3.765 3.765 0 010-2.528m0 0c.181-.506.475-.982.88-1.388a3.736 3.736 0 011.388-.88m-2.268 2.268L4.33 7.288m6.406 1.18L7.288 4.33m0 0a9.024 9.024 0 00-1.652 1.306A9.025 9.025 0 004.33 7.288",
     inspect: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z",
     calendar: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5",
     clock: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z",
@@ -527,22 +528,22 @@ export default function Overview({
 
     // Each role only gets the shortcuts it can open (drafts are Planning Officer-only, inspections Admin-only).
     // Shortcut badges stay municipal: they count the queues the pages open on.
-    const municipalReview = Object.entries(statusCounts || {}).reduce((n, [s, c]) => n + (getStatusMarkerConfig(s) === STATUS_MARKER_CONFIG["Technical Review"] ? Number(c) : 0), 0);
     const actions = isAdmin
         ? [
               { href: "/applications", icon: "registry", label: "Registry" },
-              { href: "/technical-review", icon: "search", label: "Review", count: municipalReview },
               { href: "/site-inspections", icon: "inspect", label: "Inspections", count: upcomingInspections },
+              { href: "/diagnostics", icon: "support", label: "Support Desk" },
           ]
         : [
               { href: "/applications/encode", icon: "plus", label: "Encode" },
-              { href: "/technical-review", icon: "search", label: "Review", count: municipalReview },
+              { href: "/site-inspections", icon: "inspect", label: "Inspections", count: upcomingInspections },
               { href: "/applications/drafts", icon: "draft", label: "Drafts", count: draftCount },
+              { href: "/diagnostics", icon: "support", label: "Support Desk" },
           ];
 
     const attention = [
         { href: "/applications", label: "Past the 14-day window", count: view.pastSla, tone: view.pastSla > 0 ? "text-rose-600" : "text-blue-600" },
-        { href: "/technical-review", label: "In technical review", count: reviewCount },
+        { href: "/applications", label: "In technical review", count: reviewCount },
         { href: "/notifications", label: "Unread notifications", count: unreadCount, sub: unreadCount > 0 ? latestUnread : null },
         ...(inspections
             ? [

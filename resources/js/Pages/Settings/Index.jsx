@@ -596,8 +596,8 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
                         />
                     )}
 
-                    <main className="flex-1 w-full h-full flex flex-col overflow-hidden bg-white">
-                        <div className="flex-1 flex flex-col h-full min-h-0 w-full">
+                    <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
+                        <div className="p-4 sm:p-6 flex-1 flex flex-col h-full min-h-0 max-w-[1580px] mx-auto w-full">
 
                             {/* ── NOTIFICATION ALERT ── */}
                             {statusMessage && (
@@ -622,12 +622,18 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
                                 </div>
                             )}
 
+                            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden flex-1 min-h-0 flex flex-col">
+                            {/* Title band, same as Registry and Inspections */}
+                            <div className="bg-slate-100/80 border-b border-slate-200 shrink-0 px-5 py-3 flex items-baseline gap-2.5 min-w-0">
+                                <h1 className="text-[16px] font-bold text-slate-900 tracking-tight">Settings</h1>
+                                <p className="text-[12px] text-slate-500 truncate">Map data, system and account preferences</p>
+                            </div>
+
                             {/* Settings layout: section menu on the left, one section shown at a time on the right. */}
-                            <div className="bg-white overflow-hidden flex-1 min-h-0 grid md:grid-cols-[240px_1fr]">
+                            <div className="flex-1 min-h-0 grid md:grid-cols-[240px_1fr]">
 
                                 {/* ── SECTION MENU ── */}
                                 <nav aria-label="Settings sections" className="border-b md:border-b-0 md:border-r border-slate-100 bg-slate-50/60 px-3 py-5 flex md:flex-col gap-5 overflow-x-auto">
-                                    <h1 className="hidden md:block px-2.5 text-lg font-bold text-slate-900 tracking-tight">Settings</h1>
                                     {[
                                         {
                                             group: "Map data",
@@ -945,6 +951,7 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
                                     </div>
                                 )}
                                 </div>
+                            </div>
                             </div>
                         </div>
                     </main>

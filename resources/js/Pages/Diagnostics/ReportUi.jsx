@@ -73,7 +73,7 @@ export function ReportShell({ title = "Support Desk", fill = false, children }) 
     return <><Head title={title} /><div className="flex h-screen flex-col overflow-hidden bg-slate-50/75 text-slate-800 antialiased">
         <Header {...shell} clock={clock} /><div className="relative flex min-h-0 flex-1 flex-col overflow-hidden"><Sidebar {...shell} />
             {sidebarOpen && <button aria-label="Close navigation" onClick={() => setSidebarOpen(false)} className="absolute inset-0 z-[750] bg-slate-900/20" />}
-            <main className="flex-1 overflow-y-auto"><div className={fill ? "flex w-full flex-col gap-3 p-3 sm:p-4 lg:h-full" : "mx-auto w-full max-w-6xl space-y-5 p-4 sm:p-6"}>
+            <main className="flex-1 overflow-y-auto"><div className={fill ? "mx-auto flex w-full max-w-[1580px] flex-col gap-3 p-4 sm:p-6 lg:h-full" : "mx-auto w-full max-w-6xl space-y-5 p-4 sm:p-6"}>
                 {flash?.success && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{flash.success}</p>}
                 {flash?.error && <p role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{flash.error}</p>}
                 {children}

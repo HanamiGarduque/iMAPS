@@ -422,18 +422,8 @@ function ShowInner({
     // is not offered controls it cannot use.
     const canRecordPlanningDecision = userRole === "Planning Officer";
 
-    // ── RESTORED BY THE MASTER MERGE: ORIGIN-AWARE BACK NAVIGATION ─────────
-    // The Technical Review queue opens a record with `?from=technical-review`.
-    // Master read only the URL path, so that origin was silently dropped and the
-    // back control always claimed the registry — an officer working the review
-    // queue had no way back to the queue they came from.
-    //
-    // This restores the origin in the smallest possible way: read the query
-    // flag and point the existing back control and breadcrumb at the right
-    // module. Normal entry from the registry is unchanged.
-    const openedFromTechnicalReview = usePage().url?.split("?")[1]?.includes("from=technical-review");
-    const backHref = openedFromTechnicalReview ? "/technical-review" : "/applications";
-    const backLabel = openedFromTechnicalReview ? "Back to technical review" : "Back to registry";
+    const backHref = "/applications";
+    const backLabel = "Back to registry";
 
     // Stable per-parcel callbacks: ParcelInspectionStatus refetches whenever its callback identity changes
     const statusCallbacks = useRef({});
@@ -578,9 +568,7 @@ function ShowInner({
     const deniedReasons = lots.map((l) => latestReview[l.parcel.id]).filter((r) => r?.decision === "Declined" && r.decision_reason);
 
     const primaryAction =
-        app.status === "Technical Review"
-            ? { label: saving ? "Submitting…" : "Submit evaluation", onClick: submitEvaluation, disabled: saving || !canSubmitEvaluation, title: canSubmitEvaluation ? "" : "Waiting on an open site inspection" }
-            : app.status === "Received"
+        app.status === "Received"
             ? { label: "Start technical review", onClick: () => setStatusDialog("Technical Review") }
             : app.status === "Under Sangguniang Bayan"
             ? {
@@ -823,6 +811,8 @@ function ShowInner({
                             The column is the single scroll area, so short windows scroll the page as a whole
                             (the tab bar sticks to the top) instead of squeezing the tab content into its own box. */}
                         <div className="flex-1 min-h-0 overflow-y-auto bg-[#f7f9fc] min-w-0">
+                            {/* In Technical Review the Review tab's own submit bar is the action, so the card only shows while something is outstanding. */}
+                            {!(app.status === "Technical Review" && !pendingInspections.length && !undecided.length) && (
                             <div className="px-6 pt-3 pb-2.5">
                                 {/* Status: where the record is and what happens next, in one place */}
                                 <div className={`rounded-xl border shadow-sm overflow-hidden ${overARTA ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
@@ -910,6 +900,7 @@ function ShowInner({
                                     )}
                                 </div>
                             </div>
+                            )}
 
                             {/* Tabs */}
                             <div className="sticky top-0 z-10 flex gap-6 px-6 bg-[#f7f9fc]/95 backdrop-blur border-b border-slate-200" role="tablist" aria-label="Record sections">
