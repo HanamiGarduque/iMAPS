@@ -134,7 +134,7 @@ export default function LayersPanel({
                                     </div>
                                     <div>
                                         <div className="flex items-baseline justify-between text-[10.5px] text-slate-500 mb-0.5">
-                                            <span title="Markers appear when you zoom in or select a barangay; close in they become the lot outline">Application markers</span>
+                                            <span title="Applications with a matched lot show as its outline when you zoom in close">Application lots</span>
                                             {statusFilter !== "All" && (
                                                 <button type="button" onClick={() => onStatusFilterChange("All")} className="text-[#0b2a5b] hover:underline cursor-pointer">All</button>
                                             )}
@@ -204,7 +204,6 @@ export default function LayersPanel({
                 <label className="flex items-center gap-2 py-1 text-[12.5px] text-slate-800 cursor-pointer">
                     <input type="checkbox" checked={showClup} onChange={(e) => onToggleClup(e.target.checked)} className="accent-[#0b2a5b]" />
                     CLUP 2030 zoning
-                    <kbd className="ml-auto text-[10px] text-slate-400 border border-slate-300 rounded-[3px] px-1 leading-4 bg-white">4</kbd>
                 </label>
                 {showClup && (
                     <div className="pl-6 pb-2 space-y-1.5">

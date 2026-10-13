@@ -21,8 +21,8 @@ const ROSARIO_BARANGAYS = [
 
 // "priority" is the default and is rendered as the dropdown's all-label.
 const SORT_OPTIONS = [
-    { value: "newest", label: "Newest round" },
-    { value: "oldest", label: "Oldest round" },
+    { value: "newest", label: "Newest visit" },
+    { value: "oldest", label: "Oldest visit" },
     { value: "applicant_asc", label: "Applicant (A-Z)" },
     { value: "applicant_desc", label: "Applicant (Z-A)" },
     { value: "sched_asc", label: "Scheduled (earliest)" },
@@ -53,18 +53,9 @@ const TABS = [
     { key: "", label: "All", d: "M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm0 5.25h.007v.008H3.75V12zm0 5.25h.007v.008H3.75v-.008z" },
     { key: "open", label: "Assigned", d: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" },
     { key: "completed", label: "Completed", d: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
-    { key: "reinspection", label: "With reinspection", d: "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" },
-    { key: "failed", label: "Delivery failed", d: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" },
+    { key: "reinspection", label: "Reinspections", d: "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" },
+    { key: "failed", label: "Failed to send", d: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" },
 ];
-
-// Delivery pill colour per canonical state. The text is always the server label;
-// "No Delivery Record" is deliberately quiet, never styled as a failure.
-const DELIVERY_TONE = {
-    delivery_failed: "bg-rose-50 text-rose-700 border-rose-200",
-    pending_delivery: "bg-amber-50 text-amber-700 border-amber-200",
-    delivered: "bg-blue-50 text-blue-700 border-blue-200",
-    no_delivery_record: "bg-slate-50 text-slate-500 border-slate-200",
-};
 
 // Local calendar day as YYYY-MM-DD. A bare date string is already a day and is
 // returned as-is; parsing it through Date would shift it across time zones.
@@ -110,8 +101,28 @@ const locationOf = (i) => {
     return app.project_location || app.barangay || i.barangay || "";
 };
 const isDone = (i) => i.display_status === "Completed";
+// The visit date has passed and the inspector has submitted nothing.
+const isOverdue = (i, scheduled) => {
+    const day = dayOf(scheduled);
+    return Boolean(day) && !isDone(i) && !i.submitted_at && day < dayOf(new Date());
+};
 const completedOf = (i) => i.completed_at || i.submitted_at || null;
 const time = (v) => (v ? new Date(v).getTime() || 0 : 0);
+
+// 1 -> "1st", 2 -> "2nd", 11 -> "11th".
+const ordinal = (n) => {
+    const s = ["th", "st", "nd", "rd"];
+    const v = Number(n) % 100;
+    return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+};
+
+// Display wording only: a round is shown to staff as a "visit". The number,
+// kind and note are the server's values, unchanged.
+const visitLabel = (i) => (i.round_number
+    ? `${ordinal(i.round_number)} visit · ${i.round_kind || "Inspection"}`
+    : i.round_kind === "Historical Inspection"
+      ? `${i.round_kind} · ${i.round_note || "Parcel not recorded"}`
+      : i.round_kind || "Inspection");
 
 // Sortable table header: faint arrows when idle, blue arrow when active (as on the Registry).
 function SortHeader({ label, dir, onClick }) {
@@ -138,7 +149,7 @@ function SortHeader({ label, dir, onClick }) {
 }
 
 export default function SiteInspectionsIndex() {
-    const { auth, pendingInspections = [], completedInspections = [], operations = {}, poReview = {}, counters = null, flash = {}, retryableIds = [] } = usePage().props;
+    const { auth, pendingInspections = [], completedInspections = [], operations = {}, poReview = {}, flash = {}, retryableIds = [] } = usePage().props;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
     // The open applicant folder is read from the URL, not held only in state, so
@@ -162,7 +173,6 @@ export default function SiteInspectionsIndex() {
     const [dateTo, setDateTo] = useState(() => urlParam("date_to") || "");
     const [dateRangePreset, setDateRangePreset] = useState(() => (urlParam("date_from") || urlParam("date_to") ? "custom" : "all"));
     const [dateFilterOpen, setDateFilterOpen] = useState(false);
-    const [peekKey, setPeekKey] = useState(null);
     const dateFilterRef = useRef(null);
     const searchInputRef = useRef(null);
 
@@ -200,16 +210,11 @@ export default function SiteInspectionsIndex() {
         return () => clearTimeout(handler);
     }, [searchInput]);
 
-    // "/" focuses search, as the hint inside the field promises. Escape closes
-    // the preview panel.
+    // "/" focuses search, as the hint inside the field promises.
     useEffect(() => {
         const onKey = (e) => {
             const tag = (e.target?.tagName || "").toLowerCase();
             const typing = tag === "input" || tag === "textarea" || tag === "select" || e.target?.isContentEditable;
-            if (e.key === "Escape" && !typing) {
-                setPeekKey(null);
-                return;
-            }
             if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || typing) return;
             e.preventDefault();
             searchInputRef.current?.focus();
@@ -322,7 +327,7 @@ export default function SiteInspectionsIndex() {
     const hasFailed = (i) => Boolean(opsOf(i).delivery_is_failure);
 
     // One entry per APPLICATION, with its rounds oldest -> newest. The latest
-    // round decides what the row shows; the full history lives in the preview.
+    // round decides what the row shows; the full history lives on the round page.
     const cases = useMemo(() => {
         const groups = new Map();
         allInspections.forEach(i => {
@@ -415,7 +420,6 @@ export default function SiteInspectionsIndex() {
 
     const filteredCases = useMemo(() => baseCases.filter(c => inTab(c, selectedTab)), [baseCases, selectedTab]);
     const filteredRounds = useMemo(() => filteredCases.flatMap(c => c.rounds), [filteredCases]);
-    const peekCase = peekKey ? cases.find(c => c.key === peekKey) || null : null;
 
     const folderGroups = useMemo(() => {
         const groups = {};
@@ -439,20 +443,12 @@ export default function SiteInspectionsIndex() {
     };
     const folderDetailUrl = (item) => detailUrlFromFolder("/site-inspections", item.id, selectedFolder, listQuery);
 
-    // Wide screens preview the application beside the table, as the Registry
-    // does. Without room for the panel, a row opens the latest round directly.
-    const openCase = (c) => {
-        if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
-            setPeekKey(c.key);
-        } else {
-            router.visit(listDetailUrl(c.item));
-        }
-    };
+    // A row opens the application's latest round.
+    const openCase = (c) => router.visit(listDetailUrl(c.item));
 
     const switchView = (mode) => {
         setViewMode(mode);
         if (mode === "list") setSelectedFolder(null);
-        else setPeekKey(null);
     };
 
     const toggleSort = (field) => {
@@ -481,15 +477,34 @@ export default function SiteInspectionsIndex() {
         </div>
     );
 
-    const statusBadge = (item) => (
-        <span className={`inline-flex items-center gap-1.5 text-[12.5px] font-medium ${item.display_status === "Completed" ? "text-emerald-700" : "text-amber-700"}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${item.display_status === "Completed" ? "bg-emerald-500" : "bg-amber-500"}`} aria-hidden="true" />
-            {item.display_status || "Assigned"}
-        </span>
-    );
+    // Assigned is the common case, so it stays neutral; only Completed and a
+    // failed delivery get colour, which keeps the column scannable.
+    const statusBadge = (item) => {
+        const done = item.display_status === "Completed";
+        return (
+            <span className={`inline-flex items-center gap-1.5 text-[11.5px] font-medium px-2 py-0.5 rounded-md ${done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                {done ? (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                ) : (
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                )}
+                {item.display_status || "Assigned"}
+            </span>
+        );
+    };
 
-    const deliveryPill = (ops) => ops.delivery_label && (
-        <span className={`inline-block text-[11px] font-medium px-1.5 py-px rounded border ${DELIVERY_TONE[ops.delivery_state] || DELIVERY_TONE.no_delivery_record}`}>
+    // Replaces the status badge in a list row when delivery failed: one line,
+    // the actionable fact first. The underlying status stays in the tooltip.
+    const failedBadge = (item, ops) => (
+        <span
+            className="inline-flex items-center gap-1 text-[11.5px] font-medium px-2 py-0.5 rounded-md bg-rose-50 text-rose-700"
+            title={`${item.display_status || "Assigned"} · ${ops.delivery_label}`}
+        >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
             {ops.delivery_label}
         </span>
     );
@@ -565,7 +580,7 @@ export default function SiteInspectionsIndex() {
                     <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
                         <div className="p-4 sm:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1580px] mx-auto w-full gap-5">
 
-                            {/* —— MASTER WORKSPACE ROW (TABLE CARD + QUICK PREVIEW PANEL) —— */}
+                            {/* —— MASTER WORKSPACE ROW —— */}
                             <div className="flex-1 flex gap-4 min-h-0">
 
                             {/* —— UNIFIED MASTER WORKSPACE CARD —— */}
@@ -578,20 +593,6 @@ export default function SiteInspectionsIndex() {
                                             <h1 className="text-[16px] font-bold text-slate-900 tracking-tight">Inspections</h1>
                                             <p className="text-[12px] text-slate-500 truncate">Applications sent for field inspection through iMAPS-FieldSync</p>
                                         </div>
-                                        {/* PHASE 2B1: server totals for every round on record, from
-                                            InspectionOperationsSummary::counters(). The tabs count
-                                            applications; these count rounds, and stay fixed while
-                                            the filters change. "Awaiting PO Review" is deliberately
-                                            absent: with reviewed_site_inspection_id NULL on every
-                                            existing review, "no decision yet" cannot be
-                                            distinguished from "never linked". */}
-                                        {counters && (
-                                            <p className="ml-auto text-[12px] text-slate-500 whitespace-nowrap">
-                                                <span className="font-semibold text-slate-700 tabular-nums">{counters.total ?? allInspections.length}</span> rounds on record
-                                                <span className="mx-1.5 text-slate-300" aria-hidden="true">·</span>
-                                                <span className="font-semibold text-slate-700 tabular-nums">{counters.reinspections ?? 0}</span> reinspections
-                                            </p>
-                                        )}
                                         {/* PHASE 2A: the former global "Refresh Data" button is
                                             REMOVED. It posted to an unscoped bulk reverse sync
                                             (no --local-inspection-id) and its label implied a
@@ -844,31 +845,30 @@ export default function SiteInspectionsIndex() {
                                         <table className="tabular-nums w-full text-left border-separate border-spacing-0 min-w-[900px] text-[13px] table-fixed">
                                             <thead className="sticky top-0 z-10 bg-slate-100">
                                                 <tr className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500 [&>th]:border-y [&>th]:border-slate-200 [&>th]:py-2.5 [&>th]:px-3 [&>th]:whitespace-nowrap [&>th]:font-semibold">
-                                                    <th className="w-[160px] !pl-5">Reference no.</th>
-                                                    <th aria-sort={sortDir("applicant") === "asc" ? "ascending" : sortDir("applicant") === "desc" ? "descending" : "none"}>
+                                                    <th className="w-[14%] !pl-5">Reference no.</th>
+                                                    <th className="w-[24%]" aria-sort={sortDir("applicant") === "asc" ? "ascending" : sortDir("applicant") === "desc" ? "descending" : "none"}>
                                                         <SortHeader label="Applicant" dir={sortDir("applicant")} onClick={() => toggleSort("applicant")} />
                                                     </th>
-                                                    <th className="w-[190px]">Round</th>
-                                                    <th className="w-[200px]">Inspector</th>
-                                                    <th className="w-[130px]" aria-sort={sortDir("sched") === "asc" ? "ascending" : sortDir("sched") === "desc" ? "descending" : "none"}>
+                                                    <th className="w-[16%]">Visit</th>
+                                                    <th className="w-[18%]">Inspector</th>
+                                                    <th className="w-[14%]" aria-sort={sortDir("sched") === "asc" ? "ascending" : sortDir("sched") === "desc" ? "descending" : "none"}>
                                                         <SortHeader label="Scheduled" dir={sortDir("sched")} onClick={() => toggleSort("sched")} />
                                                     </th>
-                                                    <th className="w-[160px] !pr-5">Status</th>
+                                                    <th className="w-[14%] !pr-5">Status</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {filteredCases.map((c) => {
                                                     const item = c.item;
                                                     const ops = opsOf(item);
-                                                    const isSelected = peekKey === c.key;
                                                     const failed = hasFailed(item);
                                                     const scheduled = scheduledOf(item);
                                                     // PHASE 2B2B: a parcel-unknown row is never given a number.
                                                     const roundShort = item.round_number
-                                                        ? `Round ${item.round_number}${item.round_kind === "Reinspection" ? " · Reinspection" : ""}`
-                                                        : "Historical";
+                                                        ? `${ordinal(item.round_number)} visit${item.round_kind === "Reinspection" ? " · Reinspection" : ""}`
+                                                        : "Past record";
                                                     const roundTitle = item.round_number
-                                                        ? `Round ${item.round_number} · ${item.round_kind || "Inspection"}`
+                                                        ? visitLabel(item)
                                                         : `${item.round_kind || "Historical Inspection"} · ${item.round_note || "Parcel not recorded"}`;
 
                                                     return (
@@ -882,12 +882,9 @@ export default function SiteInspectionsIndex() {
                                                                     openCase(c);
                                                                 }
                                                             }}
-                                                            aria-selected={isSelected}
-                                                            className={`cursor-pointer transition-colors align-middle focus:outline-none focus-visible:bg-blue-50/60 [&>td]:border-b [&>td]:border-slate-100 [&>td]:py-2.5 [&>td]:px-3 ${
-                                                                isSelected ? "bg-blue-50/60" : "bg-white hover:bg-slate-50/80"
-                                                            }`}
+                                                            className="cursor-pointer transition-colors align-middle bg-white hover:bg-slate-50/80 focus:outline-none focus-visible:bg-blue-50/60 [&>td]:border-b [&>td]:border-slate-100 [&>td]:py-2.5 [&>td]:px-3"
                                                         >
-                                                            <td className={`!pl-5 ${isSelected ? "shadow-[inset_3px_0_0_#2563eb]" : failed ? "shadow-[inset_3px_0_0_#e11d48]" : ""}`}>
+                                                            <td className={`!pl-5 ${failed ? "shadow-[inset_3px_0_0_#e11d48]" : ""}`}>
                                                                 {/* The reference is never clamped - it is a unique key. */}
                                                                 <span className="block text-[12px] font-medium text-slate-500 tracking-wide break-words">
                                                                     {item.display_reference || `Application #${item.zoning_application_id}`}
@@ -898,10 +895,10 @@ export default function SiteInspectionsIndex() {
                                                                 <p className="font-medium text-slate-900 truncate" title={applicantOf(item)}>{applicantOf(item)}</p>
                                                             </td>
 
-                                                            {/* Short form only; the canonical round label, parcel
-                                                                and INS id are in the preview panel. */}
+                                                            {/* Short form only; the full visit label and parcel
+                                                                are on the round page. */}
                                                             <td>
-                                                                <p className={`truncate ${roundShort === "Historical" ? "text-slate-400" : "text-slate-700"}`} title={roundTitle}>
+                                                                <p className={`truncate ${item.round_number ? "text-slate-700" : "text-slate-400"}`} title={roundTitle}>
                                                                     {roundShort}
                                                                 </p>
                                                             </td>
@@ -914,17 +911,21 @@ export default function SiteInspectionsIndex() {
 
                                                             <td className="whitespace-nowrap">
                                                                 {scheduled ? (
-                                                                    <span className="text-slate-600" title={relativeDay(scheduled)}>{formatDate(scheduled)}</span>
+                                                                    isOverdue(item, scheduled) ? (
+                                                                        <>
+                                                                            <span className="block text-slate-600">{formatDate(scheduled)}</span>
+                                                                            <span className="block text-[11px] font-medium text-rose-600">Overdue · {relativeDay(scheduled)}</span>
+                                                                        </>
+                                                                    ) : (
+                                                                        <span className="text-slate-600" title={relativeDay(scheduled)}>{formatDate(scheduled)}</span>
+                                                                    )
                                                                 ) : <span className="text-slate-300">—</span>}
                                                             </td>
 
                                                             <td className="!pr-5">
-                                                                {statusBadge(item)}
                                                                 {/* Only a delivery problem is surfaced in the row;
-                                                                    the full delivery state lives in the preview. */}
-                                                                {failed && (
-                                                                    <p className="mt-0.5 text-[11px] font-medium text-red-700">{ops.delivery_label}</p>
-                                                                )}
+                                                                    the full delivery state lives on the round page. */}
+                                                                {failed ? failedBadge(item, ops) : statusBadge(item)}
                                                                 {/* Only where the server said this viewer may resend. */}
                                                                 {retryableIds.includes(item.id) && (
                                                                     <RetryDeliveryButton inspectionId={item.id} className="mt-1.5" />
@@ -944,7 +945,7 @@ export default function SiteInspectionsIndex() {
                                                 {filteredCases.length === cases.length
                                                     ? `All ${cases.length} ${cases.length === 1 ? "application" : "applications"} shown`
                                                     : `${filteredCases.length} of ${cases.length} applications shown`}
-                                                {" · "}{filteredRounds.length} {filteredRounds.length === 1 ? "round" : "rounds"}
+                                                {" · "}{filteredRounds.length} {filteredRounds.length === 1 ? "visit" : "visits"}
                                                 <span className="h-px w-10 bg-slate-200" aria-hidden="true" />
                                             </div>
                                         )}
@@ -1010,7 +1011,6 @@ export default function SiteInspectionsIndex() {
                                                                         <span className="block text-[13.5px] font-semibold text-slate-900 leading-snug break-words group-hover:text-blue-700 transition-colors">
                                                                             {item.display_reference || `Application #${item.zoning_application_id}`}
                                                                         </span>
-                                                                        <span className="font-mono text-[10.5px] text-slate-400">INS-{item.id}</span>
                                                                     </div>
                                                                     <span className="shrink-0">
                                                                         {statusBadge(item)}
@@ -1020,11 +1020,7 @@ export default function SiteInspectionsIndex() {
 
                                                                 <div>
                                                                     <p className="text-[12.5px] font-medium text-slate-700 leading-snug">
-                                                                        {item.round_number
-                                                                            ? `Round ${item.round_number} · ${item.round_kind || "Inspection"}`
-                                                                            : item.round_kind === "Historical Inspection"
-                                                                              ? `${item.round_kind} · ${item.round_note || "Parcel not recorded"}`
-                                                                              : item.round_kind || "Inspection"}
+                                                                        {visitLabel(item)}
                                                                     </p>
                                                                     {/* PHASE 2B1: applicant and parcel, so a record is
                                                                         identifiable without opening the application. */}
@@ -1139,143 +1135,6 @@ export default function SiteInspectionsIndex() {
                             )}
                             </div>
 
-                            {/* —— QUICK PREVIEW PANEL —— */}
-                            {viewMode === "list" && peekCase && (() => {
-                                const item = peekCase.item;
-                                const ops = opsOf(item);
-                                const scheduled = scheduledOf(item);
-                                return (
-                                    <aside id="quick-preview" aria-label="Quick preview" className="hidden lg:flex w-[300px] shrink-0 bg-white rounded-xl border border-slate-200 flex-col min-h-0 overflow-hidden">
-                                        <div className="flex-1 overflow-y-auto">
-                                            {/* Identity */}
-                                            <div className="px-4 pt-3 pb-3.5 border-b border-slate-100">
-                                                <div className="flex items-center justify-between">
-                                                    <span className="font-mono text-[11px] text-slate-500">
-                                                        {item.display_reference || `Application #${item.zoning_application_id}`}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setPeekKey(null)}
-                                                        aria-label="Close preview"
-                                                        className="-mr-2 w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                                <h3 className="text-[15px] font-bold text-slate-900 leading-snug mt-0.5">{applicantOf(item)}</h3>
-                                                <p className="text-[12px] text-slate-500 mt-0.5">
-                                                    {locationOf(item) || "Location not recorded"}
-                                                </p>
-                                            </div>
-
-                                            {/* Latest round */}
-                                            <div className="px-4 py-3 border-b border-slate-100">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <h4 className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">Latest round</h4>
-                                                    {statusBadge(item)}
-                                                </div>
-                                                <dl className="grid grid-cols-[76px_1fr] gap-x-2 gap-y-1.5 text-[12px]">
-                                                    <dt className="text-slate-500">Round</dt>
-                                                    <dd className="text-slate-900">
-                                                        {item.round_number
-                                                            ? `Round ${item.round_number} · ${item.round_kind || "Inspection"}`
-                                                            : item.round_kind === "Historical Inspection"
-                                                              ? `${item.round_kind} · ${item.round_note || "Parcel not recorded"}`
-                                                              : item.round_kind || "Inspection"}
-                                                    </dd>
-                                                    <dt className="text-slate-500">Parcel</dt>
-                                                    <dd className="text-slate-900 break-words">{ops.parcel_label || "—"}</dd>
-                                                    <dt className="text-slate-500">Inspector</dt>
-                                                    <dd className="text-slate-900">{ops.inspector_name || "—"}</dd>
-                                                    <dt className="text-slate-500">Scheduled</dt>
-                                                    <dd className="text-slate-900 whitespace-nowrap">
-                                                        {scheduled ? <>{formatDate(scheduled)} <span className="text-slate-400">· {relativeDay(scheduled)}</span></> : "—"}
-                                                    </dd>
-                                                    {ops.deadline_date && (
-                                                        <>
-                                                            <dt className="text-slate-500">Deadline</dt>
-                                                            <dd className="text-slate-900">{formatDate(ops.deadline_date)}</dd>
-                                                        </>
-                                                    )}
-                                                    {completedOf(item) && (
-                                                        <>
-                                                            <dt className="text-slate-500">Completed</dt>
-                                                            <dd className="text-slate-900">{formatDate(completedOf(item))}</dd>
-                                                        </>
-                                                    )}
-                                                    <dt className="text-slate-500">Delivery</dt>
-                                                    <dd>{deliveryPill(ops) || "—"}</dd>
-                                                </dl>
-                                                {(poReview?.[item.id]?.po_decision || poReview?.[item.id]?.parcel_review) && (
-                                                    <div className="mt-2 flex flex-wrap gap-1.5">{reviewBadges(poReview?.[item.id])}</div>
-                                                )}
-                                            </div>
-
-                                            {/* Round history, newest first */}
-                                            <div className="px-4 py-3">
-                                                <h4 className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide mb-2.5">
-                                                    Round history <span className="text-slate-400 font-medium normal-case tracking-normal">· {peekCase.rounds.length}</span>
-                                                </h4>
-                                                <ol>
-                                                    {[...peekCase.rounds].reverse().map((item, idx, arr) => {
-                                                        const isLast = idx === arr.length - 1;
-                                                        const rOps = opsOf(item);
-                                                        const dot = hasFailed(item) ? "bg-rose-500" : isDone(item) ? "bg-emerald-500" : "bg-amber-500";
-                                                        const rDate = completedOf(item) || scheduledOf(item);
-                                                        return (
-                                                            <li key={item.id} className="flex gap-2.5">
-                                                                <div className="flex flex-col items-center pt-1">
-                                                                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-white ${dot}`} aria-hidden="true" />
-                                                                    {!isLast && <span className="w-px flex-1 min-h-[12px] bg-slate-200" aria-hidden="true" />}
-                                                                </div>
-                                                                <Link
-                                                                    href={listDetailUrl(item)}
-                                                                    className={`group flex-1 min-w-0 -mt-0.5 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isLast ? "" : "mb-1.5"}`}
-                                                                >
-                                                                    <span className="flex items-center justify-between gap-2">
-                                                                        <span className="font-mono text-[11px] text-slate-500 group-hover:text-blue-700">INS-{item.id}</span>
-                                                                        <span className="text-[11px] text-slate-400">{item.display_status || "Assigned"}</span>
-                                                                    </span>
-                                                                    <span className="block text-[12px] text-slate-800 leading-snug">
-                                                                        {item.round_number
-                                                                            ? `Round ${item.round_number} · ${item.round_kind || "Inspection"}`
-                                                                            : item.round_kind === "Historical Inspection"
-                                                                              ? `${item.round_kind} · ${item.round_note || "Parcel not recorded"}`
-                                                                              : item.round_kind || "Inspection"}
-                                                                    </span>
-                                                                    <span className="block text-[10.5px] text-slate-400">
-                                                                        {[rDate && formatDate(rDate), rOps.delivery_label].filter(Boolean).join(" · ")}
-                                                                    </span>
-                                                                </Link>
-                                                            </li>
-                                                        );
-                                                    })}
-                                                </ol>
-                                            </div>
-                                        </div>
-
-                                        <div className="p-3 border-t border-slate-100 flex items-center gap-2 shrink-0">
-                                            <Link
-                                                href={listDetailUrl(item)}
-                                                className="flex-1 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold transition-colors flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                                            >
-                                                Open latest round
-                                            </Link>
-                                            {item.zoning_application_id && (
-                                                <Link
-                                                    href={`/applications/${item.zoning_application_id}`}
-                                                    title="Open the application record"
-                                                    className="h-8 px-2.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[12px] font-semibold flex items-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                                >
-                                                    Application
-                                                </Link>
-                                            )}
-                                        </div>
-                                    </aside>
-                                );
-                            })()}
                             </div>
                         </div>
                     </main>

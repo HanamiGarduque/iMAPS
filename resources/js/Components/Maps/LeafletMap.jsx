@@ -19,8 +19,8 @@ function whenIdle(fn) {
 
 // ── Tile Layer Configuration ──
 export const TILE_PROVIDERS = {
-    // Default. OpenStreetMap drawn in greyscale: a muted canvas that stays
-    // sharp to street level (Esri's gray canvas stops at zoom 16).
+    // OpenStreetMap drawn in greyscale: a muted canvas that stays sharp to
+    // street level (Esri's gray canvas stops at zoom 16).
     light: {
         label: "Light Gray",
         desc: "Muted canvas, best for thematic layers",
@@ -29,6 +29,7 @@ export const TILE_PROVIDERS = {
         maxZoom: 19,
         className: "imaps-tiles-gray",
     },
+    // Default.
     standard: {
         label: "Standard Street",
         desc: "OpenStreetMap road network",
@@ -140,14 +141,14 @@ export const DEMAND_CLASSES = [
 
 export const getTrendsDemandColor = (count) => DEMAND_CLASSES.find((c) => (count || 0) >= c.min);
 
-// Application load per barangay, shown under the status pins. One muted hue
-// so the pins keep the colour.
+// Application load per barangay, shown under the status lot outlines. A
+// green-to-deep-blue ramp (YlGnBu) that reads clearly on the street basemap.
 export const APP_LOAD_CLASSES = [
-    { min: 11, color: "#4f74a8", label: "11+" },
-    { min: 6, color: "#7f9cc2", label: "6–10" },
-    { min: 3, color: "#aebfd8", label: "3–5" },
-    { min: 1, color: "#d5deeb", label: "1–2" },
-    { min: 0, color: "#f1f4f8", label: "0" },
+    { min: 11, color: "#253494", label: "11+" },
+    { min: 6, color: "#1d91c0", label: "6–10" },
+    { min: 3, color: "#7fcdbb", label: "3–5" },
+    { min: 1, color: "#c7e9b4", label: "1–2" },
+    { min: 0, color: "#f7fbff", label: "0" },
 ];
 
 export const getAppLoadColor = (count) => APP_LOAD_CLASSES.find((c) => (count || 0) >= c.min).color;
@@ -157,8 +158,7 @@ const SELECT_STROKE = "#0b2a5b";
 const HOVER_STROKE = "#1f2937";
 
 const BLANK_TILE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
-// Below this zoom the tracking map shows shaded barangays only; individual
-// applications appear when zoomed in or when a barangay is selected.
+// Zooming out past this closes the open application (Maps.jsx).
 export const PIN_ZOOM = 15;
 // From here in, an application with a matched lot draws its real outline.
 const LOT_ZOOM = 17;
@@ -218,7 +218,6 @@ export default function LeafletMap({
     const [zoningReady, setZoningReady] = useState(false);
 
     const prefersReducedMotion = useReducedMotion();
-    const pinsByZoom = (mapZoom ?? 0) >= PIN_ZOOM;
     // Space the floating right panel and attribute table cover, so framing
     // keeps the subject in the visible part of the canvas.
     const insetsRef = useRef(insets);
@@ -744,16 +743,19 @@ export default function LeafletMap({
         };
     }, [verifiedParcel]);
 
-    // ── Application pins (tracking mode) ──
+    // ── Application lots (tracking mode) ──
+    // No point markers: an application shows only as its matched lot outline,
+    // close in. Applications without a lot stay in the table and barangay counts.
     useEffect(() => {
         const map = mapInstanceRef.current;
         const group = applicationsLayerRef.current;
         if (!map || !group) return;
         group.clearLayers();
+        if (currentLayer !== "status" || !lotsByZoom) return;
         const selName = (selectedBgy?.name || "").trim().toLowerCase();
-        if (currentLayer !== "status" || !(selName || pinsByZoom)) return;
         const visible = (applications || []).filter(
-            (app) => matchesAppFilters(app, appTypeFilter, statusFilter)
+            (app) => app.parcels?.[0]?.outline
+                && matchesAppFilters(app, appTypeFilter, statusFilter)
                 && (!selName || (app?.barangay || "").trim().toLowerCase() === selName)
         );
 
@@ -762,71 +764,33 @@ export default function LeafletMap({
             if (stale) return;
             const L = mod.default;
 
-            // Applications sharing a spot are laid out in a small grid around it,
-            // so each stays clickable without a ring of markers.
-            const groups = {};
             visible.forEach((app) => {
-                const c = getAppCoordinates(app);
-                const key = `${c[0].toFixed(4)},${c[1].toFixed(4)}`;
-                (groups[key] ||= { center: c, apps: [] }).apps.push(app);
-            });
-
-            const STEP = 0.00032; // ~35 m between neighbours in a group
-            Object.values(groups).forEach(({ center, apps }) => {
-                const cols = Math.ceil(Math.sqrt(apps.length));
-                const rows = Math.ceil(apps.length / cols);
-                apps.forEach((app, idx) => {
-                    const coords = apps.length > 1
-                        ? [center[0] + ((rows - 1) / 2 - Math.floor(idx / cols)) * STEP, center[1] + ((idx % cols) - (cols - 1) / 2) * STEP]
-                        : center;
-                    const isSelected = selectedAppId === app.id;
-                    const isHovered = hoveredAppId === app.id;
-                    const cfg = getStatusMarkerConfig(app.status);
-                    const outline = app.parcels?.[0]?.outline;
-
-                    let layer;
-                    if (lotsByZoom && outline) {
-                        // Close in: the lot itself, outlined in its status colour.
-                        layer = L.geoJSON(outline, {
-                            pane: "appsPane",
-                            style: () => ({
-                                color: isSelected ? SELECT_STROKE : cfg.border,
-                                weight: isSelected || isHovered ? 2.6 : 1.6,
-                                fillColor: cfg.color,
-                                fillOpacity: isHovered || isSelected ? 0.55 : 0.35,
-                            }),
-                        });
-                    } else {
-                        layer = L.marker(coords, {
-                            pane: "appsPane",
-                            keyboard: true,
-                            zIndexOffset: isSelected ? 3000 : isHovered ? 2000 : 1000,
-                            icon: L.divIcon({
-                                className: "imaps-pin-wrap",
-                                iconSize: [14, 14],
-                                iconAnchor: [7, 7],
-                                html: `<span class="imaps-sq${isSelected ? " is-selected" : ""}${isHovered ? " is-hovered" : ""}" style="--sq:${cfg.color}"></span>`,
-                            }),
-                        });
-                        layer.on("add", () => {
-                            layer.getElement()?.setAttribute("aria-label", `${app.applicant_name || "Applicant"}, ${cfg.label}`);
-                        });
-                    }
-
-                    layer.on("click", (e) => {
-                        L.DomEvent.stopPropagation(e);
-                        live.current.onInspectApp?.(app);
-                    });
-                    layer.on("mouseover", () => live.current.onHoverApp?.(app.id));
-                    layer.on("mouseout", () => live.current.onHoverApp?.(null));
-                    group.addLayer(layer);
+                const isSelected = selectedAppId === app.id;
+                const isHovered = hoveredAppId === app.id;
+                const cfg = getStatusMarkerConfig(app.status);
+                const layer = L.geoJSON(app.parcels[0].outline, {
+                    pane: "appsPane",
+                    style: () => ({
+                        color: isSelected ? SELECT_STROKE : cfg.border,
+                        weight: isSelected || isHovered ? 2.6 : 1.6,
+                        fillColor: cfg.color,
+                        fillOpacity: isHovered || isSelected ? 0.55 : 0.35,
+                    }),
                 });
+
+                layer.on("click", (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    live.current.onInspectApp?.(app);
+                });
+                layer.on("mouseover", () => live.current.onHoverApp?.(app.id));
+                layer.on("mouseout", () => live.current.onHoverApp?.(null));
+                group.addLayer(layer);
             });
         });
         return () => {
             stale = true;
         };
-    }, [currentLayer, applications, appTypeFilter, statusFilter, selectedBgy, hoveredAppId, selectedAppId, barangaysReady, pinsByZoom, lotsByZoom]);
+    }, [currentLayer, applications, appTypeFilter, statusFilter, selectedBgy, hoveredAppId, selectedAppId, barangaysReady, lotsByZoom]);
 
     return (
         <>
@@ -875,9 +839,6 @@ const MAP_CSS = `
 .imaps-map .leaflet-interactive.imaps-deadspace { pointer-events: none !important; }
 
 .imaps-pin-wrap, .imaps-label-wrap { background: transparent; border: 0; }
-.imaps-sq { display: block; width: 10px; height: 10px; margin: 2px; background: var(--sq); border-radius: 1px; box-shadow: 0 0 0 1.5px #fff, 0 0 0 2.5px rgba(15, 23, 42, 0.55); transition: transform 120ms ease; cursor: pointer; }
-.imaps-sq.is-hovered { transform: scale(1.35); }
-.imaps-sq.is-selected { transform: scale(1.45); box-shadow: 0 0 0 1.5px #fff, 0 0 0 3.5px #0b2a5b; }
 .leaflet-marker-icon:focus-visible { outline: 2px solid #0b2a5b; outline-offset: 2px; }
 .imaps-label { transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; line-height: 1.15; white-space: nowrap; pointer-events: none;
   text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff; }
@@ -896,6 +857,6 @@ const MAP_CSS = `
 .imaps-map .leaflet-control-scale-line { border-color: #374151; color: #111827; background: rgba(255, 255, 255, 0.85); font-size: 10px; }
 .imaps-map .leaflet-control-attribution { font-size: 9.5px; }
 @media (prefers-reduced-motion: reduce) {
-  .imaps-map .leaflet-interactive, .imaps-skeleton, .imaps-sq { transition: none; animation: none; }
+  .imaps-map .leaflet-interactive, .imaps-skeleton { transition: none; animation: none; }
 }
 `;
