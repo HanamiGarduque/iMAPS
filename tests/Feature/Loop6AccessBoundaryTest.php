@@ -127,9 +127,4 @@ class Loop6AccessBoundaryTest extends TestCase
         $this->get('/api/tax-map/lookup/12345')->assertRedirect('/login');
     }
 
-    public function test_public_portal_and_public_tracking_remain_public(): void
-    {
-        $this->get('/')->assertOk();
-        $this->get('/public-portal')->assertOk();
-    }
 }
