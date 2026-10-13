@@ -15,7 +15,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
@@ -78,18 +77,20 @@ class InspectionDeliveryController extends Controller
         // remote profile data can reach a browser. The query count is unchanged.
         //
         // LOOP 9D: `include_attempts` opts ONE named round into its full attempt
-        // history. It is off by default, so the ordinary read stays exactly the
-        // three queries it has always been. Only an Admin may ask for it; a
-        // Planning Officer is refused rather than silently served a different
-        // payload, because attempt history is 9D Admin monitoring material.
+        // history. It is off by default, so it adds nothing to the ordinary
+        // read. Only an Admin may ask for it; a Planning Officer is refused
+        // rather than silently served a different payload, because attempt
+        // history is 9D Admin monitoring material.
+        //
+        // The ordinary read is five queries: the three above, plus
+        // `recorderLiveFrom()` (Issue C) and round numbering
+        // (`InspectionRoundNumbering`). None of them repeats per round.
         $attemptRoundId = $this->resolveAttemptHistoryRequest($request);
         $includeAttempts = $attemptRoundId !== null;
 
         $rounds = $application->siteInspections()
             ->with(['inspector' => fn ($query) => $query->select('id', 'name', 'role', 'is_active', 'handshake_key')])
-            ->when(Schema::hasTable('inspection_delivery_attempts'), function ($query) {
-                $query->withCount('deliveryAttempts');
-            })
+            ->withCount('deliveryAttempts')
             // Deterministic and canonical. `site_inspections` stores no round
             // number, so the primary key IS the round chronology - the same one
             // the existing `latestOfMany()` relation already relies on. Ordering

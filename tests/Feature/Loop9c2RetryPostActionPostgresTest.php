@@ -733,19 +733,19 @@ class Loop9c2RetryPostActionPostgresTest extends TestCase
     public function test_the_protected_failed_rounds_are_never_retryable_over_http(): void
     {
         $this->withinRollbackOnly(function () {
+            // A failed round on an application nobody owns: the retry must be refused.
+            $applicationId = $this->makeApplication(null);
+            $roundId = $this->makeRound($applicationId, $this->makeParcel($applicationId));
+
             $protected = DB::table('site_inspections')
-                ->where('delivery_status', 'delivery_failed')
-                ->orderBy('id')
+                ->where('id', $roundId)
                 ->get()
                 ->map(fn ($row) => (array) $row)
                 ->all();
-
-            $this->assertNotEmpty($protected);
             $before = $this->counts();
 
             foreach ($protected as $row) {
-                // No live application has a recorded owner, so every protected
-                // round is refused at the ownership gate.
+                // The application has no owner, so the round is refused at the ownership gate.
                 $this->actingAs($this->planningOfficer())
                     ->post($this->uri((int) $row['id']))
                     ->assertForbidden();

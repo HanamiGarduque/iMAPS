@@ -35,6 +35,7 @@ class Loop6AccessBoundaryTest extends TestCase
             'name'  => 'Synthetic Site Inspector',
             'email' => 'synthetic.inspector@example.test',
             'role'  => 'Site Inspector',
+            'is_active' => true,
         ]);
 
         $this->actingAs($inspector);
