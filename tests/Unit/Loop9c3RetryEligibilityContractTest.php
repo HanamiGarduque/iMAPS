@@ -78,6 +78,8 @@ class Loop9c3RetryEligibilityContractTest extends TestCase
             'parcel_id' => $parcelId,
             'delivery_status' => $deliveryStatus,
             'inspector_eligible' => $inspectorEligible,
+            // Rule F: inside the resend window unless a test says otherwise.
+            'scheduled_date' => now()->addDays(2)->toDateString(),
         ];
     }
 
@@ -618,6 +620,13 @@ class Loop9c3RetryEligibilityContractTest extends TestCase
     public function test_the_pending_transition_writes_exactly_one_column(): void
     {
         $code = $this->statements($this->serviceSource());
+
+        // The retry's one write to the inspection. Reading other columns (Rule F
+        // reads `scheduled_date`) is fine; only this statement may write.
+        $this->assertSame(1, substr_count($code, '->forceFill('), 'a retry must write the inspection exactly once');
+        $this->assertStringNotContainsString('->update(', $code);
+        preg_match('/->forceFill\(\[(.*?)\]\)/s', $code, $write);
+        $code = $write[1] ?? '';
 
         $this->assertStringContainsString("'delivery_status' => InspectionDeliveryStatus::STATE_PENDING", $code);
 

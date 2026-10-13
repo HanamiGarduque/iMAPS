@@ -4,6 +4,7 @@ import Swal from "sweetalert2";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import DropdownSelect from "@/Components/DropdownSelect";
+import RetryDeliveryButton from "@/Components/RetryDeliveryButton";
 import { detailUrlFromFolder } from "@/Components/folderOrigin";
 import { confirmSignOut } from "@/utils/signOut";
 
@@ -137,7 +138,7 @@ function SortHeader({ label, dir, onClick }) {
 }
 
 export default function SiteInspectionsIndex() {
-    const { auth, pendingInspections = [], completedInspections = [], operations = {}, poReview = {}, counters = null, flash = {} } = usePage().props;
+    const { auth, pendingInspections = [], completedInspections = [], operations = {}, poReview = {}, counters = null, flash = {}, retryableIds = [] } = usePage().props;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [clock, setClock] = useState("");
     // The open applicant folder is read from the URL, not held only in state, so
@@ -923,6 +924,10 @@ export default function SiteInspectionsIndex() {
                                                                     the full delivery state lives in the preview. */}
                                                                 {failed && (
                                                                     <p className="mt-0.5 text-[11px] font-medium text-red-700">{ops.delivery_label}</p>
+                                                                )}
+                                                                {/* Only where the server said this viewer may resend. */}
+                                                                {retryableIds.includes(item.id) && (
+                                                                    <RetryDeliveryButton inspectionId={item.id} className="mt-1.5" />
                                                                 )}
                                                             </td>
                                                         </tr>

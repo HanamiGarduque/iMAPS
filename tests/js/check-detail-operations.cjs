@@ -7,8 +7,10 @@ const parser = require('@babel/parser');
 //
 // THE DEFECTS THIS CATCHES
 // -----------------------
-//  1. Mounting the delivery PANEL, which carries the Planning Officer's
-//     retry-delivery POST, on an Admin page.
+//  1. Mounting the delivery PANEL on this page, or offering a retry the server
+//     did not allow. The only retry control is the shared button, rendered
+//     behind the server's `canRetry` (assigned Planning Officer, failed round,
+//     until the day before the scheduled inspection).
 //  2. Deriving a round number in the browser instead of reading the server's.
 //  3. Rendering a fabricated Round N for a parcel-unknown row.
 //  4. Presenting a GLOBAL diagnostics count as if it belonged to this inspection,
@@ -29,8 +31,8 @@ function done() {
         process.exit(1);
     }
     console.log(
-        `detail operations sections OK: ${passes.length} assertions - delivery health is ` +
-        'read-only and uses the canonical vocabulary, round history is server-resolved and ' +
+        `detail operations sections OK: ${passes.length} assertions - delivery health uses ` +
+        'the canonical vocabulary and offers a retry only when the server allows it, round history is server-resolved and ' +
         'navigable, the primary inspection record renders first inside one scroll owner, ' +
         'and no global diagnostic count appears on this page'
     );
@@ -117,7 +119,12 @@ check(deliveryPosts.length === 0,
     (deliveryPosts.join(' | ') || '(none)'));
 
 check(!/>(\s*)(Retry Delivery|Re-deliver|Reassign|Approve|Decline)(\s*)</.test(src),
-    'no delivery retry or PO control may be rendered');
+    'no hand-rolled retry or PO control may be rendered');
+
+const retryButtons = (code.match(/<RetryDeliveryButton\b/g) || []).length;
+check(retryButtons <= 1, 'at most one retry control may be rendered');
+check(retryButtons === 0 || /canRetry\s*&&[\s\S]{0,200}<RetryDeliveryButton\b/.test(code),
+    'the retry control must be rendered only when the server said canRetry');
 
 check(!/InspectionDeliveryStatusPanel/.test(src),
     'the delivery PANEL must not be mounted here: it carries the Planning Officer retry POST');

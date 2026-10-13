@@ -226,6 +226,7 @@ final class InspectionDeliveryRetryService
                     'inspector_eligible' => $this->inspectorIsEligible(
                         $inspection->inspector_id === null ? null : (int) $inspection->inspector_id,
                     ),
+                    'scheduled_date' => $inspection->scheduled_date,
                 ],
                 $this->latestRoundIdsByParcelFor($application),
             );
@@ -336,6 +337,8 @@ final class InspectionDeliveryRetryService
                 => InspectionDeliveryRetryResult::SUPERSEDED_ROUND,
             in_array(InspectionDeliveryRetryEligibility::BLOCKER_INSPECTOR_INVALID, $blockers, true)
                 => InspectionDeliveryRetryResult::INSPECTOR_INVALID,
+            in_array(InspectionDeliveryRetryEligibility::BLOCKER_TOO_LATE, $blockers, true)
+                => InspectionDeliveryRetryResult::TOO_LATE,
             default => InspectionDeliveryRetryResult::WRONG_DELIVERY_STATE,
         };
     }
