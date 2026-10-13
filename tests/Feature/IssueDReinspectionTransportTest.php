@@ -9,19 +9,17 @@ use App\Models\SiteInspection;
 use App\Models\TechnicalReview;
 use App\Models\User;
 use App\Models\ZoningApplication;
-use App\Services\InspectionDeliveryRecorder;
-use App\Services\SupabaseService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakePostgRest;
+use Tests\Support\PlanningEvaluationMemoryDatabase;
 use Tests\TestCase;
 
 class IssueDReinspectionTransportTest extends TestCase
 {
-    use RefreshDatabase;
+    use PlanningEvaluationMemoryDatabase;
 
     private const REASON = 'Controlled Issue D reinspection context test';
     private const INSPECTOR_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -34,13 +32,14 @@ class IssueDReinspectionTransportTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->assertSame('pgsql', config('database.default'));
-        $this->assertSame('issued_php_regression', DB::connection()->getDatabaseName());
+        $this->assertSame('sqlite', DB::connection()->getDriverName());
+        $this->assertSame(':memory:', DB::connection()->getDatabaseName());
+        $this->assertSame('', DB::selectOne('PRAGMA database_list')->file);
         $this->withoutVite();
-        Queue::fake();
-        $this->officer = User::create(['name' => 'Issue D Officer', 'email' => 'officer@issue-d.test',
+        $this->createMemoryTables();
+        $this->officer = User::forceCreate(['name' => 'Issue D Officer', 'email' => 'officer@issue-d.test',
             'password' => 'test-only', 'role' => 'Planning Officer', 'is_active' => true]);
-        $this->inspector = User::create(['name' => 'Issue D Inspector', 'email' => 'inspector@issue-d.test',
+        $this->inspector = User::forceCreate(['name' => 'Issue D Inspector', 'email' => 'inspector@issue-d.test',
             'password' => 'test-only', 'role' => 'Site Inspector', 'is_active' => true,
             'handshake_key' => 'issue-d-test-handshake']);
         $this->actingAs($this->officer);
@@ -59,11 +58,12 @@ class IssueDReinspectionTransportTest extends TestCase
             'supabase_parcels' => 'local_parcel_id', 'field_job_reviews' => 'technical_review_id'] as $table => $key) {
             $this->rest->declareUniqueKeys($table, [['bridge_source_id', $key]]);
         }
+        Http::swap(new HttpFactory());
         Http::preventStrayRequests();
-        Http::fake(function (Request $request) {
+        Http::fake(['https://issue-d.test/*' => function (Request $request) {
             if (str_contains($request->url(), '/profiles')) return Http::response([['id' => self::INSPECTOR_UUID]]);
             return $this->rest->handle($request);
-        });
+        }]);
     }
 
     public function test_normal_batch_flow_creates_rounds_one_two_and_three_and_transports_exact_linkage(): void
@@ -72,13 +72,14 @@ class IssueDReinspectionTransportTest extends TestCase
         for ($round = 1; $round <= 3; $round++) {
             $snapshot = $previous?->fresh()->getAttributes();
             $this->post('/technical-review/submit-batch', ['application_id' => $this->application->id,
-                'reviews' => [$this->parcel->id => $this->decision($round)]])->assertSessionHasNoErrors()->assertRedirect();
+                'reviews' => [$this->parcel->id => $this->decision($round)]])->assertSessionHasNoErrors()->assertRedirect('/applications');
             $inspection = SiteInspection::orderByDesc('id')->firstOrFail();
             $review = TechnicalReview::orderByDesc('id')->firstOrFail();
             $this->assertSame($inspection->id, (int) $review->site_inspection_task_id);
             $this->assertSame($previous?->id, $review->reviewed_site_inspection_id);
             if ($previous) $this->assertSame($snapshot, $previous->fresh()->getAttributes());
-            (new PushInspectionToSupabase($inspection))->handle(app(InspectionDeliveryRecorder::class));
+            $this->assertSame($inspection->id, $this->queuedJobs(PushInspectionToSupabase::class)->sole()->inspection->id);
+            $this->runNextJob();
             $jobs = $this->rest->rows('field_jobs');
             $job = array_values(array_filter($jobs, fn ($j) => $j['local_inspection_id'] === $inspection->id))[0];
             $this->assertSame($round, $job['inspection_round_number']);
@@ -86,13 +87,11 @@ class IssueDReinspectionTransportTest extends TestCase
             $this->assertSame($previous ? self::REASON : null, $job['reinspection_reason']);
             $this->assertSame($previous ? $review->reviewed_at->toIso8601String() : null, $job['reinspection_reviewed_at']);
             if ($previous) {
-                Queue::assertPushed(PushPlanningReviewToSupabase::class, function ($transport) use ($review, $previous) {
-                    if ($transport->technicalReviewId !== $review->id) return false;
-                    $this->assertSame($previous->id, $transport->reviewedSiteInspectionId);
-                    $this->assertSame(self::REASON, $transport->decisionReason);
-                    $transport->handle(app(SupabaseService::class));
-                    return true;
-                });
+                $transport = $this->queuedJobs(PushPlanningReviewToSupabase::class)->sole();
+                $this->assertSame($review->id, $transport->technicalReviewId);
+                $this->assertSame($previous->id, $transport->reviewedSiteInspectionId);
+                $this->assertSame(self::REASON, $transport->decisionReason);
+                $this->runNextJob();
                 $canonical = array_values(array_filter($this->rest->rows('field_job_reviews'),
                     fn ($r) => $r['technical_review_id'] === $review->id))[0];
                 $oldJob = array_values(array_filter($jobs, fn ($j) => $j['local_inspection_id'] === $previous->id))[0];
@@ -100,6 +99,7 @@ class IssueDReinspectionTransportTest extends TestCase
                 $this->assertNotSame($job['id'], $canonical['field_job_id']);
                 $this->assertSame(self::REASON, $canonical['decision_reason']);
             }
+            $this->assertSame(0, DB::table('jobs')->count());
             $inspection->update(['status' => 'completed', 'completed_at' => now(), 'submitted_at' => now(),
                 'inspector_notes' => "Independent round $round findings", 'inspection_result' => 'Requires Reinspection']);
             $previous = $inspection;
@@ -109,18 +109,21 @@ class IssueDReinspectionTransportTest extends TestCase
         $this->assertCount(2, $this->rest->rows('field_job_reviews'));
     }
 
-    public function test_single_action_flow_dispatches_review_to_old_round_after_transaction(): void
+    public function test_single_action_flow_queues_review_for_the_old_round_transactionally(): void
     {
         $old = SiteInspection::create(['zoning_application_id' => $this->application->id,
             'parcel_id' => $this->parcel->id, 'inspector_id' => $this->inspector->id,
             'status' => 'completed', 'completed_at' => now(), 'inspector_notes' => 'Preserved old findings']);
         $this->post('/technical-review/update-status', [...$this->decision(2),
             'id' => $this->application->id, 'parcel_id' => $this->parcel->id])
-            ->assertSessionHasNoErrors()->assertRedirect();
+            ->assertSessionHasNoErrors()->assertRedirect('/applications');
         $review = TechnicalReview::firstOrFail();
         $this->assertSame($old->id, $review->reviewed_site_inspection_id);
-        Queue::assertPushed(PushPlanningReviewToSupabase::class, fn ($job) =>
-            $job->reviewedSiteInspectionId === $old->id && $job->decisionReason === self::REASON);
+        $transport = $this->queuedJobs(PushPlanningReviewToSupabase::class)->sole();
+        $this->assertSame($old->id, $transport->reviewedSiteInspectionId);
+        $this->assertSame(self::REASON, $transport->decisionReason);
+        $this->assertSame(2, DB::table('jobs')->count());
+        $this->assertNoTransportHttp();
         $this->assertSame('completed', $old->fresh()->status);
     }
 

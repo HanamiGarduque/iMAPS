@@ -11,10 +11,15 @@ use App\Support\InspectionRoundNumbering;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\Connectors\DatabaseConnector;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\DatabaseQueue;
+use Illuminate\Queue\QueueManager;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Throwable;
 
 class PushInspectionToSupabase implements ShouldQueue
@@ -40,6 +45,27 @@ class PushInspectionToSupabase implements ShouldQueue
     {
         $this->inspection = $inspection;
         $this->deliverySource = $deliverySource;
+    }
+
+    /** Pin D8 intent inserts to the native queue on the caller's active transaction. */
+    public static function atomicQueue(): DatabaseQueue
+    {
+        $name = config('queue.default');
+        $manager = Queue::getFacadeRoot();
+        // QueueManager has no public connector getter; inspect before calling an overridden connect().
+        $connector = config("queue.connections.{$name}.driver") === 'database'
+            && get_class($manager) === QueueManager::class
+            ? (fn () => $this->getConnector('database'))->call($manager) : null;
+        $queue = $connector !== null && get_class($connector) === DatabaseConnector::class
+            ? $manager->connection($name) : null;
+
+        if ($queue === null || get_class($queue) !== DatabaseQueue::class
+            || $queue->getDatabase() !== DB::connection() || DB::transactionLevel() < 1
+            || ! DB::connection()->getPdo()->inTransaction()) {
+            throw new \RuntimeException('FieldSync delivery requires the native database queue on the current transaction connection.');
+        }
+
+        return $queue;
     }
 
     /**

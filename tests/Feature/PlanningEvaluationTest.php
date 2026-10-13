@@ -10,28 +10,26 @@ use App\Models\TechnicalReview;
 use App\Models\User;
 use App\Models\ZoningApplication;
 use App\Services\InspectionDeliveryRecorder;
+use App\Services\InspectionDeliveryRetryService;
 use App\Services\SupabaseService;
 use App\Services\WorkAssignmentService;
 use App\Support\InspectionRoundNumbering;
-use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Foundation\Bootstrap\BootProviders;
-use Illuminate\Foundation\Bootstrap\LoadConfiguration;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
-use Illuminate\Queue\Events\JobProcessing;
-use Illuminate\Queue\SyncQueue;
+use Illuminate\Queue\DatabaseQueue;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 use Tests\Support\FakePostgRest;
+use Tests\Support\PlanningEvaluationMemoryDatabase;
 
 /** Real controller/model regressions, with no migrations or persistent database. */
 class PlanningEvaluationTest extends TestCase
 {
+    use PlanningEvaluationMemoryDatabase;
+
     private const REASON = 'Controlled Issue D reinspection context test';
 
     private User $officer;
@@ -43,41 +41,6 @@ class PlanningEvaluationTest extends TestCase
     private array $roundSnapshot;
     private array $reviewSnapshot;
     private array $ownershipSnapshot;
-
-    public function createApplication()
-    {
-        $app = require dirname(__DIR__, 2).'/bootstrap/app.php';
-        $this->traitsUsedByTest = array_flip(class_uses_recursive(static::class));
-        // Never load local credentials, and remove every external DB connection
-        // before providers or the test lifecycle can resolve a connection.
-        $app->loadEnvironmentFrom('.env.planning-evaluation-unused');
-        $app->afterBootstrapping(LoadConfiguration::class, function ($app) {
-            $app->detectEnvironment(fn () => 'testing');
-            $app['config']->set([
-                'app.env' => 'testing', 'app.key' => str_repeat('x', 32),
-                'database.default' => 'sqlite',
-                'database.connections' => ['sqlite' => [
-                    'driver' => 'sqlite', 'database' => ':memory:', 'url' => null,
-                    'prefix' => '', 'foreign_key_constraints' => true,
-                ]],
-                'cache.default' => 'array', 'session.driver' => 'array', 'hashing.bcrypt.rounds' => 4,
-                'queue.default' => 'sync', 'logging.default' => 'null',
-                'bridge.source_id' => 'planning-evaluation-test',
-                'services.supabase.url' => 'https://evaluation.test',
-                'services.supabase.key' => 'test-only',
-                'services.supabase.anon_key' => 'test-only',
-                'services.supabase.service_key' => 'test-only',
-            ]);
-        });
-        $app->beforeBootstrapping(BootProviders::class, function () {
-            Http::preventStrayRequests();
-            Http::fake(['https://evaluation.test/*' => Http::response([], 201)]);
-            Queue::fake();
-        });
-        $app->make(Kernel::class)->bootstrap();
-
-        return $app;
-    }
 
     protected function setUp(): void
     {
@@ -148,9 +111,10 @@ class PlanningEvaluationTest extends TestCase
         $this->assertSame($decision === 'Declined' ? 'Current reason' : null, $latest->decision_reason);
         $this->assertSame($this->roundOne->id, $latest->reviewed_site_inspection_id);
         $this->assertNull($latest->site_inspection_task_id);
-        Queue::assertNotPushed(PushInspectionToSupabase::class);
-        Queue::assertPushed(PushPlanningReviewToSupabase::class, fn ($job) =>
-            $job->reviewedSiteInspectionId === $this->roundOne->id && $job->decision === $decision);
+        $this->assertCount(0, $this->queuedJobs(PushInspectionToSupabase::class));
+        $transport = $this->queuedJobs(PushPlanningReviewToSupabase::class)->sole();
+        $this->assertSame($this->roundOne->id, $transport->reviewedSiteInspectionId);
+        $this->assertSame($decision, $transport->decision);
         $this->assertHistoryPreserved();
     }
 
@@ -186,9 +150,10 @@ class PlanningEvaluationTest extends TestCase
             $this->assertNull($new->{$field}, "$field must not be inherited from Round 1");
         }
         $this->assertSame(1, $new->assignmentHistory()->count());
-        Queue::assertPushed(PushInspectionToSupabase::class, fn ($job) => $job->inspection->id === $new->id);
-        Queue::assertPushed(PushPlanningReviewToSupabase::class, fn ($job) =>
-            $job->reviewedSiteInspectionId === $this->roundOne->id && $job->decisionReason === self::REASON);
+        $this->assertSame($new->id, $this->queuedJobs(PushInspectionToSupabase::class)->sole()->inspection->id);
+        $transport = $this->queuedJobs(PushPlanningReviewToSupabase::class)->sole();
+        $this->assertSame($this->roundOne->id, $transport->reviewedSiteInspectionId);
+        $this->assertSame(self::REASON, $transport->decisionReason);
         $this->assertHistoryPreserved();
 
         // Execute the real transports after submission; only HTTP and delivery
@@ -212,8 +177,8 @@ class PlanningEvaluationTest extends TestCase
         }]);
         $recorder = $this->createPartialMock(InspectionDeliveryRecorder::class, ['beginAttempt']);
         $recorder->method('beginAttempt')->willReturn(null);
-        Queue::pushed(PushInspectionToSupabase::class)->sole()->handle($recorder);
-        Queue::pushed(PushPlanningReviewToSupabase::class)->sole()->handle(app(SupabaseService::class));
+        $this->queuedJobs(PushInspectionToSupabase::class)->sole()->handle($recorder);
+        $this->queuedJobs(PushPlanningReviewToSupabase::class)->sole()->handle(app(SupabaseService::class));
         $jobs = $rest->rows('field_jobs');
         $this->assertCount(2, $jobs);
         $this->assertSame($oldJob, $jobs[0]);
@@ -260,7 +225,7 @@ class PlanningEvaluationTest extends TestCase
         $this->assertSame('Technical Review', $this->application->fresh()->status);
         $this->assertSame(1, SiteInspection::count());
         $this->assertSame(1, TechnicalReview::count());
-        Queue::assertNothingPushed();
+        $this->assertSame(0, DB::table('jobs')->count());
         $this->assertHistoryPreserved();
     }
 
@@ -320,7 +285,7 @@ class PlanningEvaluationTest extends TestCase
                 ->assertSessionDoesntHaveErrors(["reviews.{$this->parcel->id}.scheduled_date"]);
         $this->assertSame(1, SiteInspection::count());
         $this->assertSame(1, TechnicalReview::count());
-        Queue::assertNothingPushed();
+        $this->assertSame(0, DB::table('jobs')->count());
         $this->assertHistoryPreserved();
     }
 
@@ -352,7 +317,7 @@ class PlanningEvaluationTest extends TestCase
         $this->assertSame('Technical Review', $this->application->fresh()->status);
         $this->assertSame(1, SiteInspection::count());
         $this->assertSame(1, TechnicalReview::count());
-        Queue::assertNothingPushed();
+        $this->assertSame(0, DB::table('jobs')->count());
         $this->assertHistoryPreserved();
     }
 
@@ -379,19 +344,11 @@ class PlanningEvaluationTest extends TestCase
     }
 
     #[DataProvider('reviewEndpoints')]
-    public function test_sync_reinspection_transport_waits_for_committed_creator_review(bool $batch): void
+    public function test_database_reinspection_transport_waits_for_committed_creator_review(bool $batch): void
     {
-        $rest = $this->useRealSyncInspectionQueue();
-        $executions = [];
-        Queue::before(function (JobProcessing $event) use (&$executions) {
-            if ($event->job->resolveName() === PushInspectionToSupabase::class) {
-                $executions[] = [
-                    'transaction_level' => DB::transactionLevel(),
-                    'pdo_in_transaction' => DB::connection()->getPdo()->inTransaction(),
-                    'creator' => TechnicalReview::where('decision', 'Requires Reinspection')->first()?->getAttributes(),
-                ];
-            }
-        });
+        // Explicit job flags must remain atomic even if the connection default is changed.
+        config(['queue.connections.database.after_commit' => true]);
+        $rest = $this->useNativeInspectionQueue();
 
         // The controller's inner commit must not release an outer transaction's job.
         DB::beginTransaction();
@@ -402,7 +359,8 @@ class PlanningEvaluationTest extends TestCase
             $this->assertSame(1, DB::transactionLevel());
             $this->assertSame(2, SiteInspection::count());
             $this->assertSame(2, TechnicalReview::count());
-            $this->assertCount(0, $executions, 'Inspection transport must wait for the outermost commit');
+            $this->assertSame(2, DB::table('jobs')->count(), 'Both intents must already belong to the transaction');
+            $this->assertNoTransportHttp();
             $this->assertCount(1, $rest->rows('field_jobs'));
             DB::commit();
         } finally {
@@ -411,10 +369,11 @@ class PlanningEvaluationTest extends TestCase
             }
         }
 
-        $this->assertCount(1, $executions, 'Exactly one real sync inspection job must execute');
-        $this->assertSame(0, $executions[0]['transaction_level']);
-        $this->assertFalse($executions[0]['pdo_in_transaction']);
-        $this->assertSame($review->getAttributes(), $executions[0]['creator']);
+        $this->assertSame(2, DB::table('jobs')->count());
+        $this->assertNoTransportHttp();
+        $this->runNextJob();
+        $this->runNextJob();
+        $this->assertSame(0, DB::table('jobs')->count());
         $jobs = $rest->rows('field_jobs');
         $this->assertCount(2, $jobs);
         $this->assertSame($new->id, $jobs[1]['local_inspection_id']);
@@ -428,10 +387,10 @@ class PlanningEvaluationTest extends TestCase
         $this->assertSame(['round-one-test.jpg'], $jobs[0]['photo_paths']);
         $this->assertSame('completed', $jobs[0]['status']);
         DB::transaction(fn () => null);
-        $this->assertCount(1, $executions, 'A later commit must not execute the transport again');
+        $this->assertSame(0, DB::table('jobs')->count());
         $this->submit($this->assignment(), $batch)->assertSessionHasErrors(['decision']);
         $this->assertSame(2, TechnicalReview::count());
-        $this->assertCount(1, $executions, 'A repeated submission must not dispatch another inspection');
+        $this->assertSame(0, DB::table('jobs')->count(), 'Repeated submission must not enqueue another inspection');
         $this->assertSame($jobs, $rest->rows('field_jobs'));
         $this->assertSame(2, SiteInspection::count());
         $this->assertSame($this->roundSnapshot, $this->roundOne->fresh()->getAttributes());
@@ -441,15 +400,9 @@ class PlanningEvaluationTest extends TestCase
     }
 
     #[DataProvider('reviewEndpoints')]
-    public function test_sync_reinspection_transport_is_discarded_when_creator_transaction_rolls_back(bool $batch): void
+    public function test_database_reinspection_transport_is_discarded_when_creator_transaction_rolls_back(bool $batch): void
     {
-        $rest = $this->useRealSyncInspectionQueue();
-        $executions = 0;
-        Queue::before(function (JobProcessing $event) use (&$executions) {
-            if ($event->job->resolveName() === PushInspectionToSupabase::class) {
-                $executions++;
-            }
-        });
+        $rest = $this->useNativeInspectionQueue();
         $createdReviewId = null;
         TechnicalReview::created(function (TechnicalReview $review) use (&$createdReviewId) {
             if ($review->decision === 'Requires Reinspection') {
@@ -470,28 +423,337 @@ class PlanningEvaluationTest extends TestCase
         $this->assertFalse(DB::connection()->getPdo()->inTransaction());
         $this->assertSame(1, SiteInspection::count());
         $this->assertSame(1, TechnicalReview::count());
-        $this->assertSame(0, $executions, 'A rolled-back inspection job must never execute');
+        $this->assertSame(0, DB::table('jobs')->count());
+        $this->assertNoTransportHttp();
         DB::transaction(fn () => null);
-        $this->assertSame(0, $executions, 'Rollback must discard callbacks rather than release them on a later commit');
+        $this->assertSame(0, DB::table('jobs')->count());
         $this->assertCount(1, $rest->rows('field_jobs'));
         $this->assertSame('Technical Review', $this->application->fresh()->status);
         $this->assertHistoryPreserved();
     }
 
-    private function useRealSyncInspectionQueue(): FakePostgRest
+    #[DataProvider('reviewEndpoints')]
+    public function test_atomic_outer_rollback_removes_both_delivery_intents(bool $batch): void
     {
-        // Inspection jobs pass through the native SyncQueue; unrelated jobs stay fake.
-        $queue = Queue::fake()->except([PushInspectionToSupabase::class]);
-        $this->assertInstanceOf(SyncQueue::class, $queue->queue->connection());
-        $this->assertFalse((bool) config('queue.connections.sync.after_commit'));
+        $this->useNativeInspectionQueue();
+        $before = $this->localSnapshot();
+        DB::beginTransaction();
+        try {
+            $this->submit($this->assignment(), $batch)->assertRedirect('/applications');
+            $this->assertSame(2, DB::table('jobs')->count());
+            $this->assertNoTransportHttp();
+        } finally {
+            DB::rollBack();
+        }
+        DB::transaction(fn () => null);
+        $this->assertSame($before, $this->localSnapshot());
+        $this->assertNoTransportHttp();
+        $this->assertHistoryPreserved();
+    }
+
+    public static function failedJobInserts(): array
+    {
+        return ['single first' => [false, 0], 'single second' => [false, 1],
+            'batch first' => [true, 0], 'batch second' => [true, 1]];
+    }
+
+    #[DataProvider('failedJobInserts')]
+    public function test_atomic_job_insert_failure_rolls_back_every_local_change(bool $batch, int $existing): void
+    {
+        $before = $this->localSnapshot();
+        DB::unprepared("CREATE TEMP TRIGGER fail_d8_job BEFORE INSERT ON jobs
+            WHEN (SELECT COUNT(*) FROM jobs) = {$existing}
+            BEGIN SELECT RAISE(ABORT, 'controlled D8 queue insert failure'); END");
+        $this->withoutExceptionHandling();
+        try {
+            $this->submit($this->assignment(), $batch);
+            $this->fail('The queue INSERT failure must propagate');
+        } catch (\Illuminate\Database\QueryException $exception) {
+            $this->assertStringContainsString('controlled D8 queue insert failure', $exception->getMessage());
+        }
+        $this->assertSame($before, $this->localSnapshot());
+        $this->assertSame(0, DB::transactionLevel());
+        $this->assertNoTransportHttp();
+        $this->assertHistoryPreserved();
+    }
+
+    public static function unsupportedQueues(): array
+    {
+        $cases = [];
+        foreach (['sync', 'redis', 'other_database', 'connector_override', 'native_connector_override'] as $kind) {
+            foreach ([false, true] as $batch) {
+                $cases[$kind.($batch ? ' batch' : ' single')] = [$kind, $batch];
+            }
+        }
+        return $cases;
+    }
+
+    #[DataProvider('unsupportedQueues')]
+    public function test_atomic_unsupported_queue_refuses_the_operation(string $kind, bool $batch): void
+    {
+        $before = $this->localSnapshot();
+        $this->configureUnsupportedQueue($kind);
+        $this->withoutExceptionHandling();
+        try {
+            $this->submit($this->assignment(), $batch);
+            $this->fail('Unsupported queue setup must fail closed');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('FieldSync delivery requires the native database queue on the current transaction connection.', $exception->getMessage());
+        }
+        $this->assertSame($before, $this->localSnapshot());
+        $this->assertNoTransportHttp();
+    }
+
+    public function test_atomic_inspection_failure_leaves_other_batch_deliveries_independent(): void
+    {
+        $rest = $this->useNativeInspectionQueue();
+        $other = Parcel::create(['zoning_application_id' => $this->application->id,
+            'parcel_code' => 'P-02', 'latitude' => 13.85, 'longitude' => 121.2]);
+        $oldOther = $this->roundOne->replicate();
+        $oldOther->parcel_id = $other->id;
+        $oldOther->save();
+        app(WorkAssignmentService::class)->recordInitialInspectorAssignment($oldOther, $this->officer);
+        $oldReview = $this->initialReview->replicate();
+        $oldReview->fill(['parcel_id' => $other->id, 'site_inspection_task_id' => $oldOther->id])->save();
+        $rest->seed('field_jobs', ['id' => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+            'bridge_source_id' => 'planning-evaluation-test', 'local_inspection_id' => $oldOther->id,
+            'status' => 'completed', 'photo_paths' => ['other-round-one-test.jpg']]);
+        $oldJobs = $rest->rows('field_jobs');
+        $this->post('/technical-review/submit-batch', ['application_id' => $this->application->id,
+            'reviews' => [$this->parcel->id => $this->assignment(), $other->id => $this->assignment()]])
+            ->assertRedirect('/applications');
+        $this->assertSame(4, DB::table('jobs')->count());
+        $new = SiteInspection::where('status', 'assigned')->orderBy('id')->firstOrFail();
+        $failId = $new->id;
+        $this->fakeTransport($rest, fn (Request $request) =>
+            $request->method() === 'POST' && str_contains($request->url(), '/field_jobs?')
+                && (int) $request['local_inspection_id'] === $failId);
+        $job = Queue::connection()->pop();
+        $uuid = $job->uuid();
+        try {
+            $job->fire();
+            $this->fail('Controlled first inspection transport must fail');
+        } catch (\Exception $exception) {
+            $this->assertStringContainsString('Field Job Sync Failed', $exception->getMessage());
+            $job->release(5);
+        }
+        $this->assertSame(4, DB::table('jobs')->count(), 'The failed intent and every independent intent remain durable');
+        $this->runNextJob();
+        $this->runNextJob();
+        $this->runNextJob();
+        $this->assertSame(1, DB::table('jobs')->count());
+        $this->assertCount(2, $rest->rows('field_job_reviews'));
+        $this->assertSame($uuid, json_decode(DB::table('jobs')->sole()->payload, true)['uuid']);
+        $this->fakeTransport($rest);
+        $this->travel(5)->seconds();
+        $this->runNextJob();
+        $this->assertSame(0, DB::table('jobs')->count());
+        $this->assertSame(4, SiteInspection::count());
+        $this->assertSame(4, TechnicalReview::count());
+        $this->assertSame($oldJobs, array_slice($rest->rows('field_jobs'), 0, 2));
+        $this->assertSame($this->roundSnapshot, $this->roundOne->fresh()->getAttributes());
+    }
+
+    public static function reviewTransportFailures(): array
+    {
+        return ['missing target' => ['missing'], 'lookup HTTP failure' => ['lookup'], 'upsert HTTP failure' => ['upsert']];
+    }
+
+    #[DataProvider('reviewTransportFailures')]
+    public function test_review_delivery_retries_immutable_target_without_fifo(string $failure): void
+    {
+        $rest = $this->useNativeInspectionQueue($failure !== 'missing');
+        $this->submit($this->assignment())->assertRedirect('/applications');
+        $this->assertNoTransportHttp();
+        // Let the review run first; R2 delivery is deliberately delayed.
+        DB::table('jobs')->where('id', DB::table('jobs')->min('id'))->update(['available_at' => now()->addSeconds(600)->timestamp]);
+        $this->fakeTransport($rest, fn (Request $request) =>
+            ($failure === 'lookup' && $request->method() === 'GET' && str_contains($request->url(), '/field_jobs?'))
+            || ($failure === 'upsert' && str_contains($request->url(), '/field_job_reviews')));
+        $job = Queue::connection()->pop();
+        $uuid = $job->uuid();
+        $this->assertSame(PushPlanningReviewToSupabase::class, $job->resolveName());
+        try {
+            $job->fire();
+            $this->fail('Missing/failed review delivery must not be silently acknowledged');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Planning review', $exception->getMessage());
+            $job->release(5);
+        }
+        $this->assertSame(5, $job->payload()['maxTries']);
+        $this->assertSame('5,30,120,300', $job->payload()['backoff']);
+        $this->assertSame(2, DB::table('jobs')->count());
+        $this->fakeTransport($rest);
+        if ($failure === 'missing') {
+            // Deliver the actual reviewed R1 mirror, not an invented R2 substitute.
+            DB::transaction(function () {
+                Queue::connection()->push((new PushInspectionToSupabase($this->roundOne))->beforeCommit());
+            });
+            $this->runNextJob();
+        }
+        $this->travel(5)->seconds();
+        $retried = $this->runNextJob();
+        $this->assertSame($uuid, $retried->uuid());
+        $this->assertSame(2, $retried->attempts());
+        $this->assertCount(1, $rest->rows('field_job_reviews'));
+        $remote = $rest->rows('field_job_reviews')[0];
+        $this->assertSame($this->roundOne->id, $remote['reviewed_site_inspection_id']);
+        $this->assertSame('planning-evaluation-test', $remote['bridge_source_id']);
+        $this->assertSame($this->queuedJobs(PushInspectionToSupabase::class)->sole()->inspection->id,
+            SiteInspection::latest('id')->firstOrFail()->id);
+        $this->assertSame(2, SiteInspection::count());
+        $this->assertSame(2, TechnicalReview::count());
+    }
+
+    public function test_atomic_duplicate_handlers_preserve_namespaced_identity_and_history(): void
+    {
+        $rest = $this->useNativeInspectionQueue();
+        $old = $rest->rows('field_jobs')[0];
+        $this->submit($this->assignment())->assertRedirect('/applications');
+        $inspection = $this->queuedJobs(PushInspectionToSupabase::class)->sole();
+        $review = $this->queuedJobs(PushPlanningReviewToSupabase::class)->sole();
+        $otherJob = ['id' => 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'bridge_source_id' => 'other-test-source',
+            'local_inspection_id' => $inspection->inspection->id, 'status' => 'completed', 'photo_paths' => ['other-source.jpg']];
+        $rest->seed('field_jobs', $otherJob);
+        $this->runNextJob();
+        $this->runNextJob();
+        DB::transaction(function () use ($inspection, $review) {
+            Queue::connection()->push($inspection->beforeCommit());
+            Queue::connection()->push($review->beforeCommit());
+        });
+        $this->runNextJob();
+        $this->runNextJob();
+        $this->assertCount(3, $rest->rows('field_jobs'));
+        $this->assertCount(1, $rest->rows('field_job_reviews'));
+        $this->assertSame($old, $rest->rows('field_jobs')[0]);
+        $this->assertSame($otherJob, $rest->rows('field_jobs')[1]);
+        $this->assertSame(2, SiteInspection::count());
+        $this->assertSame(2, TechnicalReview::count());
+        $this->assertSame($this->roundSnapshot, $this->roundOne->fresh()->getAttributes());
+        $this->assertSame($this->reviewSnapshot, $this->initialReview->fresh()->getAttributes());
+    }
+
+    public function test_retry_uses_existing_round_and_preserves_independent_review_intent(): void
+    {
+        $rest = $this->useNativeInspectionQueue();
+        $this->application->update(['assigned_planning_officer_id' => $this->officer->id]);
+        $this->submit($this->assignment())->assertRedirect('/applications');
+        $new = SiteInspection::latest('id')->firstOrFail();
+        $this->fakeTransport($rest, fn (Request $request) =>
+            $request->method() === 'POST' && str_contains($request->url(), '/field_jobs?'));
+        $job = Queue::connection()->pop();
+        try {
+            $job->fire();
+            $this->fail('Controlled inspection failure must propagate');
+        } catch (\Exception $exception) {
+            $job->fail($exception);
+        }
+        $this->assertSame('delivery_failed', $new->fresh()->delivery_status);
+        $this->assertCount(1, $this->queuedJobs(PushPlanningReviewToSupabase::class));
+        $requestCount = count(Http::recorded());
+        $result = app(InspectionDeliveryRetryService::class)->queueRetry($new->id, $this->officer);
+        $this->assertTrue($result->isQueued());
+        $this->assertCount($requestCount, Http::recorded());
+        $this->assertSame(2, DB::table('jobs')->count());
+        $this->fakeTransport($rest);
+        $this->runNextJob();
+        $this->runNextJob();
+        $this->assertSame('delivered', $new->fresh()->delivery_status);
+        $this->assertCount(1, $rest->rows('field_job_reviews'));
+        $this->assertSame(2, SiteInspection::count());
+        $this->assertSame(2, TechnicalReview::count());
+        $this->assertSame($this->roundSnapshot, $this->roundOne->fresh()->getAttributes());
+    }
+
+    public static function unsupportedRetryQueues(): array
+    {
+        return ['sync' => ['sync'], 'redis' => ['redis'], 'other database' => ['other_database'],
+            'connector override' => ['connector_override'], 'native connector override' => ['native_connector_override']];
+    }
+
+    #[DataProvider('unsupportedRetryQueues')]
+    public function test_retry_rejects_unsupported_queue_without_partial_pending_state(string $kind): void
+    {
+        $this->application->update(['assigned_planning_officer_id' => $this->officer->id]);
+        $this->submit($this->assignment())->assertRedirect('/applications');
+        $new = SiteInspection::latest('id')->firstOrFail();
+        $new->forceFill(['delivery_status' => 'delivery_failed'])->save();
+        $before = $this->localSnapshot();
+        $this->configureUnsupportedQueue($kind);
+        try {
+            app(InspectionDeliveryRetryService::class)->queueRetry($new->id, $this->officer);
+            $this->fail('Unsupported retry queue must fail closed');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('FieldSync delivery requires the native database queue on the current transaction connection.', $exception->getMessage());
+        }
+        $this->assertSame('delivery_failed', $new->fresh()->delivery_status);
+        $this->assertSame($before, $this->localSnapshot());
+        $this->assertNoTransportHttp();
+    }
+
+    private function configureUnsupportedQueue(string $kind): void
+    {
+        config(['queue.default' => 'unsupported', 'queue.connections.unsupported' => [
+            'driver' => in_array($kind, ['sync', 'redis'], true) ? $kind : 'database',
+            'connection' => $kind === 'other_database' ? 'other' : 'sqlite',
+            'table' => 'jobs', 'queue' => 'default', 'retry_after' => 90, 'after_commit' => false],
+            'database.connections.other' => config('database.connections.sqlite')]);
+        if (in_array($kind, ['redis', 'connector_override'], true)) {
+            // An inert override prevents any real Redis connection even on RED.
+            Queue::addConnector($kind === 'redis' ? 'redis' : 'database', fn () =>
+                new class implements \Illuminate\Queue\Connectors\ConnectorInterface {
+                    public function connect(array $config) { return new \Illuminate\Queue\NullQueue(); }
+                });
+        }
+        if ($kind === 'native_connector_override') {
+            Queue::addConnector('database', fn () =>
+                new class implements \Illuminate\Queue\Connectors\ConnectorInterface {
+                    public function connect(array $config) {
+                        return new DatabaseQueue(DB::connection(), $config['table'], $config['queue']);
+                    }
+                });
+        }
+    }
+
+    private function localSnapshot(): array
+    {
+        $state = ['application' => $this->application->fresh()->getAttributes()];
+        foreach (['site_inspections', 'technical_reviews', 'site_inspection_assignments', 'audit_trail',
+            'notifications', 'application_status_tracks', 'inspection_delivery_attempts', 'jobs'] as $table) {
+            $state[$table] = DB::table($table)->count();
+        }
+        return $state;
+    }
+
+    private function fakeTransport(FakePostgRest $rest, ?callable $failure = null): void
+    {
+        Http::swap(new HttpFactory());
+        Http::preventStrayRequests();
+        Http::fake(['https://evaluation.test/*' => function (Request $request) use ($rest, $failure) {
+            if ($failure !== null && $failure($request)) {
+                return Http::response(['message' => 'controlled transport failure'], 503);
+            }
+            if (parse_url($request->url(), PHP_URL_PATH) === '/rest/v1/profiles') {
+                return Http::response([['id' => 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb']]);
+            }
+            return $rest->handle($request);
+        }]);
+    }
+
+    private function useNativeInspectionQueue(bool $seedOld = true): FakePostgRest
+    {
+        $this->assertSame(DatabaseQueue::class, get_class(Queue::connection()));
+        $this->assertSame(DB::connection(), Queue::connection()->getDatabase());
         $rest = new FakePostgRest();
         foreach (['field_jobs' => 'local_inspection_id', 'supabase_zoning_applications' => 'local_application_id',
-            'supabase_parcels' => 'local_parcel_id'] as $table => $key) {
+            'supabase_parcels' => 'local_parcel_id', 'field_job_reviews' => 'technical_review_id'] as $table => $key) {
             $rest->declareUniqueKeys($table, [['bridge_source_id', $key]]);
         }
-        $rest->seed('field_jobs', ['id' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-            'bridge_source_id' => 'planning-evaluation-test', 'local_inspection_id' => $this->roundOne->id,
-            'status' => 'completed', 'photo_paths' => ['round-one-test.jpg']]);
+        if ($seedOld) {
+            $rest->seed('field_jobs', ['id' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                'bridge_source_id' => 'planning-evaluation-test', 'local_inspection_id' => $this->roundOne->id,
+                'status' => 'completed', 'photo_paths' => ['round-one-test.jpg']]);
+        }
         Http::swap(new HttpFactory());
         Http::preventStrayRequests();
         Http::fake(['https://evaluation.test/*' => function (Request $request) use ($rest) {
@@ -503,10 +765,6 @@ class PlanningEvaluationTest extends TestCase
             }
             return $rest->handle($request);
         }]);
-        $recorder = $this->createPartialMock(InspectionDeliveryRecorder::class, ['beginAttempt']);
-        $recorder->method('beginAttempt')->willReturn(null);
-        $this->app->instance(InspectionDeliveryRecorder::class, $recorder);
-
         return $rest;
     }
 
@@ -538,50 +796,4 @@ class PlanningEvaluationTest extends TestCase
         Http::assertNotSent(fn ($request) => !str_contains($request->url(), '/application_status_tracks'));
     }
 
-    private function createMemoryTables(): void
-    {
-        // A deliberately small contract schema. No production migrations execute.
-        $tables = [
-            'users' => ['name' => 'string', 'email' => 'string', 'password' => 'string', 'role' => 'string',
-                'is_active' => 'boolean', 'handshake_key' => 'string'],
-            'zoning_applications' => ['reference_number' => 'string', 'application_type' => 'string',
-                'application_stream' => 'string', 'status' => 'string', 'applicant_name' => 'string',
-                'contact_number' => 'string', 'encoded_by' => 'unsignedBigInteger',
-                'assigned_planning_officer_id' => 'unsignedBigInteger'],
-            'parcels' => ['zoning_application_id' => 'unsignedBigInteger', 'parcel_code' => 'string',
-                'latitude' => 'double', 'longitude' => 'double'],
-            'site_inspections' => ['zoning_application_id' => 'unsignedBigInteger', 'parcel_id' => 'unsignedBigInteger',
-                'inspector_id' => 'unsignedBigInteger', 'assigned_by_imaps_user_id' => 'unsignedBigInteger',
-                'assigned_by_name' => 'string', 'status' => 'string', 'scheduled_date' => 'date', 'deadline_date' => 'date',
-                'assigned_notes' => 'text', 'completed_at' => 'timestamp', 'submitted_at' => 'timestamp',
-                'findings' => 'text', 'observations' => 'text', 'discrepancies' => 'text', 'recommendations' => 'text',
-                'inspector_notes' => 'text', 'inspection_result' => 'string', 'checklist_data' => 'json',
-                'confirmed_latitude' => 'double', 'confirmed_longitude' => 'double', 'gps_accuracy_m' => 'double',
-                'gps_confirmed_at' => 'timestamp'],
-            'technical_reviews' => ['zoning_application_id' => 'unsignedBigInteger', 'parcel_id' => 'unsignedBigInteger',
-                'reviewed_by' => 'unsignedBigInteger', 'review_round' => 'integer', 'decision' => 'string',
-                'findings' => 'text', 'decision_reason' => 'text', 'site_inspection_task_id' => 'unsignedBigInteger',
-                'reviewed_site_inspection_id' => 'unsignedBigInteger', 'reviewed_at' => 'timestamp'],
-            'site_inspection_assignments' => ['site_inspection_id' => 'unsignedBigInteger', 'assignment_type' => 'string',
-                'from_inspector_id' => 'unsignedBigInteger', 'to_inspector_id' => 'unsignedBigInteger',
-                'reason' => 'string', 'reason_note' => 'text', 'reassigned_by' => 'unsignedBigInteger', 'reassigned_at' => 'timestamp'],
-            'notifications' => ['user_id' => 'unsignedBigInteger', 'title' => 'string', 'message' => 'text',
-                'type' => 'string', 'action_url' => 'string', 'is_read' => 'boolean', 'read_at' => 'timestamp'],
-            'audit_trail' => ['application_id' => 'unsignedBigInteger', 'action' => 'string',
-                'performed_by' => 'unsignedBigInteger', 'note' => 'text', 'performed_at' => 'timestamp'],
-            'application_status_tracks' => ['reference_number' => 'string', 'form_number' => 'string',
-                'contact_number' => 'string', 'masked_applicant_name' => 'string', 'application_type' => 'string',
-                'business_name' => 'string', 'status' => 'string', 'stage_order' => 'integer', 'note' => 'text',
-                'scheduled_date' => 'date'],
-        ];
-        foreach ($tables as $name => $columns) {
-            Schema::create($name, function (Blueprint $table) use ($columns) {
-                $table->id();
-                foreach ($columns as $name => $type) {
-                    $table->{$type}($name)->nullable();
-                }
-                $table->timestamps();
-            });
-        }
-    }
 }

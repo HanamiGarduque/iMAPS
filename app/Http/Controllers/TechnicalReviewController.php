@@ -188,13 +188,8 @@ class TechnicalReviewController extends Controller
             $this->validateFieldSyncParcelCoordinates($parcel);
         }
 
-        // Loop 8: transport rows are collected inside the transaction and only
-        // dispatched after it commits, so the review row identity is durable
-        // before any remote write is attempted. Collected by REFERENCE: the
-        // dispatch loop below runs after the closure has returned.
-        $pendingReviewTransports = [];
-
-        DB::transaction(function () use ($validated, &$pendingReviewTransports) {
+        DB::transaction(function () use ($validated) {
+            $queue = PushInspectionToSupabase::atomicQueue();
             // Eager load parcels so we can extract the parcel_id
             $application = ZoningApplication::with('parcels')->findOrFail($validated['id']);
             $oldStatus = $application->status;
@@ -243,7 +238,7 @@ class TechnicalReviewController extends Controller
                         $assigningOfficer,
                     );
                     $siteInspectionId = $inspection->id;
-                    PushInspectionToSupabase::dispatch($inspection)->afterCommit();
+                    $queue->push((new PushInspectionToSupabase($inspection))->beforeCommit());
 
                     AppNotification::notifyUser(
                         $validated['inspector_id'],
@@ -269,7 +264,7 @@ class TechnicalReviewController extends Controller
                 ]);
 
                 if ($reviewedSiteInspectionId !== null) {
-                    $pendingReviewTransports[] = $this->buildReviewTransport($technicalReview);
+                    $queue->push($this->buildReviewTransport($technicalReview)->beforeCommit());
                 }
             }
 
@@ -361,16 +356,6 @@ class TechnicalReviewController extends Controller
             }
         });
 
-        // Loop 8: transport Planning Review metadata only after the review rows
-        // are committed. This never reopens or mutates the reviewed task.
-        foreach ($pendingReviewTransports as $transport) {
-            // The transport is an ALREADY-CONSTRUCTED job. `Job::dispatch()`
-            // forwards its arguments to the constructor, so dispatching it as
-            // `Job::dispatch($transport)` would re-invoke the constructor with
-            // the job itself as argument #1. `dispatch()` takes the instance.
-            dispatch($transport);
-        }
-
         return redirect('/applications')->with('success', 'Technical review processed successfully.');
     }
 
@@ -445,12 +430,8 @@ class TechnicalReviewController extends Controller
             }
         }
 
-        // Loop 8: dispatch review transports only after the review rows commit.
-        // Collected by REFERENCE: the dispatch loop below runs after the
-        // closure has returned, so an inner declaration would be discarded.
-        $pendingReviewTransports = [];
-
-        DB::transaction(function () use ($application, $validated, &$pendingReviewTransports) {
+        DB::transaction(function () use ($application, $validated) {
+            $queue = PushInspectionToSupabase::atomicQueue();
             $reviews = $validated['reviews'];
             $assigningOfficer = $this->currentPlanningOfficerAssignmentActor();
 
@@ -484,7 +465,7 @@ class TechnicalReviewController extends Controller
                     );
 
                     $siteInspectionId = $inspection->id;
-                    PushInspectionToSupabase::dispatch($inspection)->afterCommit();
+                    $queue->push((new PushInspectionToSupabase($inspection))->beforeCommit());
 
                     $isReinspection = $review['decision'] === 'Requires Reinspection';
                     $parcelCode = $parcel?->parcel_code ?? "Parcel #{$parcelId}";
@@ -512,7 +493,7 @@ class TechnicalReviewController extends Controller
                 ]);
 
                 if ($reviewedSiteInspectionId !== null) {
-                    $pendingReviewTransports[] = $this->buildReviewTransport($technicalReview);
+                    $queue->push($this->buildReviewTransport($technicalReview)->beforeCommit());
                 }
             }
             
@@ -665,13 +646,6 @@ class TechnicalReviewController extends Controller
                 );
             }
         }); // <-- Closes DB::transaction
-
-        // Loop 8: dispatch review transports only after the review rows commit.
-        foreach ($pendingReviewTransports as $transport) {
-            // Already-constructed job: `dispatch()` takes the instance, not
-            // constructor arguments.
-            dispatch($transport);
-        }
 
         // Updates redirect strictly to /applications
         return redirect('/applications')->with('success', 'Technical review processed for all parcels.');

@@ -190,42 +190,30 @@ class Loop8PlanningReviewContractTest extends TestCase
         $this->assertStringContainsString('Log::warning', $job);
         $this->assertStringContainsString('Log::error', $job);
         $this->assertStringContainsString(
-            'no field job for reviewed round',
+            'awaiting reviewed field job',
             $job,
             'An unresolvable reviewed round must be logged, never written to a guessed target.'
         );
     }
 
     /** @test */
-    public function transport_is_dispatched_only_after_the_review_row_commits(): void
+    public function transport_intents_are_inserted_in_both_review_transactions(): void
     {
         $source = $this->controllerSource();
 
-        $transactionClose = strpos($source, '}); // <-- Closes DB::transaction');
-        $batchDispatch = strpos($source, 'dispatch($transport)', $transactionClose);
-
-        $this->assertNotFalse($transactionClose);
-        $this->assertNotFalse($batchDispatch);
-        $this->assertGreaterThan(
-            $transactionClose,
-            $batchDispatch,
-            'Review transport must be dispatched after the review rows are committed.'
-        );
-
-        // The transport list is built INSIDE the transaction and read AFTER it,
-        // so it must be captured by reference. A closure-local declaration is
-        // discarded on return and the dispatch loop then runs on an undefined
-        // variable, which fails the whole Technical Review submission.
+        // Native queue execution/rollback is proved by PlanningEvaluationTest.
+        // This source contract pins both producers to that shared guarded path.
         $this->assertSame(
             2,
-            substr_count($source, '$pendingReviewTransports = [];'),
-            'Both review paths declare the transport list once, before their transaction.'
+            substr_count($source, '$queue = PushInspectionToSupabase::atomicQueue();'),
+            'Both endpoints must require the exact native transaction queue.'
         );
         $this->assertSame(
             2,
-            substr_count($source, '&$pendingReviewTransports)'),
-            'The transaction closure must capture the transport list by reference.'
+            substr_count($source, '$queue->push($this->buildReviewTransport($technicalReview)->beforeCommit());'),
+            'Both review intents must be inserted before committing their local rows.'
         );
+        $this->assertStringNotContainsString('$pendingReviewTransports', $source);
 
         // `Job::dispatch()` forwards its arguments to the CONSTRUCTOR, so
         // passing an already-built job instance would re-invoke the constructor
