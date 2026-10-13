@@ -226,10 +226,10 @@ class ApplicationSubmissionClientContractTest extends TestCase
         // The wizard step is part of the persisted draft. It is carried inside
         // the saved payload and used to seed the initial step, so an officer who
         // reloads or crashes returns to the step they were on.
-        $this->assertStringContainsString(
-            'persistDraftState(tempDraftId, { ...form, __wizard_step: currentStep })',
-            $this->createSource,
-            'Every draft save must persist the current wizard step.'
+        $this->assertSame(
+            2,
+            substr_count($this->createSource, 'payload: { ...form, __wizard_step: currentStep }'),
+            'Both the autosave and the manual save must send the current wizard step to the server.'
         );
         $this->assertStringContainsString(
             'validCloud.__wizard_step',

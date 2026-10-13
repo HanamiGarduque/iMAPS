@@ -78,6 +78,10 @@ const STEP_ERROR_FIELDS = {
 
 const DRAFT_UUID_KEY = "imaps_current_draft_uuid";
 const DRAFT_PAYLOAD_KEY = "imaps_local_backup_payload";
+const NOT_SAVED = "Not saved: connection problem";
+// Form values are interpolated into Swal's html, so they must be escaped.
+const esc = (v) =>
+    String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 // Retired: applicants used to be cached here per browser. Kept only so the old copy can be wiped.
 const LEGACY_APPLICANT_REGISTRY_KEY = "imaps_known_applicants_registry";
 
@@ -414,7 +418,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     const [tempDraftId, setTempDraftId] = useState(() => {
         return cloudDraftRef || "TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase();
     });
-    const [syncStatus, setSyncStatus] = useState("Saved locally");
+    const [syncStatus, setSyncStatus] = useState("Not saved yet");
 
     // Map States
     const [brgyMapData, setBrgyMapData] = useState(null);
@@ -701,14 +705,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         return () => clearInterval(id);
     }, []);
 
-    // Draft persistence handlers
-    const persistDraftState = (uuid, payload) => {
-        try {
-            if (uuid) localStorage.setItem(DRAFT_UUID_KEY, uuid);
-            if (payload) localStorage.setItem(DRAFT_PAYLOAD_KEY, JSON.stringify(payload));
-        } catch (e) {}
-    };
-
+    // Drafts are saved on the server only. Older builds also wrote a local copy
+    // (with applicant details) that was never read back; remove any leftovers.
     const clearDraftStateRecord = () => {
         try {
             localStorage.removeItem(DRAFT_UUID_KEY);
@@ -743,20 +741,15 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             if (!hasData) return;
 
             setSyncStatus("Saving modifications...");
-            // The wizard step is part of the saved draft: an officer who reloads
-            // or crashes must return to the step they were on, not to step 1.
-            persistDraftState(tempDraftId, { ...form, __wizard_step: currentStep });
-            setSyncStatus("Saving modifications...");
-            // The wizard step is part of the saved draft: an officer who reloads
-            // or crashes must return to the step they were on, not to step 1.
-            persistDraftState(tempDraftId, { ...form, __wizard_step: currentStep });
             abortOutstandingAutosave();
             const controller = new AbortController();
             autosaveControllerRef.current = controller;
 
             axios.post("/applications/drafts/save", {
                 temp_id: tempDraftId,
-                payload: form,
+                // The wizard step is part of the saved draft: an officer who reloads
+                // or crashes must return to the step they were on, not to step 1.
+                payload: { ...form, __wizard_step: currentStep },
             }, { signal: controller.signal })
             .then(() => {
                 if (autosaveControllerRef.current === controller) {
@@ -768,25 +761,26 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 // F. An intentional abort is not a failure and must not tell the
                 // officer their draft could not be saved.
                 if (axios.isCancel(error)) return;
-                setSyncStatus("Saved locally");
+                setSyncStatus(NOT_SAVED);
             });
         }, 1200);
 
         return () => clearTimeout(handler);
-    }, [form, tempDraftId, submissionFinalized, submitting, submissionSucceeded]);
+    }, [form, currentStep, tempDraftId, submissionFinalized, submitting, submissionSucceeded]);
 
     const handleManualSave = () => {
         if (submissionFinalized || submitting || submissionSucceeded) return;
 
         setSyncStatus("Saving modifications...");
-        persistDraftState(tempDraftId, { ...form, __wizard_step: currentStep });
         abortOutstandingAutosave();
         const controller = new AbortController();
         autosaveControllerRef.current = controller;
         axios
             .post("/applications/drafts/save", {
                 temp_id: tempDraftId,
-                payload: form,
+                // The wizard step is part of the saved draft: an officer who reloads
+                // or crashes must return to the step they were on, not to step 1.
+                payload: { ...form, __wizard_step: currentStep },
             }, { signal: controller.signal })
             .then(() => {
                 if (autosaveControllerRef.current === controller) {
@@ -798,8 +792,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             })
             .catch((error) => {
                 if (axios.isCancel(error)) return;
-                setSyncStatus("Saved locally");
-                setFlash({ type: "success", msg: "Draft stored to local storage." });
+                setSyncStatus(NOT_SAVED);
+                setFlash({ type: "error", msg: "Draft could not be saved. Check your connection and save again." });
                 setTimeout(() => setFlash(null), 3000);
             });
     };
@@ -820,7 +814,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 setCurrentStep(1);
                 setActiveParcelFeature(null);
                 setActiveParcelIndex(null);
-                setSyncStatus("Saved locally");
+                setSyncStatus("Not saved yet");
             }
         });
     };
@@ -1562,20 +1556,20 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     html: `
                         <div class="text-left text-xs text-slate-600 mt-2 space-y-3">
                             <p class="text-center font-medium text-slate-600 mb-3">
-                                ${ref ? `Reference No: <span class="font-bold text-slate-900">${ref}</span>` : "Application record created successfully."}
+                                ${ref ? `Reference No: <span class="font-bold text-slate-900">${esc(ref)}</span>` : "Application record created successfully."}
                             </p>
                             <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 text-left space-y-2 text-xs">
                                 <div class="flex justify-between items-center border-b border-slate-200/60 pb-1.5">
                                     <span class="font-medium text-slate-500 text-[11px]">Applicant</span>
-                                    <span class="font-semibold text-slate-800">${applicantName}</span>
+                                    <span class="font-semibold text-slate-800">${esc(applicantName)}</span>
                                 </div>
                                 <div class="flex justify-between items-center border-b border-slate-200/60 pb-1.5">
                                     <span class="font-medium text-slate-500 text-[11px]">Type / Track</span>
-                                    <span class="font-semibold text-slate-800">${appType}</span>
+                                    <span class="font-semibold text-slate-800">${esc(appType)}</span>
                                 </div>
                                 <div class="flex justify-between items-center ${totalFee > 0 ? "border-b border-slate-200/60 pb-1.5" : ""}">
                                     <span class="font-medium text-slate-500 text-[11px]">Barangay</span>
-                                    <span class="font-semibold text-slate-800">${barangay}</span>
+                                    <span class="font-semibold text-slate-800">${esc(barangay)}</span>
                                 </div>
                                 ${totalFee > 0 ? `
                                 <div class="flex justify-between items-center pt-0.5">
@@ -1928,7 +1922,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                             <div className="flex items-center gap-2">
                                 <h1 className="text-xs sm:text-sm font-bold text-slate-900 leading-none">New Application</h1>
                                 <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 bg-slate-100/90 px-2 py-0.5 rounded-full">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === "Saving modifications..." ? "bg-amber-500 animate-ping" : syncStatus === "Auto-saved to drafts" ? "bg-emerald-500" : "bg-slate-400"}`} />
+                                    <span className={`w-1.5 h-1.5 rounded-full ${syncStatus === "Saving modifications..." ? "bg-amber-500 animate-ping" : syncStatus === "Auto-saved to drafts" ? "bg-emerald-500" : syncStatus === NOT_SAVED ? "bg-red-500" : "bg-slate-400"}`} />
                                     <span className="hidden md:inline">{syncStatus}</span>
                                 </span>
                             </div>
