@@ -40,14 +40,13 @@ class UserManagementPerformanceStatsTest extends TestCase
     }
 
     /**
-     * A raw row as older records were stored, with the type rows the
-     * create_zoning_application_types_table migration derives from its label.
+     * A raw row with its type rows, the old spelling resolved as the
+     * create_zoning_application_types_table migration resolves it.
      */
     private function insertApp(int $encodedBy, string $type, string $ref): void
     {
         $id = DB::table('zoning_applications')->insertGetId([
             'reference_number' => $ref,
-            'application_type' => $type,
             'purpose' => 'test',
             'applicant_name' => 'Applicant',
             'contact_number' => '0',
@@ -73,7 +72,13 @@ class UserManagementPerformanceStatsTest extends TestCase
 
         $this->actingAs($this->admin())->get('/users?role=Planning Officer')
             ->assertInertia(fn (Assert $page) => $page
-                ->where('users.data.0.stats.types.zoning', 3));
+                ->where('users.data.0.stats.types.zoning', 3)
+                ->where('users.data.0.stats.recent', fn ($recent) => collect($recent)->pluck('application_type')->sort()->values()->all() === [
+                    'Development Permit',
+                    'Locational Clearance, Zoning Certificate',
+                    'Zoning Certificate',
+                    'Zoning Certificate',
+                ]));
     }
 
     public function test_page_loads_quickly_when_supabase_hangs(): void

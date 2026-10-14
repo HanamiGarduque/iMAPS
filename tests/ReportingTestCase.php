@@ -49,6 +49,10 @@ abstract class ReportingTestCase extends TestCase
             $t->id(); $t->string('reference_number'); $t->string('applicant_name'); $t->string('barangay')->nullable();
             $t->unsignedBigInteger('assigned_planning_officer_id')->nullable();
         });
+        // ZoningApplication always loads its types.
+        Schema::create('zoning_application_types', function ($t) {
+            $t->id(); $t->unsignedBigInteger('zoning_application_id'); $t->string('application_type');
+        });
         Schema::create('site_inspections', function ($t) {
             $t->id(); $t->unsignedBigInteger('zoning_application_id'); $t->unsignedBigInteger('parcel_id')->nullable();
         });

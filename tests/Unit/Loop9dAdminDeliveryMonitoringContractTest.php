@@ -444,7 +444,6 @@ class Loop9dAdminDeliveryMonitoringContractTest extends TestCase
         try {
             $applicationId = DB::connection('pgsql')->table('zoning_applications')->insertGetId([
                 'reference_number' => 'PHPUNIT-9D-HISTORY',
-                'application_type' => 'Monitoring Probe',
                 'purpose' => '9D attempt history probe',
                 'applicant_name' => 'Probe',
                 'contact_number' => '0000',
@@ -575,7 +574,6 @@ class Loop9dAdminDeliveryMonitoringContractTest extends TestCase
             $make = function (string $ref, ?string $deliveryStatus): int {
                 $applicationId = DB::connection('pgsql')->table('zoning_applications')->insertGetId([
                     'reference_number' => $ref,
-                    'application_type' => 'Monitoring Probe',
                     'purpose' => '9D filter probe',
                     'applicant_name' => 'Probe',
                     'contact_number' => '0000',
@@ -641,7 +639,6 @@ class Loop9dAdminDeliveryMonitoringContractTest extends TestCase
             // because the subquery finds no row and yields NULL.
             $bareApplication = DB::connection('pgsql')->table('zoning_applications')->insertGetId([
                 'reference_number' => 'PHPUNIT-9D-NOROUND',
-                'application_type' => 'Monitoring Probe',
                 'purpose' => '9D filter probe',
                 'applicant_name' => 'Probe',
                 'contact_number' => '0000',

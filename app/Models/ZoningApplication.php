@@ -94,7 +94,12 @@ class ZoningApplication extends Model
         
     ];
 
-    protected $appends = ['land_use_class'];
+    protected $appends = ['land_use_class', 'application_type'];
+
+    // Every page that shows an application shows its type label.
+    protected $with = ['types'];
+
+    protected $hidden = ['types'];
 
     public function getLandUseClassAttribute(): ?string
     {
@@ -155,42 +160,66 @@ class ZoningApplication extends Model
     }
 
     /**
-     * Whoever writes application_type (the encoding form, factories, imports),
-     * the label is put in canonical order and the type rows follow it.
+     * Types assigned through the application_type attribute and not saved yet.
+     *
+     * @var string[]|null
      */
+    private ?array $pendingTypes = null;
+
+    /**
+     * The application's types, in APPLICATION_TYPES order: the ones assigned
+     * and not yet saved, else the zoning_application_types rows.
+     *
+     * @return string[]
+     */
+    public function typeNames(): array
+    {
+        return $this->pendingTypes ?? self::normalizeTypes($this->types->pluck('application_type')->all());
+    }
+
+    /**
+     * Display label, e.g. "Locational Clearance, Zoning Certificate". There is
+     * no such column; it is built from zoning_application_types.
+     */
+    public function getApplicationTypeAttribute(): string
+    {
+        return implode(', ', $this->typeNames());
+    }
+
+    /**
+     * Accepts a list or a comma-separated label (the encoding form, factories,
+     * imports). The rows are written when the application is saved.
+     */
+    public function setApplicationTypeAttribute(array|string|null $value): void
+    {
+        $given = is_array($value) ? $value : explode(',', (string) $value);
+        $given = array_filter(array_map(fn ($t) => trim((string) $t), $given), fn ($t) => $t !== '');
+
+        // An unknown type must not vanish from the record without a trace.
+        $unknown = array_diff(
+            array_map(fn ($t) => self::TYPE_ALIASES[$t] ?? $t, $given),
+            self::APPLICATION_TYPES,
+        );
+        if ($unknown !== []) {
+            throw new \InvalidArgumentException('Unknown application type: ' . implode(', ', $unknown));
+        }
+
+        $this->pendingTypes = self::normalizeTypes($given);
+    }
+
     protected static function booted(): void
     {
-        static::saving(function (self $application) {
-            if (! $application->isDirty('application_type')) {
-                return;
-            }
-
-            $label = (string) $application->application_type;
-            $types = self::normalizeTypes($label);
-            $given = array_filter(array_map('trim', explode(',', $label)), fn ($t) => $t !== '');
-
-            // An unknown type must not vanish from the record without a trace.
-            $unknown = array_diff(
-                array_map(fn ($t) => self::TYPE_ALIASES[$t] ?? $t, $given),
-                self::APPLICATION_TYPES,
-            );
-            if ($unknown !== []) {
-                throw new \InvalidArgumentException('Unknown application type: ' . implode(', ', $unknown));
-            }
-
-            $application->application_type = implode(', ', $types);
-        });
-
         static::saved(function (self $application) {
-            if (! $application->wasRecentlyCreated && ! $application->wasChanged('application_type')) {
+            if ($application->pendingTypes === null) {
                 return;
             }
 
-            $types = self::normalizeTypes($application->application_type);
+            $types = $application->pendingTypes;
             $application->types()->whereNotIn('application_type', $types)->delete();
             foreach ($types as $type) {
                 $application->types()->firstOrCreate(['application_type' => $type]);
             }
+            $application->pendingTypes = null;
             $application->unsetRelation('types');
         });
     }
@@ -311,14 +340,14 @@ class ZoningApplication extends Model
     }
 
     /**
-     * Get permit types recommended to be issued for this application based on its application_type and stream.
+     * Get permit types recommended to be issued for this application based on its types and stream.
      * Note: 'ze' (Zoning Evaluation) is an internal review worksheet and not an issued permit.
      *
      * @return string[] Array of permit codes (e.g. ['lc'], ['lc', 'zc'])
      */
     public function getRecommendedPermitTypes(): array
     {
-        $types = array_filter(array_map('trim', explode(',', $this->application_type ?? '')));
+        $types = $this->typeNames();
         $recommended = [];
 
         foreach ($types as $type) {
@@ -419,7 +448,7 @@ class ZoningApplication extends Model
 
     public static function byStatus(): Collection
     {
-        return static::select('status', DB::raw('COUNT(*) as cnt'))
+        return static::without('types')->select('status', DB::raw('COUNT(*) as cnt'))
             ->groupBy('status')
             ->get()
             ->pluck('cnt', 'status');
@@ -431,7 +460,6 @@ class ZoningApplication extends Model
             'id',
             'reference_number',
             'applicant_name',
-            'application_type',
             'status'
         )
             ->orderByDesc('created_at')
@@ -441,7 +469,7 @@ class ZoningApplication extends Model
 
     public static function barangayStats(): array
     {
-        $rows = static::select('barangay', 'status', DB::raw('COUNT(*) as cnt'))
+        $rows = static::without('types')->select('barangay', 'status', DB::raw('COUNT(*) as cnt'))
             ->whereNotNull('barangay')
             ->where('barangay', '!=', '')
             ->groupBy('barangay', 'status')

@@ -83,7 +83,7 @@ trait PlanningEvaluationMemoryDatabase
         $tables = [
             'users' => ['name' => 'string', 'email' => 'string', 'password' => 'string', 'role' => 'string',
                 'is_active' => 'boolean', 'handshake_key' => 'string'],
-            'zoning_applications' => ['reference_number' => 'string', 'application_type' => 'string',
+            'zoning_applications' => ['reference_number' => 'string',
                 'application_stream' => 'string', 'status' => 'string', 'applicant_name' => 'string',
                 'contact_number' => 'string', 'encoded_by' => 'unsignedBigInteger',
                 'assigned_planning_officer_id' => 'unsignedBigInteger', 'purpose' => 'string', 'barangay' => 'string'],

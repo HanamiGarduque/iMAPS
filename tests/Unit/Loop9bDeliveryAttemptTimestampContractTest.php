@@ -249,7 +249,6 @@ class Loop9bDeliveryAttemptTimestampContractTest extends TestCase
         try {
             $applicationId = DB::connection('pgsql')->table('zoning_applications')->insertGetId([
                 'reference_number' => 'PHPUNIT-9B-TIMESTAMP',
-                'application_type' => 'Hotfix Probe',
                 'purpose' => 'timestamp contract probe',
                 'applicant_name' => 'Probe',
                 'contact_number' => '0000',
@@ -314,7 +313,6 @@ class Loop9bDeliveryAttemptTimestampContractTest extends TestCase
             ] as [$outcome, $method]) {
                 $applicationId = DB::connection('pgsql')->table('zoning_applications')->insertGetId([
                     'reference_number' => 'PHPUNIT-9B-' . strtoupper($method),
-                    'application_type' => 'Hotfix Probe',
                     'purpose' => 'timestamp contract probe',
                     'applicant_name' => 'Probe',
                     'contact_number' => '0000',
@@ -392,7 +390,6 @@ class Loop9bDeliveryAttemptTimestampContractTest extends TestCase
         try {
             $applicationId = DB::connection('pgsql')->table('zoning_applications')->insertGetId([
                 'reference_number' => 'PHPUNIT-9B-NEGATIVE',
-                'application_type' => 'Hotfix Probe',
                 'purpose' => 'negative control',
                 'applicant_name' => 'Probe',
                 'contact_number' => '0000',

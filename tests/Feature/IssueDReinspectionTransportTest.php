@@ -150,6 +150,18 @@ class IssueDReinspectionTransportTest extends TestCase
         $this->assertSame('2026-10-11 13:46:30', $stored->gps_confirmed_at);
     }
 
+    public function test_mirror_receives_the_type_label_built_from_the_type_rows(): void
+    {
+        $this->application->update(['application_type' => 'Development Permit, Zoning Certificate']);
+
+        $this->post('/technical-review/submit-batch', ['application_id' => $this->application->id,
+            'reviews' => [$this->parcel->id => $this->decision(1)]])->assertSessionHasNoErrors();
+        $this->runNextJob();
+
+        $this->assertSame('Zoning Certificate, Development Permit',
+            $this->rest->rows('supabase_zoning_applications')[0]['application_type']);
+    }
+
     private function decision(int $round): array
     {
         return ['decision' => $round === 1 ? 'Needs Site Inspection' : 'Requires Reinspection',

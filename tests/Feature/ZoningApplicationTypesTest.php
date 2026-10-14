@@ -8,11 +8,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
  * An application's types live in zoning_application_types, one row each.
- * zoning_applications.application_type is the display label, always in
+ * zoning_applications has no application_type column; the model's
+ * application_type label is built from the rows, in
  * ZoningApplication::APPLICATION_TYPES order.
  */
 class ZoningApplicationTypesTest extends TestCase
@@ -90,11 +92,63 @@ class ZoningApplicationTypesTest extends TestCase
         $this->assertSame(2, substr_count($response->getContent(), 'Locational Clearance'));
     }
 
+    public function test_the_label_is_serialized_and_the_rows_are_not(): void
+    {
+        $application = ZoningApplication::factory()->create(['application_type' => 'Development Permit, Locational Clearance']);
+
+        $array = ZoningApplication::find($application->id)->toArray();
+
+        $this->assertSame('Locational Clearance, Development Permit', $array['application_type']);
+        $this->assertArrayNotHasKey('types', $array);
+        $this->assertFalse(Schema::hasColumn('zoning_applications', 'application_type'));
+    }
+
+    public function test_a_list_loads_all_types_in_one_query(): void
+    {
+        ZoningApplication::factory()->count(3)->create(['application_type' => 'Locational Clearance']);
+
+        DB::enableQueryLog();
+        $labels = ZoningApplication::all()->pluck('application_type')->all();
+
+        $this->assertSame(array_fill(0, 3, 'Locational Clearance'), $labels);
+        $this->assertCount(2, DB::getQueryLog());
+    }
+
+    public function test_drop_migration_refuses_when_label_and_rows_disagree(): void
+    {
+        $drop = require database_path('migrations/2026_10_14_030000_drop_application_type_from_zoning_applications.php');
+        $application = ZoningApplication::factory()->create(['application_type' => 'Locational Clearance']);
+
+        $drop->down();
+        DB::table('zoning_applications')->where('id', $application->id)
+            ->update(['application_type' => 'Locational Clearance, Development Permit']);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage("#{$application->id}");
+
+        $drop->up();
+    }
+
+    public function test_drop_migration_rollback_rebuilds_the_label_from_the_rows(): void
+    {
+        $drop = require database_path('migrations/2026_10_14_030000_drop_application_type_from_zoning_applications.php');
+        $application = ZoningApplication::factory()->create(['application_type' => 'Development Permit, Locational Clearance']);
+
+        $drop->down();
+        $this->assertSame('Locational Clearance, Development Permit',
+            DB::table('zoning_applications')->where('id', $application->id)->value('application_type'));
+
+        $drop->up();
+        $this->assertFalse(Schema::hasColumn('zoning_applications', 'application_type'));
+    }
+
     public function test_migration_splits_existing_labels_and_fixes_the_spelling(): void
     {
+        $drop = require database_path('migrations/2026_10_14_030000_drop_application_type_from_zoning_applications.php');
         $migration = require database_path('migrations/2026_10_14_020000_create_zoning_application_types_table.php');
         $application = ZoningApplication::factory()->create(['application_type' => 'Locational Clearance']);
 
+        $drop->down();
         $migration->down();
         DB::table('zoning_applications')->where('id', $application->id)
             ->update(['application_type' => 'Development Permit, Zoning Certification, Development Permit']);
@@ -110,9 +164,11 @@ class ZoningApplicationTypesTest extends TestCase
 
     public function test_migration_refuses_an_unmapped_type(): void
     {
+        $drop = require database_path('migrations/2026_10_14_030000_drop_application_type_from_zoning_applications.php');
         $migration = require database_path('migrations/2026_10_14_020000_create_zoning_application_types_table.php');
         $application = ZoningApplication::factory()->create(['application_type' => 'Locational Clearance']);
 
+        $drop->down();
         $migration->down();
         DB::table('zoning_applications')->where('id', $application->id)->update(['application_type' => 'Building Permit']);
 

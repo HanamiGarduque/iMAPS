@@ -99,7 +99,6 @@ class ApplicationController extends Controller
             ->select(
                 'zoning_applications.id',
                 'zoning_applications.reference_number',
-                'zoning_applications.application_type',
                 'zoning_applications.application_stream',
                 'zoning_applications.sb_ordinance_number',
                 'zoning_applications.target_land_use_class',

@@ -77,7 +77,7 @@ class SupportReportResolution
                 return $out;
             }
             // All namespace / exact UUID checks above precede these local reads.
-            $query = ZoningApplication::query()->select('id', 'reference_number', 'applicant_name', 'barangay', 'assigned_planning_officer_id')
+            $query = ZoningApplication::query()->without('types')->select('id', 'reference_number', 'applicant_name', 'barangay', 'assigned_planning_officer_id')
                 ->with('assignedPlanningOfficer:id,name,role')->whereIn('id', array_column($validated, 'local_id'));
             if ($lock) {
                 $query->lockForUpdate();

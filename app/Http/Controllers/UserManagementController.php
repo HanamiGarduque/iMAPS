@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Http;
 use App\Models\AppNotification;
 use App\Models\AuditTrail;
+use App\Models\ZoningApplication;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -173,7 +174,7 @@ class UserManagementController extends Controller
                         'id' => $a->id,
                         'reference_number' => $a->reference_number,
                         'applicant_name' => $a->applicant_name,
-                        'application_type' => $a->application_type,
+                        'application_type' => implode(', ', ZoningApplication::normalizeTypes($typesByApp[$a->id] ?? [])),
                         'status' => $a->status,
                         'created_at' => $a->created_at,
                     ])->values(),

@@ -366,7 +366,7 @@ class MapsController extends Controller
         ];
 
         $recent = (clone $query)->with('parcels:id,zoning_application_id,latitude,longitude,lot_number,lot_area_sqm,tax_dec_number')
-            ->select('id', 'reference_number', 'applicant_name', 'application_type', 'status', 'barangay', 'purpose', 'target_land_use_class', 'created_at')
+            ->select('id', 'reference_number', 'applicant_name', 'status', 'barangay', 'purpose', 'target_land_use_class', 'created_at')
             ->orderByDesc('created_at')
             ->get();
 

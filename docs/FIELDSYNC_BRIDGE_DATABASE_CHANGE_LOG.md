@@ -3130,33 +3130,33 @@ Each entry references one canonical marker. Markers for sequences, sequence owne
 
 **ROLLBACK / RECOVERY:** `down()` re-adds the five columns (`numeric(12,2) DEFAULT 0 NOT NULL`), copies the amounts back and drops `application_fees`.
 
-**RELATED COMMIT:** not yet committed
+**RELATED COMMIT:** c28b4e8
 
 ### [SCHEMA-ADD-013] ADDED TABLE zoning_application_types
 
 **SCHEMA REFERENCE:** [SCHEMA-ADD-013]
 
-**OBJECT:** table `zoning_application_types`; `zoning_applications.application_type` becomes a derived display label
+**OBJECT:** table `zoning_application_types`; column `application_type` dropped from `zoning_applications` (`[SCHEMA-BASE-015]`)
 
-**PURPOSE:** `application_type` held several types as one comma-separated string, in pick order and with two spellings of Zoning Certificate. Exact-match filters (registry, reports) missed combined filings, the Maps filter offered only the old spelling, and report grouping split one combination into several rows. Types are now one row each, restricted to the known list. The label stays (30 files and the Supabase mirror `supabase_zoning_applications` read it) and is rewritten by `ZoningApplication` save hooks in a fixed order; an unknown type is refused rather than dropped. Filters use `ZoningApplication::ofType()`.
+**PURPOSE:** `application_type` held several types as one comma-separated string, in pick order and with two spellings of Zoning Certificate. Exact-match filters (registry, reports) missed combined filings, the Maps filter offered only the old spelling, and report grouping split one combination into several rows. Types are now one row each, restricted to the known list, and the label column is dropped. `ZoningApplication` builds the same comma-separated label from the rows in a fixed order (`application_type` attribute, eager-loaded `types`), so pages, permit templates, status tracks and the Supabase mirror `supabase_zoning_applications` (whose own `application_type` column stays) receive it unchanged. Assigning `application_type` on the model writes the rows on save; an unknown type is refused rather than dropped. Filters use `ZoningApplication::ofType()`.
 
-**SOURCE:** `database/migrations/2026_10_14_020000_create_zoning_application_types_table.php`; `App\Models\ZoningApplicationType`; `ZoningApplication::APPLICATION_TYPES`, `TYPE_ALIASES`, `types()`, `normalizeTypes()`, `ofType()`, `booted()`
+**SOURCE:** `database/migrations/2026_10_14_020000_create_zoning_application_types_table.php`, `database/migrations/2026_10_14_030000_drop_application_type_from_zoning_applications.php`; `App\Models\ZoningApplicationType`; `ZoningApplication::APPLICATION_TYPES`, `TYPE_ALIASES`, `types()`, `typeNames()`, `normalizeTypes()`, `ofType()`, `booted()`
 
-**ORIGIN / CONTEXT:** first-normal-form fix of the application type (2026-10-14). Official name confirmed by the user: "Zoning Certificate".
+**ORIGIN / CONTEXT:** first-normal-form fix of the application type (2026-10-14). Official name confirmed by the user: "Zoning Certificate". Dropping the label column was requested by the user the same day; the mirror keeps its column and the same label format.
 
 **APPLIED STATE:** NOT YET APPLIED - verified in the test database only
 
-**APPLIED TO:** none yet. The migration splits every existing label, merges "Zoning Certification" into "Zoning Certificate", rewrites the label in canonical order, and aborts (transaction rolled back) if it meets a type that is neither known nor aliased.
+**APPLIED TO:** none yet. The migration splits every existing label, merges "Zoning Certification" into "Zoning Certificate", rewrites the label in canonical order, and aborts (transaction rolled back) if it meets a type that is neither known nor aliased. The drop migration then compares every label with its rows and aborts, naming the applications, if any disagree (e.g. a label edited by hand); otherwise it drops the column.
 
 **DEPENDENCIES:** `[SCHEMA-BASE-015]`
 
-**VERIFICATION:** `tests/Feature/ZoningApplicationTypesTest.php` (7 tests): canonical label and rows on save, rows follow label changes, unknown type refused, `ofType()` matches combined filings and the old spelling, report filter includes combined filings, migration split + spelling fix, migration aborts on an unmapped type.
+**VERIFICATION:** `tests/Feature/ZoningApplicationTypesTest.php` (11 tests): canonical label and rows on save, rows follow label changes, unknown type refused, `ofType()` matches combined filings and the old spelling, report filter includes combined filings, label serialized without the rows and column absent, a list loads all types in one query, drop migration aborts on a label/row mismatch, drop rollback rebuilds the label, migration split + spelling fix, migration aborts on an unmapped type. `IssueDReinspectionTransportTest` checks the mirror row receives the label built from the rows; `UserManagementPerformanceStatsTest` checks the officer's recent-application labels.
 
-**ROLLBACK / RECOVERY:** `down()` drops the table. Labels keep their normalized order and spelling; the original order and the old spelling are not restored (recoverable from a pre-migration dump).
+**ROLLBACK / RECOVERY:** roll back the drop migration first: it re-adds `application_type varchar(255) NOT NULL` and rebuilds each label from the rows. Then `down()` of the table migration drops the table. Labels keep their normalized order and spelling; the original order and the old spelling are not restored (recoverable from a pre-migration dump).
 
 **NOT CHANGED:** `application_status_tracks.application_type` and `application_drafts.application_type` keep their own copies; `historical_data.application_type` already holds one type per row.
 
-**RELATED COMMIT:** not yet committed
+**RELATED COMMIT:** c28b4e8 (table); column drop not yet committed
 
 ### [SCHEMA-ADD-014] ADDED FOREIGN KEYS on link columns
 
@@ -3180,7 +3180,7 @@ Each entry references one canonical marker. Markers for sequences, sequence owne
 
 **ROLLBACK / RECOVERY:** `down()` drops the four constraints and their indexes.
 
-**RELATED COMMIT:** not yet committed
+**RELATED COMMIT:** c28b4e8
 
 ---
 

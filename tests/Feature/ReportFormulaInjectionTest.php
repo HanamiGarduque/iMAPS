@@ -17,7 +17,6 @@ class ReportFormulaInjectionTest extends TestCase
         foreach (['=HYPERLINK("http://evil","x")', 'Juan Dela Cruz'] as $i => $name) {
             DB::table('zoning_applications')->insert([
                 'reference_number' => "ZC-TEST-$i",
-                'application_type' => 'Zoning Certificate',
                 'purpose' => '@SUM(1)',
                 'applicant_name' => $name,
                 'contact_number' => '0',
