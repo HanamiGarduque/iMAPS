@@ -290,104 +290,100 @@ export default function Index({
                         />
                     )}
 
-                    <main className="flex-1 w-full h-full flex flex-col overflow-hidden bg-white">
-                        <div className="flex-1 flex flex-col h-full min-h-0 w-full">
-                            <h1 className="sr-only">Notification history</h1>
+                    <main className="flex-1 w-full h-full flex flex-col overflow-hidden">
+                        <div className="p-4 sm:p-6 flex-1 flex flex-col h-full overflow-hidden max-w-[1580px] mx-auto w-full gap-5">
+                            <div className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200 flex flex-col min-h-0 overflow-hidden">
 
-                            {/* ── TOOLBAR: category switch (left), search/actions (right) ── */}
-                            <div className="px-6 py-3 border-b border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
-                                <nav className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100 border border-slate-200/80 overflow-x-auto max-w-full" aria-label="Filter by category">
-                                    {CATEGORIES.map((tab) => {
-                                        const on = activeCategory === tab.id;
-                                        const count = categoryCounts[tab.id] ?? 0;
-                                        // Empty categories stay out of the way unless selected
-                                        if (!on && tab.id !== "all" && count === 0) return null;
-                                        return (
-                                            <button
-                                                key={tab.id}
-                                                type="button"
-                                                onClick={() => applyFilter({ category: tab.id === "all" ? undefined : tab.id })}
-                                                aria-pressed={on}
-                                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-xs whitespace-nowrap transition-all cursor-pointer ${on
-                                                    ? "bg-white text-slate-900 font-semibold shadow-xs ring-1 ring-slate-200/80"
-                                                    : "text-slate-500 hover:text-slate-800"
-                                                    }`}
-                                            >
-                                                {tab.label}
-                                                <span className={`min-w-5 px-1.5 rounded-full text-[10.5px] font-semibold tabular-nums text-center ${on ? "bg-blue-600 text-white" : "bg-slate-200/80 text-slate-600"}`}>
-                                                    {count}
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
-                                </nav>
+                                {/* —— TITLE ROW + CATEGORY TABS —— */}
+                                <div className="bg-slate-100/80 border-b border-slate-200 shrink-0">
+                                    <div className="px-5 pt-3 flex items-center gap-3 min-w-0">
+                                        <div className="flex items-baseline gap-2.5 min-w-0">
+                                            <h1 className="text-[16px] font-bold text-slate-900 tracking-tight">Notifications</h1>
+                                            <span className="self-center shrink-0 inline-flex items-center gap-1.5 h-6 px-2.5 rounded-md bg-blue-50 ring-1 ring-inset ring-blue-200/70 text-[11.5px] font-medium text-blue-700">
+                                                {unreadCount > 0 ? `${unreadCount} unread` : "All caught up"}
+                                            </span>
+                                        </div>
+                                        <div className="ml-auto flex items-center gap-2 shrink-0">
+                                            {totalCount > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleClear}
+                                                    className="inline-flex items-center h-9 px-3 rounded-lg border border-slate-200 bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-600 hover:text-rose-600 text-[13px] font-medium transition-colors cursor-pointer whitespace-nowrap"
+                                                >
+                                                    Clear read
+                                                </button>
+                                            )}
+                                            {unreadCount > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleMarkAllRead}
+                                                    className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-blue-600 bg-blue-600 shadow-sm shadow-blue-900/10 hover:bg-blue-700 hover:border-blue-700 text-white text-[13px] font-semibold transition-colors whitespace-nowrap cursor-pointer"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.25" aria-hidden="true">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                    </svg>
+                                                    Mark {unreadCount} read
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-end gap-3 px-4 pt-2.5 overflow-x-auto">
+                                        <div className="flex items-end gap-1" role="group" aria-label="Filter by category">
+                                            {CATEGORIES.map((tab) => {
+                                                const on = activeCategory === tab.id;
+                                                const count = categoryCounts[tab.id] ?? 0;
+                                                // Empty categories stay out of the way unless selected
+                                                if (!on && tab.id !== "all" && count === 0) return null;
+                                                return (
+                                                    <button
+                                                        key={tab.id}
+                                                        type="button"
+                                                        aria-pressed={on}
+                                                        onClick={() => applyFilter({ category: tab.id === "all" ? undefined : tab.id })}
+                                                        className={`relative -mb-px flex items-center gap-2 px-4 py-2.5 rounded-t-xl border text-[12.5px] font-semibold whitespace-nowrap transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                                            on
+                                                                ? "bg-white border-slate-200 border-b-white text-blue-700"
+                                                                : "bg-slate-50 border-slate-200/70 text-slate-500 hover:text-slate-800 hover:bg-white/70"
+                                                        }`}
+                                                    >
+                                                        {tab.label}
+                                                        <span className={`text-[10.5px] font-bold tabular-nums px-1.5 py-px rounded-full ${on ? "bg-blue-700 text-white" : "bg-slate-200 text-slate-600"}`}>
+                                                            {count}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
 
-                                <div className="flex items-center gap-2.5 flex-wrap">
-                                    <div className="relative w-48 sm:w-56">
-                                        <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                {/* —— FILTER TOOLBAR —— */}
+                                <div className="px-4 py-3 flex flex-wrap items-center gap-2 shrink-0">
+                                    <div className="relative w-full sm:w-72 shrink-0">
+                                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                                         </svg>
                                         <input
                                             type="text"
                                             value={search}
                                             onChange={(e) => setSearch(e.target.value)}
-                                            placeholder="Search notifications..."
+                                            placeholder="Search notifications…"
                                             aria-label="Search notifications"
-                                            className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-7 py-1 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-2xs transition-all"
+                                            className="w-full h-9 rounded-lg border border-slate-200 bg-slate-50/60 pl-9 pr-8 text-[13px] text-slate-800 transition-colors focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 placeholder:text-slate-400"
                                         />
                                         {search && (
                                             <button
                                                 type="button"
                                                 onClick={() => setSearch("")}
                                                 aria-label="Clear search"
-                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
                                             >
-                                                ✕
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
                                             </button>
                                         )}
                                     </div>
-
-                                    {totalCount > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={handleClear}
-                                            className="inline-flex items-center gap-1.5 h-[30px] px-3 rounded-lg border border-slate-200 bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-600 hover:text-rose-600 text-xs font-medium shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
-                                        >
-                                            Clear read
-                                        </button>
-                                    )}
-                                    {/* Triage lives in the bell; offered here only while something is unread */}
-                                    {unreadCount > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={handleMarkAllRead}
-                                            className="inline-flex items-center gap-1.5 h-[30px] px-3 rounded-lg border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-slate-600 hover:text-blue-700 text-xs font-medium shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                            </svg>
-                                            Mark {unreadCount} read
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* ── FEED ── */}
-                            {isEmpty ? (
-                                <div className="p-12 text-center">
-                                    <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center mb-3">
-                                        {icon(BELL_ICON)}
-                                    </div>
-                                    <h3 className="text-sm font-semibold text-slate-800">
-                                        {search || activeCategory !== "all" ? "No matching activity" : "No activity yet"}
-                                    </h3>
-                                    <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                                        {search
-                                            ? `No notifications match "${search}".`
-                                            : activeCategory !== "all"
-                                            ? "Nothing recorded in this category."
-                                            : "Notifications you receive will be kept here."}
-                                    </p>
                                     {(search || activeCategory !== "all") && (
                                         <button
                                             type="button"
@@ -395,138 +391,157 @@ export default function Index({
                                                 setSearch("");
                                                 router.get("/notifications", {}, { preserveState: true, replace: true });
                                             }}
-                                            className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 shadow-2xs transition-colors cursor-pointer"
+                                            className="h-9 px-2 text-[13px] font-medium text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
                                         >
-                                            Clear Filters
+                                            Reset
                                         </button>
                                     )}
                                 </div>
-                            ) : (
-                                <div data-notification-feed className="flex-1 min-h-0 overflow-y-auto bg-slate-50/70">
+
+                                {/* —— TABLE —— */}
+                                <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                                     {newCount > 0 && (
                                         <button
                                             type="button"
                                             onClick={showNew}
-                                            className="sticky top-0 z-20 w-full flex items-center justify-center gap-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors cursor-pointer"
+                                            className="shrink-0 w-full flex items-center justify-center gap-2 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition-colors cursor-pointer"
                                         >
                                             <span className="w-1.5 h-1.5 rounded-full bg-white" aria-hidden="true" />
                                             {newCount} new notification{newCount === 1 ? "" : "s"}
                                             <span className="font-semibold underline underline-offset-2">Show</span>
                                         </button>
                                     )}
-                                    {groups.map((group) => (
-                                        <section key={group.label} className="bg-white">
-                                            <h2 className="sticky top-0 z-10 flex items-center gap-2 bg-slate-50/95 backdrop-blur border-y border-slate-200/80 py-2 px-6 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.08em]">
-                                                {group.label}
-                                                <span className="min-w-5 px-1.5 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-semibold tabular-nums text-center normal-case tracking-normal">
-                                                    {group.items.length}
-                                                </span>
-                                            </h2>
-                                            <ul className="divide-y divide-slate-100">
-                                                {group.items.map((item) => {
-                                                    const config = TYPE_CONFIG[item.type] || TYPE_CONFIG.default;
-                                                    const isUnread = !item.is_read;
-                                                    return (
-                                                        <li
-                                                            key={item.id}
-                                                            className={`group flex items-center gap-3 h-10 px-6 text-xs transition-colors hover:bg-slate-50 ${isUnread ? "bg-blue-50/30" : ""}`}
-                                                        >
-                                                            {/* Unread dot keeps its slot so rows stay aligned */}
-                                                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isUnread ? "bg-blue-600" : "bg-transparent"}`} aria-hidden="true" />
-
-                                                            <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5 ${isUnread ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-400"}`}>
-                                                                {config.icon}
-                                                            </span>
-
-                                                            <span className="hidden md:block w-32 shrink-0 truncate text-[11px] font-medium text-slate-400">
-                                                                {config.label}
-                                                            </span>
-
-                                                            {/* Title + message on one line; opens the notification */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleNotificationClick(item)}
-                                                                title={item.message}
-                                                                className={`min-w-0 flex-1 truncate text-left ${item.action_url || isUnread ? "cursor-pointer" : "cursor-default"} focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 rounded`}
-                                                            >
-                                                                <span className={isUnread ? "font-semibold text-slate-900" : "font-medium text-slate-700"}>
-                                                                    {item.title}
+                                    <div data-notification-feed className="flex-1 overflow-auto custom-scrollbar">
+                                        <table className="tabular-nums w-full text-left border-separate border-spacing-0 min-w-[760px] text-[13px] table-fixed">
+                                            <thead className="sticky top-0 z-10 bg-slate-100">
+                                                <tr className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500 [&>th]:border-y [&>th]:border-slate-200 [&>th]:py-2.5 [&>th]:px-3 [&>th]:whitespace-nowrap [&>th]:font-semibold">
+                                                    <th className="w-[44px] !pl-5"><span className="sr-only">Unread</span></th>
+                                                    <th className="w-[200px]">Type</th>
+                                                    <th>Notification</th>
+                                                    <th className="w-[110px]">Time</th>
+                                                    <th className="w-[96px] !pr-5 text-right">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {groups.map((group) => (
+                                                    <React.Fragment key={group.label}>
+                                                        <tr>
+                                                            <td colSpan={5} className="bg-slate-50 border-b border-slate-200/80 py-1.5 !pl-5 text-[10.5px] font-semibold text-slate-500 uppercase tracking-[0.08em]">
+                                                                {group.label}
+                                                                <span className="ml-2 min-w-5 px-1.5 rounded-full bg-slate-200/80 text-slate-600 text-[10px] font-semibold tabular-nums text-center normal-case tracking-normal">
+                                                                    {group.items.length}
                                                                 </span>
-                                                                {isUnread && <span className="sr-only"> (unread)</span>}
-                                                                <span className="text-slate-400"> — {item.message}</span>
-                                                            </button>
-
-                                                            {/* Timestamp; hover/focus swaps in row actions */}
-                                                            <div className="relative shrink-0 flex items-center justify-end w-24">
-                                                                <time
-                                                                    dateTime={item.created_at}
-                                                                    className={`text-[11px] whitespace-nowrap ${isUnread ? "text-blue-600 font-semibold" : "text-slate-400"} tabular-nums group-hover:opacity-0 group-focus-within:opacity-0 transition-opacity`}
+                                                            </td>
+                                                        </tr>
+                                                        {group.items.map((item) => {
+                                                            const config = TYPE_CONFIG[item.type] || TYPE_CONFIG.default;
+                                                            const isUnread = !item.is_read;
+                                                            return (
+                                                                <tr
+                                                                    key={item.id}
+                                                                    onClick={() => handleNotificationClick(item)}
+                                                                    className={`group align-middle transition-colors hover:bg-slate-50/80 [&>td]:border-b [&>td]:border-slate-100 [&>td]:py-2 [&>td]:px-3 ${isUnread ? "bg-blue-50/30" : "bg-white"} ${item.action_url || isUnread ? "cursor-pointer" : ""}`}
                                                                 >
-                                                                    {formatTime(item.created_at)}
-                                                                </time>
-                                                                <div className="absolute right-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                                                                    {isUnread && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleMarkAsRead(item.id)}
-                                                                            title="Mark as read"
-                                                                            aria-label={`Mark "${item.title}" as read`}
-                                                                            className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                                                                        >
-                                                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                                                            </svg>
-                                                                        </button>
-                                                                    )}
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleDeleteSingle(item.id)}
-                                                                        title="Delete"
-                                                                        aria-label={`Delete "${item.title}"`}
-                                                                        className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                                                    >
-                                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                                                        </svg>
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        </li>
-                                                    );
-                                                })}
-                                            </ul>
-                                        </section>
-                                    ))}
-                                </div>
-                            )}
+                                                                    <td className="!pl-5">
+                                                                        <span className={`block w-1.5 h-1.5 rounded-full ${isUnread ? "bg-blue-600" : "bg-transparent"}`} aria-hidden="true" />
+                                                                    </td>
+                                                                    <td>
+                                                                        <span className="flex items-center gap-2 min-w-0">
+                                                                            <span className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5 ${isUnread ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-400"}`}>
+                                                                                {config.icon}
+                                                                            </span>
+                                                                            <span className="truncate text-[12px] font-medium text-slate-500">{config.label}</span>
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="truncate" title={item.message}>
+                                                                        <span className={isUnread ? "font-semibold text-slate-900" : "font-medium text-slate-700"}>{item.title}</span>
+                                                                        {isUnread && <span className="sr-only"> (unread)</span>}
+                                                                        <span className="text-slate-400"> — {item.message}</span>
+                                                                    </td>
+                                                                    <td className="whitespace-nowrap">
+                                                                        <time dateTime={item.created_at} className={`text-[12px] ${isUnread ? "text-blue-600 font-semibold" : "text-slate-500"}`}>
+                                                                            {formatTime(item.created_at)}
+                                                                        </time>
+                                                                    </td>
+                                                                    <td className="!pr-4" onClick={(e) => e.stopPropagation()}>
+                                                                        <div className="flex items-center justify-end gap-1">
+                                                                            {isUnread && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleMarkAsRead(item.id)}
+                                                                                    title="Mark as read"
+                                                                                    aria-label={`Mark "${item.title}" as read`}
+                                                                                    className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                                                                >
+                                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                                                                    </svg>
+                                                                                </button>
+                                                                            )}
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleDeleteSingle(item.id)}
+                                                                                title="Delete"
+                                                                                aria-label={`Delete "${item.title}"`}
+                                                                                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                                                            >
+                                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                                                                            </button>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </React.Fragment>
+                                                ))}
+                                            </tbody>
+                                        </table>
 
-                            {/* ── PAGINATION CONTROLS ── */}
-                            {notifications?.links?.length > 3 && (
-                                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-3 border-t border-slate-200/80 shrink-0">
-                                    <p className="text-xs text-slate-500">
-                                        Showing <span className="font-semibold text-slate-800">{notifications.from || 1}</span> to{" "}
-                                        <span className="font-semibold text-slate-800">{notifications.to || notifications.data.length}</span> of{" "}
-                                        <span className="font-semibold text-slate-800">{notifications.total ?? totalCount}</span> notifications
-                                    </p>
-                                    <div className="flex items-center gap-1">
-                                        {notifications.links.map((link, i) => (
-                                            <button
-                                                key={i}
-                                                disabled={!link.url || link.active}
-                                                onClick={() => link.url && router.get(link.url, {}, { preserveState: true })}
-                                                className={`inline-flex items-center justify-center min-w-[32px] h-8 px-2 rounded-lg text-xs font-medium border transition-all cursor-pointer ${link.active
-                                                    ? "bg-blue-600 border-blue-600 text-white font-semibold shadow-2xs"
-                                                    : !link.url
-                                                        ? "opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400"
-                                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                                                    }`}
-                                            >
-                                                {link.label.replace("&laquo;", "«").replace("&raquo;", "»")}
-                                            </button>
-                                        ))}
+                                        {isEmpty && (
+                                            <div className="flex flex-col items-center justify-center text-slate-400 py-16">
+                                                <p className="font-bold text-[14px] text-slate-700">
+                                                    {search || activeCategory !== "all" ? "No matching activity" : "No activity yet"}
+                                                </p>
+                                                <p className="text-xs mt-1 text-slate-400">
+                                                    {search
+                                                        ? `No notifications match "${search}".`
+                                                        : activeCategory !== "all"
+                                                        ? "Nothing recorded in this category."
+                                                        : "Notifications you receive will be kept here."}
+                                                </p>
+                                            </div>
+                                        )}
                                     </div>
+
+                                    {/* —— PAGINATION —— */}
+                                    {notifications?.links?.length > 3 && (
+                                        <div className="shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 border-t border-slate-200 bg-white">
+                                            <p className="text-xs text-slate-500">
+                                                Showing <span className="font-semibold text-slate-800">{notifications.from || 1}</span> to{" "}
+                                                <span className="font-semibold text-slate-800">{notifications.to || notifications.data.length}</span> of{" "}
+                                                <span className="font-semibold text-slate-800">{notifications.total ?? totalCount}</span> notifications
+                                            </p>
+                                            <div className="flex items-center gap-1">
+                                                {notifications.links.map((link, i) => (
+                                                    <button
+                                                        key={i}
+                                                        disabled={!link.url || link.active}
+                                                        onClick={() => link.url && router.get(link.url, {}, { preserveState: true })}
+                                                        className={`inline-flex items-center justify-center min-w-[32px] h-8 px-2 rounded-lg text-xs font-medium border transition-all cursor-pointer ${link.active
+                                                            ? "bg-blue-600 border-blue-600 text-white font-semibold shadow-2xs"
+                                                            : !link.url
+                                                                ? "opacity-30 cursor-not-allowed border-slate-200 bg-white text-slate-400"
+                                                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                                            }`}
+                                                    >
+                                                        {link.label.replace("&laquo;", "«").replace("&raquo;", "»")}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
+                            </div>
                         </div>
                     </main>
                 </div>
