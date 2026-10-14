@@ -736,7 +736,7 @@ export default function StepPropertyGIS({
                 }`}
             >
                 {/* Map toolbar */}
-                <div className="h-9 shrink-0 px-1.5 bg-slate-50 border-b border-slate-300 flex items-center gap-0.5 z-20" role="toolbar" aria-label="Map tools">
+                <div className="h-9 shrink-0 px-1.5 bg-slate-50 border-b border-slate-300 flex items-center gap-0.5 relative z-30" role="toolbar" aria-label="Map tools">
                     <ToolButton label="Toggle Layers panel" active={layersOpen} onClick={() => setLayersOpen((o) => !o)}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" />
                     </ToolButton>
