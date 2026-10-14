@@ -283,6 +283,19 @@ class UserManagementController extends Controller
             'is_active' => 'required|boolean',
         ]);
 
+        // Site Inspectors sign in to FieldSync through Supabase Auth, so push the change there
+        // first: if Supabase refuses it, the local row stays untouched and the two never diverge.
+        $inspector = DB::table('users')->where('id', $id)->where('role', 'Site Inspector')->first();
+        if ($inspector && !$this->syncInspectorToSupabase($inspector, [
+            'email' => $request->email,
+            'ban_duration' => $request->boolean('is_active') ? 'none' : '876000h',
+        ], ['full_name' => $request->name])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not update the inspector\'s FieldSync account in Supabase. Nothing was changed; please try again.',
+            ], 502);
+        }
+
         $error = null;
 
         DB::transaction(function () use ($request, $id, &$error) {
@@ -371,6 +384,14 @@ class UserManagementController extends Controller
             'admin_password' => 'required|current_password',
         ]);
 
+        $inspector = DB::table('users')->where('id', $request->target_user_id)->where('role', 'Site Inspector')->first();
+        if ($inspector && !$this->syncInspectorToSupabase($inspector, ['password' => $request->new_password])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not reset the inspector\'s FieldSync password in Supabase. Nothing was changed; please try again.',
+            ], 502);
+        }
+
         DB::transaction(function () use ($request) {
             DB::table('users')->where('id', $request->target_user_id)->update([
                 'password' => Hash::make($request->new_password),
@@ -399,5 +420,55 @@ class UserManagementController extends Controller
         }
 
         return response()->json(['success' => true]);
+    }
+
+    /**
+     * Mirror an inspector's login/profile changes to Supabase Auth and `profiles`, resolving the
+     * Auth UUID through the shared handshake key. Inspectors with no handshake key have no remote
+     * account, so there is nothing to sync. Returns false when Supabase did not confirm the change.
+     */
+    private function syncInspectorToSupabase(object $user, array $auth, array $profile = []): bool
+    {
+        if (blank($user->handshake_key)) {
+            return true;
+        }
+
+        try {
+            $url = rtrim(config('services.supabase.url'), '/');
+            $key = config('services.supabase.service_key');
+            $http = Http::withHeaders(['apikey' => $key, 'Authorization' => 'Bearer ' . $key])->timeout(12);
+
+            $found = $http->get("{$url}/rest/v1/profiles", [
+                'select' => 'id',
+                'handshake_key' => 'eq.' . $user->handshake_key,
+            ]);
+            $rows = $found->json();
+            if (!$found->successful() || !is_array($rows) || count($rows) !== 1 || !is_string($rows[0]['id'] ?? null)) {
+                throw new \RuntimeException('No unique Supabase profile for handshake key.');
+            }
+            $uuid = $rows[0]['id'];
+
+            $authResponse = $http->put("{$url}/auth/v1/admin/users/{$uuid}", $auth);
+            if (!$authResponse->successful()) {
+                throw new \RuntimeException('Auth update failed: ' . $authResponse->status());
+            }
+
+            if ($profile) {
+                $profileResponse = $http->withHeaders(['Content-Type' => 'application/json'])
+                    ->patch("{$url}/rest/v1/profiles?id=eq.{$uuid}", $profile + ['updated_at' => now('Asia/Manila')->format('Y-m-d H:i:s')]);
+                if (!$profileResponse->successful()) {
+                    throw new \RuntimeException('Profile update failed: ' . $profileResponse->status());
+                }
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Inspector Supabase sync failed.', [
+                'user_id' => $user->id,
+                'fields' => array_keys($auth + $profile),
+                'error' => $e->getMessage(),
+            ]);
+            return false;
+        }
     }
 }
