@@ -107,6 +107,13 @@ const isOverdue = (i, scheduled) => {
     return Boolean(day) && !isDone(i) && !i.submitted_at && day < dayOf(new Date());
 };
 const completedOf = (i) => i.completed_at || i.submitted_at || null;
+// "Oct 14, 2026 · 3:42 PM" for a full timestamp; a date-only value (a schedule) stays a plain date.
+const formatDateTime = (value) => {
+    const date = formatDate(value);
+    if (!date || /^\d{4}-\d{2}-\d{2}$/.test(String(value))) return date;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? date : `${date} · ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+};
 const time = (v) => (v ? new Date(v).getTime() || 0 : 0);
 
 // 1 -> "1st", 2 -> "2nd", 11 -> "11th".
@@ -1053,7 +1060,7 @@ export default function SiteInspectionsIndex() {
                                                                 )}
 
                                                                 <div className="mt-auto flex items-center gap-x-2 flex-wrap pt-2 border-t border-slate-100 text-[11.5px] text-slate-500">
-                                                                    <span>{formatDate(stamp) || "No date"}</span>
+                                                                    <span>{formatDateTime(stamp) || "No date"}</span>
                                                                     {operations?.[item.id]?.inspector_name && (
                                                                         <>
                                                                             <span className="text-slate-300" aria-hidden="true">·</span>

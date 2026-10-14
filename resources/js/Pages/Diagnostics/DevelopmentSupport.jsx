@@ -23,6 +23,12 @@ import { control, stamp } from "./ReportUi";
  *
  * Collapsed by default (a native <details>) so it costs one row of the sidebar;
  * it starts expanded only while an escalation is open and needs attention.
+ *
+ * The panel is a "Contact Developer" card: the developer contact and the
+ * Compose Email draft link. Opening new escalations and the past-request
+ * history are no longer offered. An escalation opened before that change still
+ * shows its advice/close forms, because an open one blocks Resolve and Won't fix
+ * and would otherwise have no way to close.
  */
 export default function DevelopmentSupport({ report, panel, reload }) {
     const [busy, setBusy] = useState(false);
@@ -59,14 +65,12 @@ export default function DevelopmentSupport({ report, panel, reload }) {
     const hint = "mt-0.5 text-[11px] leading-relaxed text-slate-500";
     const chip = open
         ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200"><span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-500" />Open since {stamp(open.created_at)}</span>
-        : panel.escalatable
-            ? <span className="text-[11px] text-slate-500">Internal · admins only</span>
-            : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Final</span>;
+        : <span className="text-[11px] text-slate-500">Internal · admins only</span>;
 
     return <details open={Boolean(open)} className="group rounded-xl bg-white ring-1 ring-slate-200/70 [&[open]>summary]:border-b [&[open]>summary]:border-slate-100">
         <summary className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-xl px-3.5 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 [&::-webkit-details-marker]:hidden">
             <span aria-hidden="true" className="row-span-2 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-violet-50 text-violet-600 ring-1 ring-inset ring-violet-100"><svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" /></svg></span>
-            <h2 id="development-support-heading" className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-slate-900">{open ? "Developer escalation open" : "Developer escalation"}</h2>
+            <h2 id="development-support-heading" className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-slate-900">Contact Developer</h2>
             <svg aria-hidden="true" className="row-span-2 h-4 w-4 shrink-0 text-slate-400 transition group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
             <span className="col-start-2 flex">{chip}</span>
         </summary>
@@ -83,16 +87,6 @@ export default function DevelopmentSupport({ report, panel, reload }) {
             {panel.composeEmailHref && <div>
                 <a href={panel.composeEmailHref} aria-describedby="developer-email-help" className={`${control} w-full`}>Compose Email</a>
                 <p id="developer-email-help" className={`${hint} mt-1.5`}>Opens a draft in your email app; it does not send an email. Review before sending and attach sanitized files manually.</p>
-            </div>}
-
-            {!panel.escalatable && <p className="text-xs text-slate-500">This report is final.</p>}
-
-            {panel.escalatable && !open && <div className="space-y-2.5">
-                <p className="flex gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
-                    <svg aria-hidden="true" className="mt-px h-4 w-4 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" /></svg>
-                    <span>An open escalation blocks Resolve and Won’t fix until it is closed.</span></p>
-                <button type="button" className={`${control} w-full`} disabled={busy} onClick={() => post(base, {})}>
-                    {busy ? "Opening…" : "Open Developer Escalation"}</button>
             </div>}
 
             {!panel.contactConfigured && <p role="alert" className="flex gap-1.5 text-[11px] leading-relaxed text-amber-800">
@@ -123,24 +117,6 @@ export default function DevelopmentSupport({ report, panel, reload }) {
                 </form>
             </div>}
 
-            {!!panel.closed.length && <div className="border-t border-slate-100 pt-3">
-                <h3 className="text-xs font-semibold text-slate-700">Past requests</h3>
-                <ul className="mt-2 space-y-2">{panel.closed.map(episode => <li key={episode.id} className="rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-700 ring-1 ring-inset ring-slate-200/70">
-                    <p className="flex flex-wrap items-baseline justify-between gap-x-2"><span className="font-semibold">Closed {stamp(episode.closed_at)}</span><span className="text-[11px] text-slate-500">Opened {stamp(episode.created_at)}</span></p>
-                    {/* An episode can close WITH a recommendation, WITHOUT one (the
-                        closure note then explains why), or with both. Each present
-                        field is labelled and rendered; an absent one renders nothing,
-                        so the history never implies content that was not recorded. */}
-                    {episode.recommendation && <div className="mt-2">
-                        <p className="text-[11px] font-semibold text-slate-500">Advice</p>
-                        <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] text-slate-800">{episode.recommendation}</p>
-                    </div>}
-                    {episode.closure_note && <div className="mt-2">
-                        <p className="text-[11px] font-semibold text-slate-500">Note</p>
-                        <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] text-slate-800">{episode.closure_note}</p>
-                    </div>}
-                </li>)}</ul>
-            </div>}
         </section>
     </details>;
 }

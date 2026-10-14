@@ -113,7 +113,7 @@ const panel = { open: null, closed: [], escalatable: true, contactConfigured: tr
     contact: { email: 'ralphlaurexo01@gmail.com' }, composeEmailHref: 'mailto:ralphlaurexo01%40gmail.com?subject=Technical%20Issue&body=Reference%3A%20DR-2026-123456' };
 props.auth.user.role = 'Admin';
 html = render('Show', { report: technical, developmentSupport: panel });
-check(html.includes('Open Developer Escalation') && !html.includes('Send to dev team'), 'internal opening never claims email dispatch');
+check(html.includes('Contact Developer') && !html.includes('Open Developer Escalation') && !html.includes('Send to dev team'), 'panel is Contact Developer and opens no escalation');
 check(html.includes('Compose Email') && html.includes('href="mailto:'), 'email composition is a separate native link');
 check(html.includes('draft') && html.includes('manually') && html.includes('does not send'), 'email hint explains draft-only and manual attachment behavior');
 const openedPanel = { ...panel, open: { id: 1, created_at: '2026-10-13T00:00:00Z', recommendation: null } };
@@ -131,10 +131,10 @@ props.auth.user.role = 'Admin';
 html = render('Show', { report, context, developmentSupport: panel });
 check(!html.includes('Compose Email') && !html.includes('Open Developer Escalation'), 'Application Support never mounts the developer panel');
 html = render('DevelopmentSupport', { report: technical, panel: { ...panel, composeEmailHref: null } });
-check(!html.includes('Compose Email') && html.includes('Open Developer Escalation'), 'missing valid email never blocks internal escalation');
+check(!html.includes('Compose Email') && html.includes('Contact Developer'), 'missing valid email hides only the draft link');
 html = render('DevelopmentSupport', { report: { ...technical, status: 'resolved' }, panel: { ...openedPanel, escalatable: false,
     closed: [{ id: 9, recommendation: '<b>Recorded advice</b>', closure_note: 'Recorded closure.', closed_at: '2026-10-13T00:00:00Z' }] } });
-check(html.includes('&lt;b&gt;Recorded advice&lt;/b&gt;') && html.includes('Recorded closure.'), 'terminal history renders retained plain-text advice and closure');
+check(!html.includes('Recorded advice') && !html.includes('Recorded closure.') && !html.includes('Past requests'), 'past-request history is not shown');
 check(!html.includes('<form') && !html.includes('Open Developer Escalation'), 'terminal history exposes no mutation forms even with stale open props');
 props.auth.user.role = 'Planning Officer';
 html = render('Index', { allowedTypes: ['application_support'], filters: { type: 'application_support' }, loadError: 'Application support context could not be loaded.' });
