@@ -174,7 +174,7 @@ class InspectionReviewVisibilityUiTest extends TestCase
     private function nodeBinary(): string
     {
         foreach (['node', 'node.exe'] as $candidate) {
-            $which = @shell_exec('where ' . $candidate . ' 2>nul');
+            $which = @shell_exec(PHP_OS_FAMILY === 'Windows' ? 'where ' . $candidate . ' 2>nul' : 'command -v ' . escapeshellarg($candidate) . ' 2>/dev/null');
             if (is_string($which) && trim($which) !== '') {
                 return trim(explode("\n", trim($which))[0]);
             }

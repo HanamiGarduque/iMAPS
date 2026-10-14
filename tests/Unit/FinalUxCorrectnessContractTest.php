@@ -589,7 +589,7 @@ class FinalUxCorrectnessContractTest extends TestCase
             $candidates[] = (string) getenv('NODE_BINARY');
         }
 
-        $where = @shell_exec('where node 2>nul');
+        $where = @shell_exec(PHP_OS_FAMILY === 'Windows' ? 'where node 2>nul' : 'command -v node 2>/dev/null');
         if (is_string($where) && $where !== '') {
             foreach (preg_split('/\R/', trim($where)) ?: [] as $line) {
                 $line = trim($line);

@@ -3156,7 +3156,7 @@ Each entry references one canonical marker. Markers for sequences, sequence owne
 
 **NOT CHANGED:** `application_status_tracks.application_type` and `application_drafts.application_type` keep their own copies; `historical_data.application_type` already holds one type per row.
 
-**RELATED COMMIT:** c28b4e8 (table); column drop not yet committed
+**RELATED COMMIT:** c28b4e8 (table), a885de5 (column drop)
 
 ### [SCHEMA-ADD-014] ADDED FOREIGN KEYS on link columns
 
