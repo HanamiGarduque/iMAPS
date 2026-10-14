@@ -1,5 +1,5 @@
 // resources/js/Pages/Site Inspections/Show.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Link, Head, router, usePage } from "@inertiajs/react";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
@@ -372,6 +372,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
 
     const [inspectionPhotos, setInspectionPhotos] = useState([]);
     const [loadingPhotos, setLoadingPhotos] = useState(false);
+    // A failed read is not "no photos": say so, and offer a retry.
+    const [photosError, setPhotosError] = useState(false);
     const [syncing, setSyncing] = useState(false);
 
     // Scoped sync confirmation + outcome feedback. The confirmation is the
@@ -387,30 +389,73 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
     // reports itself instead of rendering as a browser broken-image icon.
     const [lightboxIndex, setLightboxIndex] = useState(null);
     const [brokenPhotos, setBrokenPhotos] = useState({});
-    const markPhotoBroken = (idx) => setBrokenPhotos((prev) => ({ ...prev, [idx]: true }));
+    const markPhotosBroken = (idxs) => setBrokenPhotos((prev) => ({ ...prev, ...Object.fromEntries(idxs.map((i) => [i, true])) }));
 
-    useEffect(() => {
+    // Signed URLs expire a few minutes after they are issued, and the grid only
+    // mounts when the Photos tab opens, so a page left open long enough hands
+    // the thumbnails dead URLs. A thumbnail that fails on URLs older than a
+    // minute re-signs every photo once through the same endpoint; a photo that
+    // fails on fresh URLs is reported unavailable.
+    const photoSigning = useRef({ inFlight: false, signedAt: 0, pending: new Set() });
+
+    const fetchInspectionPhotos = useCallback(
+        (init) =>
+            fetch(`/api/inspections/${ins.id}/supabase-data`, init)
+                .then((res) => {
+                    if (!res.ok) throw new Error("Failed to fetch");
+                    return res.json();
+                })
+                .then((data) => {
+                    photoSigning.current.signedAt = Date.now();
+                    return Array.isArray(data?.field_job_photos) ? data.field_job_photos : [];
+                }),
+        [ins.id],
+    );
+
+    const handlePhotoError = (idx) => {
+        const signing = photoSigning.current;
+        if (signing.inFlight) {
+            signing.pending.add(idx);
+            return;
+        }
+        if (Date.now() - signing.signedAt < 60_000) {
+            markPhotosBroken([idx]);
+            return;
+        }
+        signing.inFlight = true;
+        signing.pending = new Set([idx]);
+        fetchInspectionPhotos({ cache: "no-store" })
+            .then((photos) => {
+                setInspectionPhotos(photos);
+                setBrokenPhotos({});
+            })
+            .catch(() => markPhotosBroken([...signing.pending]))
+            .finally(() => {
+                signing.inFlight = false;
+                signing.pending = new Set();
+            });
+    };
+
+    const loadInspectionPhotos = useCallback(() => {
         if (!ins.id) return;
         setLoadingPhotos(true);
-        fetch(`/api/inspections/${ins.id}/supabase-data`)
-            .then((res) => {
-                if (!res.ok) throw new Error("Failed to fetch");
-                return res.json();
-            })
-            .then((data) => {
-                if (data && data.field_job_photos) {
-                    setInspectionPhotos(data.field_job_photos);
-                } else {
-                    setInspectionPhotos([]);
-                }
+        setPhotosError(false);
+        fetchInspectionPhotos({ cache: "no-store" })
+            .then((photos) => {
+                setInspectionPhotos(photos);
                 setBrokenPhotos({});
             })
             .catch((err) => {
                 console.error("Failed to fetch inspection photos:", err);
                 setInspectionPhotos([]);
+                setPhotosError(true);
             })
             .finally(() => setLoadingPhotos(false));
-    }, [ins.id]);
+    }, [ins.id, fetchInspectionPhotos]);
+
+    useEffect(() => {
+        loadInspectionPhotos();
+    }, [loadInspectionPhotos]);
 
     useEffect(() => {
         const tick = () => {
@@ -608,7 +653,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
 
     const TABS = [
         { key: "inspection", label: "Overview" },
-        { key: "photos", label: "Photos", count: loadingPhotos ? null : inspectionPhotos.length },
+        { key: "photos", label: "Photos", count: loadingPhotos || photosError ? null : inspectionPhotos.length },
         { key: "parcel", label: "Parcel" },
         { key: "application", label: "Application" },
     ];
@@ -1199,6 +1244,21 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                             </svg>
                                                             <span className="text-xs font-medium">Loading photos…</span>
                                                         </div>
+                                                    ) : photosError ? (
+                                                        <div className="py-8 short:py-5 flex flex-col items-center text-center">
+                                                            <span className="w-11 h-11 rounded-xl bg-rose-50 border border-rose-100 text-rose-500 flex items-center justify-center">
+                                                                <Icon name="alert" className="w-5 h-5" strokeWidth={1.6} />
+                                                            </span>
+                                                            <p className="mt-2.5 text-[13.5px] font-bold text-slate-900">Photos couldn't be loaded</p>
+                                                            <p className="text-[12px] text-slate-500 mt-0.5">FieldSync didn't respond. The inspection record is unaffected.</p>
+                                                            <button
+                                                                type="button"
+                                                                onClick={loadInspectionPhotos}
+                                                                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors"
+                                                            >
+                                                                Try again
+                                                            </button>
+                                                        </div>
                                                     ) : inspectionPhotos && inspectionPhotos.length > 0 ? (
                                                         <div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2.5">
                                                             {inspectionPhotos.map((photo, idx) => {
@@ -1216,13 +1276,13 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                                         onClick={() => setLightboxIndex(idx)}
                                                                         title={thumbUrl ? "Open full-size photo" : "This photo is unavailable"}
                                                                         aria-label={thumbUrl ? `Open photo ${idx + 1} full size` : `Photo ${idx + 1} unavailable`}
-                                                                        className={`relative bg-slate-100 rounded-lg overflow-hidden group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 cursor-pointer aspect-square`}
+                                                                        className="relative bg-slate-100 overflow-hidden group focus:outline-none rounded-lg focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 cursor-pointer aspect-square"
                                                                     >
                                                                         {thumbUrl && !broken ? (
                                                                             <img
                                                                                 src={thumbUrl}
-                                                                                alt={`Inspection Photo ${idx + 1}`}
-                                                                                onError={() => markPhotoBroken(idx)}
+                                                                                alt={photo.notes?.trim() || `Inspection Photo ${idx + 1}`}
+                                                                                onError={() => handlePhotoError(idx)}
                                                                                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                                                                             />
                                                                         ) : (
@@ -1546,7 +1606,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                     photos={inspectionPhotos.map((p, i) => ({
                         ...p,
                         inspectionId: ins.id,
-                        alt: `Inspection Photo ${i + 1}`,
+                        alt: p.notes?.trim() || `Inspection Photo ${i + 1}`,
                     }))}
                     index={lightboxIndex}
                     onClose={() => setLightboxIndex(null)}

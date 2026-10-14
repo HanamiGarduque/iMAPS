@@ -87,6 +87,7 @@ export default function PhotoLightbox({ photos = [], index, onClose, onIndexChan
 
     const signed = urls[index] ?? null;
     const hasMultiple = photos.length > 1;
+    const note = typeof current.notes === "string" ? current.notes.trim() : "";
     const refreshing = refreshState === "loading";
     const unreadable = !refreshing && (imageError || !signed);
 
@@ -173,23 +174,28 @@ export default function PhotoLightbox({ photos = [], index, onClose, onIndexChan
                         src={signed}
                         alt={current.alt || "Inspection photo"}
                         onError={refreshUrls}
-                        className="max-h-[82vh] max-w-full object-contain rounded-xl shadow-2xl bg-slate-900"
+                        className="max-h-[75vh] max-w-full object-contain rounded-xl shadow-2xl bg-slate-900"
                     />
                 )}
 
-                <figcaption className="flex items-center gap-3 text-[11px] text-white/70 font-medium">
-                    {hasMultiple && <span>Photo {index + 1} of {photos.length}</span>}
-                    {current.captured_at && (
-                        <span>
-                            {new Date(current.captured_at).toLocaleString("en-PH", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                            })}
-                        </span>
+                <figcaption className="flex flex-col items-center gap-1.5 max-w-xl text-center">
+                    {note && (
+                        <p className="text-[13px] text-white leading-relaxed whitespace-pre-line break-words">{note}</p>
                     )}
+                    <span className="flex items-center gap-3 text-[11px] text-white/70 font-medium">
+                        {hasMultiple && <span>Photo {index + 1} of {photos.length}</span>}
+                        {current.captured_at && (
+                            <span>
+                                {new Date(current.captured_at).toLocaleString("en-PH", {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                })}
+                            </span>
+                        )}
+                    </span>
                 </figcaption>
             </figure>
         </div>
