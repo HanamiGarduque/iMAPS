@@ -1409,6 +1409,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         if (step === STEP.FEES) {
             if (!form.or_number?.trim()) {
                 newErrors.or_number = "Official Receipt (OR) number is required.";
+            } else if (!/^OR-\d{5}$/.test(form.or_number.trim())) {
+                newErrors.or_number = "OR number must be exactly 5 digits.";
             }
             if (form.assessment_fee === "" || form.assessment_fee == null || Number(form.assessment_fee) < 0) {
                 newErrors.assessment_fee = "Assessment fee is required.";
