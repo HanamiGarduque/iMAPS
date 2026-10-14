@@ -1537,7 +1537,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     assessment_fee: form.assessment_fee,
                     or_number: form.or_number,
                 });
-                setShowRoutingSlip(true);
 
                 clearDraftStateRecord();
                 setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());

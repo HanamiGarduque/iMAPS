@@ -375,17 +375,6 @@ export default function DraftsIndex({ drafts, filters = {}, activity_counts = {}
                                                                 <div className="flex items-center justify-end gap-1">
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => resume(draft.id)}
-                                                                        aria-label={`Resume draft for ${draft.applicant_name || "unnamed applicant"}`}
-                                                                        title="Resume draft"
-                                                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                                                    >
-                                                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-                                                                        </svg>
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
                                                                         onClick={() => discard(draft)}
                                                                         aria-label={`Discard draft for ${draft.applicant_name || "unnamed applicant"}`}
                                                                         title="Discard draft"

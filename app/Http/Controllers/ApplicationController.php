@@ -130,8 +130,9 @@ class ApplicationController extends Controller
             ->orderBy('name', 'asc')
             ->get();
 
-        $statusCounts = ZoningApplication::select('status', DB::raw('count(*) as total'))
-            ->groupBy('status')
+        $statusCounts = $this->restrictToOwnApplications(ZoningApplication::query())
+            ->select('zoning_applications.status', DB::raw('count(*) as total'))
+            ->groupBy('zoning_applications.status')
             ->pluck('total', 'status')
             ->toArray();
 
@@ -343,6 +344,24 @@ class ApplicationController extends Controller
 // ─────────────────────────────────────────────────────────────────────────
     // CREATE — Show encode form
     // ─────────────────────────────────────────────────────────────────────────
+    // The registry is a working list: a Planning Officer sees only the applications they
+    // encoded or currently own (reassigned to them). Admins see everything, and Reports
+    // (a separate controller) still read the full set for export.
+    private function restrictToOwnApplications($query)
+    {
+        $user = Auth::user();
+
+        if (($user?->role ?? null) === 'Admin') {
+            return $query;
+        }
+
+        return $query->where(function ($q) use ($user) {
+            // Fails closed: no signed-in user matches no rows.
+            $q->where('zoning_applications.encoded_by', $user?->id ?? 0)
+                ->orWhere('zoning_applications.assigned_planning_officer_id', $user?->id ?? 0);
+        });
+    }
+
     /**
      * Apply the Applications registry filters to a query.
      *
@@ -352,6 +371,8 @@ class ApplicationController extends Controller
      */
     private function applyRegistryFilters($query, Request $request)
     {
+        $this->restrictToOwnApplications($query);
+
         if ($request->filled('barangay'))
             $query->where('zoning_applications.barangay', $request->barangay);
 

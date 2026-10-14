@@ -233,7 +233,7 @@ export default function StepFee({
                             const digits = e.target.value.replace(/\D/g, "").slice(0, 5);
                             set("or_number")({ target: { value: digits ? `OR-${digits}` : "" } });
                         }}
-                        placeholder="98124"
+                        placeholder="12345"
                         className="font-mono bg-white pl-12"
                         hasError={!!errors.or_number}
                     />
