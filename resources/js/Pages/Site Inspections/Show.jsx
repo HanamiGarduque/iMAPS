@@ -210,20 +210,13 @@ function ReportValue({ value, alert }) {
     return <p className={`whitespace-pre-line ${alert ? "text-rose-900" : "text-slate-800"}`}>{value}</p>;
 }
 
-// ── Panel with a small caps heading ──
-function Panel({ title, icon = null, aside = null, className = "", children }) {
+// ── Section with a plain heading (no box: it already sits in the workspace card) ──
+function Panel({ title, aside = null, className = "", children }) {
     return (
-        <section className={`bg-white rounded-lg border border-slate-200 ${className}`}>
+        <section className={className}>
             {title && (
-                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-100">
-                    <h3 className="flex items-center gap-2 text-[13px] font-bold text-slate-900">
-                        {icon && (
-                            <span className="grid place-items-center w-5 h-5 rounded-md bg-blue-50 text-blue-600">
-                                <Icon name={icon} className="w-3 h-3" strokeWidth={2.2} />
-                            </span>
-                        )}
-                        {title}
-                    </h3>
+                <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-200">
+                    <h3 className="text-[13px] font-bold text-slate-900">{title}</h3>
                     {aside}
                 </div>
             )}
@@ -643,12 +636,12 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
         ? {
               label: review.po_decision,
               sub: [review.po_decision_reviewer && `By ${review.po_decision_reviewer}`, review.po_decision_date && formatDate(review.po_decision_date)].filter(Boolean).join(" · "),
-              tone: "text-violet-800",
+              tone: "bg-violet-50 text-violet-800 ring-violet-200",
           }
         : review?.round_decision_anomaly
-          ? { label: "Needs attention", sub: review.round_decision_anomaly.message, tone: "text-amber-700" }
+          ? { label: "Needs attention", sub: review.round_decision_anomaly.message, tone: "bg-amber-50 text-amber-800 ring-amber-200" }
           : reportDone
-            ? { label: "Not yet decided", sub: null, tone: "text-slate-900" }
+            ? { label: "Not yet decided", sub: null, tone: "bg-slate-50 text-slate-700 ring-slate-200" }
             : null;
 
     const TABS = [
@@ -669,8 +662,6 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
     // The Admin sync explanation is disclosed on demand; the confirm dialog
     // repeats it before anything runs.
     const [adminInfoOpen, setAdminInfoOpen] = useState(false);
-
-    const TAB_ICONS = { inspection: "overview", photos: "photo", parcel: "map", application: "briefcase" };
 
     const deliveryTone = !delivery
         ? "slate"
@@ -733,7 +724,9 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
             ),
         });
     }
-    if (roundHistory) {
+    // A row with nothing to report ("Only round for this parcel", "No reports")
+    // is left out; the visit label in the header already says "1st visit".
+    if (roundHistory && (!roundHistory.available || roundHistory.rounds.length > 0)) {
         // PHASE 2B2D. The canonical (application, parcel) chain, so a round's
         // siblings are always the SAME lot's visits.
         tiles.push({
@@ -801,7 +794,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
             ),
         });
     }
-    tiles.push({
+    if (!applicationSupport?.ok || applicationSupport.total > 0) tiles.push({
         key: "support",
         icon: "support",
         label: "Application support",
@@ -827,6 +820,16 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
             </>
         ),
     });
+
+    // The side column only exists when it has something to show.
+    const showAside = tiles.length > 0 || userRole === "Admin" || Boolean(syncOutcome);
+    const workspaceCols = showTracker
+        ? showAside
+            ? "lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[210px_minmax(0,1fr)_340px] 2xl:grid-cols-[220px_minmax(0,1fr)_380px]"
+            : "xl:grid-cols-[210px_minmax(0,1fr)] 2xl:grid-cols-[220px_minmax(0,1fr)]"
+        : showAside
+          ? "lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]"
+          : "";
 
     // Round context, worded for staff as a "visit" (1st visit, 2nd visit).
     // No fabricated number for a historical row: it is labelled and explained
@@ -1014,7 +1017,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                     ].map(([label, value]) => (
                                                         <div key={label} className="min-w-0">
                                                             <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-                                                            <dd className="text-[12px] font-semibold text-slate-900 whitespace-nowrap">{value || "—"}</dd>
+                                                            <dd className="text-[12px] font-semibold text-slate-900 break-words sm:whitespace-nowrap">{value || "—"}</dd>
                                                         </div>
                                                     ))}
                                                 </dl>
@@ -1042,8 +1045,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
 
                             {/* ══ WORKSPACE: folder tabs over progress | record | case status ══ */}
                             <div className="lg:flex-1 lg:min-h-0 bg-white rounded-xl border border-slate-200 flex flex-col overflow-hidden">
-                                <div className="bg-slate-100/80 border-b border-slate-200 shrink-0">
-                                    <div className="flex items-end gap-1 px-4 pt-2.5 short:pt-2 overflow-x-auto" role="tablist" aria-label="Inspection record">
+                                <div className="border-b border-slate-200 shrink-0">
+                                    <div className="flex items-center gap-6 px-5 short:px-4 overflow-x-auto" role="tablist" aria-label="Inspection record">
                                         {TABS.map((tab) => {
                                             const isActive = activeTab === tab.key;
                                             return (
@@ -1053,16 +1056,15 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                     role="tab"
                                                     aria-selected={isActive}
                                                     onClick={() => setActiveTab(tab.key)}
-                                                    className={`relative -mb-px flex items-center gap-2 px-4 py-2.5 short:py-2 rounded-t-xl border text-[12.5px] font-semibold whitespace-nowrap transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                                    className={`relative flex items-center gap-1.5 py-3 short:py-2.5 border-b-2 text-[13px] font-semibold whitespace-nowrap transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
                                                         isActive
-                                                            ? "bg-white border-slate-200 border-b-white text-blue-700"
-                                                            : "bg-slate-50 border-slate-200/70 hover:bg-white/70 text-slate-500 hover:text-slate-800"
+                                                            ? "border-blue-600 text-slate-900"
+                                                            : "border-transparent text-slate-500 hover:text-slate-800"
                                                     }`}
                                                 >
-                                                    <Icon name={TAB_ICONS[tab.key]} className="w-4 h-4" />
                                                     {tab.label}
                                                     {tab.count != null && (
-                                                        <span className={`text-[10.5px] font-bold tabular-nums px-1.5 py-px rounded-full ${isActive ? "bg-blue-700 text-white" : "bg-slate-200 text-slate-600"}`}>
+                                                        <span className="text-[12px] font-medium tabular-nums text-slate-400">
                                                             {tab.count}
                                                         </span>
                                                     )}
@@ -1072,18 +1074,14 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                     </div>
                                 </div>
 
-                                <div className={`flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] ${
-                                    showTracker
-                                        ? "xl:grid-cols-[210px_minmax(0,1fr)_340px] 2xl:grid-cols-[220px_minmax(0,1fr)_380px]"
-                                        : "xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]"
-                                }`}>
+                                <div className={`flex-1 min-h-0 grid grid-cols-1 ${workspaceCols}`}>
 
                                     {/* ── PROGRESS (wide screens): a vertical journey ──
                                         From recorded facts only; a step with no evidence is
                                         shown as not reached, nothing is inferred. Open
                                         rounds only; a completed one is summed up in the header. */}
                                     {showTracker && (
-                                    <aside aria-label="Inspection progress" className="hidden xl:block min-h-0 overflow-y-auto border-r border-slate-200 p-4 short:p-3">
+                                    <aside aria-label="Inspection progress" className="hidden xl:block min-h-0 overflow-y-auto border-r border-slate-200 p-5 short:p-4">
                                         <div className="flex items-baseline justify-between gap-2 mb-4 short:mb-3">
                                             <h2 className="text-[13px] font-bold text-slate-900">Progress</h2>
                                             {!allStepsDone && (
@@ -1121,7 +1119,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                     )}
 
                                     {/* ── PRIMARY RECORD ── */}
-                                    <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto p-4 short:p-3 space-y-3">
+                                    <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto p-5 short:p-4 flex flex-col gap-6 short:gap-5">
                                         {/* Progress (narrower screens): the same steps, across */}
                                         {showTracker && (
                                         <ol className="xl:hidden grid grid-cols-4 rounded-lg border border-slate-200 px-4 py-3" aria-label="Inspection progress">
@@ -1150,45 +1148,50 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                         {activeTab === "inspection" && (
                                             <>
                                                 {/* The inspector's report */}
-                                                <Panel title="Inspection report" icon="doc">
+                                                <Panel title="Inspection report">
                                                     {hasFindings ? (
                                                         <>
-                                                            {/* Outcome: every verdict on this round, side by side and
-                                                                each one labelled with who gave it. */}
+                                                            {/* Outcome: every verdict on this round as one line of
+                                                                pills, read left to right: the site, the inspector,
+                                                                then the Planning Officer. Each pill names who gave it. */}
                                                             {(ins.is_compliant != null || ins.inspection_result || poStatus) && (
-                                                                <div className="px-4 py-3.5 border-b border-slate-100 bg-slate-50/60 grid gap-4 sm:grid-cols-3">
+                                                                <div className="py-3 border-b border-slate-100 flex flex-wrap items-center gap-x-2 gap-y-2 text-[12px]">
                                                                     {ins.is_compliant != null && (
-                                                                        <div>
-                                                                            <p className="text-[11.5px] font-medium text-slate-500">Site compliance</p>
-                                                                            <p className={`mt-0.5 inline-flex items-center gap-1.5 text-[15px] font-bold ${ins.is_compliant ? "text-emerald-700" : "text-rose-700"}`}>
-                                                                                <Icon name={ins.is_compliant ? "check" : "x"} className="w-4 h-4" strokeWidth={2.6} />
-                                                                                {ins.is_compliant ? "Compliant" : "Not compliant"}
-                                                                            </p>
-                                                                        </div>
+                                                                        <span
+                                                                            title="Site compliance"
+                                                                            className={`inline-flex items-center gap-1 h-6 px-2 rounded-md ring-1 ring-inset font-semibold ${
+                                                                                ins.is_compliant ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-rose-50 text-rose-700 ring-rose-200"
+                                                                            }`}
+                                                                        >
+                                                                            <Icon name={ins.is_compliant ? "check" : "x"} className="w-3.5 h-3.5" strokeWidth={2.6} />
+                                                                            {ins.is_compliant ? "Compliant" : "Not compliant"}
+                                                                        </span>
                                                                     )}
                                                                     {ins.inspection_result && (
-                                                                        <div>
-                                                                            <p className="text-[11.5px] font-medium text-slate-500">Inspector's result</p>
-                                                                            <p className="mt-0.5 text-[15px] font-bold text-slate-900">{ins.inspection_result}</p>
-                                                                        </div>
+                                                                        <span className="inline-flex items-center gap-1 h-6 px-2 rounded-md ring-1 ring-inset bg-slate-50 text-slate-800 ring-slate-200 font-semibold">
+                                                                            <span className="font-normal text-slate-500">Inspector:</span>
+                                                                            {ins.inspection_result}
+                                                                        </span>
                                                                     )}
                                                                     {poStatus && (
-                                                                        <div>
-                                                                            <p className="text-[11.5px] font-medium text-slate-500">Planning Officer decision</p>
-                                                                            <p className={`mt-0.5 text-[15px] font-bold ${poStatus.tone}`}>{poStatus.label}</p>
-                                                                            {poStatus.sub && <p className="mt-0.5 text-[11.5px] text-slate-500 leading-snug">{poStatus.sub}</p>}
-                                                                        </div>
+                                                                        <>
+                                                                            <span className={`inline-flex items-center gap-1 h-6 px-2 rounded-md ring-1 ring-inset font-semibold ${poStatus.tone}`}>
+                                                                                <span className="font-normal opacity-75">Decision:</span>
+                                                                                {poStatus.label}
+                                                                            </span>
+                                                                            {poStatus.sub && <span className="text-slate-500">{poStatus.sub}</span>}
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             )}
                                                             <dl className="divide-y divide-slate-100">
                                                                 {reportRows.map(([label, value, alert]) => (
-                                                                    <div key={label} className="px-4 py-3 grid gap-1 sm:grid-cols-[9.5rem_1fr] sm:gap-6">
+                                                                    <div key={label} className="py-3 grid gap-1 sm:grid-cols-[9.5rem_1fr] sm:gap-6">
                                                                         <dt className={`flex items-center gap-1.5 text-[12.5px] font-medium sm:pt-px ${alert ? "text-rose-700" : "text-slate-500"}`}>
                                                                             {alert && <Icon name="alert" className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />}
                                                                             {label}
                                                                         </dt>
-                                                                        <dd className={`min-w-0 text-[13px] leading-relaxed ${alert ? "rounded-md bg-rose-50 border border-rose-100 px-3 py-2" : ""}`}>
+                                                                        <dd className="min-w-0 text-[13px] leading-relaxed">
                                                                             <ReportValue value={value} alert={alert} />
                                                                         </dd>
                                                                     </div>
@@ -1196,7 +1199,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                             </dl>
                                                         </>
                                                     ) : (
-                                                        <div className="px-4 py-8 short:py-4 flex flex-col items-center text-center">
+                                                        <div className="py-8 short:py-4 flex flex-col items-center text-center">
                                                             <span className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 text-slate-400 flex items-center justify-center" aria-hidden="true">
                                                                 <Icon name="doc" className="w-5 h-5" />
                                                             </span>
@@ -1211,31 +1214,32 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 {/* Instructions matter while the visit is open; a completed
                                                     round no longer shows them. */}
                                                 {ins.assigned_notes && !roundDone && (
-                                                    <Panel title="Instructions for the inspector" icon="user">
-                                                        <p className="px-4 py-3 text-[13px] text-slate-700 leading-relaxed whitespace-pre-line">
+                                                    <Panel title="Instructions for the inspector">
+                                                        <p className="pt-3 text-[13px] text-slate-700 leading-relaxed whitespace-pre-line">
                                                             {ins.assigned_notes}
                                                         </p>
                                                     </Panel>
                                                 )}
 
-                                                {/* GPS Confirmation */}
+                                                {/* GPS confirmation, as one line */}
                                                 {(ins.confirmed_latitude || ins.confirmed_longitude) && (
-                                                    <Panel title="GPS confirmation" icon="gps">
-                                                        <dl className="px-4 pb-2 grid sm:grid-cols-2 gap-x-8">
-                                                            <InfoRow label="Latitude" value={ins.confirmed_latitude} mono />
-                                                            <InfoRow label="Longitude" value={ins.confirmed_longitude} mono />
-                                                            <InfoRow label="Accuracy" value={ins.gps_accuracy_m ? `${Number(ins.gps_accuracy_m).toFixed(1)} m` : null} mono />
-                                                            <InfoRow label="Confirmed" value={ins.gps_confirmed_at ? formatDate(ins.gps_confirmed_at) : null} />
-                                                        </dl>
-                                                    </Panel>
+                                                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500">
+                                                        <Icon name="gps" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                        <span>GPS confirmed</span>
+                                                        <span className="font-mono text-[11.5px] text-slate-700">
+                                                            {ins.confirmed_latitude || "—"}, {ins.confirmed_longitude || "—"}
+                                                        </span>
+                                                        {ins.gps_accuracy_m ? <span>· ±{Number(ins.gps_accuracy_m).toFixed(1)} m</span> : null}
+                                                        {ins.gps_confirmed_at ? <span>· {formatDate(ins.gps_confirmed_at)}</span> : null}
+                                                    </p>
                                                 )}
                                             </>
                                         )}
 
                                         {/* ── Photos Tab ── */}
                                         {activeTab === "photos" && (
-                                            <Panel title="Field photos" icon="photo">
-                                                <div className="p-4">
+                                            <Panel title="Field photos">
+                                                <div className="pt-4">
                                                     {loadingPhotos ? (
                                                         <div className="flex flex-col items-center justify-center py-10 text-slate-400">
                                                             <svg className="animate-spin w-5 h-5 mb-2.5 text-blue-600" fill="none" viewBox="0 0 24 24" aria-hidden="true">
@@ -1320,9 +1324,9 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
 
                                         {/* ── Parcel Tab ── */}
                                         {activeTab === "parcel" && (
-                                            <Panel title="Parcel record" icon="map">
+                                            <Panel title="Parcel record">
                                                 {parcel.id ? (
-                                                    <dl className="px-4 pb-2 grid md:grid-cols-2 gap-x-8">
+                                                    <dl className="pt-1 grid md:grid-cols-2 gap-x-8">
                                                         <InfoRow label="Parcel Code" value={parcel.parcel_code} />
                                                         <InfoRow label="Property Index Number" value={parcel.property_index_number} mono />
                                                         <InfoRow label="Lot Number" value={parcel.lot_number} />
@@ -1352,7 +1356,6 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                         {activeTab === "application" && (
                                             <Panel
                                                 title="Application record"
-                                                icon="briefcase"
                                                 aside={ins.zoning_application_id && (
                                                     <Link
                                                         href={`/applications/${ins.zoning_application_id}`}
@@ -1362,7 +1365,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                     </Link>
                                                 )}
                                             >
-                                                <dl className="px-4 pb-2 grid md:grid-cols-2 gap-x-8">
+                                                <dl className="pt-1 grid md:grid-cols-2 gap-x-8">
                                                     <InfoRow label="Reference Number" value={app.reference_number} mono />
                                                     <InfoRow label="Application Type" value={app.application_type} />
                                                     <InfoRow label="Status" value={app.status} />
@@ -1376,7 +1379,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 </dl>
 
                                                 {app.purpose && (
-                                                    <div className="mx-4 mb-4 rounded-lg bg-slate-50 border border-slate-100 px-4 py-3">
+                                                    <div className="mt-4 rounded-lg bg-slate-50 px-4 py-3">
                                                         <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Purpose</p>
                                                         <p className="mt-1 text-[13px] text-slate-700 leading-relaxed">
                                                             {app.purpose}
@@ -1391,7 +1394,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                         Beside the record on wide screens, below it on narrow
                                         ones. A status board of tiles; the open tile's full text
                                         shows in the panel beneath. */}
-                                    <aside aria-label="Operations" className="min-w-0 lg:min-h-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-200 bg-slate-50/70 p-3.5 pt-3 short:p-3 space-y-2.5">
+                                    {showAside && (
+                                    <aside aria-label="Operations" className="min-w-0 lg:min-h-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-200 p-5 short:p-4 space-y-3">
                                         {/* Scoped sync OUTCOME, set from the flash the controller
                                             returns, so the server stays the single source of truth
                                             for the wording. */}
@@ -1421,6 +1425,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                             </div>
                                         )}
 
+                                        {tiles.length > 0 && (
+                                        <>
                                         <h2 className="text-[13px] font-bold text-slate-900">Case status</h2>
 
                                         <ul className="rounded-lg bg-white border border-slate-200 divide-y divide-slate-100 overflow-hidden">
@@ -1474,6 +1480,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 );
                                             })}
                                         </ul>
+                                        </>
+                                        )}
 
                                         {/* PHASE 2A - ADMIN SUPPORT / OPERATIONS AREA.
                                             A SUPPORT action, not a business decision: it imports a
@@ -1521,6 +1529,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                             </div>
                                         )}
                                     </aside>
+                                    )}
                                 </div>
                             </div>
                         </div>
