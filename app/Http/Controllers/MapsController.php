@@ -17,7 +17,7 @@ class MapsController extends Controller
 
         $query = ZoningApplication::query();
         if ($appType && $appType !== 'All') {
-            $query->where('application_type', 'like', "%{$appType}%");
+            $query->ofType($appType);
         }
 
         $total = (clone $query)->count();

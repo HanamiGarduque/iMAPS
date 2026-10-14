@@ -10,11 +10,11 @@ export const MODULES = [
     { id: "diversity", key: "3", label: "Diversity Index", desc: "Land-use mix per barangay" },
 ];
 
-// Values match what is stored on applications ("Zoning Certification", not
-// "Certificate"); the server filters with LIKE, so combined filings match too.
+// Values match zoning_application_types; the server filters on that table, so
+// combined filings match too.
 export const PERMIT_TYPES = [
     { value: "All", label: "All permit types" },
-    { value: "Zoning Certification", label: "Zoning Certification" },
+    { value: "Zoning Certificate", label: "Zoning Certificate" },
     { value: "Locational Clearance", label: "Locational Clearance" },
     { value: "Development Permit", label: "Development Permit" },
 ];

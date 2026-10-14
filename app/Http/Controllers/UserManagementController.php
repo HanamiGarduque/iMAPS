@@ -125,6 +125,17 @@ class UserManagementController extends Controller
                 ->whereIn('encoded_by', $poIds)
                 ->get();
 
+            $typesByApp = DB::table('zoning_application_types')
+                ->whereIn('zoning_application_id', $apps->pluck('id'))
+                ->get()
+                ->groupBy('zoning_application_id')
+                ->map(fn ($rows) => $rows->pluck('application_type')->all());
+
+            // Filings for $type, alone or combined with other types.
+            $countType = fn ($userApps, string $type) => $userApps
+                ->filter(fn ($a) => in_array($type, $typesByApp[$a->id] ?? [], true))
+                ->count();
+
             foreach ($poIds as $poId) {
                 $userApps = $apps->where('encoded_by', $poId);
 
@@ -139,11 +150,10 @@ class UserManagementController extends Controller
                 })->values();
 
                 $types = [
-                    'locational' => $userApps->where('application_type', 'Locational Clearance')->count(),
-                    'development' => $userApps->where('application_type', 'Development Permit')->count(),
-                    // Stored as "Zoning Certificate" or legacy "Zoning Certification", often inside a comma-separated multi-type value.
-                    'zoning' => $userApps->filter(fn ($a) => str_contains((string) $a->application_type, 'Zoning Certific'))->count(),
-                    'special' => $userApps->where('application_type', 'Preliminary Approval and Locational Clearance (PALC)')->count(),
+                    'locational' => $countType($userApps, 'Locational Clearance'),
+                    'development' => $countType($userApps, 'Development Permit'),
+                    'zoning' => $countType($userApps, 'Zoning Certificate'),
+                    'special' => $countType($userApps, 'Preliminary Approval and Locational Clearance (PALC)'),
                 ];
 
                 $status = [

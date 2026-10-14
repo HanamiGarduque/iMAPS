@@ -89,7 +89,7 @@ class ReportController extends Controller
             $query->whereDate('created_at', '<=', $request->end_date);
         }
         if ($request->application_type && $request->application_type !== 'All') {
-            $query->where('application_type', $request->application_type);
+            $query->ofType($request->application_type);
         }
         // Same fallback as extractValue(): the application's own barangay, else its first parcel's.
         if ($request->barangay) {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ZoningApplication;
+use App\Models\ApplicationFee;
 use App\Models\Parcel;
 use App\Models\User;
 use App\Models\TechnicalReview;
@@ -359,7 +360,7 @@ class ApplicationController extends Controller
             $query->where('zoning_applications.status', $request->status);
 
         if ($request->filled('application_type'))
-            $query->where('zoning_applications.application_type', $request->application_type);
+            $query->ofType($request->application_type);
 
         if ($request->filled('date_from'))
             $query->whereDate('zoning_applications.created_at', '>=', $request->date_from);
@@ -505,7 +506,8 @@ class ApplicationController extends Controller
             }
         }
 
-        $request->merge(['application_type' => implode(', ', $applicationTypeValues)]);
+        // The label lists the types in one fixed order so equal filings read (and group) the same.
+        $request->merge(['application_type' => implode(', ', ZoningApplication::normalizeTypes($applicationTypeValues))]);
 
         $validated = $request->validate([
             'application_stream'  => 'required|in:permit,amendment',
@@ -623,16 +625,13 @@ class ApplicationController extends Controller
                 'project_tenure'             => $validated['project_tenure'] ?? null,
                 'preferred_release_mode'     => $validated['preferred_release_mode'],
                 'assessment_fee'             => $validated['assessment_fee'],
-                'zoning_certificate_fee'     => $validated['zoning_certificate_fee'] ?? 0,
-                'locational_clearance_fee'   => $validated['locational_clearance_fee'] ?? 0,
-                'development_permit_fee'     => $validated['development_permit_fee'] ?? 0,
-                'other_fees'                 => $validated['other_fees'] ?? 0,
-                'penalty_fee'                => $validated['penalty_fee'] ?? 0,
                 'date_of_receipt'            => $validated['date_of_receipt'],
                 'or_number'                  => $validated['or_number'],
                 'remarks'                    => $validated['remarks'] ?? null,
                 'encoded_by'                 => Auth::id(),
             ]);
+
+            $application->syncFees($validated);
 
             ApplicationStatusTracker::log(
                 applicationOrRef: $application,
@@ -1016,7 +1015,7 @@ class ApplicationController extends Controller
                     ->with(['siteInspection.inspector'])
                     ->withCount('siteInspections');
             }]) // <-- Eager load and order parcels
-            ->with(['generatedPermits.generatedBy:id,name'])
+            ->with(['generatedPermits.generatedBy:id,name', 'fees'])
             ->leftJoin('users', 'users.id', '=', 'zoning_applications.encoded_by')
             ->select('zoning_applications.*', 'users.name as encoded_by_name')
             ->where('zoning_applications.id', $id)
@@ -1032,6 +1031,9 @@ class ApplicationController extends Controller
         // TCT and OR numbers — for any id that did not exist. Official records
         // must never be invented, so an unknown id is now an ordinary 404.
         abort_if($application === null, 404);
+
+        // The fee breakdown lives in application_fees; expose it under the field names the page reads.
+        $application->append(array_values(ApplicationFee::COLUMN_BY_TYPE));
 
         $technicalReviews = TechnicalReview::query()
             ->leftJoin('users', 'users.id', '=', 'technical_reviews.reviewed_by')

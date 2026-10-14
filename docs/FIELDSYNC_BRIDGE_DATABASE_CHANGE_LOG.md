@@ -2443,7 +2443,7 @@ The canonical schema is now `CANONICAL_DATABASE_SCHEMA.md`, which is pure execut
 | `[SCHEMA-IDENT-001]` | Identity sequence for `technical_reviews.id` |
 | `[SCHEMA-SEQOWN-001]`..`[SCHEMA-SEQOWN-014]` and `[SCHEMA-SEQOWN-016]`..`[SCHEMA-SEQOWN-024]` | 23 `ALTER SEQUENCE ... OWNED BY` declarations. Marker 015 does not exist; the gap is permanent, not a typo. |
 | `[SCHEMA-BASE-001]`..`[SCHEMA-BASE-015]` | Core tables created by `create_initial_schema` |
-| `[SCHEMA-ADD-001]`..`[SCHEMA-ADD-011]` | Tables added by later migrations |
+| `[SCHEMA-ADD-001]`..`[SCHEMA-ADD-014]` | Tables and constraints added by later migrations |
 | `[SCHEMA-CON-001]`..`[SCHEMA-CON-061]` | Primary key, unique, check and foreign key constraints |
 | [SCHEMA-IDX-001]..[SCHEMA-IDX-029] | Indexes, including the two partial unique indexes |
 | [SCHEMA-POL-001]..[SCHEMA-POL-002] | Supabase policy definitions for FieldSync inspection-photo authorization (guarded canonical application) |
@@ -3107,6 +3107,80 @@ Each entry references one canonical marker. Markers for sequences, sequence owne
 **ROLLBACK / RECOVERY:** dropping it would orphan already-issued reference numbers, so it is retained by design.
 
 **RELATED COMMIT:** unchanged by the 2026-10-05 normalization
+
+### [SCHEMA-ADD-012] ADDED TABLE application_fees
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-012]
+
+**OBJECT:** table `application_fees`; columns `zoning_certificate_fee`, `locational_clearance_fee`, `development_permit_fee`, `other_fees`, `penalty_fee` dropped from `zoning_applications` (`[SCHEMA-BASE-015]`)
+
+**PURPOSE:** the fee breakdown was a repeating group of columns. It is now one row per charged fee (`fee_type`, `amount`), unique per application and type, amounts non-negative, types restricted to the five known kinds. `zoning_applications.assessment_fee` stays as the official total recorded with the OR, because imported applications carry a total without a breakdown. The app keeps reading the old field names through `ZoningApplication` accessors, so the encoding form, the detail page and the permit templates are unchanged.
+
+**SOURCE:** `database/migrations/2026_10_14_010000_move_fee_breakdown_to_application_fees.php`; `App\Models\ApplicationFee`; `ZoningApplication::fees()` / `syncFees()`
+
+**ORIGIN / CONTEXT:** normalization of the fee breakdown (2026-10-14)
+
+**APPLIED STATE:** NOT YET APPLIED - verified in the test database only
+
+**APPLIED TO:** none yet. Live tables were empty when written; local `imaps_db` rows with a non-zero breakdown are copied by the migration (a zero meant "not charged" and gets no row).
+
+**DEPENDENCIES:** `[SCHEMA-BASE-015]`
+
+**VERIFICATION:** `tests/Feature/ApplicationFeesTest.php` (7 tests): rows per charged fee, read-back under the old field names, detail-page props, sync replace/clear, cascade on application delete, old columns gone, and migration copy + rollback round trip.
+
+**ROLLBACK / RECOVERY:** `down()` re-adds the five columns (`numeric(12,2) DEFAULT 0 NOT NULL`), copies the amounts back and drops `application_fees`.
+
+**RELATED COMMIT:** not yet committed
+
+### [SCHEMA-ADD-013] ADDED TABLE zoning_application_types
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-013]
+
+**OBJECT:** table `zoning_application_types`; `zoning_applications.application_type` becomes a derived display label
+
+**PURPOSE:** `application_type` held several types as one comma-separated string, in pick order and with two spellings of Zoning Certificate. Exact-match filters (registry, reports) missed combined filings, the Maps filter offered only the old spelling, and report grouping split one combination into several rows. Types are now one row each, restricted to the known list. The label stays (30 files and the Supabase mirror `supabase_zoning_applications` read it) and is rewritten by `ZoningApplication` save hooks in a fixed order; an unknown type is refused rather than dropped. Filters use `ZoningApplication::ofType()`.
+
+**SOURCE:** `database/migrations/2026_10_14_020000_create_zoning_application_types_table.php`; `App\Models\ZoningApplicationType`; `ZoningApplication::APPLICATION_TYPES`, `TYPE_ALIASES`, `types()`, `normalizeTypes()`, `ofType()`, `booted()`
+
+**ORIGIN / CONTEXT:** first-normal-form fix of the application type (2026-10-14). Official name confirmed by the user: "Zoning Certificate".
+
+**APPLIED STATE:** NOT YET APPLIED - verified in the test database only
+
+**APPLIED TO:** none yet. The migration splits every existing label, merges "Zoning Certification" into "Zoning Certificate", rewrites the label in canonical order, and aborts (transaction rolled back) if it meets a type that is neither known nor aliased.
+
+**DEPENDENCIES:** `[SCHEMA-BASE-015]`
+
+**VERIFICATION:** `tests/Feature/ZoningApplicationTypesTest.php` (7 tests): canonical label and rows on save, rows follow label changes, unknown type refused, `ofType()` matches combined filings and the old spelling, report filter includes combined filings, migration split + spelling fix, migration aborts on an unmapped type.
+
+**ROLLBACK / RECOVERY:** `down()` drops the table. Labels keep their normalized order and spelling; the original order and the old spelling are not restored (recoverable from a pre-migration dump).
+
+**NOT CHANGED:** `application_status_tracks.application_type` and `application_drafts.application_type` keep their own copies; `historical_data.application_type` already holds one type per row.
+
+**RELATED COMMIT:** not yet committed
+
+### [SCHEMA-ADD-014] ADDED FOREIGN KEYS on link columns
+
+**SCHEMA REFERENCE:** [SCHEMA-ADD-014]
+
+**OBJECT:** foreign keys and indexes on `site_inspections.parcel_id`, `site_inspections.assigned_by_imaps_user_id`, `technical_reviews.parcel_id`, `technical_reviews.site_inspection_task_id`
+
+**PURPOSE:** these link columns were plain integers, so ids of missing parcels, rounds or users were accepted. Each now references its table with `ON DELETE SET NULL`, the same rule as `technical_reviews.reviewed_site_inspection_id` and `site_inspections.inspector_id`. `audit_trail.application_id` stays unconstrained so audit history outlives the application; the `report_id` columns point at Supabase and cannot be constrained locally.
+
+**SOURCE:** `database/migrations/2026_10_14_000000_add_missing_link_foreign_keys.php`
+
+**ORIGIN / CONTEXT:** referential-integrity review (2026-10-14)
+
+**APPLIED STATE:** NOT YET APPLIED - verified in the test database only
+
+**APPLIED TO:** none yet. Dangling ids are cleared to NULL before each constraint is added; local `imaps_db` had none.
+
+**DEPENDENCIES:** `[SCHEMA-BASE-010]`, `[SCHEMA-BASE-013]`, `[SCHEMA-BASE-014]`, `[SCHEMA-BASE-001]`
+
+**VERIFICATION:** full suite run with and without the migration produced the identical set of pre-existing failures; all four constraints (`confdeltype = n`) and four indexes present in the test database.
+
+**ROLLBACK / RECOVERY:** `down()` drops the four constraints and their indexes.
+
+**RELATED COMMIT:** not yet committed
 
 ---
 

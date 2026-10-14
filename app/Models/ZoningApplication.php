@@ -20,6 +20,26 @@ class ZoningApplication extends Model
         'dp' => 'Development Permit',
     ];
 
+    /**
+     * Every application type, in the order the display label lists them.
+     * Keep in sync with the create_zoning_application_types_table migration.
+     */
+    public const APPLICATION_TYPES = [
+        'Locational Clearance',
+        'Zoning Certificate',
+        'Development Permit',
+        'Preliminary Approval and Locational Clearance (PALC)',
+        'Petition for Rezoning',
+        'Petition for Reclassification',
+        // Legacy: no longer offered by the encoding form, present on older records.
+        'Special Land Use Permit',
+    ];
+
+    /** Older spellings still found in filters and imported data. */
+    public const TYPE_ALIASES = [
+        'Zoning Certification' => 'Zoning Certificate',
+    ];
+
     protected $table = 'zoning_applications';
 
     protected $fillable = [
@@ -61,11 +81,6 @@ class ZoningApplication extends Model
         // (who typed the application up) and NOT `technical_reviews.reviewed_by`
         // (who decided in a given round). Those keep their own meanings.
         'assigned_planning_officer_id',
-        'zoning_certificate_fee',
-        'locational_clearance_fee',
-        'development_permit_fee',
-        'other_fees',
-        'penalty_fee',
         'date_of_receipt',
     ];
 
@@ -74,11 +89,6 @@ class ZoningApplication extends Model
         'building_area'           => 'float',
         'area_to_develop'         => 'float',
         'project_cost'            => 'float',
-        'zoning_certificate_fee'   => 'float',
-        'locational_clearance_fee' => 'float',
-        'development_permit_fee'   => 'float',
-        'other_fees'               => 'float',
-        'penalty_fee' => 'float',
         'date_of_receipt' => 'date',
         'number_of_saleable_lots' => 'integer',
         
@@ -118,6 +128,142 @@ class ZoningApplication extends Model
     public function parcels(): HasMany
     {
         return $this->hasMany(Parcel::class, 'zoning_application_id');
+    }
+
+    public function types(): HasMany
+    {
+        return $this->hasMany(ZoningApplicationType::class, 'zoning_application_id');
+    }
+
+    /**
+     * Known types from a list or a comma-separated label: aliases resolved,
+     * duplicates and unknown values dropped, in APPLICATION_TYPES order.
+     *
+     * @return string[]
+     */
+    public static function normalizeTypes(array|string|null $types): array
+    {
+        $values = is_array($types) ? $types : explode(',', (string) $types);
+        $picked = [];
+
+        foreach ($values as $value) {
+            $value = trim((string) $value);
+            $picked[self::TYPE_ALIASES[$value] ?? $value] = true;
+        }
+
+        return array_values(array_filter(self::APPLICATION_TYPES, fn (string $type) => isset($picked[$type])));
+    }
+
+    /**
+     * Whoever writes application_type (the encoding form, factories, imports),
+     * the label is put in canonical order and the type rows follow it.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $application) {
+            if (! $application->isDirty('application_type')) {
+                return;
+            }
+
+            $label = (string) $application->application_type;
+            $types = self::normalizeTypes($label);
+            $given = array_filter(array_map('trim', explode(',', $label)), fn ($t) => $t !== '');
+
+            // An unknown type must not vanish from the record without a trace.
+            $unknown = array_diff(
+                array_map(fn ($t) => self::TYPE_ALIASES[$t] ?? $t, $given),
+                self::APPLICATION_TYPES,
+            );
+            if ($unknown !== []) {
+                throw new \InvalidArgumentException('Unknown application type: ' . implode(', ', $unknown));
+            }
+
+            $application->application_type = implode(', ', $types);
+        });
+
+        static::saved(function (self $application) {
+            if (! $application->wasRecentlyCreated && ! $application->wasChanged('application_type')) {
+                return;
+            }
+
+            $types = self::normalizeTypes($application->application_type);
+            $application->types()->whereNotIn('application_type', $types)->delete();
+            foreach ($types as $type) {
+                $application->types()->firstOrCreate(['application_type' => $type]);
+            }
+            $application->unsetRelation('types');
+        });
+    }
+
+    /**
+     * Applications filed for $type, alone or together with other types.
+     */
+    public function scopeOfType($query, string $type)
+    {
+        $type = self::TYPE_ALIASES[$type] ?? $type;
+
+        return $query->whereExists(fn ($sub) => $sub->from('zoning_application_types')
+            ->whereColumn('zoning_application_types.zoning_application_id', 'zoning_applications.id')
+            ->where('zoning_application_types.application_type', $type));
+    }
+
+    public function fees(): HasMany
+    {
+        return $this->hasMany(ApplicationFee::class, 'zoning_application_id');
+    }
+
+    /**
+     * Record the fee breakdown, keyed by the form's field names
+     * (ApplicationFee::COLUMN_BY_TYPE). A blank or zero amount means not charged.
+     */
+    public function syncFees(array $amountsByField): void
+    {
+        foreach (ApplicationFee::COLUMN_BY_TYPE as $type => $field) {
+            $amount = (float) ($amountsByField[$field] ?? 0);
+
+            if ($amount > 0) {
+                $this->fees()->updateOrCreate(['fee_type' => $type], ['amount' => $amount]);
+            } else {
+                $this->fees()->where('fee_type', $type)->delete();
+            }
+        }
+
+        $this->unsetRelation('fees');
+    }
+
+    /**
+     * The breakdown under the form's field names, so pages and permit templates
+     * keep reading $application->zoning_certificate_fee etc. Append it with
+     * ->append(array_values(ApplicationFee::COLUMN_BY_TYPE)) when serializing.
+     */
+    private function feeAmount(string $type): float
+    {
+        return (float) ($this->fees->firstWhere('fee_type', $type)?->amount ?? 0);
+    }
+
+    public function getZoningCertificateFeeAttribute(): float
+    {
+        return $this->feeAmount('zoning_certificate');
+    }
+
+    public function getLocationalClearanceFeeAttribute(): float
+    {
+        return $this->feeAmount('locational_clearance');
+    }
+
+    public function getDevelopmentPermitFeeAttribute(): float
+    {
+        return $this->feeAmount('development_permit');
+    }
+
+    public function getOtherFeesAttribute(): float
+    {
+        return $this->feeAmount('other');
+    }
+
+    public function getPenaltyFeeAttribute(): float
+    {
+        return $this->feeAmount('penalty');
     }
 
     public function generatedPermits(): HasMany

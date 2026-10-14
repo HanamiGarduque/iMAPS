@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\ZoningApplication;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -38,9 +39,13 @@ class UserManagementPerformanceStatsTest extends TestCase
         return User::factory()->create(['role' => 'Admin', 'is_active' => true]);
     }
 
+    /**
+     * A raw row as older records were stored, with the type rows the
+     * create_zoning_application_types_table migration derives from its label.
+     */
     private function insertApp(int $encodedBy, string $type, string $ref): void
     {
-        DB::table('zoning_applications')->insert([
+        $id = DB::table('zoning_applications')->insertGetId([
             'reference_number' => $ref,
             'application_type' => $type,
             'purpose' => 'test',
@@ -49,6 +54,13 @@ class UserManagementPerformanceStatsTest extends TestCase
             'barangay' => 'Alupay',
             'encoded_by' => $encodedBy,
         ]);
+
+        foreach (ZoningApplication::normalizeTypes($type) as $applicationType) {
+            DB::table('zoning_application_types')->insert([
+                'zoning_application_id' => $id,
+                'application_type' => $applicationType,
+            ]);
+        }
     }
 
     public function test_planning_officer_zoning_count_includes_both_spellings_and_multi_type(): void
