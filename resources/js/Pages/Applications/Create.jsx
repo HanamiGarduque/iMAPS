@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Link, Head, router } from "@inertiajs/react";
 import axios from "axios";
-import Swal from "sweetalert2";
+import dialog, { notify, tight } from "@/utils/dialog";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
@@ -391,7 +391,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     // previous one, and the signal is passed to axios so the browser actually
     // drops the request rather than leaving it to resolve into a late write.
     const autosaveControllerRef = useRef(null);
-    const [flash, setFlash] = useState(null);
     const [errors, setErrors] = useState(serverErrors);
     const formRef = useRef(null);
 
@@ -597,8 +596,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             representative_name: applicantSuggestion.representative_name || prev.representative_name,
         }));
         setApplicantSuggestion(null);
-        setFlash({ type: "success", msg: `Auto-filled details for ${applicantSuggestion.applicant_name}.` });
-        setTimeout(() => setFlash(null), 3000);
+        notify(`Auto-filled details for ${applicantSuggestion.applicant_name}.`, "success");
     };
 
     // Helper to move focus to the next field when pressing Enter on an input
@@ -785,14 +783,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     autosaveControllerRef.current = null;
                     setSyncStatus("Auto-saved to drafts");
                 }
-                setFlash({ type: "success", msg: `Draft synchronized (${tempDraftId}).` });
-                setTimeout(() => setFlash(null), 3000);
+                notify(`Draft synchronized (${tempDraftId}).`, "success");
             })
             .catch((error) => {
                 if (axios.isCancel(error)) return;
                 setSyncStatus(NOT_SAVED);
-                setFlash({ type: "error", msg: "Draft could not be saved. Check your connection and save again." });
-                setTimeout(() => setFlash(null), 3000);
+                notify("Draft could not be saved. Check your connection and save again.", "error");
             });
     };
 
@@ -997,8 +993,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         const isDuplicate = (form.parcels || []).some((p, i) => i !== index && p.property_index_number?.trim() === pin);
         if (isDuplicate) {
             setErrors((prev) => ({ ...prev, [`parcels.${index}.property_index_number`]: "This PIN is already attached to another parcel." }));
-            setFlash({ type: "error", msg: "Duplicate PIN detected." });
-            setTimeout(() => setFlash(null), 4000);
+            notify("Duplicate PIN detected.", "error", { timer: 4000 });
             return;
         }
 
@@ -1053,8 +1048,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 delete next.barangay;
                 return next;
             });
-            setFlash({ type: "success", msg: `PIN ${pin} verified successfully.` });
-            setTimeout(() => setFlash(null), 3000);
+            notify(`PIN ${pin} verified successfully.`, "success");
 
             // Fetch spatial zoning intersection in background
             fetchZoningByParcelArea(pin).then((spatialZoning) => {
@@ -1149,8 +1143,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             };
         });
 
-        setFlash({ type: "success", msg: `Selected lot PIN: ${pin || "Map Polygon"}` });
-        setTimeout(() => setFlash(null), 3000);
+        notify(`Selected lot PIN: ${pin || "Map Polygon"}`, "success");
 
         // Perform spatial zoning lookup asynchronously in background if not preloaded
         if (pin && !hasPreloaded) {
@@ -1430,11 +1423,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             setCurrentStep((p) => p + 1);
             if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
         } else {
-            setFlash({
-                type: "error",
-                msg: `Please complete the required fields in Step ${currentStep}.`,
-            });
-            setTimeout(() => setFlash(null), 4000);
+            notify(`Please complete the required fields in Step ${currentStep}.`, "error", { timer: 4000 });
         }
     };
 
@@ -1455,11 +1444,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             if (!validateStep(s)) {
                 setCurrentStep(s);
                 if (formRef.current) formRef.current.scrollTo({ top: 0, behavior: "smooth" });
-                setFlash({
-                    type: "error",
-                    msg: `Please complete the required fields in Step ${s} before proceeding to Step ${targetStep}.`,
-                });
-                setTimeout(() => setFlash(null), 4000);
+                notify(`Please complete the required fields in Step ${s} before proceeding to Step ${targetStep}.`, "error", { timer: 4000 });
                 return;
             }
         }
@@ -1479,8 +1464,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         const failedStep = [STEP.PROPERTY, STEP.APPLICATION, STEP.APPLICANT, STEP.FEES, STEP.REVIEW].find((s) => !validateStep(s));
         if (failedStep) {
             setCurrentStep(failedStep);
-            setFlash({ type: "error", msg: `Please complete the required fields in the ${STEPS[failedStep - 1].title} step.` });
-            setTimeout(() => setFlash(null), 4000);
+            notify(`Please complete the required fields in the ${STEPS[failedStep - 1].title} step.`, "error", { timer: 4000 });
             return;
         }
 
@@ -1506,7 +1490,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 if (!ref) {
                     setSubmissionFinalized(false);
                     submittingRef.current = false;
-                    Swal.fire({
+                    dialog.fire({
                         icon: "error",
                         title: "Submission not confirmed",
                         text: "The server did not confirm this application. Your entries are kept. Check the registry before submitting again.",
@@ -1548,14 +1532,14 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 const barangay = form.parcels?.[0]?.barangay || form.barangay || "N/A";
                 const totalFee = form.assessment_fee ? Number(form.assessment_fee) : 0;
 
-                Swal.fire({
+                dialog.fire({
                     title: "Application Encoded Successfully!",
-                    html: `
-                        <div class="text-left text-xs text-slate-600 mt-2 space-y-3">
-                            <p class="text-center font-medium text-slate-600 mb-3">
-                                ${ref ? `Reference No: <span class="font-bold text-slate-900">${esc(ref)}</span>` : "Application record created successfully."}
+                    html: tight(`
+                        <div class="text-left text-xs text-slate-600">
+                            <p class="text-center text-[13.5px] text-slate-600 mb-3">
+                                ${ref ? `Reference No: <span class="font-semibold text-slate-900">${esc(ref)}</span>` : "Application record created successfully."}
                             </p>
-                            <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 text-left space-y-2 text-xs">
+                            <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-left space-y-2 text-xs">
                                 <div class="flex justify-between items-center border-b border-slate-200/60 pb-1.5">
                                     <span class="font-medium text-slate-500 text-[11px]">Applicant</span>
                                     <span class="font-semibold text-slate-800">${esc(applicantName)}</span>
@@ -1575,21 +1559,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                 </div>` : ""}
                             </div>
                         </div>
-                    `,
+                    `),
                     icon: "success",
-                    iconHtml: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
+                    width: 460,
                     showCancelButton: true,
                     confirmButtonText: "View Application Details",
                     cancelButtonText: "Open Registry",
-                    buttonsStyling: false,
-                    customClass: {
-                        popup: "rounded-3xl border border-slate-200 shadow-2xl p-6 sm:p-8 bg-white font-sans max-w-md",
-                        title: "text-lg font-bold text-slate-900",
-                        htmlContainer: "text-xs text-slate-500 mt-2",
-                        actions: "flex flex-col-reverse sm:flex-row items-center justify-center gap-3 mt-6 w-full",
-                        confirmButton: "w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer",
-                        cancelButton: "w-full sm:w-auto inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-all active:scale-95 cursor-pointer",
-                    },
                 }).then((result) => {
                     if (result.isConfirmed && newAppId) {
                         router.visit(`/applications/${newAppId}`);
@@ -1629,12 +1604,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 const firstErrorKey = errKeys[0];
                 const actualErrorMessage = errs.db || errs[firstErrorKey] || "Please resolve the highlighted validation issues.";
 
-                setFlash({
-                    type: "error",
-                    msg: actualErrorMessage,
-                });
-
-                setTimeout(() => setFlash(null), 6000);
+                notify(actualErrorMessage, "error", { timer: 6000 });
             },
             onFinish: () => {
                 setSubmitting(false);
@@ -1666,11 +1636,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 setSubmitting(false);
                 submittingRef.current = false;
                 setSubmissionFinalized(false);
-                setFlash({
-                    type: "error",
-                    msg: "Your session or CSRF token expired before the server confirmed this application. Nothing was recorded — please sign in again and submit again.",
-                });
-                setTimeout(() => setFlash(null), 10000);
+                notify("Your session or CSRF token expired before the server confirmed this application. Nothing was recorded — please sign in again and submit again.", "error", { timer: 10000 });
                 return;
             }
             // A 5xx during submission is a server failure, not a validation
@@ -1679,11 +1645,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 setSubmitting(false);
                 submittingRef.current = false;
                 setSubmissionFinalized(false);
-                setFlash({
-                    type: "error",
-                    msg: "The server failed before confirming this application. Your entries are preserved — please try again.",
-                });
-                setTimeout(() => setFlash(null), 10000);
+                notify("The server failed before confirming this application. Your entries are preserved — please try again.", "error", { timer: 10000 });
             }
         });
 
@@ -1695,11 +1657,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             setSubmitting(false);
             submittingRef.current = false;
             setSubmissionFinalized(false);
-            setFlash({
-                type: "error",
-                msg: "The request could not reach the server, so this application was not recorded. Your entries are preserved — please try again.",
-            });
-            setTimeout(() => setFlash(null), 10000);
+            notify("The request could not reach the server, so this application was not recorded. Your entries are preserved — please try again.", "error", { timer: 10000 });
         });
 
         return () => {
@@ -1796,56 +1754,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
                 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
                 .leaflet-container { width: 100%; height: 100%; z-index: 0; }
-
-                /* SweetAlert Modern iMAPS Theme Overrides */
-                .swal2-container:not(:has(.imaps-confirm)) {
-                    backdrop-filter: blur(4px) !important;
-                    background-color: rgba(15, 23, 42, 0.4) !important;
-                }
-                .swal2-popup:not(.imaps-confirm) {
-                    font-family: 'Plus Jakarta Sans', sans-serif !important;
-                    border-radius: 1.5rem !important;
-                    border: 1px solid #e2e8f0 !important;
-                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15) !important;
-                    padding: 1.75rem !important;
-                }
-                .swal2-icon.swal2-warning {
-                    border-color: #f59e0b !important;
-                    color: #f59e0b !important;
-                    width: 3.5rem !important;
-                    height: 3.5rem !important;
-                    margin: 0.5rem auto 1rem !important;
-                }
-                .swal2-icon.swal2-success {
-                    border-color: #10b981 !important;
-                    color: #10b981 !important;
-                    width: 3.5rem !important;
-                    height: 3.5rem !important;
-                    margin: 0.5rem auto 1rem !important;
-                }
-                .swal2-icon .swal2-icon-content {
-                    font-size: 2rem !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
-                }
-                .swal2-popup:not(.imaps-confirm) .swal2-title {
-                    font-size: 1.25rem !important;
-                    font-weight: 700 !important;
-                    color: #0f172a !important;
-                    padding: 0 !important;
-                    margin-bottom: 0.5rem !important;
-                }
-                .swal2-popup:not(.imaps-confirm) .swal2-html-container {
-                    font-size: 0.8125rem !important;
-                    color: #64748b !important;
-                    margin: 0 0 1.25rem !important;
-                    line-height: 1.5 !important;
-                }
-                .swal2-popup:not(.imaps-confirm) .swal2-actions {
-                    gap: 0.75rem !important;
-                    margin-top: 1rem !important;
-                }
 
                 /* Printable Routing Slip Optimizations */
                 @media print {
@@ -1986,19 +1894,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                     {/* ── WORKSPACE ── */}
                     <main className="flex-1 w-full h-full flex flex-col bg-white overflow-hidden relative">
-                        {flash && (
-                            <div className="absolute top-4 right-4 z-[999] pointer-events-none animate-in fade-in slide-in-from-top-2">
-                                <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm pointer-events-auto transition-all ${flash.type === "success" ? "bg-slate-900 text-white border-slate-800" : "bg-rose-50 border-rose-200 text-rose-800"}`}>
-                                    <p className="font-semibold text-xs flex-1">{flash.msg}</p>
-                                    <button onClick={() => setFlash(null)} className="text-slate-400 hover:text-slate-200 cursor-pointer">
-                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
                         {/* Main Application Container - Full Screen Layout */}
                         <div className="relative z-10 flex-1 w-full h-full flex flex-col lg:flex-row bg-white overflow-hidden">
                             {currentStep === STEP.PROPERTY ? (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Head, router, Link } from "@inertiajs/react";
-import Swal from "sweetalert2";
+import dialog from "@/utils/dialog";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { confirmSignOut } from "@/utils/signOut";
@@ -18,15 +18,6 @@ const TABS = [
     { label: "Recent", activity: "recent", hint: "Edited in the last 7 days", d: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" },
     { label: "Inactive", activity: "inactive", hint: "Not edited for over 7 days", d: "M14.25 9v6m-4.5 0V9M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
 ];
-
-const swalClasses = {
-    popup: "!rounded-md !p-0 !w-[400px] max-w-[calc(100vw-2rem)] overflow-hidden",
-    title: "!text-[15px] !font-semibold !text-slate-900 !text-left !px-5 !pt-4 !pb-0 !m-0",
-    htmlContainer: "!text-left !m-0 !px-5 !pt-2 !pb-4 !text-[13px] !text-slate-600",
-    actions: "!flex !justify-end !gap-2 !w-full !m-0 !px-5 !py-3 !bg-slate-50 !border-t !border-slate-200",
-    confirmButton: "px-4 py-2 rounded-md bg-red-700 hover:bg-red-800 text-white text-[12.5px] font-semibold cursor-pointer",
-    cancelButton: "px-4 py-2 rounded-md bg-white hover:bg-slate-50 text-slate-700 text-[12.5px] font-semibold border border-slate-300 cursor-pointer",
-};
 
 // "3 min ago", "2 h ago", "Yesterday", or a date.
 function relativeTime(value) {
@@ -149,15 +140,15 @@ export default function DraftsIndex({ drafts, filters = {}, activity_counts = {}
     const resume = (id) => router.get(`/applications/encode?draft_id=${id}`);
 
     const discard = (draft) => {
-        Swal.fire({
+        dialog.fire({
             title: "Discard this draft?",
             text: `${draft.applicant_name || "This draft"} (${draft.temp_reference_number || `DRAFT-${draft.id}`}) will be deleted. This cannot be undone.`,
+            icon: "warning",
+            danger: true,
             showCancelButton: true,
             confirmButtonText: "Discard draft",
             cancelButtonText: "Keep",
-            buttonsStyling: false,
             focusCancel: true,
-            customClass: swalClasses,
         }).then((r) => {
             if (!r.isConfirmed) return;
             router.delete(`/applications/drafts/${draft.id}`, {

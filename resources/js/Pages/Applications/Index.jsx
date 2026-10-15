@@ -231,41 +231,70 @@ function StatusBadge({ status }) {
     );
 }
 
-// Table status: label on top, a segmented progress track below.
-// Filled segments are iMAPS blue; SB-routed applications get 4 steps,
-// others 3, but the track width is fixed so every row lines up.
-// iMAPS blue throughout; red is kept only for Denied.
-const STAGE_TONES = {
-    Released: { bar: "bg-blue-600", text: "text-blue-700" },
-    Denied: { bar: "bg-red-300", text: "text-red-700" },
-};
-const DEFAULT_TONE = { bar: "bg-blue-600", text: "text-slate-700" };
+// Table status: one status icon, then the stage name.
+//   Received          → pending: yellow ring with three dots (waiting for review)
+//   Review / Release  → in progress: a yellow ring, solid for how far along it is, dashed for the rest
+//   Released          → complete: solid green with a white check
+//   Denied            → solid red with a white cross
+// The ring counts Released as the last step, so SB-routed applications (5 steps)
+// fill in quarters and others (4 steps) in thirds.
+function StageIcon({ status, fraction }) {
+    if (status === "Denied") {
+        return (
+            <svg className="w-[18px] h-[18px] shrink-0" viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="10" cy="10" r="9.5" className="fill-red-600" />
+                <path d="M7 7l6 6M13 7l-6 6" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+        );
+    }
+    if (status === "Released") {
+        return (
+            <svg className="w-[18px] h-[18px] shrink-0" viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="10" cy="10" r="9.5" className="fill-green-600" />
+                <path d="M6 10.5l2.75 2.75L14 7.5" fill="none" stroke="white" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        );
+    }
+    if (status === "Received") {
+        return (
+            <svg className="w-[18px] h-[18px] shrink-0" viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="10" cy="10" r="9" className="fill-white stroke-yellow-400" strokeWidth="1.5" />
+                <circle cx="6.5" cy="10" r="1.25" className="fill-yellow-500" />
+                <circle cx="10" cy="10" r="1.25" className="fill-yellow-500" />
+                <circle cx="13.5" cy="10" r="1.25" className="fill-yellow-500" />
+            </svg>
+        );
+    }
+    // A dashed ring with a solid arc over it, clockwise from the top: the solid
+    // part is how far along it is, the dashes are what is still ahead.
+    const r = 8;
+    const circumference = 2 * Math.PI * r;
+    const dash = circumference / 12;
+    return (
+        <svg className="w-[18px] h-[18px] shrink-0 -rotate-90" viewBox="0 0 20 20" aria-hidden="true">
+            <circle cx="10" cy="10" r={r} fill="none" className="stroke-yellow-500" strokeWidth="2.25" strokeDasharray={`${dash * 0.55} ${dash * 0.45}`} />
+            <circle cx="10" cy="10" r={r} fill="none" className="stroke-yellow-500" strokeWidth="2.25" strokeDasharray={`${circumference * fraction} ${circumference}`} />
+        </svg>
+    );
+}
 
 function StageMeter({ item }) {
     const status = item.status || "Received";
-    const steps = getProgressSteps(item);
     const denied = status === "Denied";
-    const reached = Math.min(steps.filter((s) => s.state === "done" || s.state === "current").length, steps.length);
+    const released = status === "Released";
+    const base = getProgressSteps(item);
+    const steps = [
+        ...base.map((s) => ({ key: s.key, state: s.state })),
+        { key: "Released", state: released ? "done" : "pending" },
+    ];
+    const reached = steps.filter((s) => s.state === "done" || s.state === "current").length;
     const label = STATUS_CONFIG[status]?.label || status;
-    const tone = STAGE_TONES[status] || DEFAULT_TONE;
     return (
-        <span className="flex flex-col gap-1.5 min-w-0 max-w-[132px]" title={denied ? "Denied" : `Step ${reached} of ${steps.length}`}>
-            <span className={`truncate text-[12.5px] font-medium leading-none ${tone.text}`}>
+        <span className="flex items-center gap-2 min-w-0" title={denied ? "Denied" : `Step ${reached} of ${steps.length}`}>
+            <StageIcon status={status} fraction={Math.max(reached - 1, 0) / (steps.length - 1)} />
+            <span className={`truncate text-[12.5px] ${denied ? "text-red-700 font-medium" : released ? "text-blue-900 font-semibold" : "text-slate-700 font-medium"}`}>
                 {label}
                 {!denied && <span className="sr-only">, step {reached} of {steps.length}</span>}
-            </span>
-            <span className="flex gap-[3px]" aria-hidden="true">
-                {steps.map((s) => (
-                    <span
-                        key={s.key}
-                        className={`h-1 flex-1 rounded-full ${
-                            denied ? tone.bar
-                                : s.state === "done" ? tone.bar
-                                : s.state === "current" ? "bg-blue-300"
-                                : "bg-slate-200"
-                        }`}
-                    />
-                ))}
             </span>
         </span>
     );
@@ -1436,7 +1465,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     <th className="w-[130px]" aria-sort={selectedSort === "newest" ? "descending" : selectedSort === "oldest" ? "ascending" : "none"}>
                                                         <SortHeader label="Date filed" dir={selectedSort === "newest" ? "desc" : selectedSort === "oldest" ? "asc" : null} onClick={() => handleHeaderSort("date")} />
                                                     </th>
-                                                    <th className="w-[180px] !pr-4">Status</th>
+                                                    <th className="w-[204px] !pr-4">Status</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1972,7 +2001,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                         disabled={!peekItem.id}
                                         className="flex-1 h-8 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold transition-colors disabled:opacity-50 cursor-pointer"
                                     >
-                                        Open full record
+                                        Open
                                     </button>
                                     <div className="relative">
                                         <button

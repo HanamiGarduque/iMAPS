@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Head, router } from "@inertiajs/react";
-import Swal from "sweetalert2";
+import dialog from "@/utils/dialog";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { confirmSignOut } from "@/utils/signOut";
@@ -56,16 +56,6 @@ const CATEGORIES = [
     { id: "support", label: "Support" },
 ];
 
-const SWAL_CANCEL =
-    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer";
-const swalClasses = (confirmColor) => ({
-    popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
-    title: "text-base font-bold text-slate-900",
-    htmlContainer: "text-xs text-slate-500",
-    actions: "flex items-center justify-center gap-3 mt-4",
-    confirmButton: `inline-flex items-center justify-center px-4 py-2 rounded-lg ${confirmColor} text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer`,
-    cancelButton: SWAL_CANCEL,
-});
 
 export default function Index({
     notifications = { data: [], links: [] },
@@ -172,15 +162,12 @@ export default function Index({
     };
 
     const handleMarkAllRead = () => {
-        Swal.fire({
+        dialog.fire({
             title: "Mark All as Read?",
             text: "Are you sure you want to mark all notifications as read?",
             icon: "question",
             showCancelButton: true,
             confirmButtonText: "Yes, mark all read",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: swalClasses("bg-blue-600 hover:bg-blue-700"),
         }).then((result) => {
             if (result.isConfirmed) router.post("/notifications/mark-all-read", {}, { preserveScroll: true });
         });
@@ -189,7 +176,7 @@ export default function Index({
     // Default clears read items only; wiping unread ones too is the secondary (deny) choice.
     const readCount = Math.max(0, totalCount - unreadCount);
     const handleClear = () => {
-        Swal.fire({
+        dialog.fire({
             title: readCount > 0 ? "Clear Read Notifications?" : "No Read Notifications",
             html: readCount > 0
                 ? `${readCount} read notification${readCount === 1 ? "" : "s"} will be permanently removed. Unread ones are kept.`
@@ -200,12 +187,7 @@ export default function Index({
             showCancelButton: true,
             confirmButtonText: "Clear read",
             denyButtonText: `Clear all ${totalCount}`,
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                ...swalClasses("bg-blue-600 hover:bg-blue-700"),
-                denyButton: "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white hover:bg-rose-50 text-rose-600 text-xs font-semibold border border-rose-200 transition-colors cursor-pointer",
-            },
+            width: readCount > 0 ? 420 : 340,
         }).then((result) => {
             if (result.isConfirmed) router.delete("/notifications/clear-read", { preserveScroll: true });
             if (result.isDenied) router.delete("/notifications/clear-all", { preserveScroll: true });

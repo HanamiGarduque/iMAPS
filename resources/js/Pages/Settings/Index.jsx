@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Head, router } from "@inertiajs/react";
-import Swal from "sweetalert2";
+import dialog, { tight } from "@/utils/dialog";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { confirmSignOut } from "@/utils/signOut";
@@ -300,11 +300,10 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
     const selectZip = async (file, { maxBytes, label, check, setFile, setCheck }) => {
         const error = validateZipFile(file, maxBytes, label);
         if (error) {
-            Swal.fire({
+            dialog.fire({
                 icon: "error",
                 title: "Cannot upload this file",
                 text: error,
-                customClass: { popup: "rounded-2xl", confirmButton: "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs" },
             });
             return false;
         }
@@ -380,28 +379,18 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
     // Undo the last upload: puts back the version that was saved just before it.
     const handleRestore = ({ url, data = {}, name, backupAt }) => {
         if (busy) return;
-        Swal.fire({
+        dialog.fire({
             title: `Restore previous ${name}?`,
-            html: `
-                <div class="text-left text-xs text-slate-600 space-y-2 mt-2">
-                    <p>The current ${name} will be replaced by the version saved${backupAt ? ` from <b>${formatWhen(backupAt)}</b>` : ""} before the last upload.</p>
-                    <p class="text-slate-400">This can only be done once per upload.</p>
+            html: tight(`
+                <div class="space-y-2">
+                    <p>The current ${name} will be replaced by the version saved${backupAt ? ` from <b class="text-slate-900">${formatWhen(backupAt)}</b>` : ""} before the last upload.</p>
+                    <p class="text-[12.5px] text-slate-400">This can only be done once per upload.</p>
                 </div>
-            `,
+            `),
             icon: "warning",
+            width: 380,
             showCancelButton: true,
             confirmButtonText: "Restore",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
-                title: "text-base font-bold text-slate-900",
-                actions: "flex items-center justify-center gap-3 mt-4",
-                confirmButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
-                cancelButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
-            },
         }).then((res) => {
             if (!res.isConfirmed) return;
             router.post(url, data, {
@@ -425,28 +414,18 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
 
         const layerInfo = LAYER_METADATA[uploadLayer] || { title: uploadLayer };
 
-        Swal.fire({
+        dialog.fire({
             title: `Replace ${layerInfo.title}?`,
-            html: `
-                <div class="text-left text-xs text-slate-600 space-y-2 mt-2">
-                    <p>This will replace the <b>${layerInfo.title}</b> layer with the contents of <b>${esc(selectedFile.name)}</b>.</p>
-                    <p class="text-slate-400">The current version is kept, so you can restore it if something looks wrong.</p>
+            html: tight(`
+                <div class="space-y-2">
+                    <p>This will replace the <b class="text-slate-900">${layerInfo.title}</b> layer with the contents of <b class="text-slate-900">${esc(selectedFile.name)}</b>.</p>
+                    <p class="text-[12.5px] text-slate-400">The current version is kept, so you can restore it if something looks wrong.</p>
                 </div>
-            `,
+            `),
             icon: "warning",
+            width: 380,
             showCancelButton: true,
             confirmButtonText: "Yes, replace layer",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
-                title: "text-base font-bold text-slate-900",
-                actions: "flex items-center justify-center gap-3 mt-4",
-                confirmButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
-                cancelButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
-            },
         }).then((res) => {
             if (res.isConfirmed) {
                 const formData = new FormData();
@@ -458,21 +437,19 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
                     onSuccess: () => {
                         clearShapeFile();
                         setStatusMessage({ type: "success", text: `${layerInfo.title} updated · ${timeNow()}` });
-                        Swal.fire({
+                        dialog.fire({
                             icon: "success",
                             title: "Layer Updated",
                             text: `Successfully imported shapefile into ${layerInfo.table || uploadLayer}.`,
-                            customClass: { popup: "rounded-2xl", confirmButton: "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs" },
                         });
                     },
                     onError: (errors) => {
                         const msg = errors.shapefile_zip || errors.layer_type || "An error occurred during shapefile upload.";
                         setStatusMessage({ type: "error", text: msg });
-                        Swal.fire({
+                        dialog.fire({
                             icon: "error",
                             title: "Import Failed",
                             text: msg,
-                            customClass: { popup: "rounded-2xl", confirmButton: "bg-rose-600 text-white px-4 py-2 rounded-lg text-xs" },
                         });
                     },
                 });
@@ -496,28 +473,18 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
         }
         if (tileCheck?.status === "error" || tileCheck?.status === "checking") return;
 
-        Swal.fire({
+        dialog.fire({
             title: "Deploy Raster Overlay?",
-            html: `
-                <div class="text-left text-xs text-slate-600 space-y-2 mt-2">
-                    <p>This will replace the CLUP map tiles with the contents of <b>${esc(selectedTileFile.name)}</b>.</p>
-                    <p class="text-slate-400">The current tiles are kept, so you can restore them if something looks wrong.</p>
+            html: tight(`
+                <div class="space-y-2">
+                    <p>This will replace the CLUP map tiles with the contents of <b class="text-slate-900">${esc(selectedTileFile.name)}</b>.</p>
+                    <p class="text-[12.5px] text-slate-400">The current tiles are kept, so you can restore them if something looks wrong.</p>
                 </div>
-            `,
+            `),
             icon: "info",
+            width: 380,
             showCancelButton: true,
             confirmButtonText: "Deploy Tiles",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
-            customClass: {
-                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
-                title: "text-base font-bold text-slate-900",
-                actions: "flex items-center justify-center gap-3 mt-4",
-                confirmButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
-                cancelButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
-            },
         }).then((res) => {
             if (res.isConfirmed) {
                 const formData = new FormData();
@@ -528,20 +495,18 @@ export default function Settings({ auth = {}, layerHistory = {} }) {
                     onSuccess: () => {
                         clearTileFile();
                         setStatusMessage({ type: "success", text: `CLUP map tiles updated · ${timeNow()}` });
-                        Swal.fire({
+                        dialog.fire({
                             icon: "success",
                             title: "Tiles Deployed",
                             text: "CLUP raster map tiles successfully updated in the public directory.",
-                            customClass: { popup: "rounded-2xl", confirmButton: "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs" },
                         });
                     },
                     onError: (errors) => {
                         setStatusMessage({ type: "error", text: errors.tiles_zip || "An error occurred during tile deployment." });
-                        Swal.fire({
+                        dialog.fire({
                             icon: "error",
                             title: "Deployment Failed",
                             text: errors.tiles_zip || "An error occurred during tile deployment.",
-                            customClass: { popup: "rounded-2xl", confirmButton: "bg-rose-600 text-white px-4 py-2 rounded-lg text-xs" },
                         });
                     },
                 });

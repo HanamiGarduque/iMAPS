@@ -84,8 +84,9 @@ function MapController({ brgyData, activeParcelFeature }) {
                 const layer = L.geoJSON(activeParcelFeature);
                 const bounds = layer.getBounds();
                 if (bounds.isValid()) {
-                    // Top-left padding keeps the lot clear of the parcel card.
-                    map.flyToBounds(bounds, { paddingTopLeft: [24, 84], paddingBottomRight: [24, 24], maxZoom: 18, duration: 1.2 });
+                    // Measure the map's current box first so the lot lands in its centre.
+                    map.invalidateSize();
+                    map.flyToBounds(bounds, { padding: [24, 24], maxZoom: 18, duration: 1.2 });
                     map.once("moveend", () => {
                         map.dragging.disable();
                         map.touchZoom.disable();
@@ -629,6 +630,23 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
         return true;
     });
 
+    // Findings and discrepancies carry the decision and are set at reading size
+    // (discrepancies first); the rest goes in a ruled table, as on the Technical Review desk.
+    // Checklist order: what was seen (observations split into their own questions),
+    // then what was wrong, what was found, and what the inspector advises.
+    const reportQuestions = ["Observations", "Discrepancies", "Findings", "Recommendation", "Recommendations", "Remarks", "Inspector notes"]
+        .map((l) => reportRows.find(([label]) => label === l))
+        .filter(Boolean)
+        .flatMap(([label, value, alert]) => {
+            const pairs = label === "Observations" ? splitLabelled(value) : null;
+            if (pairs) return pairs.map(([k, v]) => ({ key: k, label: k, value: v }));
+            return [{ key: label, label, value, alert }];
+        });
+    const reportByline = [
+        inspector.name && `Inspected by ${inspector.name}`,
+        ins.completed_at && `Submitted ${formatDate(ins.completed_at)}`,
+    ].filter(Boolean).join(" · ");
+
     // What happens to the result: the Planning Officer's decision on THIS
     // round, exactly as the server linked it. Nothing is inferred; with no
     // linked decision the page says so.
@@ -644,11 +662,55 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
             ? { label: "Not yet decided", sub: null, tone: "bg-slate-50 text-slate-700 ring-slate-200" }
             : null;
 
+    // The verdict rows: the site, the inspector, then the Planning Officer. Coloured
+    // as on the Registry: iMAPS blue for a good outcome, red only for a problem,
+    // grey for anything in between. Only rows with a recorded answer are shown.
+    const VERDICT_INK = { good: "text-blue-700", bad: "text-red-700", neutral: "text-slate-800" };
+    const resultTone = { Compliant: "good", "With Discrepancy": "bad" }[ins.inspection_result] || "neutral";
+    const poTone = !poStatus ? "neutral" : /^approved/i.test(poStatus.label) ? "good" : /^(declined|denied)/i.test(poStatus.label) ? "bad" : "neutral";
+    const verdictSteps = [
+        ins.is_compliant != null && {
+            key: "site", who: "Site compliance",
+            label: ins.is_compliant ? "Compliant" : "Not compliant",
+            tone: ins.is_compliant ? "good" : "bad",
+        },
+        ins.inspection_result && { key: "inspector", who: "Inspector's result", label: ins.inspection_result, tone: resultTone },
+        poStatus && { key: "po", who: "Planning Officer", label: poStatus.label, sub: poStatus.sub, tone: poTone },
+    ].filter(Boolean).map((s) => ({ ...s, ink: VERDICT_INK[s.tone], icon: s.tone === "good" ? "check" : s.tone === "bad" ? "x" : null }));
+
+    // A completed round opens on its outcome, in plain words, built only from the
+    // recorded verdicts: a headline (where the round stands now) and one sentence
+    // linking the inspector's result to the Planning Officer's decision.
+    const outcome = roundDone && verdictSteps.length > 0 ? (() => {
+        const who = inspector.name || "The inspector";
+        const found = [
+            ins.is_compliant != null && `found the lot ${ins.is_compliant ? "compliant" : "not compliant"}`,
+            ins.inspection_result && `marked the result “${ins.inspection_result}”`,
+        ].filter(Boolean).join(" and ");
+        const inspectorLine = found ? `${who} ${found}.` : null;
+        const by = review?.po_decision_reviewer || "The Planning Officer";
+        const on = review?.po_decision_date ? ` on ${formatDate(review.po_decision_date)}` : "";
+        let headline, decisionLine;
+        if (review?.po_decision) {
+            headline = review.po_decision;
+            decisionLine = poTone === "good" ? `${by} approved it${on}.`
+                : poTone === "bad" ? `${by} declined it${on}.`
+                : `${by} decided “${review.po_decision}”${on}.`;
+        } else if (review?.round_decision_anomaly) {
+            headline = "Needs attention";
+            decisionLine = review.round_decision_anomaly.message;
+        } else {
+            headline = "Waiting for the Planning Officer";
+            decisionLine = "No decision has been recorded on this report yet.";
+        }
+        return { headline, tone: review?.po_decision ? poTone : "neutral", text: [inspectorLine, decisionLine].filter(Boolean).join(" ") };
+    })() : null;
+
     const TABS = [
-        { key: "inspection", label: "Overview" },
-        { key: "photos", label: "Photos", count: loadingPhotos || photosError ? null : inspectionPhotos.length },
-        { key: "parcel", label: "Parcel" },
-        { key: "application", label: "Application" },
+        { key: "inspection", label: "Report", icon: "doc" },
+        { key: "photos", label: "Photos", icon: "photo", count: loadingPhotos || photosError ? null : inspectionPhotos.length },
+        { key: "parcel", label: "Parcel", icon: "map" },
+        { key: "application", label: "Application", icon: "briefcase" },
     ];
 
     const inspectorInitials = String(inspector.name || "")
@@ -821,16 +883,6 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
         ),
     });
 
-    // The side column only exists when it has something to show.
-    const showAside = tiles.length > 0 || userRole === "Admin" || Boolean(syncOutcome);
-    const workspaceCols = showTracker
-        ? showAside
-            ? "lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[210px_minmax(0,1fr)_340px] 2xl:grid-cols-[220px_minmax(0,1fr)_380px]"
-            : "xl:grid-cols-[210px_minmax(0,1fr)] 2xl:grid-cols-[220px_minmax(0,1fr)]"
-        : showAside
-          ? "lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]"
-          : "";
-
     // Round context, worded for staff as a "visit" (1st visit, 2nd visit).
     // No fabricated number for a historical row: it is labelled and explained
     // instead.
@@ -897,156 +949,44 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                     )}
 
                     {/* ── THE INSPECTION CASE FILE ──
-                        Wide screens: sized to the viewport, nothing scrolls but the
-                        columns whose content outgrows them. Narrow screens: one scroll. */}
+                        Built like the Technical Review desk: a work card (grey header strip,
+                        folder tabs, the record) beside a side column with the lot, the visit
+                        and the case status, so everything is in view on arrival. Wide
+                        screens: sized to the viewport, only the columns scroll. */}
                     <main id="inspection-record" className="flex-1 min-h-0 w-full overflow-y-auto lg:overflow-hidden relative">
-                        <div className="max-w-[1580px] mx-auto w-full lg:h-full flex flex-col gap-3 p-4 lg:p-5 short:p-3 short:gap-2.5">
+                        <div className="max-w-[1580px] mx-auto w-full lg:h-full flex flex-col lg:flex-row gap-3 lg:gap-4 p-3 sm:p-4 short:p-3">
 
-                            {/* ══ COVER: identity on the left, the parcel itself on the right ══ */}
-                            <div className="shrink-0 grid lg:grid-cols-[minmax(0,1fr)_minmax(0,46%)] gap-3 short:gap-2.5">
-                                <section className="min-w-0 bg-white rounded-xl border border-slate-200 px-5 py-3.5 short:py-3 flex flex-col">
-                                    {/* Breadcrumb. The back control returns to the list view
-                                        or the applicant folder this round was opened from;
-                                        with no origin it falls back to the registry root. */}
-                                    <div className="flex items-center gap-2 min-w-0 text-[12px]">
+                            {/* ══ WORK CARD ══ */}
+                            <section aria-label="Inspection record" className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200 flex flex-col lg:min-h-0 overflow-hidden">
+                                {/* Header strip, as on the Registry and the review desk */}
+                                <div className="bg-slate-100/80 border-b border-slate-200 shrink-0">
+                                    <div className="px-5 pt-3 flex items-center gap-3 min-w-0">
+                                        {/* Back returns to the list view or the applicant folder this
+                                            round was opened from; with no origin, the registry root. */}
                                         <Link
                                             href={backTarget.href}
-                                            className="inline-flex items-center gap-1 h-7 pl-1.5 pr-2.5 -ml-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 font-medium transition-colors shrink-0"
-                                            title={
-                                                backTarget.folder
-                                                    ? `Return to the ${backTarget.folder} folder`
-                                                    : "Return to All Inspections"
-                                            }
+                                            aria-label={`Back to ${backTarget.label}`}
+                                            title={backTarget.folder ? `Return to the ${backTarget.folder} folder` : "Return to All Inspections"}
+                                            className="w-9 h-9 shrink-0 rounded-lg border border-slate-300 bg-white shadow-sm shadow-slate-900/5 grid place-items-center text-slate-600 hover:bg-slate-50 hover:border-slate-400 hover:text-slate-900 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                                         >
-                                            <Icon name="chevronLeft" className="w-3.5 h-3.5" strokeWidth={2.5} />
-                                            <span className="max-w-[190px] truncate">{backTarget.label}</span>
+                                            <Icon name="chevronLeft" className="w-4 h-4" strokeWidth={2.2} />
                                         </Link>
-                                        <span className="hidden md:inline text-slate-300" aria-hidden="true">/</span>
-                                        {/* The application reference is shown in the
-                                            details below (Reference Number); the INS id
-                                            stays a quiet secondary key. */}
-                                        <span className="hidden md:inline font-mono text-[11px] text-slate-400" title="Internal inspection record id">
-                                            INS-{ins.id || "—"}
-                                        </span>
-                                    </div>
-
-                                    <div className="mt-2.5 short:mt-2 min-w-0">
-                                        <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-blue-600 truncate">
-                                            {roundText}
-                                        </p>
-                                        <div className="mt-1 flex items-center gap-2.5 min-w-0">
-                                            <h1 className="text-[24px] short:text-[20px] leading-tight font-bold tracking-tight text-slate-900 truncate">
-                                                {app.applicant_name || "—"}
-                                            </h1>
-                                            <span className="shrink-0"><StatusBadge status={ins.status} /></span>
-                                        </div>
-                                        {(app.application_type || roundSummary) && (
-                                            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[12.5px] text-slate-500">
-                                                {app.application_type && (
-                                                    <span className="inline-flex items-center gap-1.5 min-w-0">
-                                                        <Icon name="briefcase" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                                        <span className="truncate">{app.application_type}</span>
-                                                    </span>
-                                                )}
-                                                {roundSummary && (
-                                                    <span className="inline-flex items-center gap-1.5 shrink-0 tabular-nums">
-                                                        <Icon name="history" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                                        {roundSummary}
-                                                    </span>
-                                                )}
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <h1 className="text-[17px] font-bold tracking-tight text-slate-900 truncate">{app.applicant_name || "—"}</h1>
+                                                <span className="shrink-0"><StatusBadge status={ins.status} /></span>
                                             </div>
-                                        )}
-                                    </div>
-
-                                    {/* People and dates, as one ruled strip */}
-                                    <dl className="mt-auto pt-3.5 short:pt-2.5">
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 border-t border-slate-100 pt-3 short:pt-2.5">
-                                            <div className="pr-4 min-w-0">
-                                                <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Inspector</dt>
-                                                <dd className="mt-1 flex items-center gap-2 min-w-0">
-                                                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0" aria-hidden="true">
-                                                        {inspectorInitials || "?"}
-                                                    </span>
-                                                    <span className="text-[13px] font-semibold text-slate-900 truncate">{inspector.name || "Unassigned"}</span>
-                                                </dd>
-                                            </div>
-                                            {[
-                                                ["Scheduled", ins.scheduled_date ? formatDate(ins.scheduled_date) : null],
-                                                ["Deadline", ins.deadline_date ? formatDate(ins.deadline_date) : null],
-                                            ].map(([label, value]) => (
-                                                <div key={label} className="pr-4 sm:pl-4 sm:border-l border-slate-100 min-w-0">
-                                                    <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-                                                    <dd className="mt-1 text-[13px] font-semibold text-slate-900 truncate leading-5">{value || "—"}</dd>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </dl>
-                                </section>
-
-                                {/* The map exists to locate THIS parcel */}
-                                <section className="relative min-h-[240px] lg:min-h-0 rounded-xl border border-slate-200 bg-slate-100 overflow-hidden" aria-label="Parcel location">
-                                    {targetPin ? (
-                                        <>
-                                            <div className="absolute inset-0">
-                                                <MapContainer center={rosarioCenter} zoom={11} minZoom={11} maxBounds={[[13.65, 121.12], [13.92, 121.36]]} maxBoundsViscosity={1.0} zoomControl={false} scrollWheelZoom={false}>
-                                                    <TileLayer
-                                                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                                    />
-                                                    {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
-                                                    {/* Neighbouring lots are only drawn once the map is
-                                                        on THIS parcel; at municipal zoom every parcel at
-                                                        once is unreadable. */}
-                                                    {parcelMapData && activeParcelFeature && <GeoJSON key={activeParcelFeature.properties?.property_index_number || "parcels"} data={parcelMapData} style={getParcelStyle} />}
-                                                    <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />
-                                                </MapContainer>
-                                            </div>
-                                            <MapSkeleton visible={mapLoading} label="Locating parcel…" tone="#f2f3f5" />
-
-                                            {/* Parcel card */}
-                                            <div className="absolute top-3 left-3 z-[470] max-w-[calc(100%-24px)] rounded-lg bg-white/95 border border-slate-200 shadow-sm px-3 py-2">
-                                                <p className="flex items-center gap-1.5 font-mono text-[11.5px] font-semibold text-slate-800 truncate">
-                                                    <Icon name="pin" className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                                    PIN {parcel.property_index_number}
-                                                </p>
-                                                <dl className="mt-1.5 grid grid-cols-3 gap-4">
-                                                    {[
-                                                        ["Lot", parcel.lot_number],
-                                                        ["Area", parcel.lot_area_sqm ? `${parcel.lot_area_sqm} sq.m` : null],
-                                                        ["Barangay", parcel.barangay || app.barangay],
-                                                    ].map(([label, value]) => (
-                                                        <div key={label} className="min-w-0">
-                                                            <dt className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-                                                            <dd className="text-[12px] font-semibold text-slate-900 break-words sm:whitespace-nowrap">{value || "—"}</dd>
-                                                        </div>
-                                                    ))}
-                                                </dl>
-                                            </div>
-
-                                            {parcelNotOnMap && (
-                                                <p className="absolute bottom-6 left-3 right-3 z-[470] bg-white px-3 py-2 rounded-lg border border-amber-200 text-[12px] text-amber-800 shadow-sm">
-                                                    This parcel's boundary is not on the map layer yet.
-                                                </p>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <div className="absolute inset-0 bg-slate-50 flex flex-col items-center justify-center text-center px-8">
-                                            <span className="w-11 h-11 rounded-xl bg-white border border-slate-200 text-slate-400 flex items-center justify-center">
-                                                <Icon name="map" className="w-5 h-5" strokeWidth={1.6} />
-                                            </span>
-                                            <p className="mt-2.5 text-[13px] font-bold text-slate-900">No parcel on record</p>
-                                            <p className="mt-0.5 max-w-xs text-[12px] text-slate-500 leading-relaxed">
-                                                This inspection round was recorded without a parcel, so there is no lot to show on the map.
+                                            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-slate-500 min-w-0">
+                                                <span className="font-semibold text-blue-700">{roundText}</span>
+                                                {app.application_type && <><span className="text-slate-300" aria-hidden="true">·</span><span className="truncate">{app.application_type}</span></>}
+                                                <span className="text-slate-300" aria-hidden="true">·</span>
+                                                <span className="font-mono text-[11px] text-slate-400" title="Internal inspection record id">INS-{ins.id || "—"}</span>
                                             </p>
                                         </div>
-                                    )}
-                                </section>
-                            </div>
+                                    </div>
 
-                            {/* ══ WORKSPACE: folder tabs over progress | record | case status ══ */}
-                            <div className="lg:flex-1 lg:min-h-0 bg-white rounded-xl border border-slate-200 flex flex-col overflow-hidden">
-                                <div className="border-b border-slate-200 shrink-0">
-                                    <div className="flex items-center gap-6 px-5 short:px-4 overflow-x-auto" role="tablist" aria-label="Inspection record">
+                                    {/* The Registry's folder tabs */}
+                                    <div className="flex items-end gap-1 px-4 pt-3 overflow-x-auto overflow-y-hidden" role="tablist" aria-label="Inspection record">
                                         {TABS.map((tab) => {
                                             const isActive = activeTab === tab.key;
                                             return (
@@ -1056,17 +996,14 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                     role="tab"
                                                     aria-selected={isActive}
                                                     onClick={() => setActiveTab(tab.key)}
-                                                    className={`relative flex items-center gap-1.5 py-3 short:py-2.5 border-b-2 text-[13px] font-semibold whitespace-nowrap transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
-                                                        isActive
-                                                            ? "border-blue-600 text-slate-900"
-                                                            : "border-transparent text-slate-500 hover:text-slate-800"
+                                                    className={`relative -mb-px flex items-center gap-2 px-4 py-2.5 rounded-t-xl border text-[12.5px] font-semibold whitespace-nowrap transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                                        isActive ? "bg-white border-slate-200 border-b-white text-blue-700" : "bg-slate-50 border-slate-200/70 text-slate-500 hover:text-slate-800 hover:bg-white/70"
                                                     }`}
                                                 >
+                                                    <Icon name={tab.icon} className="w-4 h-4" />
                                                     {tab.label}
                                                     {tab.count != null && (
-                                                        <span className="text-[12px] font-medium tabular-nums text-slate-400">
-                                                            {tab.count}
-                                                        </span>
+                                                        <span className={`text-[10.5px] font-bold tabular-nums px-1.5 py-px rounded-full ${isActive ? "bg-blue-700 text-white" : "bg-slate-200 text-slate-600"}`}>{tab.count}</span>
                                                     )}
                                                 </button>
                                             );
@@ -1074,55 +1011,11 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                     </div>
                                 </div>
 
-                                <div className={`flex-1 min-h-0 grid grid-cols-1 ${workspaceCols}`}>
-
-                                    {/* ── PROGRESS (wide screens): a vertical journey ──
-                                        From recorded facts only; a step with no evidence is
-                                        shown as not reached, nothing is inferred. Open
-                                        rounds only; a completed one is summed up in the header. */}
-                                    {showTracker && (
-                                    <aside aria-label="Inspection progress" className="hidden xl:block min-h-0 overflow-y-auto border-r border-slate-200 p-5 short:p-4">
-                                        <div className="flex items-baseline justify-between gap-2 mb-4 short:mb-3">
-                                            <h2 className="text-[13px] font-bold text-slate-900">Progress</h2>
-                                            {!allStepsDone && (
-                                                <span className="text-[11px] font-semibold tabular-nums text-slate-400">
-                                                    {stepsDoneCount} of {steps.length}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <ol>
-                                            {steps.map((step, idx) => (
-                                                <li
-                                                    key={step.key}
-                                                    className="relative flex gap-3 pb-5 short:pb-3.5 last:pb-0"
-                                                    aria-current={step.state === "current" ? "step" : undefined}
-                                                >
-                                                    {idx < steps.length - 1 && (
-                                                        <span className={`absolute left-[7.5px] top-5 bottom-1 w-px ${step.state === "done" ? doneLine : "bg-slate-200"}`} aria-hidden="true" />
-                                                    )}
-                                                    <span className="mt-px shrink-0"><StepNode state={step.state} complete={allStepsDone} /></span>
-                                                    <div className="min-w-0">
-                                                        <p className={`text-[12.5px] font-semibold leading-[18px] ${step.state === "error" ? "text-rose-700" : step.state === "todo" ? "text-slate-400" : "text-slate-800"}`}>
-                                                            {step.label}
-                                                        </p>
-                                                        {step.when && (
-                                                            <p className="text-[11.5px] leading-snug mt-0.5 tabular-nums text-slate-500">{step.when}</p>
-                                                        )}
-                                                        {step.note && (
-                                                            <p className={`text-[11.5px] leading-snug mt-0.5 ${step.state === "error" ? "text-rose-600" : "text-slate-400"}`}>{step.note}</p>
-                                                        )}
-                                                    </div>
-                                                </li>
-                                            ))}
-                                        </ol>
-                                    </aside>
-                                    )}
-
-                                    {/* ── PRIMARY RECORD ── */}
-                                    <div className="min-w-0 lg:min-h-0 lg:overflow-y-auto p-5 short:p-4 flex flex-col gap-6 short:gap-5">
+                                {/* ── THE RECORD ── */}
+                                <div className="flex-1 min-w-0 lg:min-h-0 lg:overflow-y-auto p-5 short:p-4 flex flex-col gap-5 short:gap-4">
                                         {/* Progress (narrower screens): the same steps, across */}
                                         {showTracker && (
-                                        <ol className="xl:hidden grid grid-cols-4 rounded-lg border border-slate-200 px-4 py-3" aria-label="Inspection progress">
+                                        <ol className="grid grid-cols-4 rounded-lg border border-slate-200 px-4 py-3" aria-label="Inspection progress">
                                             {steps.map((step, idx) => (
                                                 <li key={step.key} className="min-w-0" aria-current={step.state === "current" ? "step" : undefined}>
                                                     <div className="flex items-center">
@@ -1147,58 +1040,95 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                         {/* ── Overview Tab ── */}
                                         {activeTab === "inspection" && (
                                             <>
-                                                {/* The inspector's report */}
-                                                <Panel title="Inspection report">
-                                                    {hasFindings ? (
-                                                        <>
-                                                            {/* Outcome: every verdict on this round as one line of
-                                                                pills, read left to right: the site, the inspector,
-                                                                then the Planning Officer. Each pill names who gave it. */}
-                                                            {(ins.is_compliant != null || ins.inspection_result || poStatus) && (
-                                                                <div className="py-3 border-b border-slate-100 flex flex-wrap items-center gap-x-2 gap-y-2 text-[12px]">
-                                                                    {ins.is_compliant != null && (
-                                                                        <span
-                                                                            title="Site compliance"
-                                                                            className={`inline-flex items-center gap-1 h-6 px-2 rounded-md ring-1 ring-inset font-semibold ${
-                                                                                ins.is_compliant ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-rose-50 text-rose-700 ring-rose-200"
-                                                                            }`}
-                                                                        >
-                                                                            <Icon name={ins.is_compliant ? "check" : "x"} className="w-3.5 h-3.5" strokeWidth={2.6} />
-                                                                            {ins.is_compliant ? "Compliant" : "Not compliant"}
-                                                                        </span>
-                                                                    )}
-                                                                    {ins.inspection_result && (
-                                                                        <span className="inline-flex items-center gap-1 h-6 px-2 rounded-md ring-1 ring-inset bg-slate-50 text-slate-800 ring-slate-200 font-semibold">
-                                                                            <span className="font-normal text-slate-500">Inspector:</span>
-                                                                            {ins.inspection_result}
-                                                                        </span>
-                                                                    )}
-                                                                    {poStatus && (
-                                                                        <>
-                                                                            <span className={`inline-flex items-center gap-1 h-6 px-2 rounded-md ring-1 ring-inset font-semibold ${poStatus.tone}`}>
-                                                                                <span className="font-normal opacity-75">Decision:</span>
-                                                                                {poStatus.label}
-                                                                            </span>
-                                                                            {poStatus.sub && <span className="text-slate-500">{poStatus.sub}</span>}
-                                                                        </>
-                                                                    )}
+                                                {/* The inspector's report, as one compact document like the Technical
+                                                    Review desk's: a grey title bar, the verdict as one row (site →
+                                                    inspector → Planning Officer), then a ruled table of what the
+                                                    inspector recorded, with the GPS confirmation as its last line. */}
+                                                {hasFindings ? (
+                                                    <article className="rounded-lg border border-slate-200 bg-white overflow-hidden" aria-label="Site inspection report">
+                                                        <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2 border-b border-slate-200 bg-slate-50">
+                                                            <h3 className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">Site inspection report</h3>
+                                                            {reportByline && <p className="text-[11.5px] text-slate-600">{reportByline}</p>}
+                                                        </header>
+
+                                                        {/* Completed: the outcome first, in plain words */}
+                                                        {outcome && (
+                                                            <div className="mx-4 mt-3 flex items-start gap-3 rounded-lg border border-slate-200 px-3.5 py-3">
+                                                                <span
+                                                                    className={`w-8 h-8 rounded-full grid place-items-center shrink-0 ${
+                                                                        outcome.tone === "good" ? "bg-blue-600 text-white" : outcome.tone === "bad" ? "bg-red-600 text-white" : "bg-slate-100 text-slate-500"
+                                                                    }`}
+                                                                    aria-hidden="true"
+                                                                >
+                                                                    <Icon name={outcome.tone === "good" ? "check" : outcome.tone === "bad" ? "x" : "history"} className="w-4 h-4" strokeWidth={2.6} />
+                                                                </span>
+                                                                <div className="min-w-0">
+                                                                    <p className={`text-[14.5px] font-bold leading-snug ${outcome.tone === "good" ? "text-blue-800" : outcome.tone === "bad" ? "text-red-700" : "text-slate-900"}`}>{outcome.headline}</p>
+                                                                    <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate-600">{outcome.text}</p>
                                                                 </div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* One ruled table: the verdict (open rounds only; a completed round
+                                                            says it above), then the inspector's notes */}
+                                                        <div className="px-4 py-3">
+                                                            <table className="w-full border border-slate-200 text-[12.5px]">
+                                                                {!outcome && verdictSteps.length > 0 && (
+                                                                    <tbody>
+                                                                        <tr className="bg-slate-100/80">
+                                                                            <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Verdict</th>
+                                                                        </tr>
+                                                                        {verdictSteps.map((step) => (
+                                                                            <tr key={step.key} className="border-t border-slate-200 align-top">
+                                                                                <th scope="row" className="w-[150px] bg-slate-50 px-2.5 py-1.5 text-left text-[11.5px] font-semibold text-slate-600">{step.who}</th>
+                                                                                <td className="px-2.5 py-1.5 leading-snug">
+                                                                                    <span className={`inline-flex items-center gap-1 font-semibold ${step.ink}`}>
+                                                                                        {step.icon && <Icon name={step.icon} className="w-3.5 h-3.5 shrink-0" strokeWidth={2.6} />}
+                                                                                        {step.label}
+                                                                                    </span>
+                                                                                    {step.sub && <span className="ml-2 text-[11.5px] text-slate-500">{step.sub}</span>}
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                )}
+                                                                <tbody>
+                                                                    <tr className={`bg-slate-100/80 ${!outcome && verdictSteps.length > 0 ? "border-t border-slate-200" : ""}`}>
+                                                                        <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Inspector's notes</th>
+                                                                    </tr>
+                                                                    {reportQuestions.length > 0 ? (
+                                                                        reportQuestions.map((q) => (
+                                                                            <tr key={q.key} className="border-t border-slate-200 align-top">
+                                                                                <th scope="row" className={`w-[150px] bg-slate-50 px-2.5 py-1.5 text-left text-[11.5px] font-semibold ${q.alert ? "text-red-700" : "text-slate-600"}`}>
+                                                                                    {q.label}
+                                                                                </th>
+                                                                                <td className="px-2.5 py-1.5 leading-snug text-slate-800 break-words">
+                                                                                    <ReportValue value={q.value} />
+                                                                                </td>
+                                                                            </tr>
+                                                                        ))
+                                                                    ) : (
+                                                                        <tr className="border-t border-slate-200">
+                                                                            <td colSpan={2} className="px-2.5 py-1.5 text-slate-600">The inspector submitted this report without written findings.</td>
+                                                                        </tr>
+                                                                    )}
+                                                                </tbody>
+                                                            </table>
+                                                            {(ins.confirmed_latitude || ins.confirmed_longitude) && (
+                                                                <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-slate-500">
+                                                                    <Icon name="gps" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                                    <span>GPS confirmed</span>
+                                                                    <span className="font-mono text-[11px] text-slate-700">
+                                                                        {ins.confirmed_latitude || "—"}, {ins.confirmed_longitude || "—"}
+                                                                    </span>
+                                                                    {ins.gps_accuracy_m ? <span>· ±{Number(ins.gps_accuracy_m).toFixed(1)} m</span> : null}
+                                                                    {ins.gps_confirmed_at ? <span>· {formatDate(ins.gps_confirmed_at)}</span> : null}
+                                                                </p>
                                                             )}
-                                                            <dl className="divide-y divide-slate-100">
-                                                                {reportRows.map(([label, value, alert]) => (
-                                                                    <div key={label} className="py-3 grid gap-1 sm:grid-cols-[9.5rem_1fr] sm:gap-6">
-                                                                        <dt className={`flex items-center gap-1.5 text-[12.5px] font-medium sm:pt-px ${alert ? "text-rose-700" : "text-slate-500"}`}>
-                                                                            {alert && <Icon name="alert" className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />}
-                                                                            {label}
-                                                                        </dt>
-                                                                        <dd className="min-w-0 text-[13px] leading-relaxed">
-                                                                            <ReportValue value={value} alert={alert} />
-                                                                        </dd>
-                                                                    </div>
-                                                                ))}
-                                                            </dl>
-                                                        </>
-                                                    ) : (
+                                                        </div>
+                                                    </article>
+                                                ) : (
+                                                <Panel title="Inspection report">
                                                         <div className="py-8 short:py-4 flex flex-col items-center text-center">
                                                             <span className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 text-slate-400 flex items-center justify-center" aria-hidden="true">
                                                                 <Icon name="doc" className="w-5 h-5" />
@@ -1208,8 +1138,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                                 Findings, photos and GPS confirmation appear here once the inspector submits the report from FieldSync.
                                                             </p>
                                                         </div>
-                                                    )}
                                                 </Panel>
+                                                )}
 
                                                 {/* Instructions matter while the visit is open; a completed
                                                     round no longer shows them. */}
@@ -1221,8 +1151,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                     </Panel>
                                                 )}
 
-                                                {/* GPS confirmation, as one line */}
-                                                {(ins.confirmed_latitude || ins.confirmed_longitude) && (
+                                                {/* GPS confirmation, as one line (inside the report card when there is one) */}
+                                                {!hasFindings && (ins.confirmed_latitude || ins.confirmed_longitude) && (
                                                     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500">
                                                         <Icon name="gps" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                                         <span>GPS confirmed</span>
@@ -1390,148 +1320,231 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                         )}
                                     </div>
 
-                                    {/* ── SUPPLEMENTAL OPERATIONS CONTEXT ──
-                                        Beside the record on wide screens, below it on narrow
-                                        ones. A status board of tiles; the open tile's full text
-                                        shows in the panel beneath. */}
-                                    {showAside && (
-                                    <aside aria-label="Operations" className="min-w-0 lg:min-h-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-200 p-5 short:p-4 space-y-3">
-                                        {/* Scoped sync OUTCOME, set from the flash the controller
-                                            returns, so the server stays the single source of truth
-                                            for the wording. */}
-                                        {syncOutcome && (
-                                            <div
-                                                role="status"
-                                                aria-live="polite"
-                                                className={`rounded-lg px-3 py-2.5 text-[12.5px] font-medium border flex items-start gap-2 ${
-                                                    syncOutcome.tone === "ok"
-                                                        ? "bg-emerald-50 text-emerald-900 border-emerald-200"
-                                                        : syncOutcome.tone === "warn"
-                                                          ? "bg-amber-50 text-amber-900 border-amber-200"
-                                                          : syncOutcome.tone === "info"
-                                                            ? "bg-white text-slate-700 border-slate-200"
-                                                            : "bg-rose-50 text-rose-900 border-rose-200"
-                                                }`}
-                                            >
-                                                <span className="flex-1">{syncOutcome.message}</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSyncOutcome(null)}
-                                                    aria-label="Dismiss sync result"
-                                                    className="opacity-60 hover:opacity-100 cursor-pointer"
-                                                >
-                                                    <Icon name="x" className="w-3.5 h-3.5" strokeWidth={2.5} />
-                                                </button>
-                                            </div>
-                                        )}
+                            </section>
 
-                                        {tiles.length > 0 && (
-                                        <>
-                                        <h2 className="text-[13px] font-bold text-slate-900">Case status</h2>
-
-                                        <ul className="rounded-lg bg-white border border-slate-200 divide-y divide-slate-100 overflow-hidden">
-                                            {tiles.map((tile) => {
-                                                const isOpen = openTile === tile.key;
-                                                const tone = TILE_TONES[tile.tone] || TILE_TONES.slate;
-                                                const summary = (
-                                                    <>
-                                                        <span className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${tone.chip}`}>
-                                                            <Icon name={tile.icon} className="w-3.5 h-3.5" strokeWidth={2.2} />
-                                                        </span>
-                                                        <span className="min-w-0 flex-1">
-                                                            <span className="block text-[11px] font-medium text-slate-500">{tile.label}</span>
-                                                            <span className="block text-[13px] font-semibold leading-snug text-slate-900 truncate">{tile.value}</span>
-                                                        </span>
-                                                    </>
-                                                );
-                                                // A row with nothing beyond its headline is not expandable.
-                                                if (!tile.body) {
-                                                    return (
-                                                        <li key={tile.key} className="flex items-center gap-3 px-3 py-2.5">
-                                                            {summary}
-                                                        </li>
-                                                    );
-                                                }
-                                                return (
-                                                    <li key={tile.key}>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setOpenTile(isOpen ? null : tile.key)}
-                                                            aria-expanded={isOpen}
-                                                            aria-controls={`case-status-${tile.key}`}
-                                                            className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-50"
-                                                        >
-                                                            {summary}
-                                                            <Icon
-                                                                name="chevronDown"
-                                                                className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                                                                strokeWidth={2.2}
-                                                            />
-                                                        </button>
-                                                        {isOpen && (
-                                                            <div
-                                                                id={`case-status-${tile.key}`}
-                                                                className="px-3 pb-3 pl-[3.25rem] text-[12.5px] text-slate-600 leading-normal"
-                                                            >
-                                                                {tile.body}
-                                                            </div>
-                                                        )}
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                        </>
-                                        )}
-
-                                        {/* PHASE 2A - ADMIN SUPPORT / OPERATIONS AREA.
-                                            A SUPPORT action, not a business decision: it imports a
-                                            FieldSync result that already exists for THIS ONE
-                                            inspection round. It cannot approve, decline, request a
-                                            reinspection, assign an inspector, schedule or create a
-                                            round, or edit findings. Admin only: the sync route is
-                                            role:Admin, so a Planning Officer is never offered a
-                                            control the server refuses. */}
-                                        {userRole === "Admin" && (
-                                            <div className="rounded-lg bg-white border border-slate-200 p-3">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="text-[12.5px] font-bold text-slate-900 truncate">Admin support actions</p>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setAdminInfoOpen((o) => !o)}
-                                                            aria-expanded={adminInfoOpen}
-                                                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
-                                                        >
-                                                            <Icon name="info" className="w-3.5 h-3.5" />
-                                                            What this does
-                                                        </button>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        disabled={syncing}
-                                                        onClick={() => setSyncConfirmOpen(true)}
-                                                        className="shrink-0 inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-slate-200 text-slate-700 text-[12px] font-semibold hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                                                    >
-                                                        <Icon name={syncing ? "sync" : "download"} className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} strokeWidth={2} />
-                                                        <span>{syncing ? "Syncing…" : "Sync from FieldSync"}</span>
-                                                    </button>
+                            {/* ══ SIDE COLUMN: the lot, the visit, then the case status ══
+                                Beside the work card on wide screens, below it on narrow ones. */}
+                            <aside aria-label="Lot and visit" className="lg:w-[360px] shrink-0 lg:min-h-0 lg:overflow-y-auto flex flex-col gap-3 short:gap-2.5">
+                                {/* The lot: the map exists to locate THIS parcel */}
+                                <section className="bg-white rounded-xl border border-slate-200 overflow-hidden shrink-0" aria-label="Parcel location">
+                                    <div className="relative h-[190px] short:h-[160px] bg-slate-100 border-b border-slate-200">
+                                        {targetPin ? (
+                                            <>
+                                                <div className="absolute inset-0">
+                                                    <MapContainer center={rosarioCenter} zoom={11} minZoom={11} maxBounds={[[13.65, 121.12], [13.92, 121.36]]} maxBoundsViscosity={1.0} zoomControl={false} scrollWheelZoom={false}>
+                                                        <TileLayer
+                                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                                        />
+                                                        {brgyMapData && <GeoJSON data={brgyMapData} style={brgyStyle} />}
+                                                        {/* Neighbouring lots are only drawn once the map is
+                                                            on THIS parcel; at municipal zoom every parcel at
+                                                            once is unreadable. */}
+                                                        {parcelMapData && activeParcelFeature && <GeoJSON key={activeParcelFeature.properties?.property_index_number || "parcels"} data={parcelMapData} style={getParcelStyle} />}
+                                                        <MapController brgyData={brgyMapData} activeParcelFeature={activeParcelFeature} />
+                                                    </MapContainer>
                                                 </div>
-                                                {adminInfoOpen && (
-                                                    <p className="text-[12px] text-slate-500 mt-2 leading-relaxed">
-                                                        Imports the latest <span className="font-semibold text-slate-800">completed</span> FieldSync
-                                                        result for <span className="font-semibold text-slate-800">this inspection round only</span>{" "}
-                                                        (INS-{ins.id || "-"}). It changes only this round, and only with
-                                                        data FieldSync has already submitted. It does not approve,
-                                                        decline, request a reinspection, reassign an inspector,
-                                                        schedule a round, or edit findings.
+                                                <MapSkeleton visible={mapLoading} label="Locating parcel…" tone="#f2f3f5" />
+                                                {parcelNotOnMap && (
+                                                    <p className="absolute bottom-6 left-3 right-3 z-[470] bg-white px-3 py-2 rounded-lg border border-amber-200 text-[12px] text-amber-800 shadow-sm">
+                                                        This parcel's boundary is not on the map layer yet.
                                                     </p>
                                                 )}
+                                            </>
+                                        ) : (
+                                            <div className="absolute inset-0 bg-slate-50 flex flex-col items-center justify-center text-center px-8">
+                                                <span className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-slate-400 flex items-center justify-center">
+                                                    <Icon name="map" className="w-5 h-5" strokeWidth={1.6} />
+                                                </span>
+                                                <p className="mt-2 text-[13px] font-bold text-slate-900">No parcel on record</p>
+                                                <p className="mt-0.5 max-w-xs text-[12px] text-slate-500 leading-relaxed">
+                                                    This inspection round was recorded without a parcel, so there is no lot to show on the map.
+                                                </p>
                                             </div>
                                         )}
-                                    </aside>
+                                    </div>
+                                    {targetPin && (
+                                        <dl className="px-4 py-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                                            <div className="col-span-2 min-w-0">
+                                                <dt className="flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
+                                                    <Icon name="pin" className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                                    PIN
+                                                </dt>
+                                                <dd className="mt-0.5 font-mono text-[12px] font-semibold text-slate-900 break-all">{parcel.property_index_number}</dd>
+                                            </div>
+                                            {[
+                                                ["Lot", parcel.lot_number, true],
+                                                ["Area", parcel.lot_area_sqm ? `${parcel.lot_area_sqm} sq.m` : null],
+                                                ["Barangay", parcel.barangay || app.barangay],
+                                            ].map(([label, value, wide]) => (
+                                                <div key={label} className={`min-w-0 ${wide ? "col-span-2" : ""}`}>
+                                                    <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+                                                    <dd className="mt-0.5 text-[13px] font-semibold text-slate-900 break-words">{value || "—"}</dd>
+                                                </div>
+                                            ))}
+                                        </dl>
                                     )}
-                                </div>
-                            </div>
+                                </section>
+
+                                {/* The visit: who went, and when */}
+                                <section className="bg-white rounded-xl border border-slate-200 px-4 py-3 shrink-0" aria-label="Visit">
+                                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+                                        <div className="col-span-2 min-w-0">
+                                            <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Inspector</dt>
+                                            <dd className="mt-1 flex items-center gap-2 min-w-0">
+                                                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0" aria-hidden="true">
+                                                    {inspectorInitials || "?"}
+                                                </span>
+                                                <span className="text-[13px] font-semibold text-slate-900 truncate">{inspector.name || "Unassigned"}</span>
+                                            </dd>
+                                        </div>
+                                        {[
+                                            ["Scheduled", ins.scheduled_date ? formatDate(ins.scheduled_date) : null],
+                                            ["Deadline", ins.deadline_date ? formatDate(ins.deadline_date) : null],
+                                        ].map(([label, value]) => (
+                                            <div key={label} className="min-w-0">
+                                                <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+                                                <dd className="mt-0.5 text-[13px] font-semibold text-slate-900">{value || "—"}</dd>
+                                            </div>
+                                        ))}
+                                    </dl>
+                                    {roundSummary && (
+                                        <p className="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center gap-1.5 text-[12px] text-slate-500 tabular-nums">
+                                            <Icon name="history" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                            {roundSummary}
+                                        </p>
+                                    )}
+                                </section>
+
+                                {/* Scoped sync OUTCOME, set from the flash the controller
+                                    returns, so the server stays the single source of truth
+                                    for the wording. */}
+                                {syncOutcome && (
+                                    <div
+                                        role="status"
+                                        aria-live="polite"
+                                        className={`rounded-lg px-3 py-2.5 text-[12.5px] font-medium border flex items-start gap-2 ${
+                                            syncOutcome.tone === "ok"
+                                                ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                                                : syncOutcome.tone === "warn"
+                                                  ? "bg-amber-50 text-amber-900 border-amber-200"
+                                                  : syncOutcome.tone === "info"
+                                                    ? "bg-white text-slate-700 border-slate-200"
+                                                    : "bg-rose-50 text-rose-900 border-rose-200"
+                                        }`}
+                                    >
+                                        <span className="flex-1">{syncOutcome.message}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSyncOutcome(null)}
+                                            aria-label="Dismiss sync result"
+                                            className="opacity-60 hover:opacity-100 cursor-pointer"
+                                        >
+                                            <Icon name="x" className="w-3.5 h-3.5" strokeWidth={2.5} />
+                                        </button>
+                                    </div>
+                                )}
+
+                                {tiles.length > 0 && (
+                                    <ul className="rounded-xl bg-white border border-slate-200 divide-y divide-slate-100 overflow-hidden shrink-0" aria-label="Case status">
+                                        {tiles.map((tile) => {
+                                            const isOpen = openTile === tile.key;
+                                            const tone = TILE_TONES[tile.tone] || TILE_TONES.slate;
+                                            const summary = (
+                                                <>
+                                                    <span className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${tone.chip}`}>
+                                                        <Icon name={tile.icon} className="w-3.5 h-3.5" strokeWidth={2.2} />
+                                                    </span>
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="block text-[11px] font-medium text-slate-500">{tile.label}</span>
+                                                        <span className="block text-[13px] font-semibold leading-snug text-slate-900 truncate">{tile.value}</span>
+                                                    </span>
+                                                </>
+                                            );
+                                            // A row with nothing beyond its headline is not expandable.
+                                            if (!tile.body) {
+                                                return (
+                                                    <li key={tile.key} className="flex items-center gap-3 px-3 py-2.5">
+                                                        {summary}
+                                                    </li>
+                                                );
+                                            }
+                                            return (
+                                                <li key={tile.key}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOpenTile(isOpen ? null : tile.key)}
+                                                        aria-expanded={isOpen}
+                                                        aria-controls={`case-status-${tile.key}`}
+                                                        className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-50"
+                                                    >
+                                                        {summary}
+                                                        <Icon
+                                                            name="chevronDown"
+                                                            className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                                                            strokeWidth={2.2}
+                                                        />
+                                                    </button>
+                                                    {isOpen && (
+                                                        <div
+                                                            id={`case-status-${tile.key}`}
+                                                            className="px-3 pb-3 pl-[3.25rem] text-[12.5px] text-slate-600 leading-normal"
+                                                        >
+                                                            {tile.body}
+                                                        </div>
+                                                    )}
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+
+                                {/* PHASE 2A - ADMIN SUPPORT / OPERATIONS AREA.
+                                    A SUPPORT action, not a business decision: it imports a
+                                    FieldSync result that already exists for THIS ONE
+                                    inspection round. It cannot approve, decline, request a
+                                    reinspection, assign an inspector, schedule or create a
+                                    round, or edit findings. Admin only: the sync route is
+                                    role:Admin, so a Planning Officer is never offered a
+                                    control the server refuses. */}
+                                {userRole === "Admin" && (
+                                    <div className="rounded-xl bg-white border border-slate-200 p-3 shrink-0">
+                                        <div className="flex items-center gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-[12.5px] font-bold text-slate-900 truncate">Admin support actions</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAdminInfoOpen((o) => !o)}
+                                                    aria-expanded={adminInfoOpen}
+                                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+                                                >
+                                                    <Icon name="info" className="w-3.5 h-3.5" />
+                                                    What this does
+                                                </button>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                disabled={syncing}
+                                                onClick={() => setSyncConfirmOpen(true)}
+                                                className="shrink-0 inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-slate-200 text-slate-700 text-[12px] font-semibold hover:bg-slate-50 hover:border-slate-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                                            >
+                                                <Icon name={syncing ? "sync" : "download"} className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} strokeWidth={2} />
+                                                <span>{syncing ? "Syncing…" : "Sync from FieldSync"}</span>
+                                            </button>
+                                        </div>
+                                        {adminInfoOpen && (
+                                            <p className="text-[12px] text-slate-500 mt-2 leading-relaxed">
+                                                Imports the latest <span className="font-semibold text-slate-800">completed</span> FieldSync
+                                                result for <span className="font-semibold text-slate-800">this inspection round only</span>{" "}
+                                                (INS-{ins.id || "-"}). It changes only this round, and only with
+                                                data FieldSync has already submitted. It does not approve,
+                                                decline, request a reinspection, reassign an inspector,
+                                                schedule a round, or edit findings.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </aside>
                         </div>
                     </main>
                 </div>
@@ -1541,60 +1554,48 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                     The shared Modal component, deliberately NOT styled as
                     destructive: this imports data FieldSync has already
                     submitted; it is not an approval and cannot refuse anything. */}
-                <Modal show={syncConfirmOpen} onClose={() => setSyncConfirmOpen(false)} maxWidth="md">
-                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-                        <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex justify-between items-start">
-                            <h3 className="text-base font-bold text-slate-900">
-                                Sync from FieldSync?
-                            </h3>
-                            <button
-                                type="button"
-                                onClick={() => setSyncConfirmOpen(false)}
-                                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
-                                aria-label="Close"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                <Modal show={syncConfirmOpen} onClose={() => setSyncConfirmOpen(false)} maxWidth="sm">
+                    {/* Same card as the shared SweetAlert dialogs (utils/dialog). */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setSyncConfirmOpen(false)}
+                            className="absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                            aria-label="Close"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+
+                        <div className="flex flex-col items-center text-center px-6 pt-8 bg-gradient-to-b from-blue-50/70 to-white">
+                            <span aria-hidden="true" className="flex items-center justify-center w-14 h-14 rounded-full bg-blue-50 text-blue-700 shadow-[inset_0_0_0_1px_#dbeafe,0_0_0_6px_rgba(239,246,255,.6)]">
+                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+                                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 16h5v5" />
                                 </svg>
-                            </button>
+                            </span>
+                            <h3 className="mt-4 text-[17px] font-semibold leading-snug text-slate-900">Sync from FieldSync?</h3>
+                            <p className="mt-0.5 text-[13px] text-slate-400">Inspection {ins.id}</p>
                         </div>
 
-                        <div className="p-5 space-y-3">
-                            <p className="text-xs font-semibold text-slate-800 leading-relaxed">
-                                Import the latest completed FieldSync result for Inspection{" "}
-                                {ins.id}?
-                            </p>
-                            {/* Plain helper text with an information icon: nothing
-                                here is editable and nothing is sent. */}
-                            <p className="flex items-start gap-2 text-[11px] leading-relaxed text-slate-500">
-                                <svg
-                                    className="w-3.5 h-3.5 mt-px shrink-0 text-slate-400"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    />
-                                </svg>
-                                <span>
-                                    Only this inspection round can be updated. This action
-                                    imports data already submitted from FieldSync. It does not
-                                    approve, decline, request reinspection, assign an
-                                    inspector, or make a Planning Officer decision.
-                                </span>
+                        <div className="px-7 pt-4 text-center text-[13.5px] leading-relaxed text-slate-600">
+                            <p>Import the latest completed FieldSync result for this inspection?</p>
+                            {/* Plain helper text: nothing here is editable and nothing is sent. */}
+                            <p className="mt-2 text-[12px] text-slate-400">
+                                Only this inspection round can be updated. This action
+                                imports data already submitted from FieldSync. It does not
+                                approve, decline, request reinspection, assign an
+                                inspector, or make a Planning Officer decision.
                             </p>
                         </div>
 
-                        <div className="px-5 py-4 border-t border-slate-100 flex justify-end gap-2.5 bg-slate-50/80">
+                        <div className="grid grid-cols-2 gap-2.5 p-6">
                             <button
                                 type="button"
                                 onClick={() => setSyncConfirmOpen(false)}
                                 disabled={syncing}
-                                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-50 transition-all shadow-xs disabled:opacity-50"
+                                className="h-10 px-5 rounded-xl bg-white hover:bg-blue-50 text-blue-700 text-[13.5px] font-semibold border border-blue-200 cursor-pointer transition-colors disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                             >
                                 Cancel
                             </button>
@@ -1602,7 +1603,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                 type="button"
                                 onClick={runScopedSync}
                                 disabled={syncing}
-                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[13.5px] font-semibold shadow-md shadow-blue-600/25 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                             >
                                 {syncing ? "Syncing…" : "Sync from FieldSync"}
                             </button>

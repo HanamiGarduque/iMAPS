@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Head, router, Link } from "@inertiajs/react";
-import Swal from "sweetalert2";
+import dialog, { notify } from "@/utils/dialog";
 import axios from "axios";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
@@ -296,27 +296,16 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
             );
 
             if (response.data.success) {
-                Swal.fire({
-                    toast: true,
-                    position: "top-end",
-                    icon: "success",
-                    title: "User Profile Updated",
-                    showConfirmButton: false,
-                    timer: 2000,
-                });
+                notify("User Profile Updated", "success", { timer: 2000 });
                 closeAccountModal();
                 router.reload({ only: ["users"] });
             }
         } catch (error) {
             const errorMsg = error.response?.data?.message || "Failed to update profile. Check form inputs.";
-            Swal.fire({
+            dialog.fire({
                 icon: "error",
                 title: "Update Failed",
                 text: errorMsg,
-                customClass: {
-                    popup: "rounded-2xl border border-slate-200 shadow-xl",
-                    confirmButton: "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-semibold",
-                },
             });
         } finally {
             setIsSavingProfile(false);
@@ -364,14 +353,7 @@ export default function Index({ users = { data: [], links: [] }, filters = {}, r
             );
 
             if (response.data.success) {
-                Swal.fire({
-                    toast: true,
-                    position: "top-end",
-                    icon: "success",
-                    title: "Password Reset Successfully",
-                    showConfirmButton: false,
-                    timer: 2200,
-                });
+                notify("Password Reset Successfully", "success", { timer: 2200 });
                 backToProfileView();
             }
         } catch (error) {

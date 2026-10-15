@@ -536,7 +536,6 @@ export default function Overview({
               { href: "/applications/encode", icon: "plus", label: "Encode" },
               { href: "/site-inspections", icon: "inspect", label: "Inspections", count: upcomingInspections },
               { href: "/applications/drafts", icon: "draft", label: "Drafts", count: draftCount },
-              { href: "/diagnostics", icon: "support", label: "Support Desk" },
           ];
 
     const attention = [

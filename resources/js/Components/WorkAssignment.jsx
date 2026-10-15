@@ -366,7 +366,7 @@ export function InspectorRoundAssignment({
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                        Assigned Inspector · Round {state.round_number}
+                        Assigned Inspector · Visit {state.round_number}
                     </p>
                     {state.inspector_name ? (
                         <p className="text-[13px] font-bold text-slate-800">{state.inspector_name}</p>
@@ -430,8 +430,8 @@ export function InspectorRoundAssignment({
                 <ReassignModal
                     title={
                         state.inspector_id
-                            ? `Reassign Inspector · Round ${state.round_number}`
-                            : `Assign Inspector · Round ${state.round_number}`
+                            ? `Reassign Inspector · Visit ${state.round_number}`
+                            : `Assign Inspector · Visit ${state.round_number}`
                     }
                     isInitial={!state.inspector_id}
                     subtitle="Field task handover"

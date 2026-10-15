@@ -136,8 +136,10 @@ export function BarangayCard({ name, stat = {}, apps = {}, demand = 0, activeQua
             swatch: tier?.fill,
         },
     // On the Application Tracking layer the card shows applications only; the
-    // demand and land-use rows belong to their own layers.
-    ].filter((r) => activeLayer !== "status" || r.id === "status");
+    // other rows belong to their own layers. On the Diversity Index layer the
+    // panel below already leads with the mix score, so the card is just the
+    // barangay's name.
+    ].filter((r) => activeLayer !== "diversity" && (activeLayer !== "status" || r.id === "status"));
 
     return (
         <section className="shrink-0 border-b-4 border-slate-200 bg-white" aria-label={`Barangay ${name}`}>
@@ -151,7 +153,7 @@ export function BarangayCard({ name, stat = {}, apps = {}, demand = 0, activeQua
                 </span>
                 <CloseButton onClick={onClose} label="Clear barangay selection" />
             </header>
-            <ul>
+            {rows.length > 0 && <ul>
                 {rows.map((r) => {
                     const active = activeLayer === r.id;
                     return (
@@ -176,7 +178,7 @@ export function BarangayCard({ name, stat = {}, apps = {}, demand = 0, activeQua
                         </li>
                     );
                 })}
-            </ul>
+            </ul>}
         </section>
     );
 }

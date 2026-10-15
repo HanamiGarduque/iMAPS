@@ -120,9 +120,24 @@ const toInspectionPoint = (inspection) => {
     return latitude !== null && longitude !== null ? [latitude, longitude] : null;
 };
 
-export default function ApplicationMap({ lots, parcelMapData, brgyMapData, barangay, selectedIndex, inspectionPoint, onSelectLot, onPrint }) {
+// Locator pin: a teardrop marker standing on the lot, its code inside
+const pinIcon = (code) =>
+    L.divIcon({
+        className: "",
+        html: `<span class="lot-pin"><span class="lot-pin-head">${code}</span><span class="lot-pin-tip"></span></span>`,
+        iconSize: [0, 0],
+    });
+
+/**
+ * variant: "full" (default) — the working map with basemap, CLUP overlay, lot plan and print.
+ *          "locator" — a small "where is it" map: road basemap, the lot outlined with a pin on it,
+ *          zoomed out enough to show the street, and only zoom / recenter controls.
+ */
+export default function ApplicationMap({ lots, parcelMapData, brgyMapData, barangay, selectedIndex, inspectionPoint, onSelectLot, onPrint, variant = "full" }) {
+    const locator = variant === "locator";
+    const focusZoom = locator ? 17 : LOT_FOCUS_ZOOM;
     const [map, setMap] = useState(null);
-    const [basemap, setBasemap] = useState("satellite");
+    const [basemap, setBasemap] = useState(locator ? "street" : "satellite");
     const [showClup, setShowClup] = useState(false);
 
     const mappedLots = lots.filter((l) => l.feature);
@@ -159,9 +174,9 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
             framedLots.current = true;
             const targetLot = lots.find((l) => l.index === selectedIndex && l.feature) || mappedLots[0];
             if (targetLot?.feature) {
-                fitTo(targetLot.feature, LOT_FOCUS_ZOOM, false);
+                fitTo(targetLot.feature, focusZoom, false);
             } else if (lotsCollection) {
-                fitTo(lotsCollection, LOT_FOCUS_ZOOM, false);
+                fitTo(lotsCollection, focusZoom, false);
             }
         } else if (!framedLots.current && barangayOutline && mappedLots.length === 0) {
             fitTo(barangayOutline, 15, false);
@@ -175,9 +190,9 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
         lastSelected.current = selectedIndex;
         if (selectedIndex !== null && selectedIndex !== undefined) {
             const lot = lots.find((l) => l.index === selectedIndex);
-            if (lot?.feature) fitTo(lot.feature, LOT_FOCUS_ZOOM);
+            if (lot?.feature) fitTo(lot.feature, focusZoom);
         } else if (lotsCollection) {
-            fitTo(lotsCollection, LOT_FOCUS_ZOOM);
+            fitTo(lotsCollection, focusZoom);
         }
     }, [selectedIndex, map, fitTo, lots, lotsCollection]);
 
@@ -230,14 +245,17 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
                 .lot-code { transform: translate(-50%, calc(-100% - 8px)); font: 700 11px/1 ui-sans-serif, system-ui, sans-serif; color: #fff; background: ${LOT_LINE}; padding: 4px 7px; border-radius: 4px; box-shadow: 0 1px 3px rgba(15,23,42,.3); }
                 .app-lot-label { background: #fff; border: 1px solid #cbd5e1; border-radius: 3px; padding: 1px 6px; font: 600 11px/1.4 inherit; color: #0f172a; }
                 .app-lot-label::before { display: none; }
+                .lot-pin { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; pointer-events: none; filter: drop-shadow(0 2px 3px rgba(15,23,42,.35)); }
+                .lot-pin-head { font: 700 11px/1 ui-sans-serif, system-ui, sans-serif; color: #fff; background: #dc2626; border: 2px solid #fff; padding: 5px 8px; border-radius: 999px; white-space: nowrap; }
+                .lot-pin-tip { width: 0; height: 0; margin-top: -1px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #dc2626; }
             `}</style>
 
             <MapContainer ref={setMap} center={[13.7850, 121.2500]} zoom={11} minZoom={11} maxBounds={[[13.65, 121.12], [13.92, 121.36]]} maxBoundsViscosity={1.0} maxZoom={MAP_MAX_ZOOM} zoomControl={false} attributionControl={false} style={{ width: "100%", height: "100%" }}>
                 <TileLayer key={basemap} url={BASEMAPS[basemap].url} subdomains="0123" maxZoom={MAP_MAX_ZOOM} maxNativeZoom={BASEMAPS[basemap].maxNativeZoom} keepBuffer={4} />
-                {showClup && (
+                {showClup && !locator && (
                     <TileLayer url={CLUP_TILES.url} maxZoom={MAP_MAX_ZOOM} maxNativeZoom={CLUP_TILES.maxNativeZoom} opacity={0.55} zIndex={10} errorTileUrl={BLANK_TILE} />
                 )}
-                {barangayOutline && (
+                {barangayOutline && !locator && (
                     <GeoJSON key={`bgy-${barangay}`} data={barangayOutline} interactive={false} style={{ color: "#ffffff", weight: 2, opacity: 0.9, dashArray: "6 5", fill: false }} />
                 )}
                 {mappedLots.length > 0 && (
@@ -258,7 +276,11 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
                         }}
                     />
                 )}
-                {focusLot && <LotPlan key={focusLot.index} lot={focusLot} showSides={zoom >= 17} />}
+                {focusLot && !locator && <LotPlan key={focusLot.index} lot={focusLot} showSides={zoom >= 17} />}
+                {/* Locator: one pin standing on the lot, readable at street zoom */}
+                {focusLot && locator && insidePoint(focusLot.feature) && (
+                    <Marker key={`pin-${focusLot.index}`} position={insidePoint(focusLot.feature)} interactive={false} icon={pinIcon(focusLot.code)} zIndexOffset={1000} />
+                )}
                 {/* LOOP 7: the confirmed inspection site, marked only when both
                     coordinates validated. */}
                 {inspectionPoint && (
@@ -268,10 +290,52 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
                         pathOptions={{ color: "#ef4444", fillColor: "#ef4444", fillOpacity: 0.9, weight: 2 }}
                     />
                 )}
-                <ScaleBar />
+                {!locator && <ScaleBar />}
             </MapContainer>
 
+            {/* Locator: one small Map / Satellite switch and zoom; nothing else on the picture */}
+            {locator && (
+                <>
+                    <div className="absolute bottom-2.5 left-2.5 z-[400] flex gap-0.5 p-0.5 bg-white/95 border border-slate-200 rounded-md shadow-sm" role="group" aria-label="Basemap">
+                        {[
+                            ["street", "Map"],
+                            ["satellite", "Satellite"],
+                        ].map(([key, label]) => (
+                            <button
+                                key={key}
+                                type="button"
+                                aria-pressed={basemap === key}
+                                onClick={() => setBasemap(key)}
+                                className={`h-6 px-2.5 rounded text-[11.5px] font-medium cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                                    basemap === key ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
+                                }`}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="absolute bottom-2.5 right-2.5 z-[400] flex flex-col bg-white/95 border border-slate-200 rounded-md shadow-sm overflow-hidden divide-y divide-slate-100">
+                        <Control label="Zoom in" onClick={() => map?.zoomIn()}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m7-7H5" />
+                        </Control>
+                        <Control label="Zoom out" onClick={() => map?.zoomOut()}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 12H5" />
+                        </Control>
+                        <Control label="Back to the lot" disabled={!focusLot} onClick={() => focusLot && fitTo(focusLot.feature, focusZoom)}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v3m0 12v3M3 12h3m12 0h3M12 15a3 3 0 100-6 3 3 0 000 6z" />
+                        </Control>
+                        {onPrint && (
+                            <Control label="Print site & zoning map" disabled={!mappedLots.length} onClick={onPrint}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M7 9V3h10v6M7 17H5a2 2 0 01-2-2v-4a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2h-2M7 14h10v7H7z" />
+                            </Control>
+                        )}
+                    </div>
+                </>
+            )}
+
             {/* Basemap and overlay */}
+            {!locator && (
+            <>
             <div className="absolute top-3 left-3 z-[400] flex items-center gap-2">
                 <div className="flex gap-0.5 p-0.5 bg-slate-900/65 backdrop-blur-md ring-1 ring-white/10 rounded-lg shadow-lg" role="group" aria-label="Basemap">
                     {[
@@ -337,6 +401,8 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
                     </Control>
                 )}
             </div>
+            </>
+            )}
 
             {!loading && !mappedLots.length && (
                 <div className="absolute inset-x-0 bottom-8 z-[400] flex justify-center pointer-events-none">
