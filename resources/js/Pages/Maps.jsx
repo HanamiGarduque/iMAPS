@@ -67,10 +67,15 @@ class MapsErrorBoundary extends Component {
 // older shape is ignored rather than read as empty.
 const FORECAST_CACHE_KEY = "imaps_forecast_data_v2";
 
-// Quarters the LC timeline can scrub through: 2021 Q1 up to the current
-// quarter (recorded), then the next two quarters (forecast).
-function buildTimelineQuarters(urbanGrowthData) {
-    const quarters = [];
+const quarterLabel = (y, q) => `Q${q} '${String(y).slice(-2)}`;
+
+// Quarters the LC timeline can scrub through: 2021 Q1 up to the latest
+// recorded quarter, then the forecast quarters. The forecast quarters are the
+// ones the model actually returned (it anchors on the last *completed*
+// quarter, so its first one can be a quarter still being recorded); without a
+// usable run, the two quarters after the latest record. `outdated` names the
+// run's quarters when they are all already recorded.
+function buildTimelineQuarters(urbanGrowthData, modelQuarters = []) {
     let currentYear, currentQuarter;
 
     let maxDate = null;
@@ -98,21 +103,28 @@ function buildTimelineQuarters(urbanGrowthData) {
         currentQuarter = Math.floor(now.getMonth() / 3) + 1;
     }
 
-    for (let y = 2021; y <= currentYear; y++) {
-        for (let q = 1; q <= 4; q++) {
-            if (y === currentYear && q > currentQuarter) break;
-            quarters.push({ year: y, quarter: q, label: `Q${q} '${String(y).slice(-2)}`, isForecast: false });
-        }
-    }
+    // Quarters as one running number, so comparing and stepping is arithmetic.
+    const toIndex = (y, q) => y * 4 + q - 1;
+    const fromIndex = (i) => ({ year: Math.floor(i / 4), quarter: (i % 4) + 1 });
+    const recordedEnd = toIndex(currentYear, currentQuarter);
 
-    let fy = currentYear;
-    let fq = currentQuarter;
-    for (let i = 0; i < 2; i++) {
-        fq++;
-        if (fq > 4) { fq = 1; fy++; }
-        quarters.push({ year: fy, quarter: fq, label: `Q${fq} '${String(fy).slice(-2)}`, isForecast: true });
+    const model = modelQuarters.map((m) => toIndex(m.year, m.quarter));
+    const usable = model.length > 0 && model[model.length - 1] > recordedEnd;
+    const outdated = model.length > 0 && !usable
+        ? `${quarterLabel(modelQuarters[0].year, modelQuarters[0].quarter)}–${quarterLabel(modelQuarters[modelQuarters.length - 1].year, modelQuarters[modelQuarters.length - 1].quarter)}`
+        : null;
+    const forecast = usable ? model : [recordedEnd + 1, recordedEnd + 2];
+
+    const quarters = [];
+    for (let i = toIndex(2021, 1); i < forecast[0]; i++) {
+        const { year, quarter } = fromIndex(i);
+        quarters.push({ year, quarter, label: quarterLabel(year, quarter), isForecast: false });
     }
-    return quarters;
+    forecast.forEach((i) => {
+        const { year, quarter } = fromIndex(i);
+        quarters.push({ year, quarter, label: quarterLabel(year, quarter), isForecast: true });
+    });
+    return { quarters, outdated };
 }
 
 // Map scale at a latitude and zoom, for a 96-dpi screen, rounded the way a
@@ -204,14 +216,6 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const carryBgyRef = useRef(null);
 
     // ── LC demand timeline ──
-    const timelineQuarters = useMemo(() => buildTimelineQuarters(urbanGrowthData), [urbanGrowthData]);
-    const [activeQuarterIndex, setActiveQuarterIndex] = useState(() => {
-        const idx = timelineQuarters.findIndex((q) => q.isForecast);
-        return idx !== -1 ? idx : timelineQuarters.length - 1;
-    });
-    const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
-    const activeQuarter = timelineQuarters[activeQuarterIndex] || timelineQuarters[timelineQuarters.length - 1];
-
     const [customForecastData, setCustomForecastData] = useState(() => {
         try {
             const saved = localStorage.getItem(FORECAST_CACHE_KEY);
@@ -241,6 +245,24 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         });
         return byQuarter;
     }, [customForecastData]);
+
+    const { quarters: timelineQuarters, outdated: forecastOutdated } = useMemo(() => {
+        const modelQuarters = Object.keys(forecastDemand)
+            .map((k) => k.split("-").map(Number))
+            .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+            .map(([year, quarter]) => ({ year, quarter }));
+        return buildTimelineQuarters(urbanGrowthData, modelQuarters);
+    }, [urbanGrowthData, forecastDemand]);
+    const firstForecastIndex = timelineQuarters.findIndex((q) => q.isForecast);
+    const [activeQuarterIndex, setActiveQuarterIndex] = useState(() =>
+        firstForecastIndex !== -1 ? firstForecastIndex : timelineQuarters.length - 1
+    );
+    // A new run can move where the forecast starts; open on its first quarter.
+    useEffect(() => {
+        if (firstForecastIndex !== -1) setActiveQuarterIndex(firstForecastIndex);
+    }, [firstForecastIndex]);
+    const [isTimelinePlaying, setIsTimelinePlaying] = useState(false);
+    const activeQuarter = timelineQuarters[activeQuarterIndex] || timelineQuarters[timelineQuarters.length - 1];
 
     // Recorded filings for the active quarter. A forecast quarter has none —
     // its numbers live in forecastDemand.
@@ -894,6 +916,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                         activeQuarter={activeQuarter}
                                                         forecastMetrics={forecastMetrics}
                                                         forecastData={customForecastData}
+                                                        forecastOutdated={forecastOutdated}
                                                         urbanGrowthData={urbanGrowthData}
                                                         selectedBgy={selectedBgy}
                                                         onSelectBgy={selectBarangay}

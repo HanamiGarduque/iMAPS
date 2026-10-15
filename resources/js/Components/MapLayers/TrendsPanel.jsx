@@ -9,6 +9,12 @@ const formatWmape = (val) => {
     return n.toFixed(1) + '%';
 };
 
+// Share of a barangay's CLUP 2030 area zoned agricultural or protected at
+// which rising demand there is worth a zoning check. Most of Rosario is
+// agricultural (35 of 48 barangays are 60%+), so only near-total shares
+// single a barangay out.
+const AGRI_FLAG_PCT = 90;
+
 const formatR2 = (val) => {
     const n = Number(val);
     if (!Number.isFinite(n)) return '—';
@@ -94,6 +100,7 @@ export default function TrendsPanel({
     activeQuarter = null,
     forecastMetrics = null,
     forecastData = null,
+    forecastOutdated = null,
     selectedBgy = null,
     onSelectBgy,
     onHoverBgy = () => {},
@@ -171,6 +178,62 @@ export default function TrendsPanel({
     // Whatever the model measured on its own holdout quarters, or nothing.
     const { mae = null, wmape = null, r2 = null } = forecastMetrics || {};
 
+    // The guess a planner would make without the model: each barangay's
+    // average over the last four recorded quarters before the forecast.
+    const baseline = useMemo(() => {
+        const firstForecast = series.findIndex((q) => q.isForecast);
+        const recorded = series.slice(0, firstForecast === -1 ? series.length : firstForecast).slice(-4);
+        if (recorded.length === 0) return null;
+        const byBgy = {};
+        recorded.forEach((q) => {
+            Object.entries(q.byBgy || {}).forEach(([k, n]) => {
+                byBgy[k] = (byBgy[k] || 0) + n / recorded.length;
+            });
+        });
+        return {
+            byBgy,
+            total: recorded.reduce((sum, q) => sum + (q.total || 0), 0) / recorded.length,
+            span: recorded.length > 1 ? `${recorded[0].label}–${recorded[recorded.length - 1].label}` : recorded[0].label,
+        };
+    }, [series]);
+
+    // Barangays the model expects to rise above their usual level. A rise
+    // smaller than the model's own typical miss (MAE) could be noise, so it
+    // does not count.
+    const riseMargin = Math.max(1, mae ?? 1);
+    const watchlist = useMemo(() => {
+        if (!isForecast || !baseline) return [];
+        return ranking
+            .map((r) => {
+                const avg = baseline.byBgy[r.name.trim().toLowerCase()] || 0;
+                return { ...r, avg, rise: r.count - avg };
+            })
+            .filter((r) => r.rise >= riseMargin)
+            .sort((a, b) => b.rise - a.rise);
+    }, [isForecast, baseline, ranking, riseMargin]);
+
+    // Rising barangays whose land CLUP 2030 keeps almost all agricultural (the
+    // controller groups forest, water and protection zones under it too).
+    // The model predicts how many filings, not what kind, so this only says
+    // where new applications deserve a closer zoning check.
+    const zoningFlags = useMemo(() => {
+        const byName = {};
+        Object.entries(urbanGrowthData?.byBarangay || {}).forEach(([name, b]) => {
+            byName[name.trim().toLowerCase()] = b;
+        });
+        return watchlist
+            .map((r) => {
+                const row = (byName[r.name.trim().toLowerCase()]?.breakdown || []).find(([cat]) => cat === 'Agricultural');
+                return { name: r.name, pct: row ? Number(row[2]) : null };
+            })
+            .filter((r) => r.pct !== null && r.pct >= AGRI_FLAG_PCT);
+    }, [watchlist, urbanGrowthData]);
+
+    const topShare = quarterTotal > 0
+        ? ranking.slice(0, 5).reduce((sum, r) => sum + r.count, 0) / quarterTotal
+        : null;
+    const totalChange = baseline?.total > 0 ? (quarterTotal - baseline.total) / baseline.total : null;
+
     const handleExecuteForecast = async (isAutoRun = false) => {
         setIsExecuting(true);
         setIntakeError(null);
@@ -244,7 +307,7 @@ export default function TrendsPanel({
                 subtitle: 'R-squared (R²)',
                 badge: 'Closer to 1.0 is better',
                 explanation: r2 != null
-                    ? `A score from 0 to 1 (or 0% to 100%) showing how closely future demand follows past records. A score of ${formatR2(r2)} means 79% of future filings follow clear historical trends.`
+                    ? `A score from 0 to 1 (or 0% to 100%) showing how closely future demand follows past records. A score of ${formatR2(r2)} means about ${Math.round(Number(r2) * 100)}% of the variation in filings is explained by historical trends.`
                     : 'Shows how trustworthy this forecast is based on historical zoning patterns (scale of 0 to 1).',
                 takeaway: 'Higher is better. A score above 0.70 means past growth in Rosario is consistent and predictable, so you can trust this forecast for official decision-making.',
             },
@@ -324,6 +387,86 @@ export default function TrendsPanel({
                 </>
             ) : (
                 <>
+                    {isForecast && ranking.length > 0 && (
+                        <section className="shrink-0 px-4 pt-2.5 pb-3 border-b border-slate-200 bg-[#fff7ef]" aria-label="Forecast watchlist">
+                            <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#a8521a] mb-1">
+                                What to prepare for · {activeQuarter?.label}
+                            </h3>
+                            <p className="text-[12px] text-slate-800 leading-snug">
+                                <span className="font-semibold tabular-nums">{quarterTotal} LC</span> expected town-wide
+                                {baseline && (
+                                    <>
+                                        {', against '}
+                                        <span className="tabular-nums">{Math.round(baseline.total)}</span>
+                                        {' a quarter over '}{baseline.span}
+                                        {totalChange !== null && Math.abs(totalChange) >= 0.005 && (
+                                            <span className={`font-semibold tabular-nums ${totalChange > 0 ? 'text-[#b32a17]' : 'text-[#1f5fa8]'}`}>
+                                                {' '}({totalChange > 0 ? '+' : '−'}{Math.abs(Math.round(totalChange * 100))}%)
+                                            </span>
+                                        )}
+                                    </>
+                                )}
+                                .
+                                {topShare !== null && ranking.length > 5 && (
+                                    <> The top 5 barangays account for <span className="font-semibold tabular-nums">{Math.round(topShare * 100)}%</span> of it.</>
+                                )}
+                            </p>
+                            {baseline && (
+                                <>
+                                    <p
+                                        className="mt-2 text-[11px] text-slate-600"
+                                        title={`Rising: the forecast is at least ${riseMargin.toFixed(1)} LC above the barangay's average for ${baseline.span}. Smaller rises are within the model's usual error.`}
+                                    >
+                                        {watchlist.length > 0
+                                            ? `${watchlist.length} barangay${watchlist.length === 1 ? '' : 's'} expected above their usual level:`
+                                            : `No barangay is expected to rise beyond the model's usual error (±${riseMargin.toFixed(1)} LC).`}
+                                    </p>
+                                    {watchlist.length > 0 && (
+                                        <ul className="mt-1 flex flex-wrap gap-1">
+                                            {watchlist.slice(0, 6).map((r) => (
+                                                <li key={r.name}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onSelectBgy?.(r.name)}
+                                                        onMouseEnter={() => onHoverBgy(r.name)}
+                                                        onMouseLeave={() => onHoverBgy(null)}
+                                                        title={`${r.name}: ${r.count} LC expected, usually ${r.avg.toFixed(1)}`}
+                                                        className="inline-flex items-baseline gap-1 h-6 px-2 rounded-[3px] border border-[#f3c9a5] bg-white text-[11px] text-slate-800 hover:border-[#a8521a] cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
+                                                    >
+                                                        <span className="truncate max-w-[120px]">{r.name}</span>
+                                                        <span className="font-semibold tabular-nums text-[#b32a17]">+{Math.round(r.rise)}</span>
+                                                    </button>
+                                                </li>
+                                            ))}
+                                            {watchlist.length > 6 && (
+                                                <li className="h-6 px-1 inline-flex items-center text-[11px] text-slate-500">+{watchlist.length - 6} more below</li>
+                                            )}
+                                        </ul>
+                                    )}
+                                    {zoningFlags.length > 0 && (
+                                        <p className="mt-2 text-[11px] text-slate-700 leading-snug">
+                                            <span className="font-semibold text-[#a8521a]">Zoning check: </span>
+                                            {zoningFlags.map((f, i) => (
+                                                <span key={f.name}>
+                                                    {i > 0 && ', '}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onSelectBgy?.(f.name)}
+                                                        className="underline decoration-dotted underline-offset-2 hover:text-[#0b2a5b] cursor-pointer"
+                                                    >
+                                                        {f.name}
+                                                    </button>
+                                                    <span className="tabular-nums text-slate-500"> ({Math.round(f.pct)}%)</span>
+                                                </span>
+                                            ))}
+                                            {zoningFlags.length === 1 ? ' is' : ' are'} rising but almost entirely agricultural or protected land in CLUP 2030.
+                                            Review new applications there against the zoning.
+                                        </p>
+                                    )}
+                                </>
+                            )}
+                        </section>
+                    )}
                     <div className="shrink-0 flex items-baseline px-4 pt-2.5 pb-2">
                         <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">
                             {isForecast ? 'Projected demand by barangay' : 'Filings by barangay'}
@@ -345,7 +488,11 @@ export default function TrendsPanel({
                         ))}
                         {!isExecuting && ranking.length === 0 && (
                             <li className="px-4 py-6 text-center text-[12px] text-slate-500">
-                                {isForecast ? 'No forecast output for this quarter yet. Run the model below.' : 'No locational clearances were filed this quarter.'}
+                                {!isForecast
+                                    ? 'No locational clearances were filed this quarter.'
+                                    : forecastOutdated
+                                        ? `The last forecast run covers ${forecastOutdated}, which is already recorded. Run the model again below.`
+                                        : 'No forecast output for this quarter yet. Run the model below.'}
                             </li>
                         )}
                         {ranking.map((r, i) => {

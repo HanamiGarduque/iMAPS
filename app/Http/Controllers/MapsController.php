@@ -253,13 +253,14 @@ class MapsController extends Controller
             ];
         }
 
-        // ── STRICT LOCATIONAL CLEARANCE FILTER & PIN MAPPING (2021 - AUG 2026) ──
+        // ── STRICT LOCATIONAL CLEARANCE FILTER & PIN MAPPING (2021 ONWARD) ──
+        // No upper cutoff: every recorded quarter is the history the forecast
+        // trains on, and a fixed end date dropped the newest filings.
         $historicalRows = DB::table('historical_data')
             ->select('id', 'form_number', 'name', 'barangay', 'zoning_code', 'lot_area_sqm', 'application_type', 'purpose', 'encoding_date')
             ->where('application_type', 'Locational Clearance')
             ->whereNotNull('barangay')
             ->whereDate('encoding_date', '>=', '2021-01-01')
-            ->whereDate('encoding_date', '<=', '2026-08-31')
             ->orderBy('encoding_date', 'asc')
             ->get();
 
@@ -274,7 +275,7 @@ class MapsController extends Controller
 
         foreach ($historicalRows as $hRow) {
             $year = (int) date('Y', strtotime($hRow->encoding_date));
-            if ($year < 2021 || $year > 2026) continue;
+            if ($year < 2021) continue;
 
             $bName = trim($hRow->barangay);
             if ($bName === '') continue;
