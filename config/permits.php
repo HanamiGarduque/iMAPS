@@ -173,7 +173,7 @@ return [
 
     // Tags computed from other fields — never shown in the modal
     'derived' => [
-        'YEAR_TODAY', 'MONTH_TODAY', 'DAY_TODAY', 'FORM_NUMBER', 'GIVEN_DATE',
+        'YEAR_TODAY', 'MONTH_TODAY', 'DAY_TODAY', 'GIVEN_DATE',
         'ROL_OWNER_MARK', 'ROL_LESSEE_MARK', 'ROL_OTHERS_MARK',
     ],
 
@@ -185,6 +185,7 @@ return [
     'fields' => [
         // Numbers & dates
         'APPLICATION_NO'  => ['label' => 'Application No.',            'group' => 'Numbers & dates', 'readonly' => true],
+        'FORM_NUMBER'     => ['label' => 'Form No.',                   'group' => 'Numbers & dates', 'readonly' => true],
         'ZE_NO'           => ['label' => 'Zoning Evaluation No.',      'group' => 'Numbers & dates'],
         'LC_DN'           => ['label' => 'LC Decision No.',            'group' => 'Numbers & dates'],
         'ZC_DN'           => ['label' => 'Zoning Certificate No.',   'group' => 'Numbers & dates'],

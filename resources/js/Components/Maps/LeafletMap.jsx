@@ -170,7 +170,7 @@ const hoverStyle = (imagery) => (imagery ? { weight: 3, color: "#ffffff", opacit
 const boundaryStyles = (imagery) => ({
     halo: { color: imagery ? "#020617" : "#ffffff", weight: imagery ? 7 : 6, opacity: imagery ? 0.45 : 0.8, fill: false, lineJoin: "round" },
     line: { color: imagery ? "#ffffff" : "#1f2937", weight: imagery ? 2.4 : 2.2, opacity: imagery ? 1 : 0.9, fill: false, lineJoin: "round" },
-    mask: { stroke: false, fill: true, fillColor: "#020617", fillOpacity: imagery ? 0.5 : 0.12 },
+    mask: { stroke: false, fill: true, fillColor: "#020617", fillOpacity: imagery ? 0.2 : 0.1 },
 });
 // Comfortably past maxBounds at every zoom.
 const MASK_OUTER = [[12.8, 120.2], [12.8, 122.4], [14.8, 122.4], [14.8, 120.2]];
@@ -458,10 +458,10 @@ export default function LeafletMap({
 
             const map = L.map(mapRef.current, {
                 center: [13.785, 121.25],
-                zoom: 11,
-                minZoom: 11,
+                zoom: 12,
+                minZoom: 12,
                 maxZoom: 19,
-                maxBounds: [[13.65, 121.12], [13.92, 121.36]],
+                maxBounds: [[13.6, 121.12], [13.92, 121.55]],
                 maxBoundsViscosity: 1.0,
                 zoomControl: false,
             });
@@ -517,7 +517,13 @@ export default function LeafletMap({
                 municipalHaloRef.current = L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.halo }).addTo(map);
                 municipalLayerRef.current = L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.line }).addTo(map);
                 rosarioBoundsRef.current = municipalLayerRef.current.getBounds();
-                map.setMaxBounds(rosarioBoundsRef.current.pad(0.15));
+                // Extra room east and south, where the info panel and attribute
+                // table cover the canvas: framing a barangay there pans past the
+                // edge, and a tight limit makes the camera snap back (a twitch).
+                const b = rosarioBoundsRef.current.pad(0.15);
+                const w = b.getEast() - b.getWest();
+                const h = b.getNorth() - b.getSouth();
+                map.setMaxBounds([[b.getSouth() - h * 0.25, b.getWest()], [b.getNorth(), b.getEast() + w * 0.6]]);
             });
 
             loadBarangayBoundaries()
@@ -651,7 +657,7 @@ export default function LeafletMap({
         const map = mapInstanceRef.current;
         if (!map || resetTrigger === 0) return;
         if (rosarioBoundsRef.current) map.fitBounds(rosarioBoundsRef.current, framePadding());
-        else map.setView([13.785, 121.25], 11);
+        else map.setView([13.785, 121.25], 12);
     }, [resetTrigger]);
 
     useEffect(() => {

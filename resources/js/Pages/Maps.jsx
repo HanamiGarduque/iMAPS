@@ -716,7 +716,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                             <ToolButton icon="layers" label="Layers panel" pressed={layersOpen} onClick={() => setLayersOpen((v) => !v)} />
                             <Divider />
                             <ToolButton icon="zoomIn" label="Zoom in" disabled={show3D} onClick={() => setMapZoom((z) => Math.min(19, z + 1))} />
-                            <ToolButton icon="zoomOut" label="Zoom out" disabled={show3D} onClick={() => setMapZoom((z) => Math.max(11, z - 1))} />
+                            <ToolButton icon="zoomOut" label="Zoom out" disabled={show3D} onClick={() => setMapZoom((z) => Math.max(12, z - 1))} />
                             <ToolButton icon="extent" label="Zoom to Rosario" disabled={show3D} onClick={() => { setSelectedBgy(null); setResetTrigger((t) => t + 1); }} />
                             <Divider />
                             <div className="flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Map view">
