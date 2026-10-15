@@ -881,6 +881,12 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     watch={forecastWatch}
                                                     onSelectBgy={selectBarangay}
                                                     onHoverBgy={setHoveredBgy}
+                                                    onSelectQuarter={(q) => {
+                                                        const i = timelineQuarters.findIndex((t) => t.year === q.year && t.quarter === q.quarter);
+                                                        if (i === -1) return;
+                                                        setActiveQuarterIndex(i);
+                                                        setIsTimelinePlaying(false);
+                                                    }}
                                                 />
                                             </div>
                                         </div>

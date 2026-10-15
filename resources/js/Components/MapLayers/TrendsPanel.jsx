@@ -140,8 +140,13 @@ export default function TrendsPanel({
     const rankingMax = Math.max(1, ...ranking.map((r) => r.count));
     const quarterTotal = ranking.reduce((sum, r) => sum + r.count, 0);
 
-    // Change against the quarter before, when that quarter is known.
-    const previous = activeIndex > 0 ? series[activeIndex - 1] : null;
+    // Change per barangay. LC filings are strongly seasonal (Q1 is always the
+    // peak, Q3 the trough), so it is against the same quarter a year earlier,
+    // not the quarter just before.
+    const current = series[activeIndex];
+    const previous = current
+        ? series.find((q) => !q.isForecast && q.year === current.year - 1 && q.quarter === current.quarter) || null
+        : null;
     const deltaFor = (name) => {
         if (!previous || previous.total === null) return null;
         const key = name.trim().toLowerCase();
@@ -331,7 +336,7 @@ export default function TrendsPanel({
                             {isForecast ? 'Projected demand by barangay' : 'Filings by barangay'}
                         </h3>
                         <span className="text-[10.5px] text-slate-400">
-                            {isForecast ? 'Predicted clearances' : 'Click to open'}
+                            {previous ? `Change vs ${previous.label}` : isForecast ? 'Predicted clearances' : 'Click to open'}
                         </span>
                     </div>
                     <ol className="flex-1 min-h-0 overflow-y-auto border-t border-slate-200" onMouseLeave={() => onHoverBgy(null)}>
@@ -374,7 +379,7 @@ export default function TrendsPanel({
                                             </span>
                                         </span>
                                         <span
-                                            className={`text-[10.5px] tabular-nums text-right ${delta > 0 ? 'text-[#b32a17]' : 'text-slate-400'}`}
+                                            className={`text-[10.5px] tabular-nums text-right ${delta > 0 ? 'text-[#b32a17]' : 'text-[#1f5fa8]'}`}
                                             title={previous ? `vs ${previous.label}` : undefined}
                                         >
                                             {delta === null || delta === 0 ? '' : `${delta > 0 ? '+' : '−'}${Math.abs(delta)}`}
