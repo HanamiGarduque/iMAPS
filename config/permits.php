@@ -44,7 +44,9 @@ return [
     /*
     | Permit documents. `cells` overrides specific cells with a tag template —
     | used where the workbook still has cross-sheet formulas (e.g. pointing at
-    | the "ORIG COPY OF ..." sheets) instead of tags. Everything else in the
+    | the "ORIG COPY OF ..." sheets) instead of tags. Those are resolved from
+    | the same cell of the matching sheet WITHOUT "ORIG COPY OF" (e.g.
+    | 'ORIG COPY OF EVALUATION'!M27 → EVALUATION!M27). Everything else in the
     | sheet is filled automatically from the ${TAGS} already typed in it.
     | `bind` ties a dropdown cell to a named field so its value can be reused
     | by other permits.
@@ -63,7 +65,6 @@ return [
             'cells' => [
                 // Caption under the Zoning Administrator's signature
                 'H75' => 'Zoning Administrator, OIC',
-                'B13' => '${MONTH_TODAY}',
                 'E13' => '${YEAR_TODAY}',
                 'N13' => '${YEAR_TODAY}',
                 'K32' => '${APPLICATION_NO}',
@@ -97,6 +98,8 @@ return [
             'cells' => [
                 // Caption under the Zoning Administrator's signature
                 'D49' => 'Zoning Administrator, OIC',
+                // Formula joins the EVALUATION number cells, whose padding/line breaks would print
+                'B9'  => '${APPLICATION_NO}',
                 'B10' => '${DATE_TODAY}',
                 'D14' => '${CORPORATION_ADDRESS}',
                 'D18' => '${PROJECT_LOCATION}',
@@ -125,7 +128,8 @@ return [
                 'H8'  => '${ZC_DN}',
                 'D15' => '${PROJECT_LOCATION}',
                 'G18' => '${LC_DN}',
-                'F36' => '${DATE_ISSUED}',
+                // EVALUATION!M27; same date as the certified copy on page 2 (F83)
+                'F36' => '${DATE_TODAY}',
                 'A39' => '${APPLICANT_NAME}',
                 'F40' => '${CERTIFICATION_PURPOSE}',
                 'A42' => '${GIVEN_DATE}',
@@ -134,7 +138,6 @@ return [
                 'B72' => '${ZC_AMOUNT}',
                 'F73' => '${PROJECT_LOCATION}',
                 'B74' => '${ZC_DN}',
-                'F83' => '${DATE_ISSUED}',
             ],
             'bind' => [
                 'F40' => 'CERTIFICATION_PURPOSE',
@@ -150,8 +153,10 @@ return [
             'fit_height' => 1,
             'cells' => [
                 'C8'  => '${APPLICATION_NO}',
-                'C9'  => '${DATE_ISSUED}',
                 'F11' => '${PROJECT_LOCATION}',
+                // EVALUATION!C15/C18 are indented with spaces, which would push these centered names off-centre
+                'A11' => '${PARCEL_OWNER}',
+                'A13' => '${APPLICANT_NAME}',
                 'F13' => '${ADDRESS}',
                 'A15' => '${PROJECT_AREA} SQ.M',
                 'I15' => '${SALEABLE_LOTS}',
