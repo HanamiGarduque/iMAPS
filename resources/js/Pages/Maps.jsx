@@ -750,6 +750,11 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             onStatusFilterChange={setStatusFilter}
                                             statusCounts={statusCounts}
                                             activeQuarter={activeQuarter}
+                                            quarterCount={quarterCount}
+                                            demandByBgy={demandByBgy}
+                                            hoveredBgy={hoveredBgy}
+                                            selectedBgyName={selectedBgy?.name || null}
+                                            onClearSelection={() => setSelectedBgy(null)}
                                             diversityBandFilter={diversityBandFilter}
                                             onSelectBand={setDiversityBandFilter}
                                             bgyStats={mapStats}
@@ -827,7 +832,10 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                     )}
 
                                     {/* Map title, like a print layout's. It also reads out whatever is
-                                        under the cursor, so nothing floats over the data itself. */}
+                                        under the cursor, so nothing floats over the data itself.
+                                        LC demand shows it in its Layers section instead, so the
+                                        card only floats there while that panel is closed. */}
+                                    {!(activeLayer === "trends" && layersOpen) && (
                                     <div className="absolute top-3 left-3 z-[500] bg-white/95 border border-slate-300 rounded-[3px] shadow-sm w-[300px] max-w-[calc(100%-1.5rem)]">
                                         <div className="px-3 py-1.5">
                                             <div className="text-[13px] font-semibold text-slate-900 leading-tight truncate">{moduleInfo?.label}</div>
@@ -849,6 +857,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             {hoverText || (show3D ? "Drag to orbit · click a barangay to open it" : "Hover a barangay · click to open it")}
                                         </div>
                                     </div>
+                                    )}
 
                                     {/* Attribute table for the selected barangay, floating over the
                                         bottom of the map so the canvas keeps its full size. */}
