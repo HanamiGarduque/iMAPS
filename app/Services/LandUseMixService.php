@@ -229,7 +229,8 @@ class LandUseMixService
                 'diversity'        => $score,
                 'source'           => $fromRecords ? 'records' : 'plan',
                 'planDiversity'    => $planScore,
-                'variance'         => round($score - $planScore, 2),
+                // null, not 0, when the score is the plan itself: there is no drift to measure.
+                'variance'         => $fromRecords ? round($score - $planScore, 2) : null,
                 'distribution'     => self::distribution($fromRecords ? $areas : $planAreas),
                 'planDistribution' => self::distribution($planAreas),
                 'records'          => $n,

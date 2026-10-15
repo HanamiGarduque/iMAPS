@@ -103,7 +103,7 @@ class MapsController extends Controller
                 'score' => $bStat['diversity'] ?? 0,
                 'liveDiversity' => $bStat['liveDiversity'] ?? 0,
                 'clupTarget' => $bStat['clupTargetDiversity'] ?? 0,
-                'variance' => $bStat['variance'] ?? 0,
+                'variance' => $bStat['variance'] ?? null,
                 'primaryZone' => $bStat['Primary_Zone'] ?? 'N/A',
                 'distribution' => $bStat['distribution'] ?? []
             ];

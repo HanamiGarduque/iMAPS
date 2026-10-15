@@ -81,7 +81,7 @@ class LandUseMixServiceTest extends TestCase
 
         $this->assertSame('plan', $b['source']);
         $this->assertSame(0.29, $b['diversity']);
-        $this->assertSame(0.0, $b['variance']);
+        $this->assertNull($b['variance']);
     }
 
     public function test_spellings_are_matched_and_unusable_rows_skipped(): void

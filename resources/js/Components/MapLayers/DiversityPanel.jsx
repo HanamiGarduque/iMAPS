@@ -92,8 +92,10 @@ export default function DiversityPanel({
                     <span className="text-slate-500">CLUP 2030 plan mix</span>
                     <span className="tabular-nums text-slate-700">
                         {lens.format(planScore)}
-                        {fromRecords && score != null && (
+                        {fromRecords && score != null ? (
                             <span className="ml-1.5 text-slate-500">({signed(score - planScore)} recorded vs plan)</span>
+                        ) : (
+                            <span className="ml-1.5 text-slate-500">(insufficient data for plan drift)</span>
                         )}
                     </span>
                 </div>

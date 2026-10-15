@@ -296,7 +296,7 @@ export default function LeafletMap({
                 // null = too few records to score; the lens draws it as no data.
                 diversity: stat.diversity ?? null,
                 distribution: stat.distribution || [],
-                variance: stat.variance ?? 0,
+                variance: stat.variance ?? null,
                 varianceStatus: stat.varianceStatus || "",
                 clupTargetDiversity: stat.clupTargetDiversity ?? null,
             };
