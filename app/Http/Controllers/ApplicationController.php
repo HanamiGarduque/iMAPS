@@ -1752,8 +1752,9 @@ class ApplicationController extends Controller
         $fileName = sprintf('%s_%s_%s.%s', \Illuminate\Support\Str::slug($label, '_'), preg_replace('/[^A-Za-z0-9_\-]/', '_', (string) $application->reference_number), \Illuminate\Support\Str::random(6), $format);
         $storagePath = "{$storageDir}/{$fileName}";
 
-        Storage::disk('local')->makeDirectory($storageDir);
-        Storage::disk('local')->put($storagePath, file_get_contents($path));
+        $disk = Storage::disk(config('filesystems.permits_disk'));
+        $disk->makeDirectory($storageDir);
+        $disk->put($storagePath, file_get_contents($path));
 
         $savedPermit = GeneratedPermit::create([
             'zoning_application_id' => $application->id,
@@ -1794,16 +1795,12 @@ class ApplicationController extends Controller
             ? 'application/pdf'
             : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-        $fullStoragePath = Storage::disk('local')->path($storagePath);
-
-        // Remove temporary generated file
-        @unlink($path);
-
-        return response()->file($fullStoragePath, [
+        // Serve the freshly generated temp file; the stored copy may live in R2
+        return response()->file($path, [
             'Content-Type'        => $mime,
             'Content-Disposition' => ($format === 'pdf' ? 'inline' : 'attachment') . '; filename="' . $fileName . '"',
             'X-Saved-Permit-Id'   => (string) $savedPermit->id,
-        ]);
+        ])->deleteFileAfterSend(true);
     }
 
     public function savedPermits(int $id)
@@ -1821,16 +1818,17 @@ class ApplicationController extends Controller
         $application = ZoningApplication::findOrFail($id);
         $permit = GeneratedPermit::where('zoning_application_id', $application->id)->findOrFail($permitId);
 
-        if (!Storage::disk('local')->exists($permit->file_path)) {
+        $disk = Storage::disk(config('filesystems.permits_disk'));
+
+        if (!$disk->exists($permit->file_path)) {
             abort(404, 'Stored permit file not found.');
         }
 
-        $fullPath = Storage::disk('local')->path($permit->file_path);
         $mime = $permit->file_format === 'pdf'
             ? 'application/pdf'
             : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-        return response()->file($fullPath, [
+        return $disk->response($permit->file_path, $permit->file_name, [
             'Content-Type'        => $mime,
             'Content-Disposition' => ($permit->file_format === 'pdf' ? 'inline' : 'attachment') . '; filename="' . $permit->file_name . '"',
         ]);
@@ -1841,8 +1839,9 @@ class ApplicationController extends Controller
         $application = ZoningApplication::findOrFail($id);
         $permit = GeneratedPermit::where('zoning_application_id', $application->id)->findOrFail($permitId);
 
-        if (Storage::disk('local')->exists($permit->file_path)) {
-            Storage::disk('local')->delete($permit->file_path);
+        $disk = Storage::disk(config('filesystems.permits_disk'));
+        if ($disk->exists($permit->file_path)) {
+            $disk->delete($permit->file_path);
         }
 
         $permitName = $permit->permit_name;

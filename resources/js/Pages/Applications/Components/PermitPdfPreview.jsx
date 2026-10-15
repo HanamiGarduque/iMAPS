@@ -6,8 +6,20 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 // Bundled by Vite as a .js worker, so servers that don't know the .mjs MIME type still serve it
 import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?worker&url";
 
-GlobalWorkerOptions.workerPort ??= new PdfWorker();
+// In dev the page is served by Laravel (:8000) but Vite serves the worker from :5173, and browsers
+// refuse `new Worker(<other origin>)`. Start it from a same-origin blob that imports the Vite URL
+// (Vite sends CORS headers). Production builds are same-origin, so they use the bundled worker.
+const createPdfWorker = () =>
+    import.meta.env.DEV
+        ? new Worker(
+              URL.createObjectURL(new Blob([`import ${JSON.stringify(new URL(pdfWorkerUrl, import.meta.url).href)};`], { type: "text/javascript" })),
+              { type: "module" }
+          )
+        : new PdfWorker();
+
+GlobalWorkerOptions.workerPort ??= createPdfWorker();
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;

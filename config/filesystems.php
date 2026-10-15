@@ -16,6 +16,13 @@ return [
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
+    | Disk that holds generated permit files. Stays 'local' (the Railway volume)
+    | until PERMITS_DISK=r2 is set, so the switch can be made per environment.
+    */
+
+    'permits_disk' => env('PERMITS_DISK', 'local'),
+
+    /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
