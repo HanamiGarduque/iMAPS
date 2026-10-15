@@ -6,7 +6,11 @@ cd /app
 # Persistent state: storage/app (uploads, permits, history json) and map tiles.
 mkdir -p /data/app/public /data/app/private /data/app/generated_permits
 rm -rf storage/app && ln -s /data/app storage/app
-cp -rf /opt/templates storage/app/templates          # code: overwrite every deploy
+# code: overwrite every deploy. Copy the CONTENTS ("/."): once the volume already has
+# storage/app/templates, "cp -r /opt/templates storage/app/templates" nests a copy inside it
+# and the live files (e.g. the permit .xlsx) never update.
+mkdir -p storage/app/templates
+cp -rf /opt/templates/. storage/app/templates/
 [ -d /data/tiles ] || cp -r /opt/tiles /data/tiles   # seed once; Settings uploads then persist
 ln -sfn /data/tiles public/tiles
 # Permits used to live on the public disk (world-readable); move them to the private one
