@@ -357,14 +357,15 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
             {part === "generate" && !isReleased && (() => {
                 // Template-gallery style: each permit is a miniature page; click one to generate it
                 const { required, optional } = getPermitChecklist(app, savedPermits);
-                const byState = (a, b) => savedTypes.has(a.type) - savedTypes.has(b.type);
-                const pages = [...[...required].sort(byState).map((p) => ({ ...p, req: true })), ...optional.map((p) => ({ ...p, req: false }))];
+                // Fixed order: Zoning Evaluation, Locational Clearance, Zoning Certificate, Development Permit
+                const order = (p) => PERMITS.findIndex((x) => x.type === p.type);
+                const pages = [...required.map((p) => ({ ...p, req: true })), ...optional.map((p) => ({ ...p, req: false }))].sort((a, b) => order(a) - order(b));
                 return (
                     <ul className="flex flex-wrap gap-4" aria-label="Permits">
                         {pages.map((p) => {
                             const ready = savedTypes.has(p.type);
                             const todo = p.req && !ready;
-                            const state = ready ? "Ready" : p.req ? "Required" : "Optional";
+                            const state = ready ? "Ready" : "";
                             // Newest saved copy of this permit, so it can be checked right where release is decided.
                             const latest = ready
                                 ? [...savedPermits].filter((sp) => typeof sp === "object" && sp.permit_type === p.type)
@@ -375,7 +376,7 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                                     <button
                                         type="button"
                                         onClick={() => setOpen(p.type)}
-                                        aria-label={`${ready ? "Regenerate" : "Generate"} ${p.label} (${state.toLowerCase()}, ${p.paper})`}
+                                        aria-label={`${ready ? "Regenerate" : "Generate"} ${p.label} (${ready ? "ready, " : ""}${p.paper})`}
                                         title={`${ready ? "Regenerate" : "Generate"} ${p.label}`}
                                         className="group block w-full text-left cursor-pointer focus-visible:outline-none"
                                     >
@@ -389,9 +390,9 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                                         </span>
                                         <span className="mt-1.5 block text-[12px] font-medium text-slate-900 leading-snug truncate" title={p.label}>{p.label}</span>
                                         <span className="flex items-center gap-1 text-[11px] text-slate-500 truncate">
-                                            {(ready || todo) && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ready ? "bg-emerald-500" : "bg-amber-500"}`} aria-hidden="true" />}
-                                            <span className={ready ? "text-emerald-700" : todo ? "text-amber-700" : ""}>{state}</span>
-                                            <span className="text-slate-400">· {p.paper}</span>
+                                            {ready && <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500" aria-hidden="true" />}
+                                            {ready && <span className="text-emerald-700">{state}</span>}
+                                            <span className="text-slate-400">{ready ? "· " : ""}{p.paper}</span>
                                         </span>
                                     </button>
                                     {latest && (

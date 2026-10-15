@@ -80,7 +80,7 @@ class PermitExcelService
 
         // Some tags are derived from editable fields — expose the source field instead
         $sources = [
-            'YEAR_TODAY' => 'DATE_TODAY', 'MONTH_TODAY' => 'DATE_TODAY', 'DAY_TODAY' => 'DATE_TODAY',
+            'YEAR_TODAY' => 'DATE_TODAY', 'MONTH_TODAY' => 'DATE_TODAY', 'DAY_TODAY' => 'DATE_TODAY', 'FORM_NUMBER' => 'DATE_TODAY',
             'GIVEN_DATE' => 'DATE_ISSUED',
             'ROL_OWNER_MARK' => 'RIGHT_OVER_LAND', 'ROL_LESSEE_MARK' => 'RIGHT_OVER_LAND', 'ROL_OTHERS_MARK' => 'RIGHT_OVER_LAND',
         ];
@@ -391,6 +391,8 @@ class PermitExcelService
             'YEAR_TODAY'      => $evalDate->format('Y'),
             'MONTH_TODAY'     => $evalDate->format('m'),
             'DAY_TODAY'       => $evalDate->format('d'),
+            // Series part of the application no. (${YEAR_TODAY}-${FORM_NUMBER}), e.g. U-0-010
+            'FORM_NUMBER'     => sprintf('U-0-0%d', $evalDate->month),
             'GIVEN_DATE'      => sprintf('Given this %s day of %s.', $issued->format('jS'), $issued->format('F Y')),
             'ROL_OWNER_MARK'  => $rol === 'OWNER' ? self::CHECK : '',
             'ROL_LESSEE_MARK' => $rol === 'LESSEE' ? self::CHECK : '',

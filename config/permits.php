@@ -173,7 +173,7 @@ return [
 
     // Tags computed from other fields — never shown in the modal
     'derived' => [
-        'YEAR_TODAY', 'MONTH_TODAY', 'DAY_TODAY', 'GIVEN_DATE',
+        'YEAR_TODAY', 'MONTH_TODAY', 'DAY_TODAY', 'FORM_NUMBER', 'GIVEN_DATE',
         'ROL_OWNER_MARK', 'ROL_LESSEE_MARK', 'ROL_OTHERS_MARK',
     ],
 
