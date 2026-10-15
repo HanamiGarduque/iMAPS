@@ -29,7 +29,6 @@ export const TILE_PROVIDERS = {
         maxZoom: 19,
         className: "imaps-tiles-gray",
     },
-    // Default.
     standard: {
         label: "Standard Street",
         desc: "OpenStreetMap road network",
@@ -37,12 +36,16 @@ export const TILE_PROVIDERS = {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19,
     },
+    // Default. Imagery is busy, so the thematic layers switch to a lighter
+    // touch on it (see `imagery` in getFeatureStyle).
     satellite: {
         label: "Satellite Imagery",
         desc: "Esri high-resolution aerial imagery",
         url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP',
         maxZoom: 18,
+        className: "imaps-tiles-imagery",
+        imagery: true,
     },
     topo: {
         label: "Topographic",
@@ -142,7 +145,7 @@ export const DEMAND_CLASSES = [
 export const getTrendsDemandColor = (count) => DEMAND_CLASSES.find((c) => (count || 0) >= c.min);
 
 // Application load per barangay, shown under the status lot outlines. A
-// green-to-deep-blue ramp (YlGnBu) that reads clearly on the street basemap.
+// green-to-deep-blue ramp (YlGnBu) that reads on both the street and imagery basemaps.
 export const APP_LOAD_CLASSES = [
     { min: 11, color: "#253494", label: "11+" },
     { min: 6, color: "#1d91c0", label: "6–10" },
@@ -153,9 +156,57 @@ export const APP_LOAD_CLASSES = [
 
 export const getAppLoadColor = (count) => APP_LOAD_CLASSES.find((c) => (count || 0) >= c.min).color;
 
-// Shared outline colours: selection is iMAPS navy, hover a dark slate.
+// Shared outline colours: selection is iMAPS navy, hover a dark slate. Dark
+// strokes vanish into imagery, so there both turn white and differ by weight.
 const SELECT_STROKE = "#0b2a5b";
 const HOVER_STROKE = "#1f2937";
+const isImageryStyle = (style) => Boolean(TILE_PROVIDERS[style]?.imagery);
+const selectStroke = (imagery) => (imagery ? "#ffffff" : SELECT_STROKE);
+const hoverStyle = (imagery) => (imagery ? { weight: 3, color: "#ffffff", opacity: 1 } : { weight: 2.5, color: HOVER_STROKE });
+
+// Rosario's outline is drawn twice, a soft halo under a crisp line, and the
+// land outside it is dimmed by a mask with the municipality cut out, so the
+// study area lifts off the basemap without a frame around it.
+const boundaryStyles = (imagery) => ({
+    halo: { color: imagery ? "#020617" : "#ffffff", weight: imagery ? 7 : 6, opacity: imagery ? 0.45 : 0.8, fill: false, lineJoin: "round" },
+    line: { color: imagery ? "#ffffff" : "#1f2937", weight: imagery ? 2.4 : 2.2, opacity: imagery ? 1 : 0.9, fill: false, lineJoin: "round" },
+    mask: { stroke: false, fill: true, fillColor: "#020617", fillOpacity: imagery ? 0.5 : 0.12 },
+});
+// Comfortably past maxBounds at every zoom.
+const MASK_OUTER = [[12.8, 120.2], [12.8, 122.4], [14.8, 122.4], [14.8, 120.2]];
+
+const buildOutsideMask = (L, data, pane, style) => {
+    const holes = [];
+    data.features.forEach((f) => {
+        const g = f.geometry;
+        const polys = g?.type === "Polygon" ? [g.coordinates] : g?.type === "MultiPolygon" ? g.coordinates : [];
+        polys.forEach((p) => holes.push(L.GeoJSON.coordsToLatLngs(p[0])));
+    });
+    if (!holes.length) return null;
+    return L.polygon([MASK_OUTER, ...holes], { pane, interactive: false, ...style });
+};
+
+// Base tiles are drawn 1px oversize so neighbours overlap. At fractional
+// display scaling the browser rounds tile edges apart, and the container
+// background shows through as hairline seams.
+let SeamlessTileLayer = null;
+const createBaseLayer = (L, mapStyle) => {
+    SeamlessTileLayer ??= L.TileLayer.extend({
+        _initTile(tile) {
+            L.TileLayer.prototype._initTile.call(this, tile);
+            const size = this.getTileSize();
+            tile.style.width = `${size.x + 1}px`;
+            tile.style.height = `${size.y + 1}px`;
+        },
+    });
+    const provider = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.light;
+    return new SeamlessTileLayer(provider.url, {
+        attribution: provider.attribution,
+        maxNativeZoom: provider.maxZoom,
+        maxZoom: 19,
+        className: provider.className || "",
+    });
+};
 
 const BLANK_TILE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 // Zooming out past this closes the open application (Maps.jsx).
@@ -203,6 +254,8 @@ export default function LeafletMap({
     const clupTileLayerRef = useRef(null);
     const geoLayerRef = useRef(null);
     const municipalLayerRef = useRef(null);
+    const municipalHaloRef = useRef(null);
+    const outsideMaskRef = useRef(null);
     const verifiedParcelLayerRef = useRef(null);
     const zoningLayerRef = useRef(null);
     const zoningPromiseRef = useRef(null);
@@ -249,7 +302,7 @@ export default function LeafletMap({
     // they read the latest props through this ref rather than a stale closure.
     const live = useRef({});
     live.current = {
-        currentLayer, selectedBgy, showClup, showLabels,
+        currentLayer, selectedBgy, showClup, showLabels, imagery: isImageryStyle(mapStyle),
         diversityLens, diversityBandFilter, staticBgyData, bgyDemandCounts: demandCounts,
         onFeatureClick, onMapClick, onHoverBgy, onCursorMove, onZoomChange, onInspectApp, onHoverApp,
     };
@@ -259,33 +312,44 @@ export default function LeafletMap({
     const demandFor = (name) => live.current.bgyDemandCounts[name.trim().toLowerCase()] || 0;
 
     const getFeatureStyle = (feature) => {
-        const { currentLayer: layer, selectedBgy: sel, showClup: clup, diversityLens: lensId, diversityBandFilter: band } = live.current;
+        const { currentLayer: layer, selectedBgy: sel, showClup: clup, diversityLens: lensId, diversityBandFilter: band, imagery } = live.current;
         const name = featureName(feature);
         const stat = statFor(name);
         const selName = (sel?.name || "").trim().toLowerCase();
         const isSelected = Boolean(selName) && selName === name.toLowerCase();
+        // On imagery: thin translucent white edges, and fills light enough to
+        // let the ground texture through, so the colour reads as part of the
+        // land rather than a sheet laid over it.
+        const edge = imagery ? { color: "#ffffff", weight: 1.2, opacity: 0.8 } : { color: "#ffffff", weight: 1, opacity: 1 };
 
         if (layer === "diversity") {
             // A selected barangay opens up to show its CLUP parcels, so it
             // draws as an outline and every other barangay steps out of the way.
             // `fill: false` (not zero opacity) so the fill is not hit-tested.
-            if (isSelected) return { color: SELECT_STROKE, weight: 2.6, opacity: 1, fill: false, dashArray: null, className: "" };
+            if (isSelected) return { color: selectStroke(imagery), weight: imagery ? 3 : 2.6, opacity: 1, fill: false, dashArray: null, className: "" };
             if (selName) return { weight: 0, opacity: 0, fill: true, fillOpacity: 0, className: "imaps-deadspace" };
 
             const resolved = resolveLensValue(lensId, stat);
             if (band !== "all" && resolved.band.id !== band) {
-                return { color: "#b8c0cc", weight: 0.8, opacity: 0.9, dashArray: "3 3", fill: true, fillColor: "#e2e8f0", fillOpacity: 0.4, className: "" };
+                return imagery
+                    ? { color: "#ffffff", weight: 0.8, opacity: 0.55, dashArray: "3 3", fill: true, fillColor: "#020617", fillOpacity: 0.35, className: "" }
+                    : { color: "#b8c0cc", weight: 0.8, opacity: 0.9, dashArray: "3 3", fill: true, fillColor: "#e2e8f0", fillOpacity: 0.4, className: "" };
             }
-            return { color: "#ffffff", weight: 1, opacity: 1, dashArray: null, fill: true, fillColor: resolved.color, fillOpacity: clup ? 0.35 : 0.9, className: "" };
+            return { ...edge, dashArray: null, fill: true, fillColor: resolved.color, fillOpacity: clup ? 0.35 : imagery ? 0.7 : 0.9, className: "" };
         }
 
         const demand = layer === "trends" ? getTrendsDemandColor(demandFor(name)) : null;
         const fillColor = demand ? demand.color : getAppLoadColor(stat.total);
-        const base = clup ? 0.25 : layer === "trends" ? 0.82 : 0.62;
+        let base = clup ? 0.25 : layer === "trends" ? 0.82 : 0.62;
+        // The lowest class is near-white; on imagery it fades out (all but
+        // clear for zero applications) instead of washing the ground grey.
+        if (imagery && !clup) {
+            base = demand ? (demand.min === 0 ? 0.28 : 0.66) : stat.total ? 0.6 : 0.04;
+        }
         return {
-            color: isSelected ? SELECT_STROKE : demand ? demand.stroke : "#ffffff",
-            weight: isSelected ? 3 : demand ? 1.2 : 1,
-            opacity: 1,
+            color: isSelected ? selectStroke(imagery) : imagery ? edge.color : demand ? demand.stroke : "#ffffff",
+            weight: isSelected ? (imagery ? 3.4 : 3) : imagery ? edge.weight : demand ? 1.2 : 1,
+            opacity: isSelected ? 1 : edge.opacity,
             dashArray: null,
             fill: true,
             fillColor,
@@ -310,7 +374,6 @@ export default function LeafletMap({
                 if (featureName(lf.feature).toLowerCase() === name) lf.bringToFront();
             });
         }
-        municipalLayerRef.current?.bringToFront();
     };
 
     // CLUP parcels, drawn only inside the selected barangay of the diversity
@@ -404,6 +467,12 @@ export default function LeafletMap({
             });
             mapInstanceRef.current = map;
 
+            // Mask sits between the tiles (incl. CLUP) and the barangays; the
+            // municipal outline above every polygon but under the labels.
+            map.createPane("maskPane").style.zIndex = "350";
+            map.createPane("boundaryPane").style.zIndex = "420";
+            map.getPane("maskPane").style.pointerEvents = "none";
+            map.getPane("boundaryPane").style.pointerEvents = "none";
             map.createPane("labelsPane").style.zIndex = "450";
             map.createPane("appsPane").style.zIndex = "470";
             L.control.scale({ position: "bottomleft", metric: true, imperial: false, maxWidth: 120 }).addTo(map);
@@ -419,13 +488,8 @@ export default function LeafletMap({
             });
             map.on("mouseout", () => live.current.onCursorMove?.(null));
 
-            const provider = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.light;
-            tileLayerRef.current = L.tileLayer(provider.url, {
-                attribution: provider.attribution,
-                maxNativeZoom: provider.maxZoom,
-                maxZoom: 19,
-                className: provider.className || "",
-            }).addTo(map);
+            mapRef.current.classList.toggle("is-imagery", isImageryStyle(mapStyle));
+            tileLayerRef.current = createBaseLayer(L, mapStyle).addTo(map);
 
             clupTileLayerRef.current = L.tileLayer("/tiles/clup_tiles/{z}/{x}/{y}.png", {
                 maxZoom: 22,
@@ -448,10 +512,10 @@ export default function LeafletMap({
             // cached promises shared with the 3D view.
             loadMunicipalBoundary().then((data) => {
                 if (mapInstanceRef.current !== map || !data?.features) return;
-                municipalLayerRef.current = L.geoJSON(data, {
-                    interactive: false,
-                    style: { color: "#1f2937", weight: 2.2, opacity: 0.9, fill: false },
-                }).addTo(map);
+                const styles = boundaryStyles(live.current.imagery);
+                outsideMaskRef.current = buildOutsideMask(L, data, "maskPane", styles.mask)?.addTo(map) ?? null;
+                municipalHaloRef.current = L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.halo }).addTo(map);
+                municipalLayerRef.current = L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.line }).addTo(map);
                 rosarioBoundsRef.current = municipalLayerRef.current.getBounds();
                 map.setMaxBounds(rosarioBoundsRef.current.pad(0.15));
             });
@@ -470,7 +534,7 @@ export default function LeafletMap({
                             lf.on("mouseover", () => {
                                 live.current.onHoverBgy?.(name);
                                 if ((live.current.selectedBgy?.name || "").toLowerCase() !== name.toLowerCase()) {
-                                    lf.setStyle({ weight: 2.5, color: HOVER_STROKE });
+                                    lf.setStyle(hoverStyle(live.current.imagery));
                                     lf.bringToFront();
                                     raiseSelected();
                                 }
@@ -483,7 +547,6 @@ export default function LeafletMap({
                         },
                     }).addTo(map);
                     geoLayerRef.current = geo;
-                    municipalLayerRef.current?.bringToFront();
                     map.fitBounds(geo.getBounds(), { padding: [24, 24] });
                     setBarangaysReady(true);
 
@@ -537,7 +600,7 @@ export default function LeafletMap({
 
         geoLayerRef.current?.bringToFront();
         raiseSelected();
-    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, demandCounts, diversityLens, diversityBandFilter, zoningReady, barangaysReady]);
+    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, demandCounts, diversityLens, diversityBandFilter, zoningReady, barangaysReady, mapStyle]);
 
     // ── Camera follows the selected barangay ──
     useEffect(() => {
@@ -596,15 +659,16 @@ export default function LeafletMap({
         if (!map || !tileLayerRef.current) return;
         import("leaflet").then((mod) => {
             if (mapInstanceRef.current !== map) return;
-            const provider = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.light;
             tileLayerRef.current.remove();
-            tileLayerRef.current = mod.default.tileLayer(provider.url, {
-                attribution: provider.attribution,
-                maxNativeZoom: provider.maxZoom,
-                maxZoom: 19,
-                className: provider.className || "",
-            });
+            tileLayerRef.current = createBaseLayer(mod.default, mapStyle);
             tileLayerRef.current.addTo(map).bringToBack();
+
+            const imagery = isImageryStyle(mapStyle);
+            const styles = boundaryStyles(imagery);
+            mapRef.current?.classList.toggle("is-imagery", imagery);
+            outsideMaskRef.current?.setStyle(styles.mask);
+            municipalHaloRef.current?.setStyle(styles.halo);
+            municipalLayerRef.current?.setStyle(styles.line);
         });
     }, [mapStyle]);
 
@@ -697,7 +761,7 @@ export default function LeafletMap({
             if (featureName(lf.feature).toLowerCase() === target) hit = lf;
         });
         if (!hit) return;
-        hit.setStyle({ weight: 2.5, color: HOVER_STROKE });
+        hit.setStyle(hoverStyle(live.current.imagery));
         hit.bringToFront();
         return () => {
             geo.resetStyle(hit);
@@ -835,7 +899,9 @@ export default function LeafletMap({
 
 const MAP_CSS = `
 .imaps-map.leaflet-container { background: #f2f3f5; font: inherit; }
+.imaps-map.is-imagery.leaflet-container { background: #0f172a; }
 .imaps-tiles-gray { filter: grayscale(1) brightness(1.06) contrast(0.88); }
+.imaps-tiles-imagery { filter: saturate(0.85) contrast(1.05) brightness(0.95); }
 .imaps-map .leaflet-interactive { transition: fill 240ms ease, fill-opacity 240ms ease, stroke-width 160ms ease; }
 .imaps-map .leaflet-interactive.imaps-deadspace { pointer-events: none !important; }
 
@@ -845,6 +911,9 @@ const MAP_CSS = `
   text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff; }
 .imaps-label span { font-size: 10.5px; font-weight: 600; color: #1f2937; }
 .imaps-label b { font-size: 11.5px; font-weight: 700; color: #0b2a5b; font-variant-numeric: tabular-nums; }
+.is-imagery .imaps-label { text-shadow: 0 0 2px rgba(2, 6, 23, 0.9), 0 0 3px rgba(2, 6, 23, 0.8), 0 1px 4px rgba(2, 6, 23, 0.6); }
+.is-imagery .imaps-label span { color: #f8fafc; }
+.is-imagery .imaps-label b { color: #fde68a; }
 
 .imaps-tooltip { background: #fff; border: 1px solid #cbd5e1; border-radius: 3px; box-shadow: 0 2px 8px rgba(15, 23, 42, 0.14); padding: 6px 8px; color: #111827; }
 .imaps-tooltip::before { display: none; }

@@ -192,7 +192,7 @@ function DockHeader({ title, onClose, closeLabel }) {
 
 function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiversity, urbanGrowthData }) {
     const [activeLayer, setActiveLayer] = useState("status");
-    const [mapStyle, setMapStyle] = useState("standard");
+    const [mapStyle, setMapStyle] = useState("satellite");
     const [appTypeFilter, setAppTypeFilter] = useState(filters?.application_type || "All");
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [layersOpen, setLayersOpen] = useState(isDesktop);
