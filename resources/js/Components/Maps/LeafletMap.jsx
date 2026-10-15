@@ -214,6 +214,9 @@ export const PIN_ZOOM = 15;
 // From here in, an application with a matched lot draws its real outline.
 const LOT_ZOOM = 17;
 
+// Pixels of extra left padding when framing the whole municipality.
+const HOME_SHIFT = 120;
+
 const EMPTY_STAT = { total: 0, diversity: 0, variance: 0, distribution: [], landUse: "" };
 
 // ── Leaflet Map Component ──
@@ -279,6 +282,11 @@ export default function LeafletMap({
         paddingTopLeft: [48, 48],
         paddingBottomRight: [48 + (insetsRef.current.right || 0), 48 + (insetsRef.current.bottom || 0)],
     });
+    // Whole-municipality view: extra left padding nudges Rosario to the right.
+    const homePadding = () => {
+        const p = framePadding();
+        return { ...p, paddingTopLeft: [p.paddingTopLeft[0] + HOME_SHIFT, p.paddingTopLeft[1]] };
+    };
     const lotsByZoom = (mapZoom ?? 0) >= LOT_ZOOM;
 
     const staticBgyData = useMemo(() => {
@@ -553,7 +561,7 @@ export default function LeafletMap({
                         },
                     }).addTo(map);
                     geoLayerRef.current = geo;
-                    map.fitBounds(geo.getBounds(), { padding: [24, 24] });
+                    map.fitBounds(geo.getBounds(), { paddingTopLeft: [24 + HOME_SHIFT, 24], paddingBottomRight: [24, 24] });
                     setBarangaysReady(true);
 
                     // Spend the idle time after first paint preparing what the
@@ -615,8 +623,8 @@ export default function LeafletMap({
 
         if (!selectedBgy?.name) {
             if (hadSelectionRef.current && rosarioBoundsRef.current) {
-                if (prefersReducedMotion) map.fitBounds(rosarioBoundsRef.current, framePadding());
-                else map.flyToBounds(rosarioBoundsRef.current, { ...framePadding(), duration: 0.9, easeLinearity: 0.15 });
+                if (prefersReducedMotion) map.fitBounds(rosarioBoundsRef.current, homePadding());
+                else map.flyToBounds(rosarioBoundsRef.current, { ...homePadding(), duration: 0.9, easeLinearity: 0.15 });
             }
             hadSelectionRef.current = false;
             return;
@@ -656,7 +664,7 @@ export default function LeafletMap({
     useEffect(() => {
         const map = mapInstanceRef.current;
         if (!map || resetTrigger === 0) return;
-        if (rosarioBoundsRef.current) map.fitBounds(rosarioBoundsRef.current, framePadding());
+        if (rosarioBoundsRef.current) map.fitBounds(rosarioBoundsRef.current, homePadding());
         else map.setView([13.785, 121.25], 12);
     }, [resetTrigger]);
 

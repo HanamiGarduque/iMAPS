@@ -14,8 +14,16 @@ FROM dunglas/frankenphp:1-php8.3 AS app
 WORKDIR /app
 
 # postgis = shp2pgsql (Settings shapefile import); libreoffice-calc = permit PDFs
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        supervisor postgresql-client postgis libreoffice-calc fonts-liberation unzip \
+# postgresql-client-16 comes from the PGDG repo so pg_dump (backup:run) matches the
+# PostGIS server's major version; Debian's own client is newer and its dumps can
+# fail to restore into 16.
+RUN install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        supervisor postgresql-client-16 postgis libreoffice-calc fonts-liberation unzip \
     && rm -rf /var/lib/apt/lists/* \
     && install-php-extensions pdo_pgsql pgsql gd zip mbstring intl bcmath exif opcache
 
@@ -35,5 +43,6 @@ COPY docker/Caddyfile /etc/caddy/Caddyfile
 COPY docker/supervisord.conf /etc/supervisor/conf.d/imaps.conf
 COPY docker/start.sh /start.sh
 
-ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr
+ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr \
+    PG_DUMP_PATH=/usr/lib/postgresql/16/bin/pg_dump
 CMD ["bash", "/start.sh"]

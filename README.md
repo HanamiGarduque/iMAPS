@@ -49,7 +49,9 @@
 | **Cloud & Mobile Sync** | [Supabase JS Client](https://supabase.com) (`@supabase/supabase-js`) |
 | **Export Engines** | `barryvdh/laravel-dompdf`, `shuchkin/simplexlsxgen`; permit documents via `phpoffice/phpword` / `phpspreadsheet` (PDF through headless LibreOffice) |
 | **Database** | PostgreSQL + PostGIS |
-| **Production Runtime** | Docker image on [Railway](https://railway.com): [FrankenPHP](https://frankenphp.dev) (Caddy) + `supervisord` (web, queue worker, scheduler), behind Cloudflare |
+| **Permit Preview** | `pdfjs-dist` (in-browser PDF rendering of generated permits) |
+| **Production Runtime** | Docker image on [Railway](https://railway.com): [FrankenPHP](https://frankenphp.dev) (Caddy) + `supervisord` (web, queue worker, scheduler), behind Cloudflare (WAF + origin secret) |
+| **File Storage** | Railway volume (`/data`); generated permits optionally on **Cloudflare R2** via `league/flysystem-aws-s3-v3` |
 
 ---
 
@@ -264,10 +266,10 @@ Users ──► Cloudflare (WAF: office IPs only, adds X-Origin-Secret)
         │   ├── web        frankenphp + Caddy
         │   ├── queue      php artisan queue:work
         │   └── scheduler  php artisan schedule:work
-        ├── Volume  /data  (uploads, generated permits, map tiles, file cache)
-        └──► Railway PostGIS database
-                 ╲
-                  └──► Supabase (FieldSync bridge for mobile inspectors)
+        ├── Volume  /data  (uploads, map tiles, file cache, permits when PERMITS_DISK=local)
+        ├──► Railway PostGIS database
+        ├──► Cloudflare R2 bucket, private (permits when PERMITS_DISK=r2)
+        └──► Supabase (FieldSync bridge for mobile inspectors)
 ```
 
 | File | Purpose |
@@ -299,6 +301,9 @@ Users ──► Cloudflare (WAF: office IPs only, adds X-Origin-Secret)
    | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Same values; needed at **build** time, so set before the first deploy |
    | `ORIGIN_SECRET` | `openssl rand -hex 32`; must match Cloudflare's `X-Origin-Secret` header |
    | `ALLOWED_IPS` | Temporary office-IP allowlist until Cloudflare is live; leave `ORIGIN_SECRET` unset while using it |
+   | `PERMITS_DISK` | `local` (default, the `/data` volume) or `r2` (Cloudflare R2) — see [Permit storage](#permit-storage-volume-or-cloudflare-r2) |
+   | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT` | Only when `PERMITS_DISK=r2`. Endpoint is `https://<account-id>.r2.cloudflarestorage.com` |
+   | `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`, `BACKUP_R2_BUCKET` | Separate private bucket for [backups](#backups). `BACKUP_R2_ENDPOINT` defaults to `R2_ENDPOINT` |
    | `FORECAST_SERVICE_URL`, `FORECAST_SERVICE_API_KEY` | Only if the forecasting microservice is hosted |
 
    Do **not** set `PORT` (Railway injects it) and do **not** run the seeders in production.
@@ -307,20 +312,101 @@ Users ──► Cloudflare (WAF: office IPs only, adds X-Origin-Secret)
 6. **First boot** runs migrations automatically. Create the first admin through `railway ssh` →
    `php artisan tinker`, log in, import shapefiles on the **Settings** page, then run `php artisan map:warm`.
 
+### Cloudflare setup
+
+Full steps are in [docs/RAILWAY_DEPLOYMENT.md §2](docs/RAILWAY_DEPLOYMENT.md#2-cloudflare). In short:
+
+1. Proxy the domain through Cloudflare (orange cloud) and set **SSL/TLS → Full (strict)**;
+   *Flexible* causes redirect loops.
+2. **WAF custom rule (Block):** `(http.host eq "<domain>" and not ip.src in {<office IPs>})`.
+   Office IPs must be static.
+3. **Transform rule:** set the request header `X-Origin-Secret` to the value of `ORIGIN_SECRET`.
+   Without it the app answers 403 to everyone.
+4. Remove `ALLOWED_IPS` once the WAF rule is live.
+
+How the app relies on Cloudflare:
+
+- **Origin secret** ([RequireOriginSecret.php](app/Http/Middleware/RequireOriginSecret.php)): Railway's
+  origin is reachable directly, so any request without the correct `X-Origin-Secret` gets a 403
+  (except `/ping`).
+- **Real client IP:** once the secret checks out, the request provably came through Cloudflare, so
+  `CF-Connecting-IP` replaces `X-Forwarded-For`. Visitors can forge the leftmost `X-Forwarded-For`
+  entries, so trusting that header would let them dodge rate limits and the login lockout.
+- **Rate limits** (`throttle:app` in [AppServiceProvider.php](app/Providers/AppServiceProvider.php)):
+  signed-in users get 300 requests/min each, guests get 60/min per IP, and `/ping` is unlimited.
+  Stricter per-route limits (10–30/min) apply on top to logins, shapefile and tile uploads, password
+  resets and sensitive user data. Covered by `tests/Feature/CloudflareClientIpAndThrottleTest.php`.
+- **Before Cloudflare:** [RestrictToAllowedIps.php](app/Http/Middleware/RestrictToAllowedIps.php)
+  reads the client IP from the right-hand (Railway-written) end of `X-Forwarded-For`. It logs blocked
+  addresses as `Blocked by ALLOWED_IPS` so you can copy the office IP from the Railway logs.
+
+### Permit storage (volume or Cloudflare R2)
+
+Generated permits (XLSX/PDF) go to the disk named by `PERMITS_DISK`:
+
+- **`local`** (default): the private disk on the `/data` volume. On boot, `docker/start.sh` moves
+  any permits left on the old public disk into the private one.
+- **`r2`**: a Cloudflare R2 bucket accessed through the S3 driver (`config/filesystems.php`, disk `r2`).
+  **Keep the bucket private** and don't attach a public `r2.dev` URL or custom domain. Downloads
+  are streamed through Laravel, so permits stay behind login.
+
+To switch an existing install to R2, copy the files over before changing the variable. Otherwise
+previously saved permits return 404:
+
+```bash
+php artisan permits:migrate-disk --from=local --to=r2            # copy, same paths
+# set PERMITS_DISK=r2 and redeploy, check a few downloads, then optionally:
+php artisan permits:migrate-disk --from=local --to=r2 --delete-source
+```
+
+The command skips files already on the target. With `--delete-source`, it removes a source file
+only after the sizes match.
+
+### Backups
+
+Railway's Hobby plan has no backups, so the scheduler uploads them to a private R2 bucket of
+their own, separate from the permits bucket (`config/backup.php`; disk set by `BACKUP_DISK`,
+default `backups`). Create the bucket and an R2 API token with **Object Read & Write** scoped to
+it, then set the `BACKUP_R2_*` variables:
+
+| What | When | Kept | Path in bucket |
+| --- | --- | --- | --- |
+| Postgres dump (`pg_dump -Fc`) | Daily 02:00 | 14 days | `backups/database/imaps-db-<timestamp>.dump` |
+| `storage/app` (uploads, permits) | Sundays 03:00 | 28 days | `backups/files/imaps-storage-<timestamp>.tar.gz` |
+
+Map tiles aren't in the archive; keep the original tile ZIP so it can be re-uploaded. The image
+installs `postgresql-client-16` to match the PostGIS server; if the server is upgraded, change
+the version in the `Dockerfile` and `PG_DUMP_PATH` together. A failed run exits non-zero and logs
+`Backup failed:` in Railway's logs.
+
+Run one by hand (e.g. before a risky migration) with `php artisan backup:run` or
+`php artisan backup:run --files`.
+
+**Restore** (download the file from the R2 dashboard first):
+
+```bash
+# database: into a scratch DB to check it, or over production with --clean --if-exists
+pg_restore --no-owner --no-acl -d "<postgres url>" imaps-db-<timestamp>.dump
+# files: unpack into the volume
+tar -xzf imaps-storage-<timestamp>.tar.gz -C /data/app
+```
+
 ### Updating
 
-Push to GitHub; Railway rebuilds, runs migrations on boot and restarts. Take a Postgres backup
-before risky migrations.
+Push to GitHub; Railway rebuilds, runs migrations on boot and restarts. Run
+`php artisan backup:run` before risky migrations.
 
 ### Operational notes
 
 - **Single instance only.** The volume and in-container queue worker mean replicas must not be scaled.
 - **Logs** go to stderr and appear in Railway's log viewer; `storage/logs` is unused.
-- **Permits** are stored on the private disk and are not publicly reachable.
+- **Permits** are stored on the private disk (or a private R2 bucket) and are only served to
+  signed-in users.
+- **Permit PDFs** are converted by LibreOffice inside the container. If no converter is found,
+  `PERMIT_PDF_DRIVER=auto` falls back to Dompdf, which gives draft-quality output.
 - **Uploads:** Cloudflare's free plan caps requests at 100 MB while the Settings tile upload allows
   200 MB; upload large tile sets via `railway ssh` into `/data/tiles/clup_tiles`.
-- **Backups are not automatic.** Enable Railway volume backups for Postgres and `/data`, and keep an
-  off-site `pg_dump`. Test a restore once.
+- **Backups** go to R2 on a schedule (see [Backups](#backups)). Test a restore once.
 - Users need internet access (Google Fonts, OSM/ArcGIS basemaps).
 
 See the go-live checklist in [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md#5-go-live-checklist)
@@ -342,13 +428,24 @@ before opening the site to staff.
 
 ## ⚙️ Custom Commands & Testing
 
-- **Sync Completed Mobile Field Inspections:**
+- **Sync Completed Mobile Field Inspections** (from Supabase):
   ```bash
-  php artisan inspections:pull-completed
+  php artisan sync:pull-inspections
+  php artisan sync:pull-inspections --local-inspection-id=42   # a single inspection
   ```
-- **Import Historical Data:**
+- **Warm the Map Cache** (after importing shapefiles):
   ```bash
-  php artisan data:import-historical
+  php artisan map:warm
+  php artisan map:warm --fresh   # discard the current cache first
+  ```
+- **Move Stored Permits Between Disks** (e.g. volume → Cloudflare R2):
+  ```bash
+  php artisan permits:migrate-disk --from=local --to=r2 [--delete-source]
+  ```
+- **Back Up to R2** (runs on the scheduler; see [Backups](#backups)):
+  ```bash
+  php artisan backup:run            # database dump
+  php artisan backup:run --files    # storage/app archive
   ```
 - **Execute Test Suite:**
   ```bash
@@ -359,12 +456,58 @@ before opening the site to staff.
 
 ---
 
+## ⚠️ Limitations
+
+**Access & infrastructure**
+
+- **Office network only, and internet required.** Staff can only reach the system from the
+  allowlisted static office IPs, so it isn't available from home or in the field. Fonts (Google),
+  basemaps (OSM/ArcGIS) and the inspector sync (Supabase) all need internet. If the office
+  connection or ISP goes down, the system is unavailable.
+- **Changing the office IP locks everyone out** until the Cloudflare WAF rule (or `ALLOWED_IPS`)
+  is updated.
+- **Shared guest rate limit.** Everyone in the office shares one public IP, so all unauthenticated
+  requests from the office (login page, etc.) share the 60/min guest limit.
+- **Single instance.** The volume and in-container queue worker rule out scaling replicas. A
+  container restart briefly takes the whole system down.
+- **Upload size.** Cloudflare's free plan caps requests at 100 MB. Larger tile sets have to be
+  copied in over `railway ssh`.
+- **Backups are daily, not continuous.** The app dumps Postgres to R2 nightly, so up to a day of
+  data can be lost; there is no point-in-time recovery. Map tiles aren't backed up.
+- **Third-party services.** Railway, Cloudflare, Supabase and (optionally) R2 are external
+  providers. Their outages, pricing or plan limits affect the system.
+
+**Functional**
+
+- **Rezoning and reclassification don't update the map.** The system records the petition and its
+  SB ordinance or DAR clearance reference. The zoning layer itself has to be edited by hand in QGIS
+  after the ordinance is enacted, then re-imported on the Settings page and the cache refreshed
+  with `php artisan map:warm --fresh`.
+- **Forecasting is optional and external.** It needs the separate FastAPI/XGBoost service, takes
+  about 24–30+ seconds per run and requires at least one fully completed quarter of history.
+  Forecasts are estimates and are only as good as the recorded clearance history. They support
+  decisions but don't make them.
+- **Land-use mix depends on recorded data.** The entropy index uses the lot areas filed in
+  `historical_data`. Missing or mis-encoded historical records skew the scores.
+- **Map accuracy depends on the imported shapefiles.** Parcel, barangay and CLUP boundaries are only
+  as current and accurate as the last import. The system doesn't edit geometry.
+- **Drafts are per browser.** Offline drafts are kept in the browser's local storage, so they don't
+  follow a user to another computer and are lost if browser data is cleared.
+- **Roles are coarse.** The web app distinguishes only `Admin` and `Planning Officer`.
+  `Site Inspector` accounts are managed here but work through the separate mobile app via Supabase,
+  so inspection results only arrive once the device has synced.
+- **PDF fidelity.** Permit PDFs match the template only when LibreOffice is available. The Dompdf
+  fallback is draft quality.
+- **PostgreSQL + PostGIS only.** No other database is supported.
+
+---
+
 ## 📂 Project Structure
 
 ```
 iMAPS/
 ├── app/
-│   ├── Console/Commands/       # Custom Artisan commands (Supabase sync, data import)
+│   ├── Console/Commands/       # Custom Artisan commands (Supabase sync, permit disk migration)
 │   ├── Http/
 │   │   ├── Controllers/        # Controllers (Maps, Analytics, Applications, Inspections)
 │   │   └── Middleware/         # Inertia request handler & Role middleware

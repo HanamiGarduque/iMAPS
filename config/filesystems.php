@@ -81,6 +81,21 @@ return [
             'report' => false,
         ],
 
+        // Separate private R2 bucket for `backup:run`, kept apart from the permits bucket.
+        // Same Cloudflare account, so the endpoint defaults to the permits one.
+        'backups' => [
+            'driver' => 's3',
+            'key' => env('BACKUP_R2_ACCESS_KEY_ID'),
+            'secret' => env('BACKUP_R2_SECRET_ACCESS_KEY'),
+            'region' => 'auto',
+            'bucket' => env('BACKUP_R2_BUCKET'),
+            'endpoint' => env('BACKUP_R2_ENDPOINT', env('R2_ENDPOINT')),
+            'use_path_style_endpoint' => true,
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
     ],
 
     /*

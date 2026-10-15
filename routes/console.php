@@ -15,6 +15,10 @@ Schedule::command('sync:pull-inspections')->everyFiveMinutes();
 // Drop read notifications older than 90 days (see AppNotification::prunable).
 Schedule::command('model:prune', ['--model' => [\App\Models\AppNotification::class]])->daily();
 
+// Off-site backups to the backup disk (see config/backup.php). Railway's Hobby plan has none.
+Schedule::command('backup:run')->dailyAt('02:00')->withoutOverlapping()->environments('production');
+Schedule::command('backup:run --files')->weeklyOn(0, '03:00')->withoutOverlapping()->environments('production');
+
 // Pre-build the cached map layers. Run after deploying or after restoring the
 // database, so the first Maps page visit doesn't wait on the ~20s cold build of
 // the land-use plan. Uploads through Settings already warm the cache.
