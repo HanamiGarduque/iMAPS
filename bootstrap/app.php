@@ -23,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(\App\Http\Middleware\RestrictToAllowedIps::class);
 
         $middleware->web(append: [
+            'throttle:app',
             \App\Http\Middleware\PreserveFlashForBackgroundRequests::class,
             \App\Http\Middleware\EnsureUserIsActive::class,
             \App\Http\Middleware\HandleInertiaRequests::class,

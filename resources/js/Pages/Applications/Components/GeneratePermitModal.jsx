@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
+import PermitPdfPreview from "./PermitPdfPreview";
 
 export const PERMITS = [
     { type: "ze", label: "Zoning Evaluation", paper: "A4" },
@@ -949,28 +950,20 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                             )}
                         </div>
                     </div>
-                    <div className="flex-1 min-h-0 overflow-auto px-5 pb-5 flex justify-center">
-                        {previewUrl ? (
-                            <div
-                                className={`relative w-full self-start bg-white rounded-sm shadow-[0_1px_3px_rgba(15,23,42,0.08),0_12px_32px_-8px_rgba(15,23,42,0.18)] ${
-                                    type === "dp" ? "aspect-[8.5/13]" : "aspect-[1/1.414]"
-                                } ${previewLoading ? "opacity-70" : ""} transition-opacity`}
-                            >
-                                <iframe
-                                    title={`${schema?.label || "Permit"} preview`}
-                                    src={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-                                    className="absolute inset-0 w-full h-full border-0 rounded-sm"
-                                />
-                            </div>
-                        ) : previewError ? (
-                            <div role="alert" className="mt-16 max-w-sm text-center text-[12.5px] text-red-600 font-medium">{previewError}</div>
-                        ) : (
-                            <div className="mt-16 flex flex-col items-center gap-3 text-[12px] text-slate-500">
-                                <div className={`w-40 ${type === "dp" ? "aspect-[8.5/13]" : "aspect-[1/1.414]"} rounded-sm bg-white shadow-sm animate-pulse`} aria-hidden="true" />
-                                Building preview…
-                            </div>
-                        )}
-                    </div>
+                    {previewUrl ? (
+                        <PermitPdfPreview url={previewUrl} title={`${schema?.label || "Permit"} preview`} dimmed={previewLoading} />
+                    ) : (
+                        <div className="flex-1 min-h-0 overflow-auto px-5 pb-5 flex justify-center">
+                            {previewError ? (
+                                <div role="alert" className="mt-16 max-w-sm text-center text-[12.5px] text-red-600 font-medium">{previewError}</div>
+                            ) : (
+                                <div className="mt-16 flex flex-col items-center gap-3 text-[12px] text-slate-500">
+                                    <div className={`w-40 ${type === "dp" ? "aspect-[8.5/13]" : "aspect-[1/1.414]"} rounded-sm bg-white shadow-sm animate-pulse`} aria-hidden="true" />
+                                    Building preview…
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
