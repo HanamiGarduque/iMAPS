@@ -67,7 +67,7 @@ class MapsErrorBoundary extends Component {
 
 // Bumped when the forecast payload shape changes, so a cached run from an
 // older shape is ignored rather than read as empty.
-const FORECAST_CACHE_KEY = "imaps_forecast_data_v2";
+const FORECAST_CACHE_KEY = "imaps_forecast_data_v3";
 
 const quarterLabel = (y, q) => `Q${q} '${String(y).slice(-2)}`;
 

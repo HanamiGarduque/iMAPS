@@ -86,10 +86,10 @@ class LandUseMixServiceTest extends TestCase
 
     public function test_spellings_are_matched_and_unusable_rows_skipped(): void
     {
-        $plan = ['Maalas-as' => ['R1-Z' => 1], 'Palacpac' => ['R1-Z' => 1]];
+        $plan = ['Maalas-as' => ['R1-Z' => 1], 'Palakpak' => ['R1-Z' => 1]];
         $records = [
             $this->record('Maalas-As', 'R1-Z', 100, 2022),
-            $this->record(' palakpak ', 'C1-Z', 100, 2022),
+            $this->record(' palacpac ', 'C1-Z', 100, 2022),
             $this->record('Maalas-As', null, null, 2022),
             $this->record('Maalas-As', 'R2-Z', 0, 2022),
             $this->record('Nowhere', 'I1-Z', 100, 2022),
@@ -98,7 +98,7 @@ class LandUseMixServiceTest extends TestCase
         $mix = LandUseMixService::aggregate($plan, $records, self::WINDOW);
 
         $this->assertSame(1, $mix['barangays']['Maalas-as']['records']);
-        $this->assertSame(1, $mix['barangays']['Palacpac']['records']);
+        $this->assertSame(1, $mix['barangays']['Palakpak']['records']);
         // Unmapped barangays still count toward Rosario.
         $this->assertSame(3, $mix['municipal']['records']);
         $this->assertSame(1, $mix['municipal']['unmappedRecords']);

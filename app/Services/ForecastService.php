@@ -15,6 +15,17 @@ class ForecastService
     protected string $apiKey;
     protected int $timeout;
 
+    /**
+     * The forecasting service names barangays after its own shapefile, which
+     * spells two of them differently from iMAPS. Its input side already folds
+     * our spellings into its own (so the model does train on their history);
+     * this maps its output back so the counts land on the right barangay.
+     */
+    public const SERVICE_NAME_ALIASES = [
+        'nazi'     => 'Nasi',
+        'palacpac' => 'Palakpak',
+    ];
+
     public function __construct()
     {
         // Config only. A hardcoded fallback key would let a missing
@@ -123,6 +134,7 @@ class ForecastService
                 $label = $fc['Quarter_Label'] ?? null;
                 $parsed = $this->parseQuarterLabel($label);
                 $barangay = trim((string) ($fc['Barangay'] ?? ''));
+                $barangay = self::SERVICE_NAME_ALIASES[mb_strtolower($barangay)] ?? $barangay;
                 if ($parsed === null || $barangay === '') {
                     Log::warning('Skipping forecast row with no usable barangay or quarter', ['row' => $fc]);
                     continue;

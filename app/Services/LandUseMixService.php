@@ -50,7 +50,7 @@ class LandUseMixService
     public const MIN_RECORDS = 5;
 
     /** Filing-record spellings the zoning map spells differently. */
-    public const ALIASES = ['palakpak' => 'palacpac'];
+    public const ALIASES = ['palacpac' => 'palakpak'];
 
     /**
      * CLUP 2030 zone code => land-use category, as in clupZones.js. Roads are
@@ -160,7 +160,7 @@ class LandUseMixService
     public static function aggregate(array $plan, iterable $records, array $window): array
     {
         // Filing records and the zoning map spell some barangays differently
-        // ("Maalas-As" / "Maalas-as", "Palakpak" / "Palacpac"), so records are
+        // ("Maalas-As" / "Maalas-as", the older "Palacpac"), so records are
         // matched case-insensitively, through ALIASES, and filed under the
         // plan's spelling.
         $key = function ($name) {
