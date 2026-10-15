@@ -418,6 +418,13 @@ class PermitExcelService
         // Dropdown cells the user set in the modal (only real dropdown cells are accepted)
         $allowedDropdowns = collect($this->templateMeta()['sheets'][$doc['sheet']]['dropdowns'] ?? [])->keyBy('cell');
 
+        // Formulas join the month/day as plain numbers, like MONTH(TODAY()) in the original
+        // sheet: "0"&MONTH → "09" / "010", the office's application no. format
+        $formulaValues = array_merge($values, [
+            'MONTH_TODAY' => (string) (int) $values['MONTH_TODAY'],
+            'DAY_TODAY'   => (string) (int) $values['DAY_TODAY'],
+        ]);
+
         foreach (array_unique(array_merge($sheet->getCoordinates(), array_keys($overrides))) as $coord) {
             $cell = $sheet->getCell($coord);
 
@@ -452,7 +459,10 @@ class PermitExcelService
                 // Freeze: other sheets are about to be removed, so keep the last value
                 $cached = $cell->getOldCalculatedValue();
                 if (is_string($cached) && preg_match(self::TAG_PATTERN, $cached)) {
-                    $this->writeString($cell, $this->replaceTags($cached, $values));
+                    // The padding / line break typed after a tag in the referenced cell is not
+                    // part of its value: "${YEAR_TODAY}    ⏎-U-0-0${MONTH_TODAY}" → "2026-U-0-010"
+                    $cached = preg_replace('/(\$\{[^}]*\})[ \t]*\R\s*/', '$1', $cached);
+                    $this->writeString($cell, $this->replaceTags($cached, $formulaValues));
                 } elseif (is_numeric($cached)) {
                     $cell->setValueExplicit($cached, DataType::TYPE_NUMERIC);
                 } else {

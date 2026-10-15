@@ -61,67 +61,6 @@ function LegendRow({ swatch, label, count, active, onClick, highlighted = false 
     );
 }
 
-// The LC demand map's title and readout: the quarter shown, its town-wide
-// total, and whichever barangay is under the cursor or selected.
-function QuarterSummary({ quarter, count, hovered, selectedName, onClearSelection }) {
-    const isForecast = Boolean(quarter?.isForecast);
-    return (
-        <div className="rounded-md border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06)] overflow-hidden">
-            <div className="px-2.5 pt-2 pb-2">
-                <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-semibold text-slate-700 tabular-nums">{quarter?.label}</span>
-                    <span
-                        className={`text-[9.5px] font-bold uppercase tracking-[0.06em] px-1.5 py-[1px] rounded-full border ${
-                            isForecast
-                                ? "text-[#a8521a] bg-[#fff3e6] border-[#f3c9a5]"
-                                : "text-slate-600 bg-slate-100 border-slate-200"
-                        }`}
-                    >
-                        {isForecast ? "Forecast" : "Recorded"}
-                    </span>
-                </div>
-                {count ? (
-                    <div className="mt-1 flex items-baseline gap-1.5">
-                        <span className="text-[22px] font-semibold leading-none tabular-nums text-slate-900">{count}</span>
-                        <span className="text-[11px] text-slate-500">LC {isForecast ? "projected" : "filed"} town-wide</span>
-                    </div>
-                ) : (
-                    <p className="mt-1 text-[11px] text-slate-500">
-                        No LC {isForecast ? "forecast available" : "records"} for this quarter.
-                    </p>
-                )}
-            </div>
-
-            <div className="flex items-center gap-2 min-h-[30px] px-2.5 py-1.5 border-t border-slate-100 bg-slate-50/80" aria-live="polite">
-                {hovered ? (
-                    <>
-                        <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border" style={{ backgroundColor: hovered.cls.color, borderColor: hovered.cls.stroke }} aria-hidden="true" />
-                        <span className="flex-1 min-w-0 text-[11.5px] font-medium text-slate-800 truncate">{hovered.name}</span>
-                        <span className="text-[11.5px] tabular-nums text-slate-900 shrink-0">
-                            <b>{hovered.count}</b> <span className="text-slate-500">LC</span>
-                        </span>
-                    </>
-                ) : (
-                    <span className="text-[11px] text-slate-400">Hover a barangay · click to open it</span>
-                )}
-            </div>
-
-            {selectedName && (
-                <div className="flex items-center gap-2 px-2.5 py-1.5 border-t border-[#d5e0ee] bg-[#eaf0f8]">
-                    <span className="flex-1 min-w-0 text-[11.5px] text-[#0b2a5b] truncate"><b>{selectedName}</b> selected</span>
-                    <button
-                        type="button"
-                        onClick={onClearSelection}
-                        className="text-[11px] font-semibold text-[#0b2a5b] hover:underline cursor-pointer shrink-0 focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
-                    >
-                        Clear
-                    </button>
-                </div>
-            )}
-        </div>
-    );
-}
-
 export default function LayersPanel({
     activeLayer,
     onSelectLayer,
@@ -131,11 +70,8 @@ export default function LayersPanel({
     onStatusFilterChange,
     statusCounts = {},
     activeQuarter,
-    quarterCount = 0,
     demandByBgy = {},
     hoveredBgy = null,
-    selectedBgyName = null,
-    onClearSelection,
     diversityBandFilter,
     onSelectBand,
     bgyStats,
@@ -153,12 +89,8 @@ export default function LayersPanel({
     const segments = useMemo(() => [...getScaleSegments("mix")].reverse(), []);
     const bandCounts = useMemo(() => computeBandCounts("mix", bgyStats), [bgyStats]);
 
-    const hoveredDemand = useMemo(() => {
-        if (!hoveredBgy) return null;
-        const count = demandByBgy[hoveredBgy.trim().toLowerCase()] || 0;
-        return { name: hoveredBgy, count, cls: getTrendsDemandColor(count) };
-    }, [hoveredBgy, demandByBgy]);
-    const hoveredClass = hoveredDemand?.cls ?? null;
+    // The demand class of the barangay under the cursor, lit up in the legend.
+    const hoveredClass = hoveredBgy ? getTrendsDemandColor(demandByBgy[hoveredBgy.trim().toLowerCase()] || 0) : null;
 
     const toggleStatus = (id) => onStatusFilterChange(statusFilter === id ? "All" : id);
     const toggleBand = (id) => onSelectBand(diversityBandFilter === id ? "all" : id);
@@ -229,14 +161,7 @@ export default function LayersPanel({
                             )}
 
                             {active && m.id === "trends" && (
-                                <div className="pl-8 pr-3 pb-3 space-y-2">
-                                    <QuarterSummary
-                                        quarter={activeQuarter}
-                                        count={quarterCount}
-                                        hovered={hoveredDemand}
-                                        selectedName={selectedBgyName}
-                                        onClearSelection={onClearSelection}
-                                    />
+                                <div className="pl-8 pr-3 pb-3">
                                     <div>
                                         <span className="block text-[10.5px] text-slate-500 mb-0.5">
                                             LC per barangay · {activeQuarter?.label} {activeQuarter?.isForecast ? "(forecast)" : "(filed)"}

@@ -67,7 +67,6 @@ return [
                 'H75' => 'Zoning Administrator, OIC',
                 'E13' => '${YEAR_TODAY}',
                 'N13' => '${YEAR_TODAY}',
-                'K32' => '${APPLICATION_NO}',
                 'W8'  => '${ZONING_CLASSIFICATION}',
                 'C23' => '${ROL_OWNER_MARK}',
                 'G23' => '${ROL_LESSEE_MARK}',
@@ -98,8 +97,6 @@ return [
             'cells' => [
                 // Caption under the Zoning Administrator's signature
                 'D49' => 'Zoning Administrator, OIC',
-                // Formula joins the EVALUATION number cells, whose padding/line breaks would print
-                'B9'  => '${APPLICATION_NO}',
                 'B10' => '${DATE_TODAY}',
                 'D14' => '${CORPORATION_ADDRESS}',
                 'D18' => '${PROJECT_LOCATION}',
@@ -124,7 +121,6 @@ return [
                 'E34' => 'Zoning Administrator, OIC',
                 'F47' => 'Zoning Administrator, OIC',
                 'E81' => 'Zoning Administrator, OIC',
-                'C8'  => '${APPLICATION_NO}',
                 'H8'  => '${ZC_DN}',
                 'D15' => '${PROJECT_LOCATION}',
                 'G18' => '${LC_DN}',
@@ -152,7 +148,6 @@ return [
             'print_area' => 'A1:J53',
             'fit_height' => 1,
             'cells' => [
-                'C8'  => '${APPLICATION_NO}',
                 'F11' => '${PROJECT_LOCATION}',
                 // EVALUATION!C15/C18 are indented with spaces, which would push these centered names off-centre
                 'A11' => '${PARCEL_OWNER}',

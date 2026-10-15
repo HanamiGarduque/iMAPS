@@ -16,6 +16,8 @@ import {
 
 import StatusPanel, { STATUS_MARKER_CONFIG, getStatusMarkerConfig, matchesAppFilters } from "@/Components/MapLayers/StatusPanel";
 import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
+import useForecastWatchlist from "@/Components/MapLayers/useForecastWatchlist";
+import ForecastBrief from "@/Components/MapLayers/ForecastBrief";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
 import LeafletMap, { getAppCoordinates, PIN_ZOOM } from "@/Components/Maps/LeafletMap";
 import LayersPanel, { MODULES } from "@/Components/Maps/LayersPanel";
@@ -313,6 +315,15 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             r2: num(m.validation_r2),
         };
     }, [customForecastData]);
+
+    // The "what to prepare for" summary the forecast brief shows on a forecast quarter.
+    const forecastWatch = useForecastWatchlist({
+        forecastData: customForecastData,
+        activeQuarter,
+        series: quarterSeries,
+        mae: forecastMetrics?.mae ?? null,
+        urbanGrowthData,
+    });
 
     // What the choropleth colours: predicted counts on a forecast quarter,
     // filing counts on a recorded one.
@@ -750,11 +761,8 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             onStatusFilterChange={setStatusFilter}
                                             statusCounts={statusCounts}
                                             activeQuarter={activeQuarter}
-                                            quarterCount={quarterCount}
                                             demandByBgy={demandByBgy}
                                             hoveredBgy={hoveredBgy}
-                                            selectedBgyName={selectedBgy?.name || null}
-                                            onClearSelection={() => setSelectedBgy(null)}
                                             diversityBandFilter={diversityBandFilter}
                                             onSelectBand={setDiversityBandFilter}
                                             bgyStats={mapStats}
@@ -833,10 +841,9 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
                                     {/* Map title, like a print layout's. It also reads out whatever is
                                         under the cursor, so nothing floats over the data itself.
-                                        LC demand shows it in its Layers section instead, so the
-                                        card only floats there while that panel is closed. */}
-                                    {!(activeLayer === "trends" && layersOpen) && (
-                                    <div className="absolute top-3 left-3 z-[500] bg-white/95 border border-slate-300 rounded-[3px] shadow-sm w-[300px] max-w-[calc(100%-1.5rem)]">
+                                        On LC demand the forecast brief below takes its place, except
+                                        on phones, where the brief would cover the map. */}
+                                    <div className={`absolute top-3 left-3 z-[500] ${activeLayer === "trends" ? "sm:hidden" : ""} bg-white/95 border border-slate-300 rounded-[3px] shadow-sm w-[300px] max-w-[calc(100%-1.5rem)]`}>
                                         <div className="px-3 py-1.5">
                                             <div className="text-[13px] font-semibold text-slate-900 leading-tight truncate">{moduleInfo?.label}</div>
                                             <div className="text-[11px] text-slate-600 leading-tight truncate">{mapSubtitle}</div>
@@ -857,6 +864,26 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             {hoverText || (show3D ? "Drag to orbit · click a barangay to open it" : "Hover a barangay · click to open it")}
                                         </div>
                                     </div>
+
+                                    {/* LC demand brief, over the empty west of the map beside the
+                                        Layers panel. Only the cards take clicks; the space below
+                                        them still pans the map. */}
+                                    {activeLayer === "trends" && (
+                                        <div className="hidden sm:flex absolute top-3 left-3 bottom-10 z-[500] w-[272px] flex-col pointer-events-none">
+                                            <div className="pointer-events-auto min-h-0 flex flex-col">
+                                                <ForecastBrief
+                                                    quarter={activeQuarter}
+                                                    count={quarterCount}
+                                                    demandByBgy={demandByBgy}
+                                                    hoveredBgy={hoveredBgy}
+                                                    selectedName={selectedBgy?.name || null}
+                                                    onClearSelection={() => setSelectedBgy(null)}
+                                                    watch={forecastWatch}
+                                                    onSelectBgy={selectBarangay}
+                                                    onHoverBgy={setHoveredBgy}
+                                                />
+                                            </div>
+                                        </div>
                                     )}
 
                                     {/* Attribute table for the selected barangay, floating over the
