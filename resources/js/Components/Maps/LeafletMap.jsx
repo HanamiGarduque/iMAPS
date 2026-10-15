@@ -214,9 +214,6 @@ export const PIN_ZOOM = 15;
 // From here in, an application with a matched lot draws its real outline.
 const LOT_ZOOM = 17;
 
-// Pixels of extra left padding when framing the whole municipality.
-const HOME_SHIFT = 120;
-
 const EMPTY_STAT = { total: 0, diversity: 0, variance: 0, distribution: [], landUse: "" };
 
 // ── Leaflet Map Component ──
@@ -282,11 +279,12 @@ export default function LeafletMap({
         paddingTopLeft: [48, 48],
         paddingBottomRight: [48 + (insetsRef.current.right || 0), 48 + (insetsRef.current.bottom || 0)],
     });
-    // Whole-municipality view: extra left padding nudges Rosario to the right.
-    const homePadding = () => {
-        const p = framePadding();
-        return { ...p, paddingTopLeft: [p.paddingTopLeft[0] + HOME_SHIFT, p.paddingTopLeft[1]] };
-    };
+    // Whole-municipality view: balanced left and right so Rosario sits in the
+    // middle of the canvas (the pan limits leave room on every side for this).
+    const homePadding = () => ({
+        paddingTopLeft: [48, 48],
+        paddingBottomRight: [48, 48 + (insetsRef.current.bottom || 0)],
+    });
     const lotsByZoom = (mapZoom ?? 0) >= LOT_ZOOM;
 
     const staticBgyData = useMemo(() => {
@@ -525,13 +523,13 @@ export default function LeafletMap({
                 municipalHaloRef.current = L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.halo }).addTo(map);
                 municipalLayerRef.current = L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.line }).addTo(map);
                 rosarioBoundsRef.current = municipalLayerRef.current.getBounds();
-                // Extra room east and south, where the info panel and attribute
+                // Extra room east, west and south, where the info panel and attribute
                 // table cover the canvas: framing a barangay there pans past the
                 // edge, and a tight limit makes the camera snap back (a twitch).
                 const b = rosarioBoundsRef.current.pad(0.15);
                 const w = b.getEast() - b.getWest();
                 const h = b.getNorth() - b.getSouth();
-                map.setMaxBounds([[b.getSouth() - h * 0.25, b.getWest()], [b.getNorth(), b.getEast() + w * 0.6]]);
+                map.setMaxBounds([[b.getSouth() - h * 0.25, b.getWest() - w * 0.6], [b.getNorth(), b.getEast() + w * 0.6]]);
             });
 
             loadBarangayBoundaries()
@@ -561,7 +559,7 @@ export default function LeafletMap({
                         },
                     }).addTo(map);
                     geoLayerRef.current = geo;
-                    map.fitBounds(geo.getBounds(), { paddingTopLeft: [24 + HOME_SHIFT, 24], paddingBottomRight: [24, 24] });
+                    map.fitBounds(geo.getBounds(), { paddingTopLeft: [48, 48], paddingBottomRight: [48, 48] });
                     setBarangaysReady(true);
 
                     // Spend the idle time after first paint preparing what the
