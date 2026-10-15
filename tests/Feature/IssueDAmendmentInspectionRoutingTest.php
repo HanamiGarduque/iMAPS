@@ -257,7 +257,7 @@ class IssueDAmendmentInspectionRoutingTest extends TestCase
             'email'                  => 'routing.regression@example.test',
             'barangay'               => 'Bagong Pook',
             'assessment_fee'         => 1000,
-            'or_number'              => 'OR-'.str_pad((string) $this->formSequence, 6, '0', STR_PAD_LEFT),
+            'or_number'              => 'OR-'.str_pad((string) $this->formSequence, 5, '0', STR_PAD_LEFT),
             'preferred_release_mode' => 'Pick-up at Office',
             'date_of_receipt'        => now()->toDateString(),
         ], $overrides);

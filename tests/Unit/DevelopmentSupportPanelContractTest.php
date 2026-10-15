@@ -16,9 +16,8 @@ use Tests\TestCase;
  * the projected `closure_note` actually reaches the page.
  *
  * What is pinned here:
- *  - a CLOSED episode renders BOTH labelled blocks when both exist;
- *  - each block is gated on its own field, so an absent one renders nothing and no
- *    placeholder text is fabricated;
+ *  - the panel is titled "Contact Developer" and offers only the contact and the
+ *    Compose Email draft link: no new escalation and no past-request history;
  *  - rendered text is a plain JSX child (React escapes it), never raw HTML;
  *  - the unconfigured-contact notice uses the exact approved user-facing copy;
  *  - no configuration-variable name reaches the rendered Admin view.
@@ -36,64 +35,31 @@ class DevelopmentSupportPanelContractTest extends TestCase
         return (string) preg_replace(['#/\*.*?\*/#s', '#//[^\n]*#'], '', $source);
     }
 
-    public function test_history_renders_a_labelled_recommendation_block(): void
+    public function test_panel_is_titled_contact_developer(): void
     {
         $code = $this->code($this->panelSource());
-        $this->assertMatchesRegularExpression(
-            '/\{episode\.recommendation\s*&&.*>Advice<.*episode\.recommendation/s',
-            $code,
-            'A closed episode with a recommendation must render a labelled Recommendation block.'
-        );
+        $this->assertStringContainsString('>Contact Developer</h2>', $code);
+        $this->assertStringNotContainsString('Developer escalation', $code);
     }
 
-    public function test_history_renders_a_labelled_closure_note_block(): void
+    public function test_panel_offers_no_new_escalation_or_history(): void
     {
         $code = $this->code($this->panelSource());
-        $this->assertMatchesRegularExpression(
-            '/\{episode\.closure_note\s*&&.*>Note<.*episode\.closure_note/s',
-            $code,
-            'A closed episode closed WITHOUT a recommendation is explained only by its closure note, '
-            .'so the note must be rendered under its own label.'
-        );
+        // The panel is reduced to the developer contact and the email draft link.
+        $this->assertStringNotContainsString('Open Developer Escalation', $code);
+        $this->assertStringNotContainsString('post(base,', $code);
+        $this->assertStringNotContainsString('panel.closed', $code);
+        $this->assertStringNotContainsString('Past requests', $code);
+        $this->assertStringContainsString('Compose Email', $code);
+        $this->assertStringContainsString('panel.contact.email', $code);
     }
 
-    public function test_each_history_block_is_gated_on_its_own_field(): void
+    public function test_panel_text_is_plain_and_never_raw_html(): void
     {
         $code = $this->code($this->panelSource());
-        // Independent guards: neither block may be conditioned on the other field,
-        // otherwise one present value could suppress the other.
-        $this->assertStringContainsString('{episode.recommendation &&', $code);
-        $this->assertStringContainsString('{episode.closure_note &&', $code);
-        $this->assertDoesNotMatchRegularExpression(
-            '/\{episode\.recommendation\s*&&\s*episode\.closure_note/',
-            $code,
-            'The two history blocks must be gated independently, never as a conjunction.'
-        );
-    }
-
-    public function test_history_does_not_fabricate_content_for_absent_fields(): void
-    {
-        $code = $this->code($this->panelSource());
-        // No placeholder words may stand in for a value that was never recorded.
-        foreach (['No recommendation', 'No closure note', 'N/A', 'None recorded'] as $placeholder) {
-            $this->assertStringNotContainsString(
-                $placeholder,
-                $code,
-                "The history must render nothing for an absent field, never a '{$placeholder}' placeholder."
-            );
-        }
-    }
-
-    public function test_history_text_is_plain_and_never_raw_html(): void
-    {
-        $view = $this->panelSource();
-        $code = $this->code($view);
         $this->assertStringNotContainsString('dangerouslySetInnerHTML', $code);
         $this->assertStringNotContainsString('innerHTML', $code);
         $this->assertStringNotContainsString('html-react-parser', $code);
-        // Both history values are plain JSX children, so React escapes them.
-        $this->assertStringContainsString('{episode.recommendation}</p>', $code);
-        $this->assertStringContainsString('{episode.closure_note}</p>', $code);
     }
 
     public function test_unconfigured_contact_notice_uses_the_exact_approved_copy(): void

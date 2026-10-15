@@ -197,6 +197,20 @@ final class InspectionRoundNumbering
     }
 
     /**
+     * Prose for audit notes: "inspection round 2", never the inspection id,
+     * which says nothing about which visit it was. A historical row has no
+     * provable round, so it is named by its INS id instead.
+     */
+    public static function describe(Model $inspection): string
+    {
+        $round = self::forInspection($inspection);
+
+        return $round['round_number'] === null
+            ? 'historical inspection INS-'.$inspection->getKey()
+            : 'inspection round '.$round['round_number'];
+    }
+
+    /**
      * Is this row a re-inspection under the canonical contract?
      *
      * Only a parcel-bearing row whose position in its own chain exceeds 1. A

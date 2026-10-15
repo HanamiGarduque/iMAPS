@@ -1,9 +1,11 @@
 // resources/js/Pages/Applications/Components/GeneratePermitModal.jsx
 // Generate Permit: pick a permit, review/complete the fields the encode form doesn't capture,
 // and get a PDF filled into the office's own Excel layout (config/permits.php on the server).
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import axios from "axios";
 import dialog, { notify } from "@/utils/dialog";
+import PermitPdfPreview from "./PermitPdfPreview";
 
 export const PERMITS = [
     { type: "ze", label: "Zoning Evaluation", paper: "A4" },
@@ -598,8 +600,13 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
     const checklist = useMemo(() => {
         if (!schema) return [];
         const by = {};
-        schema.dropdowns.forEach((d) => (by[d.section] ||= []).push(d));
-        return Object.entries(by);
+        const pos = (cell) => {
+            const m = /^([A-Z]+)(\d+)$/.exec(cell);
+            return m ? [parseInt(m[2], 10), m[1].length * 100 + m[1].charCodeAt(0)] : [0, 0];
+        };
+        const byPos = (a, b) => pos(a.cell)[0] - pos(b.cell)[0] || pos(a.cell)[1] - pos(b.cell)[1];
+        [...schema.dropdowns].sort(byPos).forEach((d) => (by[d.section] ||= []).push(d));
+        return Object.entries(by); // insertion order = sheet order
     }, [schema]);
 
     // Every required field counts toward `missing`; only the ones that start empty get the top box
@@ -822,35 +829,51 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                                         const set_ = items.filter((d) => String(cells[d.cell] ?? "").trim()).length;
                                         return (
                                             <Section title="Checklist & recommendations" summary={set_ < items.length ? `${items.length - set_} not set` : ""}>
-                                                <p className="text-[11px] text-slate-400 mb-2.5">Same dropdowns as in the Excel sheet.</p>
+                                                <p className="text-[11px] text-slate-400 mb-2.5">Same items and order as the Excel sheet. Pick √, x or NA for each.</p>
                                                 <div className="space-y-2.5">
-                                                    {checklist.map(([section, list]) => (
-                                                        <div key={section} className="rounded-md border border-slate-200 overflow-hidden">
-                                                            <p className="px-3 py-1.5 text-[11.5px] font-medium text-slate-700 bg-slate-50 border-b border-slate-200">{section}</p>
-                                                            <div className="divide-y divide-slate-100">
-                                                                {list.map((d) => (
-                                                                    <div key={d.cell} className="flex items-center gap-2.5 px-3 py-1.5">
-                                                                        <span className="flex-1 min-w-0 text-[11.5px] text-slate-700 line-clamp-2" title={d.label}>
-                                                                            {d.label}
-                                                                        </span>
-                                                                        <select
-                                                                            value={cells[d.cell] ?? ""}
-                                                                            onChange={(e) => setCells((s) => ({ ...s, [d.cell]: e.target.value }))}
-                                                                            aria-label={d.label}
-                                                                            className={`${selectCls} w-40 shrink-0`}
-                                                                        >
-                                                                            <option value="">—</option>
-                                                                            {withCurrent(d.options, cells[d.cell]).map((o) => (
-                                                                                <option key={o} value={o}>
-                                                                                    {o}
-                                                                                </option>
-                                                                            ))}
-                                                                        </select>
-                                                                    </div>
-                                                                ))}
+                                                    {checklist.map(([section, list]) => {
+                                                        const [heading, hint] = splitHeading(section);
+                                                        return (
+                                                            <div key={section} className="rounded-md border border-slate-200 overflow-hidden">
+                                                                <p className="px-3 py-1.5 text-[11.5px] font-semibold text-slate-700 bg-slate-50 border-b border-slate-200">
+                                                                    {heading}
+                                                                    {hint && <span className="ml-2 font-normal text-slate-400">√ submitted · x not submitted · NA not applicable</span>}
+                                                                </p>
+                                                                <ol className="divide-y divide-slate-100">
+                                                                    {list.map((d) => {
+                                                                        const { num, text } = parseItemLabel(d.label);
+                                                                        const val = cells[d.cell] ?? "";
+                                                                        return (
+                                                                            <li key={d.cell} className="flex items-start gap-2.5 px-3 py-2">
+                                                                                <span
+                                                                                    className="mt-0.5 min-w-[1.5rem] h-5 px-1 shrink-0 inline-flex items-center justify-center rounded bg-slate-100 text-[10.5px] font-semibold tabular-nums text-slate-600"
+                                                                                    title={`Cell ${d.cell}`}
+                                                                                >
+                                                                                    {num || "•"}
+                                                                                </span>
+                                                                                <label htmlFor={`cl-${d.cell}`} className="flex-1 min-w-0 pt-0.5 text-[12px] leading-snug text-slate-700 break-words cursor-pointer">
+                                                                                    {text}
+                                                                                </label>
+                                                                                <select
+                                                                                    id={`cl-${d.cell}`}
+                                                                                    value={val}
+                                                                                    onChange={(e) => setCells((st) => ({ ...st, [d.cell]: e.target.value }))}
+                                                                                    className={`${checkCls} ${checkTone(val)}`}
+                                                                                >
+                                                                                    <option value="">—</option>
+                                                                                    {withCurrent(d.options, val).map((o) => (
+                                                                                        <option key={o} value={o}>
+                                                                                            {o}
+                                                                                        </option>
+                                                                                    ))}
+                                                                                </select>
+                                                                            </li>
+                                                                        );
+                                                                    })}
+                                                                </ol>
                                                             </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             </Section>
                                         );
@@ -927,28 +950,20 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                             )}
                         </div>
                     </div>
-                    <div className="flex-1 min-h-0 overflow-auto px-5 pb-5 flex justify-center">
-                        {previewUrl ? (
-                            <div
-                                className={`relative w-full self-start bg-white rounded-sm shadow-[0_1px_3px_rgba(15,23,42,0.08),0_12px_32px_-8px_rgba(15,23,42,0.18)] ${
-                                    type === "dp" ? "aspect-[8.5/13]" : "aspect-[1/1.414]"
-                                } ${previewLoading ? "opacity-70" : ""} transition-opacity`}
-                            >
-                                <iframe
-                                    title={`${schema?.label || "Permit"} preview`}
-                                    src={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
-                                    className="absolute inset-0 w-full h-full border-0 rounded-sm"
-                                />
-                            </div>
-                        ) : previewError ? (
-                            <div role="alert" className="mt-16 max-w-sm text-center text-[12.5px] text-red-600 font-medium">{previewError}</div>
-                        ) : (
-                            <div className="mt-16 flex flex-col items-center gap-3 text-[12px] text-slate-500">
-                                <div className={`w-40 ${type === "dp" ? "aspect-[8.5/13]" : "aspect-[1/1.414]"} rounded-sm bg-white shadow-sm animate-pulse`} aria-hidden="true" />
-                                Building preview…
-                            </div>
-                        )}
-                    </div>
+                    {previewUrl ? (
+                        <PermitPdfPreview url={previewUrl} title={`${schema?.label || "Permit"} preview`} dimmed={previewLoading} />
+                    ) : (
+                        <div className="flex-1 min-h-0 overflow-auto px-5 pb-5 flex justify-center">
+                            {previewError ? (
+                                <div role="alert" className="mt-16 max-w-sm text-center text-[12.5px] text-red-600 font-medium">{previewError}</div>
+                            ) : (
+                                <div className="mt-16 flex flex-col items-center gap-3 text-[12px] text-slate-500">
+                                    <div className={`w-40 ${type === "dp" ? "aspect-[8.5/13]" : "aspect-[1/1.414]"} rounded-sm bg-white shadow-sm animate-pulse`} aria-hidden="true" />
+                                    Building preview…
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -1047,6 +1062,22 @@ function Section({ title, summary, warn = false, open = false, children }) {
 
 // Selects reserve room for the dropdown arrow so long options never run under it
 const selectCls = `${inputCls} pr-8 truncate`;
+// Checklist rows: a fixed-width status select (not w-full, which would squeeze the item text away)
+const checkCls = inputCls.replace("w-full ", "") + " w-[4.5rem] shrink-0 !pr-6 text-center font-medium truncate";
+const checkTone = (v) => (v === "√" || v === "✓" ? "!text-emerald-700 !bg-emerald-50 !border-emerald-200" : /^x$/i.test(v) ? "!text-red-700 !bg-red-50 !border-red-200" : /^na$/i.test(v) ? "!text-slate-500" : "");
+
+// "(10) MPDC Endorsement…" → { num: "10", text: "MPDC Endorsement…" }; "a. Pay the fee" → { num: "a", … }
+function parseItemLabel(label) {
+    const m = /^\s*\(?(\d{1,2}|[a-z])(?:\)|\.+)\s*(.*)$/is.exec(label || "");
+    return m ? { num: m[1], text: m[2].trim() } : { num: "", text: String(label || "").trim() };
+}
+
+// "DOCUMENTARY REQUIREMENTS (submitted – / …):" → ["DOCUMENTARY REQUIREMENTS", true]
+function splitHeading(section) {
+    const m = /^(.*?)\s*\((?:submitted|not submitted)[^)]*\)\s*:?\s*$/i.exec(section || "");
+    return m ? [m[1], true] : [String(section || "").replace(/:\s*$/, ""), false];
+}
+
 const inputClsReadOnly = "w-full h-8 py-1 leading-5 rounded-md border border-slate-200 bg-slate-100 text-slate-500 px-2.5 text-[12.5px] cursor-not-allowed select-none focus:outline-none";
 
 function Field({ field, value, onChange, required = false, tag = true }) {
@@ -1087,10 +1118,91 @@ function Field({ field, value, onChange, required = false, tag = true }) {
 }
 
 // Allowed uses come from the "ALLOWED USES LIST" sheet: pick the zone's section, then the use (or type one).
+// A custom combobox rather than <datalist>: the native popup can't be styled, doesn't wrap the long
+// use names, and floats outside the modal.
 function AllowedUse({ field, value, onChange, disabled }) {
     const sections = field.sections || [];
     const [section, setSection] = useState(field.default_section || sections[0]?.section || "");
-    const uses = sections.find((s) => s.section === section)?.uses || [];
+    const uses = useMemo(() => sections.find((s) => s.section === section)?.uses || [], [sections, section]);
+    const inputRef = useRef(null);
+    const listRef = useRef(null);
+    const [open, setOpen] = useState(false);
+    const [filtering, setFiltering] = useState(false); // show everything until the user types
+    const [active, setActive] = useState(-1);
+    const [box, setBox] = useState(null); // { left, width, top | bottom, maxHeight }
+
+    const query = String(value ?? "").trim().toLowerCase();
+    const matches = useMemo(() => {
+        if (!filtering || !query) return uses;
+        const words = query.split(/\s+/);
+        return uses.filter((u) => {
+            const hay = u.toLowerCase();
+            return words.every((w) => hay.includes(w));
+        });
+    }, [uses, query, filtering]);
+
+    // Place the list under the input (above it when there's no room), in a portal so the
+    // modal's scroll area never clips it
+    const place = () => {
+        const el = inputRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        const below = window.innerHeight - r.bottom - 12;
+        const above = r.top - 12;
+        const up = below < 180 && above > below;
+        const width = Math.min(Math.max(r.width, 340), window.innerWidth - 24);
+        setBox({
+            left: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)),
+            width,
+            maxHeight: Math.min(280, up ? above : below),
+            ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+        });
+    };
+
+    useLayoutEffect(() => {
+        if (!open) return;
+        place();
+        const onMove = (e) => {
+            if (listRef.current?.contains(e.target)) return; // scrolling the list itself
+            place();
+        };
+        window.addEventListener("resize", onMove);
+        window.addEventListener("scroll", onMove, true);
+        return () => {
+            window.removeEventListener("resize", onMove);
+            window.removeEventListener("scroll", onMove, true);
+        };
+    }, [open]);
+
+    useEffect(() => setActive(-1), [matches]);
+
+    useEffect(() => {
+        if (active >= 0) listRef.current?.children[active]?.scrollIntoView({ block: "nearest" });
+    }, [active]);
+
+    const choose = (u) => {
+        onChange(u);
+        setOpen(false);
+        setFiltering(false);
+    };
+
+    const onKeyDown = (e) => {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            if (!open) return setOpen(true);
+            if (!matches.length) return;
+            const d = e.key === "ArrowDown" ? 1 : -1;
+            setActive((i) => (i < 0 ? (d > 0 ? 0 : matches.length - 1) : (i + d + matches.length) % matches.length));
+        } else if (e.key === "Enter" && open && active >= 0) {
+            e.preventDefault();
+            choose(matches[active]);
+        } else if (e.key === "Escape" && open) {
+            e.preventDefault();
+            e.stopPropagation(); // close the list, not the whole modal
+            setOpen(false);
+        }
+    };
+
     const listId = `allowed-uses-${field.key}`;
 
     return (
@@ -1102,12 +1214,71 @@ function AllowedUse({ field, value, onChange, disabled }) {
                     </option>
                 ))}
             </select>
-            <input disabled={disabled} readOnly={disabled} list={listId} value={value ?? ""} onChange={(e) => onChange(e.target.value)} placeholder="Type to search the allowed uses…" className={disabled ? inputClsReadOnly : inputCls} />
-            <datalist id={listId}>
-                {uses.map((u) => (
-                    <option key={u} value={u} />
-                ))}
-            </datalist>
+            <div className="relative">
+                <input
+                    ref={inputRef}
+                    disabled={disabled}
+                    readOnly={disabled}
+                    role="combobox"
+                    aria-expanded={open}
+                    aria-controls={listId}
+                    aria-autocomplete="list"
+                    autoComplete="off"
+                    value={value ?? ""}
+                    title={value || undefined}
+                    onChange={(e) => {
+                        onChange(e.target.value);
+                        setFiltering(true);
+                        setOpen(true);
+                    }}
+                    onFocus={() => !disabled && setOpen(true)}
+                    onClick={() => !disabled && setOpen(true)}
+                    onBlur={() => {
+                        setOpen(false);
+                        setFiltering(false);
+                    }}
+                    onKeyDown={onKeyDown}
+                    placeholder="Type to search the allowed uses…"
+                    className={`${disabled ? inputClsReadOnly : inputCls} pr-8 truncate`}
+                />
+                {!disabled && (
+                    <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                )}
+                {open && box &&
+                    createPortal(
+                        <ul
+                            id={listId}
+                            ref={listRef}
+                            role="listbox"
+                            // keep focus in the input so clicking an option doesn't blur-close it first
+                            onMouseDown={(e) => e.preventDefault()}
+                            style={{ position: "fixed", left: box.left, width: box.width, top: box.top, bottom: box.bottom, maxHeight: box.maxHeight }}
+                            className="z-[1100] overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-slate-900/5"
+                        >
+                            {matches.length === 0 ? (
+                                <li className="px-3 py-2 text-[12px] text-slate-500">No match. Keep typing to use your own wording.</li>
+                            ) : (
+                                matches.map((u, i) => (
+                                    <li
+                                        key={u}
+                                        role="option"
+                                        aria-selected={u === value}
+                                        onMouseEnter={() => setActive(i)}
+                                        onClick={() => choose(u)}
+                                        className={`cursor-pointer px-3 py-1.5 text-[12.5px] leading-snug break-words ${
+                                            i === active ? "bg-blue-50 text-blue-900" : "text-slate-700"
+                                        } ${u === value ? "font-medium" : ""}`}
+                                    >
+                                        {u}
+                                    </li>
+                                ))
+                            )}
+                        </ul>,
+                        document.body
+                    )}
+            </div>
         </div>
     );
 }

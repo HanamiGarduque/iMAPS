@@ -8,6 +8,7 @@ use App\Models\SiteInspection;
 use App\Models\SiteInspectionAssignment;
 use App\Models\User;
 use App\Models\ZoningApplication;
+use App\Support\InspectionRoundNumbering;
 use App\Support\InspectorTransferGuard;
 use App\Support\ReassignmentReasons;
 use Illuminate\Support\Facades\DB;
@@ -326,9 +327,9 @@ class WorkAssignmentService
                 action: $isInitial ? 'SITE_INSPECTOR_ASSIGNED' : 'SITE_INSPECTOR_REASSIGNED',
                 actor: $actor,
                 note: sprintf(
-                    'Inspector for inspection round %d moved from %s to %s (%s). Reason: %s. The round status and any evidence already collected were not changed.',
-                    $inspection->id,
-                    $fromId === null ? 'no assigned inspector' : (string) $fromId,
+                    'Inspector for %s moved from %s to %s (%s). Reason: %s. The round status and any evidence already collected were not changed.',
+                    InspectionRoundNumbering::describe($inspection),
+                    $fromId === null ? 'no assigned inspector' : $this->officerLabel($fromId, 'inspector'),
                     $target->name,
                     (string) $target->id,
                     $this->reasonWithNote($effectiveReason, $effectiveNote),
@@ -469,6 +470,14 @@ class WorkAssignmentService
         ]);
     }
 
+    /** "Name (id)" for audit prose; the bare role + id only if the user row is gone. */
+    private function officerLabel(int $id, string $fallbackRole): string
+    {
+        $name = User::query()->whereKey($id)->value('name');
+
+        return $name !== null ? sprintf('%s (%d)', $name, $id) : sprintf('%s %d', $fallbackRole, $id);
+    }
+
     private function describe(
         ?int $fromId,
         int $toId,
@@ -478,7 +487,7 @@ class WorkAssignmentService
     ): string {
         $movement = $fromId === null
             ? sprintf('initially assigned to %s (%d)', $toName, $toId)
-            : sprintf('moved from officer %d to %s (%d)', $fromId, $toName, $toId);
+            : sprintf('moved from %s to %s (%d)', $this->officerLabel($fromId, 'officer'), $toName, $toId);
 
         return sprintf(
             'Planning Officer ownership %s. Reason: %s. The application status, encoder and technical review history were not changed.',

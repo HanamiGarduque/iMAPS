@@ -71,7 +71,7 @@ class ApplicationSubmissionClientContractTest extends TestCase
         $this->assertNotFalse($guard, 'A missing server reference must be refused.');
 
         foreach ([
-            'setShowRoutingSlip(true)'      => 'success routing slip',
+            'Application Encoded Successfully!' => 'success dialog',
             'clearDraftStateRecord()'       => 'draft cleanup',
             'setSyncStatus("Submitted")'     => 'Submitted state',
             'setSubmissionSucceeded(true)'  => 'confirmed-success state',

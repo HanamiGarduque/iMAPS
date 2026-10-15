@@ -222,14 +222,22 @@ export default function StepFee({
             {/* Official Receipt (OR) Number */}
             <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 mt-2">
                 <Label hasError={!!errors.or_number}>Official Receipt (OR) Number</Label>
-                <Input
-                    type="text"
-                    value={form.or_number || ""}
-                    onChange={set("or_number")}
-                    placeholder="e.g. OR-2026-98124"
-                    className="font-mono bg-white uppercase mt-1"
-                    hasError={!!errors.or_number}
-                />
+                <div className="relative mt-1">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono text-sm font-semibold text-slate-500 pointer-events-none select-none">OR-</span>
+                    <Input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={5}
+                        value={(form.or_number || "").replace(/^OR-/i, "").replace(/\D/g, "").slice(0, 5)}
+                        onChange={(e) => {
+                            const digits = e.target.value.replace(/\D/g, "").slice(0, 5);
+                            set("or_number")({ target: { value: digits ? `OR-${digits}` : "" } });
+                        }}
+                        placeholder="12345"
+                        className="font-mono bg-white pl-12"
+                        hasError={!!errors.or_number}
+                    />
+                </div>
                 {errors.or_number && <p className="text-xs font-medium text-rose-500 mt-1">{errors.or_number}</p>}
             </div>
         </div>

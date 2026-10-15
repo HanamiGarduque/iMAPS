@@ -83,7 +83,7 @@ class FlashSurvivesBackgroundRequestsTest extends TestCase
             'email'                  => 'flash.applicant@example.test',
             'barangay'               => 'Bagong Pook',
             'assessment_fee'         => 500,
-            'or_number'              => 'OR-'.uniqid(),
+            'or_number'              => 'OR-'.str_pad((string) random_int(0, 99999), 5, '0', STR_PAD_LEFT),
             'preferred_release_mode' => 'Pick-up at Office',
             'date_of_receipt'        => now()->toDateString(),
             'parcels'                => [[

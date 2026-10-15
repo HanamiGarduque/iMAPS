@@ -1402,6 +1402,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         if (step === STEP.FEES) {
             if (!form.or_number?.trim()) {
                 newErrors.or_number = "Official Receipt (OR) number is required.";
+            } else if (!/^OR-\d{5}$/.test(form.or_number.trim())) {
+                newErrors.or_number = "OR number must be exactly 5 digits.";
             }
             if (form.assessment_fee === "" || form.assessment_fee == null || Number(form.assessment_fee) < 0) {
                 newErrors.assessment_fee = "Assessment fee is required.";
@@ -1519,7 +1521,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     assessment_fee: form.assessment_fee,
                     or_number: form.or_number,
                 });
-                setShowRoutingSlip(true);
 
                 clearDraftStateRecord();
                 setTempDraftId("TMP-" + Math.random().toString(36).substring(2, 11).toUpperCase());

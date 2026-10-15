@@ -208,8 +208,8 @@ final class InspectionOperationsContext
                 'display_status' => self::displayStatus((string) $sibling->status),
                 'inspector_id' => $sibling->inspector_id,
                 'scheduled_date' => $sibling->scheduled_date?->toDateString(),
-                'completed_at' => $sibling->completed_at?->toDateString(),
-                'submitted_at' => $sibling->submitted_at?->toDateString(),
+                'completed_at' => $sibling->completed_at?->toIso8601String(),
+                'submitted_at' => $sibling->submitted_at?->toIso8601String(),
                 'delivery_state' => InspectionDeliveryStatus::state($sibling->delivery_status),
             ];
         }

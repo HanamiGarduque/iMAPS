@@ -602,9 +602,9 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
         });
     };
     const assignedDay = shortDay(ins.created_at);
-    const completedDay = shortDay(ins.completed_at);
+    const completedStamp = stampOf(ins.completed_at);
     const roundSummary = roundDone
-        ? [assignedDay && `Assigned ${assignedDay}`, completedDay ? `Completed ${completedDay}` : "Completed"].filter(Boolean).join(" → ")
+        ? [assignedDay && `Assigned ${assignedDay}`, completedStamp ? `Completed ${completedStamp}` : "Completed"].filter(Boolean).join(" → ")
         : null;
 
     const hasFindings = Boolean(

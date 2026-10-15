@@ -58,7 +58,22 @@ class MapController extends Controller
     private function cacheKey(string $layer, string $scope): string
     {
         $version = Cache::rememberForever(self::VERSION_KEY, fn () => '1');
-        return 'map_layers:' . $version . ':r' . self::GEOMETRY_REV . ':' . $layer . ':' . md5(strtolower($scope));
+        return 'map_layers:' . $version . ':r' . self::GEOMETRY_REV . ':' . $layer . ':' . $this->tableVersion($layer) . ':' . md5(strtolower($scope));
+    }
+
+    // land_parcels is edited outside Laravel too (SQL, imports); a DB trigger bumps
+    // map_layer_versions on any change so the cached layer never goes stale.
+    private function tableVersion(string $layer): string
+    {
+        if ($layer !== 'land_parcels' || DB::getDriverName() !== 'pgsql') {
+            return '0';
+        }
+
+        try {
+            return (string) (DB::table('public.map_layer_versions')->where('layer', $layer)->value('version') ?? 0);
+        } catch (\Throwable $e) {
+            return '0'; // migration not run yet
+        }
     }
 
     public function getLayer($layer, Request $request)

@@ -53,11 +53,12 @@ class AdminPoPriorityClosureTest extends TestCase
         return $response->viewData('page')['props'];
     }
 
-    private function makeApplication(): ZoningApplication
+    private function makeApplication(?User $owner = null): ZoningApplication
     {
         return ZoningApplication::factory()->create([
             'status' => 'Technical Review',
             'reference_number' => 'APP-2026-90001',
+            'assigned_planning_officer_id' => $owner?->id,
         ]);
     }
 
@@ -104,7 +105,7 @@ class AdminPoPriorityClosureTest extends TestCase
     {
         $po = $this->makeUser('Planning Officer');
         $inspector = $this->makeUser('Site Inspector');
-        $application = $this->makeApplication();
+        $application = $this->makeApplication($po);
         $parcel = Parcel::factory()->create(['zoning_application_id' => $application->id]);
 
         SiteInspection::factory()->create([
@@ -123,10 +124,27 @@ class AdminPoPriorityClosureTest extends TestCase
         $this->assertStringNotContainsStringIgnoringCase('in progress', (string) $row['inspection_summary']);
     }
 
+    public function test_registry_lists_only_own_applications_for_a_planning_officer_but_all_for_admin(): void
+    {
+        $po = $this->makeUser('Planning Officer');
+        $other = $this->makeUser('Planning Officer');
+        $admin = $this->makeUser('Admin');
+
+        $owned = ZoningApplication::factory()->create(['assigned_planning_officer_id' => $po->id]);
+        $encoded = ZoningApplication::factory()->create(['encoded_by' => $po->id, 'assigned_planning_officer_id' => $other->id]);
+        $foreign = ZoningApplication::factory()->create(['encoded_by' => $other->id, 'assigned_planning_officer_id' => $other->id]);
+
+        $poIds = collect($this->props($this->actingAs($po)->get('/applications')->assertOk())['applications']['data'])->pluck('id')->all();
+        $this->assertEqualsCanonicalizing([$owned->id, $encoded->id], $poIds);
+
+        $adminIds = collect($this->props($this->actingAs($admin)->get('/applications')->assertOk())['applications']['data'])->pluck('id')->all();
+        $this->assertContains($foreign->id, $adminIds);
+    }
+
     public function test_application_without_inspection_has_no_summary_line(): void
     {
         $po = $this->makeUser('Planning Officer');
-        $application = $this->makeApplication();
+        $application = $this->makeApplication($po);
         Parcel::factory()->create(['zoning_application_id' => $application->id]);
 
         $response = $this->actingAs($po)->get('/applications')->assertOk();
@@ -139,7 +157,7 @@ class AdminPoPriorityClosureTest extends TestCase
     {
         $po = $this->makeUser('Planning Officer');
         $inspector = $this->makeUser('Site Inspector');
-        $application = $this->makeApplication();
+        $application = $this->makeApplication($po);
         $parcel = Parcel::factory()->create(['zoning_application_id' => $application->id]);
 
         // Round 1 completed, round 2 a new reinspection task: two separate rows.
