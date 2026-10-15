@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import { Input } from "./FormControls";
-import Swal from "sweetalert2";
+import dialog from "@/utils/dialog";
 import { getZoneInfo, ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
 import { resolveBarangayName } from "@/utils/mapData";
 import {
@@ -671,14 +671,14 @@ export default function StepPropertyGIS({
             warn.textContent = `${dropped.join(", ")} will be removed from this application. File them separately if they still need a clearance.`;
             list.append(warn);
         }
-        const { isConfirmed } = await Swal.fire({
+        const { isConfirmed } = await dialog.fire({
             title: `Switch to ${newType}?`,
             html: list,
             icon: "warning",
             showCancelButton: true,
             confirmButtonText: "Switch",
-            cancelButtonText: "Cancel",
             focusCancel: true,
+            width: 380,
         });
         if (!isConfirmed) return;
 

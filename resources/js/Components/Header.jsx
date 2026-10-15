@@ -409,8 +409,9 @@ export default function Header({
                         <span className="text-blue-600 font-black">i</span>MAPS
                     </span>
                     
-                    {/* Dynamic Navigation Beacon */}
-                    <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-lg shadow-2xs">
+                    {/* Dynamic Navigation Beacon — only shown while the navigation menu is open */}
+                    {sidebarOpen && (
+                    <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-lg shadow-2xs animate-in fade-in duration-150">
                         <span className="relative flex h-1.5 w-1.5">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-600" />
@@ -419,6 +420,7 @@ export default function Header({
                             {navigationBadge}
                         </span>
                     </div>
+                    )}
 
                     {/* Differentiated Portal Menu Switcher Glyph */}
                     <div className={`flex items-center gap-1 px-1.5 py-1 rounded-lg transition-all duration-200 ${

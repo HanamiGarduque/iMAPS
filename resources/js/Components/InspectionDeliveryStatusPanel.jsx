@@ -1,5 +1,5 @@
 // resources/js/Components/InspectionDeliveryStatusPanel.jsx
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { router, usePage } from "@inertiajs/react";
 
 /**
@@ -468,12 +468,8 @@ export default function InspectionDeliveryStatusPanel({ applicationId }) {
         [applicationId, historyRoundId]
     );
 
-    // The 9C-3 success flash, consumed here so Applications/Show.jsx does not
-    // have to change. Show.jsx renders no flash consumer, and the message is
-    // authored SERVER prose, never text composed here.
-    const flashSuccess = usePage().props?.flash?.success ?? null;
-    const [toast, setToast] = useState(null);
-    const seenFlash = useRef(null);
+    // The 9C-3 success flash (server prose) is shown by Applications/Show.jsx's
+    // shared toast, so this panel renders no flash of its own.
 
     const load = useCallback(() => {
         if (!applicationId) {
@@ -518,15 +514,6 @@ export default function InspectionDeliveryStatusPanel({ applicationId }) {
     }, [applicationId]);
 
     useEffect(() => load(), [load]);
-
-    useEffect(() => {
-        if (!flashSuccess || seenFlash.current === flashSuccess) return;
-        seenFlash.current = flashSuccess;
-        if (!/delivery|retry/i.test(flashSuccess)) return;
-        setToast(flashSuccess);
-        const timer = setTimeout(() => setToast(null), 4000);
-        return () => clearTimeout(timer);
-    }, [flashSuccess]);
 
     /**
      * 9C-4 retry.
@@ -691,18 +678,6 @@ export default function InspectionDeliveryStatusPanel({ applicationId }) {
                     </>
                 )}
             </div>
-
-            {/* 9C-4. The server's own success wording, in the Show.jsx toast
-                shape. It always says QUEUED, never delivered. */}
-            {toast && (
-                <div
-                    className="flex items-center gap-2.5 px-4 py-3 rounded-2xl border shadow-xl max-w-sm pointer-events-none transition-all bg-slate-900 text-white border-slate-800"
-                    role="status"
-                    aria-live="polite"
-                >
-                    <span>{toast}</span>
-                </div>
-            )}
         </section>
     );
 }

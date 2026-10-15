@@ -4,7 +4,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import axios from "axios";
-import Swal from "sweetalert2";
+import dialog, { notify } from "@/utils/dialog";
 import PermitPdfPreview from "./PermitPdfPreview";
 
 export const PERMITS = [
@@ -327,47 +327,25 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
         const permitId = typeof item === "object" ? item?.id : item;
         const permitName = typeof item === "object" ? item?.permit_name || "this permit document" : "this permit document";
 
-        Swal.fire({
+        dialog.fire({
             title: "Delete stored permit?",
             text: `Are you sure you want to delete "${permitName}"? This action cannot be undone.`,
             icon: "warning",
+            danger: true,
             showCancelButton: true,
             confirmButtonText: "Delete Permit",
-            cancelButtonText: "Cancel",
-            buttonsStyling: false,
             focusCancel: true,
-            customClass: {
-                popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
-                title: "text-base font-bold text-slate-900",
-                htmlContainer: "text-xs text-slate-500 mt-1",
-                actions: "flex items-center justify-end gap-2.5 mt-5",
-                confirmButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
-                cancelButton:
-                    "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
-            },
         }).then(async (result) => {
             if (result.isConfirmed) {
                 try {
                     await axios.delete(`/applications/${app.id}/saved-permits/${permitId}`);
                     fetchSavedPermits();
-                    Swal.fire({
-                        toast: true,
-                        position: "top-end",
-                        icon: "success",
-                        title: "Permit document deleted",
-                        showConfirmButton: false,
-                        timer: 2000,
-                    });
+                    notify("Permit document deleted", "success", { timer: 2000 });
                 } catch (e) {
-                    Swal.fire({
+                    dialog.fire({
                         icon: "error",
                         title: "Delete Failed",
                         text: e.response?.data?.message || "Could not delete stored permit.",
-                        customClass: {
-                            popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white",
-                            confirmButton: "px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold cursor-pointer",
-                        },
                     });
                 }
             }

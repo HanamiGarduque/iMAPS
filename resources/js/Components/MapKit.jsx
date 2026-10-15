@@ -423,7 +423,7 @@ export function AreaComparison({ declared, feature }) {
     return (
         <span>
             {fmt(check.declared)} declared · {fmt(check.mapped)} mapped
-            <span className={`block text-[11px] font-normal ${check.flagged ? "text-amber-700" : "text-slate-400"}`}>
+            <span className={`block text-[11px] font-normal ${check.flagged ? "text-amber-700" : "text-slate-500"}`}>
                 {check.flagged
                     ? `Differs by ${formatAreaDiff(check.diff)}: confirm the lot and the Tax Declaration`
                     : `Within ±5% (${formatAreaDiff(check.diff)})`}

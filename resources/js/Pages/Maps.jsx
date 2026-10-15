@@ -20,6 +20,7 @@ import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
 import LeafletMap, { getAppCoordinates, PIN_ZOOM } from "@/Components/Maps/LeafletMap";
 import LayersPanel, { MODULES } from "@/Components/Maps/LayersPanel";
 import TimelineBar from "@/Components/Maps/TimelineBar";
+import DiversityTimeline from "@/Components/Maps/DiversityTimeline";
 import AttributeTable from "@/Components/Maps/AttributeTable";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import { ApplicationDetails, BarangayCard } from "@/Components/Maps/IdentifyCards";
@@ -317,6 +318,12 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         [mixTimeline]
     );
     const lastStep = diversitySteps.length - 1;
+    // The year picker offers one step per year: the last quarter of each
+    // year, so the final choice is the latest quarter ("Now").
+    const diversityChoices = useMemo(
+        () => diversitySteps.flatMap((s, i) => (i === lastStep || diversitySteps[i + 1]?.year !== s.year ? [i] : [])),
+        [diversitySteps, lastStep]
+    );
     const [diversityStepIndex, setDiversityStepIndex] = useState(() => lastStep);
     const [isDiversityPlaying, setIsDiversityPlaying] = useState(false);
     const stepIndex = Math.min(diversityStepIndex, lastStep);
@@ -356,6 +363,18 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             return { total: entry ? entry.diversity : null, records: entry?.records ?? 0 };
         });
     }, [mixTimeline, selectedBgy]);
+
+    // Every barangay's score per step, for the timeline's mini maps. The last
+    // step reads bgyStats, as the big map does.
+    const diversityYearScores = useMemo(
+        () => mixTimeline.map((s, i) => {
+            const out = {};
+            if (i === lastStep) Object.entries(bgyStats || {}).forEach(([name, st]) => { out[name] = st.diversity ?? null; });
+            else Object.keys(bgyStats || {}).forEach((name) => { out[name] = s.barangays?.[name]?.diversity ?? null; });
+            return out;
+        }),
+        [mixTimeline, bgyStats, lastStep]
+    );
 
     // "Oct 2021 – Sep 2026", and how much of the five years it covers.
     const mixPeriod = (step) => {
@@ -547,12 +566,12 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     }, [isTimelinePlaying, activeLayer, timelineQuarters.length]);
 
     useEffect(() => {
-        if (!isDiversityPlaying || activeLayer !== "diversity" || diversitySteps.length <= 1) return;
+        if (!isDiversityPlaying || activeLayer !== "diversity" || diversityChoices.length <= 1) return;
         const id = setInterval(() => {
-            setDiversityStepIndex((i) => (i >= diversitySteps.length - 1 ? 0 : i + 1));
+            setDiversityStepIndex((i) => diversityChoices.find((c) => c > i) ?? diversityChoices[0]);
         }, 1400);
         return () => clearInterval(id);
-    }, [isDiversityPlaying, activeLayer, diversitySteps.length]);
+    }, [isDiversityPlaying, activeLayer, diversityChoices]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -925,9 +944,11 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                 )}
 
                                 {activeLayer === "diversity" && diversitySteps.length > 1 && (
-                                    <TimelineBar
-                                        quarters={diversitySteps}
+                                    <DiversityTimeline
+                                        steps={diversitySteps}
                                         series={diversitySeries}
+                                        yearScores={diversityYearScores}
+                                        choices={diversityChoices}
                                         index={stepIndex}
                                         onIndex={(i) => {
                                             setDiversityStepIndex(i);
@@ -935,20 +956,10 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                         }}
                                         playing={isDiversityPlaying}
                                         onTogglePlay={() => setIsDiversityPlaying((p) => !p)}
-                                        max={1}
-                                        summary={(() => {
-                                            const cur = diversitySeries[stepIndex] || {};
-                                            const who = selectedBgy?.name || "Rosario";
-                                            return cur.total == null
-                                                ? `${who} · too few filings (${cur.records}) · ${mixPeriod(diversityStep)}`
-                                                : `${who} · mix ${cur.total.toFixed(2)} · ${cur.records} filings · ${mixPeriod(diversityStep)}`;
-                                        })()}
-                                        describe={(q, total, known) =>
-                                            `5 years to ${q.label} (${mixPeriod(q)}): ${known ? `mix ${total.toFixed(2)}` : "too few filings to score"}`
-                                        }
-                                        colorFor={(q, total) => (total == null ? undefined : getLens(diversityLens).getBand(total).fill)}
-                                        ariaLabel="Diversity index timeline"
-                                        seriesLabel="Land-use mix per period"
+                                        who={selectedBgy?.name || "Rosario"}
+                                        selectedName={selectedBgy?.name || null}
+                                        planScore={selectedBgy ? bgyStats?.[selectedBgy.name]?.clupTargetDiversity : overallDiversity?.planScore}
+                                        bandFor={(total) => getLens(diversityLens).getBand(total)}
                                     />
                                 )}
                             </main>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Head, Link, usePage, router } from "@inertiajs/react";
-import Swal from "sweetalert2";
+import { notify } from "@/utils/dialog";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import DropdownSelect from "@/Components/DropdownSelect";
@@ -101,11 +101,6 @@ const locationOf = (i) => {
     return app.project_location || app.barangay || i.barangay || "";
 };
 const isDone = (i) => i.display_status === "Completed";
-// The visit date has passed and the inspector has submitted nothing.
-const isOverdue = (i, scheduled) => {
-    const day = dayOf(scheduled);
-    return Boolean(day) && !isDone(i) && !i.submitted_at && day < dayOf(new Date());
-};
 const completedOf = (i) => i.completed_at || i.submitted_at || null;
 // "Oct 14, 2026 · 3:42 PM" for a full timestamp; a date-only value (a schedule) stays a plain date.
 const formatDateTime = (value) => {
@@ -287,26 +282,8 @@ export default function SiteInspectionsIndex() {
 
 
     useEffect(() => {
-        if (flash?.success) {
-            Swal.fire({
-                toast: true,
-                position: 'top-end',
-                icon: 'success',
-                title: flash.success,
-                showConfirmButton: false,
-                timer: 3000
-            });
-        }
-        if (flash?.error) {
-            Swal.fire({
-                toast: true,
-                position: 'top-end',
-                icon: 'error',
-                title: flash.error,
-                showConfirmButton: false,
-                timer: 4000
-            });
-        }
+        if (flash?.success) notify(flash.success, "success");
+        if (flash?.error) notify(flash.error, "error", { timer: 4000 });
     }, [flash]);
 
     const handleLogout = confirmSignOut;
@@ -484,37 +461,71 @@ export default function SiteInspectionsIndex() {
         </div>
     );
 
-    // Assigned is the common case, so it stays neutral; only Completed and a
-    // failed delivery get colour, which keeps the column scannable.
-    const statusBadge = (item) => {
-        const done = item.display_status === "Completed";
+    // Where the visit stands, in plain words, read from the dates the row
+    // already has: "Assigned" alone said nothing, since every open round is
+    // assigned. Only the report coming back is green; a visit date that has
+    // passed with no report is amber.
+    const STAGE_TONES = {
+        // Solid: the one finished state stands out from the open ones.
+        green: { icon: "bg-emerald-600 text-white ring-emerald-600", label: "text-emerald-700" },
+        blue: { icon: "bg-blue-50 text-blue-600 ring-blue-100", label: "text-blue-700" },
+        amber: { icon: "bg-amber-50 text-amber-600 ring-amber-100", label: "text-amber-700" },
+        slate: { icon: "bg-slate-50 text-slate-400 ring-slate-200", label: "text-slate-600" },
+        red: { icon: "bg-rose-50 text-rose-600 ring-rose-100", label: "text-rose-700" },
+    };
+    const STAGE_ICONS = {
+        check: "M5 12.5l4.5 4.5L19 7.5",
+        pin: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z",
+        clock: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z",
+        alert: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z",
+        calendar: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5",
+        dash: "M5 12h14",
+    };
+    const lower = (s) => (s ? s[0].toLowerCase() + s.slice(1) : s);
+    const upper = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
+    const stageOf = (item) => {
+        if (isDone(item)) {
+            const at = completedOf(item);
+            return { tone: "green", icon: "check", label: "Report received", sub: at ? `Received ${lower(relativeDay(at))}` : null };
+        }
+        const scheduled = scheduledOf(item);
+        const day = dayOf(scheduled);
+        if (!day) return { tone: "slate", icon: "dash", label: "Not scheduled", sub: "No visit date yet" };
+        const today = dayOf(new Date());
+        if (day === today) return { tone: "blue", icon: "pin", label: "Visit today", sub: "Report not in yet" };
+        if (day < today) return { tone: "amber", icon: "clock", label: "Awaiting report", sub: `Visit was ${lower(relativeDay(scheduled))}` };
+        return { tone: "slate", icon: "calendar", label: "Visit upcoming", sub: upper(relativeDay(scheduled)) };
+    };
+
+    const stageView = (s, title, compact) => {
+        const t = STAGE_TONES[s.tone];
         return (
-            <span className={`inline-flex items-center gap-1.5 text-[11.5px] font-medium px-2 py-0.5 rounded-md ${done ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                {done ? (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                ) : (
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <span className="inline-flex items-center gap-2 text-left" title={title}>
+                <span className={`flex-none flex items-center justify-center w-6 h-6 rounded-full ring-1 ${t.icon}`} aria-hidden="true">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={s.icon === "check" ? 3.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+                        <path d={STAGE_ICONS[s.icon]} />
                     </svg>
-                )}
-                {item.display_status || "Assigned"}
+                </span>
+                <span className="min-w-0 leading-tight">
+                    <span className={`block text-[12px] font-semibold whitespace-nowrap ${t.label}`}>{s.label}</span>
+                    {!compact && s.sub && <span className="block mt-0.5 text-[11px] text-slate-500 whitespace-nowrap">{s.sub}</span>}
+                </span>
             </span>
         );
     };
 
-    // Replaces the status badge in a list row when delivery failed: one line,
-    // the actionable fact first. The underlying status stays in the tooltip.
-    const failedBadge = (item, ops) => (
-        <span
-            className="inline-flex items-center gap-1 text-[11.5px] font-medium px-2 py-0.5 rounded-md bg-rose-50 text-rose-700"
-            title={`${item.display_status || "Assigned"} · ${ops.delivery_label}`}
-        >
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-            </svg>
-            {ops.delivery_label}
-        </span>
-    );
+    // `compact` (the folder cards) keeps to one line; the dates are in the card footer.
+    const statusBadge = (item, { compact = false } = {}) =>
+        stageView(stageOf(item), item.display_status || "Assigned", compact);
+
+    // Replaces the status in a list row when delivery failed: the actionable
+    // fact first, with where the visit stands underneath.
+    const failedBadge = (item, ops) =>
+        stageView(
+            { tone: "red", icon: "alert", label: ops.delivery_label, sub: stageOf(item).label },
+            `${item.display_status || "Assigned"} · ${ops.delivery_label}`,
+        );
 
     const reviewBadges = (review) => (
         <>
@@ -917,15 +928,9 @@ export default function SiteInspectionsIndex() {
                                                             </td>
 
                                                             <td className="whitespace-nowrap">
+                                                                {/* How far off the date is shows in Status, not twice. */}
                                                                 {scheduled ? (
-                                                                    isOverdue(item, scheduled) ? (
-                                                                        <>
-                                                                            <span className="block text-slate-600">{formatDate(scheduled)}</span>
-                                                                            <span className="block text-[11px] font-medium text-rose-600">Overdue · {relativeDay(scheduled)}</span>
-                                                                        </>
-                                                                    ) : (
-                                                                        <span className="text-slate-600" title={relativeDay(scheduled)}>{formatDate(scheduled)}</span>
-                                                                    )
+                                                                    <span className="text-slate-600" title={relativeDay(scheduled)}>{formatDate(scheduled)}</span>
                                                                 ) : <span className="text-slate-300">—</span>}
                                                             </td>
 
@@ -1020,7 +1025,7 @@ export default function SiteInspectionsIndex() {
                                                                         </span>
                                                                     </div>
                                                                     <span className="shrink-0">
-                                                                        {statusBadge(item)}
+                                                                        {statusBadge(item, { compact: true })}
                                                                         {item.status === 'completed' && <span className="sr-only">, report received</span>}
                                                                     </span>
                                                                 </div>

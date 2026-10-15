@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { Head, Link } from "@inertiajs/react";
-import Swal from "sweetalert2";
+import dialog, { notify, tight } from "@/utils/dialog";
 import axios from "axios";
 import Chart from "chart.js/auto";
 import Header from "@/Components/Header";
@@ -423,15 +423,6 @@ function SheetPreview({ title, headers, rows, dimmed }) {
 
 const fieldClass = "w-full h-8 rounded-md border border-slate-300 bg-white pl-2.5 pr-8 py-1 text-[12.5px] leading-5 text-slate-900 transition hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 focus:outline-none";
 
-const swalClass = {
-    popup: "rounded-2xl border border-slate-200 shadow-xl p-6 bg-white font-sans",
-    title: "text-base font-bold text-slate-900",
-    htmlContainer: "text-xs text-slate-500",
-    actions: "flex items-center justify-center gap-3 mt-4",
-    confirmButton: "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer",
-    cancelButton: "inline-flex items-center justify-center px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer",
-};
-
 // Boxed settings group, like the sections of a print dialog.
 const Group = ({ title, children }) => (
     <fieldset className="rounded-md border border-slate-300 bg-slate-50 px-4 pt-3 pb-3.5">
@@ -697,29 +688,29 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
             setRecentPick(entry.id);
             writeStore(RECENT_KEY, next);
 
-            Swal.fire({ icon: "success", title: "Report downloaded", text: "The download has been recorded in the audit trail.", timer: 2200, showConfirmButton: false, customClass: swalClass });
+            notify("Report downloaded", "success", { text: "The download has been recorded in the audit trail." });
         } catch (error) {
-            Swal.fire({ icon: "error", title: "Report couldn't be generated", text: "Please try again. If it keeps failing, try fewer columns or a shorter date range.", buttonsStyling: false, customClass: swalClass });
+            dialog.fire({ icon: "error", title: "Report couldn't be generated", text: "Please try again. If it keeps failing, try fewer columns or a shorter date range." });
         } finally {
             setDownloading(false);
         }
     };
 
     const showHelp = () =>
-        Swal.fire({
+        dialog.fire({
             title: "Making a report",
-            html: `
-                <ol class="text-left text-[12.5px] leading-relaxed text-slate-600 space-y-2 mt-1 list-decimal pl-5">
+            icon: "info",
+            width: 420,
+            html: tight(`
+                <ol class="text-left text-[12.5px] leading-relaxed text-slate-600 space-y-2 list-decimal pl-5">
                     <li><b class="text-slate-800">Pick a template</b> at the top, or set up your own under <i>Data to Include</i> and <i>Layout &amp; Content</i>.</li>
                     <li><b class="text-slate-800">Check the preview</b> on the right. It updates as you change settings; use ‹ › to flip pages.</li>
                     <li><b class="text-slate-800">Download</b> as PDF, Excel or CSV. Every download is recorded in the audit trail.</li>
                 </ol>
                 <p class="text-left text-[12px] text-slate-500 mt-3"><b class="text-slate-700">Fit to page width:</b> if a table is too wide for the paper, its text is shrunk so nothing is cut off. Landscape or Legal paper gives more room.</p>
                 <p class="text-left text-[12px] text-slate-500 mt-2"><b class="text-slate-700">Recent reports</b> and your last settings are saved in this browser only.</p>
-            `,
+            `),
             confirmButtonText: "Got it",
-            buttonsStyling: false,
-            customClass: swalClass,
         });
 
     const runAgain = (entry) => {
