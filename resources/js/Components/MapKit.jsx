@@ -189,7 +189,7 @@ export function getZoningCheck(parcel, isAmendmentStream) {
     if (!cadastral) return { key: "verified", label: "Verified", dot: "bg-emerald-500" };
     if (cadastral === clup) return { key: "consistent", label: "Consistent", dot: "bg-emerald-500" };
     if (isAmendmentStream) return { key: "amendment", label: "Amendment track", dot: "bg-blue-500" };
-    const isAgri = cadastral.includes("agri");
+    const isAgri = isAgriZone(cadastral);
     return {
         key: "mismatch",
         label: "Mismatch",
@@ -199,6 +199,9 @@ export function getZoningCheck(parcel, isAmendmentStream) {
             : { label: "Switch to Rezoning", type: "Petition for Rezoning" },
     };
 }
+
+// Reclassification applies to agricultural land only; agri-/agro-industrial zones are not agricultural here.
+const isAgriZone = (zone) => zone.includes("agri") && !zone.includes("industrial");
 
 // Determines the recommended legislative petition (Rezoning vs Reclassification)
 // based on property zoning mismatch (agricultural zones mandate Reclassification).
@@ -214,7 +217,7 @@ export function getRecommendedPetition(parcels) {
 
     if (mismatchParcel) {
         const cadastral = (mismatchParcel.cadastral_zone || "").toLowerCase();
-        const isAgri = cadastral.includes("agri");
+        const isAgri = isAgriZone(cadastral);
         return isAgri ? "Petition for Reclassification" : "Petition for Rezoning";
     }
 
@@ -222,7 +225,7 @@ export function getRecommendedPetition(parcels) {
     const verified = parcels.find((p) => p.is_verified && p.cadastral_zone);
     if (verified) {
         const cadastral = (verified.cadastral_zone || "").toLowerCase();
-        const isAgri = cadastral.includes("agri");
+        const isAgri = isAgriZone(cadastral);
         return isAgri ? "Petition for Reclassification" : "Petition for Rezoning";
     }
 

@@ -99,6 +99,7 @@ class ApplicationController extends Controller
             ->select(
                 'zoning_applications.id',
                 'zoning_applications.reference_number',
+                'zoning_applications.form_number',
                 'zoning_applications.application_stream',
                 'zoning_applications.sb_ordinance_number',
                 'zoning_applications.target_land_use_class',
@@ -392,7 +393,8 @@ class ApplicationController extends Controller
             $search = '%' . strtolower($request->search) . '%';
             $query->where(function ($q) use ($search) {
                 $q->whereRaw('LOWER(zoning_applications.applicant_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(zoning_applications.reference_number) LIKE ?', [$search]);
+                    ->orWhereRaw('LOWER(zoning_applications.reference_number) LIKE ?', [$search])
+                    ->orWhereRaw('LOWER(zoning_applications.form_number) LIKE ?', [$search]);
             });
         }
 
