@@ -1,6 +1,6 @@
 import { getTrendsDemandColor } from "@/Components/Maps/LeafletMap";
 
-const CARD = "shrink-0 rounded-md border shadow-[0_2px_10px_rgba(15,23,42,0.14)] overflow-hidden";
+const CARD = "shrink-0 rounded-lg border border-slate-200 bg-white/95 backdrop-blur-sm shadow-[0_2px_10px_rgba(15,23,42,0.14)] overflow-hidden";
 const pct = (f) => `${Math.abs(Math.round(f * 100))}%`;
 
 // A change as an arrow and a percentage. More filings read red (more work for
@@ -15,30 +15,48 @@ function Change({ value, className = "" }) {
     );
 }
 
-const CardTitle = ({ children, tone = "slate" }) => (
-    <h3
-        className={`px-3 pt-2 pb-1.5 text-[9.5px] font-bold uppercase tracking-[0.08em] border-b ${
-            tone === "orange" ? "text-[#a8521a] border-[#f3d6bd]/70" : "text-slate-500 border-slate-100"
-        }`}
-    >
-        {children}
-    </h3>
+// Section heading inside a card: a small caps label, an optional count.
+const SectionTitle = ({ children, aside, title }) => (
+    <div className="flex items-baseline justify-between gap-2 px-3 pt-2.5 pb-1" title={title}>
+        <h3 className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-slate-500">{children}</h3>
+        {aside != null && <span className="text-[10px] tabular-nums text-slate-400">{aside}</span>}
+    </div>
 );
 
-const Footnote = ({ children }) => <p className="px-1.5 pt-1 text-[10px] leading-snug text-slate-400">{children}</p>;
+const Footnote = ({ children, title }) => (
+    <p className="px-3 pt-1 pb-2.5 text-[10px] leading-snug text-slate-400" title={title}>
+        {children}
+    </p>
+);
+
+// One comparison tile: what the quarter is measured against, the change, and
+// the figure it is measured from.
+function Compare({ label, value, base }) {
+    return (
+        <div className="min-w-0 px-2.5 py-1.5">
+            <dt className="text-[10px] text-slate-500 truncate">{label}</dt>
+            <dd className="mt-0.5 flex items-baseline gap-1.5">
+                {value != null ? <Change value={value} className="text-[12.5px]" /> : <span className="text-[12.5px] text-slate-400">—</span>}
+                <span className="text-[10px] tabular-nums text-slate-400 truncate">from {base}</span>
+            </dd>
+        </div>
+    );
+}
 
 // The LC demand map's title and readout: the quarter shown, its town-wide
 // total and how that compares, and whichever barangay is under the cursor.
 function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearSelection, onSelectQuarter }) {
     const isForecast = Boolean(quarter?.isForecast);
     const outlook = watch?.outlook || [];
+    const seasonal = watch?.seasonal && watch.seasonal.years > 1 ? watch.seasonal : null;
+    const share = watch?.seasonShare;
     return (
-        <div className={`${CARD} border-slate-300 bg-white/95 backdrop-blur-sm`}>
-            <div className="px-3 pt-2.5 pb-2.5">
+        <div className={CARD}>
+            <div className="px-3 pt-2.5">
                 <div className="flex items-center justify-between gap-2">
                     <h2 className="text-[13px] font-semibold text-slate-900 leading-tight">LC Demand Forecast</h2>
                     <span
-                        className={`text-[9.5px] font-bold uppercase tracking-[0.06em] px-1.5 py-[1px] rounded-full border ${
+                        className={`text-[9px] font-bold uppercase tracking-[0.06em] px-1.5 py-[1px] rounded-full border ${
                             isForecast ? "text-[#a8521a] bg-[#fff3e6] border-[#f3c9a5]" : "text-slate-600 bg-slate-100 border-slate-200"
                         }`}
                     >
@@ -49,14 +67,14 @@ function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearS
                 {/* Every quarter the run forecast, so the whole outlook is one glance
                     (and one click) away. */}
                 {outlook.length > 1 ? (
-                    <div className="mt-2 grid gap-1 p-0.5 rounded-[5px] bg-slate-100" style={{ gridTemplateColumns: `repeat(${outlook.length}, minmax(0, 1fr))` }} role="group" aria-label="Forecast quarters">
+                    <div className="mt-2 grid gap-0.5 p-0.5 rounded-md bg-slate-100" style={{ gridTemplateColumns: `repeat(${outlook.length}, minmax(0, 1fr))` }} role="group" aria-label="Forecast quarters">
                         {outlook.map((o) => (
                             <button
                                 key={o.label}
                                 type="button"
                                 aria-pressed={o.active}
                                 onClick={() => onSelectQuarter?.(o)}
-                                className={`px-2 py-1 rounded-[4px] text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b] ${
+                                className={`px-2 py-1 rounded-[5px] text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b] ${
                                     o.active ? "bg-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]" : "hover:bg-white/60"
                                 }`}
                             >
@@ -72,50 +90,52 @@ function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearS
                     <span className="block text-[11px] font-medium text-slate-500 tabular-nums">{quarter?.label}</span>
                 )}
 
+                {/* The answer first: how many, and what that means per week. */}
                 {count ? (
-                    <div className="mt-2 flex items-baseline gap-1.5">
-                        <span className="text-[26px] font-semibold leading-none tabular-nums text-slate-900">{count}</span>
-                        <span className="text-[11px] text-slate-500">LC {isForecast ? "projected" : "filed"} in {quarter?.label}</span>
+                    <div className="mt-2.5 flex items-end justify-between gap-2">
+                        <div className="flex items-baseline gap-1.5 min-w-0">
+                            <span className="text-[28px] font-semibold leading-none tabular-nums text-slate-900">{count}</span>
+                            <span className="text-[11px] leading-tight text-slate-500">
+                                LC {isForecast ? "projected" : "filed"}
+                                <br />
+                                in {quarter?.label}
+                            </span>
+                        </div>
+                        {watch && (
+                            <span className="shrink-0 text-right text-[11px] leading-tight text-slate-500">
+                                <b className="block text-[13px] font-semibold tabular-nums text-slate-800">≈ {Math.round(watch.perWeek)}</b>
+                                a week
+                            </span>
+                        )}
                     </div>
                 ) : (
-                    <p className="mt-1.5 text-[11px] text-slate-500">
+                    <p className="mt-2 text-[11px] text-slate-500">
                         No LC {isForecast ? "forecast available" : "records"} for this quarter.
-                    </p>
-                )}
-
-                {watch && (
-                    <dl className="mt-2 space-y-[3px] text-[11px]">
-                        {watch.lastYear && (
-                            <div className="flex items-baseline gap-2">
-                                <dt className="flex-1 text-slate-500">vs {watch.lastYear.label}</dt>
-                                <dd className="tabular-nums text-slate-700">{watch.lastYear.total}</dd>
-                                <dd className="w-[52px] text-right"><Change value={watch.lastYear.change} /></dd>
-                            </div>
-                        )}
-                        {watch.seasonal && watch.seasonal.years > 1 && (
-                            <div className="flex items-baseline gap-2">
-                                <dt className="flex-1 text-slate-500">vs {watch.seasonal.span} average</dt>
-                                <dd className="tabular-nums text-slate-700">{Math.round(watch.seasonal.total)}</dd>
-                                <dd className="w-[52px] text-right">
-                                    <Change value={watch.seasonal.total > 0 ? (watch.total - watch.seasonal.total) / watch.seasonal.total : null} />
-                                </dd>
-                            </div>
-                        )}
-                        <div className="flex items-baseline gap-2">
-                            <dt className="flex-1 text-slate-500">Weekly intake</dt>
-                            <dd className="tabular-nums font-semibold text-slate-800">≈ {Math.round(watch.perWeek)} a week</dd>
-                        </div>
-                    </dl>
-                )}
-                {watch?.seasonShare != null && (
-                    <p className="mt-2 text-[10.5px] leading-snug text-slate-500">
-                        Q{quarter.quarter} usually brings <b className="text-slate-700 tabular-nums">{pct(watch.seasonShare)}</b> of a
-                        year's LC filings{watch.seasonShare >= 0.35 ? ", the busiest quarter" : watch.seasonShare <= 0.12 ? ", the quietest quarter" : ""}.
                     </p>
                 )}
             </div>
 
-            <div className="flex items-center gap-2 min-h-[30px] px-3 py-1.5 border-t border-slate-100 bg-slate-50/80" aria-live="polite">
+            {watch && (watch.lastYear || seasonal) && (
+                <dl className="mx-3 mt-2.5 grid grid-cols-2 divide-x divide-slate-200 rounded-md border border-slate-200 bg-slate-50/70">
+                    {watch.lastYear && <Compare label={`vs ${watch.lastYear.label}`} value={watch.lastYear.change} base={watch.lastYear.total} />}
+                    {seasonal && (
+                        <Compare
+                            label={`vs ${seasonal.span} avg`}
+                            value={seasonal.total > 0 ? (watch.total - seasonal.total) / seasonal.total : null}
+                            base={Math.round(seasonal.total)}
+                        />
+                    )}
+                </dl>
+            )}
+
+            {share != null && (
+                <p className="px-3 pt-2 text-[10.5px] leading-snug text-slate-500">
+                    Q{quarter.quarter} usually brings <b className="text-slate-700 tabular-nums">{pct(share)}</b> of a year's LC filings
+                    {share >= 0.35 ? ", the busiest quarter" : share <= 0.12 ? ", the quietest quarter" : ""}.
+                </p>
+            )}
+
+            <div className="mt-2.5 flex items-center gap-2 min-h-[30px] px-3 py-1.5 border-t border-slate-100 bg-slate-50/80" aria-live="polite">
                 {hovered ? (
                     <>
                         <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border" style={{ backgroundColor: hovered.cls.color, borderColor: hovered.cls.stroke }} aria-hidden="true" />
@@ -157,7 +177,7 @@ function WatchRow({ name, tag, tagTone = "info", value, valueClass, title, onSel
                 onFocus={() => onHover?.(name)}
                 onBlur={() => onHover?.(null)}
                 title={title}
-                className="w-full flex items-center gap-1.5 px-1.5 py-[3px] rounded-[3px] text-[11.5px] text-left text-slate-700 hover:bg-[#fff3e6] cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
+                className="w-full flex items-center gap-1.5 px-3 py-[4px] text-[11.5px] text-left text-slate-700 hover:bg-slate-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
             >
                 <span className="min-w-0 truncate">{name}</span>
                 {tag && (
@@ -175,13 +195,6 @@ function WatchRow({ name, tag, tagTone = "info", value, valueClass, title, onSel
     );
 }
 
-const WatchTitle = ({ children, aside, title }) => (
-    <div className="flex items-baseline justify-between gap-2 px-1.5 mb-0.5" title={title}>
-        <span className="text-[10.5px] font-medium text-slate-600">{children}</span>
-        {aside != null && <span className="text-[10px] tabular-nums text-slate-400">{aside}</span>}
-    </div>
-);
-
 const signed = (n) => `${n > 0 ? "+" : "−"}${Math.abs(Math.round(n))}`;
 
 // What a forecast quarter asks of the office: where demand concentrates,
@@ -190,101 +203,104 @@ const signed = (n) => `${n > 0 ? "+" : "−"}${Math.abs(Math.round(n))}`;
 function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
     const shown = watch.rising.slice(0, 5);
     const usual = watch.seasonal ? (watch.seasonal.years > 1 ? `their ${watch.seasonal.span} average` : watch.seasonal.span) : null;
+    const usualShort = watch.seasonal ? (watch.seasonal.years > 1 ? `${watch.seasonal.span} avg` : watch.seasonal.span) : null;
     return (
-        <section className={`${CARD} border-[#ecc9a8] bg-[#fffaf5]`} aria-label="What to prepare for">
-            <CardTitle tone="orange">What to prepare for</CardTitle>
-            <div className="px-1 py-1.5 space-y-2">
+        <section className={`${CARD} border-l-[3px] border-l-[#d9772b]`} aria-label="What to prepare for">
+            <div className="px-3 pt-2.5">
+                <h3 className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#a8521a]">What to prepare for</h3>
                 {watch.topShare !== null && (
-                    <p className="px-1.5 text-[11px] leading-snug text-slate-600">
+                    <p className="mt-1 text-[11.5px] leading-snug text-slate-700">
                         The top 5 barangays take <b className="tabular-nums text-slate-900">{pct(watch.topShare)}</b> of expected demand.
                     </p>
                 )}
+            </div>
 
-                {watch.seasonal ? (
-                    <div>
-                        <WatchTitle aside={watch.rising.length || null} title={`Expected at least ${watch.margin.toFixed(1)} LC above ${usual}.`}>
-                            Busier than usual for Q{quarterLabel}
-                        </WatchTitle>
-                        {shown.length > 0 ? (
-                            <ul>
-                                {shown.map((r) => (
-                                    <WatchRow
-                                        key={r.name}
-                                        name={r.name}
-                                        tag={r.noHistory ? "No history" : r.isNew ? "New" : null}
-                                        tagTone={r.noHistory ? "caution" : "info"}
-                                        value={signed(r.change)}
-                                        valueClass="text-[#b32a17]"
-                                        title={
-                                            r.noHistory
-                                                ? `${r.name}: ${r.count} LC expected, but no LC filing has ever been recorded here. The figure comes from neighbouring barangays and land use; treat it with caution.`
-                                                : `${r.name}: ${r.count} LC expected, usually ${r.usual.toFixed(1)}${r.isNew ? " (little or no activity this quarter in past years)" : ""}`
-                                        }
-                                        onSelect={onSelectBgy}
-                                        onHover={onHoverBgy}
-                                    />
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="px-1.5 text-[11px] text-slate-500">No barangay beyond the model's usual error.</p>
-                        )}
-                        {watch.rising.length > shown.length && (
-                            <p className="px-1.5 pt-0.5 text-[10.5px] text-slate-400">+{watch.rising.length - shown.length} more in the barangay list</p>
-                        )}
-
-                        {watch.easing.length > 0 && (
-                            <p className="px-1.5 pt-1.5 text-[11px] leading-snug text-slate-600">
-                                <span className="font-medium">Quieter than usual:</span>{" "}
-                                {watch.easing.slice(0, 3).map((r, i) => (
-                                    <span key={r.name}>
-                                        {i > 0 && ", "}
-                                        <button
-                                            type="button"
-                                            onClick={() => onSelectBgy?.(r.name)}
-                                            onMouseEnter={() => onHoverBgy?.(r.name)}
-                                            onMouseLeave={() => onHoverBgy?.(null)}
-                                            className="hover:underline cursor-pointer"
-                                        >
-                                            {r.name}
-                                        </button>{" "}
-                                        <span className="tabular-nums font-semibold text-[#1f5fa8]">{signed(r.change)}</span>
-                                    </span>
-                                ))}
-                                {watch.easing.length > 3 && <span className="text-slate-400"> and {watch.easing.length - 3} more</span>}
-                            </p>
-                        )}
-                    </div>
-                ) : null}
-
-                {watch.zoningFlags.length > 0 && (
-                    <div className="pt-1.5 border-t border-[#f3d6bd]/70">
-                        <WatchTitle title="Busier-than-usual barangays whose CLUP 2030 area is almost entirely agricultural or protected.">
-                            Zoning check · mostly agri/protected land
-                        </WatchTitle>
+            {watch.seasonal ? (
+                <div>
+                    <SectionTitle aside={watch.rising.length || null} title={`Expected at least ${watch.margin.toFixed(1)} LC above ${usual}.`}>
+                        Busier than usual · Q{quarterLabel}
+                    </SectionTitle>
+                    {shown.length > 0 ? (
                         <ul>
-                            {watch.zoningFlags.map((f) => (
+                            {shown.map((r) => (
                                 <WatchRow
-                                    key={f.name}
-                                    name={f.name}
-                                    value={`${Math.round(f.pct)}%`}
-                                    valueClass="text-[#4d7c0f]"
-                                    title={`${f.name}: ${Math.round(f.pct)}% of its CLUP 2030 area is agricultural or protected`}
+                                    key={r.name}
+                                    name={r.name}
+                                    tag={r.noHistory ? "No history" : r.isNew ? "New" : null}
+                                    tagTone={r.noHistory ? "caution" : "info"}
+                                    value={signed(r.change)}
+                                    valueClass="text-[#b32a17]"
+                                    title={
+                                        r.noHistory
+                                            ? `${r.name}: ${r.count} LC expected, but no LC filing has ever been recorded here. The figure comes from neighbouring barangays and land use; treat it with caution.`
+                                            : `${r.name}: ${r.count} LC expected, usually ${r.usual.toFixed(1)}${r.isNew ? " (little or no activity this quarter in past years)" : ""}`
+                                    }
                                     onSelect={onSelectBgy}
                                     onHover={onHoverBgy}
                                 />
                             ))}
                         </ul>
-                        <Footnote>Review new applications here against the zoning.</Footnote>
-                    </div>
-                )}
+                    ) : (
+                        <p className="px-3 text-[11px] text-slate-500">No barangay beyond the model's usual error.</p>
+                    )}
+                    {watch.rising.length > shown.length && (
+                        <p className="px-3 pt-0.5 text-[10.5px] text-slate-400">+{watch.rising.length - shown.length} more in the barangay list</p>
+                    )}
 
-                {watch.seasonal && (
-                    <Footnote>
-                        Compared with {usual}. Changes under ±{watch.margin.toFixed(1)} LC, the model's typical miss per barangay, are left out.
-                        {watch.rising.some((r) => r.noHistory) && " “No history”: no LC has ever been filed there, so the figure is the model's estimate from neighbouring barangays."}
-                    </Footnote>
-                )}
-            </div>
+                    {watch.easing.length > 0 && (
+                        <p className="px-3 pt-2 text-[11px] leading-snug text-slate-600">
+                            <span className="font-medium">Quieter than usual:</span>{" "}
+                            {watch.easing.slice(0, 3).map((r, i) => (
+                                <span key={r.name}>
+                                    {i > 0 && ", "}
+                                    <button
+                                        type="button"
+                                        onClick={() => onSelectBgy?.(r.name)}
+                                        onMouseEnter={() => onHoverBgy?.(r.name)}
+                                        onMouseLeave={() => onHoverBgy?.(null)}
+                                        className="hover:underline cursor-pointer"
+                                    >
+                                        {r.name}
+                                    </button>{" "}
+                                    <span className="tabular-nums font-semibold text-[#1f5fa8]">{signed(r.change)}</span>
+                                </span>
+                            ))}
+                            {watch.easing.length > 3 && <span className="text-slate-400"> and {watch.easing.length - 3} more</span>}
+                        </p>
+                    )}
+                </div>
+            ) : null}
+
+            {watch.zoningFlags.length > 0 && (
+                <div className="mt-2 border-t border-slate-100">
+                    <SectionTitle title="Busier-than-usual barangays whose CLUP 2030 area is almost entirely agricultural or protected.">
+                        Zoning check · mostly agri/protected
+                    </SectionTitle>
+                    <ul>
+                        {watch.zoningFlags.map((f) => (
+                            <WatchRow
+                                key={f.name}
+                                name={f.name}
+                                value={`${Math.round(f.pct)}%`}
+                                valueClass="text-[#4d7c0f]"
+                                title={`${f.name}: ${Math.round(f.pct)}% of its CLUP 2030 area is agricultural or protected`}
+                                onSelect={onSelectBgy}
+                                onHover={onHoverBgy}
+                            />
+                        ))}
+                    </ul>
+                    <p className="px-3 pt-0.5 text-[10.5px] text-slate-500">Review new applications here against the zoning.</p>
+                </div>
+            )}
+
+            {watch.seasonal ? (
+                <Footnote title={`Compared with ${usual}. Changes under ±${watch.margin.toFixed(1)} LC, the model's typical miss per barangay, are left out.`}>
+                    vs {usualShort} · changes under ±{watch.margin.toFixed(1)} LC (typical model error) hidden.
+                    {watch.rising.some((r) => r.noHistory) && " “No history”: no LC ever filed there; figure estimated from neighbouring barangays."}
+                </Footnote>
+            ) : (
+                <div className="pb-2.5" />
+            )}
         </section>
     );
 }
@@ -293,26 +309,24 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
 // reviewers can be lined up before the filings arrive.
 function ExpectedMix({ mix }) {
     return (
-        <section className={`${CARD} border-slate-300 bg-white/95 backdrop-blur-sm`} aria-label="Expected application mix">
-            <CardTitle>Expected applications by zone</CardTitle>
-            <div className="px-1 py-1.5">
-                <div className="mx-1.5 mb-1.5 flex h-2.5 rounded-[3px] overflow-hidden ring-1 ring-black/10" aria-hidden="true">
-                    {mix.map((m) => (
-                        <span key={m.id} style={{ width: `${m.share * 100}%`, backgroundColor: m.fill }} title={`${m.label}: ${pct(m.share)}`} />
-                    ))}
-                </div>
-                <ul>
-                    {mix.slice(0, 6).map((m) => (
-                        <li key={m.id} className="flex items-center gap-2 px-1.5 py-[2px] text-[11.5px]">
-                            <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border" style={{ backgroundColor: m.fill, borderColor: m.stroke }} aria-hidden="true" />
-                            <span className={`flex-1 min-w-0 truncate ${m.id === "none" ? "text-slate-400" : "text-slate-700"}`}>{m.label}</span>
-                            <span className="tabular-nums text-slate-500">≈ {Math.round(m.count)}</span>
-                            <span className="w-[34px] text-right tabular-nums font-semibold text-slate-800">{pct(m.share)}</span>
-                        </li>
-                    ))}
-                </ul>
-                <Footnote>Each barangay's forecast split by the zones of its own LC filings over the last two years.</Footnote>
+        <section className={CARD} aria-label="Expected application mix">
+            <SectionTitle>Expected applications by zone</SectionTitle>
+            <div className="mx-3 mt-0.5 mb-1.5 flex h-2 rounded-full overflow-hidden ring-1 ring-black/5" aria-hidden="true">
+                {mix.map((m) => (
+                    <span key={m.id} style={{ width: `${m.share * 100}%`, backgroundColor: m.fill }} title={`${m.label}: ${pct(m.share)}`} />
+                ))}
             </div>
+            <ul>
+                {mix.slice(0, 6).map((m) => (
+                    <li key={m.id} className="flex items-center gap-2 px-3 py-[2px] text-[11.5px]">
+                        <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border" style={{ backgroundColor: m.fill, borderColor: m.stroke }} aria-hidden="true" />
+                        <span className={`flex-1 min-w-0 truncate ${m.id === "none" ? "text-slate-400" : "text-slate-700"}`}>{m.label}</span>
+                        <span className="tabular-nums text-slate-500">≈ {Math.round(m.count)}</span>
+                        <span className="w-[34px] text-right tabular-nums font-semibold text-slate-800">{pct(m.share)}</span>
+                    </li>
+                ))}
+            </ul>
+            <Footnote>Each barangay's forecast split by the zones of its own LC filings over the last two years.</Footnote>
         </section>
     );
 }
