@@ -1,6 +1,5 @@
 // resources/js/Components/ParcelInspectionStatus.jsx
 import React, { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
 import { fetchParcelInspection } from "@/utils/supabaseApi";
 
 // ── Badge Configuration ──
@@ -69,6 +68,89 @@ const VERDICT_TONE = {
     neutral: { rule: "border-slate-500", soft: "bg-slate-50", ink: "text-slate-600", path: "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" },
 };
 
+// Inline photo viewer (no modal): a sliding track of the photos, arrows over the photo,
+// thumbnails below. ← / → step through them while the viewer has focus.
+function PhotoViewer({ photos, formatDate, formatTime, className = "" }) {
+    const [index, setIndex] = useState(0);
+    const count = photos.length;
+    const current = Math.min(index, count - 1);
+    const photo = photos[current];
+    const go = (step) => setIndex((current + step + count) % count);
+
+    const onKey = (e) => {
+        if (count < 2) return;
+        if (e.key === "ArrowRight") go(1);
+        else if (e.key === "ArrowLeft") go(-1);
+        else return;
+        e.preventDefault();
+    };
+
+    const ARROW = "absolute top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/90 text-slate-800 shadow-md shadow-slate-900/20 grid place-items-center hover:bg-white hover:scale-105 active:scale-95 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
+
+    return (
+        <div className={`focus:outline-none ${className}`} tabIndex={count > 1 ? 0 : undefined} onKeyDown={onKey} aria-roledescription="carousel" aria-label="Field photographs">
+            {/* Stage: every photo sits on one track that slides to the current one */}
+            <div className="relative aspect-[4/3] max-h-[440px] w-full rounded-lg overflow-hidden bg-slate-900">
+                <div
+                    className="flex h-full transition-transform duration-500 ease-[cubic-bezier(.22,.8,.24,1)] motion-reduce:transition-none"
+                    style={{ transform: `translateX(-${current * 100}%)` }}
+                >
+                    {photos.map((p, i) => (
+                        <div key={p.id} className="w-full h-full shrink-0 grid place-items-center" aria-hidden={i !== current}>
+                            <img
+                                src={p.signed_url}
+                                alt={`Field photograph ${i + 1} of ${count}`}
+                                className={`max-w-full max-h-full object-contain transition-[opacity,transform] duration-500 motion-reduce:transition-none ${i === current ? "opacity-100 scale-100" : "opacity-40 scale-[.96]"}`}
+                                draggable="false"
+                            />
+                        </div>
+                    ))}
+                </div>
+
+                {count > 1 && (
+                    <>
+                        <button type="button" onClick={() => go(-1)} className={`${ARROW} left-3`} aria-label="Previous photo">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </button>
+                        <button type="button" onClick={() => go(1)} className={`${ARROW} right-3`} aria-label="Next photo">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                        <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-slate-900/70 text-white text-[11px] font-medium tabular-nums" aria-live="polite">
+                            {current + 1} / {count}
+                        </span>
+                    </>
+                )}
+            </div>
+
+            <p className="mt-1.5 text-[11.5px] text-slate-500 tabular-nums">
+                <span className="font-medium text-slate-700">Photo {current + 1}</span>
+                {photo.captured_at && ` · ${formatDate(photo.captured_at)}, ${formatTime(photo.captured_at)}`}
+            </p>
+
+            {count > 1 && (
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                    {photos.map((p, i) => (
+                        <button
+                            type="button"
+                            key={p.id}
+                            onClick={() => setIndex(i)}
+                            className={`shrink-0 w-16 h-12 rounded-md overflow-hidden border-2 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${i === current ? "border-blue-600" : "border-transparent opacity-60 hover:opacity-100"}`}
+                            aria-label={`Show photo ${i + 1}`}
+                            aria-current={i === current}
+                        >
+                            <img src={p.signed_url} alt="" className="w-full h-full object-cover" />
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // The inspector's written sections, most decision-relevant first.
 const REPORT_SECTIONS = [
     ["discrepancies", "Discrepancies"],
@@ -86,7 +168,6 @@ const REPORT_SECTIONS = [
 export default function ParcelInspectionStatus({ inspectionId, localInspection = null, localParcel = null, onStatusFetched, onInspectionDataFetched, report = false, wide = false }) {
     const [inspection, setInspection] = useState(localInspection);
     const [loading, setLoading] = useState(true);
-    const [photoIndex, setPhotoIndex] = useState(null); // open photo in the viewer, by position
     const [loadError, setLoadError] = useState(null);
     const onStatusFetchedRef = useRef(onStatusFetched);
     const onInspectionDataFetchedRef = useRef(onInspectionDataFetched);
@@ -95,23 +176,6 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
     onStatusFetchedRef.current = onStatusFetched;
     onInspectionDataFetchedRef.current = onInspectionDataFetched;
     localInspectionRef.current = localInspection;
-
-    // Photo viewer keys: ← / → step through the photos, Escape closes. Caught first (capture) and
-    // stopped, so Escape closes only the viewer and not a side panel it was opened from.
-    useEffect(() => {
-        if (photoIndex === null) return undefined;
-        const count = (inspection?.field_job_photos || []).filter((p) => p.signed_url).length;
-        const onKey = (e) => {
-            if (e.key === "Escape") setPhotoIndex(null);
-            else if (count > 1 && e.key === "ArrowRight") setPhotoIndex((i) => (i + 1) % count);
-            else if (count > 1 && e.key === "ArrowLeft") setPhotoIndex((i) => (i - 1 + count) % count);
-            else return;
-            e.preventDefault();
-            e.stopImmediatePropagation();
-        };
-        window.addEventListener("keydown", onKey, true);
-        return () => window.removeEventListener("keydown", onKey, true);
-    }, [photoIndex, inspection]);
 
     useEffect(() => {
         const getInspection = async () => {
@@ -240,72 +304,6 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
 
     const actualPhotoCount = photosToRender.length;
 
-    // Photo viewer, built like the Registry's panels: white card, small uppercase label, outlined buttons.
-    // The photo is fitted to the window, so the viewer never scrolls; with several photos a footer steps through them.
-    const openPhoto = photoIndex !== null ? photosToRender[photoIndex] : null;
-    const NAV_BUTTON = "inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 bg-white shadow-sm shadow-slate-900/5 text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 hover:text-slate-900 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
-    const lightbox = openPhoto && createPortal(
-        <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/50 animate-[formFadeIn_0.2s_ease-out]"
-            onClick={() => setPhotoIndex(null)}
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Field photograph ${photoIndex + 1} of ${actualPhotoCount}`}
-        >
-            <div
-                className="w-full max-w-[600px] max-h-[calc(100vh-2rem)] flex flex-col bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden"
-                onClick={(e) => e.stopPropagation()} // Clicks inside keep the viewer open
-            >
-                {/* Header */}
-                <div className="px-4 pt-3 pb-2.5 border-b border-slate-100 flex items-start justify-between gap-3 shrink-0">
-                    <h3 className="self-center text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">Field photograph</h3>
-                    <button
-                        type="button"
-                        onClick={() => setPhotoIndex(null)}
-                        aria-label="Close"
-                        className="-mr-1.5 w-7 h-7 shrink-0 rounded-md flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-
-                {/* Photo, fitted (no scrollbar) */}
-                <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
-                    <img
-                        key={openPhoto.id}
-                        src={openPhoto.signed_url}
-                        alt={`Field photograph ${photoIndex + 1}`}
-                        className="block max-w-full max-h-[min(62vh,560px)] object-contain rounded-md"
-                    />
-                </div>
-
-                {/* More than one photo: step through them */}
-                {actualPhotoCount > 1 && (
-                    <div className="px-3 py-2.5 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
-                        <button type="button" onClick={() => setPhotoIndex((photoIndex - 1 + actualPhotoCount) % actualPhotoCount)} className={NAV_BUTTON}>
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                            </svg>
-                            Previous
-                        </button>
-                        <span className="text-[12px] font-medium text-slate-600 tabular-nums" aria-live="polite">
-                            {photoIndex + 1} of {actualPhotoCount}
-                        </span>
-                        <button type="button" onClick={() => setPhotoIndex((photoIndex + 1) % actualPhotoCount)} className={NAV_BUTTON}>
-                            Next
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                            </svg>
-                        </button>
-                    </div>
-                )}
-            </div>
-        </div>,
-        document.body
-    );
-
     const complianceValue = inspection.is_compliant !== null ? (
         <span className={`inline-flex items-center gap-1 text-[12px] font-bold ${inspection.is_compliant ? 'text-emerald-600' : 'text-red-600'}`}>
             {inspection.is_compliant ? 'Compliant' : 'Non-Compliant'}
@@ -418,22 +416,8 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                     )}
 
                     {photosToRender.length > 0 && (
-                        <div className="px-5 pb-4 grid grid-cols-4 sm:grid-cols-6 gap-2">
-                            {photosToRender.map((photo, i) => (
-                                <button
-                                    type="button"
-                                    key={photo.id}
-                                    onClick={() => setPhotoIndex(i)}
-                                    className="block aspect-[4/3] rounded-sm overflow-hidden border border-slate-300 bg-slate-100 hover:border-blue-500 cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                    aria-label={`Enlarge field photograph ${i + 1}`}
-                                >
-                                    <img src={photo.signed_url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                                </button>
-                            ))}
-                        </div>
+                        <PhotoViewer photos={photosToRender} formatDate={formatDate} formatTime={formatTime} className="px-5 pb-4" />
                     )}
-
-                    {lightbox}
                 </article>
             );
         }
@@ -474,7 +458,7 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                     </p>
                 )}
 
-                <div className={wide && photosToRender.length > 0 ? "xl:grid xl:grid-cols-[minmax(0,1fr)_220px]" : ""}>
+                <div className={wide && photosToRender.length > 0 ? "xl:grid xl:grid-cols-[minmax(0,1fr)_340px]" : ""}>
                 {/* The inspector's own words: the decisive sections at reading size, the rest in a ruled table */}
                 {sections.length > 0 ? (
                     <div className="px-5 pt-2 pb-2.5 space-y-2">
@@ -510,32 +494,7 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                 {photosToRender.length > 0 && (
                     <section className={`px-5 pb-3 ${wide ? "xl:pl-0 xl:pt-2.5" : ""}`}>
                         <h4 className="text-[11.5px] font-semibold text-slate-600">Annex · Field photographs ({actualPhotoCount})</h4>
-                        <div className={`mt-1 grid grid-cols-3 sm:grid-cols-4 gap-2 ${wide ? "xl:grid-cols-2 xl:[&>*:only-child]:col-span-2" : ""}`}>
-                            {photosToRender.map((photo, i) => (
-                                <button
-                                    type="button"
-                                    key={photo.id}
-                                    onClick={() => setPhotoIndex(photosToRender.indexOf(photo))}
-                                    className="group text-left cursor-zoom-in rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                                    title="Enlarge photo"
-                                    aria-label={`Enlarge field photograph ${i + 1}`}
-                                >
-                                    <span className="relative block aspect-[4/3] rounded-sm overflow-hidden border border-slate-300 bg-slate-100 group-hover:border-blue-500 transition-colors">
-                                        <img src={photo.signed_url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                                        {/* Always shown, so it reads as clickable without hovering (and on touch screens) */}
-                                        <span className="absolute right-1.5 bottom-1.5 w-6 h-6 rounded bg-slate-900/65 group-hover:bg-blue-600 text-white grid place-items-center transition-colors" aria-hidden="true">
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
-                                            </svg>
-                                        </span>
-                                    </span>
-                                    <span className="mt-0.5 block text-[10.5px] text-slate-500 tabular-nums">
-                                        Photo {i + 1}
-                                        {photo.captured_at && ` · ${formatDate(photo.captured_at)}, ${formatTime(photo.captured_at)}`}
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
+                        <PhotoViewer photos={photosToRender} formatDate={formatDate} formatTime={formatTime} className="mt-1.5" />
                     </section>
                 )}
                 </div>
@@ -566,8 +525,6 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                         </div>
                     ))}
                 </dl>
-
-                {lightbox}
             </article>
         );
     }
@@ -725,40 +682,10 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                 {photosToRender.length > 0 && (
                     <div className="pt-4 border-t border-slate-100">
                         <SectionLabel>Attached Field Photos</SectionLabel>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-2">
-                            {photosToRender.map((photo) => (
-                                <button 
-                                    type="button"
-                                    key={photo.id} 
-                                    onClick={() => setPhotoIndex(photosToRender.indexOf(photo))}
-                                    className="group relative block aspect-square rounded-xl overflow-hidden border border-slate-200 bg-slate-100 hover:border-blue-400 hover:shadow-md transition-all cursor-zoom-in text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                                    title="Click to enlarge photo"
-                                >
-                                    <img 
-                                        src={photo.signed_url}
-                                        alt={`Field evidence`}
-                                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                        loading="lazy"
-                                    />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                                    
-                                    {/* Capture Time Overlay on Hover */}
-                                    {photo.captured_at && (
-                                        <div className="absolute bottom-2 left-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                                            <p className="text-[9px] font-bold text-white uppercase tracking-widest drop-shadow-md truncate">
-                                                {formatDate(photo.captured_at)} • {formatTime(photo.captured_at)}
-                                            </p>
-                                        </div>
-                                    )}
-                                </button>
-                            ))}
-                        </div>
+                        <PhotoViewer photos={photosToRender} formatDate={formatDate} formatTime={formatTime} className="mt-2 max-w-[640px]" />
                     </div>
                 )}
             </div>
-
-            {/* NEW: Lightbox Modal for Enlarged Photo */}
-            {lightbox}
         </div>
     );
 }
