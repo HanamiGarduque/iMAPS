@@ -753,10 +753,10 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="permit-dialog-title"
-                className="bg-white rounded-xl shadow-2xl w-full max-w-[1080px] h-[86vh] flex overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                className="bg-white rounded-xl shadow-2xl w-full max-w-[1080px] h-[86vh] max-h-full min-h-0 flex overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             >
                 {/* ── Form column ── */}
-                <div className="flex flex-col flex-1 min-w-0 lg:border-r border-slate-200">
+                <div className="flex flex-col flex-1 min-w-0 min-h-0 lg:border-r border-slate-200">
                     {/* Header: the one permit being issued (picked from its card on the record page) */}
                     <div className="px-5 pt-4 pb-3 border-b border-slate-100 shrink-0">
                         <div className="flex items-start justify-between gap-3">
@@ -789,7 +789,7 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                     </div>
 
                     {/* Fields */}
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
                         {loading && <p className="px-5 py-4 text-[12.5px] text-slate-500">Loading fields…</p>}
 
                         {!loading && schema && (
