@@ -106,6 +106,16 @@ class ForecastService
             throw new Exception('Forecasting service is not configured. Set FORECAST_SERVICE_URL and FORECAST_SERVICE_API_KEY.');
         }
 
+        // A cold run outlasts PHP's request limit (30s locally, 120s in the
+        // container), which killed the request mid-call with a fatal error
+        // instead of letting the timeout below fail cleanly. Raise the limit to
+        // cover the service timeout; never lower it, and never add one where
+        // there is none (CLI, tests).
+        $limit = (int) ini_get('max_execution_time');
+        if ($limit > 0 && $limit < $this->timeout + 30) {
+            set_time_limit($this->timeout + 30);
+        }
+
         try {
             $response = Http::timeout($this->timeout)
                 ->withHeaders([

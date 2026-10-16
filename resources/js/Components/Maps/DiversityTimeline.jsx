@@ -48,6 +48,39 @@ function useOutlines() {
     }, [geo]);
 }
 
+// Previous / play / next, the same control the LC demand timeline uses. The
+// arrows step between the years shown, not the raw quarters underneath.
+const BTN = "w-7 h-7 flex items-center justify-center rounded-[3px] border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer";
+
+function PlayControls({ choices, index, onIndex, playing, onTogglePlay }) {
+    const prev = [...choices].reverse().find((c) => c < index);
+    const next = choices.find((c) => c > index);
+    return (
+        <div className="flex items-center gap-1">
+            <button type="button" className={BTN} onClick={() => onIndex(prev)} disabled={prev === undefined} aria-label="Previous year">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <button
+                type="button"
+                className={`${BTN} ${playing ? "bg-[#0b2a5b] border-[#0b2a5b] text-white hover:bg-[#0e3574]" : ""}`}
+                onClick={onTogglePlay}
+                disabled={choices.length <= 1}
+                aria-label={playing ? "Pause" : "Play through years"}
+                aria-pressed={playing}
+            >
+                {playing ? (
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                ) : (
+                    <svg className="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                )}
+            </button>
+            <button type="button" className={BTN} onClick={() => onIndex(next)} disabled={next === undefined} aria-label="Next year">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+            </button>
+        </div>
+    );
+}
+
 function MiniMap({ outlines, scores, bandFor, highlight }) {
     if (!outlines) return <div className="w-full h-full rounded-[2px] bg-slate-100 animate-pulse" aria-hidden="true" />;
     const sel = highlight?.toLowerCase();
@@ -132,9 +165,12 @@ export default function DiversityTimeline({
             : ` No barangay changed colour since ${prevLabel}.`;
     }
 
+    const controls = <PlayControls choices={choices} index={index} onIndex={onIndex} playing={playing} onTogglePlay={onTogglePlay} />;
+
     if (collapsed) {
         return (
             <div className="shrink-0 px-3 py-1.5 bg-[#f5f6f8] border-t border-slate-300 flex items-center gap-3" role="group" aria-label="Diversity index by year">
+                <div className="shrink-0">{controls}</div>
                 <button
                     type="button"
                     onClick={toggleCollapsed}
@@ -162,17 +198,18 @@ export default function DiversityTimeline({
         <div className="shrink-0 px-3 pt-2 pb-1.5 bg-[#f5f6f8] border-t border-slate-300" role="group" aria-label="Diversity index by year">
             <div className="flex items-center gap-3">
                 <div className="shrink-0 w-[175px] leading-tight">
+                    {controls}
                     <button
                         type="button"
                         onClick={toggleCollapsed}
                         aria-expanded="true"
                         title="Hide the year maps"
-                        className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-800 hover:text-[#0b2a5b] cursor-pointer"
+                        className="mt-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-slate-800 hover:text-[#0b2a5b] cursor-pointer"
                     >
                         <Chevron open />
                         Mix by year
                     </button>
-                    <span className="block text-[10.5px] text-slate-500">Each small map is the big map for that year. Click one to open it.</span>
+                    <span className="block text-[10.5px] text-slate-500">Each small map is the big map for that year.</span>
                 </div>
 
                 <div className="flex-1 min-w-0 flex gap-1.5" role="listbox" aria-label="Year">
@@ -203,23 +240,6 @@ export default function DiversityTimeline({
                         );
                     })}
                 </div>
-
-                <button
-                    type="button"
-                    onClick={onTogglePlay}
-                    disabled={choices.length <= 1}
-                    aria-pressed={playing}
-                    className={`shrink-0 h-9 px-3 flex items-center gap-1.5 rounded-[4px] border text-[11.5px] font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                        playing ? "bg-[#0b2a5b] border-[#0b2a5b] text-white" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
-                    }`}
-                >
-                    {playing ? (
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-                    ) : (
-                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
-                    )}
-                    {playing ? "Pause" : "Play"}
-                </button>
             </div>
 
             <p className="mt-1 pl-[187px] text-[10.5px] text-slate-500 truncate" aria-live="polite">{sentence}{change}</p>

@@ -18,7 +18,8 @@ class MapController extends Controller
     private const CACHE_TTL_DAYS = 30;
     private const VERSION_KEY = 'map_layers:version';
     // Bump when buildGeoJson output changes, so cached bodies from the old code are not served.
-    private const GEOMETRY_REV = '4';
+    // 5: the Palacpac -> Palakpak migration renamed rows in layers that carry no table version.
+    private const GEOMETRY_REV = '5';
 
     // ~5.5 m tolerance collapses a 25 m tax lot into a rough box, so cadastral
     // parcels keep full detail. Barangays are simplified one polygon at a time,
