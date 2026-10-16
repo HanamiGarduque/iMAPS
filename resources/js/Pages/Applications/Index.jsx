@@ -938,7 +938,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         if (debouncedSearch) {
             const q = debouncedSearch.toLowerCase();
             list = list.filter((item) => {
-                const matchRef = String(item?.reference_number || "").toLowerCase().includes(q);
+                const matchRef = String(item?.reference_number || "").toLowerCase().includes(q) || String(item?.form_number || "").toLowerCase().includes(q);
                 const matchName = String(item?.applicant_name || "").toLowerCase().includes(q);
                 const matchBrgy = String(item?.barangay || "").toLowerCase().includes(q);
                 const matchPurpose = String(item?.purpose || "").toLowerCase().includes(q);
@@ -1448,7 +1448,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                             {viewMode === "list" ? (
                                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                                     <div className="flex-1 overflow-auto custom-scrollbar">
-                                        <table className="tabular-nums w-full text-left border-separate border-spacing-0 min-w-[760px] text-[13px] table-fixed">
+                                        <table className="tabular-nums w-full text-left border-separate border-spacing-0 min-w-[900px] text-[13px] table-fixed">
                                             <thead className="sticky top-0 z-10 bg-slate-100">
                                                 <tr className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500 [&>th]:border-y [&>th]:border-slate-200 [&>th]:py-2.5 [&>th]:px-3 [&>th]:whitespace-nowrap [&>th]:font-semibold">
                                                     <th className="w-11 !pl-4 !pr-2">
@@ -1457,6 +1457,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     <th className="w-[140px]" aria-sort={selectedSort === "ref_asc" ? "ascending" : "none"}>
                                                         <SortHeader label="Reference no." dir={selectedSort === "ref_asc" ? "asc" : null} onClick={() => handleHeaderSort("ref")} />
                                                     </th>
+                                                    <th className="w-[120px]">Form no.</th>
                                                     <th className="w-[24%]" aria-sort={selectedSort === "applicant_asc" ? "ascending" : selectedSort === "applicant_desc" ? "descending" : "none"}>
                                                         <SortHeader label="Applicant" dir={selectedSort === "applicant_asc" ? "asc" : selectedSort === "applicant_desc" ? "desc" : null} onClick={() => handleHeaderSort("applicant")} />
                                                     </th>
@@ -1502,6 +1503,10 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
                                                             <td className="whitespace-nowrap">
                                                                 <span className="text-[12px] font-medium text-slate-500 tracking-wide">{refCode}</span>
+                                                            </td>
+
+                                                            <td className="whitespace-nowrap">
+                                                                <span className="text-[12px] font-medium text-slate-500 tracking-wide">{item.form_number || <span className="text-slate-300">—</span>}</span>
                                                             </td>
 
                                                             <td>

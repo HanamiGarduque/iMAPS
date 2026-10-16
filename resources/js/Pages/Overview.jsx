@@ -395,6 +395,7 @@ export default function Overview({
     bgyStats = {},
     municipalDiversity = 0,
     municipalPlanDiversity = null,
+    municipalVariance = null,
     municipalZones = {},
     unreadCount = 0,
     latestUnread = null,
@@ -501,7 +502,7 @@ export default function Overview({
     const stat = selectedBgy ? bgyStats?.[selectedBgy.name] : null;
     const view = stat
         ? { area: selectedBgy.name, ...stat, forecast: forecast && { ...forecast, quarters: stat.forecast } }
-        : { area: "All of Rosario", statusCounts, quarterly, forecast, releaseTime, diversity: municipalDiversity, planDiversity: municipalPlanDiversity, zones: municipalZones };
+        : { area: "All of Rosario", statusCounts, quarterly, forecast, releaseTime, diversity: municipalDiversity, planDiversity: municipalPlanDiversity, variance: municipalVariance, zones: municipalZones };
 
     // Raw status strings grouped the same way the map and registry colour them.
     const pipeline = useMemo(() => {
@@ -872,7 +873,7 @@ export default function Overview({
                                                     ["Area", view.area],
                                                     ["Mix", tier ? tier.shortLabel : "No zoning data"],
                                                     // Recorded mix (last five years of filings) against the CLUP 2030 plan.
-                                                    ["Plan mix", view.planDiversity == null ? "—" : `${Number(view.planDiversity).toFixed(2)} (${view.diversity - view.planDiversity >= 0 ? "+" : ""}${(view.diversity - view.planDiversity).toFixed(2)})`],
+                                                    ["Plan mix", view.planDiversity == null ? "—" : `${Number(view.planDiversity).toFixed(2)} (${view.variance == null ? "insufficient data for drift" : `${view.variance >= 0 ? "+" : ""}${Number(view.variance).toFixed(2)}`})`],
                                                     stat ? ["Mix rank", `#${mixRank.indexOf(selectedBgy.name) + 1} of ${mixRank.length}`] : ["Barangays", num(bgyNames.length)],
                                                     ["Applications", num(total)],
                                                     ["Mostly", shares[0] ? `${shares[0].label} ${pct(shares[0].share)}` : "—"],

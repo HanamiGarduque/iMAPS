@@ -211,7 +211,9 @@ export const getZoningConformity = (requestedUse, zoneValue) => {
         };
     }
 
-    if (requested.category === "agroIndustrial" && zone.category === "agricultural") {
+    // Reclassification applies only to agricultural land; any other zone,
+    // agro-industrial included, goes to variance review.
+    if (requested.category && zone.category === "agricultural") {
         return {
             status: "conversion",
             isConforming: false,
@@ -219,7 +221,7 @@ export const getZoningConformity = (requestedUse, zoneValue) => {
             dotClass: "bg-violet-500",
             title: "Reclassification Required",
             label: "SB reclassification",
-            desc: `Agri-Industrial use within a ${zoneDisplay} zone requires SB reclassification and DAR clearance.`,
+            desc: `${requested.label} use within a ${zoneDisplay} zone requires SB reclassification and DAR clearance.`,
         };
     }
 

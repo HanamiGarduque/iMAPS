@@ -117,6 +117,8 @@ class OverviewController extends Controller
             $bgyStats[$name] = [
                 'diversity'    => $mix['barangays'][$name]['diversity'] ?? null,
                 'planDiversity' => $mix['barangays'][$name]['planDiversity'] ?? null,
+                // null when the score is the plan itself (too few records).
+                'variance'     => $mix['barangays'][$name]['variance'] ?? null,
                 // CLUP 2030 zone code => area, for the zoning composition beside the map.
                 'zones'        => array_map('round', $areas),
                 'statusCounts' => $statusByBgy[$k] ?? [],
@@ -141,6 +143,7 @@ class OverviewController extends Controller
             'bgyStats'     => $bgyStats,
             'municipalDiversity' => $mix['municipal']['diversity'],
             'municipalPlanDiversity' => $mix['municipal']['planDiversity'],
+            'municipalVariance' => $mix['municipal']['variance'],
             'mixWindow'    => $mix['window'],
             // CLUP 2030 zone code => area, for the zoning composition beside the map.
             'municipalZones' => array_map('round', $mix['municipal']['planZones']),
