@@ -2,7 +2,7 @@
 
 One Railway app service (web + queue worker + scheduler under supervisord, see
 `docker/`) + a PostGIS database + one Volume. Cloudflare sits in front and only
-lets the office IPs through.
+lets approved emails through (Zero Trust Access).
 
 ## 1. Railway
 
@@ -37,21 +37,18 @@ lets the office IPs through.
 
 1. Add the domain to Cloudflare (free plan), proxied (orange cloud) CNAME to Railway.
 2. **SSL/TLS → Full (strict)**. (Flexible causes redirect loops.)
-3. **Security → WAF → Custom rules → Create rule**, action **Block**:
-
-   ```
-   (http.host eq "imaps.example.gov.ph" and not ip.src in {203.0.113.10 203.0.113.11})
-   ```
-   Replace host and IPs with the real ones. Office IPs must be static; check with the ISP.
+3. **Zero Trust → Access → Applications → Add → Self-hosted**: set the domain, then add an
+   *Allow* policy with the approved emails (one-time PIN login). Delete any old IP-based WAF
+   block rule (Security → WAF → Custom rules); otherwise it still blocks users before Access runs.
 4. **Rules → Transform Rules → Modify Request Header → Set static**: `X-Origin-Secret` = the same value as `ORIGIN_SECRET`.
    Without this step the app returns 403 to everyone (only `/ping` is exempt).
 
-## 2b. Office-only access without Cloudflare (temporary)
+## 2b. IP allowlist without Cloudflare (temporary, legacy)
 
 Until a domain is on Cloudflare, set `ALLOWED_IPS` on the app service (comma-separated, CIDR allowed,
 e.g. `203.0.113.10,198.51.100.0/24`) and leave `ORIGIN_SECRET` **unset**. Anyone else gets 403 (`/ping` stays open).
 Blocked IPs are logged as `Blocked by ALLOWED_IPS`; if you are blocked, copy the IP from the logs.
-Once Cloudflare's WAF rule is live, remove `ALLOWED_IPS` and set `ORIGIN_SECRET`.
+Once Cloudflare Access is live, remove `ALLOWED_IPS` and set `ORIGIN_SECRET`.
 
 ## 3. Why the origin secret
 

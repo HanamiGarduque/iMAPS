@@ -243,22 +243,22 @@ default here — `tests/Unit/ForecastServiceConfigTest.php` enforces that.
 ## 🚂 Production Deployment (Railway)
 
 iMAPS is deployed on **[Railway](https://railway.com)** as a single Docker service plus a PostGIS
-database and one persistent volume, fronted by **Cloudflare**, which restricts access to office IPs.
+database and one persistent volume, fronted by **Cloudflare**, which restricts access to approved email addresses (Cloudflare Zero Trust Access).
 The full step-by-step guide is [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md); this
 section is the overview.
 
 ### Access model
 
-iMAPS is **hosted on the internet but restricted to authorized office IP addresses** — it is not
-open to the public. Cloudflare's WAF (or `ALLOWED_IPS` before Cloudflare is set up) blocks every
-other address with a 403, and only `/ping` (Railway's health check) is exempt. In practice it
-behaves like an intranet system for municipal staff, but it is not network-isolated: the server
-has a public address, so the IP allowlist and `ORIGIN_SECRET` are what keep it private.
+iMAPS is **hosted on the internet but restricted to authorized users** — it is not open to the
+public. A Cloudflare Zero Trust Access policy lets in only approved email addresses (one-time PIN),
+and `ORIGIN_SECRET` makes the app refuse any request that bypassed Cloudflare with a 403; only
+`/ping` (Railway's health check) is exempt. Staff can sign in from any network, but the server has
+a public address, so the Access policy and `ORIGIN_SECRET` are what keep it private.
 
 ### Architecture
 
 ```text
-Users ──► Cloudflare (WAF: office IPs only, adds X-Origin-Secret)
+Users ──► Cloudflare (Zero Trust Access: approved emails only, adds X-Origin-Secret)
               │
               ▼
         Railway app service  (Dockerfile, FrankenPHP/Caddy on $PORT)
@@ -318,11 +318,12 @@ Full steps are in [docs/RAILWAY_DEPLOYMENT.md §2](docs/RAILWAY_DEPLOYMENT.md#2-
 
 1. Proxy the domain through Cloudflare (orange cloud) and set **SSL/TLS → Full (strict)**;
    *Flexible* causes redirect loops.
-2. **WAF custom rule (Block):** `(http.host eq "<domain>" and not ip.src in {<office IPs>})`.
-   Office IPs must be static.
+2. **Zero Trust → Access → Applications:** add a self-hosted application for the domain with an
+   *Allow* policy listing the approved emails (or an email domain). Delete any old IP-based WAF
+   block rule, or it will still show "Sorry, you have been blocked" to people outside those IPs.
 3. **Transform rule:** set the request header `X-Origin-Secret` to the value of `ORIGIN_SECRET`.
    Without it the app answers 403 to everyone.
-4. Remove `ALLOWED_IPS` once the WAF rule is live.
+4. Leave `ALLOWED_IPS` unset; access is controlled by the Access policy.
 
 How the app relies on Cloudflare:
 
@@ -460,12 +461,11 @@ before opening the site to staff.
 
 **Access & infrastructure**
 
-- **Office network only, and internet required.** Staff can only reach the system from the
-  allowlisted static office IPs, so it isn't available from home or in the field. Fonts (Google),
+- **Internet required.** Fonts (Google),
   basemaps (OSM/ArcGIS) and the inspector sync (Supabase) all need internet. If the office
   connection or ISP goes down, the system is unavailable.
-- **Changing the office IP locks everyone out** until the Cloudflare WAF rule (or `ALLOWED_IPS`)
-  is updated.
+- **Access is tied to the Cloudflare Access policy.** A user whose email isn't listed there can't
+  reach the system until it is added.
 - **Shared guest rate limit.** Everyone in the office shares one public IP, so all unauthenticated
   requests from the office (login page, etc.) share the 60/min guest limit.
 - **Single instance.** The volume and in-container queue worker rule out scaling replicas. A
