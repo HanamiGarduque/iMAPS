@@ -17,6 +17,11 @@ function whenIdle(fn) {
     }
 }
 
+// Esri basemaps go through the keyed static-tiles service (public API key,
+// restricted to our referrers and the Static basemap tiles privilege).
+const ESRI_KEY = import.meta.env.VITE_ARCGIS_API_KEY || "";
+const ESRI_TILES = "https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1";
+
 // ── Tile Layer Configuration ──
 export const TILE_PROVIDERS = {
     // OpenStreetMap drawn in greyscale: a muted canvas that stays sharp to
@@ -41,7 +46,7 @@ export const TILE_PROVIDERS = {
     satellite: {
         label: "Satellite Imagery",
         desc: "Esri high-resolution aerial imagery",
-        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        url: `${ESRI_TILES}/arcgis/imagery/static/tile/{z}/{y}/{x}?token=${ESRI_KEY}`,
         attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP',
         maxZoom: 18,
         className: "imaps-tiles-imagery",
@@ -50,7 +55,7 @@ export const TILE_PROVIDERS = {
     topo: {
         label: "Topographic",
         desc: "Relief shading with roads and place names",
-        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+        url: `${ESRI_TILES}/arcgis/topographic/static/tile/{z}/{y}/{x}?token=${ESRI_KEY}`,
         attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, USGS',
         maxZoom: 17,
     },
@@ -199,7 +204,9 @@ const createBaseLayer = (L, mapStyle) => {
             tile.style.height = `${size.y + 1}px`;
         },
     });
-    const provider = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.light;
+    let provider = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.light;
+    // Without a key the Esri tiles would 4xx; fall back to OpenStreetMap.
+    if (!ESRI_KEY && provider.url.startsWith(ESRI_TILES)) provider = TILE_PROVIDERS.standard;
     return new SeamlessTileLayer(provider.url, {
         attribution: provider.attribution,
         maxNativeZoom: provider.maxZoom,

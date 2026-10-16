@@ -3306,3 +3306,19 @@ This is operational migration history, not schema, so it belongs in this file. T
 **ROLLBACK / RECOVERY:** the exact inverse SQL restores the prior policy definitions and drops `field_job_photos_path_namespace_chk`; not executed.
 
 **RELATED COMMIT:** `fix: harden inspection photo authorization` on FieldSync `feat/midflight-handover-prerequisites`, commit `d6da48914ae16c4e7d80e41d6b66377cea5c8c75`.
+## 2026-10-16 - Forecast tables aligned with the per-barangay, 2-quarter design - **APPLIED LOCALLY / VERIFIED**
+
+**APPLIED TO:** local database `imaps_db` only, on 2026-10-16, via `php artisan migrate --path=...` (only this migration). Verified: new columns and renamed range columns present, `forecast_periods` default is 2. Not applied to any other environment.
+
+**MIGRATION:** `2026_10_16_010000_align_forecast_tables_with_barangay_quarter_design`
+
+**CHANGES:**
+- `forecast_outputs` gains nullable `barangay`, `year`, `quarter` and index `forecast_outputs_run_barangay_quarter_idx` on `(forecast_run_id, barangay, year, quarter)`.
+- `forecast_outputs.lower_ci` / `upper_ci` renamed `lower_80` / `upper_80` (the manuscript reports an 80% prediction range).
+- `forecast_runs.forecast_periods` default changed from 6 to 2 (quarters).
+
+**NO CHANGE:** Supabase and FieldSync. No application code writes to either forecast table yet, so no data is migrated; the new columns stay nullable until forecast persistence exists.
+
+**ROLLBACK:** `down()` restores the old names and default and drops the new columns and index.
+
+**NOTE:** The canonical schema file lists the new columns but not the new index; add it as the next `SCHEMA-IDX` marker once the migration is applied.

@@ -706,7 +706,7 @@ ALTER SEQUENCE public.zoning_applications_id_seq OWNED BY public.zoning_applicat
 CREATE TABLE public.forecast_runs (
     id bigint NOT NULL,
     application_type character varying(255),
-    forecast_periods integer DEFAULT 6 NOT NULL,
+    forecast_periods integer DEFAULT 2 NOT NULL,
     model_metrics json,
     historical_data json,
     triggered_by character varying(255),
@@ -729,10 +729,13 @@ ALTER SEQUENCE public.forecast_runs_id_seq OWNED BY public.forecast_runs.id;
 CREATE TABLE public.forecast_outputs (
     id bigint NOT NULL,
     forecast_run_id bigint NOT NULL,
+    barangay character varying(255),
+    year smallint,
+    quarter smallint,
     forecast_date date NOT NULL,
     mean_value numeric(10,2) NOT NULL,
-    lower_ci numeric(10,2),
-    upper_ci numeric(10,2),
+    lower_80 numeric(10,2),
+    upper_80 numeric(10,2),
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone
 );

@@ -8,10 +8,13 @@ class ForecastOutput extends Model
 {
     protected $fillable = [
         'forecast_run_id',
+        'barangay',
+        'year',
+        'quarter',
         'forecast_date',
         'mean_value',
-        'lower_ci',
-        'upper_ci',
+        'lower_80',
+        'upper_80',
     ];
 
     public function run()
