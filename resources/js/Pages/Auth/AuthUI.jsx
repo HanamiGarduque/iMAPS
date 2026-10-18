@@ -1,3 +1,5 @@
+import ApplicationLogo from '@/Components/ApplicationLogo';
+
 // Shared visual language for the authenticated/admin side of iMAPS (Login, Register, …):
 // cadastral map texture, floating navbar, icon-field inputs. Keeps these pages visually identical.
 
@@ -73,14 +75,7 @@ export const CadastralBackground = ({ activeParcel }) => (
 export const Navbar = ({ right }) => (
     <nav className="rise mt-4 flex items-center justify-between rounded-2xl bg-white/85 backdrop-blur-md border border-slate-200/70 px-4 py-2.5 shadow-[0_10px_40px_-14px_rgba(37,99,235,.25)]">
         <div className="flex items-center gap-3">
-            <svg className="w-11 h-11 shrink-0" viewBox="0 0 44 44" aria-hidden="true">
-                <circle cx="22" cy="22" r="22" className="fill-blue-100" />
-                <circle cx="22" cy="22" r="17" className="fill-blue-200" />
-                <circle cx="22" cy="22" r="12" className="fill-blue-400" />
-                <circle cx="22" cy="22" r="8" className="fill-blue-600" />
-                <path d="M22 14.5c-3 0-5.2 2.2-5.2 5 0 3.6 5.2 9 5.2 9s5.2-5.4 5.2-9c0-2.8-2.2-5-5.2-5Z" fill="#fff" />
-                <circle cx="22" cy="19.5" r="2" className="fill-blue-600" />
-            </svg>
+            <ApplicationLogo className="w-11 h-11 shrink-0" alt="" aria-hidden="true" />
             <div className="leading-tight">
                 <p className="text-xl font-extrabold tracking-tight text-slate-900">iMAPS</p>
                 <p className="text-[9px] sm:text-[11px] font-semibold uppercase tracking-[0.06em] sm:tracking-[0.1em] text-blue-600">Municipal Planning and Development Office</p>
