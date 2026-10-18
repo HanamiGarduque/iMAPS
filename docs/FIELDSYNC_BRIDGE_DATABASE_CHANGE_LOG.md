@@ -3306,9 +3306,9 @@ This is operational migration history, not schema, so it belongs in this file. T
 **ROLLBACK / RECOVERY:** the exact inverse SQL restores the prior policy definitions and drops `field_job_photos_path_namespace_chk`; not executed.
 
 **RELATED COMMIT:** `fix: harden inspection photo authorization` on FieldSync `feat/midflight-handover-prerequisites`, commit `d6da48914ae16c4e7d80e41d6b66377cea5c8c75`.
-## 2026-10-16 - Forecast tables aligned with the per-barangay, 2-quarter design - **APPLIED LOCALLY / VERIFIED**
+## 2026-10-16 - Forecast tables aligned with the per-barangay, 2-quarter design - **APPLIED LOCALLY + RAILWAY PRODUCTION / VERIFIED**
 
-**APPLIED TO:** local database `imaps_db` only, on 2026-10-16, via `php artisan migrate --path=...` (only this migration). Verified: new columns and renamed range columns present, `forecast_periods` default is 2. Not applied to any other environment.
+**APPLIED TO:** local database `imaps_db` only, on 2026-10-16, via `php artisan migrate --path=...` (only this migration). Verified: new columns and renamed range columns present, `forecast_periods` default is 2. Also applied to Railway production automatically on deploy of commit `b948892` (`docker/start.sh` runs `migrate --force`); `php artisan migrate:status` in the Railway console shows it as batch 30, Ran. Not applied to Supabase (not applicable).
 
 **MIGRATION:** `2026_10_16_010000_align_forecast_tables_with_barangay_quarter_design`
 

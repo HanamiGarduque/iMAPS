@@ -873,7 +873,7 @@ export default function Overview({
                                                     ["Area", view.area],
                                                     ["Mix", tier ? tier.shortLabel : "No zoning data"],
                                                     // Recorded mix (last five years of filings) against the CLUP 2030 plan.
-                                                    ["Plan mix", view.planDiversity == null ? "—" : `${Number(view.planDiversity).toFixed(2)} (${view.variance == null ? "insufficient data for drift" : `${view.variance >= 0 ? "+" : ""}${Number(view.variance).toFixed(2)}`})`],
+                                                    ["Plan mix", view.planDiversity == null ? "—" : `${Number(view.planDiversity).toFixed(2)}${view.variance == null ? "" : ` (${view.variance >= 0 ? "+" : ""}${Number(view.variance).toFixed(2)})`}`],
                                                     stat ? ["Mix rank", `#${mixRank.indexOf(selectedBgy.name) + 1} of ${mixRank.length}`] : ["Barangays", num(bgyNames.length)],
                                                     ["Applications", num(total)],
                                                     ["Mostly", shares[0] ? `${shares[0].label} ${pct(shares[0].share)}` : "—"],

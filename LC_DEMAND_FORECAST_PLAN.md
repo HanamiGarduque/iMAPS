@@ -45,40 +45,63 @@ The data in the system can already answer all three:
 
 ---
 
-## 3. The forecasting service (verified against its source, 2026-10-09)
+## 3. The forecasting service (verified against its source, 2026-10-09; updated 2026-10-18)
 
 **Correction.** This section previously described a `statsmodels` SARIMAX service inferred from
 a compiled `python-analytics/__pycache__/main.cpython-314.pyc`. That is not what the port-8002
 service is. The real service was located, read and run end-to-end.
 
+**Second correction (2026-10-18).** The 2026-10-09 version described a two-stage "hurdle"
+XGBoost model with 16 features and no prediction intervals. The service has since replaced that
+design (`_fit_model` in `app/services/forecasting.py`). The bullets below describe the current
+code.
+
 - **Where it lives:** its own git repository, a sibling of this one — `../iMAPS-forecasting-service`
   (FastAPI; `app/main.py`, `app/config.py`, `app/security.py`, `app/services/forecasting.py`).
   The empty `iMAPS-forecasting-service/` folder *inside* this repo is a stale skeleton.
-- **Model:** a two-stage **"hurdle" XGBoost** pair, not SARIMAX — an `XGBClassifier` gate
-  (does this barangay-quarter see any clearances?) multiplied by an `XGBRegressor` intensity,
-  tuned with `RandomizedSearchCV` over expanding-window temporal folds (`_temporal_folds`,
-  `n_splits=3`, so it is never trained on quarters later than the ones it scores).
+- **Model:** a single **XGBoost Poisson regression**, not SARIMAX:
+  `XGBRegressor(objective="count:poisson")`, tuned with `RandomizedSearchCV`
+  (`scoring="neg_mean_poisson_deviance"`) over expanding-window temporal folds
+  (`_temporal_folds`, `n_splits=3`, so it is never trained on quarters later than the ones it
+  scores). It replaced an earlier two-stage hurdle design (an `XGBClassifier` gate multiplied by
+  an `XGBRegressor` intensity). In rolling backtests the hurdle and Tweedie variants forecast
+  about 6–8% too low in total, and the Poisson objective is calibrated to the mean.
 - **Scope:** *one panel model over all barangays*, predicting per barangay-quarter — not one
   model per barangay, and not a municipal total split afterwards. A run on the default CSV
   returned 96 rows: 48 barangays × 2 quarters.
-- **Features (16):** `Quarter`, `Lag_1`, `Lag_2`, `Lag_4`, `Rolling_4Q_Mean`, `Rolling_4Q_Std`,
-  `Spatial_Lag_1`, `Barangay_Mean_Baseline`, `Area_sqm`, `Centroid_X`, `Centroid_Y`,
-  `Total_Road_Length_m`, `Road_Density`, `Prop_Residential`, `Prop_Comm_Ind`, `Prop_Restricted`.
+- **Features (19):** `Quarter`, `Lag_1`, `Lag_2`, `Lag_4`, `Rolling_4Q_Mean`, `Rolling_4Q_Std`,
+  `Spatial_Lag_1`, `Barangay_Mean_Baseline`, `Muni_Lag_1`, `Muni_Lag_4`, `Brgy_Qmean`,
+  `Area_sqm`, `Centroid_X`, `Centroid_Y`, `Total_Road_Length_m`, `Road_Density`,
+  `Prop_Residential`, `Prop_Comm_Ind`, `Prop_Restricted`.
+  - `Barangay_Mean_Baseline` is the barangay's **overall** mean quarterly volume, computed from
+    the training split only.
+  - `Brgy_Qmean` is the barangay's mean for the **same calendar quarter** in earlier years.
+  - `Muni_Lag_1` / `Muni_Lag_4` are the municipality-wide total one quarter and four quarters
+    back. They add seasonal context.
   The spatial ones come from three shapefiles in the service's `data/` (barangay boundaries,
-  roads, land use) — which its `.gitignore` excludes, so a clone does not deploy them.
+  roads, land use). They are now committed and shipped in the Docker image.
 - **Training window:** `TRAINING_WINDOW_MONTHS = 60`, anchored on the **last completed
   quarter**. The service refuses the request if the newest quarter in the CSV has not finished,
   is incomplete, or if too few quarters are present.
 - **Horizon:** exactly the next **two** quarters, derived from the data — not hardcoded to 2026.
-- **Response:** `{forecasts: [{Date, Quarter_Label, Barangay, Predicted_Quarterly_Clearances}],
-  metrics: {validation_mae, validation_wmape, validation_r2}, training_window: {...},
-  data_quality: {...}, summary: {q<N>_<YEAR>_total, combined_total}}`.
-  `validation_wmape` is a **percentage** (e.g. `42.3`), not a fraction.
+- **Response:** `{forecasts: [{Date, Quarter_Label, Barangay, Predicted_Quarterly_Clearances,
+  Expected, Lower_80, Upper_80, Confidence}], metrics: {validation_mae, validation_wmape,
+  validation_r2, baseline_mae, baseline_wmape, baseline_r2}, training_window: {...},
+  data_quality: {...}, summary: {q<N>_<YEAR>_total, combined_total},
+  totals: {"<YEAR> Q<N>": {expected, lower_80, upper_80}}, intervals: {level, basis}}`.
+  `validation_wmape` is a **percentage** (e.g. `37.78`), not a fraction. The `baseline_*`
+  metrics score a naive benchmark on the same held-out quarters: each barangay's last observed
+  quarter, repeated.
 - **Cost:** it trains on every request. Measured **~24s warm, over 30s cold** (first call loads
   the shapefiles). Laravel set no HTTP timeout, so Guzzle's 30s default aborted the call
   mid-forecast; `FORECAST_SERVICE_TIMEOUT` now defaults to 180s.
-- **No prediction intervals.** These are point predictions; there is no fitted-model object with
-  confidence bounds to extract. See Phase 2.
+- **80% prediction ranges.** Per barangay, `Lower_80`/`Upper_80` are the 10th and 90th
+  percentiles of a Poisson distribution centred on the predicted value (`_poisson_interval`).
+  Each quarter's municipal total has its own range in `totals`. That range adds 15% relative
+  model error to the Poisson variance (`MUNICIPAL_EXTRA_CV`) and takes a normal 80% interval
+  (`_total_range`). `Confidence` is `low` below 3 expected clearances, `medium` below 8, and
+  `high` otherwise. In backtests on synthetic data the ranges captured 87% (barangay) and 83%
+  (municipal) of actuals. Recalibrate them on real data.
 
 ## 4. Plan
 
@@ -94,27 +117,23 @@ service is. The real service was located, read and run end-to-end.
 
 ### Phase 2: Get uncertainty out of the service
 
-**Revised.** The original plan here pasted `SARIMAX(...).fit()` / `get_forecast().summary_frame()`
-to pull `mean_ci_lower` / `mean_ci_upper`. That does not apply: the service is gradient-boosted
-trees, which produce a single number per barangay-quarter and no confidence interval. The
-`forecast_outputs.mean_value` / `lower_ci` / `upper_ci` columns can still be filled, but the
-bounds have to be *produced*, not read off a fitted model. Two options, cheapest first:
+**Done on the service side (2026-10-18).** The service now returns an 80% range for every
+barangay-quarter and for each municipal total (see §3). It uses neither option this phase
+proposed (quantile regression or conformal intervals). The ranges come from the Poisson
+distribution implied by the model's own objective, with extra model error added for totals.
 
-1. **Quantile regression** — refit the intensity stage with
-   `XGBRegressor(objective="reg:quantileerror", quantile_alpha=[0.1, 0.5, 0.9])`, giving an
-   80% band directly from the same features. Smallest change to the service.
-2. **Conformal intervals** — keep the current point model and calibrate residuals on the
-   held-out quarters (`training_window.holdout_quarters` is already 2) to get a band with
-   coverage guarantees. No retraining, but it needs a calibration step in the pipeline.
+Laravel passes the whole payload through, so the ranges already reach the frontend in
+`forecasts[]` and `totals`. What remains is on the iMAPS side:
 
-The service already returns `metrics` (`validation_mae`, `validation_wmape`, `validation_r2`),
-`training_window` and `data_quality`, and Laravel passes the whole payload through — so
-anything added server-side reaches the frontend without a Laravel change.
+- `ForecastService::generateForecast()` builds `demand[]` with only `predicted`. Add `expected`,
+  `lower_80`, `upper_80` and `confidence` to it so the map and timeline can read them.
+- Fill `forecast_outputs` (the `ForecastOutput` model already lists `lower_80`) when runs are
+  persisted (Phase 1).
 
 What is still worth adding on the service side, independent of intervals:
 
 - **Fitted values for history**, so the timeline can show model-vs-actual on past quarters.
-- **Feature importances** from the two stages, which is the honest version of a "Drivers" list.
+- **Feature importances** from the model, which is the honest version of a "Drivers" list.
 
 ### Phase 3: Make the forecast stand out on the map and timeline
 
@@ -138,20 +157,21 @@ What is still worth adding on the service side, independent of intervals:
 
 **"Model" card in the panel**
 
-*Revised for the real model (hurdle XGBoost, not SARIMAX — see §3).*
+*Revised for the real model (single Poisson XGBoost, not SARIMAX — see §3).*
 
 | Service output | What the planner sees | Available today? |
 |---|---|---|
 | `training_window` (`start`, `end`, `quarters_used_for_modelling`, `holdout_quarters`) | Exactly how much data the model ran on, e.g. `60 months to Q3 '26 · 20 quarters · 2 held out` | **Yes** |
 | `metrics.validation_mae`, `validation_wmape`, `validation_r2` | How far off the model usually is, e.g. `±1.4 clearances per barangay-quarter` | **Yes** |
 | `data_quality` | Whether the upload was thin or patchy enough to distrust the output | **Yes** |
-| Comparison against a naive baseline (repeat last year's quarter) | Whether the model beats a simple guess — the single most useful honesty signal, and MAE alone does not show it | No — service change |
-| Feature importances from the gate and intensity stages | A "Drivers" list, the honest version: which of the 16 features move the prediction | No — service change |
-| Quantile or conformal bounds | A range instead of a single number | No — Phase 2 |
+| `metrics.baseline_mae`, `baseline_wmape`, `baseline_r2` (naive benchmark: repeat each barangay's last quarter) | Whether the model beats a simple guess. This is the single most useful honesty signal, and MAE alone does not show it | **Yes** |
+| Feature importances from the model | A "Drivers" list, the honest version: which of the 19 features move the prediction | No — service change |
+| `Lower_80` / `Upper_80` per barangay, `totals` per quarter, `Confidence` | A range instead of a single number, and how far to trust it | **Yes** (service); not yet in `demand[]`, see Phase 2 |
 
-There is no `order`/`seasonal_order`/AIC to show, and no seasonal component to decompose; the
-calendar quarter is just one of 16 input features. A "which model ran" line should state the
-window and the validation error, not a model formula.
+There is no `order`/`seasonal_order`/AIC to show, and no seasonal component to decompose.
+Seasonality enters only through input features (`Quarter`, `Lag_4`, `Muni_Lag_4`,
+`Brgy_Qmean`) among the 19. A "which model ran" line should state the window and the
+validation error against the naive baseline, not a model formula.
 
 ### Phase 4: Connect demand to the land-use plan
 
@@ -181,8 +201,10 @@ share? — is answered. It is neither (see §3).*
 
 The service fits **one panel model across all barangays** and predicts each barangay-quarter
 from that barangay's own features: its lags, its 4-quarter rolling mean and std, a spatial lag
-from its neighbours, its historical baseline, and its static geography (area, centroid, road
-length and density, three land-use proportions). So:
+from its neighbours, its overall historical mean, its same-quarter historical mean, and its
+static geography (area, centroid, road length and density, three land-use proportions). It also
+uses two shared municipality-wide inputs: last quarter's total and the total for the same
+quarter a year earlier. So:
 
 - **The per-barangay number is genuine model output, not an allocation of a municipal total.**
   The map may legitimately be labeled a per-barangay forecast.
@@ -194,9 +216,10 @@ length and density, three land-use proportions). So:
 - **The pin positions carry no extra precision.** Predictions are per barangay; placing them at
   centroids (as `ForecastService` does) is a drawing choice, not a location the model produced.
   A choropleth is the honest form; see §1.5.
-- **Report the error with the number.** `validation_wmape` on the current data is 42.3% with an
-  MAE of ~1.4 clearances per barangay-quarter. A quarter predicted as `5` should not be
-  presented as more precise than that.
+- **Report the error with the number.** In the service README's sample run on the 6,638-row
+  history, `validation_wmape` is 37.78% with an MAE of ~1.4 clearances per barangay-quarter.
+  The naive baseline scores 50.0% and 1.84. A quarter predicted as `5` should be shown with its
+  80% range (e.g. `5 (2–8)`), not as a precise count.
 
 ---
 
@@ -205,19 +228,23 @@ length and density, three land-use proportions). So:
 Questions 1-4 below were **answered** on 2026-10-09 by reading and running the service (§3):
 
 1. ~~**Service source:** where is it?~~ → `../iMAPS-forecasting-service`, its own git repo.
-2. ~~**Model scope:** SARIMAX per barangay or one municipal model?~~ → Neither. One hurdle-XGBoost
-   panel model over all barangays, predicting per barangay-quarter.
-3. ~~**Exog variables:** what are they?~~ → 16 features: calendar quarter, lags 1/2/4, 4-quarter
-   rolling mean/std, a spatial lag, a per-barangay baseline, and six static spatial attributes
-   (area, centroid X/Y, road length, road density, three land-use proportions).
+2. ~~**Model scope:** SARIMAX per barangay or one municipal model?~~ → Neither. One XGBoost
+   Poisson-regression panel model over all barangays, predicting per barangay-quarter (it
+   replaced a two-stage hurdle model; see §3).
+3. ~~**Exog variables:** what are they?~~ → 19 features: calendar quarter, lags 1/2/4, 4-quarter
+   rolling mean/std, a spatial lag, the barangay's overall mean and same-quarter mean,
+   municipal totals lagged 1 and 4 quarters, and static spatial attributes (area, centroid X/Y,
+   road length, road density, three land-use proportions).
 4. ~~**Forecast horizon:** can it go past 2026 Q4?~~ → Yes. The horizon is the two quarters
    after the last completed quarter in the uploaded CSV; nothing is pinned to 2026.
 
+5. ~~**Uncertainty:** quantile regression or conformal intervals (Phase 2)?~~ → Neither. The
+   service returns Poisson-based 80% ranges (§3), so the map can show a range.
+
 Genuinely still open:
 
-5. **Uncertainty:** quantile regression or conformal intervals (Phase 2)? This decides whether
-   the map can show a range rather than a single number.
 6. **Run cadence:** the service retrains on every request (~24s). Should forecasts be generated
    on a schedule and stored in `forecast_runs` / `forecast_outputs`, rather than on page load?
-7. **WMAPE of 42.3% on the current data** — is a mean absolute error of ~1.4 clearances per
-   barangay-quarter good enough to plan with, and what should the UI say about that?
+7. **WMAPE of ~38% on the current data** (against 50% for the naive baseline). Is a mean
+   absolute error of ~1.4 clearances per barangay-quarter good enough to plan with, and what
+   should the UI say about that?
