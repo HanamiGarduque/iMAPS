@@ -38,107 +38,165 @@ const MODULES = [
     { name: 'Demand Forecasting', title: 'Data to decisions', text: 'Turn approved clearances into trends and forecasted demand by barangay.' },
 ];
 
+// The three policy documents below mirror the FieldSync drafts in
+// imaps_fieldsync_main/assets/policies/ (DRAFT v0.9, prepared October 18, 2026).
+// Keep both sides in step — when a FieldSync policy is revised, update the
+// matching document below as well.
+
 const PRIVACY = [
-    ['Scope & Legal Basis', [
-        ['COVERAGE', 'This Privacy Policy explains how the Municipal Government of Rosario, through the Municipal Planning and Development Office (MPDO), collects, uses, stores and protects personal data processed in iMAPS.'],
-        ['LEGAL BASIS', 'Processing is carried out in accordance with Republic Act No. 10173 (Data Privacy Act of 2012), its Implementing Rules and Regulations, and issuances of the National Privacy Commission, in the exercise of the municipality\'s mandate over zoning and land-use regulation.'],
+    ['Who This Notice Covers', [
+        'This notice explains how personal information may be handled within the iMAPS internal web system and the iMAPS FieldSync mobile application in connection with MPDO Rosario zoning administration, application monitoring, GIS reporting, and field inspections. It applies to applicant and property records handled by the office and to authorized personnel using the Platforms. If a separate public status portal is operated, its actual authentication method, visible fields, and service provider must be verified and described before including it under this notice.',
     ]],
-    ['Personal Data We Collect', [
-        ['STAFF ACCOUNT DATA', 'Name, official email address, role, office assignment and login credentials of authorized personnel.'],
-        ['APPLICANT DATA', 'Names, addresses, contact details, property and parcel information, and supporting documents submitted with zoning and locational clearance applications.'],
-        ['SYSTEM LOGS', 'Login times, IP addresses, device information and records of actions performed in the system, kept for security and audit purposes.'],
+    ['Responsible Office and Privacy Contact', [
+        'The responsible personal information controller and any personal information processors must be identified by the implementing municipality before deployment. Proposed service office: Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas. Official controller designation: __________. Data Protection Officer/privacy contact: Name/Office: __________  Email: __________  Address: __________  Request procedure: __________.',
     ]],
-    ['How We Use Personal Data', [
-        ['PERMIT PROCESSING', 'To evaluate, inspect, approve and issue zoning and locational clearances, and to notify applicants of their application status.'],
-        ['PLANNING & ANALYTICS', 'To produce land-use maps, statistics and demand forecasts. Data used for analytics is aggregated or anonymized wherever possible.'],
-        ['SECURITY & ACCOUNTABILITY', 'To authenticate users, prevent unauthorized access, and maintain audit trails required by law.'],
+    ['Categories of Personal and Operational Data', [
+        'Depending on the user’s role and the feature used, records may include: (a) staff account identifiers, contact details, roles, login/session and audit information; (b) application and permit-related records such as applicant and business names, contact details, submitted documents, processing status, dates, parcel identifiers, and land-use or zoning information; (c) inspection assignments and results, inspector identifiers, timestamps, checklists, field notes, GPS coordinates, and photographs; and (d) technical data needed for system operation, troubleshooting, synchronization, and security. Not every field is collected by every feature or from every person. Exact database fields and mobile permissions must be inventoried before publication.',
     ]],
-    ['Data Sharing & Disclosure', [
-        ['AUTHORIZED RECIPIENTS', 'Personal data is shared only with municipal offices and national agencies that require it to perform their legal functions, or when required by law, court order or lawful request.'],
-        ['NO COMMERCIAL USE', 'Personal data is never sold, rented or used for marketing purposes.'],
+    ['Why the Information Is Processed', [
+        'Data are processed to receive and organize zoning-related records, route and monitor administrative work, assign and document site inspections, support verification of land-use information, maintain accountability through audit records, produce administrative reports and geospatial summaries, and support authorized planning decisions. Aggregated or barangay-level analytics and forecasting may use historical transaction or spatial features; these outputs support planning and do not themselves determine the approval or rejection of an individual application. Any research or capstone use of live personal records must have its own lawful basis and applicable safeguards.',
     ]],
-    ['Retention & Protection', [
-        ['RETENTION PERIOD', 'Records are retained only for as long as necessary for their purpose and as required by government records-management rules, after which they are securely disposed of.'],
-        ['SAFEGUARDS', 'We apply organizational, physical and technical security measures, including role-based access, secure connections and activity logging, to protect personal data against loss, misuse and unauthorized access.'],
+    ['Lawful Basis and Fair Processing', [
+        'Personal data must be processed for specified, legitimate purposes and on an applicable lawful basis under Republic Act No. 10173 (Data Privacy Act of 2012), its Implementing Rules and Regulations, and relevant National Privacy Commission issuances. For government functions, the legal basis may relate to statutory duties or other grounds recognized by law and is not necessarily consent. The responsible office must document the basis for each processing activity. Where a separate optional activity legally requires consent, that consent must be requested distinctly and must not be hidden inside general Terms acceptance.',
     ]],
-    ['Your Rights as a Data Subject', [
-        ['DATA SUBJECT RIGHTS', 'You have the right to be informed, to access, to object, to rectify, to erasure or blocking, to data portability, and to damages, subject to the limits set by law.'],
-        ['EXERCISING YOUR RIGHTS', 'Requests and concerns may be sent to the Data Protection Officer below. You may also file a complaint with the National Privacy Commission.'],
+    ['When FieldSync Uses Camera and Location', [
+        'FieldSync may request camera/photo-library and device location permission when an inspector opens a feature that needs photographic or geospatial inspection evidence. Such evidence may be associated with an assigned application or parcel and transmitted to connected office systems after successful synchronization. The final product team must verify whether the app accesses location only during active use or in the background, whether images embed location metadata, and whether there are alternate workflows when a permission is declined. This notice does not authorize continuous employee tracking.',
+    ]],
+    ['Offline Records and Data Synchronization', [
+        'To support work during weak or unavailable connectivity, FieldSync may hold assignments, completed forms, media, and pending synchronization actions in local device storage. Information remains on the device until the app can transmit it successfully or it is removed under the approved retention process. Lost, shared, or compromised devices therefore present privacy risks. Staff should use supported device security settings and report lost devices promptly. The team must verify local encryption, session handling, logout behavior, and deletion of successfully synchronized drafts before claiming specific protections.',
+    ]],
+    ['Authorized Access and Data Sharing', [
+        'Access should be limited to officials and personnel who need data for their assigned responsibilities. Information may also pass through contracted hosting, authentication, synchronization, backup, and mapping services needed to operate the Platforms; the actual providers, hosting locations, contractual roles, and categories of data disclosed must be confirmed. Information may be disclosed to competent authorities where required or authorized by law. Official records must not be shared for unrelated advertising or marketing purposes. Specific access limitations cannot be promised until role permissions and public endpoints have been verified.',
+    ]],
+    ['Public Status Information', [
+        'If an applicant-facing status portal is part of the approved deployment, the office must publish its verified lookup requirements and the exact application fields it reveals. A public-facing screen should disclose no more information than necessary for the status inquiry. The draft does not assert that full contact information, remarks, or parcel identifiers are inaccessible, because this requires confirmation of deployed queries, database permissions, and access rules.',
+    ]],
+    ['Security and Incident Handling', [
+        'The responsible office should maintain proportionate organizational, physical, and technical safeguards, including approved access permissions, authentication controls, audit logging, secure transmission, backups, incident response, and device procedures. These measures must be regularly reviewed, especially wherever mobile and web services exchange data. No system can promise absolute security. Personal data breaches and requests for assistance should be escalated through the approved municipal incident-response and DPO process, with regulatory notification when required by applicable rules.',
+    ]],
+    ['Retention and Disposal', [
+        'Application, inspection, account, audit, and backup records are retained according to an approved government records-retention schedule and the purposes and legal requirements applicable to each category. Records should be securely deleted or de-identified when retention is no longer lawful or necessary, subject to official recordkeeping obligations. The exact retention periods, deletion authorities, backup schedules, and offline-device cleanup rules are [TO BE CONFIRMED AND DISCLOSED BEFORE PUBLICATION].',
+    ]],
+    ['Rights of Data Subjects', [
+        'Individuals have rights under the Data Privacy Act, as applicable, including the rights to be informed, access information, rectify inaccurate data, object in circumstances provided by law, request erasure or blocking where legally available, data portability where applicable, seek damages, and file a complaint with the National Privacy Commission. Some requests may be limited by lawful government recordkeeping or other statutory duties. Requests should be submitted through the designated MPDO or municipal privacy contact, and identity may be verified before personal records are disclosed.',
+    ]],
+    ['Policy Changes and Contact', [
+        'Material changes in processing practices should be reflected in an updated notice, with notice provided through an appropriate platform or official office channel. Version: DRAFT 0.9. Effective date: Pending official approval. Responsible office: MPDO, Municipality of Rosario, Batangas. Official DPO/privacy contact and reporting channel: __________. This draft requires validation against the production configuration and review by the responsible office before release.',
     ]],
 ];
 
 const TERMS = [
-    ['Acceptance & Coverage', [
-        ['AGREEMENT TO TERMS', 'By logging in to iMAPS, you confirm that you have read and understood these Terms and agree to comply with them. These Terms apply to all officials, employees and other personnel of the Municipal Government of Rosario who are granted access to the system.'],
-        ['OFFICIAL USE ONLY', 'iMAPS is an internal government information system. Access is a privilege granted by reason of your official functions and does not create any personal right to the system or its data.'],
+    ['Purpose and Scope', [
+        'These Terms describe the responsible use of iMAPS: An Intelligent Geospatial Analytics System for Zoning Application Tracking and Land-Use Development Monitoring, including its internal web system and its companion iMAPS FieldSync mobile application (together, the “Platforms”). The Platforms are designed to assist the Municipal Planning and Development Office (MPDO) of Rosario, Batangas with application records, zoning-related workflows, maps, analytics, and field inspections. Any separately operated public application-status portal is covered only after the implementing office confirms that it falls within the same service and publishes matching notices.',
     ]],
-    ['Authorized Access & Account Security', [
-        ['AUTHORIZED USERS', 'Accounts are issued by the System Administrator upon authorization of the MPDO head. Each user may access only the modules and records required by their assigned role.'],
-        ['CREDENTIAL CONFIDENTIALITY', 'Your account is personal and non-transferable. Do not share your password, allow others to use your session, or leave the system unattended while logged in. You are accountable for all actions performed under your account.'],
-        ['INCIDENT REPORTING', 'Report any suspected unauthorized access, lost credentials or security incident to the System Administrator immediately so it can be contained and, where required, reported to the National Privacy Commission.'],
+    ['Authorized Users and Access', [
+        'Internal functions are intended for personnel specifically authorized by the implementing office, such as administrators, planning officers, and assigned site inspectors. Access is role-dependent. Users must sign in using credentials provided or approved by the organization and must not share accounts or attempt to access records outside their assigned duties. A person using a public-facing status inquiry, if officially enabled, receives only the access and functions expressly offered through that service.',
     ]],
-    ['Acceptable Use', [
-        ['PERMITTED USE', 'Use iMAPS only to perform official tasks such as encoding and evaluating zoning applications, conducting site inspections, reviewing geospatial layers and preparing planning reports.'],
-        ['PROHIBITED ACTS', 'You must not: (a) access records unrelated to your duties; (b) alter, delete or falsify application, inspection or permit records without proper authority; (c) download, copy or disclose data for personal or unofficial purposes; (d) attempt to bypass security controls; or (e) introduce malicious software or otherwise disrupt the system.'],
+    ['Responsible Use of Records', [
+        'Users must provide and update official information accurately, follow established MPDO procedures, and record status changes and field findings truthfully. The Platforms assist with documentation and monitoring; they do not replace legal review, the Comprehensive Land Use Plan, applicable zoning ordinances, or the final decision of authorized municipal personnel. Maps, density displays, and forecasts are decision-support outputs and must not be treated as automatic approvals, legal land-title determinations, or guarantees about future events.',
     ]],
-    ['Data Accuracy & Official Records', [
-        ['ACCURACY OF ENTRIES', 'Information you encode, including applicant details, parcel data, inspection findings and fees, must be accurate and based on submitted documents or actual field verification.'],
-        ['OFFICIAL RECORDS', 'Records created in iMAPS are official public records of the Municipal Government of Rosario and are retained and disposed of only in accordance with the National Archives of the Philippines Act (RA 9470) and its records-disposition schedules.'],
-        ['DECISION SUPPORT', 'Maps, analytics and demand forecasts generated by the system are planning aids. They do not replace the professional judgment of evaluators or the provisions of the Comprehensive Land Use Plan and Zoning Ordinance.'],
+    ['FieldSync Inspections', [
+        'FieldSync supports assigned on-site inspection activities that may include location verification, photographs, checklists, notes, and submission of findings. Users must obtain permissions and follow applicable office procedures when collecting evidence, avoid unnecessary personal information in photos or remarks, and use official devices or approved devices responsibly. Where offline entry is available, saved records may remain on the device until synchronization succeeds; users should verify the app’s synchronization status before treating an inspection as submitted to the office.',
     ]],
-    ['Data Privacy & Confidentiality', [
-        ['PERSONAL DATA', 'Applicant and staff personal data must be processed only for its declared purpose and protected in accordance with the Data Privacy Act of 2012 (RA 10173). See the Privacy Policy for details.'],
-        ['CONFIDENTIALITY OBLIGATION', 'Your duty to keep system data confidential continues even after your access ends, including upon transfer, resignation or separation from service.'],
+    ['Security and Prohibited Conduct', [
+        'Users must protect credentials, lock devices when unattended, promptly report lost devices and suspected unauthorized access, and refrain from copying or disclosing applicant, landowner, or inspection information without authority. Prohibited acts include impersonation, deliberate falsification of records, unauthorized extraction of data, attempts to bypass role restrictions, interfering with service operation, or using inspection information for personal gain. Suspected misuse may be handled under applicable office policies and Philippine law, subject to due process.',
     ]],
-    ['Monitoring & Accountability', [
-        ['ACTIVITY LOGGING', 'All logins and transactions are recorded in audit logs. These logs may be reviewed by authorized personnel for security, audit and investigation purposes.'],
-        ['SANCTIONS', 'Violations of these Terms may result in suspension of access and administrative action under Civil Service rules and the Code of Conduct and Ethical Standards for Public Officials and Employees (RA 6713), without prejudice to criminal liability under the Data Privacy Act or the Cybercrime Prevention Act of 2012 (RA 10175).'],
+    ['Availability and Connectivity', [
+        'Some functions require an internet or authorized network connection, including online map tiles, web application access, and synchronization with connected services. Availability may be affected by maintenance, network interruptions, third-party systems, and device limitations. A locally saved FieldSync inspection is not necessarily reflected in the central iMAPS record until a successful sync has occurred. Any stated service levels must be supported by an approved operating agreement.',
     ]],
-    ['System Availability & Support', [
-        ['AVAILABILITY', 'The MPDO aims to keep iMAPS available during office hours but does not guarantee uninterrupted service. Access may be limited during maintenance, upgrades or unforeseen technical issues.'],
-        ['TECHNICAL SUPPORT', 'Support is available Monday to Friday, 8:00 AM to 5:00 PM (Philippine Time), excluding holidays, through the System Administrator.'],
+    ['Third-Party Services', [
+        'The Platforms may rely on infrastructure and geospatial service providers to enable authentication, hosting, database synchronization, and map display. Such providers may apply their own lawful terms and privacy notices to services they operate. The responsible office must verify and publish the actual provider list before this policy takes effect. No third-party service should be treated as having permission to reuse official case records for unrelated purposes merely because it supports the Platforms.',
     ]],
-    ['Changes & Termination of Access', [
-        ['AMENDMENTS', 'These Terms may be updated by the MPDO. Users will be informed of material changes, and continued use of the system after notice constitutes acceptance.'],
-        ['TERMINATION OF ACCESS', 'Access is automatically revoked upon transfer, resignation, retirement or separation from service, and may be suspended at any time for security reasons or violations of these Terms.'],
+    ['Privacy and Record Retention', [
+        'Handling of personal data is described in the separate iMAPS & FieldSync Privacy Notice. Information recorded through the Platforms remains subject to government recordkeeping, privacy, security, and disclosure requirements. Requests for access, correction, and other data-subject rights should be directed to the designated responsible office or Data Protection Officer (DPO), using the verified contact information published with the final notices.',
+    ]],
+    ['Ownership and Permitted Use', [
+        'Project code, documentation, municipal datasets, maps, and user-submitted official records may have different owners or licenses. No ownership or broad reuse rights are granted by these Terms. The implementing office and capstone project proponents should document the final software license, data ownership, deployment agreement, and any third-party map or library attribution requirements before release.',
+    ]],
+    ['Updates, Suspension, and Governing Law', [
+        'The office may revise operating procedures and these Terms when necessary, with appropriate notice. Access may be suspended or adjusted when authorized for security, role changes, or administrative reasons. These Terms are interpreted in accordance with applicable laws of the Republic of the Philippines. They do not remove rights granted by law or replace established government processes.',
+    ]],
+    ['Contact and Acknowledgment', [
+        'Office: Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas. Privacy/security contact: Name/Office: __________  Email: __________  Contact channel: __________. Policy owner and publication authority: __________. Effective date: Pending official approval. For internal staff, acknowledgment may be recorded as part of approved onboarding; displaying this notice alone does not prove that user consent or legal authorization for all processing has been obtained.',
     ]],
 ];
 
 const COOKIES = [
-    ['What Cookies Are', [
-        ['DEFINITION', 'Cookies are small pieces of data a website asks your browser to store, then sends back on later requests so the site can recognize your browser.'],
-        ['WHY WE USE THEM', 'iMAPS uses cookies only to keep you securely signed in and to protect the system against cross-site request forgery. We do not use cookies for advertising, analytics or tracking.'],
+    ['Scope: Web Cookies and Mobile Storage', [
+        'This policy describes how the iMAPS internal web system and FieldSync mobile app may use browser cookies, web storage, device-local storage, and connected servers. Browser cookies and mobile offline records are different technologies; FieldSync does not need to use browser cookies merely because the iMAPS web system does. Any separate public status portal should publish a matching notice based on its actual implementation.',
     ]],
-    ['Cookies We Use', [
-        ['SESSION COOKIE', 'Identifies your logged-in session on the server so the system knows who you are between page requests. It is essential: without it you cannot stay signed in. It expires after a period of inactivity or when you log out.'],
-        ['CSRF PROTECTION COOKIE (XSRF-TOKEN)', 'A security cookie used to verify that form submissions and requests genuinely come from your browser session, preventing cross-site request forgery attacks. It is essential and contains no personal data.'],
+    ['Essential Web Session and Security Storage', [
+        'The Laravel-based iMAPS web system may use session-related cookies and anti-forgery tokens to maintain an authenticated session and protect requests. The actual cookie names, scope, expiration, SameSite settings, Secure/HttpOnly flags, and whether sessions are stored server-side must be verified from the deployed configuration. Necessary storage enables authorized workflows; users may be unable to sign in or use protected features if their browser blocks it.',
     ]],
-    ['Cookies We Do Not Use', [
-        ['NO ANALYTICS OR ADVERTISING', 'iMAPS does not set analytics, advertising or social-media cookies, and does not share browsing data with third parties.'],
-        ['NO CROSS-SITE TRACKING', 'Because iMAPS is an internal government system, no cookie set here is used to track you across other websites.'],
+    ['Web Preferences, Caches, and Reports', [
+        'Depending on implemented features, the browser may store non-essential preferences (for example, visual or map-view choices) and temporarily cache downloaded resources. An earlier internal assessment also flagged forecast outputs saved to browser localStorage without an expiry; the team must confirm whether that behavior still exists, what information it contains, and whether it should be moved to server-controlled records or given an expiration. No claim is made that all cached information is automatically removed at logout.',
     ]],
-    ['Managing Cookies', [
-        ['BROWSER CONTROLS', 'You can block or delete cookies through your browser settings. Because the session and CSRF cookies are essential to signing in, disabling them will prevent you from using iMAPS.'],
-        ['QUESTIONS', 'For questions about this Cookie Policy, contact the Data Protection Officer below.'],
+    ['FieldSync Offline Storage', [
+        'FieldSync may keep inspection assignments, draft forms, GPS readings, geotagged media references, and a synchronization queue on the device so field work can continue during connectivity interruptions. When service returns, the app may attempt to upload pending items to the connected backend or synchronization service. A successful upload does not automatically prove that local copies, device backups, or cached media were erased. The product team must document actual file locations, storage protections, queue cleanup, retry behavior, and the user-facing sync status.',
+    ]],
+    ['Authentication and Other Device Data', [
+        'FieldSync may maintain a session token or similar credential needed for signed-in users. Mobile operating systems and application libraries may also store preferences and temporary media files. Whether credentials are stored in protected device facilities, whether offline records are encrypted at rest, and whether app removal deletes all related copies or cloud backups must be tested. Do not store passwords or sensitive authentication secrets in plain text.',
+    ]],
+    ['Maps and External Resources', [
+        'When users display basemaps or other externally hosted map resources, their browser or device may send ordinary technical requests to the map provider, potentially including an IP address and network/device metadata. The iMAPS manuscript identifies OpenStreetMap and Esri basemaps used with Leaflet and MapLibre; exact provider endpoints, attribution, analytics, cookies, and external requests must be reviewed against the production configuration and respective provider notices.',
+    ]],
+    ['Analytics, Advertising, and Optional Tracking', [
+        'The project materials reviewed do not establish the deployment of advertising cookies, cross-site marketing trackers, or optional behavioral analytics. They must not be described as installed—or definitively absent—without an inventory of production scripts and mobile SDKs. If non-essential tracking is introduced, the responsible office must update this policy and implement any legally required choice and notice mechanisms before activation.',
+    ]],
+    ['How Users Can Manage Storage', [
+        'Web users can manage cookies and local website data through their browser settings, but deleting essential session data can sign them out. FieldSync users can manage app permissions through operating-system settings and should use the app’s intended synchronization workflow before clearing app data or uninstalling it; otherwise, unsent inspection drafts may be lost. Municipal device administrators should provide an approved process for lost devices, account revocation, and secure disposal. Privacy and retention requests should go through the designated DPO.',
+    ]],
+    ['Data Retention and Updates', [
+        'Storage lifetimes vary by record type, device state, server configuration, backup practice, and legal records-retention duties. The final published policy must specify, or link to a schedule for, actual session expiration, offline draft cleanup, audit-log retention, application/inspection record retention, and third-party storage practices. Review this policy whenever the app adds an SDK, changes its sync design, or alters cookies or storage settings.',
+    ]],
+    ['Contact and Version', [
+        'Responsible office: Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas. Official DPO/privacy contact: __________. Draft version: 0.9. Effective date: Pending official approval. Users may request clarification about storage, cookies, or data rights through the verified contact channel published with the final policy.',
     ]],
 ];
 
 const DOCS = {
-    terms: {
-        title: 'Terms and Conditions of Use',
-        summary: 'These Terms and Conditions govern your access to and use of the iMAPS (Intelligent Geospatial Analytics and Land-Use Monitoring System) operated by the Municipal Planning and Development Office of Rosario, Batangas. iMAPS is restricted to authorized government personnel, and by logging in you agree to use it only for official purposes and in accordance with these Terms and applicable laws.',
-        sections: TERMS,
-        contact: ['Legal Affairs Office', 'legal@imaps-rosario.gov.ph'],
-    },
     privacy: {
-        title: 'Privacy Policy',
-        summary: 'The Municipal Government of Rosario is committed to protecting the personal data entrusted to it. This policy describes what personal data iMAPS processes, why it is processed, how it is protected, and the rights you have under the Data Privacy Act of 2012.',
+        title: 'Privacy Notice',
+        subtitle: 'iMAPS: An Intelligent Geospatial Analytics System + FieldSync Mobile App',
+        status: [
+            ['Document status', 'DRAFT v0.9 — MPDO/DPO review required; not yet effective'],
+            ['Prepared', 'October 18, 2026'],
+            ['New policy effective date', 'Pending official approval'],
+        ],
+        notice: [
+            'DRAFT — FOR REVIEW ONLY. This is proposed public-facing wording, not an approved municipal notice. Confirm contacts, technical claims, and deployment facts before publication.',
+            'Notice: Draft v0.9. Approval and effective date remain pending. Contact names and details are intentionally blank until verified.',
+        ],
         sections: PRIVACY,
         contact: ['Data Protection Officer', 'dpo@imaps-rosario.gov.ph'],
     },
+    terms: {
+        title: 'Terms and Conditions',
+        subtitle: 'iMAPS: An Intelligent Geospatial Analytics System + FieldSync Mobile App',
+        status: [
+            ['Document status', 'DRAFT v0.9 — MPDO/DPO review required; not yet effective'],
+            ['Prepared', 'October 18, 2026'],
+            ['New policy effective date', 'Pending official approval'],
+        ],
+        notice: [
+            'DRAFT — FOR REVIEW ONLY. This is proposed public-facing wording, not an approved municipal notice. Confirm contacts, technical claims, and deployment facts before publication.',
+            'Notice: Draft v0.9. Approval and effective date remain pending. Contact names and details are intentionally blank until verified.',
+        ],
+        sections: TERMS,
+        contact: ['Legal Affairs Office', 'legal@imaps-rosario.gov.ph'],
+    },
     cookies: {
-        title: 'Cookie Policy',
-        summary: 'This Cookie Policy explains the cookies iMAPS sets in your browser, why it sets them, and how you can control them. iMAPS only uses cookies essential to signing in securely — it does not use analytics, advertising or tracking cookies.',
+        title: 'Cookie & Storage Policy',
+        subtitle: 'iMAPS: An Intelligent Geospatial Analytics System + FieldSync Mobile App',
+        status: [
+            ['Document status', 'DRAFT v0.9 — MPDO/DPO review required; not yet effective'],
+            ['Prepared', 'October 18, 2026'],
+            ['New policy effective date', 'Pending official approval'],
+        ],
+        notice: [
+            'DRAFT — FOR REVIEW ONLY. This is proposed public-facing wording, not an approved municipal notice. Confirm contacts, technical claims, and deployment facts before publication.',
+            'Notice: Draft v0.9. Approval and effective date remain pending. Contact names and details are intentionally blank until verified.',
+        ],
         sections: COOKIES,
         contact: ['Data Protection Officer', 'dpo@imaps-rosario.gov.ph'],
     },
@@ -441,9 +499,9 @@ export default function Login() {
                                     <Icon d={ICONS.shield} className="w-[18px] h-[18px] mt-0.5 text-blue-600 shrink-0" sw={1.8} />
                                     <p>
                                         Authorized personnel only. By signing in you agree to our{' '}
-                                        <button type="button" onClick={() => openTerms('terms')} className="text-blue-600 font-semibold hover:underline">Terms of Service</button>,{' '}
+                                        <button type="button" onClick={() => openTerms('terms')} className="text-blue-600 font-semibold hover:underline">Terms & Conditions</button>,{' '}
                                         <button type="button" onClick={() => openTerms('privacy')} className="text-blue-600 font-semibold hover:underline">Privacy Policy</button>{' '}and{' '}
-                                        <button type="button" onClick={() => openTerms('cookies')} className="text-blue-600 font-semibold hover:underline">Cookie Policy</button>.
+                                        <button type="button" onClick={() => openTerms('cookies')} className="text-blue-600 font-semibold hover:underline">Cookie & Storage Policy</button>.
                                     </p>
                                 </div>
                             </div>
@@ -461,6 +519,7 @@ export default function Login() {
                             <div>
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Legal</p>
                                 <h2 id="terms-title" className="mt-1 text-2xl font-semibold tracking-tight text-[#0A2540]">{d.title}</h2>
+                                <p className="mt-1.5 text-xs font-medium text-slate-500">{d.subtitle}</p>
                             </div>
                             <button onClick={() => setShowTerms(false)} aria-label="Close" className="shrink-0 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors">
                                 <Icon d={ICONS.close} className="w-5 h-5" />
@@ -469,9 +528,14 @@ export default function Login() {
 
                         <div className="px-8 py-7 overflow-y-auto custom-scrollbar text-sm text-slate-600 leading-7 space-y-8">
                             <section>
-                                <h3 className="text-[#0A2540] font-semibold text-xs mb-3 uppercase tracking-[0.16em]">Executive Summary</h3>
-                                <div className="bg-slate-50 border border-slate-200 border-l-4 border-l-blue-600 px-5 py-4 rounded-xl text-slate-600">
-                                    {d.summary}
+                                <h3 className="text-[#0A2540] font-semibold text-xs mb-3 uppercase tracking-[0.16em]">Document Status</h3>
+                                <div className="bg-slate-50 border border-slate-200 border-l-4 border-l-blue-600 px-5 py-4 rounded-xl text-slate-600 space-y-2">
+                                    {d.status.map(([label, value]) => (
+                                        <p key={label}><span className="font-semibold text-slate-900">{label}:</span> {value}</p>
+                                    ))}
+                                    {d.notice.map((text) => (
+                                        <p key={text}>{text}</p>
+                                    ))}
                                 </div>
                             </section>
 
@@ -482,11 +546,8 @@ export default function Login() {
                                         {heading}
                                     </h3>
                                     <div className="space-y-4 pl-9">
-                                        {items.map(([title, text]) => (
-                                            <div key={title}>
-                                                <h4 className="font-semibold text-slate-900 mb-0.5">{title}</h4>
-                                                <p>{text}</p>
-                                            </div>
+                                        {items.map((text, j) => (
+                                            <p key={j}>{text}</p>
                                         ))}
                                     </div>
                                 </section>
