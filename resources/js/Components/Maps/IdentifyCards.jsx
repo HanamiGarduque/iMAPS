@@ -142,7 +142,7 @@ export function BarangayCard({ name, stat = {}, apps = {}, demand = 0, activeQua
     ].filter((r) => activeLayer !== "diversity" && (activeLayer !== "status" || r.id === "status"));
 
     return (
-        <section className="shrink-0 border-b-4 border-slate-200 bg-white" aria-label={`Barangay ${name}`}>
+        <section className="shrink-0 border-t border-slate-200 bg-white" aria-label={`Barangay ${name}`}>
             <header className="flex items-center gap-2 px-4 py-2 bg-[#eef1f5] border-b border-slate-200">
                 <div className="min-w-0">
                     <span className="block text-[10px] uppercase tracking-[0.08em] text-slate-500">Barangay</span>

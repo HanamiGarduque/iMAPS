@@ -122,6 +122,7 @@ class MapsController extends Controller
             'timeline' => $mix['timeline'],
             'primary' => $mun['distribution'][0]['name'] ?? 'Multi-Sector',
             'distribution' => $mun['distribution'],
+            'planDistribution' => $mun['planDistribution'],
             'topBarangays' => array_slice($rankedBgys, 0, 8),
             'lowBarangays' => array_slice(array_reverse($rankedBgys), 0, 5),
             'totalAreaHa' => round($municipalAreaSqm / 10000, 1),

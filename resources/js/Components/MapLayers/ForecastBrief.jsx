@@ -1,6 +1,6 @@
 import { getTrendsDemandColor } from "@/Components/Maps/LeafletMap";
 
-const CARD = "shrink-0 rounded-lg border border-slate-200 bg-white/95 backdrop-blur-sm shadow-[0_2px_10px_rgba(15,23,42,0.14)] overflow-hidden";
+const CARD = "shrink-0 bg-white border-b border-slate-200";
 const pct = (f) => `${Math.abs(Math.round(f * 100))}%`;
 
 // A change as an arrow and a percentage. More filings read red (more work for
@@ -17,14 +17,14 @@ function Change({ value, className = "" }) {
 
 // Section heading inside a card: a small caps label, an optional count.
 const SectionTitle = ({ children, aside, title }) => (
-    <div className="flex items-baseline justify-between gap-2 px-3 pt-2.5 pb-1" title={title}>
+    <div className="flex items-baseline justify-between gap-2 px-4 pt-3 pb-1" title={title}>
         <h3 className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-slate-500">{children}</h3>
         {aside != null && <span className="text-[10px] tabular-nums text-slate-400">{aside}</span>}
     </div>
 );
 
 const Footnote = ({ children, title }) => (
-    <p className="px-3 pt-1 pb-2.5 text-[10px] leading-snug text-slate-400" title={title}>
+    <p className="px-4 pt-1 pb-3 text-[10.5px] leading-snug text-slate-400" title={title}>
         {children}
     </p>
 );
@@ -33,11 +33,11 @@ const Footnote = ({ children, title }) => (
 // the figure it is measured from.
 function Compare({ label, value, base }) {
     return (
-        <div className="min-w-0 px-2.5 py-1.5">
-            <dt className="text-[10px] text-slate-500 truncate">{label}</dt>
-            <dd className="mt-0.5 flex items-baseline gap-1.5">
+        <div className="min-w-0 px-3 py-2">
+            <dt className="text-[10.5px] text-slate-500 truncate">{label}</dt>
+            <dd className="mt-1 flex items-baseline gap-1.5">
                 {value != null ? <Change value={value} className="text-[12.5px]" /> : <span className="text-[12.5px] text-slate-400">—</span>}
-                <span className="text-[10px] tabular-nums text-slate-400 truncate">from {base}</span>
+                <span className="text-[10.5px] tabular-nums text-slate-400 truncate">from {base}</span>
             </dd>
         </div>
     );
@@ -51,51 +51,14 @@ function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearS
     const seasonal = watch?.seasonal && watch.seasonal.years > 1 ? watch.seasonal : null;
     const share = watch?.seasonShare;
     return (
-        <div className={CARD}>
-            <div className="px-3 pt-2.5">
-                <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-[13px] font-semibold text-slate-900 leading-tight">LC Demand Forecast</h2>
-                    <span
-                        className={`text-[9px] font-bold uppercase tracking-[0.06em] px-1.5 py-[1px] rounded-full border ${
-                            isForecast ? "text-[#a8521a] bg-[#fff3e6] border-[#f3c9a5]" : "text-slate-600 bg-slate-100 border-slate-200"
-                        }`}
-                    >
-                        {isForecast ? "Forecast" : "Recorded"}
-                    </span>
-                </div>
-
-                {/* Every quarter the run forecast, so the whole outlook is one glance
-                    (and one click) away. */}
-                {outlook.length > 1 ? (
-                    <div className="mt-2 grid gap-0.5 p-0.5 rounded-md bg-slate-100" style={{ gridTemplateColumns: `repeat(${outlook.length}, minmax(0, 1fr))` }} role="group" aria-label="Forecast quarters">
-                        {outlook.map((o) => (
-                            <button
-                                key={o.label}
-                                type="button"
-                                aria-pressed={o.active}
-                                onClick={() => onSelectQuarter?.(o)}
-                                className={`px-2 py-1 rounded-[5px] text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b] ${
-                                    o.active ? "bg-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]" : "hover:bg-white/60"
-                                }`}
-                            >
-                                <span className={`block text-[10px] font-semibold ${o.active ? "text-[#0b2a5b]" : "text-slate-500"}`}>{o.label}</span>
-                                <span className="flex items-baseline gap-1">
-                                    <span className="text-[12.5px] font-semibold tabular-nums text-slate-900">{o.total}</span>
-                                    <Change value={o.yoy} className="text-[9.5px]" />
-                                </span>
-                            </button>
-                        ))}
-                    </div>
-                ) : (
-                    <span className="block text-[11px] font-medium text-slate-500 tabular-nums">{quarter?.label}</span>
-                )}
-
+        <div className={`${CARD} pb-3`}>
+            <div className="px-4 pt-3">
                 {/* The answer first: how many, and what that means per week. */}
                 {count ? (
-                    <div className="mt-2.5 flex items-end justify-between gap-2">
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                            <span className="text-[28px] font-semibold leading-none tabular-nums text-slate-900">{count}</span>
-                            <span className="text-[11px] leading-tight text-slate-500">
+                    <div className="flex items-end justify-between gap-3">
+                        <div className="flex items-baseline gap-2 min-w-0">
+                            <span className="text-[34px] font-semibold leading-none tabular-nums text-slate-900">{count}</span>
+                            <span className="text-[11.5px] leading-tight text-slate-500">
                                 LC {isForecast ? "projected" : "filed"}
                                 <br />
                                 in {quarter?.label}
@@ -103,20 +66,20 @@ function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearS
                         </div>
                         {watch && (
                             <span className="shrink-0 text-right text-[11px] leading-tight text-slate-500">
-                                <b className="block text-[13px] font-semibold tabular-nums text-slate-800">≈ {Math.round(watch.perWeek)}</b>
+                                <b className="block text-[15px] font-semibold tabular-nums text-slate-800">≈ {Math.round(watch.perWeek)}</b>
                                 a week
                             </span>
                         )}
                     </div>
                 ) : (
-                    <p className="mt-2 text-[11px] text-slate-500">
+                    <p className="text-[11px] text-slate-500">
                         No LC {isForecast ? "forecast available" : "records"} for this quarter.
                     </p>
                 )}
             </div>
 
             {watch && (watch.lastYear || seasonal) && (
-                <dl className="mx-3 mt-2.5 grid grid-cols-2 divide-x divide-slate-200 rounded-md border border-slate-200 bg-slate-50/70">
+                <dl className="mx-4 mt-3.5 grid grid-cols-2 divide-x divide-slate-200 rounded-lg border border-slate-200">
                     {watch.lastYear && <Compare label={`vs ${watch.lastYear.label}`} value={watch.lastYear.change} base={watch.lastYear.total} />}
                     {seasonal && (
                         <Compare
@@ -129,28 +92,27 @@ function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearS
             )}
 
             {share != null && (
-                <p className="px-3 pt-2 text-[10.5px] leading-snug text-slate-500">
+                <p className="px-4 pt-3 text-[11px] leading-snug text-slate-500">
                     Q{quarter.quarter} usually brings <b className="text-slate-700 tabular-nums">{pct(share)}</b> of a year's LC filings
                     {share >= 0.35 ? ", the busiest quarter" : share <= 0.12 ? ", the quietest quarter" : ""}.
                 </p>
             )}
 
-            <div className="mt-2.5 flex items-center gap-2 min-h-[30px] px-3 py-1.5 border-t border-slate-100 bg-slate-50/80" aria-live="polite">
-                {hovered ? (
-                    <>
+            {/* The barangay under the cursor; absent until there is one. */}
+            <div aria-live="polite">
+                {hovered && (
+                    <div className="mx-4 mt-3 flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-50 border border-slate-200">
                         <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border" style={{ backgroundColor: hovered.cls.color, borderColor: hovered.cls.stroke }} aria-hidden="true" />
                         <span className="flex-1 min-w-0 text-[11.5px] font-medium text-slate-800 truncate">{hovered.name}</span>
                         <span className="text-[11.5px] tabular-nums text-slate-900 shrink-0">
                             <b>{hovered.count}</b> <span className="text-slate-500">LC</span>
                         </span>
-                    </>
-                ) : (
-                    <span className="text-[11px] text-slate-400">Hover a barangay · click to open it</span>
+                    </div>
                 )}
             </div>
 
             {selectedName && (
-                <div className="flex items-center gap-2 px-3 py-1.5 border-t border-[#d5e0ee] bg-[#eaf0f8]">
+                <div className="mx-4 mt-3 flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#eaf0f8]">
                     <span className="flex-1 min-w-0 text-[11.5px] text-[#0b2a5b] truncate"><b>{selectedName}</b> selected</span>
                     <button
                         type="button"
@@ -172,12 +134,8 @@ function WatchRow({ name, tag, tagTone = "info", value, valueClass, title, onSel
             <button
                 type="button"
                 onClick={() => onSelect?.(name)}
-                onMouseEnter={() => onHover?.(name)}
-                onMouseLeave={() => onHover?.(null)}
-                onFocus={() => onHover?.(name)}
-                onBlur={() => onHover?.(null)}
                 title={title}
-                className="w-full flex items-center gap-1.5 px-3 py-[4px] text-[11.5px] text-left text-slate-700 hover:bg-slate-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
+                className="w-full flex items-center gap-1.5 px-4 py-[5px] text-[12px] text-left text-slate-700 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
             >
                 <span className="min-w-0 truncate">{name}</span>
                 {tag && (
@@ -205,9 +163,9 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
     const usual = watch.seasonal ? (watch.seasonal.years > 1 ? `their ${watch.seasonal.span} average` : watch.seasonal.span) : null;
     const usualShort = watch.seasonal ? (watch.seasonal.years > 1 ? `${watch.seasonal.span} avg` : watch.seasonal.span) : null;
     return (
-        <section className={`${CARD} border-l-[3px] border-l-[#d9772b]`} aria-label="What to prepare for">
-            <div className="px-3 pt-2.5">
-                <h3 className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#a8521a]">What to prepare for</h3>
+        <section className={CARD} aria-label="What to prepare for">
+            <div className="px-4 pt-3">
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#a8521a]">What to prepare for</h3>
                 {watch.topShare !== null && (
                     <p className="mt-1 text-[11.5px] leading-snug text-slate-700">
                         The top 5 barangays take <b className="tabular-nums text-slate-900">{pct(watch.topShare)}</b> of expected demand.
@@ -241,14 +199,14 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
                             ))}
                         </ul>
                     ) : (
-                        <p className="px-3 text-[11px] text-slate-500">No barangay beyond the model's usual error.</p>
+                        <p className="px-4 text-[11px] text-slate-500">No barangay beyond the model's usual error.</p>
                     )}
                     {watch.rising.length > shown.length && (
-                        <p className="px-3 pt-0.5 text-[10.5px] text-slate-400">+{watch.rising.length - shown.length} more in the barangay list</p>
+                        <p className="px-4 pt-0.5 text-[10.5px] text-slate-400">+{watch.rising.length - shown.length} more in the barangay list</p>
                     )}
 
                     {watch.easing.length > 0 && (
-                        <p className="px-3 pt-2 text-[11px] leading-snug text-slate-600">
+                        <p className="px-4 pt-2 text-[11px] leading-snug text-slate-600">
                             <span className="font-medium">Quieter than usual:</span>{" "}
                             {watch.easing.slice(0, 3).map((r, i) => (
                                 <span key={r.name}>
@@ -256,9 +214,7 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
                                     <button
                                         type="button"
                                         onClick={() => onSelectBgy?.(r.name)}
-                                        onMouseEnter={() => onHoverBgy?.(r.name)}
-                                        onMouseLeave={() => onHoverBgy?.(null)}
-                                        className="hover:underline cursor-pointer"
+                                        className="cursor-pointer"
                                     >
                                         {r.name}
                                     </button>{" "}
@@ -272,7 +228,7 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
             ) : null}
 
             {watch.zoningFlags.length > 0 && (
-                <div className="mt-2 border-t border-slate-100">
+                <div className="mt-2.5 border-t border-slate-100">
                     <SectionTitle title="Busier-than-usual barangays whose CLUP 2030 area is almost entirely agricultural or protected.">
                         Zoning check · mostly agri/protected
                     </SectionTitle>
@@ -289,7 +245,7 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
                             />
                         ))}
                     </ul>
-                    <p className="px-3 pt-0.5 text-[10.5px] text-slate-500">Review new applications here against the zoning.</p>
+                    <p className="px-4 pt-0.5 text-[10.5px] text-slate-500">Review new applications here against the zoning.</p>
                 </div>
             )}
 
@@ -311,14 +267,14 @@ function ExpectedMix({ mix }) {
     return (
         <section className={CARD} aria-label="Expected application mix">
             <SectionTitle>Expected applications by zone</SectionTitle>
-            <div className="mx-3 mt-0.5 mb-1.5 flex h-2 rounded-full overflow-hidden ring-1 ring-black/5" aria-hidden="true">
+            <div className="mx-4 mt-1 mb-2 flex h-2 rounded-full overflow-hidden ring-1 ring-black/5" aria-hidden="true">
                 {mix.map((m) => (
                     <span key={m.id} style={{ width: `${m.share * 100}%`, backgroundColor: m.fill }} title={`${m.label}: ${pct(m.share)}`} />
                 ))}
             </div>
             <ul>
                 {mix.slice(0, 6).map((m) => (
-                    <li key={m.id} className="flex items-center gap-2 px-3 py-[2px] text-[11.5px]">
+                    <li key={m.id} className="flex items-center gap-2 px-4 py-[3px] text-[12px]" title={m.lower != null ? `${m.label}: likely ${m.lower}–${m.upper} applications (80% range)` : undefined}>
                         <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border" style={{ backgroundColor: m.fill, borderColor: m.stroke }} aria-hidden="true" />
                         <span className={`flex-1 min-w-0 truncate ${m.id === "none" ? "text-slate-400" : "text-slate-700"}`}>{m.label}</span>
                         <span className="tabular-nums text-slate-500">≈ {Math.round(m.count)}</span>
@@ -326,36 +282,40 @@ function ExpectedMix({ mix }) {
                     </li>
                 ))}
             </ul>
-            <Footnote>Each barangay's forecast split by the zones of its own LC filings over the last two years.</Footnote>
+            <Footnote>Each barangay's forecast split by the zones of its own LC filings since 2021, blended toward the town-wide split where it has few filings.</Footnote>
         </section>
     );
 }
 
-// Floats over the left of the map on the LC demand layer, beside the Layers
-// panel: the quarter on screen, the barangay under the cursor, and on a
-// forecast quarter what it asks of the office. It replaces the map title card
-// there, so the right-hand panel keeps the metrics and the full ranking.
-export default function ForecastBrief({ quarter, count, demandByBgy = {}, hoveredBgy, selectedName, onClearSelection, watch, onSelectBgy, onHoverBgy, onSelectQuarter }) {
-    const hovered = hoveredBgy
-        ? (() => {
-            const n = demandByBgy[hoveredBgy.trim().toLowerCase()] || 0;
-            return { name: hoveredBgy, count: n, cls: getTrendsDemandColor(n) };
-        })()
-        : null;
+const hoveredFor = (hoveredBgy, demandByBgy) => {
+    if (!hoveredBgy) return null;
+    const n = demandByBgy[hoveredBgy.trim().toLowerCase()] || 0;
+    return { name: hoveredBgy, count: n, cls: getTrendsDemandColor(n) };
+};
 
+// Heads the right-hand panel on the LC demand layer: the quarter on screen,
+// how it compares, and the barangay under the cursor.
+export function ForecastSummary({ quarter, count, demandByBgy = {}, hoveredBgy, selectedName, onClearSelection, watch, onSelectQuarter }) {
     return (
-        <div className="flex flex-col gap-2 max-h-full overflow-y-auto overscroll-contain pr-0.5 [scrollbar-width:thin]">
-            <QuarterSummary
-                quarter={quarter}
-                count={count}
-                watch={watch}
-                hovered={hovered}
-                selectedName={selectedName}
-                onClearSelection={onClearSelection}
-                onSelectQuarter={onSelectQuarter}
-            />
-            {watch && <ForecastWatchlist watch={watch} quarterLabel={quarter.quarter} onSelectBgy={onSelectBgy} onHoverBgy={onHoverBgy} />}
-            {watch?.mix?.length > 0 && <ExpectedMix mix={watch.mix} />}
-        </div>
+        <QuarterSummary
+            quarter={quarter}
+            count={count}
+            watch={watch}
+            hovered={hoveredFor(hoveredBgy, demandByBgy)}
+            selectedName={selectedName}
+            onClearSelection={onClearSelection}
+            onSelectQuarter={onSelectQuarter}
+        />
+    );
+}
+
+// What a forecast quarter asks of the office, shown after the ranking.
+export function ForecastInsights({ quarter, watch, onSelectBgy, onHoverBgy }) {
+    if (!watch) return null;
+    return (
+        <>
+            <ForecastWatchlist watch={watch} quarterLabel={quarter.quarter} onSelectBgy={onSelectBgy} onHoverBgy={onHoverBgy} />
+            {watch.mix?.length > 0 && <ExpectedMix mix={watch.mix} />}
+        </>
     );
 }

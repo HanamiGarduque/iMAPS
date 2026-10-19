@@ -37,7 +37,8 @@ class ForecastService
 
     /**
      * The clearance history this system actually holds, as the CSV the
-     * microservice expects: Encoding Date, Barangay, Application Type.
+     * microservice expects: Encoding Date, Barangay, Application Type, and
+     * Zoning Code, which the service uses to forecast the application mix.
      *
      * Read from historical_data — the same table the Maps page shows as
      * recorded history — so the forecast is never trained on a bundled file
@@ -47,7 +48,7 @@ class ForecastService
     {
         $rows = Schema::hasTable('historical_data')
             ? DB::table('historical_data')
-                ->select('encoding_date', 'barangay', 'application_type')
+                ->select('encoding_date', 'barangay', 'application_type', 'zoning_code')
                 ->whereNotNull('encoding_date')
                 ->whereNotNull('barangay')
                 ->where('barangay', '<>', '')
@@ -61,12 +62,13 @@ class ForecastService
         }
 
         $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, ['Encoding Date', 'Barangay', 'Application Type']);
+        fputcsv($handle, ['Encoding Date', 'Barangay', 'Application Type', 'Zoning Code']);
         foreach ($rows as $row) {
             fputcsv($handle, [
                 substr((string) $row->encoding_date, 0, 10),
                 trim((string) $row->barangay),
                 (string) $row->application_type,
+                trim((string) ($row->zoning_code ?? '')),
             ]);
         }
         rewind($handle);

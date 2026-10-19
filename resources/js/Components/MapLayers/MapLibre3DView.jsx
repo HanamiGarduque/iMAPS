@@ -43,7 +43,6 @@ const LYR_PARCEL_LINES = "clup-parcels-lines";
 const MORPH_MS = 650;
 const FADE_MS = 260;
 const FLIGHT_MS = 1100;
-const ORBIT_DEG_PER_SEC = 7.5;
 const PARCEL_HEIGHT = 190;
 
 const easeSine = (t) => 0.5 - 0.5 * Math.cos(Math.PI * t);
@@ -263,9 +262,6 @@ export default function MapLibre3DView({
     const isFlatRef = useRef(false);
     const hasEnteredRef = useRef(false);
 
-    const orbitRafRef = useRef(null);
-    const orbitLastTsRef = useRef(0);
-
     // Hover position is written straight to the DOM node; only the *content*
     // lives in React state, keyed by barangay, so moving the mouse across one
     // prism re-renders nothing.
@@ -282,7 +278,6 @@ export default function MapLibre3DView({
 
     const prefersReducedMotion = useReducedMotion();
 
-    const [isOrbiting, setIsOrbiting] = useState(false);
     const [currentBearing, setCurrentBearing] = useState(DEFAULT_BEARING);
     const [currentPitch, setCurrentPitch] = useState(DEFAULT_PITCH);
     const [hoverCard, setHoverCard] = useState(null);
@@ -764,7 +759,7 @@ export default function MapLibre3DView({
             zoom: baseZoom,
             pitch: DEFAULT_PITCH,
             bearing: DEFAULT_BEARING,
-            maxPitch: 75,
+            maxPitch: 60,
             antialias: true,
             attributionControl: false,
         });
@@ -906,28 +901,8 @@ export default function MapLibre3DView({
             }
         });
 
-        const stopOrbitOnInput = () => {
-            if (orbitRafRef.current !== null) {
-                cancelAnimationFrame(orbitRafRef.current);
-                orbitRafRef.current = null;
-                setIsOrbiting(false);
-            }
-        };
-        const canvas = map.getCanvas();
-        canvas.addEventListener("mousedown", stopOrbitOnInput);
-        canvas.addEventListener("wheel", stopOrbitOnInput, { passive: true });
-        canvas.addEventListener("touchstart", stopOrbitOnInput, { passive: true });
-
-        const handleVisibility = () => { if (document.hidden) stopOrbitOnInput(); };
-        document.addEventListener("visibilitychange", handleVisibility);
-
         return () => {
-            if (orbitRafRef.current !== null) cancelAnimationFrame(orbitRafRef.current);
             if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current);
-            canvas.removeEventListener("mousedown", stopOrbitOnInput);
-            canvas.removeEventListener("wheel", stopOrbitOnInput);
-            canvas.removeEventListener("touchstart", stopOrbitOnInput);
-            document.removeEventListener("visibilitychange", handleVisibility);
             styleReadyRef.current = false;
             map.remove();
             mapRef.current = null;
@@ -1042,20 +1017,12 @@ export default function MapLibre3DView({
         return () => clearTimeout(timer);
     }, [rightPanelOpen, cameraPadding]);
 
-    // The view stays mounted when hidden so returning to it is instant. While
-    // hidden it must not keep spinning the camera (the orbit loop would burn
-    // frames nobody sees), and on reappearing it re-measures in case the window
-    // or the panel changed size in the meantime.
+    // The view stays mounted when hidden so returning to it is instant. On
+    // reappearing it re-measures in case the window or the panel changed size
+    // in the meantime.
     useEffect(() => {
         const map = mapRef.current;
-        if (!active) {
-            if (orbitRafRef.current !== null) {
-                cancelAnimationFrame(orbitRafRef.current);
-                orbitRafRef.current = null;
-                setIsOrbiting(false);
-            }
-            return;
-        }
+        if (!active) return;
         if (map) requestAnimationFrame(() => mapRef.current && mapRef.current.resize());
     }, [active]);
 
@@ -1070,35 +1037,6 @@ export default function MapLibre3DView({
         }
         map.stop();
         map.easeTo({ pitch, bearing, duration: 800, easing: easeSine, essential: true });
-    };
-
-    const toggleOrbit = () => {
-        const map = mapRef.current;
-        if (!map) return;
-
-        if (orbitRafRef.current !== null) {
-            cancelAnimationFrame(orbitRafRef.current);
-            orbitRafRef.current = null;
-            setIsOrbiting(false);
-            return;
-        }
-
-        setIsOrbiting(true);
-        orbitLastTsRef.current = 0;
-
-        // Delta-time stepping: a fixed degrees-per-second regardless of frame
-        // rate, instead of the old fixed 0.35°-per-tick setInterval that
-        // drifted whenever the machine was busy.
-        const step = (ts) => {
-            const m = mapRef.current;
-            if (!m) return;
-            const last = orbitLastTsRef.current || ts;
-            const dt = Math.min(64, ts - last);
-            orbitLastTsRef.current = ts;
-            m.setBearing((m.getBearing() + (ORBIT_DEG_PER_SEC * dt) / 1000) % 360);
-            orbitRafRef.current = requestAnimationFrame(step);
-        };
-        orbitRafRef.current = requestAnimationFrame(step);
     };
 
     const activeLens = getLens(lens);
@@ -1128,8 +1066,7 @@ export default function MapLibre3DView({
             {controls && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[450] flex items-center bg-white border border-slate-300 rounded-md shadow-sm pointer-events-auto overflow-hidden">
                 {[
-                    { label: "Oblique", pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING, active: currentPitch >= 40 && currentPitch <= 64 },
-                    { label: "Dramatic", pitch: 70, bearing: -32, active: currentPitch > 64 },
+                    { label: "Oblique", pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING, active: currentPitch >= 40 },
                     { label: "Top-Down", pitch: 0, bearing: 0, active: currentPitch < 40 },
                 ].map((preset, idx) => (
                     <button
@@ -1143,24 +1080,6 @@ export default function MapLibre3DView({
                         {preset.label}
                     </button>
                 ))}
-
-                <button
-                    onClick={toggleOrbit}
-                    disabled={prefersReducedMotion}
-                    className={`px-3 py-1.5 text-[11.5px] font-bold border-l border-slate-300 flex items-center gap-1.5 transition-colors ${
-                        prefersReducedMotion
-                            ? "bg-white text-slate-300 cursor-not-allowed"
-                            : isOrbiting
-                            ? "bg-slate-900 text-white cursor-pointer"
-                            : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
-                    }`}
-                    title={prefersReducedMotion ? "Disabled while your system requests reduced motion" : isOrbiting ? "Stop orbit" : "Slowly orbit the municipality"}
-                >
-                    <svg className={`w-3.5 h-3.5 ${isOrbiting ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    <span className="hidden sm:inline">Orbit</span>
-                </button>
 
                 <button
                     onClick={() => frameMunicipality(true)}
