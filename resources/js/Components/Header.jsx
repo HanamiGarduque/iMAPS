@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
+import ApplicationLogo from '@/Components/ApplicationLogo';
 import { Link, router, usePage } from '@inertiajs/react';
 import { promptParcelApplication } from '@/utils/parcelHandoff.jsx';
 import { getZoneInfo } from '@/utils/clupZones';
@@ -376,32 +377,9 @@ export default function Header({
                     }`}
                     title={sidebarOpen ? "Close Navigation Menu" : "Open Navigation Menu"}
                 >
-                    {/* Custom 3D Topo Map Emblem */}
+                    {/* Compact fingerprint parcel mark; the wordmark remains readable beside it. */}
                     <div className="w-7 h-7 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform duration-200">
-                        <svg className="w-7 h-7" viewBox="0 0 32 32" fill="none">
-                            <defs>
-                                <linearGradient id="header-map-grad" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-                                    <stop offset="0%" stopColor="#2563eb" />
-                                    <stop offset="100%" stopColor="#4f46e5" />
-                                </linearGradient>
-                                <linearGradient id="header-pin-grad" x1="12" y1="10" x2="20" y2="18" gradientUnits="userSpaceOnUse">
-                                    <stop offset="0%" stopColor="#38bdf8" />
-                                    <stop offset="100%" stopColor="#2563eb" />
-                                </linearGradient>
-                            </defs>
-                            <path 
-                                d="M4 8L11.5 5L20.5 8L28 5V24L20.5 27L11.5 24L4 27V8Z" 
-                                fill="url(#header-map-grad)" 
-                                fillOpacity="0.14" 
-                                stroke="url(#header-map-grad)" 
-                                strokeWidth="2.2" 
-                                strokeLinejoin="round"
-                            />
-                            <path d="M11.5 5V24" stroke="url(#header-map-grad)" strokeWidth="1.8" strokeLinecap="round" strokeDasharray="2.5 2.5"/>
-                            <path d="M20.5 8V27" stroke="url(#header-map-grad)" strokeWidth="1.8" strokeLinecap="round"/>
-                            <circle cx="16" cy="14.5" r="3.2" fill="url(#header-pin-grad)" stroke="#ffffff" strokeWidth="1.5" />
-                            <circle cx="16" cy="14.5" r="6" stroke="#38bdf8" strokeWidth="1" strokeOpacity="0.4" strokeDasharray="2 2" className="animate-spin duration-1000 origin-center"/>
-                        </svg>
+                        <ApplicationLogo symbol className="w-7 h-7" alt="" aria-hidden="true" />
                     </div>
 
                     {/* Wordmark */}
