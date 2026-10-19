@@ -17,10 +17,16 @@ function whenIdle(fn) {
     }
 }
 
-// Esri basemaps go through the keyed static-tiles service (public API key,
-// restricted to our referrers and the Static basemap tiles privilege).
-const ESRI_KEY = import.meta.env.VITE_ARCGIS_API_KEY || "";
+// Esri basemaps use Esri's public keyless tile endpoint by default. Set
+// VITE_ARCGIS_TILES_KEYED=true (with VITE_ARCGIS_API_KEY) to use the keyed
+// static-tiles service instead (public API key, restricted to our referrers
+// and the Static basemap tiles privilege).
+const ESRI_KEY = import.meta.env.VITE_ARCGIS_TILES_KEYED === "true" ? (import.meta.env.VITE_ARCGIS_API_KEY || "") : "";
 const ESRI_TILES = "https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1";
+const ESRI_PUBLIC = "https://services.arcgisonline.com/ArcGIS/rest/services";
+const esriUrl = (keyed, publicService) => ESRI_KEY
+    ? `${ESRI_TILES}/arcgis/${keyed}/static/tile/{z}/{y}/{x}?token=${ESRI_KEY}`
+    : `${ESRI_PUBLIC}/${publicService}/MapServer/tile/{z}/{y}/{x}`;
 
 // ── Tile Layer Configuration ──
 export const TILE_PROVIDERS = {
@@ -46,7 +52,7 @@ export const TILE_PROVIDERS = {
     satellite: {
         label: "Satellite Imagery",
         desc: "Esri high-resolution aerial imagery",
-        url: `${ESRI_TILES}/arcgis/imagery/static/tile/{z}/{y}/{x}?token=${ESRI_KEY}`,
+        url: esriUrl("imagery", "World_Imagery"),
         attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP',
         maxZoom: 18,
         className: "imaps-tiles-imagery",
@@ -55,7 +61,7 @@ export const TILE_PROVIDERS = {
     topo: {
         label: "Topographic",
         desc: "Relief shading with roads and place names",
-        url: `${ESRI_TILES}/arcgis/topographic/static/tile/{z}/{y}/{x}?token=${ESRI_KEY}`,
+        url: esriUrl("topographic", "World_Topo_Map"),
         attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, USGS',
         maxZoom: 17,
     },
@@ -204,9 +210,7 @@ const createBaseLayer = (L, mapStyle) => {
             tile.style.height = `${size.y + 1}px`;
         },
     });
-    let provider = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.light;
-    // Without a key the Esri tiles would 4xx; fall back to OpenStreetMap.
-    if (!ESRI_KEY && provider.url.startsWith(ESRI_TILES)) provider = TILE_PROVIDERS.standard;
+    const provider = TILE_PROVIDERS[mapStyle] || TILE_PROVIDERS.light;
     return new SeamlessTileLayer(provider.url, {
         attribution: provider.attribution,
         maxNativeZoom: provider.maxZoom,
