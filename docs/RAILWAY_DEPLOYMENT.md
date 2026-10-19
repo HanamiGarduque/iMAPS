@@ -2,7 +2,7 @@
 
 One Railway app service (web + queue worker + scheduler under supervisord, see
 `docker/`) + a PostGIS database + one Volume. Cloudflare sits in front and only
-lets approved emails through (Zero Trust Access).
+lets the office IP addresses through (WAF custom rule).
 
 ## 1. Railway
 
@@ -27,6 +27,7 @@ lets approved emails through (Zero Trust Access).
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | same values; needed at **build** time, so set before the first deploy |
 | `FORECAST_SERVICE_URL`, `FORECAST_SERVICE_API_KEY` | only if the forecasting service is hosted somewhere |
 | `ORIGIN_SECRET` | `openssl rand -hex 32` (see section 3) |
+| `ALLOWED_IPS` | optional second layer: the same office IPs as the Cloudflare rule (see section 2) |
 
    Do not set `PORT`; Railway injects it. Do not run the seeders (`admin@imaps.com` / `password123`).
 5. **Networking → Custom Domain:** add your domain, point the CNAME Railway gives you at it. Then **delete the generated `*.up.railway.app` domain.**
@@ -37,18 +38,26 @@ lets approved emails through (Zero Trust Access).
 
 1. Add the domain to Cloudflare (free plan), proxied (orange cloud) CNAME to Railway.
 2. **SSL/TLS → Full (strict)**. (Flexible causes redirect loops.)
-3. **Zero Trust → Access → Applications → Add → Self-hosted**: set the domain, then add an
-   *Allow* policy with the approved emails (one-time PIN login). Delete any old IP-based WAF
-   block rule (Security → WAF → Custom rules); otherwise it still blocks users before Access runs.
-4. **Rules → Transform Rules → Modify Request Header → Set static**: `X-Origin-Secret` = the same value as `ORIGIN_SECRET`.
+3. **IP allowlist.** *Manage Account → Configurations → Lists → Create list* (type IP), name it
+   `office_ips` and add the office's public IPs (single addresses or CIDR ranges). Then
+   **Security → WAF → Custom rules → Create rule**:
+   - Expression: `(not ip.src in $office_ips)` (Edit expression), action **Block**.
+
+   Anyone else sees Cloudflare's "Sorry, you have been blocked" page. To find an address, check
+   *Security → Events* or visit `https://www.cloudflare.com/cdn-cgi/trace` (`ip=`) from the office.
+4. **No Zero Trust Access.** If a self-hosted application for the domain exists under
+   *Zero Trust → Access → Applications*, delete it; otherwise users still get the email-code prompt.
+5. **Rules → Transform Rules → Modify Request Header → Set static**: `X-Origin-Secret` = the same value as `ORIGIN_SECRET`.
    Without this step the app returns 403 to everyone (only `/ping` is exempt).
 
-## 2b. IP allowlist without Cloudflare (temporary, legacy)
+## 2b. `ALLOWED_IPS` (app-side allowlist)
 
-Until a domain is on Cloudflare, set `ALLOWED_IPS` on the app service (comma-separated, CIDR allowed,
-e.g. `203.0.113.10,198.51.100.0/24`) and leave `ORIGIN_SECRET` **unset**. Anyone else gets 403 (`/ping` stays open).
-Blocked IPs are logged as `Blocked by ALLOWED_IPS`; if you are blocked, copy the IP from the logs.
-Once Cloudflare Access is live, remove `ALLOWED_IPS` and set `ORIGIN_SECRET`.
+`ALLOWED_IPS` on the app service (comma-separated, CIDR allowed, e.g. `203.0.113.10,198.51.100.0/24`)
+makes the app itself return 403 to any other client IP (`/ping` stays open). It works with
+`ORIGIN_SECRET` set: the app then checks Cloudflare's `CF-Connecting-IP`. Use it as a second layer
+behind the WAF rule (keep both lists in sync), or alone while the domain is not on Cloudflare yet
+(leave `ORIGIN_SECRET` unset then). Blocked IPs are logged as `Blocked by ALLOWED_IPS`; if you are
+blocked, copy the IP from the Railway logs.
 
 ## 3. Why the origin secret
 
@@ -69,6 +78,7 @@ Cloudflare adds (`app/Http/Middleware/RequireOriginSecret.php`).
 ## 5. Go-live checklist
 
 - [ ] `ORIGIN_SECRET` set (or `ALLOWED_IPS` until Cloudflare is live); generated `*.up.railway.app` domain deleted.
+- [ ] Cloudflare WAF rule blocks IPs outside `$office_ips`; no Zero Trust Access application left on the domain.
 - [ ] Seeders never run; no `admin@imaps.com` / `password123` account exists (`User::where('email','admin@imaps.com')->count()` is 0).
 - [ ] `APP_DEBUG=false`, `SESSION_SECURE_COOKIE=true`, `SESSION_ENCRYPT=true`.
 - [ ] The Postgres service and the app's `/data` volume both exist (permits, uploads and tiles live on the volume).

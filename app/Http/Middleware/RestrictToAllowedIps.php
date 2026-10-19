@@ -8,10 +8,14 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\IpUtils;
 
 /**
- * Office-only access without Cloudflare: refuse any client IP not in ALLOWED_IPS
- * (comma-separated, CIDR ranges allowed). Disabled when ALLOWED_IPS is unset;
- * /ping stays open for Railway's healthcheck. Blocked IPs are logged so the
- * address the app actually sees can be copied into ALLOWED_IPS.
+ * Office-only access: refuse any client IP not in ALLOWED_IPS (comma-separated,
+ * CIDR ranges allowed). Disabled when ALLOWED_IPS is unset; /ping stays open for
+ * Railway's healthcheck. Blocked IPs are logged so the address the app actually
+ * sees can be copied into ALLOWED_IPS.
+ *
+ * Works with or without Cloudflare: RequireOriginSecret runs first and, once the
+ * secret checks out, replaces X-Forwarded-For with CF-Connecting-IP, so the walk
+ * below finds the visitor rather than a Cloudflare edge server.
  */
 class RestrictToAllowedIps
 {
