@@ -25,6 +25,7 @@ lets the office IP addresses through (WAF custom rule).
 | `IMAPS_BRIDGE_SOURCE_ID` | unique for this install, e.g. `rosario-imaps-railway-a` |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` | from Supabase (one line each, no wrapping) |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | same values; needed at **build** time, so set before the first deploy |
+| `VITE_ARCGIS_API_KEY` | Esri basemap key (satellite and topographic maps); needed at **build** time. Without it the map silently falls back to OpenStreetMap. Restrict it to the "Static basemap tiles" privilege and your domain referrer |
 | `FORECAST_SERVICE_URL`, `FORECAST_SERVICE_API_KEY` | only if the forecasting service is hosted somewhere |
 | `ORIGIN_SECRET` | `openssl rand -hex 32` (see section 3) |
 | `ALLOWED_IPS` | optional second layer: the same office IPs as the Cloudflare rule (see section 2) |

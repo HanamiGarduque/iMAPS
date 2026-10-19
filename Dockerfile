@@ -8,6 +8,7 @@ COPY public ./public
 # Railway passes service variables to the build only when declared as ARG
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_ARCGIS_API_KEY
 RUN npm run build
 
 FROM dunglas/frankenphp:1-php8.3 AS app
