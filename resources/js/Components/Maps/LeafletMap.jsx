@@ -258,6 +258,9 @@ export default function LeafletMap({
     insets = { right: 0, bottom: 0 },
     verifiedParcel = null,
     demandCounts = {},
+    // Filled with { get, set } so the 3D view can start from, and hand back,
+    // exactly the view the person is looking at.
+    viewRef = null,
 }) {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
@@ -340,12 +343,8 @@ export default function LeafletMap({
         const edge = imagery ? { color: "#ffffff", weight: 1.2, opacity: 0.8 } : { color: "#ffffff", weight: 1, opacity: 1 };
 
         if (layer === "diversity") {
-            // A selected barangay opens up to show its CLUP parcels, so it
-            // draws as an outline and every other barangay steps out of the way.
-            // `fill: false` (not zero opacity) so the fill is not hit-tested.
-            if (isSelected) return { color: selectStroke(imagery), weight: imagery ? 3 : 2.6, opacity: 1, fill: false, dashArray: null, className: "" };
-            if (selName) return { weight: 0, opacity: 0, fill: true, fillOpacity: 0, className: "imaps-deadspace" };
-
+            // As in the other modules: the selected barangay gets a heavier
+            // outline, and its neighbours stay in view with a lighter fill.
             const resolved = resolveLensValue(lensId, stat);
             if (band !== "all" && resolved.band.id !== band) {
                 return imagery
@@ -357,13 +356,13 @@ export default function LeafletMap({
             // near-white lowest class fades rather than greying the ground.
             const lowest = resolved.band.id === "monoculture";
             return {
-                color: imagery ? edge.color : resolved.stroke || "#ffffff",
-                weight: imagery ? edge.weight : 1.2,
-                opacity: edge.opacity,
+                color: isSelected ? selectStroke(imagery) : imagery ? edge.color : resolved.stroke || "#ffffff",
+                weight: isSelected ? (imagery ? 3 : 2.6) : imagery ? edge.weight : 1.2,
+                opacity: isSelected ? 1 : edge.opacity,
                 dashArray: null,
                 fill: true,
                 fillColor: resolved.color,
-                fillOpacity: clup ? 0.25 : imagery ? (lowest ? 0.28 : 0.66) : 0.82,
+                fillOpacity: (clup ? 0.25 : imagery ? (lowest ? 0.28 : 0.66) : 0.82) * (selName && !isSelected ? 0.4 : 1),
                 className: "",
             };
         }
@@ -496,6 +495,12 @@ export default function LeafletMap({
                 zoomControl: false,
             });
             mapInstanceRef.current = map;
+            if (viewRef) {
+                viewRef.current = {
+                    get: () => { const c = map.getCenter(); return { center: [c.lng, c.lat], zoom: map.getZoom() }; },
+                    set: ({ center, zoom }) => map.setView([center[1], center[0]], Math.min(19, Math.max(12, zoom)), { animate: false }),
+                };
+            }
 
             // Mask sits between the tiles (incl. CLUP) and the barangays; the
             // municipal outline above every polygon but under the labels.
@@ -590,7 +595,6 @@ export default function LeafletMap({
                     // next clicks need: the parcels and the 3D chunk.
                     whenIdle(() => {
                         if (mapInstanceRef.current !== map) return;
-                        ensureZoningLayer();
                         import("@/Components/MapLayers/MapLibre3DView").catch(() => {});
                     });
                 })
@@ -614,7 +618,9 @@ export default function LeafletMap({
         if (!map) return;
         restyleBarangays();
 
-        const needsParcels = currentLayer === "diversity" && Boolean(selectedBgy?.name);
+        // CLUP parcels are not drawn on selection for now; the pipeline below
+        // stays wired, so re-enabling is just this condition.
+        const needsParcels = false;
         if (needsParcels && !zoningLayerRef.current) ensureZoningLayer();
         const parcels = zoningLayerRef.current;
         if (parcels) {
@@ -719,8 +725,8 @@ export default function LeafletMap({
         const run = ++labelsRunRef.current;
         group.clearLayers();
 
-        const { currentLayer: layer, diversityLens: lensId, diversityBandFilter: band, selectedBgy: sel, showLabels: on } = live.current;
-        if (!on || (layer === "diversity" && sel?.name)) return;
+        const { currentLayer: layer, diversityLens: lensId, diversityBandFilter: band, showLabels: on } = live.current;
+        if (!on) return;
 
         import("leaflet").then((mod) => {
             if (run !== labelsRunRef.current || mapInstanceRef.current !== map) return;
@@ -924,11 +930,6 @@ export default function LeafletMap({
                 aria-busy={!barangaysReady}
             />
             <MapSkeleton visible={!barangaysReady} label="Loading barangay boundaries…" />
-            {currentLayer === "diversity" && selectedBgy?.name && !zoningReady && (
-                <div className="absolute top-0 inset-x-0 z-[450] h-0.5 overflow-hidden bg-slate-200" role="progressbar" aria-label="Loading CLUP parcels">
-                    <div className="imaps-loading-bar h-full w-1/3 bg-[#0b2a5b]" />
-                </div>
-            )}
         </>
     );
 }

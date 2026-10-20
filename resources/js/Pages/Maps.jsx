@@ -417,9 +417,25 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         return `${m(step.from)} – ${m(step.to)}${span}`;
     };
 
-    // ── 3D (diversity only) ──
-    const [is3DMode, setIs3DMode] = useState(true);
-    const show3D = is3DMode && activeLayer === "diversity";
+    // ── 3D (every map layer) ──
+    // Opens in 2D, drawn by the same map as LC demand and application
+    // tracking so the three modules read alike; 3D is opt-in.
+    const [is3DMode, setIs3DMode] = useState(false);
+    const show3D = is3DMode;
+    // 2D and 3D crossfade rather than swap: the 3D map tilts up as it fades in,
+    // and visibility only flips once the fade-out has finished.
+    //
+    // Order of events, so the two never blend while they are tilted differently:
+    //   2D to 3D: 3D fades in flat over the identical 2D view, then tilts up.
+    //   3D to 2D: 3D levels out first, then fades away over the 2D view.
+    const leafletViewRef = useRef(null);
+    const view3DRef = useRef(null);
+    const fadeStyle = (visible, hideDelay, fadeMs) => ({
+        opacity: visible ? 1 : 0,
+        visibility: visible ? "visible" : "hidden",
+        pointerEvents: visible ? "auto" : "none",
+        transition: `opacity ${visible ? fadeMs : fadeMs}ms ease ${visible ? 0 : hideDelay}ms, visibility 0s linear ${visible ? 0 : hideDelay + fadeMs}ms`,
+    });
     const [has3DMounted, setHas3DMounted] = useState(false);
     useEffect(() => {
         if (show3D) setHas3DMounted(true);
@@ -715,24 +731,22 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                         <div className="shrink-0 flex items-center gap-0.5 h-10 px-2 bg-[#f1f3f6] border-b border-slate-300" role="toolbar" aria-label="Map tools">
                             <ToolButton icon="layers" label="Layers panel" pressed={layersOpen} onClick={() => setLayersOpen((v) => !v)} />
                             <Divider />
-                            <ToolButton icon="zoomIn" label="Zoom in" disabled={show3D} onClick={() => setMapZoom((z) => Math.min(19, z + 1))} />
-                            <ToolButton icon="zoomOut" label="Zoom out" disabled={show3D} onClick={() => setMapZoom((z) => Math.max(12, z - 1))} />
-                            <ToolButton icon="extent" label="Zoom to Rosario" disabled={show3D} onClick={() => { setSelectedBgy(null); setResetTrigger((t) => t + 1); }} />
+                            <ToolButton icon="zoomIn" label="Zoom in" onClick={() => (show3D ? view3DRef.current?.zoomBy(1) : setMapZoom((z) => Math.min(19, z + 1)))} />
+                            <ToolButton icon="zoomOut" label="Zoom out" onClick={() => (show3D ? view3DRef.current?.zoomBy(-1) : setMapZoom((z) => Math.max(12, z - 1)))} />
+                            <ToolButton icon="extent" label="Zoom to Rosario" onClick={() => { setSelectedBgy(null); if (show3D) view3DRef.current?.reset(); else setResetTrigger((t) => t + 1); }} />
                             <Divider />
                             <div className="flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Map view">
                                 {["2D", "3D"].map((v) => {
                                     const on = (v === "3D") === show3D;
-                                    const disabled = v === "3D" && activeLayer !== "diversity";
                                     return (
                                         <button
                                             key={v}
                                             type="button"
                                             aria-pressed={on}
-                                            disabled={disabled}
-                                            title={disabled ? "3D is available in the Diversity Index" : `${v} view`}
+                                            title={`${v} view`}
                                             onClick={() => setIs3DMode(v === "3D")}
-                                            className={`h-7 px-2.5 text-[11.5px] font-semibold cursor-pointer disabled:cursor-not-allowed disabled:text-slate-400 ${v === "3D" ? "border-l border-slate-300" : ""} ${
-                                                on ? "bg-[#0b2a5b] text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                                            className={`h-7 px-2.5 text-[11.5px] font-bold transition-colors cursor-pointer ${v === "3D" ? "border-l border-slate-300" : ""} ${
+                                                on ? "bg-[#0b2a5b] text-white" : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                                             }`}
                                         >
                                             {v}
@@ -785,7 +799,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                 <div ref={canvasRef} className="flex-1 min-h-0 relative">
                                     {/* Both maps stay mounted once created and are hidden with
                                         `visibility`, so neither is rebuilt on a 2D/3D switch. */}
-                                    <div className="absolute inset-0" style={{ visibility: show3D ? "hidden" : "visible" }} aria-hidden={show3D}>
+                                    <div className="absolute inset-0" style={fadeStyle(!show3D, 700, 0)} aria-hidden={show3D}>
                                         <LeafletMap
                                             bgyStats={mapStats}
                                             applications={applications}
@@ -796,6 +810,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             selectedAppId={inspectedApp?.id ?? null}
                                             hoveredAppId={hoveredAppId}
                                             selectedBgy={selectedBgy}
+                                            viewRef={leafletViewRef}
                                             flyToTarget={flyToTarget}
                                             verifiedParcel={verifiedParcel}
                                             mapZoom={mapZoom}
@@ -820,20 +835,26 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                     </div>
 
                                     {has3DMounted && (
-                                        <div className="absolute inset-0" style={{ visibility: show3D ? "visible" : "hidden" }} aria-hidden={!show3D}>
+                                        <div className="absolute inset-0" style={fadeStyle(show3D, 1500, 600)} aria-hidden={!show3D}>
                                             <Suspense fallback={<MapSkeleton visible label="Loading 3D view…" tone="#e9ecf0" />}>
                                                 <MapLibre3DView
                                                     active={show3D}
+                                                    syncRef={leafletViewRef}
+                                                    controlRef={view3DRef}
+                                                    showLabels={showLabels}
                                                     selectedBgy={selectedBgy}
                                                     onFeatureClick={(name) => selectBarangay(name)}
                                                     onMapClick={handleMapClick}
-                                                    bgyStats={diversityStats}
+                                                    bgyStats={mapStats}
+                                                    lens={activeLayer === "diversity" ? diversityLens : activeLayer}
+                                                    demandCounts={demandByBgy}
                                                     rightPanelOpen={panelOpen}
                                                     panelWidth={372}
                                                     bandFilter={diversityBandFilter}
                                                     hoveredBgy={hoveredBgy}
                                                     onHoverBgy={setHoveredBgy}
                                                     onParcelsVisible={setParcels3D}
+                                                    insets={mapInsets}
                                                 />
                                             </Suspense>
                                         </div>
