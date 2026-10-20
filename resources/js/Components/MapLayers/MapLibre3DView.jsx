@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Map as MapLibreMap, setWorkerUrl } from "maplibre-gl";
+import { Map as MapLibreMap, Marker, setWorkerUrl } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { getLens, resolveLensValue, DIVERSITY_LENSES } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import useReducedMotion from "@/utils/useReducedMotion";
-import { loadBarangayBoundaries, resolveBarangayName } from "@/utils/mapData";
+import { getTrendsDemandColor, DEMAND_CLASSES, APP_LOAD_CLASSES } from "@/Components/Maps/LeafletMap";
+import { loadBarangayBoundaries, loadMunicipalBoundary, resolveBarangayName } from "@/utils/mapData";
 import { ensureRFC7946Winding } from "@/utils/polygonWinding";
 
 // Configure MapLibre Web Worker for Vite bundling
@@ -18,24 +19,32 @@ try {
 
 // Official Center for Rosario, Batangas — also the fixed idle/deselected framing.
 const ROSARIO_CENTER = [121.258, 13.805];
-const DEFAULT_PITCH = 54;
-const DEFAULT_BEARING = -18;
+// While hidden behind the 2D map the camera rests top-down (flat, like 2D).
+// Switching to 3D tilts it to the oblique angle and raises the prisms; switching
+// back does the reverse.
+const DEFAULT_PITCH = 0;
+const DEFAULT_BEARING = 0;
+const OBLIQUE_PITCH = 54;
+const OBLIQUE_BEARING = -18;
+const TILT_MS = 1100;
+const MIN_ZOOM = 11;
+// How long the 3D map takes to fade in over 2D before it starts to tilt.
+const FADE_IN_MS = 650;
 
-// The canvas is a flat, solid ground plane. There is no basemap: aerial
-// imagery underneath coloured prisms competed with the very fills that carry
-// the meaning, and left the view looking like two maps fighting. Rosario's
-// barangays now sit isolated on a clean sheet.
+// Same keyless Esri imagery the 2D map uses.
+const SATELLITE_TILES = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+
+// Esri satellite imagery sits under the prisms; CANVAS only shows while tiles load.
 const CANVAS = "#f8f9fa";
 const GROUND = "#eef1f4";
 const INK = "#0f172a";
-const HAIRLINE = "#8b0000";
 
 const SRC_PRISMS = "diversity-source";
-const SRC_LABELS = "diversity-centroids";
 const SRC_PARCELS = "clup-parcels";
+const SRC_MUNI = "municipal-outline";
+const SRC_MASK = "municipal-mask";
 const LYR_PRISMS = "diversity-prisms";
 const LYR_FOOTPRINTS = "diversity-footprints";
-const LYR_LABELS = "diversity-labels";
 const LYR_PARCELS = "clup-parcels-extrusion";
 const LYR_PARCEL_LINES = "clup-parcels-lines";
 
@@ -133,12 +142,30 @@ const EMPTY_FC = { type: "FeatureCollection", features: [] };
 //
 // Every value written into `properties` is a scalar: MapLibre serialises nested
 // arrays and objects to JSON strings on the way out of queryRenderedFeatures.
-function buildFeatures(baseGeo, bgyStats) {
+//
+// The LC demand and application layers ride the same property scheme under the
+// pseudo-lens ids "trends" and "status", so every layer shares one set of
+// prisms and a layer switch is just another height/colour morph.
+const HEIGHT_FLOOR = 140;
+const HEIGHT_CEIL = 1250;
+const countHeight = (count, ref) => (count > 0 ? Math.round(HEIGHT_FLOOR + Math.min(1, count / ref) * (HEIGHT_CEIL - HEIGHT_FLOOR)) : 20);
+
+//
+// Double-buffered for motion: a data-driven value never transitions when the
+// source data changes, only when a paint property's expression does. So each
+// value is written to two slots (`h_mix_0`, `h_mix_1`); a refresh puts the new
+// data in the idle slot, keeps the old data in the other, and then flips the
+// paint expressions to read the idle slot. That flip is what the declared
+// height and colour transitions animate, so stepping a timeline morphs the
+// prisms instead of snapping them.
+const SLOTTED = /^(?:[hcbl]|cls)_/;
+function buildFeatures(baseGeo, bgyStats, demandCounts, slot = 0, prevProps = null) {
     const features = (baseGeo?.features || []).map((f, idx) => {
         const name = resolveBarangayName(f.properties);
         const stat = bgyStats?.[name] || {};
         const centroid = polygonCentroid(f);
 
+        const vals = {};
         const props = {
             name,
             permitCount: stat.permitCount ?? stat.Total ?? 0,
@@ -149,13 +176,36 @@ function buildFeatures(baseGeo, bgyStats) {
             cy: centroid[1],
         };
 
+        const demand = demandCounts?.[name.trim().toLowerCase()] || 0;
+        const demandClass = getTrendsDemandColor(demand);
+        vals.h_trends = countHeight(demand, 16);
+        vals.c_trends = demandClass.color;
+        vals.b_trends = demandClass.min === 0 ? "minimal" : String(demandClass.min);
+        vals.l_trends = demand ? `${demand} LC` : "";
+        vals.cls_trends = demandClass.label;
+
+        const total = stat.Total ?? stat.total ?? 0;
+        const loadClass = APP_LOAD_CLASSES.find((c) => total >= c.min);
+        vals.h_status = countHeight(total, 11);
+        vals.c_status = loadClass.color;
+        vals.b_status = total ? String(loadClass.min) : "none";
+        vals.l_status = total ? String(total) : "";
+        vals.cls_status = total ? `${total} application${total === 1 ? "" : "s"}` : "No applications";
+
         DIVERSITY_LENSES.forEach((lensDef) => {
             const r = resolveLensValue(lensDef.id, stat);
-            props[`h_${lensDef.id}`] = r.height;
-            props[`c_${lensDef.id}`] = r.color;
-            props[`b_${lensDef.id}`] = r.band.id;
-            props[`l_${lensDef.id}`] = r.formatted;
-            props[`cls_${lensDef.id}`] = r.band.classification;
+            vals[`h_${lensDef.id}`] = r.height;
+            vals[`c_${lensDef.id}`] = r.color;
+            vals[`b_${lensDef.id}`] = r.band.id;
+            vals[`l_${lensDef.id}`] = r.formatted;
+            vals[`cls_${lensDef.id}`] = r.band.classification;
+        });
+
+        const prev = prevProps?.[name];
+        Object.entries(vals).forEach(([key, value]) => {
+            props[`${key}_${slot}`] = value;
+            const old = prev?.[`${key}_${1 - slot}`];
+            props[`${key}_${1 - slot}`] = old === undefined ? value : old;
         });
 
         return {
@@ -169,18 +219,6 @@ function buildFeatures(baseGeo, bgyStats) {
     });
 
     return { type: "FeatureCollection", features };
-}
-
-function toCentroidCollection(fc) {
-    return {
-        type: "FeatureCollection",
-        features: fc.features.map((f) => ({
-            type: "Feature",
-            id: f.id,
-            geometry: { type: "Point", coordinates: [f.properties.cx, f.properties.cy] },
-            properties: { ...f.properties },
-        })),
-    };
 }
 
 
@@ -228,7 +266,10 @@ export default function MapLibre3DView({
     bgyStats = {},
     rightPanelOpen,
     panelWidth = 380,
+    // "mix" for the diversity index, or "trends" / "status" for the other layers.
     lens = "mix",
+    // LC demand per barangay (lower-cased name -> count), for the trends lens.
+    demandCounts = null,
     bandFilter = "all",
     hoveredBgy = null,
     onHoverBgy = () => {},
@@ -237,12 +278,32 @@ export default function MapLibre3DView({
     // defaults are the Maps page's framing.
     baseZoom = 11.5,
     framePadding = null,
-    controls = true,
+    insets = null,
+    // The 2D map's { get, set } view, so a 2D/3D switch starts from the same
+    // centre and zoom (MapLibre's zoom is Leaflet's minus one) and hands it back.
+    syncRef = null,
+    // Filled with { zoomBy, reset } for the page's toolbar.
+    controlRef = null,
+    showLabels = true,
 }) {
     const mapContainerRef = useRef(null);
     const mapRef = useRef(null);
 
     const baseGeoRef = useRef(null);
+    // Rosario's extent, for the same whole-municipality framing as the 2D map.
+    const muniBoundsRef = useRef(null);
+    // Which data slot the paint expressions currently read (see buildFeatures).
+    const slotRef = useRef(0);
+    const labelsRef = useRef({});
+    const showLabelsRef = useRef(showLabels);
+    showLabelsRef.current = showLabels;
+    const lastPropsRef = useRef(null);
+    const activeRef = useRef(active);
+    activeRef.current = active;
+    const demandRef = useRef(demandCounts);
+    demandRef.current = demandCounts;
+    const insetsRef = useRef(insets);
+    insetsRef.current = insets;
     const parcelCacheRef = useRef({});
     const parcelFetchRef = useRef({});
     const featureIndexRef = useRef({});
@@ -259,7 +320,7 @@ export default function MapLibre3DView({
     // Tracks whether a barangay was selected a moment ago, so the deselect
     // branch above can tell "just cleared" apart from "already empty".
     const hadSelectionRef = useRef(false);
-    const isFlatRef = useRef(false);
+    const isFlatRef = useRef(DEFAULT_PITCH < 12);
     const hasEnteredRef = useRef(false);
 
     // Hover position is written straight to the DOM node; only the *content*
@@ -278,8 +339,6 @@ export default function MapLibre3DView({
 
     const prefersReducedMotion = useReducedMotion();
 
-    const [currentBearing, setCurrentBearing] = useState(DEFAULT_BEARING);
-    const [currentPitch, setCurrentPitch] = useState(DEFAULT_PITCH);
     const [hoverCard, setHoverCard] = useState(null);
     const [loadState, setLoadState] = useState("loading");
 
@@ -291,14 +350,14 @@ export default function MapLibre3DView({
 
     const heightExpression = useCallback((lensId, flat) => {
         if (flat) return 0;
-        return ["to-number", ["get", `h_${lensId}`]];
+        return ["to-number", ["get", `h_${lensId}_${slotRef.current}`]];
     }, []);
 
     const colorExpression = useCallback((lensId) => [
         "case",
         ["boolean", ["feature-state", "hover"], false],
         INK,
-        ["coalesce", ["get", `c_${lensId}`], "#94a3b8"],
+        ["coalesce", ["get", `c_${lensId}_${slotRef.current}`], "#94a3b8"],
     ], []);
 
     const opacityExpression = useCallback((lensId, band, hasSelection) => {
@@ -309,18 +368,63 @@ export default function MapLibre3DView({
             return ["case", ["boolean", ["feature-state", "selected"], false], 0.98, 0];
         }
         if (!band || band === "all") {
+            // Flat (top-down): translucent so the satellite imagery reads through.
+            // Same strengths as the 2D layers on imagery: the lowest class
+            // all but clears instead of greying the ground.
+            const flat = isFlatRef.current;
             return [
                 "case",
-                ["boolean", ["feature-state", "hover"], false], 0.98,
-                0.92,
+                ["boolean", ["feature-state", "hover"], false], flat ? 0.85 : 0.98,
+                flat
+                    ? ["case",
+                        ["==", ["get", `b_${lensId}_${slotRef.current}`], "none"], 0.04,
+                        ["in", ["get", `b_${lensId}_${slotRef.current}`], ["literal", ["monoculture", "minimal"]]], 0.28,
+                        0.66]
+                    : 0.92,
             ];
         }
         return [
             "case",
             ["boolean", ["feature-state", "selected"], false], 0.98,
-            ["==", ["get", `b_${lensId}`], band], 0.95,
+            ["==", ["get", `b_${lensId}_${slotRef.current}`], band], 0.95,
             0.12,
         ];
+    }, []);
+
+    // Label text, isolation, band dimming and overlap culling. Like the 2D map,
+    // the labels with the highest values are placed first and any that would
+    // overlap one already placed are hidden.
+    const refreshLabels = useCallback(() => {
+        const map = mapRef.current;
+        const entries = labelsRef.current;
+        const props = lastPropsRef.current;
+        if (!map || !props) return;
+        const key = `${lensRef.current}_${slotRef.current}`;
+        const band = bandRef.current;
+        const selected = (selectedNameRef.current || "").toLowerCase();
+
+        const candidates = Object.entries(entries).map(([name, { marker }]) => {
+            const p = props[name] || {};
+            return { name, value: p[`l_${key}`] || "", rank: Number(p[`h_${key}`]) || 0, band: p[`b_${key}`], point: map.project(marker.getLngLat()) };
+        }).sort((a, b) => b.rank - a.rank);
+
+        const placed = [];
+        candidates.forEach(({ name, value, band: b, point }) => {
+            const { el, valueEl } = entries[name];
+            valueEl.textContent = value;
+            valueEl.style.display = value ? "" : "none";
+            let target = 1;
+            if (selected) target = name.toLowerCase() === selected ? 1 : 0;
+            else if (band && band !== "all" && b !== band) target = 0.15;
+            if (target > 0.5) {
+                const w = Math.max(name.length, value.length) * 6.2 + 10;
+                const h = value ? 30 : 16;
+                const box = { l: point.x - w / 2, r: point.x + w / 2, t: point.y - h / 2, b: point.y + h / 2 };
+                if (placed.some((q) => box.l < q.r && box.r > q.l && box.t < q.b && box.b > q.t)) target = 0;
+                else placed.push(box);
+            }
+            el.style.opacity = showLabelsRef.current ? String(target) : "0";
+        });
     }, []);
 
     // One place that pushes the active lens and band filter into the layers.
@@ -369,40 +473,22 @@ export default function MapLibre3DView({
                 LYR_FOOTPRINTS,
                 "line-opacity",
                 showAllBoundaries
-                    ? 0.95
+                    ? ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.8]
                     : ["case", ["boolean", ["feature-state", "selected"], false], 1, 0]
             );
         }
 
-        if (map.getLayer(LYR_LABELS)) {
-            // Layout properties don't transition, but the label text has to
-            // follow the lens or the number beside a barangay would be stale.
-            map.setLayoutProperty(LYR_LABELS, "text-field", [
-                "concat", ["get", "name"], "   ", ["get", `l_${lensId}`],
-            ]);
-            // The centroid-labels source never receives feature-state (only
-            // the prisms source does — feature-state is scoped per source, not
-            // shared across them even when the ids line up), so isolation here
-            // compares the label's own `name` property against the selected
-            // name directly rather than reading `feature-state.selected`.
-            map.setPaintProperty(
-                LYR_LABELS,
-                "text-opacity",
-                hasSelection
-                    ? ["case", ["==", ["get", "name"], selectedName], 1, 0]
-                    : (!band || band === "all" ? 1 : ["case", ["==", ["get", `b_${lensId}`], band], 1, 0.15])
-            );
-        }
-    }, [heightExpression, colorExpression, opacityExpression]);
+        refreshLabels();
+    }, [heightExpression, colorExpression, opacityExpression, refreshLabels]);
 
     const syncSourceData = useCallback(() => {
         const map = mapRef.current;
         if (!map || !styleReadyRef.current || !baseGeoRef.current) return;
         const src = map.getSource(SRC_PRISMS);
-        const labelSrc = map.getSource(SRC_LABELS);
         if (!src) return;
 
-        const fc = buildFeatures(baseGeoRef.current, bgyStats);
+        const nextSlot = 1 - slotRef.current;
+        const fc = buildFeatures(baseGeoRef.current, bgyStats, demandRef.current, nextSlot, lastPropsRef.current);
 
         const index = {};
         fc.features.forEach((f) => {
@@ -440,7 +526,8 @@ export default function MapLibre3DView({
         featureIndexRef.current = index;
 
         src.setData(fc);
-        if (labelSrc) labelSrc.setData(toCentroidCollection(fc));
+        slotRef.current = nextSlot;
+        lastPropsRef.current = Object.fromEntries(fc.features.map((f) => [f.properties.name, f.properties]));
 
         // setData clears every feature-state on the source, which would silently
         // drop the selected prism's state on a data refresh.
@@ -512,15 +599,16 @@ export default function MapLibre3DView({
 
     const cameraPadding = useCallback(() => {
         if (framePadding) return framePadding;
+        // The analysis panel and attribute table float over the canvas, so the
+        // camera pads for exactly what they cover; the map then sits centred in
+        // the part of the canvas that is still visible.
         const map = mapRef.current;
         const w = map ? map.getCanvas().clientWidth : 1000;
-        const h = map ? map.getCanvas().clientHeight : 800;
-
         return {
-            top: Math.min(100, h * 0.2),
-            bottom: Math.min(120, h * 0.2),
-            left: Math.min(320, w * 0.35),
-            right: Math.min(rightPanelOpen ? panelWidth + 50 : 70, w * 0.45),
+            top: 0,
+            bottom: insetsRef.current?.bottom || 0,
+            left: 0,
+            right: rightPanelOpen ? Math.min(panelWidth, w * 0.6) : 0,
         };
     }, [rightPanelOpen, panelWidth, framePadding]);
 
@@ -541,8 +629,8 @@ export default function MapLibre3DView({
         const target = {
             center: entry.centroid,
             zoom: calculatedZoom,
-            pitch: 0,
-            bearing: 0,
+            pitch: activeRef.current ? OBLIQUE_PITCH : DEFAULT_PITCH,
+            bearing: activeRef.current ? OBLIQUE_BEARING : DEFAULT_BEARING,
             padding: cameraPadding(),
         };
 
@@ -557,6 +645,10 @@ export default function MapLibre3DView({
         map.once("moveend", () => { flightTargetRef.current = null; });
     }, [cameraPadding]);
 
+    // Read from effects that must not re-run when the panel opens or closes.
+    const cameraPaddingRef = useRef(cameraPadding);
+    cameraPaddingRef.current = cameraPadding;
+
     const frameMunicipality = useCallback((animate = true) => {
         const map = mapRef.current;
         if (!map) return;
@@ -568,8 +660,21 @@ export default function MapLibre3DView({
         // empty space to deselect would zoom out further than the map's own
         // resting size. A fixed target makes "deselected" always look like
         // the initial view, regardless of panel state.
-        const target = { center: ROSARIO_CENTER, zoom: baseZoom, pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING };
+        const pitch = activeRef.current ? OBLIQUE_PITCH : DEFAULT_PITCH;
+        const bearing = activeRef.current ? OBLIQUE_BEARING : DEFAULT_BEARING;
+        let target = { center: ROSARIO_CENTER, zoom: baseZoom, pitch, bearing };
         target.padding = cameraPadding();
+        // Maps page: fit Rosario with the 2D map's home padding (48px, plus the
+        // attribute table when it is open) so both views open on the same frame.
+        if (!framePadding && muniBoundsRef.current) {
+            // Fit the zoom to the visible area; the centre is the municipality's
+            // own, shown at the middle of the padded (visible) region.
+            const pad = cameraPadding();
+            const padding = { top: 48, left: 48, right: 48 + pad.right, bottom: 48 + pad.bottom };
+            const cam = map.cameraForBounds(muniBoundsRef.current, { padding, bearing });
+            const [[w, s], [e, n]] = muniBoundsRef.current;
+            if (cam) target = { center: [(w + e) / 2, (s + n) / 2], zoom: Math.max(MIN_ZOOM, cam.zoom), pitch, bearing, padding: pad };
+        }
 
         if (!animate || reducedRef.current) {
             map.jumpTo(target);
@@ -577,12 +682,14 @@ export default function MapLibre3DView({
         }
         map.stop();
         map.easeTo({ ...target, duration: FLIGHT_MS, easing: easeSine, essential: true });
-    }, [cameraPadding, baseZoom]);
+    }, [cameraPadding, baseZoom, framePadding]);
 
     // ── Layer setup ──────────────────────────────────────────────────────────
 
     const setupLayers = useCallback((map) => {
-        const fc = buildFeatures(baseGeoRef.current, bgyStats);
+        const fc = buildFeatures(baseGeoRef.current, bgyStats, demandRef.current, 0, null);
+        slotRef.current = 0;
+        lastPropsRef.current = Object.fromEntries(fc.features.map((f) => [f.properties.name, f.properties]));
 
         const index = {};
         fc.features.forEach((f) => {
@@ -617,8 +724,10 @@ export default function MapLibre3DView({
         featureIndexRef.current = index;
 
         if (!map.getSource(SRC_PRISMS)) map.addSource(SRC_PRISMS, { type: "geojson", data: fc });
-        if (!map.getSource(SRC_LABELS)) map.addSource(SRC_LABELS, { type: "geojson", data: toCentroidCollection(fc) });
         if (!map.getSource(SRC_PARCELS)) map.addSource(SRC_PARCELS, { type: "geojson", data: EMPTY_FC });
+
+        if (!map.getSource(SRC_MUNI)) map.addSource(SRC_MUNI, { type: "geojson", data: EMPTY_FC });
+        if (!map.getSource(SRC_MASK)) map.addSource(SRC_MASK, { type: "geojson", data: EMPTY_FC });
 
         // Ground plate: a flat wash under the municipality so the prisms have
         // something to stand on rather than floating on the page.
@@ -627,7 +736,7 @@ export default function MapLibre3DView({
                 id: "diversity-ground",
                 type: "fill",
                 source: SRC_PRISMS,
-                paint: { "fill-color": GROUND, "fill-opacity": 1 },
+                paint: { "fill-color": GROUND, "fill-opacity": 0 },
             });
         }
 
@@ -649,6 +758,16 @@ export default function MapLibre3DView({
                     "fill-extrusion-opacity-transition": { duration: FADE_MS, delay: 0 },
                 },
             });
+        }
+
+        // Land outside Rosario is dimmed so the study area lifts off the imagery.
+        if (!map.getLayer("municipal-mask")) {
+            map.addLayer({
+                id: "municipal-mask",
+                type: "fill",
+                source: SRC_MASK,
+                paint: { "fill-color": "#020617", "fill-opacity": 0.2 },
+            }, LYR_PRISMS);
         }
 
         // Selected barangay's CLUP parcels, standing where its prism was.
@@ -683,18 +802,13 @@ export default function MapLibre3DView({
                 type: "line",
                 source: SRC_PRISMS,
                 paint: {
-                    // Dark hairlines, not the white ones the satellite basemap
-                    // needed — on a light canvas white boundaries vanish.
-                    "line-color": [
-                        "case",
-                        ["boolean", ["feature-state", "selected"], false], INK,
-                        HAIRLINE,
-                    ],
+                    // White boundaries, matching the 2D layers over satellite.
+                    "line-color": "#ffffff",
                     "line-width": [
                         "case",
                         ["boolean", ["feature-state", "selected"], false], 2.4,
-                        ["boolean", ["feature-state", "hover"], false], 1.8,
-                        0.9,
+                        ["boolean", ["feature-state", "hover"], false], 3,
+                        1.2,
                     ],
                     // Starts hidden (matches applyPaint's Oblique/Dramatic
                     // case) since the scene opens at DEFAULT_PITCH, which is
@@ -713,32 +827,72 @@ export default function MapLibre3DView({
             });
         }
 
-        if (!map.getLayer(LYR_LABELS)) {
+        // Rosario's outline: a soft dark halo under a crisp white line.
+        if (!map.getLayer("municipal-halo")) {
             map.addLayer({
-                id: LYR_LABELS,
-                type: "symbol",
-                source: SRC_LABELS,
-                layout: {
-                    "text-field": ["concat", ["get", "name"], "   ", ["get", "valueLabel"]],
-                    "text-font": ["Noto Sans Regular"],
-                    "text-size": ["interpolate", ["linear"], ["zoom"], 11, 10, 13, 11.5, 15, 13],
-                    "text-offset": [0, -1.1],
-                    "text-anchor": "bottom",
-                    "text-allow-overlap": false,
-                    "text-max-width": 9,
-                },
-                paint: {
-                    // Dark ink with a light halo, inverted for the light canvas.
-                    "text-color": INK,
-                    "text-halo-color": CANVAS,
-                    "text-halo-width": 2,
-                    "text-halo-blur": 0.4,
-                    "text-opacity": 1,
-                    "text-opacity-transition": { duration: FADE_MS, delay: 0 },
-                },
+                id: "municipal-halo",
+                type: "line",
+                source: SRC_MUNI,
+                layout: { "line-join": "round" },
+                paint: { "line-color": "#020617", "line-width": 7, "line-opacity": 0.45, "line-blur": 1 },
+            });
+            map.addLayer({
+                id: "municipal-line",
+                type: "line",
+                source: SRC_MUNI,
+                layout: { "line-join": "round" },
+                paint: { "line-color": "#ffffff", "line-width": 2.4, "line-opacity": 1 },
             });
         }
-    }, [bgyStats, colorExpression]);
+
+        loadMunicipalBoundary().then((data) => {
+            if (!data?.features || mapRef.current !== map) return;
+            const muni = ensureRFC7946Winding(data);
+            map.getSource(SRC_MUNI)?.setData(muni);
+            const holes = [];
+            muni.features.forEach((ft) => {
+                const g = ft.geometry;
+                if (!g) return;
+                if (g.type === "Polygon") holes.push(g.coordinates[0]);
+                else if (g.type === "MultiPolygon") g.coordinates.forEach((p) => holes.push(p[0]));
+            });
+            let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+            holes.forEach((ring) => ring.forEach(([x, y]) => {
+                w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y);
+            }));
+            if (Number.isFinite(w)) {
+                const first = !muniBoundsRef.current;
+                muniBoundsRef.current = [[w, s], [e, n]];
+                if (first && !selectedNameRef.current && !syncRef) frameMunicipality(false);
+            }
+            map.getSource(SRC_MASK)?.setData({
+                type: "FeatureCollection",
+                features: [{
+                    type: "Feature",
+                    properties: {},
+                    geometry: { type: "Polygon", coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]], ...holes] },
+                }],
+            });
+        }).catch(() => {});
+
+        // Barangay labels are HTML, styled exactly like the 2D map's, so both
+        // views read the same.
+        Object.values(labelsRef.current).forEach(({ marker }) => marker.remove());
+        labelsRef.current = {};
+        fc.features.forEach((f) => {
+            const el = document.createElement("div");
+            el.className = "imaps3d-label";
+            const nameEl = document.createElement("span");
+            nameEl.textContent = f.properties.name;
+            const valueEl = document.createElement("b");
+            el.append(nameEl, valueEl);
+            const marker = new Marker({ element: el, anchor: "center" })
+                .setLngLat([f.properties.cx, f.properties.cy])
+                .addTo(map);
+            labelsRef.current[f.properties.name] = { el, valueEl, marker };
+        });
+        refreshLabels();
+    }, [bgyStats, colorExpression, frameMunicipality, refreshLabels]);
 
     // ── Init ─────────────────────────────────────────────────────────────────
 
@@ -752,14 +906,21 @@ export default function MapLibre3DView({
             style: {
                 version: 8,
                 glyphs: "/fonts/{fontstack}/{range}.pbf",
-                sources: {},
-                layers: [{ id: "canvas", type: "background", paint: { "background-color": CANVAS } }],
+                sources: {
+                    satellite: { type: "raster", tiles: [SATELLITE_TILES], tileSize: 256, maxzoom: 19 },
+                },
+                layers: [
+                    { id: "canvas", type: "background", paint: { "background-color": CANVAS } },
+                    { id: "satellite", type: "raster", source: "satellite" },
+                ],
             },
             center: ROSARIO_CENTER,
             zoom: baseZoom,
             pitch: DEFAULT_PITCH,
             bearing: DEFAULT_BEARING,
             maxPitch: 60,
+            // Zooming out stops at the 2D map's minimum (Leaflet 12 is MapLibre 11).
+            minZoom: MIN_ZOOM,
             antialias: true,
             attributionControl: false,
         });
@@ -789,7 +950,7 @@ export default function MapLibre3DView({
 
                     setupLayers(map);
                     setLoadState("ready");
-                    frameMunicipality(!reducedRef.current);
+                    if (!syncRef) frameMunicipality(!reducedRef.current);
 
                     const enter = () => {
                         if (hasEnteredRef.current || !mapRef.current) return;
@@ -876,7 +1037,7 @@ export default function MapLibre3DView({
         };
 
         const handleBackgroundClick = (e) => {
-            const layers = [LYR_PRISMS, LYR_LABELS, LYR_PARCELS].filter((id) => map.getLayer(id));
+            const layers = [LYR_PRISMS, LYR_PARCELS].filter((id) => map.getLayer(id));
             if (!layers.length) return;
             if (map.queryRenderedFeatures(e.point, { layers }).length === 0) callbacksRef.current.onMapClick?.();
         };
@@ -887,9 +1048,8 @@ export default function MapLibre3DView({
         map.on("click", handleBackgroundClick);
 
         map.on("moveend", () => {
-            setCurrentBearing(Math.round(map.getBearing()));
+            refreshLabels();
             const p = Math.round(map.getPitch());
-            setCurrentPitch(p);
 
             // Flatten only when the view has actually settled top-down, with
             // hysteresis so grazing the threshold mid-flight doesn't collapse
@@ -904,6 +1064,8 @@ export default function MapLibre3DView({
         return () => {
             if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current);
             styleReadyRef.current = false;
+            Object.values(labelsRef.current).forEach(({ marker }) => marker.remove());
+            labelsRef.current = {};
             map.remove();
             mapRef.current = null;
         };
@@ -925,7 +1087,7 @@ export default function MapLibre3DView({
         if (!styleReadyRef.current) return;
         syncSourceData();
         applyPaint();
-    }, [bgyStats, syncSourceData, applyPaint]);
+    }, [bgyStats, demandCounts, syncSourceData, applyPaint]);
 
     useEffect(() => {
         bandRef.current = bandFilter;
@@ -974,7 +1136,7 @@ export default function MapLibre3DView({
         selectedIdRef.current = entry.id;
         map.setFeatureState({ source: SRC_PRISMS, id: entry.id }, { selected: true });
         applyPaint();
-        showParcelsFor(name);
+        // CLUP parcels are intentionally not shown on selection.
         hadSelectionRef.current = true;
 
         // Fly only when the selection itself changed. This effect also re-runs
@@ -985,6 +1147,19 @@ export default function MapLibre3DView({
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedBgy?.name, lens, applyPaint, showParcelsFor, frameMunicipality]);
+
+    useEffect(() => { refreshLabels(); }, [showLabels, refreshLabels]);
+
+    useEffect(() => {
+        if (!controlRef) return;
+        controlRef.current = {
+            zoomBy: (delta) => {
+                const map = mapRef.current;
+                if (map) map.easeTo({ zoom: map.getZoom() + delta, duration: reducedRef.current ? 0 : 400, easing: easeSine, essential: true });
+            },
+            reset: () => frameMunicipality(true),
+        };
+    }, [controlRef, frameMunicipality]);
 
     // Mirror the panel's hover onto the map, so the explorer list and the
     // prisms behave like one instrument.
@@ -1010,40 +1185,84 @@ export default function MapLibre3DView({
         const timer = setTimeout(() => {
             const map = mapRef.current;
             if (!map) return;
+            if (!activeRef.current) return;
             map.resize();
             if (reducedRef.current) map.jumpTo({ padding: cameraPadding() });
             else map.easeTo({ padding: cameraPadding(), duration: 420, easing: easeSine });
         }, 300);
         return () => clearTimeout(timer);
-    }, [rightPanelOpen, cameraPadding]);
+    }, [rightPanelOpen, insets?.bottom, cameraPadding]);
 
     // The view stays mounted when hidden so returning to it is instant. On
     // reappearing it re-measures in case the window or the panel changed size
-    // in the meantime.
+    // in the meantime, then tilts up out of the flat top-down frame (prisms
+    // rising with it); on hiding it settles back flat so the 2D crossfade
+    // starts from a matching view.
     useEffect(() => {
         const map = mapRef.current;
-        if (!active) return;
-        if (map) requestAnimationFrame(() => mapRef.current && mapRef.current.resize());
-    }, [active]);
+        if (!map || loadState !== "ready") return;
+        const instant = reducedRef.current;
+        const noPadding = { top: 0, bottom: 0, left: 0, right: 0 };
+        let timer = null;
+        let onEnd = null;
 
-    // ── Controls ─────────────────────────────────────────────────────────────
-
-    const setCameraPerspective = (pitch, bearing) => {
-        const map = mapRef.current;
-        if (!map) return;
-        if (reducedRef.current) {
-            map.jumpTo({ pitch, bearing });
-            return;
+        if (active) {
+            map.resize();
+            map.stop();
+            const view = syncRef?.current?.get();
+            if (view) {
+                // Land exactly on what the 2D map shows, flat, so the fade is
+                // between two identical pictures.
+                map.jumpTo({ center: view.center, zoom: view.zoom - 1, pitch: 0, bearing: 0, padding: noPadding });
+            }
+            const tilt = () => {
+                isFlatRef.current = false;
+                applyPaint();
+                // Padding eases in with the tilt, sliding the map out from under
+                // the panel into the visible area.
+                const target = { pitch: OBLIQUE_PITCH, bearing: OBLIQUE_BEARING, padding: cameraPaddingRef.current() };
+                if (instant) map.jumpTo(target);
+                else map.easeTo({ ...target, duration: TILT_MS, easing: easeSine, essential: true });
+            };
+            if (instant) tilt(); else timer = setTimeout(tilt, FADE_IN_MS);
+        } else {
+            // Level out and lower the prisms; once flat, give the 2D map the
+            // view we ended on (it is already showing underneath).
+            isFlatRef.current = true;
+            applyPaint();
+            const handBack = () => {
+                const c = map.getCenter();
+                syncRef?.current?.set({ center: [c.lng, c.lat], zoom: map.getZoom() + 1 });
+            };
+            if (instant || (Math.abs(map.getPitch()) < 1 && Math.abs(map.getBearing()) < 1)) {
+                map.jumpTo({ pitch: 0, bearing: 0, padding: noPadding });
+                handBack();
+            } else {
+                map.stop();
+                onEnd = () => { onEnd = null; handBack(); };
+                map.once("moveend", onEnd);
+                map.easeTo({ pitch: 0, bearing: 0, padding: noPadding, duration: TILT_MS, easing: easeSine, essential: true });
+            }
         }
-        map.stop();
-        map.easeTo({ pitch, bearing, duration: 800, easing: easeSine, essential: true });
-    };
+        return () => {
+            if (timer) clearTimeout(timer);
+            if (onEnd) map.off("moveend", onEnd);
+        };
+    }, [active, loadState, applyPaint]);
 
-    const activeLens = getLens(lens);
+    const metricLabel = lens === "trends" ? "LC applications forecast"
+        : lens === "status" ? "Permit applications filed"
+        : getLens(lens).metricLabel;
 
     return (
         <div className="relative w-full h-full overflow-hidden" style={{ backgroundColor: CANVAS }}>
             <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
+            <style>{`
+.imaps3d-label { display: flex; flex-direction: column; align-items: center; line-height: 1.15; white-space: nowrap; pointer-events: none; transition: opacity 200ms ease;
+  text-shadow: 0 0 2px rgba(2, 6, 23, 0.9), 0 0 3px rgba(2, 6, 23, 0.8), 0 1px 4px rgba(2, 6, 23, 0.6); }
+.imaps3d-label span { font-size: 10.5px; font-weight: 600; color: #f8fafc; }
+.imaps3d-label b { font-size: 11.5px; font-weight: 700; color: #fde68a; font-variant-numeric: tabular-nums; }
+`}</style>
 
             {loadState !== "ready" && (
                 <div
@@ -1062,39 +1281,6 @@ export default function MapLibre3DView({
                 </div>
             )}
 
-            {/* Camera dock (hidden in compact embeds such as the Overview preview) */}
-            {controls && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[450] flex items-center bg-white border border-slate-300 rounded-md shadow-sm pointer-events-auto overflow-hidden">
-                {[
-                    { label: "Oblique", pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING, active: currentPitch >= 40 },
-                    { label: "Top-Down", pitch: 0, bearing: 0, active: currentPitch < 40 },
-                ].map((preset, idx) => (
-                    <button
-                        key={preset.label}
-                        onClick={() => setCameraPerspective(preset.pitch, preset.bearing)}
-                        className={`px-3 py-1.5 text-[11.5px] font-bold whitespace-nowrap transition-colors cursor-pointer ${
-                            idx > 0 ? "border-l border-slate-300" : ""
-                        } ${preset.active ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}
-                        title={`${preset.label} view (${preset.pitch}°)`}
-                    >
-                        {preset.label}
-                    </button>
-                ))}
-
-                <button
-                    onClick={() => frameMunicipality(true)}
-                    className="px-3 py-1.5 text-[11.5px] font-bold border-l border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
-                    title="Frame the whole municipality"
-                >
-                    Reset
-                </button>
-
-                <span className="px-3 py-1.5 text-[10px] font-mono tabular-nums whitespace-nowrap text-slate-400 border-l border-slate-300 hidden lg:block">
-                    {currentPitch}° / {currentBearing}°
-                </span>
-            </div>
-            )}
-
             {/* Hover card. Position is written to this node on a rAF; only the
                 content below is React state, keyed by barangay. */}
             <div
@@ -1108,14 +1294,14 @@ export default function MapLibre3DView({
                             <span className="text-[12px] font-bold text-slate-900 truncate">{hoverCard.name}</span>
                             <span
                                 className="text-[11px] font-mono tabular-nums font-bold px-1.5 rounded-sm shrink-0"
-                                style={{ backgroundColor: hoverCard[`c_${lens}`], color: "#fff" }}
+                                style={{ backgroundColor: hoverCard[`c_${lens}_${slotRef.current}`], color: "#fff" }}
                             >
-                                {hoverCard[`l_${lens}`]}
+                                {hoverCard[`l_${lens}_${slotRef.current}`]}
                             </span>
                         </div>
                         <div className="px-2.5 py-1.5 space-y-0.5">
-                            <div className="text-[11px] font-semibold text-slate-700">{hoverCard[`cls_${lens}`]}</div>
-                            <div className="text-[10px] text-slate-500">{activeLens.metricLabel}</div>
+                            <div className="text-[11px] font-semibold text-slate-700">{hoverCard[`cls_${lens}_${slotRef.current}`]}</div>
+                            <div className="text-[10px] text-slate-500">{metricLabel}</div>
                             {hoverCard.clusterName && (
                                 <div className="flex items-center gap-1.5 pt-1 mt-1 border-t border-slate-200">
                                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: hoverCard.clusterColor }} />

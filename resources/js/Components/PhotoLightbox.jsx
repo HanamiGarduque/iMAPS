@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import downloadPhoto from "./downloadPhoto";
 
 /**
  * Inspection photo lightbox.
@@ -99,6 +100,24 @@ export default function PhotoLightbox({ photos = [], index, onClose, onIndexChan
             aria-modal="true"
             aria-label="Inspection photo viewer"
         >
+            {/* Download */}
+            {!unreadable && !refreshing && signed && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        downloadPhoto(signed, { inspectionId, index, capturedAt: current.captured_at });
+                    }}
+                    aria-label="Download photo"
+                    title="Download photo"
+                    className="absolute top-4 right-16 sm:top-6 sm:right-20 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                </button>
+            )}
+
             {/* Close */}
             <button
                 type="button"

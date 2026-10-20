@@ -36,7 +36,7 @@ export default function TimelineBar({
                     </button>
                     <button
                         type="button"
-                        className={`${btn} ${playing ? "bg-[#0b2a5b] border-[#0b2a5b] text-white hover:bg-[#0e3574]" : ""}`}
+                        className={`${btn} ${playing ? "!bg-[#0b2a5b] !border-[#0b2a5b] !text-white hover:!bg-[#0e3574]" : ""}`}
                         onClick={onTogglePlay}
                         disabled={quarters.length <= 1}
                         aria-label={playing ? "Pause" : "Play through quarters"}

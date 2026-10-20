@@ -227,13 +227,13 @@ export default function StepFee({
                     <Input
                         type="text"
                         inputMode="numeric"
-                        maxLength={5}
-                        value={(form.or_number || "").replace(/^OR-/i, "").replace(/\D/g, "").slice(0, 5)}
+                        maxLength={6}
+                        value={(form.or_number || "").replace(/^OR-/i, "").replace(/\D/g, "").slice(0, 6)}
                         onChange={(e) => {
-                            const digits = e.target.value.replace(/\D/g, "").slice(0, 5);
+                            const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
                             set("or_number")({ target: { value: digits ? `OR-${digits}` : "" } });
                         }}
-                        placeholder="12345"
+                        placeholder="123456"
                         className="font-mono bg-white pl-12"
                         hasError={!!errors.or_number}
                     />
