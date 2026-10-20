@@ -17,7 +17,7 @@ import {
 import StatusPanel, { STATUS_MARKER_CONFIG, getStatusMarkerConfig, matchesAppFilters } from "@/Components/MapLayers/StatusPanel";
 import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import useForecastWatchlist from "@/Components/MapLayers/useForecastWatchlist";
-import ForecastBrief from "@/Components/MapLayers/ForecastBrief";
+import { ForecastSummary, ForecastInsights } from "@/Components/MapLayers/ForecastBrief";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
 import LeafletMap, { getAppCoordinates, PIN_ZOOM } from "@/Components/Maps/LeafletMap";
 import LayersPanel, { MODULES } from "@/Components/Maps/LayersPanel";
@@ -840,57 +840,32 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                     )}
 
                                     {/* Map title, like a print layout's. It also reads out whatever is
-                                        under the cursor, so nothing floats over the data itself.
-                                        On LC demand the forecast brief below takes its place, except
-                                        on phones, where the brief would cover the map. */}
-                                    <div className={`absolute top-3 left-3 z-[500] ${activeLayer === "trends" ? "sm:hidden" : ""} bg-white/95 border border-slate-300 rounded-[3px] shadow-sm w-[300px] max-w-[calc(100%-1.5rem)]`}>
+                                        under the cursor, so nothing floats over the data itself. */}
+                                    <div className="absolute top-3 left-3 z-[500] bg-white/95 border border-slate-300 rounded-[3px] shadow-sm w-[300px] max-w-[calc(100%-1.5rem)]">
                                         <div className="px-3 py-1.5">
                                             <div className="text-[13px] font-semibold text-slate-900 leading-tight truncate">{moduleInfo?.label}</div>
                                             <div className="text-[11px] text-slate-600 leading-tight truncate">{mapSubtitle}</div>
                                         </div>
                                         {selectedBgy?.name && (
-                                            <div className="flex items-center gap-2 px-3 py-1 border-t border-slate-200 bg-[#eaf0f8]">
-                                                <span className="text-[11.5px] text-[#0b2a5b] truncate"><b>{selectedBgy.name}</b> selected</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSelectedBgy(null)}
-                                                    className="ml-auto text-[11px] font-semibold text-[#0b2a5b] hover:underline cursor-pointer shrink-0"
-                                                >
-                                                    Clear
-                                                </button>
-                                            </div>
+                                            <BarangayCard
+                                                name={selectedBgy.name}
+                                                stat={mapStats?.[selectedBgy.name] || selectedBgy.data || {}}
+                                                apps={selectedBgyApps || {}}
+                                                demand={demandByBgy[selectedBgy.name.trim().toLowerCase()] || 0}
+                                                activeQuarter={activeQuarter}
+                                                activeLayer={activeLayer}
+                                                onSwitch={(id) => {
+                                                    if (id === activeLayer) return;
+                                                    carryBgyRef.current = selectedBgy.name;
+                                                    setActiveLayer(id);
+                                                }}
+                                                onClose={() => setSelectedBgy(null)}
+                                            />
                                         )}
                                         <div className="px-3 py-1 border-t border-slate-200 text-[11px] leading-tight truncate text-slate-600" aria-live="polite">
                                             {hoverText || (show3D ? "Drag to orbit · click a barangay to open it" : "Hover a barangay · click to open it")}
                                         </div>
                                     </div>
-
-                                    {/* LC demand brief, over the empty west of the map beside the
-                                        Layers panel. Only the cards take clicks; the space below
-                                        them still pans the map. */}
-                                    {activeLayer === "trends" && (
-                                        <div className="hidden sm:flex absolute top-3 left-3 bottom-10 z-[500] w-[272px] flex-col pointer-events-none">
-                                            <div className="pointer-events-auto min-h-0 flex flex-col">
-                                                <ForecastBrief
-                                                    quarter={activeQuarter}
-                                                    count={quarterCount}
-                                                    demandByBgy={demandByBgy}
-                                                    hoveredBgy={hoveredBgy}
-                                                    selectedName={selectedBgy?.name || null}
-                                                    onClearSelection={() => setSelectedBgy(null)}
-                                                    watch={forecastWatch}
-                                                    onSelectBgy={selectBarangay}
-                                                    onHoverBgy={setHoveredBgy}
-                                                    onSelectQuarter={(q) => {
-                                                        const i = timelineQuarters.findIndex((t) => t.year === q.year && t.quarter === q.quarter);
-                                                        if (i === -1) return;
-                                                        setActiveQuarterIndex(i);
-                                                        setIsTimelinePlaying(false);
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
 
                                     {/* Attribute table for the selected barangay, floating over the
                                         bottom of the map so the canvas keeps its full size. */}
@@ -929,23 +904,6 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     />
                                                 )}
 
-                                                {selectedBgy?.name && !showAppDetails && (
-                                                    <BarangayCard
-                                                        name={selectedBgy.name}
-                                                        stat={mapStats?.[selectedBgy.name] || selectedBgy.data || {}}
-                                                        apps={selectedBgyApps || {}}
-                                                        demand={demandByBgy[selectedBgy.name.trim().toLowerCase()] || 0}
-                                                        activeQuarter={activeQuarter}
-                                                        activeLayer={activeLayer}
-                                                        onSwitch={(id) => {
-                                                            if (id === activeLayer) return;
-                                                            carryBgyRef.current = selectedBgy.name;
-                                                            setActiveLayer(id);
-                                                        }}
-                                                        onClose={() => setSelectedBgy(null)}
-                                                    />
-                                                )}
-
                                                 {activeLayer === "status" && !showAppDetails && !selectedBgy?.name && (
                                                     <StatusPanel
                                                         recent={applications.filter((a) => matchesAppFilters(a, appTypeFilter, "All"))}
@@ -953,22 +911,47 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     />
                                                 )}
 
-                                                {activeLayer === "trends" && (
-                                                    <TrendsPanel
-                                                        activeQuarter={activeQuarter}
-                                                        forecastMetrics={forecastMetrics}
-                                                        forecastData={customForecastData}
-                                                        forecastOutdated={forecastOutdated}
-                                                        urbanGrowthData={urbanGrowthData}
-                                                        selectedBgy={selectedBgy}
-                                                        onSelectBgy={selectBarangay}
-                                                        onHoverBgy={setHoveredBgy}
-                                                        onForecastGenerated={handleForecastGenerated}
-                                                        activePins={activeHistoricalPins}
-                                                        series={quarterSeries}
-                                                        activeIndex={activeQuarterIndex}
-                                                        onSelectQuarter={setActiveQuarterIndex}
-                                                    />
+                                                {activeLayer === "trends" && !showAppDetails && (
+                                                    <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+                                                        <TrendsPanel
+                                                            activeQuarter={activeQuarter}
+                                                            forecastMetrics={forecastMetrics}
+                                                            forecastData={customForecastData}
+                                                            forecastOutdated={forecastOutdated}
+                                                            urbanGrowthData={urbanGrowthData}
+                                                            selectedBgy={selectedBgy}
+                                                            onSelectBgy={selectBarangay}
+                                                            onHoverBgy={setHoveredBgy}
+                                                            onForecastGenerated={handleForecastGenerated}
+                                                            activePins={activeHistoricalPins}
+                                                            series={quarterSeries}
+                                                            activeIndex={activeQuarterIndex}
+                                                            onSelectQuarter={setActiveQuarterIndex}
+                                                            header={activeQuarter?.isForecast && (
+                                                                <ForecastSummary
+                                                                    quarter={activeQuarter}
+                                                                    count={quarterCount}
+                                                                    demandByBgy={demandByBgy}
+                                                                    hoveredBgy={hoveredBgy}
+                                                                    watch={forecastWatch}
+                                                                    onSelectQuarter={(q) => {
+                                                                        const i = timelineQuarters.findIndex((t) => t.year === q.year && t.quarter === q.quarter);
+                                                                        if (i === -1) return;
+                                                                        setActiveQuarterIndex(i);
+                                                                        setIsTimelinePlaying(false);
+                                                                    }}
+                                                                />
+                                                            )}
+                                                            footer={activeQuarter?.isForecast && (
+                                                                <ForecastInsights
+                                                                    quarter={activeQuarter}
+                                                                    watch={forecastWatch}
+                                                                    onSelectBgy={selectBarangay}
+                                                                    onHoverBgy={setHoveredBgy}
+                                                                />
+                                                            )}
+                                                        />
+                                                    </div>
                                                 )}
 
                                                 {activeLayer === "diversity" && (

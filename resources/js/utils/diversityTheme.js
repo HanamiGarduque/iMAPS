@@ -5,8 +5,10 @@
 // (#fde725) is unreadable on the light canvas this view now uses, and whose
 // smooth gradient implied a continuum the stepped legend never delivered. The
 // scale below is a flat, print-safe five-step sequential ramp (ColorBrewer
-// YlGnBu with its lightest class dropped, so the low end stays visible
-// against #F8F9FA).
+// Purples). Each map layer has its own hue family so a glance tells them
+// apart: LC demand is YlOrRd, application load YlGnBu, diversity purple.
+// As on the LC demand map, the lowest class is near-white and carries a
+// coloured outline, so it stays visible against the canvas.
 //
 // It is deliberately a *sequential* scale, not the categorical CLUP palette:
 // the diversity index is a continuous 0–1 score, while CLUP codes are zone
@@ -26,8 +28,8 @@ export const DIVERSITY_TIERS = [
         max: Infinity,
         label: "High Mix (≥ 0.60)",
         shortLabel: "High Mix",
-        fill: "#253494",
-        stroke: "#1a2570",
+        fill: "#3f007d",
+        stroke: "#2a0054",
         onFill: "#ffffff",
         classification: "High Urban Mix",
         summary: "Main commercial and residential area with a good mix of shops, public facilities, and housing.",
@@ -39,8 +41,8 @@ export const DIVERSITY_TIERS = [
         max: 0.60,
         label: "Diverse (0.45–0.59)",
         shortLabel: "Diverse",
-        fill: "#2a76ab",
-        stroke: "#1d5578",
+        fill: "#6a51a3",
+        stroke: "#4a3874",
         onFill: "#ffffff",
         classification: "Active Growth Area",
         summary: "Growing area that mixes housing subdivisions, public facilities, and businesses.",
@@ -52,8 +54,8 @@ export const DIVERSITY_TIERS = [
         max: 0.45,
         label: "Balanced (0.30–0.44)",
         shortLabel: "Balanced",
-        fill: "#31a0a9",
-        stroke: "#217680",
+        fill: "#9e9ac8",
+        stroke: "#6f6aa3",
         onFill: "#0f172a",
         classification: "Balanced Town",
         summary: "An area where farms and established housing communities exist together.",
@@ -65,8 +67,8 @@ export const DIVERSITY_TIERS = [
         max: 0.30,
         label: "Rural (0.15–0.29)",
         shortLabel: "Rural",
-        fill: "#7fcdbb",
-        stroke: "#4aa392",
+        fill: "#cbc9e2",
+        stroke: "#9590c0",
         onFill: "#0f172a",
         classification: "Rural Community",
         summary: "Mostly farming area with scattered houses.",
@@ -78,8 +80,8 @@ export const DIVERSITY_TIERS = [
         max: 0.15,
         label: "Specialized Ag (< 0.15)",
         shortLabel: "Specialized Ag",
-        fill: "#c7e9b4",
-        stroke: "#7ab648",
+        fill: "#f2f0f7",
+        stroke: "#a8a3cc",
         onFill: "#0f172a",
         classification: "Farming Area",
         summary: "Protected farming area with very few buildings for other uses.",

@@ -352,7 +352,20 @@ export default function LeafletMap({
                     ? { color: "#ffffff", weight: 0.8, opacity: 0.55, dashArray: "3 3", fill: true, fillColor: "#020617", fillOpacity: 0.35, className: "" }
                     : { color: "#b8c0cc", weight: 0.8, opacity: 0.9, dashArray: "3 3", fill: true, fillColor: "#e2e8f0", fillOpacity: 0.4, className: "" };
             }
-            return { ...edge, dashArray: null, fill: true, fillColor: resolved.color, fillOpacity: clup ? 0.35 : imagery ? 0.7 : 0.9, className: "" };
+            // Drawn like the LC demand map: each class outlined in its own
+            // darker shade, the same fill strength, and on imagery the
+            // near-white lowest class fades rather than greying the ground.
+            const lowest = resolved.band.id === "monoculture";
+            return {
+                color: imagery ? edge.color : resolved.stroke || "#ffffff",
+                weight: imagery ? edge.weight : 1.2,
+                opacity: edge.opacity,
+                dashArray: null,
+                fill: true,
+                fillColor: resolved.color,
+                fillOpacity: clup ? 0.25 : imagery ? (lowest ? 0.28 : 0.66) : 0.82,
+                className: "",
+            };
         }
 
         const demand = layer === "trends" ? getTrendsDemandColor(demandFor(name)) : null;

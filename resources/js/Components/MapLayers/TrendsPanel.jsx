@@ -20,7 +20,7 @@ function MetricCard({ label, value, tooltip, align = 'center', hasBorder = true 
 
     return (
         <div
-            className={`relative px-2 py-2 group hover:bg-slate-50/80 transition-colors cursor-pointer select-none ${
+            className={`relative px-3 py-2.5 group hover:bg-slate-50/80 transition-colors cursor-pointer select-none ${
                 hasBorder ? 'border-l border-slate-200' : ''
             }`}
             onClick={() => setOpen((prev) => !prev)}
@@ -37,7 +37,7 @@ function MetricCard({ label, value, tooltip, align = 'center', hasBorder = true 
                 {value}
             </span>
             <div className="flex items-center gap-0.5 mt-1 text-slate-500">
-                <span className="block text-[9px] sm:text-[9.5px] font-medium uppercase tracking-[0.03em] truncate">
+                <span className="block text-[9.5px] font-medium uppercase tracking-[0.04em] truncate">
                     {label}
                 </span>
                 <svg
@@ -103,6 +103,8 @@ export default function TrendsPanel({
     series = [],
     activeIndex = 0,
     onSelectQuarter = () => {},
+    header = null,
+    footer = null,
 }) {
     const isBgy = Boolean(selectedBgy?.name);
     const bgyName = selectedBgy?.name || '';
@@ -136,6 +138,15 @@ export default function TrendsPanel({
             .map(([name, count]) => ({ name, count }))
             .sort((a, b) => b.count - a.count);
     }, [activePins, isForecast, forecastData, activeQuarter]);
+
+    // Projected demand is paged five barangays at a time, recorded filings seven.
+    const PAGE_SIZE = isForecast ? 5 : 7;
+    const [page, setPage] = useState(0);
+    useEffect(() => setPage(0), [activeQuarter?.year, activeQuarter?.quarter, isForecast]);
+    const pageCount = Math.max(1, Math.ceil(ranking.length / PAGE_SIZE));
+    const safePage = Math.min(page, pageCount - 1);
+    const pageStart = safePage * PAGE_SIZE;
+    const visibleRanking = ranking.slice(pageStart, pageStart + PAGE_SIZE);
 
     const rankingMax = Math.max(1, ...ranking.map((r) => r.count));
     const quarterTotal = ranking.reduce((sum, r) => sum + r.count, 0);
@@ -201,7 +212,7 @@ export default function TrendsPanel({
 
     const metricsConfig = [
         {
-            label: isForecast ? 'Projected LC' : 'LC filed',
+            label: isForecast ? 'Projected' : 'Filed',
             value: quarterTotal,
             align: 'left',
             tooltip: {
@@ -243,7 +254,7 @@ export default function TrendsPanel({
             },
         },
         {
-            label: 'R-squared',
+            label: 'R²',
             value: r2 != null ? formatR2(r2) : '—',
             align: 'right',
             tooltip: {
@@ -260,22 +271,29 @@ export default function TrendsPanel({
 
     return (
         <div className="flex-1 min-h-0 flex flex-col">
-            <div className="shrink-0 grid grid-cols-4 border-b border-slate-200">
-                {metricsConfig.map((k, i) => (
-                    <MetricCard
-                        key={k.label}
-                        label={k.label}
-                        value={k.value}
-                        tooltip={k.tooltip}
-                        align={k.align}
-                        hasBorder={i > 0}
-                    />
-                ))}
-            </div>
+            {isForecast && (
+            <section className="border-b border-slate-200" aria-label="Forecast accuracy">
+                <h3 className="px-4 pt-3.5 pb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Forecast accuracy</h3>
+                <div className="grid grid-cols-4 border-t border-slate-200">
+                    {metricsConfig.map((k, i) => (
+                        <MetricCard
+                            key={k.label}
+                            label={k.label}
+                            value={k.value}
+                            tooltip={k.tooltip}
+                            align={k.align}
+                            hasBorder={i > 0}
+                        />
+                    ))}
+                </div>
+            </section>
+            )}
+
+            {header}
 
             {isBgy ? (
                 <>
-                    <div className="shrink-0 px-4 pt-2.5 pb-3 border-b border-slate-200">
+                    <div className="shrink-0 px-4 pt-3.5 pb-3.5 border-b border-slate-200">
                         <div className="flex items-baseline mb-1.5">
                             <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">LC per quarter · {bgyName}</h3>
                             <span className="text-[10.5px] text-slate-400">Click a bar to view it</span>
@@ -304,11 +322,13 @@ export default function TrendsPanel({
                             })}
                         </div>
                     </div>
-                    <div className="shrink-0 flex items-baseline px-4 pt-2.5 pb-2">
+                    {!isForecast && (
+                        <>
+                    <div className="shrink-0 flex items-baseline px-4 pt-3.5 pb-2">
                         <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">LC records · {bgyName}</h3>
                         <span className="text-[10.5px] text-slate-400 tabular-nums">{bgyRecords.length} on file</span>
                     </div>
-                    <ul className="flex-1 min-h-0 overflow-y-auto border-t border-slate-200">
+                    <ul className="border-t border-b border-slate-200">
                         {bgyRecords.length === 0 && (
                             <li className="px-4 py-6 text-center text-[12px] text-slate-500">No locational clearance records for this barangay.</li>
                         )}
@@ -328,10 +348,12 @@ export default function TrendsPanel({
                             </li>
                         ))}
                     </ul>
+                        </>
+                    )}
                 </>
             ) : (
-                <>
-                    <div className="shrink-0 flex items-baseline px-4 pt-2.5 pb-2">
+                <section className="border-b border-slate-200" aria-label="Demand by barangay">
+                    <div className="shrink-0 flex items-baseline px-4 pt-3.5 pb-2">
                         <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">
                             {isForecast ? 'Projected demand by barangay' : 'Filings by barangay'}
                         </h3>
@@ -339,7 +361,7 @@ export default function TrendsPanel({
                             {previous ? `Change vs ${previous.label}` : isForecast ? 'Predicted clearances' : 'Click to open'}
                         </span>
                     </div>
-                    <ol className="flex-1 min-h-0 overflow-y-auto border-t border-slate-200" onMouseLeave={() => onHoverBgy(null)}>
+                    <ol>
                         {isExecuting && ranking.length === 0 && [0, 1, 2, 3, 4, 5].map((n) => (
                             <li key={n} className="px-4 py-2 flex items-center gap-2 animate-pulse" aria-hidden="true">
                                 <span className="w-3 h-2.5 rounded-sm bg-slate-200" />
@@ -359,7 +381,8 @@ export default function TrendsPanel({
                                         : 'No forecast output for this quarter yet. Run the model below.'}
                             </li>
                         )}
-                        {ranking.map((r, i) => {
+                        {visibleRanking.map((r, idx) => {
+                            const i = pageStart + idx;
                             const cls = getTrendsDemandColor(r.count);
                             const delta = deltaFor(r.name);
                             return (
@@ -367,9 +390,7 @@ export default function TrendsPanel({
                                     <button
                                         type="button"
                                         onClick={() => onSelectBgy?.(r.name)}
-                                        onMouseEnter={() => onHoverBgy(r.name)}
-                                        onFocus={() => onHoverBgy(r.name)}
-                                        className="w-full grid grid-cols-[20px_1fr_28px_auto] items-center gap-2 px-4 py-1.5 text-left hover:bg-slate-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b]"
+                                        className="w-full grid grid-cols-[20px_1fr_28px_auto] items-center gap-2 px-4 py-2 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b]"
                                     >
                                         <span className="text-[10.5px] tabular-nums text-slate-400">{i + 1}</span>
                                         <span className="min-w-0">
@@ -392,10 +413,38 @@ export default function TrendsPanel({
                             );
                         })}
                     </ol>
-                </>
+                    {ranking.length > PAGE_SIZE && (
+                        <div className="shrink-0 flex items-center justify-between px-4 py-1.5 border-t border-slate-200 bg-slate-50/70">
+                            <button
+                                type="button"
+                                onClick={() => setPage(safePage - 1)}
+                                disabled={safePage === 0}
+                                aria-label={`Previous ${PAGE_SIZE} barangays`}
+                                className="w-7 h-7 flex items-center justify-center rounded-[3px] border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                            </button>
+                            <span className="text-[10.5px] tabular-nums text-slate-500">
+                                {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, ranking.length)} of {ranking.length}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setPage(safePage + 1)}
+                                disabled={safePage >= pageCount - 1}
+                                aria-label={`Next ${PAGE_SIZE} barangays`}
+                                className="w-7 h-7 flex items-center justify-center rounded-[3px] border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                        </div>
+                    )}
+                </section>
             )}
 
-            <details className="group shrink-0 border-t border-slate-200">
+            {footer}
+
+            {isForecast && (
+            <details className="group shrink-0 border-b border-slate-200">
                 <summary className="flex items-center justify-between px-4 py-2.5 cursor-pointer list-none hover:bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
                     Model data
                     <svg className="w-3.5 h-3.5 text-slate-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
@@ -433,6 +482,7 @@ export default function TrendsPanel({
                     )}
                 </div>
             </details>
+            )}
         </div>
     );
 }
