@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -20,12 +21,22 @@ class AuthenticatedSessionController extends Controller
     {
         return Inertia::render('Auth/Login', [
             'status' => session('status'),
+            // Public by design; null turns the Turnstile widget off.
+            'turnstileSiteKey' => $this->turnstileEnabled() ? config('services.turnstile.site_key') : null,
         ]);
     }
 
     public function store(LoginRequest $request): RedirectResponse
     {
         $throttleKey = $request->throttleKey();
+
+        // Cloudflare Turnstile runs before anything touches the credentials or the lockout counter,
+        // so a failed or missing check never costs the real user a login attempt.
+        if ($this->turnstileEnabled() && ! $this->turnstilePasses($request)) {
+            throw ValidationException::withMessages([
+                'email' => 'Please complete the security check and try again.',
+            ]);
+        }
 
         // Temporary, per email+IP lockout. The account itself is never deactivated: anyone who
         // knows an email address could otherwise lock that person (or every admin) out for good.
@@ -125,6 +136,32 @@ class AuthenticatedSessionController extends Controller
         $request->session()->forget('url.intended');
 
         return redirect(route('overview', absolute: false));
+    }
+
+    private function turnstileEnabled(): bool
+    {
+        return filled(config('services.turnstile.site_key')) && filled(config('services.turnstile.secret_key'));
+    }
+
+    private function turnstilePasses(Request $request): bool
+    {
+        $token = $request->input('cf-turnstile-response');
+
+        if (! is_string($token) || $token === '') {
+            return false;
+        }
+
+        try {
+            $response = Http::asForm()->timeout(5)->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+                'secret' => config('services.turnstile.secret_key'),
+                'response' => $token,
+                'remoteip' => $request->ip(),
+            ]);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $response->successful() && $response->json('success') === true;
     }
 
     // retry_after (seconds) lets the login page show a live countdown; the email message is the plain-text fallback.
