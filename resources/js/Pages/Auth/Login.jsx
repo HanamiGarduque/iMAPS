@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Head, useForm } from '@inertiajs/react';
-import { Icon, ICONS, PARCELS, CadastralBackground, Navbar, Field, inputClass, AuthStyles } from './AuthUI';
+import { Head, useForm, usePage } from '@inertiajs/react';
+import ApplicationLogo from '@/Components/ApplicationLogo';
+import { Icon, ICONS, PARCELS, CadastralBackground, Field, inputClass, AuthStyles } from './AuthUI';
 import { confirmDialog } from '@/utils/signOut';
 
 const keySvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>';
@@ -223,11 +224,73 @@ const MOCKS = [
     </MockFrame>,
 ];
 
+// Login-only refinement of the shared input: taller, softly tinted at rest, white with a blue halo on focus.
+const inputPolish = '!h-11 !rounded-xl !bg-slate-50/70 !shadow-[inset_0_1px_2px_rgba(15,23,42,.05)] focus:!bg-white focus:!shadow-[0_0_0_4px_rgba(37,99,235,.1)] !text-[15px] !font-medium';
+
+// The desktop layout is about 1180 × 680 at natural size. Scale it to the largest size that still fits the window
+// (capped so it never gets silly on huge or tiny screens). Below 1024px the page stacks and scrolls, so no scaling.
+const fitZoom = () => {
+    if (typeof window === 'undefined' || window.innerWidth < 1024) return 1;
+    return Math.max(0.7, Math.min(1.6, window.innerWidth / 1180, window.innerHeight / 680));
+};
+
+// Cloudflare Turnstile: the "Verifying…" security check. Renders only when the server hands over a site key.
+// The slot keeps a fixed height so the card never changes size while the widget loads.
+const TURNSTILE_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+const Turnstile = ({ siteKey, onToken, widgetRef }) => {
+    const box = useRef(null);
+    useEffect(() => {
+        let cancelled = false;
+        const mount = () => {
+            if (cancelled || !box.current || !window.turnstile || widgetRef.current !== null) return;
+            widgetRef.current = window.turnstile.render(box.current, {
+                sitekey: siteKey,
+                theme: 'light',
+                callback: (token) => onToken(token),
+                'expired-callback': () => onToken(''),
+                'error-callback': () => onToken(''),
+            });
+        };
+        if (window.turnstile) mount();
+        else {
+            let script = document.querySelector(`script[src="${TURNSTILE_SRC}"]`);
+            if (!script) {
+                script = document.createElement('script');
+                script.src = TURNSTILE_SRC;
+                script.async = true;
+                document.head.appendChild(script);
+            }
+            script.addEventListener('load', mount);
+        }
+        return () => {
+            cancelled = true;
+            if (widgetRef.current !== null && window.turnstile) window.turnstile.remove(widgetRef.current);
+            widgetRef.current = null;
+        };
+    }, [siteKey]);
+    return <div className="flex h-[65px] items-center justify-center overflow-hidden" ref={box} aria-label="Security check" />;
+};
+
 export default function Login() {
+    const [zoom, setZoom] = useState(fitZoom);
+    useEffect(() => {
+        const onResize = () => setZoom(fitZoom());
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+
+    const { turnstileSiteKey } = usePage().props;
+    const turnstileWidget = useRef(null);
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         email: '',
         password: '',
+        'cf-turnstile-response': '',
     });
+    // A Turnstile token works once, so every attempt (even a failed one) gets a fresh check.
+    const resetTurnstile = () => {
+        setData('cf-turnstile-response', '');
+        if (turnstileWidget.current !== null && window.turnstile) window.turnstile.reset(turnstileWidget.current);
+    };
 
     const [showPassword, setShowPassword] = useState(false);
     const [active, setActive] = useState(0);
@@ -286,7 +349,7 @@ export default function Login() {
         e.preventDefault();
         post('/login', {
             showProgress: false, // the button's spinner is the loading indicator here
-            onFinish: () => reset('password'),
+            onFinish: () => { reset('password'); if (turnstileSiteKey) resetTurnstile(); },
         });
     };
 
@@ -296,20 +359,40 @@ export default function Login() {
 
             <AuthStyles lockScroll={!!showTerms} />
 
-            <div className="relative min-h-screen w-full overflow-hidden bg-white text-slate-900">
+            {/* On desktop the whole page fits the window, so it never scrolls. The layout is scaled to the window
+                (see fitZoom): up on big screens so it isn't tiny, down on short ones so nothing is cut off. */}
+            <style>{`
+                @media (min-width: 1024px) {
+                    body { overflow: hidden; }
+                    .login-fit { zoom: var(--z, 1); height: calc(100vh / var(--z, 1)); }
+                }
+            `}</style>
+
+            <div className="relative min-h-screen w-full overflow-hidden bg-white text-slate-900 lg:h-screen">
 
                 <CadastralBackground activeParcel={ACTIVE_PARCEL[active]} />
 
-                <div className="relative z-10 max-w-6xl mx-auto px-5 sm:px-6 min-h-screen flex flex-col">
+                <div style={{ '--z': zoom }} className="login-fit relative z-10 max-w-6xl mx-auto px-5 sm:px-6 min-h-screen flex flex-col lg:min-h-0">
 
-                    <Navbar right={
-                        <a href="mailto:admin@imaps-rosario.gov.ph" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors">
+                    {/* Wordmark-only bar; the logo mark lives on the sign-in card below. */}
+                    {/* On desktop the bar is exactly as wide as the content below (headline edge to card edge). */}
+                    <nav className="rise relative mt-4 flex w-full items-center justify-between rounded-2xl bg-white/75 backdrop-blur-xl border border-white ring-1 ring-slate-900/5 py-2.5 pl-6 pr-3 shadow-[0_1px_2px_rgba(15,23,42,.04),0_18px_44px_-20px_rgba(37,99,235,.35)] lg:mx-auto lg:max-w-[1012px] after:absolute after:inset-x-10 after:bottom-0 after:h-px after:bg-gradient-to-r after:from-transparent after:via-blue-400/50 after:to-transparent">
+                        <div className="flex items-center gap-4">
+                            <p className="text-[26px] font-extrabold leading-none tracking-[-0.045em] text-slate-900">
+                                iMAPS<span className="text-blue-600">.</span>
+                            </p>
+                            <span className="hidden sm:block h-5 w-px bg-slate-200" aria-hidden="true" />
+                            <p className="hidden sm:block text-[10.5px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                                Municipal Planning and Development Office
+                            </p>
+                        </div>
+                        <a href="mailto:admin@imaps-rosario.gov.ph" className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm hover:border-blue-200 hover:text-blue-700 hover:bg-blue-50 transition-colors">
                             <Icon d={ICONS.mail} className="w-4 h-4" sw={2} />
                             <span className="hidden sm:inline">Need help?</span>
                         </a>
-                    } />
+                    </nav>
 
-                    <main className="flex-1 grid lg:grid-cols-[minmax(0,540px)_400px] lg:justify-center gap-12 lg:gap-24 items-center py-12">
+                    <main className="flex-1 grid lg:grid-cols-[minmax(0,540px)_376px] lg:justify-center gap-12 lg:gap-24 items-center py-12 lg:min-h-0 lg:py-4">
 
                         {/* Left: headline + module stepper */}
                         <div className="rise rise-2 order-2 lg:order-1">
@@ -347,25 +430,38 @@ export default function Login() {
 
                         {/* Right: sign-in card */}
                         <div className="rise rise-2 order-1 lg:order-2 w-full">
-                            <div className="rounded-2xl bg-white border border-slate-200/80 p-6 sm:p-8 shadow-[0_30px_70px_-30px_rgba(37,99,235,.4)]">
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-blue-600">
-                                    <Icon d={ICONS.shield} className="w-3.5 h-3.5" sw={2} />
-                                    Secure Access
-                                </span>
-                                <h2 className="mt-3 text-2xl font-extrabold leading-tight tracking-tight text-slate-900">Welcome back</h2>
-                                <p className="mt-1.5 mb-6 text-sm leading-6 text-slate-500">Enter your official staff credentials to continue.</p>
-
-                                {errors.email && (
-                                    <div id="login-error" role="alert" className="-mt-2 mb-4 flex items-start gap-2.5 rounded-lg border border-red-100 bg-red-50/60 px-3 py-2 text-[12.5px] leading-[18px] text-red-700 shadow-[inset_3px_0_0_#ef4444]">
-                                        <Icon d={ICONS.alert} className="w-4 h-4 mt-px shrink-0 text-red-500" sw={2} />
-                                        {retryIn > 0 ? (
-                                            <span>
-                                                Too many failed login attempts. Try again in{' '}
-                                                <time className="font-bold tabular-nums">{countdown}</time>.
-                                            </span>
-                                        ) : errors.email}
+                            <div style={{ zoom: turnstileSiteKey ? 0.86 : 0.94 }} className="overflow-hidden rounded-3xl bg-white ring-1 ring-slate-900/5 shadow-[0_2px_4px_rgba(15,23,42,.04),0_50px_90px_-34px_rgba(35,71,213,.55)]">
+                                {/* Centred header: emblem, eyebrow, title, subtitle */}
+                                <div className="px-7 pt-6 text-center">
+                                    {/* A faint halo lifts the logo off the card without a heavy shadow */}
+                                    <div className="relative mx-auto h-[84px] w-[84px]">
+                                        <span className="pointer-events-none absolute -inset-6 rounded-full bg-[radial-gradient(circle,rgba(37,99,235,.13),transparent_68%)]" aria-hidden="true" />
+                                        <ApplicationLogo symbol data-splash-target="symbol" className="relative h-full w-full" alt="" aria-hidden="true" />
                                     </div>
-                                )}
+<p className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-blue-50/80 px-3 py-[5px] text-[10px] font-bold uppercase leading-none tracking-[0.24em] text-blue-600 ring-1 ring-inset ring-blue-100">                                        <Icon d={ICONS.shield} className="w-3 h-3" sw={2.2} />                                        Authorized Personnel                                    </p>
+                                    <h2 className="mt-3 text-[27px] font-extrabold leading-none tracking-[-0.035em] text-slate-900">
+                                        Welcome <span className="bg-gradient-to-r from-blue-600 to-indigo-500 bg-clip-text text-transparent">back</span>
+                                    </h2>
+                                    {/* Fixed-height slot: the subtitle and any sign-in error swap places here, so the card never changes size or moves. */}
+                                    <div className="relative mt-2 h-10">
+                                        <p className={`absolute inset-0 pt-px text-[13px] leading-5 text-slate-500 transition-opacity duration-200 ${errors.email ? 'opacity-0' : 'opacity-100'}`} aria-hidden={!!errors.email}>
+                                            Enter your official staff credentials to continue.
+                                        </p>
+                                        {errors.email && (
+                                            <div id="login-error" role="alert" className="absolute inset-0 flex items-center gap-2.5 rounded-lg border border-red-100 bg-red-50/70 px-3 text-left text-[12.5px] leading-[17px] text-red-700 shadow-[inset_3px_0_0_#ef4444]">
+                                                <Icon d={ICONS.alert} className="w-4 h-4 shrink-0 text-red-500" sw={2} />
+                                                {retryIn > 0 ? (
+                                                    <span>
+                                                        Too many failed login attempts. Try again in{' '}
+                                                        <time className="font-bold tabular-nums">{countdown}</time>.
+                                                    </span>
+                                                ) : errors.email}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="px-7 pt-3 pb-6">
 
                                 <form onSubmit={submit} aria-busy={processing} className={`space-y-4 transition-opacity ${processing ? '[&_input]:opacity-60 [&_input]:pointer-events-none' : ''}`}>
                                     <Field id="email" label="Email address" icon={ICONS.mail}>
@@ -374,7 +470,7 @@ export default function Login() {
                                             id="email"
                                             value={data.email}
                                             onChange={e => setData('email', e.target.value)}
-                                            className={inputClass}
+                                            className={`${inputClass} ${inputPolish}`}
                                             placeholder="name@rosario.gov.ph"
                                             autoComplete="email"
                                             aria-invalid={!!errors.email}
@@ -403,7 +499,7 @@ export default function Login() {
                                             id="password"
                                             value={data.password}
                                             onChange={e => setData('password', e.target.value)}
-                                            className={`${inputClass} pr-12`}
+                                            className={`${inputClass} ${inputPolish} pr-12`}
                                             placeholder="Enter your password"
                                             autoComplete="current-password"
                                             aria-invalid={!!errors.email}
@@ -420,10 +516,14 @@ export default function Login() {
                                         </button>
                                     </Field>
 
+                                    {turnstileSiteKey && (
+                                        <Turnstile siteKey={turnstileSiteKey} widgetRef={turnstileWidget} onToken={(t) => setData('cf-turnstile-response', t)} />
+                                    )}
+
                                     <button
                                         type="submit"
-                                        disabled={processing || retryIn > 0}
-                                        className="w-full h-11 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 active:scale-[.99] disabled:cursor-wait disabled:opacity-90 text-white text-[15px] font-semibold shadow-[0_10px_24px_-8px_rgba(37,99,235,.6),inset_0_1px_0_rgba(255,255,255,.25)] transition inline-flex items-center justify-center gap-2.5"
+                                        disabled={processing || retryIn > 0 || (!!turnstileSiteKey && !data['cf-turnstile-response'])}
+                                        className="w-full h-11 rounded-xl bg-gradient-to-b from-blue-500 via-blue-600 to-blue-700 hover:brightness-110 active:scale-[.99] disabled:cursor-wait disabled:opacity-90 text-white text-[15px] font-semibold tracking-wide shadow-[0_16px_30px_-10px_rgba(37,99,235,.75),inset_0_1px_0_rgba(255,255,255,.3)] transition inline-flex items-center justify-center gap-2.5"
                                     >
                                         {processing && (
                                             <svg className="w-[18px] h-[18px] animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -431,20 +531,21 @@ export default function Login() {
                                                 <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
                                             </svg>
                                         )}
-                                        <span>{processing ? 'Logging in…' : 'Log in'}</span>
-                                        {/* Announced only while a login is in progress, not as a stray "Log in". */}
-                                        <span role="status" className="sr-only">{processing ? 'Logging in…' : ''}</span>
+                                        <span>{processing ? 'Signing in…' : 'Sign In'}</span>
+                                        {/* Announced only while a sign-in is in progress, not as a stray "Sign In". */}
+                                        <span role="status" className="sr-only">{processing ? 'Signing in…' : ''}</span>
                                     </button>
                                 </form>
 
-                                <div className="mt-6 pt-5 border-t border-slate-100 flex items-start gap-2.5 text-[13px] leading-relaxed text-slate-500">
-                                    <Icon d={ICONS.shield} className="w-[18px] h-[18px] mt-0.5 text-blue-600 shrink-0" sw={1.8} />
-                                    <p>
-                                        Authorized personnel only. By signing in you agree to our{' '}
-                                        <button type="button" onClick={() => openTerms('terms')} className="text-blue-600 font-semibold hover:underline">Terms of Service</button>,{' '}
-                                        <button type="button" onClick={() => openTerms('privacy')} className="text-blue-600 font-semibold hover:underline">Privacy Policy</button>{' '}and{' '}
-                                        <button type="button" onClick={() => openTerms('cookies')} className="text-blue-600 font-semibold hover:underline">Cookie Policy</button>.
+                                <div className="mt-5 border-t border-slate-100 pt-4 text-center">
+                                    {/* text-wrap: balance splits the sentence into two even lines instead of leaving "and" on its own. */}
+                                    <p className="mx-auto max-w-[19rem] text-xs leading-[1.65] text-slate-500 [text-wrap:balance]">
+                                        By signing in you agree to our{' '}
+                                        <span className="whitespace-nowrap"><button type="button" onClick={() => openTerms('terms')} className="font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Terms of Service</button>,</span>{' '}
+                                        <button type="button" onClick={() => openTerms('privacy')} className="whitespace-nowrap font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Privacy Policy</button>{' '}and{' '}
+                                        <button type="button" onClick={() => openTerms('cookies')} className="whitespace-nowrap font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Cookie Policy</button>.
                                     </p>
+                                </div>
                                 </div>
                             </div>
                         </div>

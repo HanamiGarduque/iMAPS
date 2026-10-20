@@ -21,10 +21,15 @@
         /* Hand-off: everything but the logo fades, then the logo flies into the navbar (see script) */
         #launch-splash .ls-bg, #launch-splash .ls-grid, #launch-splash .ls-glow, #launch-splash .ls-name, #launch-splash .ls-status, #launch-splash .ls-comet, #launch-splash .ls-svg { transition: opacity .45s ease; }
         #launch-splash.is-leaving .ls-grid, #launch-splash.is-leaving .ls-glow, #launch-splash.is-leaving .ls-name, #launch-splash.is-leaving .ls-status, #launch-splash.is-leaving .ls-comet { opacity: 0 !important; animation: none; }
-        #launch-splash.is-leaving .ls-bg { opacity: 0; transition-duration: .7s; transition-delay: .2s; }
-        #launch-splash .ls-final { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .5s ease .25s; }
+        #launch-splash.is-leaving .ls-bg { opacity: 0; transition-duration: 1.1s; transition-delay: .35s; transition-timing-function: cubic-bezier(.4,0,.2,1); }
+        #launch-splash .ls-final { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .7s ease .5s; }
         #launch-splash.is-leaving .ls-final { opacity: 1; }
-        #launch-splash.is-leaving .ls-svg { opacity: 0; transition-duration: .5s; transition-delay: .25s; filter: none; }
+        #launch-splash.is-leaving .ls-svg { opacity: 0; transition-duration: .7s; transition-delay: .5s; filter: none; }
+        /* Landing on a white logo (e.g. on a blue header): stay white instead of turning navy. */
+        #launch-splash.no-lettering #custom-imaps-lettering { transition: opacity .6s ease .15s; }
+        #launch-splash.no-lettering.is-leaving #custom-imaps-lettering { opacity: 0; }
+        #launch-splash.keep-white.is-leaving .ls-final { opacity: 0; }
+        #launch-splash.keep-white.is-leaving .ls-svg { opacity: 1; }
         html.splash-flying img[data-nav-logo] { opacity: 0; }
 
         /* Faint map grid, fading out towards the edges */
@@ -155,7 +160,7 @@
             // Fade everything out, and fly the logo into the navbar logo it becomes.
             function hand() {
                 var mark = el.querySelector('.ls-mark');
-                var nav = document.querySelector('nav img[src$="imaps-logo.svg"]');
+                var nav = document.querySelector('img[data-splash-target]');
                 var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
                 root.classList.remove('splash-on'); // lets the page's own entrance animations start under the fading splash
                 if (!nav || !mark || !mark.animate || reduce) {
@@ -171,15 +176,35 @@
                 var m = mark.getBoundingClientRect();
                 var dx = box.left + box.width / 2 - (m.left + m.width / 2);
                 var dy = box.top + box.height / 2 - (m.top + m.height / 2);
+                var scale = th / m.height;
+                if (nav.getAttribute('data-splash-target') === 'symbol') {
+                    // Target is the fingerprint-only mark (no lettering): align the two logos by their shared coordinates
+                    // (fingerprint pin at 716,767; splash viewBox starts at 212,69; symbol viewBox is 1024 square).
+                    var k1 = m.width / 887;
+                    var side = Math.min(box.width, box.height);
+                    var k2 = side / 1024;
+                    var ox = box.left + (box.width - side) / 2;
+                    var oy = box.top + (box.height - side) / 2;
+                    var cx = m.left + m.width / 2;
+                    var cy = m.top + m.height / 2;
+                    scale = k2 / k1;
+                    dx = ox + 716 * k2 - (cx + scale * (m.left + (716 - 212) * k1 - cx));
+                    dy = oy + 767 * k2 - (cy + scale * (m.top + (767 - 69) * k1 - cy));
+                    var fin = el.querySelector('.ls-final');
+                    fin.src = '{{ asset('branding/imaps-symbol.svg') }}';
+                    fin.style.cssText = 'inset:auto;max-width:none;max-height:none;object-fit:fill;left:' + (-212 * k1) + 'px;top:' + (-69 * k1) + 'px;width:' + (1024 * k1) + 'px;height:' + (1024 * k1) + 'px';
+                    el.classList.add('no-lettering');
+                }
+                el.classList.toggle('keep-white', nav.getAttribute('data-splash-target') === 'white');
                 nav.setAttribute('data-nav-logo', '');
                 root.classList.add('splash-flying');
                 el.classList.add('is-leaving');
                 var fly = mark.animate(
-                    [{ transform: 'none' }, { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(' + (th / m.height) + ')' }],
-                    { duration: 1050, delay: 150, easing: 'cubic-bezier(.65,0,.2,1)', fill: 'forwards' }
+                    [{ transform: 'none' }, { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(' + scale + ')' }],
+                    { duration: 1700, delay: 100, easing: 'cubic-bezier(.5,0,.1,1)', fill: 'forwards' }
                 );
                 fly.onfinish = cleanup;
-                setTimeout(cleanup, 2000); // safety net
+                setTimeout(cleanup, 2600); // safety net
             }
             window.addEventListener('imaps:ready', leave);
             setTimeout(leave, 10000); // never trap the user behind the splash
