@@ -595,23 +595,13 @@ export default function Login() {
                                     </button>
                                 </form>
 
-<<<<<<< HEAD
                                 <div className="mt-5 border-t border-slate-100 pt-4 text-center">
                                     {/* text-wrap: balance splits the sentence into two even lines instead of leaving "and" on its own. */}
                                     <p className="mx-auto max-w-[19rem] text-xs leading-[1.65] text-slate-500 [text-wrap:balance]">
                                         By signing in you agree to our{' '}
-                                        <span className="whitespace-nowrap"><button type="button" onClick={() => openTerms('terms')} className="font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Terms of Service</button>,</span>{' '}
+                                        <span className="whitespace-nowrap"><button type="button" onClick={() => openTerms('terms')} className="font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Terms & Conditions</button>,</span>{' '}
                                         <button type="button" onClick={() => openTerms('privacy')} className="whitespace-nowrap font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Privacy Policy</button>{' '}and{' '}
-                                        <button type="button" onClick={() => openTerms('cookies')} className="whitespace-nowrap font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Cookie Policy</button>.
-=======
-                                <div className="mt-6 pt-5 border-t border-slate-100 flex items-start gap-2.5 text-[13px] leading-relaxed text-slate-500">
-                                    <Icon d={ICONS.shield} className="w-[18px] h-[18px] mt-0.5 text-blue-600 shrink-0" sw={1.8} />
-                                    <p>
-                                        Authorized personnel only. By signing in you agree to our{' '}
-                                        <button type="button" onClick={() => openTerms('terms')} className="text-blue-600 font-semibold hover:underline">Terms & Conditions</button>,{' '}
-                                        <button type="button" onClick={() => openTerms('privacy')} className="text-blue-600 font-semibold hover:underline">Privacy Policy</button>{' '}and{' '}
-                                        <button type="button" onClick={() => openTerms('cookies')} className="text-blue-600 font-semibold hover:underline">Cookie & Storage Policy</button>.
->>>>>>> ad08353a100ef72b9ee93ae163f5fa0f0b4c5308
+                                        <button type="button" onClick={() => openTerms('cookies')} className="whitespace-nowrap font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Cookie & Storage Policy</button>.
                                     </p>
                                 </div>
                                 </div>
