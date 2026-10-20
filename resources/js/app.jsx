@@ -33,6 +33,8 @@ createInertiaApp({
                 <PageLoader />
             </>
         )
+        // Tells the launch splash in app.blade.php that the page underneath is ready.
+        requestAnimationFrame(() => requestAnimationFrame(() => window.dispatchEvent(new Event('imaps:ready'))))
     },
     // The top progress bar is replaced by the centred loading bubble in PageLoader.
     progress: false,
