@@ -258,6 +258,8 @@ export default function LeafletMap({
     insets = { right: 0, bottom: 0 },
     verifiedParcel = null,
     demandCounts = {},
+    // Per-barangay colour override for the LC layer (see utils/lcInsights).
+    lcColors = null,
     // Filled with { get, set } so the 3D view can start from, and hand back,
     // exactly the view the person is looking at.
     viewRef = null,
@@ -367,7 +369,7 @@ export default function LeafletMap({
             };
         }
 
-        const demand = layer === "trends" ? getTrendsDemandColor(demandFor(name)) : null;
+        const demand = layer === "trends" ? (lcColors?.[name.trim().toLowerCase()] || getTrendsDemandColor(demandFor(name))) : null;
         const fillColor = demand ? demand.color : getAppLoadColor(stat.total);
         let base = clup ? 0.25 : layer === "trends" ? 0.82 : 0.62;
         // The lowest class is near-white; on imagery it fades out (all but
@@ -642,7 +644,7 @@ export default function LeafletMap({
 
         geoLayerRef.current?.bringToFront();
         raiseSelected();
-    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, demandCounts, diversityLens, diversityBandFilter, zoningReady, barangaysReady, mapStyle]);
+    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, demandCounts, lcColors, diversityLens, diversityBandFilter, zoningReady, barangaysReady, mapStyle]);
 
     // ── Camera follows the selected barangay ──
     useEffect(() => {

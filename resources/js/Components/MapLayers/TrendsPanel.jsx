@@ -1,6 +1,9 @@
 import { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
 import { getTrendsDemandColor } from '@/Components/Maps/LeafletMap';
+import BarangayLcDetail from '@/Components/MapLayers/BarangayLcDetail';
+import useBarangayNames from '@/utils/useBarangayNames';
+import { concentration } from '@/utils/lcInsights';
 
 // The service reports validation_wmape as a percentage (e.g. 42.3).
 const formatWmape = (val) => {
@@ -96,6 +99,9 @@ export default function TrendsPanel({
     forecastData = null,
     forecastOutdated = null,
     selectedBgy = null,
+    bgyStat = null,
+    onOpenRecords = null,
+    recordsOpen = false,
     onSelectBgy,
     onHoverBgy = () => {},
     onForecastGenerated = null,
@@ -148,6 +154,12 @@ export default function TrendsPanel({
     const pageStart = safePage * PAGE_SIZE;
     const visibleRanking = ranking.slice(pageStart, pageStart + PAGE_SIZE);
 
+    const barangayNames = useBarangayNames();
+    // Whether the quarter's demand sits in a few barangays or is spread out.
+    const spread = useMemo(
+        () => (barangayNames.length ? concentration([...ranking.map((r) => r.count), ...Array(Math.max(0, barangayNames.length - ranking.length)).fill(0)]) : null),
+        [ranking, barangayNames]
+    );
     const rankingMax = Math.max(1, ...ranking.map((r) => r.count));
     const quarterTotal = ranking.reduce((sum, r) => sum + r.count, 0);
 
@@ -163,14 +175,6 @@ export default function TrendsPanel({
         const key = name.trim().toLowerCase();
         return (series[activeIndex]?.byBgy?.[key] || 0) - (previous.byBgy?.[key] || 0);
     };
-
-    // The selected barangay tracked across every quarter on the timeline.
-    const bgyTrend = useMemo(() => {
-        if (!isBgy) return [];
-        const key = bgyName.trim().toLowerCase();
-        return series.map((q) => ({ ...q, value: q.total === null ? null : q.byBgy?.[key] || 0 }));
-    }, [series, isBgy, bgyName]);
-    const bgyTrendMax = Math.max(1, ...bgyTrend.map((q) => q.value || 0));
 
     // Historical LC records for the selected barangay
     const bgyRecords = useMemo(() => {
@@ -269,10 +273,15 @@ export default function TrendsPanel({
         },
     ];
 
+    // On a recorded quarter a barangay's own detail leads and the town-wide forecast
+    // cards follow. On a forecast quarter the panel keeps its forecast layout:
+    // accuracy, the town summary, then this barangay's quarter chart.
+    const after = (n) => (isBgy && !isForecast ? { order: n } : undefined);
+
     return (
         <div className="flex-1 min-h-0 flex flex-col">
             {isForecast && (
-            <section className="border-b border-slate-200" aria-label="Forecast accuracy">
+            <section className="border-b border-slate-200" style={after(2)} aria-label="Forecast accuracy">
                 <h3 className="px-4 pt-3.5 pb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Forecast accuracy</h3>
                 <div className="grid grid-cols-4 border-t border-slate-200">
                     {metricsConfig.map((k, i) => (
@@ -289,68 +298,23 @@ export default function TrendsPanel({
             </section>
             )}
 
-            {header}
+            {header && <div style={after(3)}>{header}</div>}
 
             {isBgy ? (
-                <>
-                    <div className="shrink-0 px-4 pt-3.5 pb-3.5 border-b border-slate-200">
-                        <div className="flex items-baseline mb-1.5">
-                            <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">LC per quarter · {bgyName}</h3>
-                            <span className="text-[10.5px] text-slate-400">Click a bar to view it</span>
-                        </div>
-                        <div className="flex items-end gap-[2px] h-12">
-                            {bgyTrend.map((q, i) => {
-                                const known = q.value !== null;
-                                const selected = i === activeIndex;
-                                return (
-                                    <button
-                                        key={`${q.year}-${q.quarter}`}
-                                        type="button"
-                                        onClick={() => onSelectQuarter(i)}
-                                        title={`${q.label}${q.isForecast ? ' (forecast)' : ''}: ${known ? `${q.value} LC` : 'not loaded'}`}
-                                        aria-label={`${q.label}, ${known ? `${q.value} LC` : 'not loaded'}`}
-                                        className="flex-1 h-full flex items-end cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
-                                    >
-                                        <span
-                                            className={`block w-full rounded-t-[2px] ${known ? '' : 'border border-dashed border-slate-300'}`}
-                                            style={known
-                                                ? { height: `${Math.max(q.value ? 10 : 3, (q.value / bgyTrendMax) * 100)}%`, background: selected ? '#0b2a5b' : q.isForecast ? '#fd8d3c' : '#9fb1c9' }
-                                                : { height: '25%' }}
-                                        />
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                    {!isForecast && (
-                        <>
-                    <div className="shrink-0 flex items-baseline px-4 pt-3.5 pb-2">
-                        <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">LC records · {bgyName}</h3>
-                        <span className="text-[10.5px] text-slate-400 tabular-nums">{bgyRecords.length} on file</span>
-                    </div>
-                    <ul className="border-t border-b border-slate-200">
-                        {bgyRecords.length === 0 && (
-                            <li className="px-4 py-6 text-center text-[12px] text-slate-500">No locational clearance records for this barangay.</li>
-                        )}
-                        {bgyRecords.map((item, idx) => (
-                            <li key={item.id || `${item.reference_number}-${idx}`} className="px-4 py-2 border-b border-slate-100">
-                                <div className="flex items-baseline justify-between gap-2">
-                                    <span className="text-[12px] font-semibold text-slate-900 truncate">{item.applicant_name || 'Applicant'}</span>
-                                    <span className="text-[10.5px] tabular-nums text-slate-500 shrink-0">
-                                        {item.created_at ? new Date(item.created_at).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
-                                    </span>
-                                </div>
-                                <div className="text-[10.5px] text-slate-500 truncate">
-                                    <span className="font-mono">{item.reference_number || '—'}</span>
-                                    {' · '}{item.target_land_use_class || item.zoning_code || 'Locational clearance'}
-                                    {item.lot_area_sqm ? ` · ${item.lot_area_sqm} sqm` : ''}
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                        </>
-                    )}
-                </>
+                <div className="shrink-0 flex flex-col" style={after(1)}>
+                <BarangayLcDetail
+                    bgyName={bgyName}
+                    bgyStat={bgyStat}
+                    series={series}
+                    activeIndex={activeIndex}
+                    activeQuarter={activeQuarter}
+                    forecastData={forecastData}
+                    records={bgyRecords}
+                    onSelectQuarter={onSelectQuarter}
+                    onOpenRecords={onOpenRecords}
+                    recordsOpen={recordsOpen}
+                />
+                </div>
             ) : (
                 <section className="border-b border-slate-200" aria-label="Demand by barangay">
                     <div className="shrink-0 flex items-baseline px-4 pt-3.5 pb-2">
@@ -361,6 +325,11 @@ export default function TrendsPanel({
                             {previous ? `Change vs ${previous.label}` : isForecast ? 'Predicted clearances' : 'Click to open'}
                         </span>
                     </div>
+                    {spread && (
+                        <p className="px-4 pb-2 text-[11px] leading-snug text-slate-500">
+                            Half of the quarter's {spread.total} LC {isForecast ? 'projected' : 'filed'} come from <b className="text-slate-700">{spread.k} of {spread.of}</b> barangays.
+                        </p>
+                    )}
                     <ol>
                         {isExecuting && ranking.length === 0 && [0, 1, 2, 3, 4, 5].map((n) => (
                             <li key={n} className="px-4 py-2 flex items-center gap-2 animate-pulse" aria-hidden="true">
@@ -441,10 +410,10 @@ export default function TrendsPanel({
                 </section>
             )}
 
-            {footer}
+            {footer && <div style={after(4)}>{footer}</div>}
 
             {isForecast && (
-            <details className="group shrink-0 border-b border-slate-200">
+            <details className="group shrink-0 border-b border-slate-200" style={after(5)}>
                 <summary className="flex items-center justify-between px-4 py-2.5 cursor-pointer list-none hover:bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
                     Model data
                     <svg className="w-3.5 h-3.5 text-slate-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">

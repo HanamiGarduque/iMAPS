@@ -7,7 +7,7 @@ import { getZoneInfo } from "@/utils/clupZones";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import useReducedMotion from "@/utils/useReducedMotion";
 import { getTrendsDemandColor, DEMAND_CLASSES, APP_LOAD_CLASSES } from "@/Components/Maps/LeafletMap";
-import { loadBarangayBoundaries, loadMunicipalBoundary, resolveBarangayName } from "@/utils/mapData";
+import { loadBarangayBoundaries, loadMunicipalBoundary, loadNeighborMunicipalities, resolveBarangayName } from "@/utils/mapData";
 import { ensureRFC7946Winding } from "@/utils/polygonWinding";
 
 // Configure MapLibre Web Worker for Vite bundling
@@ -35,14 +35,21 @@ const FADE_IN_MS = 650;
 const SATELLITE_TILES = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 
 // Esri satellite imagery sits under the prisms; CANVAS only shows while tiles load.
+// (The LC demand forecast hides the imagery and shows PLAIN_PAGE instead.)
 const CANVAS = "#f8f9fa";
 const GROUND = "#eef1f4";
+// The LC demand forecast skips the imagery for a plain white page: a faint warm
+// gray toward the edges, so the shapes read as printed on paper.
+const PLAIN_PAGE = "radial-gradient(ellipse at 50% 45%, #ffffff 0%, #ffffff 52%, #f3f1ed 100%)";
+const PLAIN_LINE = "#b9b4ab";
+const SHADOW_STEPS = [[3, 5], [7, 11], [12, 18]];
 const INK = "#0f172a";
 
 const SRC_PRISMS = "diversity-source";
 const SRC_PARCELS = "clup-parcels";
 const SRC_MUNI = "municipal-outline";
 const SRC_MASK = "municipal-mask";
+const SRC_NEIGHBORS = "neighbor-municipalities";
 const LYR_PRISMS = "diversity-prisms";
 const LYR_FOOTPRINTS = "diversity-footprints";
 const LYR_PARCELS = "clup-parcels-extrusion";
@@ -159,7 +166,7 @@ const countHeight = (count, ref) => (count > 0 ? Math.round(HEIGHT_FLOOR + Math.
 // height and colour transitions animate, so stepping a timeline morphs the
 // prisms instead of snapping them.
 const SLOTTED = /^(?:[hcbl]|cls)_/;
-function buildFeatures(baseGeo, bgyStats, demandCounts, slot = 0, prevProps = null) {
+function buildFeatures(baseGeo, bgyStats, demandCounts, slot = 0, prevProps = null, lcColors = null) {
     const features = (baseGeo?.features || []).map((f, idx) => {
         const name = resolveBarangayName(f.properties);
         const stat = bgyStats?.[name] || {};
@@ -179,10 +186,11 @@ function buildFeatures(baseGeo, bgyStats, demandCounts, slot = 0, prevProps = nu
         const demand = demandCounts?.[name.trim().toLowerCase()] || 0;
         const demandClass = getTrendsDemandColor(demand);
         vals.h_trends = countHeight(demand, 16);
-        vals.c_trends = demandClass.color;
+        const lc = lcColors?.[name.trim().toLowerCase()];
+        vals.c_trends = lc?.color || demandClass.color;
         vals.b_trends = demandClass.min === 0 ? "minimal" : String(demandClass.min);
         vals.l_trends = demand ? `${demand} LC` : "";
-        vals.cls_trends = demandClass.label;
+        vals.cls_trends = lc?.label || demandClass.label;
 
         const total = stat.Total ?? stat.total ?? 0;
         const loadClass = APP_LOAD_CLASSES.find((c) => total >= c.min);
@@ -270,6 +278,8 @@ export default function MapLibre3DView({
     lens = "mix",
     // LC demand per barangay (lower-cased name -> count), for the trends lens.
     demandCounts = null,
+    // Per-barangay colour and hover text for the LC layer (see utils/lcInsights).
+    lcColors = null,
     bandFilter = "all",
     hoveredBgy = null,
     onHoverBgy = () => {},
@@ -285,6 +295,8 @@ export default function MapLibre3DView({
     // Filled with { zoomBy, reset } for the page's toolbar.
     controlRef = null,
     showLabels = true,
+    // Brings the satellite back under the LC demand forecast, which is plain white by default.
+    showSatellite = false,
 }) {
     const mapContainerRef = useRef(null);
     const mapRef = useRef(null);
@@ -302,6 +314,8 @@ export default function MapLibre3DView({
     activeRef.current = active;
     const demandRef = useRef(demandCounts);
     demandRef.current = demandCounts;
+    const lcColorsRef = useRef(lcColors);
+    lcColorsRef.current = lcColors;
     const insetsRef = useRef(insets);
     insetsRef.current = insets;
     const parcelCacheRef = useRef({});
@@ -312,6 +326,7 @@ export default function MapLibre3DView({
     const selectedNameRef = useRef(null);
 
     const lensRef = useRef(lens);
+    const plainRef = useRef(lens === "trends" && !showSatellite);
     const bandRef = useRef(bandFilter);
     const reducedRef = useRef(false);
     const styleReadyRef = useRef(false);
@@ -360,35 +375,26 @@ export default function MapLibre3DView({
         ["coalesce", ["get", `c_${lensId}_${slotRef.current}`], "#94a3b8"],
     ], []);
 
+    // fill-extrusion-opacity can't read properties or feature-state, so a data
+    // expression here is rejected and the layer silently keeps its last value.
+    // Isolation and band dimming are therefore filters (see layerFilter); the
+    // opacity itself is a plain number.
     const opacityExpression = useCallback((lensId, band, hasSelection) => {
-        if (hasSelection) {
-            // Isolation: the selected prism remains fully visible while
-            // everything else disappears rather than staying visible underneath 
-            // — the band filter is moot while one barangay has the floor.
-            return ["case", ["boolean", ["feature-state", "selected"], false], 0.98, 0];
-        }
+        if (hasSelection) return 0.98;
         if (!band || band === "all") {
-            // Flat (top-down): translucent so the satellite imagery reads through.
-            // Same strengths as the 2D layers on imagery: the lowest class
-            // all but clears instead of greying the ground.
-            const flat = isFlatRef.current;
-            return [
-                "case",
-                ["boolean", ["feature-state", "hover"], false], flat ? 0.85 : 0.98,
-                flat
-                    ? ["case",
-                        ["==", ["get", `b_${lensId}_${slotRef.current}`], "none"], 0.04,
-                        ["in", ["get", `b_${lensId}_${slotRef.current}`], ["literal", ["monoculture", "minimal"]]], 0.28,
-                        0.66]
-                    : 0.92,
-            ];
+            // No imagery to read through on the white page: fills stay opaque.
+            return plainRef.current ? 1 : 0.92;
         }
-        return [
-            "case",
-            ["boolean", ["feature-state", "selected"], false], 0.98,
-            ["==", ["get", `b_${lensId}_${slotRef.current}`], band], 0.95,
-            0.12,
-        ];
+        return 0.95;
+    }, []);
+
+    // Isolation: with a barangay selected, every other prism, outline and
+    // shadow is removed outright (the band filter is moot while one barangay
+    // has the floor). Without one, a band filter keeps only that band.
+    const layerFilter = useCallback((lensId, band, selectedName) => {
+        if (selectedName) return ["==", ["downcase", ["get", "name"]], selectedName.toLowerCase()];
+        if (band && band !== "all") return ["==", ["get", `b_${lensId}_${slotRef.current}`], band];
+        return null;
     }, []);
 
     // Label text, isolation, band dimming and overlap culling. Like the 2D map,
@@ -403,28 +409,87 @@ export default function MapLibre3DView({
         const band = bandRef.current;
         const selected = (selectedNameRef.current || "").toLowerCase();
 
+        const propsFor = (name) => props[name] || {};
         const candidates = Object.entries(entries).map(([name, { marker }]) => {
             const p = props[name] || {};
-            return { name, value: p[`l_${key}`] || "", rank: Number(p[`h_${key}`]) || 0, band: p[`b_${key}`], point: map.project(marker.getLngLat()) };
+            return { name, marker, value: p[`l_${key}`] || "", rank: Number(p[`h_${key}`]) || 0, band: p[`b_${key}`], point: map.project(marker.getLngLat()) };
         }).sort((a, b) => b.rank - a.rank);
 
+        // On the white page the northern barangays crowd each other, so low
+        // zooms keep only the busiest and the rest appear as the map zooms in.
+        const zoom = map.getZoom();
+        const plain = plainRef.current;
+        const maxLabels = !plain ? Infinity : zoom < 11.8 ? 10 : zoom < 12.6 ? 18 : zoom < 13.4 ? 30 : Infinity;
+        let shown = 0;
+
+        // Chips ride on top of their prism instead of the ground beneath it: a
+        // tall block otherwise hides, or sits well off, its own label.
+        const mPerPx = 78271.517 * Math.cos((ROSARIO_CENTER[1] * Math.PI) / 180) / 2 ** zoom;
+        const lift = plain && !isFlatRef.current ? Math.sin((map.getPitch() * Math.PI) / 180) / mPerPx : 0;
+
         const placed = [];
-        candidates.forEach(({ name, value, band: b, point }) => {
-            const { el, valueEl } = entries[name];
+        candidates.forEach(({ name, marker, rank, value, band: b, point: ground }) => {
+            const { valueEl, metaEl, changeEl } = entries[name];
+            const rise = Math.round(rank * lift);
+            marker.setOffset([0, -rise]);
+            const point = { x: ground.x, y: ground.y - rise };
             valueEl.textContent = value;
             valueEl.style.display = value ? "" : "none";
             let target = 1;
             if (selected) target = name.toLowerCase() === selected ? 1 : 0;
             else if (band && band !== "all" && b !== band) target = 0.15;
+            if (target > 0.5 && plain && !selected && ((!value && zoom < 13.4) || shown >= maxLabels)) target = 0;
             if (target > 0.5) {
-                const w = Math.max(name.length, value.length) * 6.2 + 10;
-                const h = value ? 30 : 16;
+                const w = Math.max(name.length, value.length) * 6.2 + (plain ? 20 : 10);
+                const h = (value ? 30 : 16) + (plain ? 8 : 0);
                 const box = { l: point.x - w / 2, r: point.x + w / 2, t: point.y - h / 2, b: point.y + h / 2 };
                 if (placed.some((q) => box.l < q.r && box.r > q.l && box.t < q.b && box.b > q.t)) target = 0;
-                else placed.push(box);
+                else { placed.push(box); shown += 1; }
             }
-            el.style.opacity = showLabelsRef.current ? String(target) : "0";
+            // The isolated barangay's label becomes a callout card edged in its demand colour.
+            const focus = Boolean(selected) && name.toLowerCase() === selected && plain;
+            entries[name].el.classList.toggle("imaps3d-focus", focus);
+            const lc = lcColorsRef.current?.[name.toLowerCase()];
+            if (focus) entries[name].el.style.setProperty("--lc", propsFor(name)[`c_${key}`] || "#94a3b8");
+            metaEl.textContent = focus ? (lc?.meta || "").split(" · ")[0] : "";
+            changeEl.textContent = focus ? lc?.change || "" : "";
+            changeEl.dataset.tone = lc?.delta > 0 ? "up" : lc?.delta < 0 ? "down" : "flat";
+            // Through the marker: it rewrites its element's opacity on every moveend.
+            const opacity = showLabelsRef.current ? target : 0;
+            marker.setOpacity(opacity, opacity);
         });
+    }, []);
+
+    // Plain white page vs satellite. Only the LC demand forecast is plain, and
+    // only until the user asks for the basemap back; every other layer keeps
+    // the imagery, the dark halo and the outside-municipality mask.
+    const applyBackdrop = useCallback(() => {
+        const map = mapRef.current;
+        if (!map || !styleReadyRef.current || !map.getLayer("satellite")) return;
+        const plain = plainRef.current;
+        const set = (layer, prop, value) => { if (map.getLayer(layer)) map.setPaintProperty(layer, prop, value); };
+
+        map.setLayoutProperty("satellite", "visibility", plain ? "none" : "visible");
+        set("canvas", "background-opacity", plain ? 0 : 1);
+
+        set("neighbor-fill", "fill-opacity", plain ? 0.55 : 0);
+        set("neighbor-line", "line-opacity", plain ? 0.9 : 0);
+        SHADOW_STEPS.forEach((_, i) => set(`ground-shadow-${i}`, "fill-opacity", plain ? 0.07 : 0));
+        set("municipal-mask", "fill-opacity", plain ? 0 : 0.2);
+        set("municipal-halo", "line-opacity", plain ? 0 : 0.45);
+        set("municipal-line", "line-color", plain ? PLAIN_LINE : "#ffffff");
+        set("municipal-line", "line-width", plain ? 1.4 : 2.4);
+
+        // Cooler, flatter key on white so the side faces separate from the page
+        // instead of washing out; satellite keeps the original gradient.
+        set(LYR_PRISMS, "fill-extrusion-vertical-gradient", true);
+        if (map.setLight) {
+            try {
+                map.setLight(plain
+                    ? { anchor: "viewport", color: "#ffffff", intensity: 0.38, position: [1.4, 215, 52] }
+                    : { anchor: "viewport", color: "#ffffff", intensity: 0.55, position: [1.5, 200, 40] });
+            } catch (e) { /* older style spec */ }
+        }
     }, []);
 
     // One place that pushes the active lens and band filter into the layers.
@@ -442,6 +507,15 @@ export default function MapLibre3DView({
         map.setPaintProperty(LYR_PRISMS, "fill-extrusion-height", heightExpression(lensId, isFlatRef.current));
         map.setPaintProperty(LYR_PRISMS, "fill-extrusion-color", colorExpression(lensId));
         map.setPaintProperty(LYR_PRISMS, "fill-extrusion-opacity", opacityExpression(lensId, band, hasSelection));
+
+        // Alone, the barangay needs less competing linework around it.
+        if (map.getLayer("municipal-line")) map.setPaintProperty("municipal-line", "line-opacity", plainRef.current && hasSelection ? 0.4 : 1);
+        if (map.getLayer("neighbor-line")) map.setPaintProperty("neighbor-line", "line-opacity", plainRef.current ? (hasSelection ? 0.45 : 0.9) : 0);
+
+        const filter = layerFilter(lensId, band, selectedName);
+        [LYR_PRISMS, LYR_FOOTPRINTS, ...SHADOW_STEPS.map((_, i) => `ground-shadow-${i}`)].forEach((id) => {
+            if (map.getLayer(id)) map.setFilter(id, filter);
+        });
 
         // Parcels have to flatten with everything else. Pinned at a constant
         // height they stayed standing as 190m blocks over an otherwise flat map
@@ -469,17 +543,25 @@ export default function MapLibre3DView({
             // are gone, and the boundary is the only thing left marking where
             // one barangay ends and another begins.
             const showAllBoundaries = isFlatRef.current && !hasSelection;
+            const plain = plainRef.current;
+            map.setPaintProperty(LYR_FOOTPRINTS, "line-color", plain ? PLAIN_LINE : "#ffffff");
             map.setPaintProperty(
                 LYR_FOOTPRINTS,
                 "line-opacity",
                 showAllBoundaries
-                    ? ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.8]
-                    : ["case", ["boolean", ["feature-state", "selected"], false], 1, 0]
+                    ? ["case", ["boolean", ["feature-state", "hover"], false], 1, plain ? 0.7 : 0.8]
+                    // On the white page a faint hairline keeps pale prisms apart
+                    // from the ground. Standing alone, a selected prism's own
+                    // walls and shadow outline it: a ground line would float in
+                    // front of the wall.
+                    : plain && !isFlatRef.current
+                        ? (hasSelection ? 0 : ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.35])
+                        : ["case", ["boolean", ["feature-state", "selected"], false], 1, 0]
             );
         }
 
         refreshLabels();
-    }, [heightExpression, colorExpression, opacityExpression, refreshLabels]);
+    }, [heightExpression, colorExpression, opacityExpression, layerFilter, refreshLabels]);
 
     const syncSourceData = useCallback(() => {
         const map = mapRef.current;
@@ -488,7 +570,7 @@ export default function MapLibre3DView({
         if (!src) return;
 
         const nextSlot = 1 - slotRef.current;
-        const fc = buildFeatures(baseGeoRef.current, bgyStats, demandRef.current, nextSlot, lastPropsRef.current);
+        const fc = buildFeatures(baseGeoRef.current, bgyStats, demandRef.current, nextSlot, lastPropsRef.current, lcColorsRef.current);
 
         const index = {};
         fc.features.forEach((f) => {
@@ -626,10 +708,16 @@ export default function MapLibre3DView({
             calculatedZoom = entry.bounds.optimalZoom;
         }
 
+        // Less canvas visible (a table under the map) means a smaller barangay,
+        // so it still fits with its callout.
+        const full = map.getContainer().clientHeight || 1;
+        const room = Math.max(0.35, (full - (insetsRef.current?.bottom || 0)) / full);
         const target = {
             center: entry.centroid,
-            zoom: calculatedZoom,
-            pitch: activeRef.current ? OBLIQUE_PITCH : DEFAULT_PITCH,
+            // Alone on the white page, a shallower tilt and a touch more room
+            // show the prism's top as well as its walls.
+            zoom: (plainRef.current ? calculatedZoom - 0.3 : calculatedZoom) + Math.log2(room),
+            pitch: activeRef.current ? (plainRef.current ? 46 : OBLIQUE_PITCH) : DEFAULT_PITCH,
             bearing: activeRef.current ? OBLIQUE_BEARING : DEFAULT_BEARING,
             padding: cameraPadding(),
         };
@@ -687,7 +775,7 @@ export default function MapLibre3DView({
     // ── Layer setup ──────────────────────────────────────────────────────────
 
     const setupLayers = useCallback((map) => {
-        const fc = buildFeatures(baseGeoRef.current, bgyStats, demandRef.current, 0, null);
+        const fc = buildFeatures(baseGeoRef.current, bgyStats, demandRef.current, 0, null, lcColorsRef.current);
         slotRef.current = 0;
         lastPropsRef.current = Object.fromEntries(fc.features.map((f) => [f.properties.name, f.properties]));
 
@@ -723,11 +811,39 @@ export default function MapLibre3DView({
         });
         featureIndexRef.current = index;
 
-        if (!map.getSource(SRC_PRISMS)) map.addSource(SRC_PRISMS, { type: "geojson", data: fc });
+        if (!map.getSource(SRC_PRISMS)) map.addSource(SRC_PRISMS, { type: "geojson", data: fc, tolerance: 2 });
         if (!map.getSource(SRC_PARCELS)) map.addSource(SRC_PARCELS, { type: "geojson", data: EMPTY_FC });
 
         if (!map.getSource(SRC_MUNI)) map.addSource(SRC_MUNI, { type: "geojson", data: EMPTY_FC });
         if (!map.getSource(SRC_MASK)) map.addSource(SRC_MASK, { type: "geojson", data: EMPTY_FC });
+        if (!map.getSource(SRC_NEIGHBORS)) map.addSource(SRC_NEIGHBORS, { type: "geojson", data: EMPTY_FC });
+
+        // Neighbouring towns and the ground shadow only show on the white page
+        // (applyBackdrop). Both sit under the prisms.
+        if (!map.getLayer("neighbor-fill")) {
+            map.addLayer({
+                id: "neighbor-fill",
+                type: "fill",
+                source: SRC_NEIGHBORS,
+                paint: { "fill-color": "#f4f2ee", "fill-opacity": 0 },
+            });
+            map.addLayer({
+                id: "neighbor-line",
+                type: "line",
+                source: SRC_NEIGHBORS,
+                layout: { "line-join": "round" },
+                paint: { "line-color": "#c4c0b8", "line-width": 1, "line-dasharray": [3, 2.5], "line-opacity": 0 },
+            });
+            // Soft shadow: three offset copies of the footprint, widening and fading.
+            SHADOW_STEPS.forEach(([dx, dy], i) => {
+                map.addLayer({
+                    id: `ground-shadow-${i}`,
+                    type: "fill",
+                    source: SRC_PRISMS,
+                    paint: { "fill-color": "#4a4338", "fill-opacity": 0, "fill-translate": [dx, dy] },
+                });
+            });
+        }
 
         // Ground plate: a flat wash under the municipality so the prisms have
         // something to stand on rather than floating on the page.
@@ -845,6 +961,10 @@ export default function MapLibre3DView({
             });
         }
 
+        loadNeighborMunicipalities().then((data) => {
+            if (data?.features && mapRef.current === map) map.getSource(SRC_NEIGHBORS)?.setData(data);
+        }).catch(() => {});
+
         loadMunicipalBoundary().then((data) => {
             if (!data?.features || mapRef.current !== map) return;
             const muni = ensureRFC7946Winding(data);
@@ -885,11 +1005,14 @@ export default function MapLibre3DView({
             const nameEl = document.createElement("span");
             nameEl.textContent = f.properties.name;
             const valueEl = document.createElement("b");
-            el.append(nameEl, valueEl);
+            // Shown only on the isolated barangay's card.
+            const metaEl = document.createElement("em");
+            const changeEl = document.createElement("small");
+            el.append(nameEl, valueEl, metaEl, changeEl);
             const marker = new Marker({ element: el, anchor: "center" })
                 .setLngLat([f.properties.cx, f.properties.cy])
                 .addTo(map);
-            labelsRef.current[f.properties.name] = { el, valueEl, marker };
+            labelsRef.current[f.properties.name] = { el, valueEl, metaEl, changeEl, marker };
         });
         refreshLabels();
     }, [bgyStats, colorExpression, frameMunicipality, refreshLabels]);
@@ -949,6 +1072,7 @@ export default function MapLibre3DView({
                     }
 
                     setupLayers(map);
+                    applyBackdrop();
                     setLoadState("ready");
                     if (!syncRef) frameMunicipality(!reducedRef.current);
 
@@ -1078,16 +1202,18 @@ export default function MapLibre3DView({
     // snapping to the new metric.
     useEffect(() => {
         lensRef.current = lens;
+        plainRef.current = lens === "trends" && !showSatellite;
         if (!styleReadyRef.current) return;
+        applyBackdrop();
         applyPaint();
-    }, [lens, applyPaint]);
+    }, [lens, showSatellite, applyBackdrop, applyPaint]);
 
     // Live stats changed (a new permit, a fresh request): rebuild the source.
     useEffect(() => {
         if (!styleReadyRef.current) return;
         syncSourceData();
         applyPaint();
-    }, [bgyStats, demandCounts, syncSourceData, applyPaint]);
+    }, [bgyStats, demandCounts, lcColors, syncSourceData, applyPaint]);
 
     useEffect(() => {
         bandRef.current = bandFilter;
@@ -1187,11 +1313,15 @@ export default function MapLibre3DView({
             if (!map) return;
             if (!activeRef.current) return;
             map.resize();
-            if (reducedRef.current) map.jumpTo({ padding: cameraPadding() });
+            // With a barangay open, refit it to what is still visible; otherwise just re-pad.
+            if (selectedNameRef.current) {
+                flightTargetRef.current = null;
+                flyToBarangay(selectedNameRef.current);
+            } else if (reducedRef.current) map.jumpTo({ padding: cameraPadding() });
             else map.easeTo({ padding: cameraPadding(), duration: 420, easing: easeSine });
         }, 300);
         return () => clearTimeout(timer);
-    }, [rightPanelOpen, insets?.bottom, cameraPadding]);
+    }, [rightPanelOpen, insets?.bottom, cameraPadding, flyToBarangay]);
 
     // The view stays mounted when hidden so returning to it is instant. On
     // reappearing it re-measures in case the window or the panel changed size
@@ -1250,18 +1380,37 @@ export default function MapLibre3DView({
         };
     }, [active, loadState, applyPaint]);
 
+    const plain = lens === "trends" && !showSatellite;
     const metricLabel = lens === "trends" ? "LC applications forecast"
         : lens === "status" ? "Permit applications filed"
         : getLens(lens).metricLabel;
 
     return (
-        <div className="relative w-full h-full overflow-hidden" style={{ backgroundColor: CANVAS }}>
+        <div
+            className={`relative w-full h-full overflow-hidden ${plain ? "imaps3d-plain" : ""}`}
+            style={plain ? { background: PLAIN_PAGE } : { backgroundColor: CANVAS }}
+        >
             <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
             <style>{`
 .imaps3d-label { display: flex; flex-direction: column; align-items: center; line-height: 1.15; white-space: nowrap; pointer-events: none; transition: opacity 200ms ease;
   text-shadow: 0 0 2px rgba(2, 6, 23, 0.9), 0 0 3px rgba(2, 6, 23, 0.8), 0 1px 4px rgba(2, 6, 23, 0.6); }
 .imaps3d-label span { font-size: 10.5px; font-weight: 600; color: #f8fafc; }
 .imaps3d-label b { font-size: 11.5px; font-weight: 700; color: #fde68a; font-variant-numeric: tabular-nums; }
+.imaps3d-plain .imaps3d-label { text-shadow: none; padding: 2px 7px 3px; background: rgba(255, 255, 255, 0.96); border: 1px solid rgba(15, 23, 42, 0.14); border-radius: 6px; box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28); }
+.imaps3d-plain .imaps3d-label span { color: #0f172a; font-size: 11px; }
+.imaps3d-plain .imaps3d-label b { color: #9a3412; font-size: 11.5px; }
+.imaps3d-label em, .imaps3d-label small { display: none; font-style: normal; }
+.imaps3d-plain .imaps3d-focus { margin-top: -34px; min-width: 150px; padding: 9px 14px 10px; border: 0; border-radius: 10px; align-items: flex-start; background: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.30), 0 0 0 1px rgba(15, 23, 42, 0.08); }
+.imaps3d-plain .imaps3d-focus::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; margin-left: -6px; transform: rotate(45deg); background: #ffffff; box-shadow: 3px 3px 5px rgba(15, 23, 42, 0.14); }
+.imaps3d-plain .imaps3d-focus span { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: #64748b; text-transform: uppercase; }
+.imaps3d-plain .imaps3d-focus b { font-size: 24px; line-height: 1.1; font-weight: 700; color: #0f172a; margin-top: 1px; }
+.imaps3d-plain .imaps3d-focus em { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 11.5px; font-weight: 600; color: #334155; }
+.imaps3d-plain .imaps3d-focus em::before { content: ""; width: 9px; height: 9px; border-radius: 2px; background: var(--lc, #94a3b8); box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.25); }
+.imaps3d-plain .imaps3d-focus small { display: block; margin-top: 3px; font-size: 11px; font-weight: 600; }
+.imaps3d-plain .imaps3d-focus small[data-tone="up"] { color: #b32a17; }
+.imaps3d-plain .imaps3d-focus small[data-tone="down"] { color: #1f5fa8; }
+.imaps3d-plain .imaps3d-focus small[data-tone="flat"] { color: #64748b; }
 `}</style>
 
             {loadState !== "ready" && (
@@ -1286,9 +1435,10 @@ export default function MapLibre3DView({
             <div
                 ref={hoverElRef}
                 className="absolute top-0 left-0 pointer-events-none z-[900] will-change-transform"
-                style={{ visibility: hoverCard ? "visible" : "hidden" }}
+                style={{ visibility: hoverCard && lens !== "trends" ? "visible" : "hidden" }}
             >
-                {hoverCard && (
+                {/* The LC layer reads its numbers from the chips, the title card and the side panel. */}
+                {hoverCard && lens !== "trends" && (
                     <div className="bg-white border border-slate-300 rounded-md shadow-md min-w-[200px] mb-3 overflow-hidden animate-in fade-in duration-150">
                         <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-slate-200">
                             <span className="text-[12px] font-bold text-slate-900 truncate">{hoverCard.name}</span>

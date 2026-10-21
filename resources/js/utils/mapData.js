@@ -46,6 +46,12 @@ export function loadMunicipalBoundary() {
     return cachedJson("rosario_boundary", "/api/map/rosario_boundary");
 }
 
+// Surrounding municipalities (geoBoundaries ADM3, simplified), only used as a
+// faint context outline so Rosario doesn't read as an island.
+export function loadNeighborMunicipalities() {
+    return cachedJson("neighbor_municipalities", "/geo/neighbor_municipalities.geojson");
+}
+
 // Every zoning parcel in the municipality. Only the layers that render the
 // whole plan at once (CLUP 2030, Urban Growth) need this; the diversity view
 // asks for one barangay at a time via `?barangay=`.

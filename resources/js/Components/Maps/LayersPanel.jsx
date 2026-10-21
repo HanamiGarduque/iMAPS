@@ -84,6 +84,9 @@ export default function LayersPanel({
     onToggleLabels,
     mapStyle,
     onMapStyle,
+    is3D = false,
+    showSatellite3D = false,
+    onToggleSatellite3D = () => {},
 }) {
     const lens = getLens("mix");
     const segments = useMemo(() => [...getScaleSegments("mix")].reverse(), []);
@@ -248,19 +251,30 @@ export default function LayersPanel({
             </div>
 
             <GroupTitle>Basemap</GroupTitle>
-            <div className="px-3">
-                <label htmlFor="basemap" className="sr-only">Basemap</label>
-                <select
-                    id="basemap"
-                    value={mapStyle}
-                    onChange={(e) => onMapStyle(e.target.value)}
-                    className={FIELD}
-                >
-                    {Object.entries(TILE_PROVIDERS).map(([key, p]) => (
-                        <option key={key} value={key}>{p.label}</option>
-                    ))}
-                </select>
-            </div>
+            {/* The 3D demand forecast sits on plain white; the dropdown only drives the 2D map. */}
+            {is3D && activeLayer === "trends" ? (
+                <div className="px-3">
+                    <label className="flex items-center gap-2 py-1 text-[12.5px] text-slate-800 cursor-pointer">
+                        <input type="checkbox" checked={showSatellite3D} onChange={(e) => onToggleSatellite3D(e.target.checked)} className="accent-[#0b2a5b]" />
+                        Show basemap (satellite)
+                    </label>
+                    <p className="text-[11px] text-slate-500 leading-snug">3D uses a plain background by default. The basemap list applies in 2D.</p>
+                </div>
+            ) : (
+                <div className="px-3">
+                    <label htmlFor="basemap" className="sr-only">Basemap</label>
+                    <select
+                        id="basemap"
+                        value={mapStyle}
+                        onChange={(e) => onMapStyle(e.target.value)}
+                        className={FIELD}
+                    >
+                        {Object.entries(TILE_PROVIDERS).map(([key, p]) => (
+                            <option key={key} value={key}>{p.label}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
         </div>
     );
 }
