@@ -547,7 +547,7 @@ class ApplicationController extends Controller
             'barangay'            => 'required|string',
             'street_address'      => 'nullable|string|max:255',
             'assessment_fee'      => 'required|numeric|min:0',
-            'or_number'              => ['required', 'regex:/^OR-\d{5}$/'],
+            'or_number'              => ['required', 'regex:/^OR-\d{6}$/'],
             'remarks'             => 'nullable|string',
             'corporation_contact'    => ['nullable', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
             'representative_contact' => ['nullable', 'regex:/^(09|\+63|63|\d)\d{9}$/'],

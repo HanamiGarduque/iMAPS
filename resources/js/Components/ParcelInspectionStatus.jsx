@@ -1,6 +1,7 @@
 // resources/js/Components/ParcelInspectionStatus.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { fetchParcelInspection } from "@/utils/supabaseApi";
+import downloadPhoto from "./downloadPhoto";
 
 // ── Badge Configuration ──
 const STATUS_CONFIG = {
@@ -129,6 +130,14 @@ function PhotoViewer({ photos, formatDate, formatTime, className = "" }) {
             <p className="mt-1.5 text-[11.5px] text-slate-500 tabular-nums">
                 <span className="font-medium text-slate-700">Photo {current + 1}</span>
                 {photo.captured_at && ` · ${formatDate(photo.captured_at)}, ${formatTime(photo.captured_at)}`}
+                {" · "}
+                <button
+                    type="button"
+                    onClick={() => downloadPhoto(photo.signed_url, { index: current, capturedAt: photo.captured_at })}
+                    className="font-medium text-blue-600 hover:text-blue-700 hover:underline cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                >
+                    Download
+                </button>
             </p>
 
             {count > 1 && (

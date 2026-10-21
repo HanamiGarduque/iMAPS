@@ -43,6 +43,13 @@ return [
         'key'         => env('SUPABASE_SERVICE_KEY'),
     ],
 
+    // Cloudflare Turnstile (login security check). Both keys come from the Cloudflare dashboard
+    // (Turnstile > your widget). With either one empty the check is off, so local dev needs nothing.
+    'turnstile' => [
+        'site_key' => env('TURNSTILE_SITE_KEY'),
+        'secret_key' => env('TURNSTILE_SECRET_KEY'),
+    ],
+
     'fastapi' => [
         'base_url' => env('FASTAPI_BASE_URL', 'http://127.0.0.1:8001'),
         'timeout' => (int) env('FASTAPI_TIMEOUT', 30),

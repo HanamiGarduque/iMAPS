@@ -62,7 +62,7 @@ function PlayControls({ choices, index, onIndex, playing, onTogglePlay }) {
             </button>
             <button
                 type="button"
-                className={`${BTN} ${playing ? "bg-[#0b2a5b] border-[#0b2a5b] text-white hover:bg-[#0e3574]" : ""}`}
+                className={`${BTN} ${playing ? "!bg-[#0b2a5b] !border-[#0b2a5b] !text-white hover:!bg-[#0e3574]" : ""}`}
                 onClick={onTogglePlay}
                 disabled={choices.length <= 1}
                 aria-label={playing ? "Pause" : "Play through years"}
