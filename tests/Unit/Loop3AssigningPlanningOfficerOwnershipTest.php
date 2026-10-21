@@ -165,7 +165,7 @@ class Loop3AssigningPlanningOfficerOwnershipTest extends TestCase
     {
         $source = $this->jobSource();
 
-        $this->assertMatchesRegularExpression('/\'status\'\s*=>\s*\$existingJob\[\'status\'\]\s*\?\?\s*\'assigned\'/s', $source);
+        $this->assertStringContainsString("unset(\$metadata['scheduled_date'], \$metadata['is_self_scheduled'], \$metadata['status'], \$metadata['deadline_date'])", $source);
     }
 
     public function test_loop2_assignment_instructions_remain_unchanged(): void

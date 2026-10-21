@@ -24,7 +24,7 @@ class PreLoop3CleanupContractTest extends TestCase
     {
         $source = $this->source('app/Jobs/PushInspectionToSupabase.php');
         $this->assertStringContainsString(
-            "'status'                  => \$existingJob['status'] ?? 'assigned'",
+            "unset(\$metadata['scheduled_date'], \$metadata['is_self_scheduled'], \$metadata['status'], \$metadata['deadline_date'])",
             $source,
         );
     }

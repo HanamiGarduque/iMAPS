@@ -100,10 +100,10 @@ class Loop2AssignmentInstructionsOwnershipTest extends TestCase
     {
         $source = $this->jobSource();
 
-        $this->assertMatchesRegularExpression(
-            "/'status'\s*=>\s*\\\$existingJob\['status'\]\s*\?\?\s*'assigned'/",
+        $this->assertStringContainsString(
+            "unset(\$metadata['scheduled_date'], \$metadata['is_self_scheduled'], \$metadata['status'], \$metadata['deadline_date'])",
             $source,
-            'Status must fall back to assigned only when no remote row exists',
+            'Redelivery must omit lifecycle rather than echo a stale read; real race coverage is in InspectionVisitDeliveryTest',
         );
     }
 

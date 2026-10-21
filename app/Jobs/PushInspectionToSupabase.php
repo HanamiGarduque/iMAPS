@@ -3,11 +3,13 @@
 namespace App\Jobs;
 
 use App\Models\InspectionDeliveryAttempt;
+use App\Models\AppNotification;
 use App\Models\SiteInspection;
 use App\Models\TechnicalReview;
 use App\Services\BridgeSourceIdentity;
 use App\Services\InspectionDeliveryRecorder;
 use App\Support\InspectionRoundNumbering;
+use App\Support\InspectorTransferGuard;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -20,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Throwable;
 
 class PushInspectionToSupabase implements ShouldQueue
@@ -123,6 +126,11 @@ class PushInspectionToSupabase implements ShouldQueue
             // missing source id can never leave a half-written remote set.
             // -----------------------------------------------------------------
             $bridgeSourceId = BridgeSourceIdentity::id();
+
+            // A queued model is not authority for an older PO assignment.
+            $this->inspection->refresh();
+            $assignmentSnapshot = array_intersect_key($this->inspection->getRawOriginal(),
+                array_fill_keys(InspectionDeliveryRecorder::ASSIGNMENT_FIELDS, true));
 
             // 1. Eager load the required relationships
             $this->inspection->load(['zoningApplication', 'zoningApplication.parcels' => function($query) {
@@ -262,25 +270,6 @@ class PushInspectionToSupabase implements ShouldQueue
             // ==========================================
             // 5. Push to field_jobs
             // ==========================================
-            // NAMESPACED lookup: this environment's job for THIS round only.
-            // A bare `local_inspection_id` filter can read another environment's
-            // row and then preserve that row's lifecycle status into our upsert.
-            //
-            // Preserve the current FieldSync lifecycle state when this job is retried.
-            $existingJobResponse = $http->get("{$supabaseUrl}/rest/v1/field_jobs", [
-                'bridge_source_id'   => "eq.{$bridgeSourceId}",
-                'local_inspection_id' => "eq.{$this->inspection->id}",
-                'select' => 'status',
-                'limit' => 1,
-            ]);
-
-            if (!$existingJobResponse->successful()) {
-                $typedCategory = $recorder->classifyFromResponse($existingJobResponse);
-                throw new \Exception("Field Job Lookup Failed: " . $existingJobResponse->body());
-            }
-
-            $existingJob = $existingJobResponse->json()[0] ?? null;
-
             // NAMESPACED identity: on_conflict=bridge_source_id,local_inspection_id.
             // This is the incident's exact defect: with a conflict target of the
             // bare local integer, a second environment pushing its own local
@@ -309,7 +298,8 @@ class PushInspectionToSupabase implements ShouldQueue
                     'local_inspection_id'     => $this->inspection->id,
                     'supabase_application_id' => $supabaseAppId,
                     'supabase_parcel_id'      => $supabaseParcelId,
-                    'status'                  => $existingJob['status'] ?? 'assigned',
+                    'status'                  => 'assigned',
+                    'is_self_scheduled'       => false,
                     'scheduled_date'          => $this->inspection->scheduled_date->format('Y-m-d'),
                     'deadline_date'           => $this->inspection->deadline_date ? $this->inspection->deadline_date->format('Y-m-d') : null,
                     'assigned_inspector_id'   => $this->resolveSupabaseUserId($this->inspection->inspector_id),
@@ -323,23 +313,89 @@ class PushInspectionToSupabase implements ShouldQueue
                 $this->inspection->assigned_by_name,
             );
 
-            $jobResponse = $http->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=bridge_source_id,local_inspection_id", $jobPayload);
+            $this->assertCurrentAssignment();
+            // Creation is insert-only. A competing creator/inspector keeps its
+            // row; DO NOTHING is never treated as a delivered representation.
+            $jobResponse = $http->replaceHeaders(['Prefer' => 'return=representation,resolution=ignore-duplicates'])
+                ->post("{$supabaseUrl}/rest/v1/field_jobs?on_conflict=bridge_source_id,local_inspection_id", $jobPayload);
 
             if (!$jobResponse->successful()) {
                 $typedCategory = $recorder->classifyFromResponse($jobResponse);
                 throw new \Exception("Field Job Sync Failed: " . $jobResponse->body());
             }
 
-            Log::info("Successfully pushed Site Inspection {$this->inspection->id} to Supabase.");
+            $created = $jobResponse->json();
+            if ($created === []) {
+                $lookup = [
+                    'bridge_source_id' => "eq.{$bridgeSourceId}",
+                    'local_inspection_id' => "eq.{$this->inspection->id}",
+                    'select' => '*', 'limit' => 2,
+                ];
+                $existingResponse = $http->get("{$supabaseUrl}/rest/v1/field_jobs", $lookup);
+                if (!$existingResponse->successful()) {
+                    $typedCategory = $recorder->classifyFromResponse($existingResponse);
+                    throw new \RuntimeException('Field Job Lookup Failed');
+                }
+                $existing = $this->verifiedJob($existingResponse->json(), $jobPayload, true);
+                $deadline = $existing['deadline_date'] ?? null;
+                if ($deadline !== $jobPayload['deadline_date']) {
+                    $this->deliveryConflict(($existing['is_self_scheduled'] ?? false) === true
+                        && ($jobPayload['deadline_date'] === null || $jobPayload['deadline_date'] < ($existing['scheduled_date'] ?? ''))
+                        ? 'The requested PO deadline conflicts with the committed Visit and was not applied.'
+                        : 'The PO deadline differs from FieldSync. The requested deadline was not applied; explicit PO resolution is required.');
+                }
+                if (($existing['assigned_inspector_id'] ?? null) !== $jobPayload['assigned_inspector_id']) {
+                    $this->assertAuthorizedHandover($existing);
+                }
+                $metadata = $jobPayload;
+                // NEVER echo read-dependent inspector workflow, even when the
+                // earlier flag was false. A read/merge-upsert guard is racy.
+                unset($metadata['scheduled_date'], $metadata['is_self_scheduled'], $metadata['status'], $metadata['deadline_date']);
+                $filters = $lookup + ['id' => 'eq.'.$existing['id'], 'updated_at' => 'eq.'.$existing['updated_at'],
+                    'inspection_round_number' => isset($existing['inspection_round_number']) ? 'eq.'.$existing['inspection_round_number'] : 'is.null',
+                    'assigned_inspector_id' => isset($existing['assigned_inspector_id']) ? 'eq.'.$existing['assigned_inspector_id'] : 'is.null'];
+                unset($filters['limit']);
+                $this->assertCurrentAssignment();
+                $patched = $http->replaceHeaders(['Prefer' => 'return=representation'])
+                    ->patch("{$supabaseUrl}/rest/v1/field_jobs?".http_build_query($filters), $metadata);
+                if (!$patched->successful()) {
+                    $typedCategory = $recorder->classifyFromResponse($patched);
+                    throw new \RuntimeException('Field Job Metadata Sync Failed');
+                }
+                if ($patched->json() === []) {
+                    // Observe the changed row, but never label an unapplied
+                    // conditional write delivered. The normal queue may retry.
+                    $http->get("{$supabaseUrl}/rest/v1/field_jobs", $lookup);
+                    $this->deliveryConflict('The FieldSync assignment changed during delivery. Refresh before retrying.');
+                }
+                $updated = $this->verifiedJob($patched->json(), $jobPayload);
+                $this->confirmMetadata($updated, $metadata);
+                if ($updated['id'] !== $existing['id'] || ($updated['assigned_inspector_id'] ?? null) !== $jobPayload['assigned_inspector_id']
+                    || ($updated['deadline_date'] ?? null) !== $jobPayload['deadline_date']) {
+                    $this->deliveryConflict('FieldSync did not confirm the requested assignment.');
+                }
+            } else {
+                $newJob = $this->verifiedJob($created, $jobPayload);
+                $this->confirmMetadata($newJob, $jobPayload);
+                foreach (['status', 'is_self_scheduled', 'scheduled_date', 'deadline_date', 'assigned_inspector_id'] as $field) {
+                    if (!array_key_exists($field, $newJob) || $newJob[$field] !== $jobPayload[$field]) {
+                        $this->deliveryConflict('FieldSync did not confirm the new assignment.');
+                    }
+                }
+            }
+            $this->assertCurrentAssignment();
 
             // ---------------------------------------------------------------
             // Loop 9B: every required remote upsert succeeded, so the round is
             // delivered. Idempotent, and it never touches task lifecycle state.
             // ---------------------------------------------------------------
             if ($attempt !== null) {
-                $recorder->markDelivered($attempt);
+                if (!$recorder->markDelivered($attempt, $assignmentSnapshot)) {
+                    $this->deliveryConflict('The PO assignment or latest delivery changed before acknowledgement. This request was not confirmed.');
+                }
                 $recorder->logOutcome($this->inspection->getKey(), 'delivered', 'none');
             }
+            Log::info("Successfully pushed Site Inspection {$this->inspection->id} to Supabase.");
 
         } catch (Throwable $e) {
             $failure = $typedCategory !== null
@@ -364,6 +420,99 @@ class PushInspectionToSupabase implements ShouldQueue
 
             throw $e;
         }
+    }
+
+    private function verifiedJob(mixed $rows, array $payload, bool $allowLegacyRound = false): array
+    {
+        $row = is_array($rows) && array_is_list($rows) && count($rows) === 1 ? $rows[0] : null;
+        if (!is_array($row) || !Str::isUuid($row['id'] ?? '')
+            || ($row['bridge_source_id'] ?? null) !== $payload['bridge_source_id']
+            || (string) ($row['local_inspection_id'] ?? '') !== (string) $payload['local_inspection_id']) {
+            $this->deliveryConflict('FieldSync did not confirm this namespace and inspection round.');
+        }
+        foreach (['inspection_round_number', 'previous_site_inspection_id'] as $field) {
+            $actual = $row[$field] ?? null;
+            if ($actual !== $payload[$field] && !($allowLegacyRound && $actual === null)) {
+                $this->deliveryConflict('FieldSync did not confirm this namespace and inspection round.');
+            }
+        }
+        if (!is_string($row['updated_at'] ?? null) || strtotime($row['updated_at']) === false) {
+            $this->deliveryConflict('The FieldSync revision could not be verified.');
+        }
+        return $row;
+    }
+
+    private function confirmMetadata(array $row, array $metadata): void
+    {
+        foreach ($metadata as $field => $expected) {
+            if (!array_key_exists($field, $row)) {
+                $this->deliveryConflict('FieldSync did not confirm the requested assignment metadata.');
+            }
+            $actual = $row[$field];
+            // PostgREST may canonicalize timestamptz offsets/fractional seconds.
+            if ($field === 'reinspection_reviewed_at' && $expected !== null
+                && is_string($actual) && strtotime($actual) !== false
+                && new \DateTimeImmutable($actual) == new \DateTimeImmutable($expected)) {
+                continue;
+            }
+            if ($actual !== $expected) {
+                $this->deliveryConflict('FieldSync did not confirm the requested assignment metadata.');
+            }
+        }
+    }
+
+    private function assertCurrentAssignment(): void
+    {
+        $fresh = SiteInspection::find($this->inspection->getKey());
+        foreach (InspectionDeliveryRecorder::ASSIGNMENT_FIELDS as $field) {
+            if ($fresh === null || $fresh->getRawOriginal($field) !== $this->inspection->getRawOriginal($field)) {
+                $this->deliveryConflict('The PO assignment changed during delivery. The older request was not confirmed.');
+            }
+        }
+    }
+
+    private function assertAuthorizedHandover(array $existing): void
+    {
+        $history = $this->inspection->assignmentHistory()->reorder()->latest('id')->first();
+        $verifiedUntouched = array_diff(['gps_confirmed_at', 'checklist_completed_count', 'photo_count'], array_keys($existing)) === []
+            && is_numeric($existing['checklist_completed_count']) && (int) $existing['checklist_completed_count'] === 0
+            && is_numeric($existing['photo_count']) && (int) $existing['photo_count'] === 0
+            && empty($existing['photo_paths']) && empty($existing['findings']);
+        $decision = InspectorTransferGuard::evaluate([
+            'local_status' => $this->inspection->status, 'remote_readable' => true,
+            'remote_status' => $existing['status'] ?? null,
+            'gps_confirmed_at' => $existing['gps_confirmed_at'] ?? null,
+            'checklist_completed_count' => $existing['checklist_completed_count'] ?? 0,
+            'photo_count' => $existing['photo_count'] ?? 0,
+        ]);
+        if (!$history || $history->assignment_type !== 'reassignment' || !$history->from_inspector_id
+            || (int) $history->to_inspector_id !== (int) $this->inspection->inspector_id
+            || !$verifiedUntouched || !$decision['allowed'] || ($existing['current_step'] ?? null) !== 0
+            || !array_key_exists('started_at', $existing) || $existing['started_at'] !== null
+            || !array_key_exists('submitted_at', $existing) || $existing['submitted_at'] !== null
+            || $this->resolveSupabaseUserId($history->from_inspector_id) !== ($existing['assigned_inspector_id'] ?? null)) {
+            $this->deliveryConflict('FieldSync ownership differs or field work has started. The inspector was not changed.');
+        }
+    }
+
+    private function deliveryConflict(string $message): never
+    {
+        Log::warning('FieldSync delivery conflict', ['site_inspection_id' => $this->inspection->getKey(), 'reason' => $message]);
+        // Notifications are targeted to the current PO, never a public broadcast.
+        try {
+            $owner = $this->inspection->zoningApplication?->fresh()?->assigned_planning_officer_id
+                ?? $this->inspection->assigned_by_imaps_user_id;
+            $recipient = \App\Models\User::whereKey($owner)->where('role', 'Planning Officer')->where('is_active', true)->first();
+            $url = '/applications/'.$this->inspection->zoning_application_id;
+            $notice = 'Inspection '.$this->inspection->id.': '.$message.' Visit, progress and evidence were preserved. Coordinate with the inspector before retrying.';
+            if ($recipient && !AppNotification::where('user_id', $recipient->id)->where('type', 'inspection_delivery_conflict')
+                ->where('message', $notice)->where('is_read', false)->exists()) {
+                AppNotification::notifyUser($recipient->id, 'FieldSync delivery needs PO review', $notice, 'inspection_delivery_conflict', $url);
+            }
+        } catch (Throwable $e) {
+            Log::warning('FieldSync conflict notification unavailable', ['site_inspection_id' => $this->inspection->getKey()]);
+        }
+        throw new \RuntimeException('FieldSync delivery conflict: '.$message, 23514);
     }
 
     /**

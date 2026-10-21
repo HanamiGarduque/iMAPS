@@ -360,29 +360,34 @@ class Loop9bDeliveryWriterContractTest extends TestCase
         $app = strpos($src, 'supabase_zoning_applications?on_conflict');
         $geom = strpos($src, 'ST_AsText');
         $parcel = strpos($src, 'supabase_parcels?on_conflict');
-        $lookup = strpos($src, "/rest/v1/field_jobs\", [");
-        $upsert = strpos($src, 'field_jobs?on_conflict');
+        $lookup = strpos($src, '$existingResponse =');
+        $create = strpos($src, 'field_jobs?on_conflict');
+        $patch = strpos($src, '->patch(');
 
-        foreach (['app' => $app, 'geom' => $geom, 'parcel' => $parcel, 'lookup' => $lookup, 'upsert' => $upsert] as $k => $pos) {
+        foreach (['app' => $app, 'geom' => $geom, 'parcel' => $parcel, 'lookup' => $lookup, 'create' => $create, 'patch' => $patch] as $k => $pos) {
             $this->assertNotFalse($pos, "missing step: {$k}");
         }
 
         $this->assertLessThan($geom, $app, 'application mirror must precede geometry');
         $this->assertLessThan($parcel, $geom, 'geometry must precede parcel mirror');
-        $this->assertLessThan($lookup, $parcel, 'parcel mirror must precede status lookup');
-        $this->assertLessThan($upsert, $lookup, 'status lookup must precede the job upsert');
+        $this->assertLessThan($create, $parcel, 'parcel mirror must precede create-only insertion');
+        $this->assertLessThan($lookup, $create, 'ignored creation must refetch before updating');
+        $this->assertLessThan($patch, $lookup, 'verified lookup must precede metadata PATCH');
     }
 
     public function test_remote_lifecycle_status_is_still_preserved(): void
     {
         $src = $this->jobSource();
 
-        $this->assertStringContainsString("'status'                  => \$existingJob['status'] ?? 'assigned'", $src);
+        $this->assertStringContainsString("unset(\$metadata['scheduled_date'], \$metadata['is_self_scheduled'], \$metadata['status'], \$metadata['deadline_date'])", $src);
     }
 
     public function test_inspector_owned_and_evidence_columns_are_still_absent(): void
     {
         $src = $this->jobSource();
+        // Reading progress to refuse an unsafe handover is not writing evidence.
+        $start = strpos($src, '$jobPayload = self::');
+        $src = substr($src, $start, strpos($src, '$this->assertCurrentAssignment();', $start) - $start);
 
         foreach ([
             'inspector_notes',

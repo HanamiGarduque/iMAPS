@@ -262,11 +262,10 @@ class Loop9bScenarioERegressionTest extends TestCase
     public function test_terminal_delivery_state_is_never_a_fieldsync_lifecycle_field(): void
     {
         // The 9B correction must not have drifted into owning task state. The
-        // writer may read FieldSync's status to preserve it, but must never
-        // compute or send one.
+        // Existing workflow is omitted, never echoed from an earlier read.
         $job = $this->jobSource();
 
-        $this->assertStringContainsString("\$existingJob['status'] ?? 'assigned'", $job);
+        $this->assertStringContainsString("unset(\$metadata['scheduled_date'], \$metadata['is_self_scheduled'], \$metadata['status'], \$metadata['deadline_date'])", $job);
         $this->assertStringNotContainsString("'status' => \$this->", $job);
         $this->assertStringNotContainsString("'delivery_status'", $job);
         $this->assertStringNotContainsString("'completed'", $job);

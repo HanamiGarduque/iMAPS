@@ -169,7 +169,7 @@ class Loop4ReinspectionNewRoundTest extends TestCase
         $this->assertStringContainsString("'local_inspection_id' => \"eq.{\$this->inspection->id}\"", $source);
         $this->assertStringContainsString("'local_inspection_id'     => \$this->inspection->id", $source);
         $this->assertStringContainsString('field_jobs?on_conflict=bridge_source_id,local_inspection_id', $source);
-        $this->assertStringContainsString("'status'                  => \$existingJob['status'] ?? 'assigned'", $source);
+        $this->assertStringContainsString("unset(\$metadata['scheduled_date'], \$metadata['is_self_scheduled'], \$metadata['status'], \$metadata['deadline_date'])", $source);
         foreach (['submitted_at', 'current_step', 'step_timestamps', 'rework_started_at',
             'findings', 'observations', 'discrepancies', 'recommendations',
             'inspector_notes', 'checklist_data', 'photo_paths', 'confirmed_latitude'] as $field) {
