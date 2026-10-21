@@ -213,19 +213,38 @@ function ReportValue({ value, alert, labelled = false }) {
 
 const reportText = (value) => typeof value === "string" && value.trim() ? value : "";
 
+// CE-06 checklist reader. Structured answers are additive: FieldSync sends
+// canonical tokens (yes/no/unable/not_applicable) in `answer`, keeps the free
+// text of a declared use verbatim, and leaves legacy `checked`/`passed` rows
+// untouched. A missing or empty answer stays "Not recorded" — never "No".
+const CHECKLIST_ANSWER_LABELS = new Map([
+    ["yes", "Yes"],
+    ["no", "No"],
+    ["unable", "Unable to Verify"],
+    ["unable to verify", "Unable to Verify"],
+    ["not applicable", "Not Applicable"],
+    ["not_applicable", "Not Applicable"],
+]);
+
+function readChecklistAnswer(entry) {
+    const answer = reportText(entry.answer).trim();
+    if (answer) {
+        return CHECKLIST_ANSWER_LABELS.get(answer.toLowerCase()) ?? answer;
+    }
+    const checked = entry.checked ?? entry.passed;
+    return checked === true || checked === 1 ? "Checked"
+        : checked === false || checked === 0 ? "Not checked" : "Not recorded";
+}
+
 function readChecklist(value) {
     if (typeof value === "string") {
         try { value = JSON.parse(value); } catch { return []; }
     }
     if (!Array.isArray(value)) return [];
-    return value.filter((entry) => entry && reportText(entry.item)).map((entry) => {
-        const checked = entry.checked ?? entry.passed;
-        return {
-            item: entry.item,
-            answer: checked === true || checked === 1 ? "Checked"
-                : checked === false || checked === 0 ? "Not checked" : "Not recorded",
-        };
-    });
+    return value.filter((entry) => entry && reportText(entry.item)).map((entry) => ({
+        item: entry.item,
+        answer: readChecklistAnswer(entry),
+    }));
 }
 
 // ── Section with a plain heading (no box: it already sits in the workspace card) ──

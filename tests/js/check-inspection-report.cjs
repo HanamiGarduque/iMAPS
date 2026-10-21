@@ -151,6 +151,107 @@ test('a checklist-only historical report remains visible, with explicit boolean/
     assert.doesNotMatch(page.html, /No inspection report yet/);
 });
 
+test('structured checklist answers render exact PO labels instead of raw tokens', () => {
+    const data = [
+        { item: 'Existing project or development on site', answer: 'yes' },
+        { item: 'Extension of an existing structure', answer: 'no' },
+        { item: 'Still at the project proposal stage', answer: 'unable' },
+        { item: 'Existing mojon or property marker observed', answer: 'not_applicable' },
+    ];
+    for (const checklistData of [data, JSON.stringify(data)]) {
+        const page = render({ inspection_result: 'For Review', checklist_data: checklistData });
+        const expected = {
+            'Existing project or development on site': /Yes$/,
+            'Extension of an existing structure': /No$/,
+            'Still at the project proposal stage': /Unable to Verify$/,
+            'Existing mojon or property marker observed': /Not Applicable$/,
+        };
+        for (const [item, label] of Object.entries(expected)) {
+            const answer = row(page.report, item);
+            assert.match(text(answer), label);
+            assert.doesNotMatch(answer, /text-red-|text-rose-|failed|non-compliant/i);
+        }
+        assert.doesNotMatch(page.text, /\bnot_applicable\b|\[object Object\]/);
+    }
+});
+
+test('missing structured answers stay Not recorded while explicit No is not inferred', () => {
+    const page = render({ checklist_data: [
+        { item: 'Existing project or development on site' },
+        { item: 'Extension of an existing structure', answer: null },
+        { item: 'Still at the project proposal stage', answer: '   ' },
+    ] });
+    for (const item of ['Existing project or development on site', 'Extension of an existing structure',
+        'Still at the project proposal stage']) {
+        assert.match(text(row(page.report, item)), /Not recorded$/);
+    }
+    assert.doesNotMatch(text(page.report), /\bNo\b/);
+
+    const explicit = render({ checklist_data: [{ item: 'Existing project or development on site', answer: 'no' }] });
+    assert.match(text(row(explicit.report, 'Existing project or development on site')), /No$/);
+});
+
+test('declared-use free text renders exactly and remains escaped', () => {
+    const page = render({ checklist_data: [
+        { item: "Existing project's declared use", answer: 'Fictional residential' },
+    ] });
+    assert.match(text(row(page.report, "Existing project's declared use")), /Fictional residential$/);
+
+    const injection = '<script>alert("synthetic")</script>';
+    const escaped = render({ checklist_data: [{ item: "Existing project's declared use", answer: injection }] });
+    assert.doesNotMatch(escaped.report, /<script>/);
+    assert.ok(escaped.report.includes('&lt;script&gt;'));
+});
+
+test('historical boolean rows keep their meaning and order beside structured answers', () => {
+    const page = render({ checklist_data: [
+        { item: 'Structure matches declared use', checked: true },
+        { item: 'Existing project or development on site', answer: 'yes' },
+        { item: 'Setback distances compliant', passed: false },
+        { item: 'Existing mojon or property marker observed', answer: 'no' },
+    ] });
+    assert.match(text(row(page.report, 'Structure matches declared use')), /Checked$/);
+    assert.match(text(row(page.report, 'Setback distances compliant')), /Not checked$/);
+    assert.match(text(row(page.report, 'Existing project or development on site')), /Yes$/);
+    assert.match(text(row(page.report, 'Existing mojon or property marker observed')), /No$/);
+    for (const [earlier, later] of [
+        ['Structure matches declared use', 'Existing project or development on site'],
+        ['Existing project or development on site', 'Setback distances compliant'],
+        ['Setback distances compliant', 'Existing mojon or property marker observed'],
+    ]) {
+        assert.ok(page.text.indexOf(earlier) < page.text.indexOf(later));
+    }
+});
+
+test('conditional questions render only the rows actually recorded', () => {
+    const page = render({ checklist_data: [
+        { item: 'Existing project or development on site', answer: 'yes' },
+        { item: "Existing project's declared use", answer: 'Fictional residential' },
+        { item: 'Extension of an existing structure', answer: 'no' },
+        { item: 'Still at the project proposal stage', answer: 'yes' },
+        { item: 'Trees present on the lot', answer: 'yes' },
+        { item: 'Canal or waterway on or adjoining the lot', answer: 'unable' },
+    ] });
+    const expected = {
+        'Existing project or development on site': /Yes$/,
+        "Existing project's declared use": /Fictional residential$/,
+        'Extension of an existing structure': /No$/,
+        'Still at the project proposal stage': /Yes$/,
+        'Trees present on the lot': /Yes$/,
+        'Canal or waterway on or adjoining the lot': /Unable to Verify$/,
+    };
+    for (const [item, label] of Object.entries(expected)) assert.match(text(row(page.report, item)), label);
+
+    const parentOnly = render({ checklist_data: [
+        { item: 'Existing project or development on site', answer: 'no' },
+        { item: 'Still at the project proposal stage', answer: 'no' },
+    ] });
+    for (const hidden of ["Existing project's declared use", 'Extension of an existing structure',
+        'Trees present on the lot', 'Canal or waterway on or adjoining the lot']) {
+        assert.equal(row(parentOnly.report, hidden), '', `${hidden} must not be invented`);
+    }
+});
+
 test('missing/malformed evidence is safe and never interpreted through truthiness', () => {
     for (const data of [undefined, null, '', 'not JSON', {}, [null, 7, 'old entry', { item: {} }]]) {
         const page = render({ checklist_data: data, observations: {}, findings: [], discrepancies: { invalid: true },
