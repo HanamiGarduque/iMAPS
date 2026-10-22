@@ -19,6 +19,9 @@ export default function TimelineBar({
     colorFor,
     ariaLabel = "Quarter timeline",
     seriesLabel = "LC per quarter",
+    // A quarter that is always the busiest (LC filings peak in Q1): its bars
+    // are drawn a shade darker, so a tall one is not read as growth.
+    peakQuarter = null,
 }) {
     const active = quarters[index];
     const last = quarters.length - 1;
@@ -72,7 +75,7 @@ export default function TimelineBar({
                             ? "#0b2a5b"
                             : q.isForecast
                                 ? "repeating-linear-gradient(45deg,#fd8d3c 0 3px,#fed7b5 3px 6px)"
-                                : colorFor?.(q, total, i) ?? "#9fb1c9";
+                                : colorFor?.(q, total, i) ?? (peakQuarter && q.quarter === peakQuarter ? "#7389ad" : "#9fb1c9");
                         return (
                             <button
                                 key={`${q.year}-${q.quarter}`}
@@ -98,6 +101,12 @@ export default function TimelineBar({
                         </span>
                     ))}
                 </div>
+                {peakQuarter && (
+                    <div className="mt-0.5 flex items-center gap-1 text-[9.5px] text-slate-500">
+                        <span className="w-2 h-2 rounded-[2px]" style={{ backgroundColor: "#7389ad" }} aria-hidden="true" />
+                        Darker bars: Q{peakQuarter}, the usual peak. Compare a quarter with the same quarter a year earlier.
+                    </div>
+                )}
             </div>
         </div>
     );
