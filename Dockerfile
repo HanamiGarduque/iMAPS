@@ -11,7 +11,7 @@ ARG VITE_SUPABASE_ANON_KEY
 ARG VITE_ARCGIS_API_KEY
 RUN npm run build
 
-FROM dunglas/frankenphp:1-php8.3 AS app
+FROM dunglas/frankenphp:1-php8.3.36 AS app
 WORKDIR /app
 
 # postgis = shp2pgsql (Settings shapefile import); libreoffice-calc = permit PDFs
