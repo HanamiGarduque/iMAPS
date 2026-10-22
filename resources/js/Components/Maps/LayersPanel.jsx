@@ -84,6 +84,9 @@ export default function LayersPanel({
     onToggleLabels,
     mapStyle,
     onMapStyle,
+    is3D = false,
+    showSatellite3D = false,
+    onToggleSatellite3D = () => {},
 }) {
     const lens = getLens("mix");
     const segments = useMemo(() => [...getScaleSegments("mix")].reverse(), []);
@@ -248,19 +251,40 @@ export default function LayersPanel({
             </div>
 
             <GroupTitle>Basemap</GroupTitle>
-            <div className="px-3">
-                <label htmlFor="basemap" className="sr-only">Basemap</label>
-                <select
-                    id="basemap"
-                    value={mapStyle}
-                    onChange={(e) => onMapStyle(e.target.value)}
-                    className={FIELD}
-                >
-                    {Object.entries(TILE_PROVIDERS).map(([key, p]) => (
-                        <option key={key} value={key}>{p.label}</option>
-                    ))}
-                </select>
-            </div>
+            {/* The LC demand forecast sits on plain white in 2D and 3D; a basemap is opt-in. */}
+            {activeLayer === "trends" ? (
+                <div className="px-3 space-y-1.5">
+                    <label className="flex items-center gap-2 py-1 text-[12.5px] text-slate-800 cursor-pointer">
+                        <input type="checkbox" checked={showSatellite3D} onChange={(e) => onToggleSatellite3D(e.target.checked)} className="accent-[#0b2a5b]" />
+                        Show basemap
+                    </label>
+                    {showSatellite3D && !is3D && (
+                        <>
+                            <label htmlFor="basemap" className="sr-only">Basemap</label>
+                            <select id="basemap" value={mapStyle} onChange={(e) => onMapStyle(e.target.value)} className={FIELD}>
+                                {Object.entries(TILE_PROVIDERS).map(([key, p]) => (
+                                    <option key={key} value={key}>{p.label}</option>
+                                ))}
+                            </select>
+                        </>
+                    )}
+                    {showSatellite3D && is3D && <p className="text-[11px] text-slate-500 leading-snug">3D shows the satellite imagery.</p>}
+                </div>
+            ) : (
+                <div className="px-3">
+                    <label htmlFor="basemap" className="sr-only">Basemap</label>
+                    <select
+                        id="basemap"
+                        value={mapStyle}
+                        onChange={(e) => onMapStyle(e.target.value)}
+                        className={FIELD}
+                    >
+                        {Object.entries(TILE_PROVIDERS).map(([key, p]) => (
+                            <option key={key} value={key}>{p.label}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
         </div>
     );
 }

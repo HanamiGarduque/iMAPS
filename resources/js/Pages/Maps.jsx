@@ -19,13 +19,18 @@ import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import useForecastWatchlist from "@/Components/MapLayers/useForecastWatchlist";
 import { ForecastSummary, ForecastInsights } from "@/Components/MapLayers/ForecastBrief";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
-import LeafletMap, { getAppCoordinates, PIN_ZOOM } from "@/Components/Maps/LeafletMap";
+import LeafletMap, { getAppCoordinates, PIN_ZOOM, getTrendsDemandColor } from "@/Components/Maps/LeafletMap";
 import LayersPanel, { MODULES } from "@/Components/Maps/LayersPanel";
 import TimelineBar from "@/Components/Maps/TimelineBar";
 import DiversityTimeline from "@/Components/Maps/DiversityTimeline";
 import AttributeTable from "@/Components/Maps/AttributeTable";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import { ApplicationDetails, BarangayCard } from "@/Components/Maps/IdentifyCards";
+import BarangayLocator from "@/Components/Maps/BarangayLocator";
+import LcRecordsTable from "@/Components/Maps/LcRecordsTable";
+import { buildLcView, summarizeBarangay } from "@/utils/lcInsights";
+import LcCallout from "@/Components/Maps/LcCallout";
+import useBarangayNames from "@/utils/useBarangayNames";
 import { getLens } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
 import { confirmSignOut } from "@/utils/signOut";
@@ -193,6 +198,7 @@ function DockHeader({ title, onClose, closeLabel }) {
 function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiversity, urbanGrowthData }) {
     const [activeLayer, setActiveLayer] = useState("status");
     const [mapStyle, setMapStyle] = useState("satellite");
+    const [showSatellite3D, setShowSatellite3D] = useState(false);
     const [appTypeFilter, setAppTypeFilter] = useState(filters?.application_type || "All");
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [layersOpen, setLayersOpen] = useState(isDesktop);
@@ -339,6 +345,29 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         return counts;
     }, [activeHistoricalPins, activeQuarter, forecastDemand]);
 
+    // The LC layer's selected barangay: its chip and locator on the map stand in
+    // for the title card, and the numbers live in the side panel.
+    const lcFocus = useMemo(() => {
+        if (activeLayer !== "trends" || !selectedBgy?.name) return null;
+        const count = demandByBgy[selectedBgy.name.trim().toLowerCase()] || 0;
+        return { count, cls: getTrendsDemandColor(count) };
+    }, [activeLayer, selectedBgy, demandByBgy]);
+
+    // Per-barangay colour and hover text for the LC map; the hover adds the
+    // change from the same quarter a year earlier when that quarter is on record.
+    const lcLastYear = useMemo(() => (
+        activeQuarter
+            ? quarterSeries.find((q) => !q.isForecast && q.total !== null && q.year === activeQuarter.year - 1 && q.quarter === activeQuarter.quarter) || null
+            : null
+    ), [quarterSeries, activeQuarter]);
+    const barangayCount = useBarangayNames().length;
+    const lcView = useMemo(() => buildLcView({
+        names: Object.keys(bgyStats || {}),
+        current: quarterSeries[activeQuarterIndex],
+        lastYear: lcLastYear,
+        total: barangayCount,
+    }), [bgyStats, quarterSeries, activeQuarterIndex, lcLastYear, barangayCount]);
+
     // ── Diversity timeline ──
     // One step per quarter, each scored over the five years ending that
     // quarter (a rolling five-year window). The latest step is the headline
@@ -478,6 +507,22 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         setTableOpen(Boolean(selectedBgy?.name));
     }, [selectedBgy?.name]);
     const showTable = activeLayer === "status" && tableOpen;
+
+    // The LC layer's records dialog, opened from the side panel and shut when the
+    // barangay is cleared or the layer changes.
+    const [lcTableOpen, setLcTableOpen] = useState(false);
+    const showLcTable = activeLayer === "trends" && lcTableOpen && Boolean(selectedBgy?.name) && !activeQuarter?.isForecast;
+    useEffect(() => { if (!selectedBgy?.name || activeLayer !== "trends") setLcTableOpen(false); }, [selectedBgy?.name, activeLayer]);
+    const selectedLcRecords = useMemo(() => {
+        const name = selectedBgy?.name?.trim().toLowerCase();
+        if (!name || activeLayer !== "trends") return [];
+        return Object.values(urbanGrowthData?.historicalPins || {}).flat().filter((p) => (p.barangay || "").trim().toLowerCase() === name);
+    }, [urbanGrowthData, selectedBgy?.name, activeLayer]);
+    const lcSummary = useMemo(() => (
+        selectedBgy?.name && activeLayer === "trends"
+            ? summarizeBarangay({ name: selectedBgy.name, series: quarterSeries, activeIndex: activeQuarterIndex, activeQuarter, records: selectedLcRecords })
+            : null
+    ), [selectedBgy?.name, activeLayer, quarterSeries, activeQuarterIndex, activeQuarter, selectedLcRecords]);
     const compactPanel = activeLayer === "status";
     // An open application takes the whole tracking panel: it gets the full map
     // height and the table narrows beside it instead of pushing it to scroll.
@@ -679,7 +724,8 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         if (activeLayer === "trends") {
             const key = hoveredBgy.trim().toLowerCase();
             const n = demandByBgy[key] || 0;
-            return `${hoveredBgy}: ${n} LC ${activeQuarter?.isForecast ? "projected" : "filed"}, ${activeQuarter?.label}`;
+            const note = lcView[key]?.label;
+            return `${hoveredBgy}: ${n} LC ${activeQuarter?.isForecast ? "projected" : "filed"}, ${activeQuarter?.label}${note ? ` · ${note}` : ""}`;
         }
         if (activeLayer === "diversity") {
             const lens = getLens(diversityLens);
@@ -688,7 +734,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         }
         const n = stat.Total ?? 0;
         return `${hoveredBgy}: ${n} application${n === 1 ? "" : "s"}${stat.Primary_Zone ? ` · ${stat.Primary_Zone}` : ""}`;
-    }, [hoveredBgy, hoveredAppId, applications, mapStats, activeLayer, demandByBgy, activeQuarter, diversityLens]);
+    }, [hoveredBgy, hoveredAppId, applications, mapStats, activeLayer, demandByBgy, activeQuarter, diversityLens, lcView]);
 
     return (
         <>
@@ -732,7 +778,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                             <ToolButton icon="layers" label="Layers panel" pressed={layersOpen} onClick={() => setLayersOpen((v) => !v)} />
                             <Divider />
                             <ToolButton icon="zoomIn" label="Zoom in" onClick={() => (show3D ? view3DRef.current?.zoomBy(1) : setMapZoom((z) => Math.min(19, z + 1)))} />
-                            <ToolButton icon="zoomOut" label="Zoom out" onClick={() => (show3D ? view3DRef.current?.zoomBy(-1) : setMapZoom((z) => Math.max(12, z - 1)))} />
+                            <ToolButton icon="zoomOut" label="Zoom out" onClick={() => (show3D ? view3DRef.current?.zoomBy(-1) : setMapZoom((z) => Math.max(11, z - 1)))} />
                             <ToolButton icon="extent" label="Zoom to Rosario" onClick={() => { setSelectedBgy(null); if (show3D) view3DRef.current?.reset(); else setResetTrigger((t) => t + 1); }} />
                             <Divider />
                             <div className="flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Map view">
@@ -789,6 +835,9 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             onToggleLabels={setShowLabels}
                                             mapStyle={mapStyle}
                                             onMapStyle={setMapStyle}
+                                            is3D={show3D}
+                                            showSatellite3D={showSatellite3D}
+                                            onToggleSatellite3D={setShowSatellite3D}
                                         />
                                     </div>
                                 </aside>
@@ -805,6 +854,15 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             applications={applications}
                                             currentLayer={activeLayer}
                                             mapStyle={mapStyle}
+                                            plain={activeLayer === "trends" && !showSatellite3D}
+                                            callout={lcFocus && !show3D ? (
+                                                <LcCallout
+                                                    name={selectedBgy.name}
+                                                    summary={lcSummary}
+                                                    quarter={activeQuarter}
+                                                    onClose={() => setSelectedBgy(null)}
+                                                />
+                                            ) : null}
                                             appTypeFilter={appTypeFilter}
                                             statusFilter={statusFilter}
                                             selectedAppId={inspectedApp?.id ?? null}
@@ -829,6 +887,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             onInspectApp={handleInspectApp}
                                             insets={mapInsets}
                                             demandCounts={demandByBgy}
+                                            lcColors={lcView}
                                             onFeatureClick={(name) => selectBarangay(name)}
                                             onMapClick={handleMapClick}
                                         />
@@ -842,12 +901,22 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     syncRef={leafletViewRef}
                                                     controlRef={view3DRef}
                                                     showLabels={showLabels}
+                                                    showSatellite={showSatellite3D}
                                                     selectedBgy={selectedBgy}
                                                     onFeatureClick={(name) => selectBarangay(name)}
                                                     onMapClick={handleMapClick}
                                                     bgyStats={mapStats}
                                                     lens={activeLayer === "diversity" ? diversityLens : activeLayer}
                                                     demandCounts={demandByBgy}
+                                                    lcColors={lcView}
+                                                    callout={lcFocus ? (
+                                                        <LcCallout
+                                                            name={selectedBgy.name}
+                                                            summary={lcSummary}
+                                                            quarter={activeQuarter}
+                                                            onClose={() => setSelectedBgy(null)}
+                                                        />
+                                                    ) : null}
                                                     rightPanelOpen={panelOpen}
                                                     panelWidth={372}
                                                     bandFilter={diversityBandFilter}
@@ -862,6 +931,11 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
                                     {/* Map title, like a print layout's. It also reads out whatever is
                                         under the cursor, so nothing floats over the data itself. */}
+                                    {lcFocus ? (
+                                        <>
+                                            <BarangayLocator name={selectedBgy.name} color={lcFocus.cls.color} onClear={() => setSelectedBgy(null)} />
+                                        </>
+                                    ) : (
                                     <div className="absolute top-3 left-3 z-[500] bg-white/95 border border-slate-300 rounded-[3px] shadow-sm w-[300px] max-w-[calc(100%-1.5rem)]">
                                         <div className="px-3 py-1.5">
                                             <div className="text-[13px] font-semibold text-slate-900 leading-tight truncate">{moduleInfo?.label}</div>
@@ -887,6 +961,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             {hoverText || (show3D ? "Drag to orbit · click a barangay to open it" : "Hover a barangay · click to open it")}
                                         </div>
                                     </div>
+                                    )}
 
                                     {/* Attribute table for the selected barangay, floating over the
                                         bottom of the map so the canvas keeps its full size. */}
@@ -904,6 +979,15 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                 onCollapse={() => setInspectedApp(null)}
                                             />
                                         </div>
+                                    )}
+
+                                    {showLcTable && (
+                                        <LcRecordsTable
+                                            barangay={selectedBgy.name}
+                                            quarter={activeQuarter}
+                                            records={selectedLcRecords}
+                                            onClose={() => setLcTableOpen(false)}
+                                        />
                                     )}
 
                                     {/* ── Identify & analysis dock ── */}
@@ -941,6 +1025,9 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                             forecastOutdated={forecastOutdated}
                                                             urbanGrowthData={urbanGrowthData}
                                                             selectedBgy={selectedBgy}
+                                                            lcSummary={lcSummary}
+                                                            onOpenRecords={() => setLcTableOpen((v) => !v)}
+                                                            recordsOpen={showLcTable}
                                                             onSelectBgy={selectBarangay}
                                                             onHoverBgy={setHoveredBgy}
                                                             onForecastGenerated={handleForecastGenerated}
@@ -1009,6 +1096,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                         onTogglePlay={() => setIsTimelinePlaying((p) => !p)}
                                         count={quarterCount}
                                         series={quarterSeries}
+                                        peakQuarter={1}
                                     />
                                 )}
 

@@ -69,7 +69,7 @@ class SupabaseService
     private function serviceHeaders(array $extra = []): array
     {
         return array_merge([
-            'apikey'        => $this->anonKey,
+            'apikey'        => $this->serviceKey,
             'Authorization' => 'Bearer ' . $this->serviceKey,
             'Content-Type'  => 'application/json',
         ], $extra);
