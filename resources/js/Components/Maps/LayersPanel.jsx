@@ -251,14 +251,24 @@ export default function LayersPanel({
             </div>
 
             <GroupTitle>Basemap</GroupTitle>
-            {/* The 3D demand forecast sits on plain white; the dropdown only drives the 2D map. */}
-            {is3D && activeLayer === "trends" ? (
-                <div className="px-3">
+            {/* The LC demand forecast sits on plain white in 2D and 3D; a basemap is opt-in. */}
+            {activeLayer === "trends" ? (
+                <div className="px-3 space-y-1.5">
                     <label className="flex items-center gap-2 py-1 text-[12.5px] text-slate-800 cursor-pointer">
                         <input type="checkbox" checked={showSatellite3D} onChange={(e) => onToggleSatellite3D(e.target.checked)} className="accent-[#0b2a5b]" />
-                        Show basemap (satellite)
+                        Show basemap
                     </label>
-                    <p className="text-[11px] text-slate-500 leading-snug">3D uses a plain background by default. The basemap list applies in 2D.</p>
+                    {showSatellite3D && !is3D && (
+                        <>
+                            <label htmlFor="basemap" className="sr-only">Basemap</label>
+                            <select id="basemap" value={mapStyle} onChange={(e) => onMapStyle(e.target.value)} className={FIELD}>
+                                {Object.entries(TILE_PROVIDERS).map(([key, p]) => (
+                                    <option key={key} value={key}>{p.label}</option>
+                                ))}
+                            </select>
+                        </>
+                    )}
+                    {showSatellite3D && is3D && <p className="text-[11px] text-slate-500 leading-snug">3D shows the satellite imagery.</p>}
                 </div>
             ) : (
                 <div className="px-3">

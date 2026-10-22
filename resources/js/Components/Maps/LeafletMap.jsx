@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { getStatusMarkerConfig, matchesAppFilters } from "@/Components/MapLayers/StatusPanel";
 import { resolveLensValue, matchesBand } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
-import { loadBarangayBoundaries, loadMunicipalBoundary, loadLandUsePlan, resolveBarangayName } from "@/utils/mapData";
+import { loadBarangayBoundaries, loadNeighborMunicipalities, loadMunicipalBoundary, loadLandUsePlan, resolveBarangayName } from "@/utils/mapData";
 import useReducedMotion from "@/utils/useReducedMotion";
+import labelPoint from "@/utils/labelPoint";
 import MapSkeleton from "./MapSkeleton";
 
 // Runs `fn` when the browser is idle, so background preparation never competes
@@ -178,7 +180,12 @@ const hoverStyle = (imagery) => (imagery ? { weight: 3, color: "#ffffff", opacit
 // Rosario's outline is drawn twice, a soft halo under a crisp line, and the
 // land outside it is dimmed by a mask with the municipality cut out, so the
 // study area lifts off the basemap without a frame around it.
-const boundaryStyles = (imagery) => ({
+const PLAIN_LINE = "#b9b4ab";
+const boundaryStyles = (imagery, plain = false) => plain ? ({
+    halo: { stroke: false, fill: false },
+    line: { color: PLAIN_LINE, weight: 1.4, opacity: 1, fill: false, lineJoin: "round" },
+    mask: { stroke: false, fill: false },
+}) : ({
     halo: { color: imagery ? "#020617" : "#ffffff", weight: imagery ? 7 : 6, opacity: imagery ? 0.45 : 0.8, fill: false, lineJoin: "round" },
     line: { color: imagery ? "#ffffff" : "#1f2937", weight: imagery ? 2.4 : 2.2, opacity: imagery ? 1 : 0.9, fill: false, lineJoin: "round" },
     mask: { stroke: false, fill: true, fillColor: "#020617", fillOpacity: imagery ? 0.2 : 0.1 },
@@ -260,6 +267,10 @@ export default function LeafletMap({
     demandCounts = {},
     // Per-barangay colour override for the LC layer (see utils/lcInsights).
     lcColors = null,
+    // The LC layer's plain white page: no basemap, light linework, names only.
+    plain = false,
+    // A React card shown above the selected barangay on the plain LC map.
+    callout = null,
     // Filled with { get, set } so the 3D view can start from, and hand back,
     // exactly the view the person is looking at.
     viewRef = null,
@@ -267,6 +278,7 @@ export default function LeafletMap({
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
     const tileLayerRef = useRef(null);
+    const neighborLayerRef = useRef(null);
     const clupTileLayerRef = useRef(null);
     const geoLayerRef = useRef(null);
     const municipalLayerRef = useRef(null);
@@ -291,14 +303,24 @@ export default function LeafletMap({
     // keeps the subject in the visible part of the canvas.
     const insetsRef = useRef(insets);
     insetsRef.current = insets;
+    // A short canvas gets a smaller card, and room for it above the barangay.
+    const calloutScale = () => {
+        const h = mapInstanceRef.current?.getSize().y || 700;
+        return Math.max(0.6, Math.min(1, (h * 0.5) / 330));
+    };
+    const calloutRoom = () => Math.round(285 * calloutScale());
+    const calloutOnRef = useRef(false);
+    calloutOnRef.current = Boolean(callout);
     const framePadding = () => ({
-        paddingTopLeft: [48, 48],
+        // room above the barangay for its card
+        paddingTopLeft: [48, 48 + (calloutOnRef.current ? calloutRoom() : 0)],
         paddingBottomRight: [48 + (insetsRef.current.right || 0), 48 + (insetsRef.current.bottom || 0)],
     });
     // Whole-municipality view: balanced left and right so Rosario sits in the
     // middle of the canvas (the pan limits leave room on every side for this).
     const homePadding = () => ({
-        paddingTopLeft: [48, 48],
+        // a little more room above, where the title card sits
+        paddingTopLeft: [48, 72],
         paddingBottomRight: [48, 48 + (insetsRef.current.bottom || 0)],
     });
     const lotsByZoom = (mapZoom ?? 0) >= LOT_ZOOM;
@@ -324,7 +346,7 @@ export default function LeafletMap({
     // they read the latest props through this ref rather than a stale closure.
     const live = useRef({});
     live.current = {
-        currentLayer, selectedBgy, showClup, showLabels, imagery: isImageryStyle(mapStyle),
+        currentLayer, selectedBgy, showClup, showLabels, imagery: isImageryStyle(mapStyle) && !plain, plain,
         diversityLens, diversityBandFilter, staticBgyData, bgyDemandCounts: demandCounts,
         onFeatureClick, onMapClick, onHoverBgy, onCursorMove, onZoomChange, onInspectApp, onHoverApp,
     };
@@ -370,6 +392,19 @@ export default function LeafletMap({
         }
 
         const demand = layer === "trends" ? (lcColors?.[name.trim().toLowerCase()] || getTrendsDemandColor(demandFor(name))) : null;
+        if (live.current.plain && layer === "trends") {
+            // White page: opaque fills in the legend's colours, hairline borders.
+            return {
+                color: isSelected ? "#0b2a5b" : PLAIN_LINE,
+                weight: isSelected ? 3 : 0.9,
+                opacity: 1,
+                dashArray: null,
+                fill: true,
+                fillColor: demand.color,
+                fillOpacity: selName && !isSelected ? 0.35 : 1,
+                className: "",
+            };
+        }
         const fillColor = demand ? demand.color : getAppLoadColor(stat.total);
         let base = clup ? 0.25 : layer === "trends" ? 0.82 : 0.62;
         // The lowest class is near-white; on imagery it fades out (all but
@@ -490,7 +525,10 @@ export default function LeafletMap({
             const map = L.map(mapRef.current, {
                 center: [13.785, 121.25],
                 zoom: 12,
-                minZoom: 12,
+                // Finer than whole steps, and low enough that the whole town fits a short window.
+                minZoom: 11,
+                zoomSnap: 0.25,
+                zoomDelta: 1,
                 maxZoom: 19,
                 maxBounds: [[13.6, 121.12], [13.92, 121.55]],
                 maxBoundsViscosity: 1.0,
@@ -500,7 +538,7 @@ export default function LeafletMap({
             if (viewRef) {
                 viewRef.current = {
                     get: () => { const c = map.getCenter(); return { center: [c.lng, c.lat], zoom: map.getZoom() }; },
-                    set: ({ center, zoom }) => map.setView([center[1], center[0]], Math.min(19, Math.max(12, zoom)), { animate: false }),
+                    set: ({ center, zoom }) => map.setView([center[1], center[0]], Math.min(19, Math.max(11, zoom)), { animate: false }),
                 };
             }
 
@@ -526,7 +564,21 @@ export default function LeafletMap({
             map.on("mouseout", () => live.current.onCursorMove?.(null));
 
             mapRef.current.classList.toggle("is-imagery", isImageryStyle(mapStyle));
-            tileLayerRef.current = createBaseLayer(L, mapStyle).addTo(map);
+            tileLayerRef.current = createBaseLayer(L, mapStyle);
+            if (!live.current.plain) tileLayerRef.current.addTo(map);
+            mapRef.current.classList.toggle("is-plain", Boolean(live.current.plain));
+
+            map.createPane("neighborPane").style.zIndex = "300";
+            map.getPane("neighborPane").style.pointerEvents = "none";
+            loadNeighborMunicipalities().then((data) => {
+                if (mapInstanceRef.current !== map || !data?.features) return;
+                neighborLayerRef.current = L.geoJSON(data, {
+                    pane: "neighborPane",
+                    interactive: false,
+                    style: { color: "#c4c0b8", weight: 1, dashArray: "4 4", opacity: 0.9, fill: true, fillColor: "#f4f2ee", fillOpacity: 0.55 },
+                });
+                if (live.current.plain) neighborLayerRef.current.addTo(map);
+            });
 
             clupTileLayerRef.current = L.tileLayer("/tiles/clup_tiles/{z}/{x}/{y}.png", {
                 maxZoom: 22,
@@ -542,14 +594,25 @@ export default function LeafletMap({
 
             // The docks around the map open and close, so the canvas re-measures
             // whenever its box changes, not just on window resize.
-            resizeObserver = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+            // The opening view shows the whole town. The docks around the canvas settle
+            // after first paint, so it is re-fitted whenever the canvas changes size,
+            // until the person pans or zooms for themselves.
+            const touched = { current: false };
+            map.on("dragstart", () => { touched.current = true; });
+            mapRef.current.addEventListener("wheel", () => { touched.current = true; }, { passive: true });
+            resizeObserver = new ResizeObserver(() => {
+                map.invalidateSize({ pan: false });
+                if (!touched.current && !live.current.selectedBgy?.name && rosarioBoundsRef.current) {
+                    map.fitBounds(rosarioBoundsRef.current, { ...homePadding(), animate: false });
+                }
+            });
             resizeObserver.observe(mapRef.current);
 
             // Each layer draws the moment its own data arrives; the loaders are
             // cached promises shared with the 3D view.
             loadMunicipalBoundary().then((data) => {
                 if (mapInstanceRef.current !== map || !data?.features) return;
-                const styles = boundaryStyles(live.current.imagery);
+                const styles = boundaryStyles(live.current.imagery, live.current.plain);
                 outsideMaskRef.current = buildOutsideMask(L, data, "maskPane", styles.mask)?.addTo(map) ?? null;
                 municipalHaloRef.current = L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.halo }).addTo(map);
                 municipalLayerRef.current = L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.line }).addTo(map);
@@ -560,7 +623,7 @@ export default function LeafletMap({
                 const b = rosarioBoundsRef.current.pad(0.15);
                 const w = b.getEast() - b.getWest();
                 const h = b.getNorth() - b.getSouth();
-                map.setMaxBounds([[b.getSouth() - h * 0.25, b.getWest() - w * 0.6], [b.getNorth(), b.getEast() + w * 0.6]]);
+                map.setMaxBounds([[b.getSouth() - h * 0.25, b.getWest() - w * 0.6], [b.getNorth() + h * 0.4, b.getEast() + w * 0.6]]);
             });
 
             loadBarangayBoundaries()
@@ -590,7 +653,7 @@ export default function LeafletMap({
                         },
                     }).addTo(map);
                     geoLayerRef.current = geo;
-                    map.fitBounds(geo.getBounds(), { paddingTopLeft: [48, 48], paddingBottomRight: [48, 48] });
+                    map.fitBounds(geo.getBounds(), homePadding());
                     setBarangaysReady(true);
 
                     // Spend the idle time after first paint preparing what the
@@ -644,7 +707,73 @@ export default function LeafletMap({
 
         geoLayerRef.current?.bringToFront();
         raiseSelected();
-    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, demandCounts, lcColors, diversityLens, diversityBandFilter, zoningReady, barangaysReady, mapStyle]);
+    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, demandCounts, lcColors, diversityLens, diversityBandFilter, zoningReady, barangaysReady, mapStyle, plain]);
+
+    // ── Callout card on the selected barangay ──
+    const calloutMarkerRef = useRef(null);
+    const [calloutHost, setCalloutHost] = useState(null);
+    useEffect(() => {
+        const map = mapInstanceRef.current;
+        const drop = () => {
+            calloutMarkerRef.current?.remove();
+            calloutMarkerRef.current = null;
+            setCalloutHost(null);
+        };
+        if (!map || !geoLayerRef.current || !callout || !selectedBgy?.name) return drop();
+        const target = selectedBgy.name.trim().toLowerCase();
+        let match = null;
+        geoLayerRef.current.eachLayer((lf) => { if (featureName(lf.feature).toLowerCase() === target) match = lf; });
+        if (!match) return drop();
+        import("leaflet").then((mod) => {
+            if (mapInstanceRef.current !== map) return;
+            const L = mod.default;
+            calloutMarkerRef.current?.remove();
+            const b = match.getBounds();
+            // The pin is a point inside the barangay, always on the shape; the card
+            // floats above the shape's top edge and its leader line runs down to the pin.
+            const pt = labelPoint(match.feature?.geometry);
+            const pin = pt ? L.latLng(pt[1], pt[0]) : b.getCenter();
+            const marker = L.marker(pin, {
+                pane: "popupPane",
+                interactive: false,
+                keyboard: false,
+                icon: L.divIcon({ className: "imaps-callout-wrap", iconSize: [0, 0], html: "" }),
+            }).addTo(map);
+            const host = document.createElement("div");
+            host.className = "imaps-callout-host";
+            L.DomEvent.disableClickPropagation(host);
+            L.DomEvent.disableScrollPropagation(host);
+            marker.getElement().appendChild(host);
+            // The dot is a real map point, so it sits exactly on the pin at every zoom;
+            // the card only draws the line down to it.
+            host.style.setProperty("--lc-dot", "none");
+            host.style.setProperty("--lc-line", "none");
+            // The leader is drawn from the pin itself, straight up to the card, so it
+            // can never overshoot the dot.
+            const stem = document.createElement("div");
+            stem.className = "imaps-callout-stem";
+            marker.getElement().appendChild(stem);
+            const dot = L.circleMarker(pin, { pane: "popupPane", interactive: false, radius: 5, color: "#ffffff", weight: 2, fillColor: "#1e293b", fillOpacity: 1 }).addTo(map);
+            marker.once("remove", () => dot.remove());
+            const place = () => {
+                const k = calloutScale();
+                // pixels from the pin up to the top of the shape, plus a gap
+                const rise = Math.max(0, map.latLngToContainerPoint(pin).y - map.latLngToContainerPoint([b.getNorth(), pin.lng]).y) + 26;
+                // hold the card above the dot even when the pin is high up in the shape
+                host.style.setProperty("--lc-leader", `${Math.round(rise / k)}px`);
+                stem.style.height = `${Math.round(rise)}px`;
+                // The card scales about the pin, so its own offset is the unscaled distance (rise / k).
+                host.style.transform = `translate(-50%, calc(-100% - ${Math.round(rise / k)}px)) scale(${k.toFixed(2)})`;
+                host.style.transformOrigin = `50% calc(100% + ${Math.round(rise / k)}px)`;
+            };
+            place();
+            map.on("zoom move resize", place);
+            marker.once("remove", () => map.off("zoom move resize", place));
+            calloutMarkerRef.current = marker;
+            setCalloutHost(host);
+        });
+        return undefined;
+    }, [selectedBgy?.name, Boolean(callout), barangaysReady]);
 
     // ── Camera follows the selected barangay ──
     useEffect(() => {
@@ -705,16 +834,23 @@ export default function LeafletMap({
             if (mapInstanceRef.current !== map) return;
             tileLayerRef.current.remove();
             tileLayerRef.current = createBaseLayer(mod.default, mapStyle);
-            tileLayerRef.current.addTo(map).bringToBack();
+            // Plain white: no basemap, the neighbouring towns as faint outlines.
+            if (plain) {
+                if (neighborLayerRef.current && !map.hasLayer(neighborLayerRef.current)) neighborLayerRef.current.addTo(map);
+            } else {
+                tileLayerRef.current.addTo(map).bringToBack();
+                if (neighborLayerRef.current && map.hasLayer(neighborLayerRef.current)) map.removeLayer(neighborLayerRef.current);
+            }
 
-            const imagery = isImageryStyle(mapStyle);
-            const styles = boundaryStyles(imagery);
+            const imagery = isImageryStyle(mapStyle) && !plain;
+            const styles = boundaryStyles(imagery, plain);
             mapRef.current?.classList.toggle("is-imagery", imagery);
+            mapRef.current?.classList.toggle("is-plain", plain);
             outsideMaskRef.current?.setStyle(styles.mask);
             municipalHaloRef.current?.setStyle(styles.halo);
             municipalLayerRef.current?.setStyle(styles.line);
         });
-    }, [mapStyle]);
+    }, [mapStyle, plain]);
 
     // ── Barangay labels ──
     // Name plus the active mode's value, placed strongest-first and skipped
@@ -748,7 +884,7 @@ export default function LeafletMap({
                     rank = r.value;
                 } else if (layer === "trends") {
                     rank = demandFor(name);
-                    value = rank ? `${rank} LC` : "";
+                    value = rank && !live.current.plain ? `${rank} LC` : "";
                 } else {
                     rank = stat.total;
                     value = rank ? String(rank) : "";
@@ -758,11 +894,13 @@ export default function LeafletMap({
             candidates.sort((a, b) => b.rank - a.rank);
 
             const placed = [];
+            const namesOnly = live.current.plain && layer === "trends";
             candidates.forEach(({ name, value, center }) => {
                 const pt = map.latLngToContainerPoint(center);
-                const w = Math.max(name.length, value.length) * 6.2 + 10;
-                const h = value ? 30 : 16;
+                const w = namesOnly ? name.length * 6.6 + 12 : Math.max(name.length, value.length) * 6.2 + 10;
+                const h = namesOnly ? 18 : value ? 30 : 16;
                 const box = { l: pt.x - w / 2, r: pt.x + w / 2, t: pt.y - h / 2, b: pt.y + h / 2 };
+                // Names that would collide are skipped (busiest first) and appear on zoom-in.
                 if (placed.some((q) => box.l < q.r && box.r > q.l && box.t < q.b && box.b > q.t)) return;
                 placed.push(box);
 
@@ -774,7 +912,7 @@ export default function LeafletMap({
                         icon: L.divIcon({
                             className: "imaps-label-wrap",
                             iconSize: [0, 0],
-                            html: `<div class="imaps-label"><span>${escapeHtml(name)}</span>${value ? `<b>${escapeHtml(value)}</b>` : ""}</div>`,
+                            html: `<div class="imaps-label${namesOnly ? " imaps-label-name" : ""}"><span>${escapeHtml(name)}</span>${value ? `<b>${escapeHtml(value)}</b>` : ""}</div>`,
                         }),
                     })
                 );
@@ -784,7 +922,7 @@ export default function LeafletMap({
 
     useEffect(() => {
         renderLabels();
-    }, [currentLayer, diversityLens, diversityBandFilter, selectedBgy, showLabels, staticBgyData, demandCounts, barangaysReady, renderLabels]);
+    }, [currentLayer, diversityLens, diversityBandFilter, selectedBgy, showLabels, staticBgyData, demandCounts, barangaysReady, renderLabels, plain]);
 
     useEffect(() => {
         const map = mapInstanceRef.current;
@@ -904,6 +1042,7 @@ export default function LeafletMap({
     return (
         <>
             <style>{MAP_CSS}</style>
+            {calloutHost && callout && createPortal(callout, calloutHost)}
             <svg style={{ position: "absolute", width: 0, height: 0 }} aria-hidden="true">
                 <defs>
                     <pattern id="pattern-gray-line-969696" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
@@ -939,6 +1078,12 @@ export default function LeafletMap({
 const MAP_CSS = `
 .imaps-map.leaflet-container { background: #f2f3f5; font: inherit; }
 .imaps-map.is-imagery.leaflet-container { background: #0f172a; }
+.imaps-map.is-plain.leaflet-container { background: radial-gradient(ellipse at 50% 45%, #ffffff 0%, #ffffff 52%, #f3f1ed 100%); }
+.imaps-callout-wrap { background: transparent; border: 0; }
+.imaps-callout-stem { position: absolute; left: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: rgba(71, 85, 105, 0.7); pointer-events: none; }
+.imaps-callout-host { position: absolute; left: 0; top: 0; transform: translate(-50%, calc(-100% - 26px)); pointer-events: auto; }
+.imaps-label-name { font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; text-shadow: none; }
+.imaps-label-name span { font-size: 11px; font-weight: 600; color: #1e293b; paint-order: stroke fill; -webkit-text-stroke: 3px rgba(255, 255, 255, 0.88); }
 .imaps-tiles-gray { filter: grayscale(1) brightness(1.06) contrast(0.88); }
 .imaps-tiles-imagery { filter: saturate(0.85) contrast(1.05) brightness(0.95); }
 .imaps-map .leaflet-interactive { transition: fill 240ms ease, fill-opacity 240ms ease, stroke-width 160ms ease; }

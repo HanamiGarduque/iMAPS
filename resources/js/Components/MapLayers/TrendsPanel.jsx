@@ -99,7 +99,7 @@ export default function TrendsPanel({
     forecastData = null,
     forecastOutdated = null,
     selectedBgy = null,
-    bgyStat = null,
+    lcSummary = null,
     onOpenRecords = null,
     recordsOpen = false,
     onSelectBgy,
@@ -304,13 +304,11 @@ export default function TrendsPanel({
                 <div className="shrink-0 flex flex-col" style={after(1)}>
                 <BarangayLcDetail
                     bgyName={bgyName}
-                    bgyStat={bgyStat}
                     series={series}
                     activeIndex={activeIndex}
-                    activeQuarter={activeQuarter}
-                    forecastData={forecastData}
-                    records={bgyRecords}
                     onSelectQuarter={onSelectQuarter}
+                    summary={lcSummary}
+                    activeQuarter={activeQuarter}
                     onOpenRecords={onOpenRecords}
                     recordsOpen={recordsOpen}
                 />

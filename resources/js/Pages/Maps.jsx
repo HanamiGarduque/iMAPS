@@ -28,7 +28,8 @@ import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import { ApplicationDetails, BarangayCard } from "@/Components/Maps/IdentifyCards";
 import BarangayLocator from "@/Components/Maps/BarangayLocator";
 import LcRecordsTable from "@/Components/Maps/LcRecordsTable";
-import { buildLcView } from "@/utils/lcInsights";
+import { buildLcView, summarizeBarangay } from "@/utils/lcInsights";
+import LcCallout from "@/Components/Maps/LcCallout";
 import useBarangayNames from "@/utils/useBarangayNames";
 import { getLens } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
@@ -517,6 +518,11 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         if (!name || activeLayer !== "trends") return [];
         return Object.values(urbanGrowthData?.historicalPins || {}).flat().filter((p) => (p.barangay || "").trim().toLowerCase() === name);
     }, [urbanGrowthData, selectedBgy?.name, activeLayer]);
+    const lcSummary = useMemo(() => (
+        selectedBgy?.name && activeLayer === "trends"
+            ? summarizeBarangay({ name: selectedBgy.name, series: quarterSeries, activeIndex: activeQuarterIndex, activeQuarter, records: selectedLcRecords })
+            : null
+    ), [selectedBgy?.name, activeLayer, quarterSeries, activeQuarterIndex, activeQuarter, selectedLcRecords]);
     const compactPanel = activeLayer === "status";
     // An open application takes the whole tracking panel: it gets the full map
     // height and the table narrows beside it instead of pushing it to scroll.
@@ -772,7 +778,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                             <ToolButton icon="layers" label="Layers panel" pressed={layersOpen} onClick={() => setLayersOpen((v) => !v)} />
                             <Divider />
                             <ToolButton icon="zoomIn" label="Zoom in" onClick={() => (show3D ? view3DRef.current?.zoomBy(1) : setMapZoom((z) => Math.min(19, z + 1)))} />
-                            <ToolButton icon="zoomOut" label="Zoom out" onClick={() => (show3D ? view3DRef.current?.zoomBy(-1) : setMapZoom((z) => Math.max(12, z - 1)))} />
+                            <ToolButton icon="zoomOut" label="Zoom out" onClick={() => (show3D ? view3DRef.current?.zoomBy(-1) : setMapZoom((z) => Math.max(11, z - 1)))} />
                             <ToolButton icon="extent" label="Zoom to Rosario" onClick={() => { setSelectedBgy(null); if (show3D) view3DRef.current?.reset(); else setResetTrigger((t) => t + 1); }} />
                             <Divider />
                             <div className="flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Map view">
@@ -848,6 +854,15 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             applications={applications}
                                             currentLayer={activeLayer}
                                             mapStyle={mapStyle}
+                                            plain={activeLayer === "trends" && !showSatellite3D}
+                                            callout={lcFocus && !show3D ? (
+                                                <LcCallout
+                                                    name={selectedBgy.name}
+                                                    summary={lcSummary}
+                                                    quarter={activeQuarter}
+                                                    onClose={() => setSelectedBgy(null)}
+                                                />
+                                            ) : null}
                                             appTypeFilter={appTypeFilter}
                                             statusFilter={statusFilter}
                                             selectedAppId={inspectedApp?.id ?? null}
@@ -894,6 +909,14 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     lens={activeLayer === "diversity" ? diversityLens : activeLayer}
                                                     demandCounts={demandByBgy}
                                                     lcColors={lcView}
+                                                    callout={lcFocus ? (
+                                                        <LcCallout
+                                                            name={selectedBgy.name}
+                                                            summary={lcSummary}
+                                                            quarter={activeQuarter}
+                                                            onClose={() => setSelectedBgy(null)}
+                                                        />
+                                                    ) : null}
                                                     rightPanelOpen={panelOpen}
                                                     panelWidth={372}
                                                     bandFilter={diversityBandFilter}
@@ -908,7 +931,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
                                     {/* Map title, like a print layout's. It also reads out whatever is
                                         under the cursor, so nothing floats over the data itself. */}
-                                    {lcFocus && show3D ? (
+                                    {lcFocus ? (
                                         <>
                                             <BarangayLocator name={selectedBgy.name} color={lcFocus.cls.color} onClear={() => setSelectedBgy(null)} />
                                         </>
@@ -1002,9 +1025,9 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                             forecastOutdated={forecastOutdated}
                                                             urbanGrowthData={urbanGrowthData}
                                                             selectedBgy={selectedBgy}
+                                                            lcSummary={lcSummary}
                                                             onOpenRecords={() => setLcTableOpen((v) => !v)}
                                                             recordsOpen={showLcTable}
-                                                            bgyStat={selectedBgy?.name ? (mapStats?.[selectedBgy.name] || selectedBgy.data || {}) : null}
                                                             onSelectBgy={selectBarangay}
                                                             onHoverBgy={setHoveredBgy}
                                                             onForecastGenerated={handleForecastGenerated}

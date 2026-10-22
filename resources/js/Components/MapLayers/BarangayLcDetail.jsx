@@ -1,13 +1,7 @@
-import { useMemo, useState, useEffect } from 'react';
-import { getTrendsDemandColor } from '@/Components/Maps/LeafletMap';
+import { useMemo } from 'react';
+import SignedChange from '@/Components/Maps/SignedChange';
 
 const TITLE = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500';
-
-const shortClass = (label) => label.replace(/ (Demand|Activity)$/, '');
-
-// Greys, like the rest of the panel's quiet chrome: the legend carries the
-// names and counts, so the bar only has to show proportions.
-const TYPE_SHADES = ['#0f172a', '#64748b', '#cbd5e1', '#e5e9ef'];
 
 // One line across all quarters: the filled area is what was filed, the dashed
 // orange stretch is the forecast, the marked point is the quarter on the map.
@@ -80,213 +74,52 @@ function QuarterTrend({ points, activeIndex, onSelect }) {
     );
 }
 
-function Tile({ title, aside, children, note, noteTone = 'text-slate-500', foot }) {
-    return (
-        <div className="min-w-0 rounded-[4px] border border-slate-200 bg-white px-2.5 py-2">
-            <div className="flex items-baseline justify-between gap-1 text-[9.5px] uppercase tracking-[0.06em] text-slate-500">
-                <span className="font-bold truncate">{title}</span>
-                <span className="shrink-0 tabular-nums normal-case tracking-normal text-[10.5px]">{aside}</span>
-            </div>
-            <div className="mt-1 flex items-baseline gap-1.5">{children}</div>
-            {note && <div className={`mt-1 text-[11px] font-semibold leading-snug ${noteTone}`}>{note}</div>}
-            {foot && <div className="mt-2">{foot}</div>}
-        </div>
-    );
-}
-
-function PairBars({ rows }) {
-    const max = Math.max(1, ...rows.map((x) => x.v));
-    return (
-        <div className="space-y-1">
-            {rows.map((x) => (
-                <div key={x.label} className="flex items-center gap-1.5 text-[10px] text-slate-500">
-                    <span className="w-9 shrink-0 tabular-nums">{x.label}</span>
-                    <span className="flex-1 h-[7px] rounded-full bg-slate-100 overflow-hidden">
-                        <span className="block h-full rounded-full" style={{ width: `${Math.max(x.v ? 6 : 0, (x.v / max) * 100)}%`, backgroundColor: x.tone }} />
-                    </span>
-                    <span className="w-4 text-right tabular-nums font-semibold text-slate-700">{x.v}</span>
-                </div>
-            ))}
-        </div>
-    );
-}
-
-const FIGURE = 'text-[20px] leading-none font-semibold tabular-nums text-slate-900';
-const UNIT = 'text-[11px] font-medium text-slate-500';
-
-// "9 fewer than Q1 '23": the direction in words, not just an arrow.
-const changePhrase = (delta, baseLabel) => {
-    if (delta === null || !baseLabel) return { text: '', tone: '' };
-    if (delta === 0) return { text: `Same as ${baseLabel}`, tone: 'text-slate-500' };
-    return delta > 0
-        ? { text: `▲ ${delta} more than ${baseLabel}`, tone: 'text-[#b32a17]' }
-        : { text: `▼ ${Math.abs(delta)} fewer than ${baseLabel}`, tone: 'text-[#1f5fa8]' };
-};
-
-export default function BarangayLcDetail({
-    bgyName,
-    bgyStat = {},
-    series = [],
-    activeIndex = 0,
-    activeQuarter = null,
-    forecastData = null,
-    records = [],
-    onSelectQuarter = () => {},
-    onOpenRecords,
-    recordsOpen = false,
-}) {
+export default function BarangayLcDetail({ bgyName, series = [], activeIndex = 0, onSelectQuarter = () => {}, summary = null, activeQuarter = null, onOpenRecords, recordsOpen = false }) {
     const key = bgyName.trim().toLowerCase();
-    const isForecast = Boolean(activeQuarter?.isForecast);
-    const current = series[activeIndex];
-
-    const countOf = (q, k = key) => q?.byBgy?.[k] || 0;
-    const count = countOf(current);
-    const cls = getTrendsDemandColor(count);
-
-    // Seasonal comparison: against the same quarter a year earlier, as the
-    // ranking list does, since Q1 is always the peak.
-    const lastYear = current
-        ? series.find((q) => !q.isForecast && q.total !== null && q.year === current.year - 1 && q.quarter === current.quarter) || null
-        : null;
-    const delta = lastYear ? count - countOf(lastYear) : null;
-
-    // The quarter after this one. Once later quarters are on record (viewing
-    // 2021 from 2026) it is simply what was filed; only the quarters the model
-    // has forecast show a "~" and its 80% range. At the end of the timeline,
-    // where nothing follows, the tile shows this quarter a year earlier instead.
-    const following = series[activeIndex + 1];
-    const hasFollowing = Boolean(following) && following.total !== null;
-    const followingCount = hasFollowing ? countOf(following) : null;
-    const followingRow = hasFollowing && following.isForecast
-        ? (forecastData?.demand || []).find((d) => Number(d.year) === following.year && Number(d.quarter) === following.quarter && (d.barangay || '').trim().toLowerCase() === key)
-        : null;
-    const hasRange = followingRow && followingRow.lower != null && followingRow.upper != null;
-    // Recorded quarters read against this one; a forecast against the same
-    // quarter a year earlier, since Q1 is always the peak.
-    const followingBase = !hasFollowing ? null : following.isForecast
-        ? series.find((q) => !q.isForecast && q.total !== null && q.year === following.year - 1 && q.quarter === following.quarter) || null
-        : current;
-    const followingDelta = followingBase ? followingCount - countOf(followingBase) : null;
-    const change = changePhrase(followingDelta, followingBase?.label);
-
-    // Each tile compares two quarters with two labelled bars on one scale.
-    const thisPair = lastYear
-        ? [{ label: lastYear.label, v: countOf(lastYear), tone: '#cfd5dd' }, { label: activeQuarter?.label, v: count, tone: cls.stroke }]
-        : null;
-    const nextPair = hasFollowing && followingBase
-        ? [{ label: followingBase.label, v: countOf(followingBase), tone: '#cfd5dd' }, { label: following.label, v: followingCount, tone: followingDelta > 0 ? '#e0674f' : followingDelta < 0 ? '#5b95c9' : '#94a3b8' }]
-        : null;
-    const thisSays = changePhrase(delta, 'a year ago');
-    const nextSays = changePhrase(followingDelta, followingBase?.label);
-    const tile = hasFollowing
-        ? {
-            title: 'Next quarter',
-            value: `${following.isForecast ? '~' : ''}${followingCount}`,
-            aside: following.isForecast ? `${following.label} forecast` : following.label,
-            ...change,
-            ...(hasRange ? { text: `${change.text ? change.text + ' · ' : ''}likely ${Math.round(followingRow.lower)}–${Math.round(followingRow.upper)}` } : {}),
-        }
-        : lastYear
-            ? { title: 'Same quarter last year', value: String(countOf(lastYear)), aside: lastYear.label, text: '', tone: '' }
-            : { title: 'Next quarter', value: '—', aside: '', text: 'No later quarter on record', tone: '' };
-
-    // The quarter's filings by land-use class (recorded quarters only).
-    const quarterRecords = useMemo(() => {
-        if (isForecast || !activeQuarter) return [];
-        return records.filter((r) => {
-            const d = r.created_at ? new Date(r.created_at) : null;
-            return d && !isNaN(d.getTime()) && d.getFullYear() === activeQuarter.year && Math.floor(d.getMonth() / 3) + 1 === activeQuarter.quarter;
-        });
-    }, [records, isForecast, activeQuarter]);
-    const typeCounts = useMemo(() => {
-        const tally = {};
-        quarterRecords.forEach((r) => {
-            const t = r.target_land_use_class || 'Other';
-            tally[t] = (tally[t] || 0) + 1;
-        });
-        const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
-        const top = sorted.slice(0, 3);
-        const rest = sorted.slice(3).reduce((sum, [, n]) => sum + n, 0);
-        return rest ? [...top, ['Other', rest]] : top;
-    }, [quarterRecords]);
 
     // LC per quarter for this barangay, across the whole timeline.
     const trend = useMemo(() => series.map((q) => ({ ...q, value: q.total === null ? null : q.byBgy?.[key] || 0 })), [series, key]);
 
     return (
         <>
-            {/* On a forecast quarter the forecast cards above already say it, so no tiles. */}
-            {!isForecast && (
-            <div className="shrink-0 grid grid-cols-2 gap-2 px-4 py-3 border-b border-slate-200">
-                <Tile
-                    title="This quarter"
-                    aside={activeQuarter?.label}
-                    note={thisSays.text}
-                    noteTone={thisSays.tone}
-                    foot={thisPair && <PairBars rows={thisPair} />}
-                >
-                    <span className={FIGURE}>{count}</span>
-                    <span className={UNIT}>LC</span>
-                    <span
-                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full border"
-                        style={{ color: cls.stroke, borderColor: cls.stroke + '55', backgroundColor: cls.color + '33' }}
-                    >
-                        {shortClass(cls.label)}
-                    </span>
-                </Tile>
-                <Tile
-                    title={tile.title}
-                    aside={tile.aside}
-                    note={nextPair ? nextSays.text : tile.text}
-                    noteTone={nextPair ? nextSays.tone : tile.tone}
-                    foot={nextPair && <PairBars rows={nextPair} />}
-                >
-                    <span className={FIGURE}>{tile.value}</span>
-                    {tile.value !== '—' && <span className={UNIT}>LC</span>}
-                </Tile>
+            <div className="shrink-0 px-4 pt-3 pb-2.5 border-b border-slate-200">
+                <div className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-slate-400">Barangay</div>
+                <div className="text-[16px] font-semibold text-slate-900 leading-tight truncate">{bgyName}</div>
             </div>
-            )}
-
-            {!isForecast && quarterRecords.length > 0 && (
-                <section className="shrink-0 px-4 pt-3 pb-3 border-b border-slate-200" aria-label="Filings by type">
-                    <div className="flex items-baseline mb-1.5">
-                        <h3 className={`${TITLE} mr-auto`}>Filings by type · {activeQuarter.label}</h3>
-                        <span className="text-[10.5px] text-slate-400 tabular-nums">{quarterRecords.length} total</span>
-                    </div>
-                    <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100" role="img" aria-label={typeCounts.map(([t, n]) => `${t} ${n}`).join(', ')}>
-                        {typeCounts.map(([t, n], i) => (
-                            <span key={t} style={{ width: `${(n / quarterRecords.length) * 100}%`, backgroundColor: TYPE_SHADES[i] }} />
-                        ))}
-                    </div>
-                    <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                        {typeCounts.map(([t, n], i) => (
-                            <li key={t} className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                                <span className="w-2 h-2 rounded-[2px] border border-black/10" style={{ backgroundColor: TYPE_SHADES[i] }} aria-hidden="true" />
-                                {t} · <span className="tabular-nums">{n}</span>
-                            </li>
-                        ))}
-                    </ul>
-                </section>
-            )}
 
             <div className="shrink-0 px-4 pt-3.5 pb-3.5 border-b border-slate-200">
                 <div className="flex items-baseline mb-1.5">
-                    <h3 className={`${TITLE} mr-auto`}>LC per quarter · {bgyName}</h3>
+                    <h3 className={`${TITLE} mr-auto`}>LC per quarter</h3>
                     <span className="text-[10.5px] text-slate-400">Click a point to view it</span>
                 </div>
                 <QuarterTrend points={trend} activeIndex={activeIndex} onSelect={onSelectQuarter} />
             </div>
 
-            {!isForecast && (
+            {summary?.following && summary.followingCount !== null && (
+                <div className="shrink-0 flex items-start gap-3 px-4 py-3 border-b border-slate-200">
+                    <div className="min-w-0">
+                        <div className="text-[12px] font-semibold text-slate-900">Next quarter</div>
+                        <div className="text-[11px] text-slate-500">{summary.following.label}{summary.following.isForecast ? ' · forecast' : ''}</div>
+                    </div>
+                    <div className="ml-auto text-right">
+                        <div className="text-[15px] font-semibold tabular-nums text-slate-900">{summary.following.isForecast ? '~' : ''}{summary.followingCount} <span className="text-[11px] font-medium text-slate-500">LC</span></div>
+                        {summary.followingBase && (
+                            <div className="text-[11px]"><SignedChange delta={summary.followingDelta} baseLabel={summary.followingBase.label} /></div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {summary && !summary.isForecast && (
                 <button
                     type="button"
                     onClick={onOpenRecords}
                     aria-pressed={recordsOpen}
-                    className={`shrink-0 w-full flex items-center gap-2 px-4 py-3 text-left border-b border-slate-200 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b] ${recordsOpen ? 'bg-[#eaf0f8]' : 'hover:bg-slate-50'}`}
+                    className="shrink-0 w-full flex items-center gap-2 px-4 py-3 text-left border-b border-slate-200 hover:bg-slate-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b]"
                 >
                     <span className="min-w-0 flex-1">
                         <span className="block text-[12px] font-semibold text-slate-900">LC records</span>
-                        <span className="block text-[11px] text-slate-500">{quarterRecords.length} filed in {activeQuarter?.label} · {records.length} in all years</span>
+                        <span className="block text-[11px] text-slate-500">{summary.quarterRecordCount} filed in {activeQuarter?.label}</span>
                     </span>
                     <span className="shrink-0 flex items-center gap-1 text-[11.5px] font-semibold text-[#0b2a5b]">
                         View records

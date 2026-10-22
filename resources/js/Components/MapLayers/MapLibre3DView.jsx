@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Map as MapLibreMap, Marker, setWorkerUrl } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -28,6 +29,8 @@ const OBLIQUE_PITCH = 54;
 const OBLIQUE_BEARING = -18;
 const TILT_MS = 1100;
 const MIN_ZOOM = 11;
+// The ground size (metres) every selected barangay is framed against on the white LC view.
+const STANDARD_SPAN_M = 5800;
 // How long the 3D map takes to fade in over 2D before it starts to tilt.
 const FADE_IN_MS = 650;
 
@@ -98,6 +101,56 @@ function ringArea(ring) {
         twiceArea += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
     }
     return Math.abs(twiceArea / 2);
+}
+
+function geometryBBox(geometry) {
+    const polys = geometry?.type === "Polygon" ? [geometry.coordinates] : geometry?.type === "MultiPolygon" ? geometry.coordinates : [];
+    let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+    polys.forEach((poly) => poly[0].forEach(([x, y]) => { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }));
+    return Number.isFinite(w) ? [[w, s], [e, n]] : null;
+}
+
+// The point inside a polygon farthest from its edges (a coarse grid search), so
+// a name sits in the widest part of an L-shaped or notched barangay instead of
+// wherever the average of its outline falls.
+function labelPoint(feature, fallback) {
+    const geom = feature.geometry;
+    let ring = null;
+    if (geom?.type === "Polygon") ring = geom.coordinates[0];
+    else if (geom?.type === "MultiPolygon") {
+        let best = -1;
+        geom.coordinates.forEach((poly) => { const a = ringArea(poly[0]); if (a > best) { best = a; ring = poly[0]; } });
+    }
+    if (!ring || ring.length < 4) return fallback;
+    let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+    ring.forEach(([x, y]) => { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); });
+    const inside = (x, y) => {
+        let c = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const [xi, yi] = ring[i], [xj, yj] = ring[j];
+            if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+        }
+        return c;
+    };
+    const edgeDist = (x, y) => {
+        let d = Infinity;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const [ax, ay] = ring[j], [bx, by] = ring[i];
+            const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy || 1e-12;
+            const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l));
+            d = Math.min(d, Math.hypot(x - (ax + t * dx), y - (ay + t * dy)));
+        }
+        return d;
+    };
+    let best = fallback, bestD = inside(fallback[0], fallback[1]) ? edgeDist(fallback[0], fallback[1]) * 0.9 : -1;
+    const N = 18;
+    for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) {
+        const x = w + ((e - w) * i) / N, y = s + ((n - s) * j) / N;
+        if (!inside(x, y)) continue;
+        const d = edgeDist(x, y);
+        if (d > bestD) { bestD = d; best = [x, y]; }
+    }
+    return best;
 }
 
 function polygonCentroid(feature) {
@@ -171,6 +224,7 @@ function buildFeatures(baseGeo, bgyStats, demandCounts, slot = 0, prevProps = nu
         const name = resolveBarangayName(f.properties);
         const stat = bgyStats?.[name] || {};
         const centroid = polygonCentroid(f);
+        const labelAt = labelPoint(f, centroid);
 
         const vals = {};
         const props = {
@@ -181,6 +235,8 @@ function buildFeatures(baseGeo, bgyStats, demandCounts, slot = 0, prevProps = nu
             primaryZone: stat.Primary_Zone || "",
             cx: centroid[0],
             cy: centroid[1],
+            lx: labelAt[0],
+            ly: labelAt[1],
         };
 
         const demand = demandCounts?.[name.trim().toLowerCase()] || 0;
@@ -280,6 +336,8 @@ export default function MapLibre3DView({
     demandCounts = null,
     // Per-barangay colour and hover text for the LC layer (see utils/lcInsights).
     lcColors = null,
+    // A React card shown on the isolated barangay (white LC view only).
+    callout = null,
     bandFilter = "all",
     hoveredBgy = null,
     onHoverBgy = () => {},
@@ -314,6 +372,10 @@ export default function MapLibre3DView({
     activeRef.current = active;
     const demandRef = useRef(demandCounts);
     demandRef.current = demandCounts;
+    const calloutRef = useRef(callout);
+    calloutRef.current = callout;
+    const calloutHostRef = useRef(null);
+    const [calloutHost, setCalloutHost] = useState(null);
     const lcColorsRef = useRef(lcColors);
     lcColorsRef.current = lcColors;
     const insetsRef = useRef(insets);
@@ -419,7 +481,11 @@ export default function MapLibre3DView({
         // zooms keep only the busiest and the rest appear as the map zooms in.
         const zoom = map.getZoom();
         const plain = plainRef.current;
-        const maxLabels = !plain ? Infinity : zoom < 11.8 ? 10 : zoom < 12.6 ? 18 : zoom < 13.4 ? 30 : Infinity;
+        // On the white page the town view shows names only (the count is on hover and
+        // in the ranking), so more of them fit before they crowd.
+        const namesOnly = plain && !selected;
+        // Every barangay is named in the town view; only the satellite view thins out.
+        const maxLabels = Infinity;
         let shown = 0;
 
         // Chips ride on top of their prism instead of the ground beneath it: a
@@ -428,20 +494,30 @@ export default function MapLibre3DView({
         const lift = plain && !isFlatRef.current ? Math.sin((map.getPitch() * Math.PI) / 180) / mPerPx : 0;
 
         const placed = [];
+        let focusEl = null;
+        let focusInfo = null;
         candidates.forEach(({ name, marker, rank, value, band: b, point: ground }) => {
             const { valueEl, metaEl, changeEl } = entries[name];
             const rise = Math.round(rank * lift);
             marker.setOffset([0, -rise]);
             const point = { x: ground.x, y: ground.y - rise };
             valueEl.textContent = value;
-            valueEl.style.display = value ? "" : "none";
+            valueEl.style.display = value && !namesOnly ? "" : "none";
+            entries[name].el.classList.toggle("imaps3d-name-only", namesOnly);
+            // Names grow a little as the map is zoomed in, so they stay in proportion to the shapes.
+            entries[name].el.style.fontSize = namesOnly ? `${Math.min(14, Math.max(8.5, 8.5 + (zoom - 11) * 2.2)).toFixed(1)}px` : "";
             let target = 1;
             if (selected) target = name.toLowerCase() === selected ? 1 : 0;
             else if (band && band !== "all" && b !== band) target = 0.15;
-            if (target > 0.5 && plain && !selected && ((!value && zoom < 13.4) || shown >= maxLabels)) target = 0;
-            if (target > 0.5) {
-                const w = Math.max(name.length, value.length) * 6.2 + (plain ? 20 : 10);
-                const h = (value ? 30 : 16) + (plain ? 8 : 0);
+            if (target > 0.5 && plain && !selected && ((!namesOnly && !value && zoom < 13.4) || shown >= maxLabels)) target = 0;
+            if (namesOnly) {
+                // No hiding: a small name is better than a missing one. Busier barangays
+                // sit on top where names touch.
+                entries[name].el.style.zIndex = String(1000 + Math.round(rank));
+                shown += 1;
+            } else if (target > 0.5) {
+                const w = namesOnly ? name.length * 7 + 16 : Math.max(name.length, value.length) * 6.2 + (plain ? 20 : 10);
+                const h = namesOnly ? 20 : (value ? 30 : 16) + (plain ? 8 : 0);
                 const box = { l: point.x - w / 2, r: point.x + w / 2, t: point.y - h / 2, b: point.y + h / 2 };
                 if (placed.some((q) => box.l < q.r && box.r > q.l && box.t < q.b && box.b > q.t)) target = 0;
                 else { placed.push(box); shown += 1; }
@@ -449,16 +525,68 @@ export default function MapLibre3DView({
             // The isolated barangay's label becomes a callout card edged in its demand colour.
             const focus = Boolean(selected) && name.toLowerCase() === selected && plain;
             entries[name].el.classList.toggle("imaps3d-focus", focus);
+            entries[name].el.classList.toggle("imaps3d-focus-card", focus && Boolean(calloutRef.current));
+            if (focus) {
+                focusEl = entries[name].el;
+                const bb = featureIndexRef.current[name.toLowerCase()]?.bounds?.bbox;
+                if (bb) {
+                    const ys = [[bb[0][0], bb[0][1]], [bb[1][0], bb[0][1]], [bb[0][0], bb[1][1]], [bb[1][0], bb[1][1]]].map((c) => map.project(c).y);
+                    const top = Math.min(...ys) - rise;
+                    const lift = Math.max(30, Math.min(map.getCanvas().clientHeight * 0.6, point.y - top + 10));
+                    focusInfo = { x: point.x, y: point.y, lift };
+                }
+            }
             const lc = lcColorsRef.current?.[name.toLowerCase()];
             if (focus) entries[name].el.style.setProperty("--lc", propsFor(name)[`c_${key}`] || "#94a3b8");
             metaEl.textContent = focus ? (lc?.meta || "").split(" · ")[0] : "";
             changeEl.textContent = focus ? lc?.change || "" : "";
             changeEl.dataset.tone = lc?.delta > 0 ? "up" : lc?.delta < 0 ? "down" : "flat";
             // Through the marker: it rewrites its element's opacity on every moveend.
-            const opacity = showLabelsRef.current ? target : 0;
+            const opacity = showLabelsRef.current || focus ? target : 0;
             marker.setOpacity(opacity, opacity);
         });
-    }, []);
+
+        // The card rides on the isolated barangay's marker so it follows the map.
+        if (focusEl && calloutRef.current) {
+            if (!calloutHostRef.current) {
+                const host = document.createElement("div");
+                // Clicks and drags on the card are the card's own, not the map's.
+                ["click", "dblclick", "mousedown", "pointerdown", "touchstart"].forEach((ev) => host.addEventListener(ev, (e) => e.stopPropagation()));
+                calloutHostRef.current = host;
+            }
+            if (calloutHostRef.current.parentNode !== focusEl) focusEl.appendChild(calloutHostRef.current);
+            // A short window gets a proportionally smaller card, anchored at its leader line.
+            const ch = map.getCanvas().clientHeight;
+            const cw = map.getCanvas().clientWidth - (rightPanelOpen ? Math.min(panelWidth, map.getCanvas().clientWidth * 0.6) : 0);
+            const k = cardScale(ch, cw);
+            // The card keeps clear of the canvas edges and the locator: lift it only as
+            // high as there is room for, and slide it sideways to stay in view.
+            let lift = focusInfo?.lift ?? 44;
+            let dx = 0;
+            if (focusInfo) {
+                const host = calloutHostRef.current;
+                const cardH = (host.offsetHeight || 260) * k;
+                const halfW = 136 * k;
+                // Room above the barangay's centre is what decides: with none, the card
+                // drops over the shape (negative lift) rather than leave the frame.
+                lift = Math.min(lift, focusInfo.y - cardH - 10);
+                const cardTop = focusInfo.y - lift - cardH;
+                const minX = (cardTop < 330 ? 184 : 10) + halfW;
+                const maxX = cw - 10 - halfW;
+                dx = Math.max(minX, Math.min(focusInfo.x, Math.max(minX, maxX))) - focusInfo.x;
+            }
+            focusEl.style.setProperty("--lc-lift", `${Math.round(lift)}px`);
+            focusEl.style.setProperty("--lc-leader", `${Math.max(0, Math.round(lift / k))}px`);
+            focusEl.style.setProperty("--lc-dot", lift > 8 ? "block" : "none");
+            focusEl.style.setProperty("--lc-dx", `${Math.round(dx / k)}px`);
+            calloutHostRef.current.style.transform = `translateX(${Math.round(dx)}px) scale(${k.toFixed(2)})`;
+            calloutHostRef.current.style.transformOrigin = "50% 100%";
+            setCalloutHost(calloutHostRef.current);
+        } else if (calloutHostRef.current?.parentNode) {
+            calloutHostRef.current.remove();
+            setCalloutHost(null);
+        }
+    }, [rightPanelOpen, panelWidth]);
 
     // Plain white page vs satellite. Only the LC demand forecast is plain, and
     // only until the user asks for the basemap back; every other layer keeps
@@ -594,7 +722,7 @@ export default function MapLibre3DView({
 
                     // Cap zoom to prevent super-zooming into small barangays
                     optimalZoom = Math.max(12.0, Math.min(13.2, optimalZoom - 0.3));
-                    bounds = { optimalZoom };
+                    bounds = { optimalZoom, bbox: geometryBBox(f.geometry) };
                 }
             }
 
@@ -679,6 +807,9 @@ export default function MapLibre3DView({
 
     // ── Camera ───────────────────────────────────────────────────────────────
 
+    // One card scale for the window: a short or narrow canvas gets a smaller card.
+    const cardScale = (ch, cw) => Math.max(0.6, Math.min(1, (ch * 0.52) / 330, (cw - 20) / 290));
+
     const cameraPadding = useCallback(() => {
         if (framePadding) return framePadding;
         // The analysis panel and attribute table float over the canvas, so the
@@ -686,6 +817,13 @@ export default function MapLibre3DView({
         // the part of the canvas that is still visible.
         const map = mapRef.current;
         const w = map ? map.getCanvas().clientWidth : 1000;
+        // The isolated barangay's card sits above it, so the camera leaves it room.
+        const h = map ? map.getCanvas().clientHeight : 700;
+        const cardOn = plainRef.current && selectedNameRef.current && calloutRef.current;
+        const visibleW = w - (rightPanelOpen ? Math.min(panelWidth, w * 0.6) : 0);
+        void cardOn; void visibleW;
+        // The selected barangay sits in the middle of the visible map; the card is
+        // drawn over it and moved to keep inside the frame (see refreshLabels).
         return {
             top: 0,
             bottom: insetsRef.current?.bottom || 0,
@@ -708,20 +846,51 @@ export default function MapLibre3DView({
             calculatedZoom = entry.bounds.optimalZoom;
         }
 
-        // Less canvas visible (a table under the map) means a smaller barangay,
-        // so it still fits with its callout.
-        const full = map.getContainer().clientHeight || 1;
-        const room = Math.max(0.35, (full - (insetsRef.current?.bottom || 0)) / full);
-        const target = {
-            center: entry.centroid,
-            // Alone on the white page, a shallower tilt and a touch more room
-            // show the prism's top as well as its walls.
-            zoom: (plainRef.current ? calculatedZoom - 0.3 : calculatedZoom) + Math.log2(room),
-            pitch: activeRef.current ? (plainRef.current ? 46 : OBLIQUE_PITCH) : DEFAULT_PITCH,
-            bearing: activeRef.current ? OBLIQUE_BEARING : DEFAULT_BEARING,
-            padding: cameraPadding(),
-        };
+        const pitch = activeRef.current ? (plainRef.current ? 46 : OBLIQUE_PITCH) : DEFAULT_PITCH;
+        const bearing = activeRef.current ? OBLIQUE_BEARING : DEFAULT_BEARING;
+        const basePadding = cameraPadding();
 
+        // Every barangay opens at the same zoom, so shapes can be compared by eye;
+        // the card is what adapts to the room there is.
+        // "Same" means the same ground size on screen for every barangay: the zoom at
+        // which a fixed reference area fits the room left for the map on this window.
+        let zoom = calculatedZoom;
+        let padding = basePadding;
+        const bb = entry.bounds?.bbox;
+        if (plainRef.current) {
+            const canvas = map.getCanvas();
+            const tilt = (pitch * Math.PI) / 180;
+            const metersPerPxAt = (z) => (78271.517 * Math.cos((13.8 * Math.PI) / 180)) / 2 ** z;
+            const zoomFor = (spanX, spanY, aw, ah) => Math.log2((78271.517 * Math.cos((13.8 * Math.PI) / 180)) / Math.max(spanX / aw, spanY / ah));
+            const availW = Math.max(120, canvas.clientWidth - basePadding.left - basePadding.right - 40);
+            const availFullH = Math.max(120, canvas.clientHeight - basePadding.top - basePadding.bottom - 40);
+            const k = cardScale(canvas.clientHeight, canvas.clientWidth - basePadding.right);
+            const cardRoom = Math.round(265 * k) + 16;
+
+            // The reference size every barangay is framed against.
+            const refY = STANDARD_SPAN_M * Math.cos(tilt) + 500 * Math.sin(tilt);
+            zoom = Math.min(14.2, Math.max(11.8, zoomFor(STANDARD_SPAN_M, refY, availW, availFullH)));
+
+            // A barangay too big for that zoom zooms out until it fits, with the card's
+            // room kept clear above it so the two never overlap.
+            if (bb) {
+                const lat = (bb[0][1] + bb[1][1]) / 2;
+                const mx = 111320 * Math.cos((lat * Math.PI) / 180);
+                const my = 110574;
+                const rad = (bearing * Math.PI) / 180;
+                const w = (bb[1][0] - bb[0][0]) * mx, h = (bb[1][1] - bb[0][1]) * my;
+                const spanX = Math.abs(w * Math.cos(rad)) + Math.abs(h * Math.sin(rad));
+                const spanY = (Math.abs(w * Math.sin(rad)) + Math.abs(h * Math.cos(rad))) * Math.cos(tilt) + 500 * Math.sin(tilt);
+                const shapeH = spanY / metersPerPxAt(zoom);
+                const shapeW = spanX / metersPerPxAt(zoom);
+                if (shapeH > availFullH - cardRoom || shapeW > availW) {
+                    zoom = Math.max(MIN_ZOOM, Math.min(zoom, zoomFor(spanX, spanY, availW, Math.max(100, availFullH - cardRoom))));
+                    padding = { ...basePadding, top: basePadding.top + cardRoom };
+                }
+            }
+        }
+        const center = bb ? [(bb[0][0] + bb[1][0]) / 2, (bb[0][1] + bb[1][1]) / 2] : entry.centroid;
+        const target = { center, zoom, pitch, bearing, padding };
         if (reducedRef.current) {
             map.jumpTo(target);
             flightTargetRef.current = null;
@@ -798,7 +967,7 @@ export default function MapLibre3DView({
                     let optimalZoom = 12.6 - Math.log2(effectiveSize / 0.05);
                     // Cap zoom to prevent super-zooming into small barangays
                     optimalZoom = Math.max(12.0, Math.min(13.2, optimalZoom - 0.3));
-                    bounds = { optimalZoom };
+                    bounds = { optimalZoom, bbox: geometryBBox(f.geometry) };
                 }
             }
 
@@ -1010,7 +1179,7 @@ export default function MapLibre3DView({
             const changeEl = document.createElement("small");
             el.append(nameEl, valueEl, metaEl, changeEl);
             const marker = new Marker({ element: el, anchor: "center" })
-                .setLngLat([f.properties.cx, f.properties.cy])
+                .setLngLat([f.properties.lx ?? f.properties.cx, f.properties.ly ?? f.properties.cy])
                 .addTo(map);
             labelsRef.current[f.properties.name] = { el, valueEl, metaEl, changeEl, marker };
         });
@@ -1170,6 +1339,15 @@ export default function MapLibre3DView({
         map.on("mouseleave", LYR_PRISMS, handleLeave);
         map.on("click", LYR_PRISMS, handleClick);
         map.on("click", handleBackgroundClick);
+
+        // Names follow the map as it moves, one pass per frame. Refreshing only
+        // when a zoom ends left them at their old spots mid-zoom and then
+        // snapped them into place.
+        let labelFrame = null;
+        map.on("move", () => {
+            if (labelFrame !== null) return;
+            labelFrame = requestAnimationFrame(() => { labelFrame = null; refreshLabels(); });
+        });
 
         map.on("moveend", () => {
             refreshLabels();
@@ -1392,25 +1570,20 @@ export default function MapLibre3DView({
         >
             <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
             <style>{`
-.imaps3d-label { display: flex; flex-direction: column; align-items: center; line-height: 1.15; white-space: nowrap; pointer-events: none; transition: opacity 200ms ease;
+.imaps3d-label { font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; line-height: 1.15; white-space: nowrap; pointer-events: none; transition: opacity 200ms ease;
   text-shadow: 0 0 2px rgba(2, 6, 23, 0.9), 0 0 3px rgba(2, 6, 23, 0.8), 0 1px 4px rgba(2, 6, 23, 0.6); }
-.imaps3d-label span { font-size: 10.5px; font-weight: 600; color: #f8fafc; }
-.imaps3d-label b { font-size: 11.5px; font-weight: 700; color: #fde68a; font-variant-numeric: tabular-nums; }
+.imaps3d-label > span { font-size: 10.5px; font-weight: 600; color: #f8fafc; }
+.imaps3d-label > b { font-size: 11.5px; font-weight: 700; color: #fde68a; font-variant-numeric: tabular-nums; }
 .imaps3d-plain .imaps3d-label { text-shadow: none; padding: 2px 7px 3px; background: rgba(255, 255, 255, 0.96); border: 1px solid rgba(15, 23, 42, 0.14); border-radius: 6px; box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28); }
-.imaps3d-plain .imaps3d-label span { color: #0f172a; font-size: 11px; }
-.imaps3d-plain .imaps3d-label b { color: #9a3412; font-size: 11.5px; }
-.imaps3d-label em, .imaps3d-label small { display: none; font-style: normal; }
-.imaps3d-plain .imaps3d-focus { margin-top: -34px; min-width: 150px; padding: 9px 14px 10px; border: 0; border-radius: 10px; align-items: flex-start; background: #ffffff;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.30), 0 0 0 1px rgba(15, 23, 42, 0.08); }
-.imaps3d-plain .imaps3d-focus::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; margin-left: -6px; transform: rotate(45deg); background: #ffffff; box-shadow: 3px 3px 5px rgba(15, 23, 42, 0.14); }
-.imaps3d-plain .imaps3d-focus span { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: #64748b; text-transform: uppercase; }
-.imaps3d-plain .imaps3d-focus b { font-size: 24px; line-height: 1.1; font-weight: 700; color: #0f172a; margin-top: 1px; }
-.imaps3d-plain .imaps3d-focus em { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 11.5px; font-weight: 600; color: #334155; }
-.imaps3d-plain .imaps3d-focus em::before { content: ""; width: 9px; height: 9px; border-radius: 2px; background: var(--lc, #94a3b8); box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.25); }
-.imaps3d-plain .imaps3d-focus small { display: block; margin-top: 3px; font-size: 11px; font-weight: 600; }
-.imaps3d-plain .imaps3d-focus small[data-tone="up"] { color: #b32a17; }
-.imaps3d-plain .imaps3d-focus small[data-tone="down"] { color: #1f5fa8; }
-.imaps3d-plain .imaps3d-focus small[data-tone="flat"] { color: #64748b; }
+.imaps3d-plain .imaps3d-label > span { color: #0f172a; font-size: 11px; }
+.imaps3d-plain .imaps3d-label > b { color: #9a3412; font-size: 11.5px; }
+.imaps3d-label > em, .imaps3d-label > small { display: none; }
+.imaps3d-plain .imaps3d-name-only { padding: 0; background: none; border: 0; box-shadow: none; border-radius: 0; font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; }
+.imaps3d-plain .imaps3d-name-only > span { font-size: 1em; font-weight: 600; letter-spacing: 0.005em; color: #1e293b;
+  paint-order: stroke fill; -webkit-text-stroke: 3px rgba(255, 255, 255, 0.85); text-shadow: 0 0 6px rgba(255, 255, 255, 0.7); }
+.imaps3d-plain .imaps3d-focus-card { display: block; margin-top: 0; min-width: 0; padding: 0; background: transparent; border: 0; box-shadow: none; border-radius: 0; pointer-events: auto; translate: 0 calc(-50% - var(--lc-lift, 44px)); }
+.imaps3d-plain .imaps3d-focus-card > span, .imaps3d-plain .imaps3d-focus-card > b,
+.imaps3d-plain .imaps3d-focus-card > em, .imaps3d-plain .imaps3d-focus-card > small { display: none; }
 `}</style>
 
             {loadState !== "ready" && (
@@ -1429,6 +1602,8 @@ export default function MapLibre3DView({
                     )}
                 </div>
             )}
+
+            {calloutHost && callout && createPortal(callout, calloutHost)}
 
             {/* Hover card. Position is written to this node on a rAF; only the
                 content below is React state, keyed by barangay. */}
