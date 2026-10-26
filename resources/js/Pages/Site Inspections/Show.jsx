@@ -194,8 +194,8 @@ function splitLabelled(text) {
     return pairs.every(Boolean) ? pairs.map(([, label, value]) => [label, value]) : null;
 }
 
-function ReportValue({ value, alert }) {
-    const pairs = splitLabelled(value);
+function ReportValue({ value, alert, labelled = false }) {
+    const pairs = labelled ? splitLabelled(value) : null;
     if (pairs) {
         return (
             <dl className="space-y-1">
@@ -209,6 +209,42 @@ function ReportValue({ value, alert }) {
         );
     }
     return <p className={`whitespace-pre-line ${alert ? "text-rose-900" : "text-slate-800"}`}>{value}</p>;
+}
+
+const reportText = (value) => typeof value === "string" && value.trim() ? value : "";
+
+// CE-06 checklist reader. Structured answers are additive: FieldSync sends
+// canonical tokens (yes/no/unable/not_applicable) in `answer`, keeps the free
+// text of a declared use verbatim, and leaves legacy `checked`/`passed` rows
+// untouched. A missing or empty answer stays "Not recorded" — never "No".
+const CHECKLIST_ANSWER_LABELS = new Map([
+    ["yes", "Yes"],
+    ["no", "No"],
+    ["unable", "Unable to Verify"],
+    ["unable to verify", "Unable to Verify"],
+    ["not applicable", "Not Applicable"],
+    ["not_applicable", "Not Applicable"],
+]);
+
+function readChecklistAnswer(entry) {
+    const answer = reportText(entry.answer).trim();
+    if (answer) {
+        return CHECKLIST_ANSWER_LABELS.get(answer.toLowerCase()) ?? answer;
+    }
+    const checked = entry.checked ?? entry.passed;
+    return checked === true || checked === 1 ? "Checked"
+        : checked === false || checked === 0 ? "Not checked" : "Not recorded";
+}
+
+function readChecklist(value) {
+    if (typeof value === "string") {
+        try { value = JSON.parse(value); } catch { return []; }
+    }
+    if (!Array.isArray(value)) return [];
+    return value.filter((entry) => entry && reportText(entry.item)).map((entry) => ({
+        item: entry.item,
+        answer: readChecklistAnswer(entry),
+    }));
 }
 
 // ── Section with a plain heading (no box: it already sits in the workspace card) ──
@@ -607,41 +643,30 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
         ? [assignedDay && `Assigned ${assignedDay}`, completedStamp ? `Completed ${completedStamp}` : "Completed"].filter(Boolean).join(" → ")
         : null;
 
-    const hasFindings = Boolean(
-        ins.findings || ins.recommendation || ins.remarks || ins.inspection_result || ins.observations ||
-        ins.discrepancies || ins.recommendations || ins.inspector_notes
-    );
+    // The legacy binary is derived, not a second verdict or a missing result's
+    // replacement. Review/reinspection are procedural, never proven non-compliance.
+    const inspectionResult = ["Compliant", "With Discrepancy", "For Review", "Requires Reinspection"]
+        .includes(ins.inspection_result) ? ins.inspection_result : null;
+    const checklist = readChecklist(ins.checklist_data);
+    const storedObservations = reportText(ins.observations);
+    const generatedSummary = /^(?:Actual land use|Land use):/i.test(storedObservations.trim());
+    const explanationLabel = inspectionResult === "For Review" ? "Explanation for review"
+        : inspectionResult === "Requires Reinspection" ? "Explanation for reinspection" : "Discrepancies";
 
-    // Report body, in reading order. The result is shown separately as the
-    // headline. A field whose text repeats an earlier one is not shown twice.
-    const seenReportText = new Set();
-    const reportRows = [
-        ["Findings", ins.findings, false],
-        ["Observations", ins.observations, false],
-        ["Discrepancies", ins.discrepancies, true],
-        ["Recommendation", ins.recommendation, false],
-        ["Recommendations", ins.recommendations, false],
-        ["Remarks", ins.remarks, false],
-        ["Inspector notes", ins.inspector_notes, false],
-    ].filter(([, value]) => {
-        const key = String(value || "").trim().toLowerCase();
-        if (!key || seenReportText.has(key)) return false;
-        seenReportText.add(key);
-        return true;
-    });
-
-    // Findings and discrepancies carry the decision and are set at reading size
-    // (discrepancies first); the rest goes in a ruled table, as on the Technical Review desk.
-    // Checklist order: what was seen (observations split into their own questions),
-    // then what was wrong, what was found, and what the inspector advises.
-    const reportQuestions = ["Observations", "Discrepancies", "Findings", "Recommendation", "Recommendations", "Remarks", "Inspector notes"]
-        .map((l) => reportRows.find(([label]) => label === l))
-        .filter(Boolean)
-        .flatMap(([label, value, alert]) => {
-            const pairs = label === "Observations" ? splitLabelled(value) : null;
-            if (pairs) return pairs.map(([k, v]) => ({ key: k, label: k, value: v }));
-            return [{ key: label, label, value, alert }];
-        });
+    // Each field retains its provenance even when two fields contain the same
+    // words. Only known generated summary text is split into labelled details.
+    const reportQuestions = [
+        ["Inspector observations", ins.inspector_notes],
+        [reportText(ins.inspector_notes) ? "Additional inspector observations" : "Inspector observations", ins.notes],
+        [explanationLabel, ins.discrepancies, inspectionResult === "With Discrepancy"],
+        ["Findings", ins.findings],
+        [generatedSummary ? "Generated site summary" : "Stored observations", storedObservations, false, generatedSummary],
+        ["Recommendation", ins.recommendation],
+        ["Recommendations", ins.recommendations],
+        ["Remarks", ins.remarks],
+    ].map(([label, value, alert = false, labelled = false]) => ({ label, value: reportText(value), alert, labelled }))
+        .filter(({ value }) => value);
+    const hasFindings = Boolean(inspectionResult || reportQuestions.length || checklist.length || reportDone || roundDone || ins.is_compliant != null);
     const reportByline = [
         inspector.name && `Inspected by ${inspector.name}`,
         ins.completed_at && `Submitted ${formatDate(ins.completed_at)}`,
@@ -662,49 +687,14 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
             ? { label: "Not yet decided", sub: null, tone: "bg-slate-50 text-slate-700 ring-slate-200" }
             : null;
 
-    // The verdict rows: the site, the inspector, then the Planning Officer. Coloured
-    // as on the Registry: iMAPS blue for a good outcome, red only for a problem,
-    // grey for anything in between. Only rows with a recorded answer are shown.
+    // The inspector's primary assessment and the server-linked PO decision are
+    // separate facts. This page never derives either from the other.
     const VERDICT_INK = { good: "text-blue-700", bad: "text-red-700", neutral: "text-slate-800" };
-    const resultTone = { Compliant: "good", "With Discrepancy": "bad" }[ins.inspection_result] || "neutral";
+    const resultTone = inspectionResult === "Compliant" ? "good" : inspectionResult === "With Discrepancy" ? "bad" : "neutral";
     const poTone = !poStatus ? "neutral" : /^approved/i.test(poStatus.label) ? "good" : /^(declined|denied)/i.test(poStatus.label) ? "bad" : "neutral";
     const verdictSteps = [
-        ins.is_compliant != null && {
-            key: "site", who: "Site compliance",
-            label: ins.is_compliant ? "Compliant" : "Not compliant",
-            tone: ins.is_compliant ? "good" : "bad",
-        },
-        ins.inspection_result && { key: "inspector", who: "Inspector's result", label: ins.inspection_result, tone: resultTone },
         poStatus && { key: "po", who: "Planning Officer", label: poStatus.label, sub: poStatus.sub, tone: poTone },
     ].filter(Boolean).map((s) => ({ ...s, ink: VERDICT_INK[s.tone], icon: s.tone === "good" ? "check" : s.tone === "bad" ? "x" : null }));
-
-    // A completed round opens on its outcome, in plain words, built only from the
-    // recorded verdicts: a headline (where the round stands now) and one sentence
-    // linking the inspector's result to the Planning Officer's decision.
-    const outcome = roundDone && verdictSteps.length > 0 ? (() => {
-        const who = inspector.name || "The inspector";
-        const found = [
-            ins.is_compliant != null && `found the lot ${ins.is_compliant ? "compliant" : "not compliant"}`,
-            ins.inspection_result && `marked the result “${ins.inspection_result}”`,
-        ].filter(Boolean).join(" and ");
-        const inspectorLine = found ? `${who} ${found}.` : null;
-        const by = review?.po_decision_reviewer || "The Planning Officer";
-        const on = review?.po_decision_date ? ` on ${formatDate(review.po_decision_date)}` : "";
-        let headline, decisionLine;
-        if (review?.po_decision) {
-            headline = review.po_decision;
-            decisionLine = poTone === "good" ? `${by} approved it${on}.`
-                : poTone === "bad" ? `${by} declined it${on}.`
-                : `${by} decided “${review.po_decision}”${on}.`;
-        } else if (review?.round_decision_anomaly) {
-            headline = "Needs attention";
-            decisionLine = review.round_decision_anomaly.message;
-        } else {
-            headline = "Waiting for the Planning Officer";
-            decisionLine = "No decision has been recorded on this report yet.";
-        }
-        return { headline, tone: review?.po_decision ? poTone : "neutral", text: [inspectorLine, decisionLine].filter(Boolean).join(" ") };
-    })() : null;
 
     const TABS = [
         { key: "inspection", label: "Report", icon: "doc" },
@@ -1040,10 +1030,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                         {/* ── Overview Tab ── */}
                                         {activeTab === "inspection" && (
                                             <>
-                                                {/* The inspector's report, as one compact document like the Technical
-                                                    Review desk's: a grey title bar, the verdict as one row (site →
-                                                    inspector → Planning Officer), then a ruled table of what the
-                                                    inspector recorded, with the GPS confirmation as its last line. */}
+                                                {/* The recorded inspector assessment stays primary; the PO decision
+                                                    remains a separate, server-linked read-only record. */}
                                                 {hasFindings ? (
                                                     <article className="rounded-lg border border-slate-200 bg-white overflow-hidden" aria-label="Site inspection report">
                                                         <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2 border-b border-slate-200 bg-slate-50">
@@ -1051,32 +1039,28 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                             {reportByline && <p className="text-[11.5px] text-slate-600">{reportByline}</p>}
                                                         </header>
 
-                                                        {/* Completed: the outcome first, in plain words */}
-                                                        {outcome && (
-                                                            <div className="mx-4 mt-3 flex items-start gap-3 rounded-lg border border-slate-200 px-3.5 py-3">
-                                                                <span
-                                                                    className={`w-8 h-8 rounded-full grid place-items-center shrink-0 ${
-                                                                        outcome.tone === "good" ? "bg-blue-600 text-white" : outcome.tone === "bad" ? "bg-red-600 text-white" : "bg-slate-100 text-slate-500"
-                                                                    }`}
-                                                                    aria-hidden="true"
-                                                                >
-                                                                    <Icon name={outcome.tone === "good" ? "check" : outcome.tone === "bad" ? "x" : "history"} className="w-4 h-4" strokeWidth={2.6} />
-                                                                </span>
-                                                                <div className="min-w-0">
-                                                                    <p className={`text-[14.5px] font-bold leading-snug ${outcome.tone === "good" ? "text-blue-800" : outcome.tone === "bad" ? "text-red-700" : "text-slate-900"}`}>{outcome.headline}</p>
-                                                                    <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate-600">{outcome.text}</p>
-                                                                </div>
+                                                        <div role="group" aria-label="Inspector's result" className="mx-4 mt-3 flex items-start gap-3 rounded-lg border border-slate-200 px-3.5 py-3">
+                                                            <span
+                                                                className={`w-8 h-8 rounded-full grid place-items-center shrink-0 ${
+                                                                    resultTone === "good" ? "bg-blue-600 text-white" : resultTone === "bad" ? "bg-red-600 text-white" : "bg-slate-100 text-slate-500"
+                                                                }`}
+                                                                aria-hidden="true"
+                                                            >
+                                                                <Icon name={resultTone === "good" ? "check" : resultTone === "bad" ? "x" : "history"} className="w-4 h-4" strokeWidth={2.6} />
+                                                            </span>
+                                                            <div className="min-w-0">
+                                                                <p className="text-[11.5px] font-semibold text-slate-500">Inspector's result</p>
+                                                                <p className={`text-[14.5px] font-bold leading-snug ${resultTone === "good" ? "text-blue-800" : resultTone === "bad" ? "text-red-700" : "text-slate-900"}`}>{inspectionResult || "Not recorded"}</p>
                                                             </div>
-                                                        )}
+                                                        </div>
 
-                                                        {/* One ruled table: the verdict (open rounds only; a completed round
-                                                            says it above), then the inspector's notes */}
+                                                        {/* PO decision, recorded evidence, then the neutral checklist. */}
                                                         <div className="px-4 py-3">
                                                             <table className="w-full border border-slate-200 text-[12.5px]">
-                                                                {!outcome && verdictSteps.length > 0 && (
+                                                                {verdictSteps.length > 0 && (
                                                                     <tbody>
                                                                         <tr className="bg-slate-100/80">
-                                                                            <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Verdict</th>
+                                                                            <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Planning Officer decision</th>
                                                                         </tr>
                                                                         {verdictSteps.map((step) => (
                                                                             <tr key={step.key} className="border-t border-slate-200 align-top">
@@ -1093,17 +1077,17 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                                     </tbody>
                                                                 )}
                                                                 <tbody>
-                                                                    <tr className={`bg-slate-100/80 ${!outcome && verdictSteps.length > 0 ? "border-t border-slate-200" : ""}`}>
-                                                                        <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Inspector's notes</th>
+                                                                    <tr className={`bg-slate-100/80 ${verdictSteps.length > 0 ? "border-t border-slate-200" : ""}`}>
+                                                                        <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Recorded evidence</th>
                                                                     </tr>
                                                                     {reportQuestions.length > 0 ? (
                                                                         reportQuestions.map((q) => (
-                                                                            <tr key={q.key} className="border-t border-slate-200 align-top">
+                                                                            <tr key={q.label} className="border-t border-slate-200 align-top">
                                                                                 <th scope="row" className={`w-[150px] bg-slate-50 px-2.5 py-1.5 text-left text-[11.5px] font-semibold ${q.alert ? "text-red-700" : "text-slate-600"}`}>
                                                                                     {q.label}
                                                                                 </th>
                                                                                 <td className="px-2.5 py-1.5 leading-snug text-slate-800 break-words">
-                                                                                    <ReportValue value={q.value} />
+                                                                                    <ReportValue value={q.value} alert={q.alert} labelled={q.labelled} />
                                                                                 </td>
                                                                             </tr>
                                                                         ))
@@ -1111,6 +1095,19 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                                         <tr className="border-t border-slate-200">
                                                                             <td colSpan={2} className="px-2.5 py-1.5 text-slate-600">The inspector submitted this report without written findings.</td>
                                                                         </tr>
+                                                                    )}
+                                                                </tbody>
+                                                                <tbody aria-label="Inspection checklist">
+                                                                    <tr className="border-t border-slate-200 bg-slate-100/80">
+                                                                        <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Inspection checklist</th>
+                                                                    </tr>
+                                                                    {checklist.length ? checklist.map((entry, index) => (
+                                                                        <tr key={`${index}-${entry.item}`} className="border-t border-slate-200 align-top">
+                                                                            <th scope="row" className="bg-slate-50 px-2.5 py-1.5 text-left text-[11.5px] font-semibold text-slate-600 break-words">{entry.item}</th>
+                                                                            <td className="px-2.5 py-1.5 text-slate-700 whitespace-nowrap">{entry.answer}</td>
+                                                                        </tr>
+                                                                    )) : (
+                                                                        <tr className="border-t border-slate-200"><td colSpan={2} className="px-2.5 py-1.5 text-slate-500">Checklist not recorded</td></tr>
                                                                     )}
                                                                 </tbody>
                                                             </table>

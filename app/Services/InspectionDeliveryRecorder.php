@@ -43,6 +43,10 @@ class InspectionDeliveryRecorder
     /** How many times allocation is retried if the unique backstop trips. */
     private const ALLOCATION_RETRIES = 3;
 
+    /** PO intent, excluding delivery summaries/timestamps changed by this recorder. */
+    public const ASSIGNMENT_FIELDS = ['zoning_application_id', 'parcel_id', 'inspector_id', 'scheduled_date',
+        'deadline_date', 'assigned_notes', 'assigned_by_imaps_user_id', 'assigned_by_name'];
+
     /**
      * Closed failure vocabulary, with the user-facing prose that may be stored.
      *
@@ -161,16 +165,33 @@ class InspectionDeliveryRecorder
      *
      * Idempotent: running it twice changes nothing and adds no history.
      */
-    public function markDelivered(InspectionDeliveryAttempt $attempt): void
+    public function markDelivered(InspectionDeliveryAttempt $attempt, ?array $assignmentSnapshot = null): bool
     {
-        DB::transaction(function () use ($attempt) {
+        return DB::transaction(function () use ($attempt, $assignmentSnapshot) {
             $parent = SiteInspection::query()
                 ->whereKey($attempt->site_inspection_id)
                 ->lockForUpdate()
                 ->first();
 
             if ($parent === null) {
-                return;
+                return false;
+            }
+
+            // A PO change and acknowledgement serialize on this same parent lock.
+            // The optional argument keeps legacy direct recorder callers compatible;
+            // the bridge always supplies its complete immutable request snapshot.
+            if ($assignmentSnapshot !== null) {
+                foreach (self::ASSIGNMENT_FIELDS as $field) {
+                    if (!array_key_exists($field, $assignmentSnapshot)
+                        || $parent->getRawOriginal($field) !== $assignmentSnapshot[$field]) {
+                        return false;
+                    }
+                }
+            }
+            $latest = InspectionDeliveryAttempt::where('site_inspection_id', $parent->getKey())
+                ->orderByDesc('attempt_number')->first();
+            if ($latest === null || $latest->getKey() !== $attempt->getKey()) {
+                return false;
             }
 
             $fresh = InspectionDeliveryAttempt::query()->whereKey($attempt->getKey())->first();
@@ -197,6 +218,7 @@ class InspectionDeliveryRecorder
             }
 
             $parent->forceFill($attributes)->save();
+            return true;
         });
     }
 
@@ -414,6 +436,9 @@ class InspectionDeliveryRecorder
 
     private function classify(Throwable $e): string
     {
+        if ($e instanceof \RuntimeException && $e->getCode() === 23514) {
+            return InspectionDeliveryAttempt::FAILURE_REMOTE_CONSTRAINT_FAILURE;
+        }
         if ($e instanceof ConnectionException) {
             return InspectionDeliveryAttempt::FAILURE_SUPABASE_UNREACHABLE;
         }

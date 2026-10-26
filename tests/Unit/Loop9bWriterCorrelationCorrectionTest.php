@@ -289,7 +289,7 @@ class Loop9bWriterCorrelationCorrectionTest extends TestCase
             'on_conflict=bridge_source_id,local_application_id',
             'on_conflict=bridge_source_id,local_parcel_id',
             'on_conflict=bridge_source_id,local_inspection_id',
-            "'status'                  => \$existingJob['status'] ?? 'assigned'",
+            "unset(\$metadata['scheduled_date'], \$metadata['is_self_scheduled'], \$metadata['status'], \$metadata['deadline_date'])",
         ] as $token) {
             $this->assertStringContainsString($token, $src);
         }
@@ -305,20 +305,22 @@ class Loop9bWriterCorrelationCorrectionTest extends TestCase
             'geometry must precede the parcel mirror'
         );
         $this->assertLessThan(
-            strpos($src, '/rest/v1/field_jobs", ['),
+            strpos($src, 'field_jobs?on_conflict'),
             strpos($src, 'supabase_parcels?on_conflict'),
-            'parcel mirror must precede the status lookup'
+            'parcel mirror must precede create-only insertion'
         );
         $this->assertLessThan(
+            strpos($src, '$existingResponse ='),
             strpos($src, 'field_jobs?on_conflict'),
-            strpos($src, '/rest/v1/field_jobs", ['),
-            'status lookup must precede the job upsert'
+            'ignored creation must refetch the exact job'
         );
     }
 
     public function test_inspector_owned_and_evidence_columns_remain_absent(): void
     {
         $src = $this->jobSource();
+        $start = strpos($src, '$jobPayload = self::');
+        $src = substr($src, $start, strpos($src, '$this->assertCurrentAssignment();', $start) - $start);
 
         foreach ([
             'inspector_notes',

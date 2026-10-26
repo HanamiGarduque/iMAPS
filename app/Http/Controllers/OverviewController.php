@@ -134,7 +134,7 @@ class OverviewController extends Controller
             'inspections'  => $isAdmin ? [
                 'open'      => SiteInspection::whereNull('submitted_at')->whereNull('completed_at')->count(),
                 'synced'    => SiteInspection::whereNotNull('submitted_at')->count(),
-                'failed'    => SiteInspection::where('delivery_status', 'failed')->count(),
+                'failed'    => SiteInspection::where('delivery_status', 'delivery_failed')->count(),
             ] : null,
             'statusCounts' => $statusCounts,
             'quarterly'    => $quarterly,

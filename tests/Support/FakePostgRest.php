@@ -36,6 +36,19 @@ final class FakePostgRest
     private array $requests = [];
 
     private int $nextUuid = 1;
+    private int $revision = 1;
+
+    /** Controlled competing write, used only by transport race tests. */
+    public function updateRow(string $table, string $id, array $changes): void
+    {
+        foreach ($this->rows[$table] ?? [] as $index => $row) {
+            if ($row['id'] === $id) {
+                $this->rows[$table][$index] = array_replace($row, $changes, ['updated_at' => $this->nextRevision()]);
+                return;
+            }
+        }
+        throw new \LogicException('Fake row not found');
+    }
 
     /**
      * Seed a row and, optionally, declare the unique keys of its table.
@@ -97,9 +110,12 @@ final class FakePostgRest
 
         $table = $this->path($url);
 
-        return $method === 'POST'
-            ? $this->post($request, $table, $url)
-            : $this->get($request, $table, $url);
+        return match ($method) {
+            'POST' => $this->post($request, $table, $url),
+            'GET' => $this->get($request, $table, $url),
+            'PATCH' => $this->patch($request, $table, $url),
+            default => throw new \LogicException('Unsupported fake HTTP method: '.$method),
+        };
     }
 
     private function post(Request $request, string $table, string $url): PromiseInterface
@@ -144,12 +160,18 @@ final class FakePostgRest
                 continue;
             }
 
-            // resolution=merge-duplicates: the provided columns are written.
-            foreach ($row as $column => $value) {
-                $this->rows[$table][array_search($existing, $this->rows[$table], true)][$column] = $value;
+            $prefer = strtolower(implode(',', $request->header('Prefer')));
+            // PostgREST honors the first occurrence, not the safest-looking one.
+            preg_match('/(?:^|,)\s*(resolution=[^,\s]+)/', $prefer, $preference);
+            $resolution = $preference[1] ?? null;
+            if ($resolution === 'resolution=ignore-duplicates') {
+                continue;
             }
-
-            $result[] = $existing;
+            if ($resolution !== 'resolution=merge-duplicates') {
+                return $this->conflict('23505', 'duplicate key');
+            }
+            $this->updateRow($table, $existing['id'], $row);
+            $result[] = $this->rows[$table][array_search($existing['id'], array_column($this->rows[$table], 'id'), true)];
         }
 
         return $this->representation($request, $result);
@@ -178,10 +200,25 @@ final class FakePostgRest
         return $this->jsonResponse($matched);
     }
 
+    private function patch(Request $request, string $table, string $url): PromiseInterface
+    {
+        $query = $this->query($url);
+        $result = [];
+        foreach ($this->rows[$table] ?? [] as $row) {
+            foreach ($query as $column => $filter) {
+                if (in_array($column, ['select', 'limit'], true)) { continue; }
+                if (!$this->matches($row[$column] ?? null, $filter)) { continue 2; }
+            }
+            $this->updateRow($table, $row['id'], $request->data());
+            $result[] = $this->rows[$table][array_search($row['id'], array_column($this->rows[$table], 'id'), true)];
+        }
+        return $this->jsonResponse($result);
+    }
+
     private function matches(mixed $actual, string $filter): bool
     {
         if (str_starts_with($filter, 'eq.')) {
-            return (string) $actual === substr($filter, 3);
+            return $actual !== null && (is_bool($actual) ? ($actual ? 'true' : 'false') : (string) $actual) === substr($filter, 3);
         }
 
         if (str_starts_with($filter, 'is.null')) {
@@ -198,12 +235,15 @@ final class FakePostgRest
             return in_array((string) $actual, $wanted, true);
         }
 
-        return true;
+        throw new \LogicException('Unsupported fake PostgREST filter: '.$filter);
     }
 
     private function insertRow(string $table, array $row): array
     {
         $row += ['id' => $this->uuid()];
+        if ($table === 'field_jobs') {
+            $row += ['updated_at' => $this->nextRevision(), 'is_self_scheduled' => false];
+        }
         $this->rows[$table][] = $row;
 
         return $row;
@@ -328,5 +368,10 @@ final class FakePostgRest
         $n = $this->nextUuid++;
 
         return sprintf('00000000-0000-4000-8000-%012d', $n);
+    }
+
+    private function nextRevision(): string
+    {
+        return sprintf('2026-10-21T10:00:01.%06d+00:00', $this->revision++);
     }
 }

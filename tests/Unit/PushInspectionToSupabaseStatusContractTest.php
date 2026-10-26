@@ -2,7 +2,6 @@
 
 namespace Tests\Unit;
 
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class PushInspectionToSupabaseStatusContractTest extends TestCase
@@ -12,7 +11,7 @@ class PushInspectionToSupabaseStatusContractTest extends TestCase
         $source = $this->jobSource();
 
         $this->assertMatchesRegularExpression(
-            "/'status'\s*=>\s*\\\$existingJob\['status'\]\s*\?\?\s*'assigned'/",
+            "/'status'\s*=>\s*'assigned'/",
             $source,
         );
         $this->assertStringNotContainsString(
@@ -21,26 +20,13 @@ class PushInspectionToSupabaseStatusContractTest extends TestCase
         );
     }
 
-    #[DataProvider('existingStatusProvider')]
-    public function test_existing_remote_status_is_preserved_without_normalization(string $status): void
+    public function test_existing_remote_status_is_omitted_instead_of_echoed(): void
     {
-        $existingJob = ['status' => $status];
-
-        $outgoingStatus = $existingJob['status'] ?? 'assigned';
-
-        $this->assertSame($status, $outgoingStatus);
-    }
-
-    public static function existingStatusProvider(): array
-    {
-        return [
-            'assigned' => ['assigned'],
-            'in progress' => ['in_progress'],
-            'completed' => ['completed'],
-            'legacy Pending' => ['Pending'],
-            'legacy pending' => ['pending'],
-            'legacy onprocess' => ['onprocess'],
-        ];
+        // The real-writer lifecycle matrix now lives in InspectionVisitDeliveryTest;
+        // computing $existingJob['status'] inside a test never tested the writer.
+        $source = $this->jobSource();
+        $this->assertStringContainsString("unset(\$metadata['scheduled_date'], \$metadata['is_self_scheduled'], \$metadata['status'], \$metadata['deadline_date'])", $source);
+        $this->assertStringNotContainsString("\$existingJob['status'] ??", $source);
     }
 
     private function jobSource(): string
