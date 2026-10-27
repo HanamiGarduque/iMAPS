@@ -1013,11 +1013,93 @@ class ApplicationController extends Controller
             })
             ->orderByDesc('created_at')
             ->limit(25)
-            ->get(['applicant_name', 'contact_number', 'email', 'representative_name']);
+            ->toBase()
+            ->get([
+                'applicant_name', 'applicant_street', 'applicant_barangay', 'contact_number', 'email',
+                'representative_name', 'representative_contact', 'representative_address',
+            ]);
 
+        // Newest first, so each applicant's details come from their latest filing
         return response()->json(
             $rows->unique(fn ($r) => mb_strtolower($r->applicant_name) . '|' . $r->contact_number)->take(5)->values()
         );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CORPORATION LOOKUP — past corporations matching a name, with the contact
+    // and address from their latest application
+    // ─────────────────────────────────────────────────────────────────────────
+    public function corporationLookup(Request $request)
+    {
+        $q = trim((string) $request->query('q', ''));
+        if (mb_strlen($q) < 3) {
+            return response()->json([]);
+        }
+
+        $like = '%' . addcslashes(mb_strtolower($q), '\\%_') . '%';
+
+        $rows = ZoningApplication::query()
+            ->whereRaw('LOWER(corporation_name) LIKE ?', [$like])
+            ->orderByDesc('created_at')
+            ->limit(25)
+            ->toBase()
+            ->get(['corporation_name', 'corporation_contact', 'corporation_address']);
+
+        return response()->json(
+            $rows->unique(fn ($r) => mb_strtolower(trim($r->corporation_name)))->take(5)->values()
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PREVIOUS RECORDS — a returning applicant's or corporation's past
+    // applications with the lots each one covered, so the encode form can be
+    // started from one of them
+    // ─────────────────────────────────────────────────────────────────────────
+    public function previousRecords(Request $request)
+    {
+        $q = trim((string) $request->query('q', ''));
+        if (mb_strlen($q) < 3) {
+            return response()->json([]);
+        }
+
+        $like = '%' . addcslashes(mb_strtolower($q), '\\%_') . '%';
+        $digits = preg_replace('/\D/', '', $q);
+
+        $applications = ZoningApplication::query()
+            ->where(function ($w) use ($like, $digits) {
+                $w->whereRaw('LOWER(applicant_name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(corporation_name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(email) LIKE ?', [$like]);
+                if (strlen($digits) >= 4) {
+                    $w->orWhere('contact_number', 'like', '%' . $digits . '%');
+                }
+            })
+            ->with(['parcels' => fn ($p) => $p->orderBy('parcel_code')])
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get();
+
+        return response()->json($applications->map(fn ($a) => [
+            'id'                     => $a->id,
+            'reference_number'       => $a->reference_number,
+            'application_type'       => $a->application_type,
+            'status'                 => $a->status,
+            'date'                   => ($a->date_of_receipt ?? $a->created_at)?->toDateString(),
+            'applicant_name'         => $a->applicant_name,
+            'applicant_street'       => $a->applicant_street,
+            'applicant_barangay'     => $a->applicant_barangay,
+            'contact_number'         => $a->contact_number,
+            'email'                  => $a->email,
+            'representative_name'    => $a->representative_name,
+            'representative_contact' => $a->representative_contact,
+            'representative_address' => $a->representative_address,
+            'corporation_name'       => $a->corporation_name,
+            'corporation_contact'    => $a->corporation_contact,
+            'corporation_address'    => $a->corporation_address,
+            'parcels'                => $a->parcels->map(fn ($p) => $p->only([
+                'parcel_code', 'property_index_number', 'lot_number', 'tct_number', 'barangay', 'location_address', 'lot_area_sqm',
+            ]))->values(),
+        ])->values());
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -124,6 +124,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/applications/applicant-lookup', [ApplicationController::class, 'applicantLookup'])
         ->name('applications.applicantLookup')
         ->middleware('role:Planning Officer');
+    Route::get('/applications/corporation-lookup', [ApplicationController::class, 'corporationLookup'])
+        ->name('applications.corporationLookup')
+        ->middleware('role:Planning Officer');
+    Route::get('/applications/previous-records', [ApplicationController::class, 'previousRecords'])
+        ->name('applications.previousRecords')
+        ->middleware('role:Planning Officer');
     // ── Single-View & Standard Status Transitions ──
     // Generating a permit (schema, preview, document) is Planning Officer only; Admin can still read saved permits below.
     Route::get('/applications/{id}/permit-schema/{type}', [ApplicationController::class, 'permitSchema'])

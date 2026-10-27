@@ -15,6 +15,43 @@ const ROSARIO_BARANGAYS = [
     "Tiquiwan", "Tulos"
 ];
 
+// A past applicant or corporation from the database, offered for auto-fill
+function SuggestionBanner({ label, name, detail, onApply, onDismiss }) {
+    return (
+        <div className="p-3 bg-blue-50/90 border border-blue-200 rounded-2xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 shadow-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                    </svg>
+                </span>
+                <div className="text-xs min-w-0">
+                    <p className="font-bold text-blue-950 truncate">
+                        {label}: <span className="underline">{name}</span>
+                    </p>
+                    {detail && <p className="text-[11px] text-blue-700 font-mono truncate">{detail}</p>}
+                </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                    type="button"
+                    onClick={onApply}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-all active:scale-95 cursor-pointer"
+                >
+                    Auto-fill
+                </button>
+                <button
+                    type="button"
+                    onClick={onDismiss}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+                >
+                    ✕
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export default function StepApplicant({
     form,
     set,
@@ -24,10 +61,22 @@ export default function StepApplicant({
     applicantSuggestion,
     applyApplicantSuggestion,
     setApplicantSuggestion,
+    corporationSuggestion,
+    checkCorporationMatches,
+    applyCorporationSuggestion,
+    setCorporationSuggestion,
     errors = {},
 }) {
     const [showCorp, setShowCorp] = React.useState(!!form.corporation_name || !!form.corporation_contact || !!form.corporation_address);
     const [showRep, setShowRep] = React.useState(!!form.representative_name || !!form.representative_contact || !!form.representative_address);
+
+    // Details auto-filled while this step is open show their section
+    React.useEffect(() => {
+        if (form.corporation_name) setShowCorp(true);
+    }, [form.corporation_name]);
+    React.useEffect(() => {
+        if (form.representative_name) setShowRep(true);
+    }, [form.representative_name]);
 
     // Registered owner from the first verified lot's tax record
     const ownerParcel = (form.parcels || []).find((p) => p.is_verified && p.owner_name?.trim());
@@ -41,6 +90,7 @@ export default function StepApplicant({
         if (ownerIsCorporate) {
             setForm((prev) => ({ ...prev, corporation_name: ownerName, right_over_land: "Owner" }));
             setShowCorp(true);
+            checkCorporationMatches(ownerName);
             return;
         }
         const parts = splitFullName(ownerName);
@@ -82,39 +132,13 @@ export default function StepApplicant({
             )}
             {/* Applicant Autocomplete Suggestion Banner */}
             {applicantSuggestion && (
-                <div className="p-3 bg-blue-50/90 border border-blue-200 rounded-2xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 shadow-xs">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                            </svg>
-                        </span>
-                        <div className="text-xs min-w-0">
-                            <p className="font-bold text-blue-950 truncate">
-                                Previous applicant: <span className="underline">{applicantSuggestion.applicant_name}</span>
-                            </p>
-                            <p className="text-[11px] text-blue-700 font-mono truncate">
-                                +63 {applicantSuggestion.contact_number} {applicantSuggestion.email ? `· ${applicantSuggestion.email}` : ""}
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                            type="button"
-                            onClick={applyApplicantSuggestion}
-                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-all active:scale-95 cursor-pointer"
-                        >
-                            Auto-fill
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setApplicantSuggestion(null)}
-                            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                </div>
+                <SuggestionBanner
+                    label="Previous applicant"
+                    name={applicantSuggestion.applicant_name}
+                    detail={`+63 ${applicantSuggestion.contact_number}${applicantSuggestion.email ? ` · ${applicantSuggestion.email}` : ""}`}
+                    onApply={applyApplicantSuggestion}
+                    onDismiss={() => setApplicantSuggestion(null)}
+                />
             )}
 
 
@@ -277,6 +301,17 @@ export default function StepApplicant({
                             placeholder="Registered corporation / company name"
                             className="bg-white mt-1"
                         />
+                        {corporationSuggestion && (
+                            <div className="mt-3">
+                                <SuggestionBanner
+                                    label="Previous corporation"
+                                    name={corporationSuggestion.corporation_name}
+                                    detail={[corporationSuggestion.corporation_contact, corporationSuggestion.corporation_address].filter(Boolean).join(" · ")}
+                                    onApply={applyCorporationSuggestion}
+                                    onDismiss={() => setCorporationSuggestion(null)}
+                                />
+                            </div>
+                        )}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
                             <div>
                                 <Label>Corporation Telephone</Label>

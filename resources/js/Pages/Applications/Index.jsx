@@ -1021,14 +1021,12 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
     // KPI & Workflow Status Counts
     const totalCount = Math.max(1, getStatusCount(""));
-    const receivedCount = getStatusCount("Received");
     const reviewCount = getStatusCount("Technical Review");
     const sbCount = getStatusCount("Under Sangguniang Bayan");
     const forReleaseCount = getStatusCount("For Release");
     const releasedCount = getStatusCount("Released");
     const deniedCount = getStatusCount("Denied");
 
-    const receivedPct = Math.round((receivedCount / totalCount) * 100);
     const reviewPct = Math.round((reviewCount / totalCount) * 100);
     const sbPct = Math.round((sbCount / totalCount) * 100);
     const forReleasePct = Math.round((forReleaseCount / totalCount) * 100);
@@ -1196,7 +1194,6 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                 <div className="flex items-end gap-1" role="group" aria-label="Filter by status">
                                     {[
                                         { label: "All", status: "", count: getStatusCount(""), d: "M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm0 5.25h.007v.008H3.75V12zm0 5.25h.007v.008H3.75v-.008z" },
-                                        { label: "Received", status: "Received", count: receivedCount, d: "M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859M2.25 13.5V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.5M2.25 13.5l2.4-7.2A2.25 2.25 0 016.79 4.5h10.42a2.25 2.25 0 012.14 1.8l2.4 7.2" },
                                         { label: "Technical review", status: "Technical Review", count: reviewCount, d: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" },
                                         { label: "Sangguniang Bayan", status: "Under Sangguniang Bayan", count: sbCount, d: "M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0012 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18" },
                                         { label: "Issued / ready", status: "Released", count: releasedCount, d: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },

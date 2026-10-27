@@ -16,6 +16,8 @@ import StepPropertyGIS from "./Components/StepPropertyGIS";
 import StepReview from "./Components/StepReview";
 import StepFee from "./Components/StepFee";
 import SiteMapPrint from "./Components/SiteMapPrint";
+import PreviousRecordSearch from "./Components/PreviousRecordSearch";
+import useDebouncedLookup from "@/utils/useDebouncedLookup";
 import { splitFullName, joinName } from "@/utils/names";
 import { getZoneInfo } from "@/utils/clupZones";
 import { getRecommendedPetition } from "@/Components/MapKit";
@@ -239,6 +241,15 @@ function toTitleCase(str) {
 }
 
 // Same comparison as the map step's progression lock: Assessor classification vs spatial CLUP zone
+// Stored numbers are digits only; formatted to a 10-digit mobile number
+function toMobile(value) {
+    let mobile = String(value || "").replace(/\D/g, "");
+    if (mobile.startsWith("63") && mobile.length > 10) mobile = mobile.slice(2);
+    if (mobile.startsWith("0") && mobile.length === 11) mobile = mobile.slice(1);
+    if (mobile.length > 10) mobile = mobile.slice(-10);
+    return mobile;
+}
+
 function hasZoningMismatch(parcels) {
     return (parcels || []).some((p) => {
         const cadastral = p.cadastral_zone?.trim().toLowerCase();
@@ -409,6 +420,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     // Smart Features State
     const [applicantSuggestion, setApplicantSuggestion] = useState(null);
+    const [corporationSuggestion, setCorporationSuggestion] = useState(null);
     const [siteMapOpen, setSiteMapOpen] = useState(false);
 
     // Tracking identifier
@@ -555,48 +567,98 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     // Applicant auto-complete: past applicants from the database, looked up after typing pauses
     const formLatest = useRef(form);
     formLatest.current = form;
-    const applicantLookupTimer = useRef(null);
-    const applicantLookupSeq = useRef(0);
-    const checkApplicantMatches = (val) => {
-        clearTimeout(applicantLookupTimer.current);
-        const q = String(val || "").trim();
-        if (q.length < 3) {
-            setApplicantSuggestion(null);
-            return;
-        }
-        applicantLookupTimer.current = setTimeout(() => {
-            const seq = ++applicantLookupSeq.current;
-            axios
-                .get("/applications/applicant-lookup", { params: { q } })
-                .then(({ data }) => {
-                    if (seq !== applicantLookupSeq.current) return;
-                    const current = (formLatest.current.applicant_name || "").trim().toLowerCase();
-                    const match = (Array.isArray(data) ? data : []).find((a) => a.applicant_name?.trim().toLowerCase() !== current);
-                    setApplicantSuggestion(match || null);
-                })
-                .catch(() => seq === applicantLookupSeq.current && setApplicantSuggestion(null));
-        }, 350);
-    };
-    useEffect(() => () => clearTimeout(applicantLookupTimer.current), []);
+    const sameName = (a, b) => (a || "").trim().toLowerCase() === (b || "").trim().toLowerCase();
 
-    const applyApplicantSuggestion = () => {
-        if (!applicantSuggestion) return;
-        const parts = splitFullName(applicantSuggestion.applicant_name);
-        // Stored numbers are digits only; formatted to 10-digit mobile number
-        let mobile = String(applicantSuggestion.contact_number || "").replace(/\D/g, "");
-        if (mobile.startsWith("63") && mobile.length > 10) mobile = mobile.slice(2);
-        if (mobile.startsWith("0") && mobile.length === 11) mobile = mobile.slice(1);
-        if (mobile.length > 10) mobile = mobile.slice(-10);
+    const checkApplicantMatches = useDebouncedLookup("/applications/applicant-lookup", (rows) => {
+        const f = formLatest.current;
+        // An applicant already filled in with this name and number needs no suggestion
+        const match = rows.find((a) => !(sameName(a.applicant_name, f.applicant_name) && toMobile(a.contact_number) === toMobile(f.contact_number)));
+        setApplicantSuggestion(match || null);
+    });
+
+    // Past values fill the form; a value the record lacks keeps what was typed
+    const fillApplicant = (s) => {
+        const parts = splitFullName(s.applicant_name);
         setForm((prev) => ({
             ...prev,
             ...parts,
             applicant_name: joinName(parts),
-            contact_number: mobile || prev.contact_number,
-            email: applicantSuggestion.email || prev.email,
-            representative_name: applicantSuggestion.representative_name || prev.representative_name,
+            applicant_street: s.applicant_street || prev.applicant_street,
+            applicant_barangay: s.applicant_barangay || prev.applicant_barangay,
+            contact_number: toMobile(s.contact_number) || prev.contact_number,
+            email: s.email || prev.email,
+            representative_name: s.representative_name || prev.representative_name,
+            representative_contact: toMobile(s.representative_contact) || prev.representative_contact,
+            representative_address: s.representative_address || prev.representative_address,
         }));
+    };
+
+    const fillCorporation = (s) => {
+        setForm((prev) => ({
+            ...prev,
+            corporation_name: s.corporation_name,
+            corporation_contact: s.corporation_contact || prev.corporation_contact,
+            corporation_address: s.corporation_address || prev.corporation_address,
+        }));
+    };
+
+    const applyApplicantSuggestion = () => {
+        if (!applicantSuggestion) return;
+        fillApplicant(applicantSuggestion);
         setApplicantSuggestion(null);
         notify(`Auto-filled details for ${applicantSuggestion.applicant_name}.`, "success");
+    };
+
+    // Corporation auto-complete: past corporations and the contact details from their latest application
+    const checkCorporationMatches = useDebouncedLookup("/applications/corporation-lookup", (rows) => {
+        const f = formLatest.current;
+        // A corporation already filled in with this name, telephone and address needs no suggestion
+        const match = rows.find(
+            (c) =>
+                !(
+                    sameName(c.corporation_name, f.corporation_name) &&
+                    (c.corporation_contact || "") === (f.corporation_contact || "") &&
+                    (c.corporation_address || "") === (f.corporation_address || "")
+                )
+        );
+        setCorporationSuggestion(match || null);
+    });
+
+    const applyCorporationSuggestion = () => {
+        if (!corporationSuggestion) return;
+        fillCorporation(corporationSuggestion);
+        setCorporationSuggestion(null);
+        notify(`Auto-filled details for ${corporationSuggestion.corporation_name}.`, "success");
+    };
+
+    // A previous application chosen in the record search: its applicant, corporation and chosen lots.
+    // The lots are verified again against the tax map, so ownership and zoning reflect today's records.
+    const [recordSearchOpen, setRecordSearchOpen] = useState(false);
+    const applyPreviousRecord = (record, lots) => {
+        fillApplicant(record);
+        if (record.corporation_name) fillCorporation(record);
+        setApplicantSuggestion(null);
+        setCorporationSuggestion(null);
+
+        // Lots already in the form stay; the empty P-01 is replaced; lots already attached are skipped
+        const kept = (formLatest.current.parcels || []).filter((p) => p.property_index_number?.trim());
+        const known = new Set(kept.map((p) => p.property_index_number.trim()));
+        const added = lots.filter((l) => !known.has(l.property_index_number.trim()));
+        if (added.length) {
+            const blank = emptyForm().parcels[0];
+            setForm((prev) => ({
+                ...prev,
+                parcels: [...kept, ...added.map((l) => ({ ...blank, property_index_number: l.property_index_number.trim() }))].map((p, i) => ({
+                    ...p,
+                    parcel_code: `P-${String(i + 1).padStart(2, "0")}`,
+                })),
+            }));
+            added.forEach((l, k) => handlePinLookup(kept.length + k, l.property_index_number));
+        }
+
+        setRecordSearchOpen(false);
+        const lotNote = added.length ? ` and ${added.length} lot${added.length > 1 ? "s" : ""}` : "";
+        notify(`Filled the details of ${record.corporation_name || record.applicant_name}${lotNote} from ${record.reference_number}.`, "success");
     };
 
     // Helper to move focus to the next field when pressing Enter on an input
@@ -987,8 +1049,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         return payload.data;
     };
 
-    const handlePinLookup = async (index) => {
-        const pin = form.parcels[index]?.property_index_number?.trim();
+    // pinOverride is for lots set in the same render, which this closure's form does not have yet
+    const handlePinLookup = async (index, pinOverride) => {
+        const pin = (pinOverride ?? form.parcels[index]?.property_index_number)?.trim();
 
         const isDuplicate = (form.parcels || []).some((p, i) => i !== index && p.property_index_number?.trim() === pin);
         if (isDuplicate) {
@@ -1184,6 +1247,9 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         setForm((f) => ({ ...f, [field]: val }));
         if (field === "email") {
             checkApplicantMatches(val, "email");
+        }
+        if (field === "corporation_name") {
+            checkCorporationMatches(val);
         }
         if (errors[field]) {
             setErrors((err) => {
@@ -1870,8 +1936,19 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                         {/* Right: Actions */}
                         <div className="flex items-center gap-2 shrink-0">
-                            <button 
-                                type="button" 
+                            <button
+                                type="button"
+                                onClick={() => setRecordSearchOpen(true)}
+                                title="Retrieve the details and lots of a returning applicant or corporation"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                                </svg>
+                                <span className="hidden sm:inline">Retrieve record</span>
+                            </button>
+                            <button
+                                type="button"
                                 onClick={handleRestart}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                             >
@@ -2105,6 +2182,10 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                     applicantSuggestion={applicantSuggestion}
                                                     applyApplicantSuggestion={applyApplicantSuggestion}
                                                     setApplicantSuggestion={setApplicantSuggestion}
+                                                    corporationSuggestion={corporationSuggestion}
+                                                    checkCorporationMatches={checkCorporationMatches}
+                                                    applyCorporationSuggestion={applyCorporationSuggestion}
+                                                    setCorporationSuggestion={setCorporationSuggestion}
                                                     errors={errors}
                                                 />
                                             )}
@@ -2298,6 +2379,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 form={form}
                 parcelMapData={parcelMapData}
                 preparedBy={userName}
+            />
+
+            <PreviousRecordSearch
+                open={recordSearchOpen}
+                onClose={() => setRecordSearchOpen(false)}
+                onApply={applyPreviousRecord}
             />
         </>
     );
