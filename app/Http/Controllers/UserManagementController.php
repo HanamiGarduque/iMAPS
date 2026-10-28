@@ -124,6 +124,7 @@ class UserManagementController extends Controller
         if (!empty($poIds)) {
             $apps = DB::table('zoning_applications')
                 ->whereIn('encoded_by', $poIds)
+                ->whereNull('voided_at')
                 ->get();
 
             $typesByApp = DB::table('zoning_application_types')

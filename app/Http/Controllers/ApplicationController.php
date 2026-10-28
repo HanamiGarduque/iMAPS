@@ -35,6 +35,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 
@@ -111,6 +112,9 @@ class ApplicationController extends Controller
                 'zoning_applications.or_number',
                 'zoning_applications.remarks',
                 'zoning_applications.created_at',
+                'zoning_applications.archived_at',
+                'zoning_applications.voided_at',
+                'zoning_applications.void_reason',
                 'users.name as encoded_by_name'
             )
             ->selectRaw(
@@ -131,7 +135,9 @@ class ApplicationController extends Controller
             ->orderBy('name', 'asc')
             ->get();
 
-        $statusCounts = $this->restrictToOwnApplications(ZoningApplication::query())
+        $view = $this->registryView($request);
+
+        $statusCounts = $this->applyRegistryView($this->restrictToOwnApplications(ZoningApplication::query()), $view)
             ->select('zoning_applications.status', DB::raw('count(*) as total'))
             ->groupBy('zoning_applications.status')
             ->pluck('total', 'status')
@@ -235,6 +241,13 @@ class ApplicationController extends Controller
         return Inertia::render('Applications/Index', [
             'applications'    => $applications,
             'filters'         => (object) $request->only(['barangay', 'status', 'application_type', 'date_from', 'date_to', 'search']),
+            // Active (default), Archived or Voided. Server-side, because the
+            // browser only ever holds one page of the selected view.
+            'registry_view'   => $view,
+            'view_counts'     => [
+                'archived' => $this->restrictToOwnApplications(ZoningApplication::onlyArchived())->count(),
+                'voided'   => $this->restrictToOwnApplications(ZoningApplication::onlyVoided())->count(),
+            ],
             'inspectors'      => $inspectors,
             'status_counts'   => $statusCounts,
             'applicant_counts' => $applicantCounts,
@@ -363,6 +376,26 @@ class ApplicationController extends Controller
         });
     }
 
+    private const REGISTRY_VIEWS = ['active', 'archived', 'voided'];
+
+    /** An unknown value falls back to the working list, never to an empty one. */
+    private function registryView(Request $request): string
+    {
+        $view = (string) $request->query('view', 'active');
+
+        return in_array($view, self::REGISTRY_VIEWS, true) ? $view : 'active';
+    }
+
+    /** Archived records are kept out of the working list; voided ones out of both. */
+    private function applyRegistryView($query, string $view)
+    {
+        return match ($view) {
+            'archived' => $query->onlyArchived(),
+            'voided'   => $query->onlyVoided(),
+            default    => $query->notArchived(),
+        };
+    }
+
     /**
      * Apply the Applications registry filters to a query.
      *
@@ -373,6 +406,7 @@ class ApplicationController extends Controller
     private function applyRegistryFilters($query, Request $request)
     {
         $this->restrictToOwnApplications($query);
+        $this->applyRegistryView($query, $this->registryView($request));
 
         if ($request->filled('barangay'))
             $query->where('zoning_applications.barangay', $request->barangay);
@@ -534,7 +568,8 @@ class ApplicationController extends Controller
         $validated = $request->validate([
             'application_stream'  => 'required|in:permit,amendment',
             'application_type'    => 'required|string|max:255',
-            'form_number'         => 'required|string|max:100|unique:zoning_applications,form_number',
+            // A voided (mistaken) encoding frees its form number for the corrected one.
+            'form_number'         => ['required', 'string', 'max:100', Rule::unique('zoning_applications', 'form_number')->whereNull('voided_at')],
             'target_land_use_class' => ['nullable', 'in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational,R1-Z,R2-Z,MR2-SZ,BR2-SZ,C1-Z,C2-Z,C/MP-Z,I1-Z,I2-Z,I3-Z,AgIndZ,AgIndZ-PTR,AgIndZ-PGR,GI-Z,UTS-Z,CMRF,PR-Z,T-Z,ECT-Z'],
             'land_use_class'        => ['nullable', 'in:Residential,Commercial,Industrial,Agri-Industrial,Institutional,Recreational,R1-Z,R2-Z,MR2-SZ,BR2-SZ,C1-Z,C2-Z,C/MP-Z,I1-Z,I2-Z,I3-Z,AgIndZ,AgIndZ-PTR,AgIndZ-PGR,GI-Z,UTS-Z,CMRF,PR-Z,T-Z,ECT-Z'],
             'purpose'             => 'required|string',
@@ -1107,7 +1142,9 @@ class ApplicationController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     public function show(int $id)
     {
-        $application = ZoningApplication::query()
+        // withVoided: a voided record is still opened from the registry's Voided
+        // view. Every action route keeps the default scope, so it is read-only.
+        $application = ZoningApplication::withVoided()
             ->with(['parcels' => function ($query) {
                 // Admin/PO audit: the detail page exposed only a raw
                 // inspector_id, so a Planning Officer could not tell who was
@@ -1285,6 +1322,9 @@ class ApplicationController extends Controller
             'canReassignPlanningOfficer' => $viewerRole === 'Admin',
             'canReassignInspector'       => $viewerRole === 'Planning Officer',
 
+            // Record retention: archive / void state and what this viewer may do.
+            'recordRetention'  => $this->recordRetention($application),
+
             'statusOrder'      => self::STATUS_ORDER,
             'hasSbRouting'     => $application->hasSbRouting(),
             // When each stage began, for "days in stage" on the record page
@@ -1293,6 +1333,29 @@ class ApplicationController extends Controller
                 ->orderBy('created_at')
                 ->get(['status', 'created_at']),
         ]);
+    }
+
+    private function recordRetention(ZoningApplication $application): array
+    {
+        $user = Auth::user();
+        $names = User::whereIn('id', array_filter([$application->archived_by, $application->voided_by]))->pluck('name', 'id');
+        $isVoided = $application->isVoided();
+        $isClosed = in_array($application->status, ZoningApplication::CLOSED_STATUSES, true);
+        $canVoid = ! $isVoided && $application->canBeVoidedBy($user);
+
+        return [
+            'archived_at'    => $application->archived_at?->toIso8601String(),
+            'archived_by'    => $names[$application->archived_by] ?? null,
+            'voided_at'      => $application->voided_at?->toIso8601String(),
+            'voided_by'      => $names[$application->voided_by] ?? null,
+            'void_reason'    => $application->void_reason,
+            'can_archive'    => ! $isVoided && $isClosed && ! $application->isArchived() && $application->canBeArchivedBy($user),
+            'can_unarchive'  => ! $isVoided && $application->isArchived() && $application->canBeArchivedBy($user),
+            // Offered to the owner while still undecided; the blocker explains a
+            // disabled button rather than hiding it.
+            'can_void'       => $canVoid && ! $isClosed,
+            'void_blocker'   => $canVoid && ! $isClosed ? $application->voidBlocker() : null,
+        ];
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1923,22 +1986,19 @@ class ApplicationController extends Controller
         $application = ZoningApplication::findOrFail($id);
         $permit = GeneratedPermit::where('zoning_application_id', $application->id)->findOrFail($permitId);
 
-        $disk = Storage::disk(config('filesystems.permits_disk'));
-        if ($disk->exists($permit->file_path)) {
-            $disk->delete($permit->file_path);
-        }
-
-        $permitName = $permit->permit_name;
+        // Removed from the list only. The row and the stored file are kept: the
+        // permit may already have been issued, and it is under MPDO retention.
+        $permit->forceFill(['deleted_by' => Auth::id()])->save();
         $permit->delete();
 
         AuditLogger::log(
             applicationId: $application->id,
             action: 'PERMIT_DELETED',
             performedBy: Auth::id(),
-            note: sprintf('Stored permit %s (%s) deleted.', $permitName, $permit->file_name)
+            note: sprintf('Stored permit %s (%s) removed from the list. The file is kept on record.', $permit->permit_name, $permit->file_name)
         );
 
-        return response()->json(['message' => 'Saved permit deleted successfully.']);
+        return response()->json(['message' => 'Saved permit removed. The file is kept on record.']);
     }
 }
 

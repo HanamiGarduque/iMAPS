@@ -168,6 +168,22 @@ Route::middleware('auth')->group(function () {
         ->name('applications.amendmentRefs')
         ->middleware('role:Planning Officer');
 
+    // ── Record retention (no delete: MPDO keeps records for 10 years) ──
+    // Archive: Admin or the owning Planning Officer. Void: the owning Planning
+    // Officer only. Ownership is re-checked in ApplicationRecordController.
+    Route::post('/applications/{id}/archive', [\App\Http\Controllers\ApplicationRecordController::class, 'archive'])
+        ->whereNumber('id')
+        ->name('applications.archive')
+        ->middleware('role:Admin,Planning Officer');
+    Route::post('/applications/{id}/unarchive', [\App\Http\Controllers\ApplicationRecordController::class, 'unarchive'])
+        ->whereNumber('id')
+        ->name('applications.unarchive')
+        ->middleware('role:Admin,Planning Officer');
+    Route::post('/applications/{id}/void', [\App\Http\Controllers\ApplicationRecordController::class, 'void'])
+        ->whereNumber('id')
+        ->name('applications.void')
+        ->middleware(['role:Planning Officer', 'throttle:20,1']);
+
     // Handles Approved / Declined standard status changes from the show docket
     // Loop 6 (Leader correction): status update is Planning Officer-only — NOT Admin.
     Route::post('/applications/update-status', [ApplicationController::class, 'updateStatus'])

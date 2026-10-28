@@ -72,6 +72,10 @@ const AUDIT_LABELS = {
     SITE_INSPECTION_ASSIGNED: "Site inspection assigned",
     BATCH_TECHNICAL_REVIEW_UPDATED: "Batch review updated",
     BATCH_TECHNICAL_REVIEW_COMPLETED: "Batch review completed",
+    APPLICATION_ARCHIVED: "Application archived",
+    APPLICATION_UNARCHIVED: "Application unarchived",
+    APPLICATION_VOIDED: "Application voided",
+    PERMIT_DELETED: "Saved permit removed",
 };
 
 // Mon–Fri days elapsed (national holidays not excluded)
@@ -531,6 +535,7 @@ function ShowInner({
     reassignmentReasons = [],
     canReassignPlanningOfficer = false,
     canReassignInspector = false,
+    recordRetention = {},
     hasSbRouting: propHasSbRouting = false,
     errors: serverErrors = {},
 }) {
@@ -674,7 +679,10 @@ function ShowInner({
     // middleware is weakened and the server remains authoritative. A read-only
     // role still sees every recorded decision, reviewer, date and note; it simply
     // is not offered controls it cannot use.
-    const canRecordPlanningDecision = userRole === "Planning Officer";
+    // A voided record is read-only; the server refuses every action on it too.
+    const isVoided = Boolean(recordRetention.voided_at);
+    const isArchived = Boolean(recordRetention.archived_at);
+    const canRecordPlanningDecision = userRole === "Planning Officer" && !isVoided;
 
     const backHref = "/applications";
     const backLabel = "Back to registry";
@@ -829,6 +837,45 @@ function ShowInner({
     };
 
     const handleLogout = confirmSignOut;
+
+    // ── Record retention: archive / unarchive / void (nothing is deleted) ──
+    const postRecordAction = (action, data, done) => {
+        setSaving(true);
+        router.post(`/applications/${app.id}/${action}`, data, {
+            preserveScroll: true,
+            onSuccess: () => showToast(done),
+            onError: (errs) => showToast(Object.values(errs)[0] || "The record could not be updated.", "error"),
+            onFinish: () => setSaving(false),
+        });
+    };
+
+    const archiveRecord = () =>
+        dialog.fire({
+            icon: "question",
+            title: "Archive this application?",
+            text: "It moves out of the active registry into Archived. It is still kept, counted in reports and searchable, and you can unarchive it.",
+            showCancelButton: true,
+            confirmButtonText: "Archive",
+        }).then((r) => r.isConfirmed && postRecordAction("archive", {}, "Application archived."));
+
+    const unarchiveRecord = () => postRecordAction("unarchive", {}, "Application moved back to the active registry.");
+
+    const voidRecord = () =>
+        dialog.fire({
+            icon: "warning",
+            danger: true,
+            title: "Void this application?",
+            html: tight(`<p>Use this only for an application encoded by mistake. It stays on record for the retention period but is no longer counted in reports, maps or search, and it can no longer be worked on.</p>
+                <p style="margin-top:8px">Its form number <strong>${esc(app.form_number || "—")}</strong> can then be used for the corrected encoding.</p>`),
+            input: "textarea",
+            inputLabel: "Reason",
+            inputPlaceholder: "e.g. Duplicate of 2026-LC-0123, encoded twice",
+            inputAttributes: { maxlength: "1000", "aria-label": "Reason for voiding" },
+            inputValidator: (v) => (String(v || "").trim().length < 10 ? "Describe the reason in at least 10 characters." : undefined),
+            showCancelButton: true,
+            confirmButtonText: "Void application",
+            focusCancel: true,
+        }).then((r) => r.isConfirmed && postRecordAction("void", { reason: String(r.value).trim() }, "Application voided."));
 
     // ── What's next ──
     const daysSinceFiling = workingDaysSince(app.created_at);
@@ -986,7 +1033,7 @@ function ShowInner({
         ["Penalty", app.penalty_fee],
     ].filter(([, v]) => Number(v) > 0);
 
-    const canExport = app.status === "For Release" || app.status === "Released";
+    const canExport = !isVoided && (app.status === "For Release" || app.status === "Released");
     const showRefs = isAmendment || hasSbRouting;
     const refsInNextStep = showRefs && app.status === "Under Sangguniang Bayan";
     const refsDirty = refs.sb_ordinance_number !== (app.sb_ordinance_number || "") || refs.dar_clearance_ref !== (app.dar_clearance_ref || "");
@@ -1364,6 +1411,33 @@ function ShowInner({
                             {daysSinceFiling} working days · past RA 11032
                         </span>
                     )}
+                    {recordRetention.can_archive && (
+                        <button type="button" onClick={archiveRecord} disabled={saving} className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-slate-300 bg-white shadow-sm shadow-slate-900/5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 hover:text-slate-900 whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+                            <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                            </svg>
+                            Archive
+                        </button>
+                    )}
+                    {recordRetention.can_unarchive && (
+                        <button type="button" onClick={unarchiveRecord} disabled={saving} className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-slate-300 bg-white shadow-sm shadow-slate-900/5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 hover:text-slate-900 whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+                            Unarchive
+                        </button>
+                    )}
+                    {recordRetention.can_void && (
+                        <button
+                            type="button"
+                            onClick={voidRecord}
+                            disabled={saving || Boolean(recordRetention.void_blocker)}
+                            title={recordRetention.void_blocker || "Void an application encoded by mistake"}
+                            className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border border-rose-200 bg-white text-[13px] font-semibold text-rose-700 hover:bg-rose-50 hover:border-rose-300 whitespace-nowrap transition-colors cursor-pointer disabled:text-slate-400 disabled:border-slate-200 disabled:bg-white disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                            </svg>
+                            Void
+                        </button>
+                    )}
                     {/* One button for everything that is not the report or the decision (styled as the Registry's
                         Drafts button). The panel it opens has the Application / Property / History tabs and
                         reopens on the tab last used. */}
@@ -1418,6 +1492,23 @@ function ShowInner({
                             </svg>
                             <span className="truncate">{applicantStrip.email}</span>
                         </a>
+                    )}
+                </div>
+            )}
+
+            {(isVoided || isArchived) && (
+                <div className={`mx-5 mb-2.5 mt-0.5 rounded-lg border px-3.5 py-2 text-[12.5px] ${isVoided ? "border-rose-200 bg-rose-50 text-rose-900" : "border-slate-200 bg-white text-slate-700"}`}>
+                    {isVoided ? (
+                        <>
+                            <span className="font-semibold">Voided</span> {fmtDate(recordRetention.voided_at, true)}
+                            {recordRetention.voided_by ? ` by ${recordRetention.voided_by}` : ""}. Kept on record, read-only, and not counted anywhere.
+                            {recordRetention.void_reason && <span className="block mt-0.5 text-rose-800">Reason · {recordRetention.void_reason}</span>}
+                        </>
+                    ) : (
+                        <>
+                            <span className="font-semibold">Archived</span> {fmtDate(recordRetention.archived_at, true)}
+                            {recordRetention.archived_by ? ` by ${recordRetention.archived_by}` : ""}. Still counted in reports and kept for the retention period.
+                        </>
                     )}
                 </div>
             )}
@@ -1994,7 +2085,7 @@ function ShowInner({
                             candidates={planningOfficers}
                             history={poAssignmentHistory}
                             reasons={reassignmentReasons}
-                            canReassign={canReassignPlanningOfficer}
+                            canReassign={canReassignPlanningOfficer && !isVoided}
                             applicationId={app.id}
                         />
                         <div className="rounded-lg border border-slate-200 bg-white p-4">

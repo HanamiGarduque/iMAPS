@@ -88,7 +88,8 @@ class SearchController extends Controller
                 ->orWhereRaw("UPPER(REGEXP_REPLACE(tax_dec_number, '[^A-Za-z0-9]', '', 'g')) = ?", [$normalized])
                 ->orWhereRaw("UPPER(REGEXP_REPLACE(property_index_number, '[^A-Za-z0-9]', '', 'g')) = ?", [$normalized]);
         };
-        $recorded = Parcel::with('zoningApplication')->where($matchParcel)->latest('id')->first();
+        // whereHas keeps a voided application's parcels out of the lookup.
+        $recorded = Parcel::with('zoningApplication')->whereHas('zoningApplication')->where($matchParcel)->latest('id')->first();
 
         if (!$cadastral && !$recorded) {
             return response()->json([
