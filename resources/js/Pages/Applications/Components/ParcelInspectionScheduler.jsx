@@ -1,6 +1,13 @@
 import React from "react";
 import { Label, Textarea } from "./FormControls";
 
+const today = () => {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(new Date()).map(({ type, value }) => [type, value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
 export default function ParcelInspectionScheduler({
     index,
     parcel,
@@ -93,7 +100,7 @@ export default function ParcelInspectionScheduler({
                         <Label required hasError={!!errors[`parcels.${index}.scheduled_date`]}>Inspection Date</Label>
                         <input
                             type="date"
-                            min={new Date().toISOString().split("T")[0]}
+                            min={today()}
                             value={parcel.scheduled_date || ""}
                             onChange={setParcelField(index, "scheduled_date")}
                             className={`w-full rounded-full border px-3 py-2 text-xs font-medium text-slate-700 outline-none bg-white ${errors[`parcels.${index}.scheduled_date`] ? "border-rose-300" : "border-slate-200 focus:border-blue-500"}`}
@@ -104,7 +111,7 @@ export default function ParcelInspectionScheduler({
                         <Label required hasError={!!errors[`parcels.${index}.deadline_date`]}>Deadline</Label>
                         <input
                             type="date"
-                            min={parcel.scheduled_date || new Date().toISOString().split("T")[0]}
+                            min={parcel.scheduled_date || today()}
                             value={parcel.deadline_date || ""}
                             onChange={setParcelField(index, "deadline_date")}
                             className={`w-full rounded-full border px-3 py-2 text-xs font-medium text-slate-700 outline-none bg-white ${errors[`parcels.${index}.deadline_date`] ? "border-rose-300" : "border-slate-200 focus:border-blue-500"}`}

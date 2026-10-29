@@ -104,7 +104,12 @@ const fmtDate = (d, withTime = false) => {
 };
 const peso = (v) => `₱ ${Number(v || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const dash = (v) => (v !== null && v !== undefined && String(v).trim() !== "" ? v : "—");
-const today = () => new Date().toISOString().split("T")[0];
+const today = () => {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(new Date()).map(({ type, value }) => [type, value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+};
 
 
 
