@@ -230,14 +230,38 @@ function computeFeeLines(applicationType, landUse, area, cost) {
     return { lines, byField, total };
 }
 
-// ── Title Case & Formatting Helper ──
-function toTitleCase(str) {
-    if (!str) return "";
-    return str
-        .toLowerCase()
-        .split(" ")
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(" ");
+// ── Upper-case text fields ──
+// Free-text inputs are encoded and stored in capitals. Dropdowns (barangay, zoning class, etc.), the
+// e-mail, numbers and dates keep their own format. Mirrored by App\Http\Controllers\ApplicationController::UPPERCASE_FIELDS.
+const UPPER_FIELDS = [
+    "first_name", "middle_name", "last_name", "suffix", "applicant_name", "applicant_street",
+    "representative_name", "representative_address", "corporation_name", "corporation_address",
+    "business_name", "street_address", "purpose", "remarks",
+];
+const UPPER_PARCEL_FIELDS = [
+    "parcel_code", "location_address", "owner_name", "property_index_number", "arp_number", "survey_number",
+    "lot_number", "tct_number", "tax_dec_number", "decision_reason", "findings", "assigned_notes",
+];
+
+// Returns the same object when nothing changes, so React can skip the re-render
+function uppercaseForm(form) {
+    let next = form;
+    for (const k of UPPER_FIELDS) {
+        if (typeof next[k] === "string" && next[k] !== next[k].toUpperCase()) next = { ...next, [k]: next[k].toUpperCase() };
+    }
+    if (Array.isArray(next.parcels)) {
+        let changed = false;
+        const parcels = next.parcels.map((p) => {
+            let q = p;
+            for (const k of UPPER_PARCEL_FIELDS) {
+                if (typeof q?.[k] === "string" && q[k] !== q[k].toUpperCase()) q = { ...q, [k]: q[k].toUpperCase() };
+            }
+            if (q !== p) changed = true;
+            return q;
+        });
+        if (changed) next = { ...next, parcels };
+    }
+    return next;
 }
 
 // Same comparison as the map step's progression lock: Assessor classification vs spatial CLUP zone
@@ -450,7 +474,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     };
 
     // Hydration
-    const [form, setForm] = useState(() => {
+    const [form, setFormState] = useState(() => {
         const baseForm = emptyForm();
         const validCloud = cleanPayload(cloudDraftPayload);
         if (validCloud) {
@@ -498,6 +522,12 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
         return baseForm;
     });
+
+    // Every update to the form (typing, autofill, map picks, restored drafts) passes through here,
+    // so the typed-in text fields are always upper-case, as they are stored.
+    const setForm = (update) => setFormState((prev) => uppercaseForm(typeof update === "function" ? update(prev) : update));
+    // Restored drafts and prefills start out as saved; bring them into capitals too
+    useEffect(() => setForm((f) => f), []);
 
     // Valid parcels and total lot area computation (only when PIN is filled)
     const validParcels = useMemo(() => {
@@ -1262,7 +1292,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
     const handleNameChange = (field) => (e) => {
         const rawVal = e.target.value;
-        const val = toTitleCase(rawVal);
+        const val = rawVal.toUpperCase();
         setForm((prev) => {
             const next = { ...prev, [field]: val };
             const parts = [

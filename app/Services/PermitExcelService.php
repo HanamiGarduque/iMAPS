@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\GeneratedPermit;
 use App\Models\ZoningApplication;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -112,6 +113,16 @@ class PermitExcelService
             $fields[] = $field;
         }
 
+        // The Zoning Evaluation sheet carries all three decision numbers, but an application only
+        // gets the one for its own category (e.g. a Locational Clearance has no Development Permit No.)
+        if ($type === 'ze') {
+            $own = array_map('strtoupper', $application->getRecommendedPermitTypes());
+            $fields = array_values(array_filter(
+                $fields,
+                fn ($f) => ! preg_match('/^(LC|ZC|DP)_DN$/', $f['key']) || in_array(substr($f['key'], 0, 2), $own, true)
+            ));
+        }
+
         // Unbound dropdown cells in the sheet (checklists etc.)
         $bound = array_keys($doc['bind'] ?? []);
         $dropdowns = collect($sheetMeta['dropdowns'])
@@ -169,7 +180,8 @@ class PermitExcelService
 
         // Same permit + same values = same PDF: reuse it (the preview already built it, so
         // Generate is instant). Callers delete or move the returned file, so hand out a copy.
-        $cacheKey = $format === 'pdf' ? $this->pdfCacheKey($type, $values, $cellInput) : null;
+        $this->lastAmendment = $this->amendmentNumber($application, $type);
+        $cacheKey = $format === 'pdf' ? $this->pdfCacheKey($type, $values, $cellInput, $this->lastAmendment) : null;
         if ($cacheKey && ($cached = $this->cachedPdf($cacheKey))) {
             $copy = "{$dir}/{$base}.pdf";
             if (@copy($cached['path'], $copy)) {
@@ -189,6 +201,7 @@ class PermitExcelService
         $this->widenMerges($sheet, $doc['merge'] ?? []);
         $this->isolateSheet($spreadsheet, $sheet);
         $this->applyPageSetup($sheet, $doc);
+        $this->markAmended($sheet, $this->lastAmendment);
 
         $xlsxPath = "{$dir}/{$base}.xlsx";
 
@@ -210,10 +223,27 @@ class PermitExcelService
         return $pdfPath;
     }
 
+    /** Amendment number of the last permit built (0 = original). */
+    public int $lastAmendment = 0;
+
+    /**
+     * Which copy this permit would be: 0 for the first one issued for the application, then 1, 2, ...
+     * Removed (soft-deleted) copies still count, so a number is never reused.
+     */
+    public function amendmentNumber(ZoningApplication $application, string $type): int
+    {
+        $last = GeneratedPermit::withTrashed()
+            ->where('zoning_application_id', $application->id)
+            ->where('permit_type', $type)
+            ->max('amendment_number');
+
+        return $last === null ? 0 : ((int) $last) + 1;
+    }
+
     /** Driver of a PDF served from the cache (null when it was just converted). */
     private ?string $cachedDriver = null;
 
-    private function pdfCacheKey(string $type, array $values, array $cellInput): string
+    private function pdfCacheKey(string $type, array $values, array $cellInput, int $amendment = 0): string
     {
         $template = config('permits.template');
 
@@ -221,6 +251,7 @@ class PermitExcelService
             $type,
             $values,
             $cellInput,
+            $amendment,
             is_file($template) ? filemtime($template) : 0,
             md5(serialize(config('permits'))),
             filemtime(__FILE__), // a change to how permits are filled invalidates old PDFs
@@ -545,6 +576,17 @@ class PermitExcelService
             $sheet->mergeCells($range);
             $sheet->getStyle($range)->getAlignment()->setHorizontal($align);
         }
+    }
+
+    /** An amended permit is stamped in the page header, so it can't be mistaken for the original. */
+    private function markAmended(Worksheet $sheet, int $amendment): void
+    {
+        if ($amendment < 1) {
+            return;
+        }
+
+        $sheet->getPageMargins()->setHeader(0.2);
+        $sheet->getHeaderFooter()->setOddHeader(sprintf('&L&11AMENDED COPY NO. %d · %s', $amendment, now()->format('F j, Y')));
     }
 
     private function applyPageSetup(Worksheet $sheet, array $doc): void

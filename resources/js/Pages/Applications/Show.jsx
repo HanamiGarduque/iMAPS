@@ -2126,7 +2126,7 @@ function ShowInner({
             <div id="dashboard-root" className="bg-slate-50 text-slate-800 h-screen flex flex-col overflow-hidden">
                 <Header userName={userName} userRole={userRole} clock={clock} onLogout={handleLogout} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
-                <div className="flex-1 overflow-hidden relative flex flex-col min-w-0">
+                <div id="app-main-area" className="flex-1 overflow-hidden relative flex flex-col min-w-0">
                     <Sidebar userName={userName} userRole={userRole} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} onLogout={handleLogout} activePage="applications" />
                     {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/20 z-[750]" aria-hidden="true" />}
 

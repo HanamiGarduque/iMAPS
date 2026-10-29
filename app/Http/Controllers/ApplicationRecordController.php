@@ -15,7 +15,7 @@ use Illuminate\Validation\ValidationException;
  * Record retention for zoning applications. MPDO keeps these records for 10
  * years, so there is no delete:
  *
- *  - ARCHIVE hides a decided (Released / Denied) application from the working
+ *  - ARCHIVE hides a Released application from the working
  *    registry. It is still counted, mapped, reported and searchable, and can be
  *    unarchived. Admin or the owning Planning Officer.
  *  - VOID marks an application that was encoded by mistake. It drops out of
@@ -39,9 +39,9 @@ class ApplicationRecordController extends Controller
             if ($application->isArchived()) {
                 throw ValidationException::withMessages(['archive' => 'This application is already archived.']);
             }
-            if (! in_array($application->status, ZoningApplication::CLOSED_STATUSES, true)) {
+            if (! in_array($application->status, ZoningApplication::ARCHIVABLE_STATUSES, true)) {
                 throw ValidationException::withMessages([
-                    'archive' => 'Only Released or Denied applications can be archived.',
+                    'archive' => 'Only Released applications can be archived.',
                 ]);
             }
 
@@ -56,6 +56,55 @@ class ApplicationRecordController extends Controller
         });
 
         return back()->with('success', 'Application archived. It is still kept and counted in reports.');
+    }
+
+    /**
+     * Archive several ticked registry rows at once. Same rules as archive():
+     * each row is locked and checked on its own, and one that fails (not
+     * closed, already archived, not yours) is skipped, never an error for
+     * the rest.
+     */
+    public function bulkArchive(Request $request)
+    {
+        $ids = $request->validate([
+            'ids'   => 'required|array|min:1|max:200',
+            'ids.*' => 'integer',
+        ])['ids'];
+
+        $archived = 0;
+
+        foreach (array_unique($ids) as $id) {
+            DB::transaction(function () use ($id, &$archived) {
+                $application = ZoningApplication::withVoided()->lockForUpdate()->find($id);
+
+                if (! $application
+                    || $application->voided_at !== null
+                    || $application->isArchived()
+                    || ! in_array($application->status, ZoningApplication::ARCHIVABLE_STATUSES, true)
+                    || ! $application->canBeArchivedBy(Auth::user())) {
+                    return;
+                }
+
+                $application->forceFill(['archived_at' => now(), 'archived_by' => Auth::id()])->save();
+
+                AuditLogger::log(
+                    applicationId: $application->id,
+                    action: 'APPLICATION_ARCHIVED',
+                    performedBy: Auth::id(),
+                    note: "Application archived ({$application->status})."
+                );
+                $archived++;
+            });
+        }
+
+        $skipped = count(array_unique($ids)) - $archived;
+
+        if ($archived === 0) {
+            return back()->with('error', 'Nothing was archived. Only Released applications that you handle can be archived.');
+        }
+
+        return back()->with('success', $archived . ' ' . ($archived === 1 ? 'application' : 'applications') . ' archived. They are still kept and counted in reports.'
+            . ($skipped > 0 ? " {$skipped} skipped (not Released, already archived or not yours)." : ''));
     }
 
     public function unarchive(int $id)

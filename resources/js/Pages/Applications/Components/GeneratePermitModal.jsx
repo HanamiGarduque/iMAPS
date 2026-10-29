@@ -301,6 +301,9 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
         (savedPermits || []).map((p) => (typeof p === "object" ? p?.permit_type : p)).filter(Boolean)
     );
 
+    // A saved permit opens in a new tab (PDFs show in the browser's viewer, other formats download)
+    const openSaved = (item) => window.open(`/applications/${app.id}/saved-permits/${item.id}/download`, "_blank", "noopener,noreferrer");
+
     const fetchSavedPermits = async () => {
         try {
             const { data } = await axios.get(`/applications/${app.id}/saved-permits`);
@@ -376,8 +379,8 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                                     <button
                                         type="button"
                                         onClick={() => setOpen(p.type)}
-                                        aria-label={`${ready ? "Regenerate" : "Generate"} ${p.label} (${ready ? "ready, " : ""}${p.paper})`}
-                                        title={`${ready ? "Regenerate" : "Generate"} ${p.label}`}
+                                        aria-label={`${ready ? "Amend" : "Generate"} ${p.label} (${ready ? "ready, " : ""}${p.paper})`}
+                                        title={`${ready ? "Amend" : "Generate"} ${p.label}`}
                                         className="group block w-full text-left cursor-pointer focus-visible:outline-none"
                                     >
                                         {/* Mock-up of a portrait bond-paper page: letterhead, title, form lines, signatures */}
@@ -385,7 +388,7 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                                             <PermitMock type={p.type} label={p.label} todo={todo} />
                                             {/* Hover action bar */}
                                             <span className="absolute inset-x-0 bottom-0 py-1 bg-blue-600/95 text-center text-[10px] font-semibold text-white translate-y-full group-hover:translate-y-0 group-focus-visible:translate-y-0 transition-transform duration-150">
-                                                {ready ? "Regenerate" : "Generate"}
+                                                {ready ? "Amend" : "Generate"}
                                             </span>
                                         </span>
                                         <span className="mt-1.5 block text-[12px] font-medium text-slate-900 leading-snug truncate" title={p.label}>{p.label}</span>
@@ -451,7 +454,16 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                         {savedPermits.map((item) => {
                             const isPdf = item.file_format === "pdf";
                             return (
-                                <li key={item.id} className="flex items-center gap-3 pl-3.5 pr-2 py-2.5">
+                                <li
+                                    key={item.id}
+                                    role="link"
+                                    tabIndex={0}
+                                    onClick={() => openSaved(item)}
+                                    onKeyDown={(e) => e.key === "Enter" && openSaved(item)}
+                                    title={isPdf ? "Open PDF in a new tab" : "Download"}
+                                    aria-label={`${isPdf ? "Open" : "Download"} ${item.permit_name}`}
+                                    className="flex items-center gap-3 pl-3.5 pr-2 py-2.5 cursor-pointer hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-slate-50 transition-colors"
+                                >
                                     <PermitIcon type={item.permit_type} className="w-4 h-4 text-slate-400 shrink-0" />
                                     <div className="flex-1 min-w-0">
                                         <p className="flex items-center gap-2">
@@ -459,6 +471,11 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                                             <span className="shrink-0 px-1.5 h-[18px] inline-flex items-center rounded text-[10px] font-semibold uppercase tracking-wide bg-slate-100 text-slate-500">
                                                 {item.file_format}
                                             </span>
+                                            {item.amendment_number > 0 && (
+                                                <span className="shrink-0 px-1.5 h-[18px] inline-flex items-center rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800" title="Amended copy; the earlier copies are kept">
+                                                    Amended No. {item.amendment_number}
+                                                </span>
+                                            )}
                                         </p>
                                         <p className="text-[11px] text-slate-500 mt-0.5 truncate">
                                             {new Date(item.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
@@ -467,29 +484,11 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-0.5 shrink-0">
-                                        <a
-                                            href={`/applications/${app.id}/saved-permits/${item.id}/download`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            title={isPdf ? "View PDF" : "Download"}
-                                            aria-label={`${isPdf ? "View" : "Download"} ${item.permit_name}`}
-                                            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition-colors"
-                                        >
-                                            {isPdf ? (
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            </svg>
-                                            ) : (
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                                            </svg>
-                                            )}
-                                        </a>
                                         {!isReleased && (
                                             <button
                                                 type="button"
-                                                onClick={() => handleDeleteSavedPermit(item)}
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteSavedPermit(item); }}
+                                                onKeyDown={(e) => e.stopPropagation()}
                                                 title="Remove"
                                                 aria-label={`Remove ${item.permit_name}`}
                                                 className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
@@ -526,6 +525,13 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
     );
 }
 
+// The generator takes over the record page's main area (below the header) so the permit preview is
+// large enough to read; it falls back to the whole window if that area isn't on the page.
+const inMainArea = (node) => {
+    const host = document.getElementById("app-main-area");
+    return host ? createPortal(node, host) : <div className="fixed inset-0 z-[999] flex">{node}</div>;
+};
+
 export default function GeneratePermitModal({ app, initialType, onClose, onPermitGenerated, savedPermits = [] }) {
     // One dialog = one permit (chosen from its card); to make another, close and pick that card
     const [type] = useState(initialType || defaultPermitFor(app));
@@ -537,6 +543,8 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
     const [error, setError] = useState("");
     const [previewUrl, setPreviewUrl] = useState(null);
     const [previewLoading, setPreviewLoading] = useState(false);
+    // True from the moment a field changes until the preview for it has finished (covers the typing pause)
+    const [previewPending, setPreviewPending] = useState(true);
     const [previewError, setPreviewError] = useState(null);
     const [previewDriver, setPreviewDriver] = useState(null); // libreoffice | excel | dompdf
     const [success, setSuccess] = useState(null); // { label, regenerated, url, at } after a PDF is saved
@@ -640,9 +648,10 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
 
         const controller = new AbortController();
         abortController.current = controller;
+        setPreviewPending(true);
 
         // No wait for the first preview; while typing, wait until the user pauses
-        const delay = previewShown.current ? 800 : 0;
+        const delay = previewShown.current ? 300 : 0;
         const timer = setTimeout(async () => {
             setPreviewLoading(true);
             setPreviewError(null);
@@ -676,6 +685,8 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                 }
             } finally {
                 setPreviewLoading(false);
+                // A newer edit has taken over: stay pending until its preview is done
+                if (abortController.current === controller) setPreviewPending(false);
             }
         }, delay);
 
@@ -744,41 +755,37 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
 
     return (
         <>
-        {!success && (
-        <div
-            className="fixed inset-0 z-[999] bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-6 animate-fade-in duration-150"
-            onMouseDown={(e) => e.target === e.currentTarget && !busy && onClose()}
-        >
+        {!success && inMainArea(
+        <div className="absolute inset-0 z-[600] bg-slate-100 flex p-3 sm:p-4 min-h-0 animate-fade-in duration-150">
             <div
                 role="dialog"
-                aria-modal="true"
                 aria-labelledby="permit-dialog-title"
-                className="bg-white rounded-xl shadow-2xl w-full max-w-[1080px] h-[86vh] max-h-full min-h-0 flex overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+                className="bg-white rounded-xl border border-slate-200 shadow-sm w-full h-full min-h-0 flex overflow-hidden"
             >
                 {/* ── Form column ── */}
-                <div className="flex flex-col flex-1 min-w-0 min-h-0 lg:border-r border-slate-200">
+                <div className="flex flex-col flex-1 lg:flex-none lg:w-[400px] xl:w-[440px] min-w-0 min-h-0 lg:border-r border-slate-200">
                     {/* Header: the one permit being issued (picked from its card on the record page) */}
                     <div className="px-5 pt-4 pb-3 border-b border-slate-100 shrink-0">
-                        <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                disabled={!!busy}
+                                className="shrink-0 inline-flex items-center h-8 w-8 justify-center rounded-md border border-slate-300 bg-white text-[12.5px] font-semibold text-slate-700 shadow-sm hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700 disabled:opacity-50 cursor-pointer transition-colors"
+                                aria-label="Close"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                    <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+                                </svg>
+                            </button>
                             <div className="min-w-0">
                                 <h3 id="permit-dialog-title" className="text-[15px] font-semibold text-slate-900 leading-tight truncate">
-                                    {isAlreadyGenerated ? "Regenerate" : "Generate"} {permits.find((p) => p.type === type)?.label || "permit"}
+                                    {isAlreadyGenerated ? "Amend" : "Generate"} {permits.find((p) => p.type === type)?.label || "permit"}
                                 </h3>
                                 <p className="mt-0.5 text-[11.5px] text-slate-500 truncate">
                                     {app.reference_number} · {app.applicant_name}
                                 </p>
                             </div>
-                            <button
-                                type="button"
-                                onClick={onClose}
-                                disabled={!!busy}
-                                className="-mr-1.5 p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
-                                aria-label="Close"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                    <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
-                                </svg>
-                            </button>
                         </div>
 
                         <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-slate-500">
@@ -893,8 +900,10 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                                 <span className="text-amber-700">
                                     {missing.length} required field{missing.length === 1 ? "" : "s"} left
                                 </span>
+                            ) : previewPending ? (
+                                <span className="text-slate-500">Updating preview…</span>
                             ) : (
-                                <span className="text-slate-500">{isAlreadyGenerated ? "Regenerating saves an updated copy." : "Ready to generate."}</span>
+                                <span className="text-slate-500">{isAlreadyGenerated ? "Amending saves a new copy marked AMENDED; the earlier copy is kept." : "Ready to generate."}</span>
                             )}
                         </p>
                         <button
@@ -908,8 +917,8 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                         <button
                             type="button"
                             // Never issue a permit with a required field blank (the server refuses it too)
-                            disabled={loading || !!busy || !schema || missing.length > 0}
-                            title={missing.length > 0 ? `Fill in first: ${missing.map((f) => f.label).join(", ")}` : undefined}
+                            disabled={loading || !!busy || !schema || missing.length > 0 || previewPending}
+                            title={missing.length > 0 ? `Fill in first: ${missing.map((f) => f.label).join(", ")}` : previewPending ? "Waiting for the preview to finish updating" : undefined}
                             onClick={() => generate("pdf")}
                             className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/40 disabled:cursor-not-allowed text-white text-[12.5px] font-semibold transition-colors cursor-pointer"
                         >
@@ -924,13 +933,13 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m3.75 9v6m3-3H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                 </svg>
                             )}
-                            {busy === "pdf" ? (isAlreadyGenerated ? "Regenerating…" : "Generating…") : isAlreadyGenerated ? "Regenerate" : "Generate PDF"}
+                            {busy === "pdf" ? (isAlreadyGenerated ? "Amending…" : "Generating…") : isAlreadyGenerated ? "Amend" : "Generate PDF"}
                         </button>
                     </div>
                 </div>
 
                 {/* ── Live preview: the page floating on a soft canvas ── */}
-                <div className="hidden lg:flex flex-col w-[380px] xl:w-[420px] shrink-0 bg-slate-100">
+                <div className="hidden lg:flex flex-col flex-1 min-w-0 bg-slate-100">
                     <div className="px-5 h-11 flex items-center justify-between shrink-0">
                         <p className="text-[12px] font-medium text-slate-600">Preview</p>
                         <div className="flex items-center gap-2 text-[11px]">
@@ -989,7 +998,7 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                         </svg>
                     </span>
                     <h3 id="permit-success-title" className="mt-4 text-[16px] font-semibold tracking-tight text-slate-900">
-                        {success.label} {success.regenerated ? "regenerated" : "generated"}
+                        {success.label} {success.regenerated ? "amended" : "generated"}
                     </h3>
                     <p id="permit-success-desc" className="mt-1 text-[12.5px] text-slate-500">A copy was saved to this application.</p>
 

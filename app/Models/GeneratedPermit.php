@@ -21,6 +21,7 @@ class GeneratedPermit extends Model
         'zoning_application_id',
         'permit_type',
         'permit_name',
+        'amendment_number',
         'file_name',
         'file_path',
         'file_format',
@@ -32,6 +33,7 @@ class GeneratedPermit extends Model
     protected $casts = [
         'input_data' => 'array',
         'file_size'  => 'integer',
+        'amendment_number' => 'integer',
     ];
 
     protected $appends = ['formatted_file_size'];

@@ -47,6 +47,9 @@ class ZoningApplication extends Model
     /** Decided applications; only these can be archived. */
     public const CLOSED_STATUSES = ['Released', 'Denied'];
 
+    /** Only a Released application (permit issued and handed out) may be archived. */
+    public const ARCHIVABLE_STATUSES = ['Released'];
+
     protected $fillable = [
         'reference_number',
         'application_stream',

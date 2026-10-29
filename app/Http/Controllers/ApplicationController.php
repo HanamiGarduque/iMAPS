@@ -535,6 +535,45 @@ class ApplicationController extends Controller
     // ─────────────────────────────────────────────────────────────────────────
     // STORE — Validate and persist new application, with one or more parcels
     // ─────────────────────────────────────────────────────────────────────────
+    /**
+     * Free-text fields of a new application are stored in capitals. Dropdown values (barangay, zoning
+     * class, release mode, ...), the e-mail, numbers and dates are left exactly as submitted.
+     * Mirrors UPPER_FIELDS in resources/js/Pages/Applications/Create.jsx.
+     */
+    private const UPPERCASE_FIELDS = [
+        'applicant_name', 'applicant_street', 'representative_name', 'representative_address',
+        'corporation_name', 'corporation_address', 'business_name', 'street_address', 'purpose', 'remarks',
+    ];
+
+    private const UPPERCASE_PARCEL_FIELDS = [
+        'parcel_code', 'location_address', 'owner_name', 'property_index_number', 'arp_number', 'survey_number',
+        'lot_number', 'tct_number', 'tax_dec_number', 'decision_reason', 'findings', 'assigned_notes',
+    ];
+
+    private function uppercaseEncodedText(Request $request): void
+    {
+        $upper = fn ($v) => is_string($v) ? mb_strtoupper($v) : $v;
+
+        $request->merge(collect(self::UPPERCASE_FIELDS)
+            ->filter(fn ($k) => $request->has($k))
+            ->mapWithKeys(fn ($k) => [$k => $upper($request->input($k))])
+            ->all());
+
+        if (is_array($request->input('parcels'))) {
+            $request->merge(['parcels' => array_map(function ($parcel) use ($upper) {
+                if (! is_array($parcel)) {
+                    return $parcel;
+                }
+                foreach (self::UPPERCASE_PARCEL_FIELDS as $k) {
+                    if (array_key_exists($k, $parcel)) {
+                        $parcel[$k] = $upper($parcel[$k]);
+                    }
+                }
+                return $parcel;
+            }, $request->input('parcels'))]);
+        }
+    }
+
    public function store(Request $request)
     {
         if (Auth::user()->role !== 'Planning Officer') {
@@ -564,6 +603,8 @@ class ApplicationController extends Controller
 
         // The label lists the types in one fixed order so equal filings read (and group) the same.
         $request->merge(['application_type' => implode(', ', ZoningApplication::normalizeTypes($applicationTypeValues))]);
+
+        $this->uppercaseEncodedText($request);
 
         $validated = $request->validate([
             'application_stream'  => 'required|in:permit,amendment',
@@ -1349,7 +1390,7 @@ class ApplicationController extends Controller
             'voided_at'      => $application->voided_at?->toIso8601String(),
             'voided_by'      => $names[$application->voided_by] ?? null,
             'void_reason'    => $application->void_reason,
-            'can_archive'    => ! $isVoided && $isClosed && ! $application->isArchived() && $application->canBeArchivedBy($user),
+            'can_archive'    => ! $isVoided && in_array($application->status, ZoningApplication::ARCHIVABLE_STATUSES, true) && ! $application->isArchived() && $application->canBeArchivedBy($user),
             'can_unarchive'  => ! $isVoided && $application->isArchived() && $application->canBeArchivedBy($user),
             // Offered to the owner while still undecided; the blocker explains a
             // disabled button rather than hiding it.
@@ -1907,6 +1948,7 @@ class ApplicationController extends Controller
             'zoning_application_id' => $application->id,
             'permit_type'           => $type,
             'permit_name'           => $label,
+            'amendment_number'      => $permits->lastAmendment,
             'file_name'             => $fileName,
             'file_path'             => $storagePath,
             'file_format'           => $format,
@@ -1920,8 +1962,9 @@ class ApplicationController extends Controller
             action: 'PERMIT_GENERATED',
             performedBy: Auth::id(),
             note: sprintf(
-                '%s generated & stored (%s%s).',
+                '%s%s generated & stored (%s%s).',
                 $label,
+                $permits->lastAmendment > 0 ? " (Amendment No. {$permits->lastAmendment})" : '',
                 strtoupper($format),
                 $format === 'pdf' && $permits->lastPdfDriver() ? ' via ' . $permits->lastPdfDriver() : ''
             )

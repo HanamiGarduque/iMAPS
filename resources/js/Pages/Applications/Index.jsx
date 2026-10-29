@@ -5,6 +5,7 @@ import Sidebar from "@/Components/Sidebar";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import { confirmSignOut } from "@/utils/signOut";
+import dialog, { notify } from "@/utils/dialog";
 import "leaflet/dist/leaflet.css";
 
 // —— Status Configuration ——
@@ -1045,6 +1046,37 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const rowKey = (item) => item?.id ?? item?.reference_number;
     const toggleRow = (key) => setSelectedIds((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
 
+    // Archive the ticked rows. Only Released, not-yet-archived ones qualify; the server
+    // re-checks each (including ownership) and skips the rest.
+    const [archiving, setArchiving] = useState(false);
+    const archivableSelected = filteredList.filter(
+        (item) => selectedIds.includes(rowKey(item)) && item.status === "Released" && !item.archived_at
+    );
+    const archiveSelected = () => {
+        if (archivableSelected.length === 0) return;
+        const n = archivableSelected.length;
+        dialog.fire({
+            icon: "question",
+            title: `Archive ${n} ${n === 1 ? "application" : "applications"}?`,
+            text: "They move out of the active registry into Archived. They are still kept, counted in reports and searchable, and can be unarchived.",
+            showCancelButton: true,
+            confirmButtonText: "Archive",
+        }).then((r) => {
+            if (!r.isConfirmed) return;
+            setArchiving(true);
+            router.post("/applications/bulk-archive", { ids: archivableSelected.map((a) => a.id) }, {
+                preserveScroll: true,
+                onSuccess: (page) => {
+                    setSelectedIds([]);
+                    const f = page.props.flash || {};
+                    notify(f.success || f.error || "Done.", f.error && !f.success ? "error" : "success", { timer: 4500 });
+                },
+                onError: (errs) => notify(Object.values(errs)[0] || "The applications could not be archived.", "error", { timer: 4500 }),
+                onFinish: () => setArchiving(false),
+            });
+        });
+    };
+
     useEffect(() => setMoreOpen(false), [peekItem]);
 
     // KPI & Workflow Status Counts
@@ -1667,6 +1699,17 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                             <span className="hidden sm:inline text-[11.5px] text-slate-400 whitespace-nowrap">
                                                 <kbd className="font-sans px-1 rounded bg-white/10 text-slate-300">Ctrl A</kbd> all · <kbd className="font-sans px-1 rounded bg-white/10 text-slate-300">Esc</kbd> clear
                                             </span>
+                                            {registry_view === "active" && (
+                                                <button
+                                                    type="button"
+                                                    onClick={archiveSelected}
+                                                    disabled={archiving || archivableSelected.length === 0}
+                                                    title={archivableSelected.length === 0 ? "Only Released applications can be archived" : undefined}
+                                                    className="ml-1 h-8 px-3 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:hover:bg-white/10 disabled:cursor-not-allowed text-[12.5px] font-semibold cursor-pointer transition-colors"
+                                                >
+                                                    {archiving ? "Archiving…" : `Archive${archivableSelected.length > 0 ? ` ${archivableSelected.length}` : ""}`}
+                                                </button>
+                                            )}
                                         </div>
                                     )}
 

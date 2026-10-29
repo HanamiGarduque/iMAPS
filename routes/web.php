@@ -175,6 +175,9 @@ Route::middleware('auth')->group(function () {
         ->whereNumber('id')
         ->name('applications.archive')
         ->middleware('role:Admin,Planning Officer');
+    Route::post('/applications/bulk-archive', [\App\Http\Controllers\ApplicationRecordController::class, 'bulkArchive'])
+        ->name('applications.bulk-archive')
+        ->middleware(['role:Admin,Planning Officer', 'throttle:20,1']);
     Route::post('/applications/{id}/unarchive', [\App\Http\Controllers\ApplicationRecordController::class, 'unarchive'])
         ->whereNumber('id')
         ->name('applications.unarchive')
