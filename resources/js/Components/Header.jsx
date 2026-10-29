@@ -5,6 +5,7 @@ import { promptParcelApplication } from '@/utils/parcelHandoff.jsx';
 import { getZoneInfo } from '@/utils/clupZones';
 
 import { confirmSignOut } from '@/utils/signOut';
+import { showPageHelp } from '@/utils/pageHelp';
 
 // ── Predictive Highlight Helper ──
 const HighlightMatch = ({ text, query }) => {
@@ -174,7 +175,7 @@ export default function Header({
         const t = setTimeout(() => setGreeting(null), 6000);
         return () => clearTimeout(t);
     }, [userName]);
-    const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
+    const openHelp = () => showPageHelp(currentUrl, { search: shouldShowSearch });
     const [notifMenuOpen, setNotifMenuOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const [recentNotifs, setRecentNotifs] = useState([]);
@@ -299,12 +300,6 @@ export default function Header({
 
             // Esc key isolation: close topmost overlay first
             if (e.key === 'Escape') {
-                if (shortcutsModalOpen) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setShortcutsModalOpen(false);
-                    return;
-                }
                 if (notifMenuOpen) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -337,16 +332,16 @@ export default function Header({
                 }
             }
 
-            // ? key for keyboard help modal
-            if (e.key === '?' && !isInputActive) {
+            // ? key opens this page's help (unless a dialog is already up)
+            if (e.key === '?' && !isInputActive && !document.querySelector('.swal2-container')) {
                 e.preventDefault();
-                setShortcutsModalOpen(prev => !prev);
+                openHelp();
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [shortcutsModalOpen, profileMenuOpen, searchFocused]);
+    }, [profileMenuOpen, searchFocused, currentUrl, shouldShowSearch]);
 
     // ── Session Keep-Alive Heartbeat Ping ──
     useEffect(() => {
@@ -574,9 +569,10 @@ export default function Header({
                 {/* Keyboard Shortcuts Trigger */}
                 <button
                     type="button"
-                    onClick={() => setShortcutsModalOpen(true)}
+                    onClick={openHelp}
                     className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-blue-700 hover:bg-slate-100 rounded-xl transition-colors focus:outline-none"
-                    title="Keyboard Shortcuts & Map Help (?)"
+                    title="Help for this page (?)"
+                    aria-label="Help for this page"
                 >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
@@ -785,81 +781,6 @@ export default function Header({
                     )}
                 </div>
             </div>
-
-            {/* ── KEYBOARD SHORTCUTS & HELP MODAL ── */}
-            {shortcutsModalOpen && (
-                <div 
-                    className="fixed inset-0 z-[9999] bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
-                    onClick={() => setShortcutsModalOpen(false)}
-                >
-                    <div 
-                        className="bg-white rounded-3xl p-5 max-w-md w-full shadow-2xl border border-slate-200/90 space-y-4"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm border border-blue-200/60">
-                                    ⌨
-                                </div>
-                                <div>
-                                    <h3 className="text-sm font-bold text-slate-900">Spatial Keyboard Shortcuts</h3>
-                                    <p className="text-[11px] text-slate-500 font-medium">Power-user spatial navigation controls</p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setShortcutsModalOpen(false)}
-                                className="w-7 h-7 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="space-y-2 text-xs">
-                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                                <span className="text-slate-800 font-semibold">Quick Command Search</span>
-                                <div className="flex gap-1 font-mono font-bold text-[11px]">
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">⌘ / Ctrl</kbd>
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs">K</kbd>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                                <span className="text-slate-800 font-semibold">Tracking · Forecast · Diversity · CLUP overlay</span>
-                                <div className="flex gap-1 font-mono font-bold text-[11px]">
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Application Tracking">1</kbd>
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="LC Demand Forecast">2</kbd>
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Diversity Index">3</kbd>
-                                    <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs" title="Toggle CLUP 2030 overlay">4</kbd>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                                <span className="text-slate-800 font-semibold">Toggle Analysis Panel</span>
-                                <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs font-mono font-bold text-[11px]">I</kbd>
-                            </div>
-
-                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                                <span className="text-slate-800 font-semibold">Toggle Fullscreen Map</span>
-                                <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs font-mono font-bold text-[11px]">F</kbd>
-                            </div>
-
-                            <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100">
-                                <span className="text-slate-800 font-semibold">Clear Selected Barangay</span>
-                                <kbd className="px-2 py-0.5 bg-white border border-slate-200 rounded shadow-2xs font-mono font-bold text-[11px]">Esc</kbd>
-                            </div>
-                        </div>
-
-                        <button
-                            onClick={() => setShortcutsModalOpen(false)}
-                            className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors"
-                        >
-                            Close
-                        </button>
-                    </div>
-                </div>
-            )}
         </header>
     );
 }
