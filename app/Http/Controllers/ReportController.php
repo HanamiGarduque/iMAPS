@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\ZoningApplication;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
@@ -203,16 +202,6 @@ class ReportController extends Controller
         ];
     }
 
-    // Only embed what is genuinely a PNG data URI; anything else is dropped and the PDF shows the table alone.
-    private function validPngDataUri(?string $uri): ?string
-    {
-        if (!$uri || !str_starts_with($uri, 'data:image/png;base64,')) {
-            return null;
-        }
-        $bytes = base64_decode(substr($uri, 22), true);
-        return $bytes !== false && str_starts_with($bytes, "\x89PNG\r\n\x1a\n") ? $uri : null;
-    }
-
     // Shared by preview and download so both accept exactly the same options.
     private function reportRules(): array
     {
@@ -223,7 +212,7 @@ class ReportController extends Controller
             'barangay' => 'nullable|in:' . implode(',', self::BARANGAYS),
             'variables' => 'nullable|array',
             'variables.*' => 'in:reference_number,form_number,date,application_type,status,name,barangay,land_use_class,lot_area_sqm,building_area,project_cost,purpose,assessment_fee',
-            'presentation_style' => 'nullable|in:table,summary_table,bar_chart,horizontal_bar_chart,line_chart,pie_chart,doughnut_chart',
+            'presentation_style' => 'nullable|in:table,summary_table',
             'aggregation' => 'nullable|in:count,sum_lot_area,avg_lot_area,sum_building_area,sum_project_cost,sum_fee',
             'group_by' => 'nullable|in:status,barangay,application_type,land_use_class,month,year',
         ];
@@ -241,22 +230,11 @@ class ReportController extends Controller
         // Only the columns the user picked, in the order they picked them.
         $vars = $this->withFormNumber($request->variables);
 
-        $chartData = null;
-
         if ($request->presentation_style && $request->presentation_style !== 'table') {
             $allData = $query->get();
             $summary = $this->generateSummaryData($allData, $request->group_by ?? 'barangay', $request->aggregation ?? 'count');
             $headers = [$summary['groupName'], $summary['datasetLabel']];
             $rows = $summary['rows'];
-            
-            // Raw series only: the browser draws the chart itself, so no data leaves the server.
-            if (str_ends_with((string) $request->presentation_style, '_chart')) {
-                $chartData = [
-                    'labels' => $summary['labels'],
-                    'data' => $summary['data'],
-                    'datasetLabel' => $summary['datasetLabel'],
-                ];
-            }
         } else {
             $headers = $this->getHeaders($vars);
             $rows = [];
@@ -273,7 +251,6 @@ class ReportController extends Controller
         return response()->json([
             'headers' => $headers,
             'rows' => $rows,
-            'chartData' => $chartData,
             'total_rows' => $total_rows
         ]);
     }
@@ -281,15 +258,7 @@ class ReportController extends Controller
     public function generateReport(Request $request)
     {
         $request->validate($this->reportRules() + [
-            'format' => 'required|in:pdf,csv,xlsx',
-            'document_size' => 'nullable|in:a4,letter,legal',
-            'orientation' => 'nullable|in:portrait,landscape',
-            // Chart drawn by the browser; ~4 MB ceiling covers a 2000×1200 PNG with room to spare.
-            'chart_image' => 'nullable|string|max:4000000',
-            // Text size (px) chosen by the preview so wide tables fit the paper width.
-            'font_size' => 'nullable|numeric|between:5,12',
-            // Chart width (px) chosen by the preview so the chart and table fit on page 1.
-            'chart_width' => 'nullable|numeric|between:100,1000',
+            'format' => 'required|in:csv,xlsx',
         ], [
             'end_date.after_or_equal' => 'The end date must be on or after the start date.',
         ]);
@@ -300,16 +269,10 @@ class ReportController extends Controller
         // Only the columns the user picked, in the order they picked them.
         $vars = $this->withFormNumber($request->variables);
 
-        $chartSrc = null;
-
         if ($request->presentation_style && $request->presentation_style !== 'table') {
             $summary = $this->generateSummaryData($allData, $request->group_by ?? 'barangay', $request->aggregation ?? 'count');
             $headers = [$summary['groupName'], $summary['datasetLabel']];
             $rows = $summary['rows'];
-            
-            if ($request->format === 'pdf' && str_ends_with((string) $request->presentation_style, '_chart')) {
-                $chartSrc = $this->validPngDataUri($request->chart_image);
-            }
         } else {
             $headers = $this->getHeaders($vars);
             $rows = [];
@@ -345,11 +308,9 @@ class ReportController extends Controller
 
         $format = $request->format;
 
-        if ($format !== 'pdf') {
-            $reportTitleStr = $this->neutralizeFormula($reportTitleStr);
-            $headers = $this->neutralizeFormula($headers);
-            $rows = $this->neutralizeFormula($rows);
-        }
+        $reportTitleStr = $this->neutralizeFormula($reportTitleStr);
+        $headers = $this->neutralizeFormula($headers);
+        $rows = $this->neutralizeFormula($rows);
 
         if ($format === 'csv') {
             $callback = function () use ($headers, $rows, $reportTitleStr) {
@@ -364,17 +325,6 @@ class ReportController extends Controller
                 fclose($file);
             };
             return response()->streamDownload($callback, $filename . '.csv', ['Content-Type' => 'text/csv']);
-        } elseif ($format === 'pdf') {
-            $pdf = Pdf::loadView('reports.custom', [
-                'headers' => $headers, 
-                'rows' => $rows,
-                'report_title' => $reportTitleStr,
-                'presentation_style' => $request->presentation_style ?? 'table',
-                'chartSrc' => $chartSrc,
-                'fontSize' => (float) ($request->font_size ?: 12),
-                'chartWidth' => $request->chart_width ? (int) $request->chart_width : null,
-            ])->setPaper($request->document_size ?? 'a4', $request->orientation ?? 'landscape')->setOptions(['isRemoteEnabled' => false]);
-            return $pdf->download($filename . '.pdf');
         } elseif ($format === 'xlsx') {
             if (class_exists('\Shuchkin\SimpleXLSXGen')) {
                 $emptyRow = array_fill(0, count($headers), '');
