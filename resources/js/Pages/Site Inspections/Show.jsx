@@ -213,38 +213,85 @@ function ReportValue({ value, alert, labelled = false }) {
 
 const reportText = (value) => typeof value === "string" && value.trim() ? value : "";
 
-// CE-06 checklist reader. Structured answers are additive: FieldSync sends
-// canonical tokens (yes/no/unable/not_applicable) in `answer`, keeps the free
-// text of a declared use verbatim, and leaves legacy `checked`/`passed` rows
-// untouched. A missing or empty answer stays "Not recorded" — never "No".
+// Label-based FieldSync contract. Invalid/ambiguous evidence stays visible as
+// escaped raw JSON; display never repairs, drops or rewrites a recorded answer.
 const CHECKLIST_ANSWER_LABELS = new Map([
     ["yes", "Yes"],
     ["no", "No"],
     ["unable", "Unable to Verify"],
-    ["unable to verify", "Unable to Verify"],
-    ["not applicable", "Not Applicable"],
     ["not_applicable", "Not Applicable"],
 ]);
+const TRI_STATE_CHECKLIST_ANSWERS = ["yes", "no", "unable"];
+const STRUCTURED_CHECKLIST_QUESTIONS = new Map([
+    ["Existing project or development on site", { options: TRI_STATE_CHECKLIST_ANSWERS }],
+    ["Existing project's declared use", { options: null, parent: "Existing project or development on site" }],
+    ["Extension of an existing structure", { options: [...TRI_STATE_CHECKLIST_ANSWERS, "not_applicable"] }],
+    ["Still at the project proposal stage", { options: TRI_STATE_CHECKLIST_ANSWERS }],
+    ["Trees present on the lot", { options: TRI_STATE_CHECKLIST_ANSWERS, parent: "Still at the project proposal stage" }],
+    ["Canal or waterway on or adjoining the lot", { options: TRI_STATE_CHECKLIST_ANSWERS, parent: "Still at the project proposal stage" }],
+    ["Existing mojon or property marker observed", { options: TRI_STATE_CHECKLIST_ANSWERS }],
+]);
+const checklistIssue = (reason, entry) => `${reason} — recorded: ${JSON.stringify(entry) ?? String(entry)}`;
+const malformedChecklistEntry = (entry, reason = "Malformed checklist entry") => ({
+    item: "Unidentified checklist entry", answer: checklistIssue(reason, entry),
+});
 
-function readChecklistAnswer(entry) {
-    const answer = reportText(entry.answer).trim();
-    if (answer) {
-        return CHECKLIST_ANSWER_LABELS.get(answer.toLowerCase()) ?? answer;
+function readChecklistAnswer(entry, byQuestion) {
+    const question = STRUCTURED_CHECKLIST_QUESTIONS.get(entry.item);
+    if (question) {
+        if (byQuestion.get(entry.item).length > 1) return checklistIssue("Ambiguous duplicate", entry);
+        if (Object.hasOwn(entry, "checked") || Object.hasOwn(entry, "passed")) {
+            return checklistIssue("Malformed structured entry", entry);
+        }
+        const answer = entry.answer;
+        if (answer == null || (typeof answer === "string" && !answer.trim())) return "Not recorded";
+        if (typeof answer !== "string") return checklistIssue("Malformed answer", entry);
+        if (question.options !== null && !question.options.includes(answer)) return checklistIssue("Unknown answer", entry);
+
+        // A missing parent is permitted for historical standalone rows. A recorded
+        // parent must not be silently ignored or chosen from contradictory copies.
+        const parents = byQuestion.get(question.parent) ?? [];
+        if (parents.length > 1) return checklistIssue("Ambiguous parent answer", entry);
+        if (parents.length === 1) {
+            const parent = parents[0];
+            if (Object.hasOwn(parent, "checked") || Object.hasOwn(parent, "passed")
+                || !TRI_STATE_CHECKLIST_ANSWERS.includes(parent.answer)) {
+                return checklistIssue("Unverifiable parent answer", entry);
+            }
+            if (parent.answer !== "yes") return checklistIssue("Contradictory conditional answer", entry);
+        }
+        return question.options === null ? answer : CHECKLIST_ANSWER_LABELS.get(answer);
     }
+
+    if (Object.hasOwn(entry, "answer")) return checklistIssue("Unknown question", entry);
     const checked = entry.checked ?? entry.passed;
     return checked === true || checked === 1 ? "Checked"
-        : checked === false || checked === 0 ? "Not checked" : "Not recorded";
+        : checked === false || checked === 0 ? "Not checked"
+        : checked == null ? "Not recorded" : checklistIssue("Malformed answer", entry);
 }
 
 function readChecklist(value) {
+    if (value == null || (typeof value === "string" && !value.trim())) return [];
+    const raw = value;
     if (typeof value === "string") {
-        try { value = JSON.parse(value); } catch { return []; }
+        try { value = JSON.parse(value); } catch { return [malformedChecklistEntry(raw, "Malformed checklist")]; }
     }
-    if (!Array.isArray(value)) return [];
-    return value.filter((entry) => entry && reportText(entry.item)).map((entry) => ({
-        item: entry.item,
-        answer: readChecklistAnswer(entry),
-    }));
+    if (value == null) return [];
+    if (!Array.isArray(value)) return [malformedChecklistEntry(raw, "Malformed checklist")];
+
+    const byQuestion = new Map();
+    for (const entry of value) {
+        if (entry && typeof entry === "object" && !Array.isArray(entry) && STRUCTURED_CHECKLIST_QUESTIONS.has(entry.item)) {
+            if (!byQuestion.has(entry.item)) byQuestion.set(entry.item, []);
+            byQuestion.get(entry.item).push(entry);
+        }
+    }
+    return value.map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry) || !reportText(entry.item)) {
+            return malformedChecklistEntry(entry);
+        }
+        return { item: entry.item, answer: readChecklistAnswer(entry, byQuestion) };
+    });
 }
 
 // ── Section with a plain heading (no box: it already sits in the workspace card) ──
@@ -1103,8 +1150,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                                     </tr>
                                                                     {checklist.length ? checklist.map((entry, index) => (
                                                                         <tr key={`${index}-${entry.item}`} className="border-t border-slate-200 align-top">
-                                                                            <th scope="row" className="bg-slate-50 px-2.5 py-1.5 text-left text-[11.5px] font-semibold text-slate-600 break-words">{entry.item}</th>
-                                                                            <td className="px-2.5 py-1.5 text-slate-700 whitespace-nowrap">{entry.answer}</td>
+                                                                            <th scope="row" className="bg-slate-50 px-2.5 py-1.5 text-left text-[11.5px] font-semibold text-slate-600 [overflow-wrap:anywhere]">{entry.item}</th>
+                                                                            <td className="px-2.5 py-1.5 text-slate-700 whitespace-pre-wrap [overflow-wrap:anywhere]">{entry.answer}</td>
                                                                         </tr>
                                                                     )) : (
                                                                         <tr className="border-t border-slate-200"><td colSpan={2} className="px-2.5 py-1.5 text-slate-500">Checklist not recorded</td></tr>

@@ -154,17 +154,17 @@ test('a checklist-only historical report remains visible, with explicit boolean/
 test('structured checklist answers render exact PO labels instead of raw tokens', () => {
     const data = [
         { item: 'Existing project or development on site', answer: 'yes' },
-        { item: 'Extension of an existing structure', answer: 'no' },
+        { item: 'Extension of an existing structure', answer: 'not_applicable' },
         { item: 'Still at the project proposal stage', answer: 'unable' },
-        { item: 'Existing mojon or property marker observed', answer: 'not_applicable' },
+        { item: 'Existing mojon or property marker observed', answer: 'no' },
     ];
     for (const checklistData of [data, JSON.stringify(data)]) {
         const page = render({ inspection_result: 'For Review', checklist_data: checklistData });
         const expected = {
             'Existing project or development on site': /Yes$/,
-            'Extension of an existing structure': /No$/,
+            'Extension of an existing structure': /Not Applicable$/,
             'Still at the project proposal stage': /Unable to Verify$/,
-            'Existing mojon or property marker observed': /Not Applicable$/,
+            'Existing mojon or property marker observed': /No$/,
         };
         for (const [item, label] of Object.entries(expected)) {
             const answer = row(page.report, item);
@@ -201,6 +201,133 @@ test('declared-use free text renders exactly and remains escaped', () => {
     const escaped = render({ checklist_data: [{ item: "Existing project's declared use", answer: injection }] });
     assert.doesNotMatch(escaped.report, /<script>/);
     assert.ok(escaped.report.includes('&lt;script&gt;'));
+});
+
+test('declared-use text stays literal even when it resembles a reserved answer', () => {
+    const item = "Existing project's declared use";
+    for (const answer of ['yes', 'no', 'unable', 'not_applicable', 'Unable to Verify', '  no\n  fictional clinic  ']) {
+        const page = render({ checklist_data: [{ item, answer }] });
+        const cell = row(page.report, item).match(/<td\b[^>]*>([\s\S]*?)<\/td>/)?.[1];
+        assert.equal(cell, answer, 'Free text must not be translated, trimmed or reclassified');
+    }
+});
+
+test('long checklist labels and raw/free-text answers retain intrinsic wrapping and whitespace', () => {
+    const item = "Existing project's declared use";
+    const long = 'synthetic'.repeat(128);
+    const answer = `  ${long}\n  literal `;
+    const unknown = { item: long, answer: long };
+    const page = render({ checklist_data: [{ item, answer }, unknown] });
+    for (const label of [item, long]) {
+        const record = row(page.report, label);
+        for (const cell of ['th', 'td']) {
+            const classes = record.match(new RegExp(`<${cell}\\b[^>]*class="([^"]*)"`))?.[1] || '';
+            assert.ok(classes.split(/\s+/).includes('[overflow-wrap:anywhere]'), `${cell} must allow intrinsic wrapping`);
+            if (cell === 'td') assert.match(classes, /\bwhitespace-pre-wrap\b/);
+        }
+    }
+    assert.ok(page.report.includes(answer), 'Whitespace and long literal text must not be rewritten');
+    assert.ok(text(row(page.report, long)).includes(JSON.stringify(unknown)), 'Long raw evidence must remain intact');
+});
+
+const triStateQuestions = [
+    'Existing project or development on site',
+    'Still at the project proposal stage',
+    'Trees present on the lot',
+    'Canal or waterway on or adjoining the lot',
+    'Existing mojon or property marker observed',
+];
+
+test('each structured choice accepts only its own canonical options', () => {
+    for (const item of [...triStateQuestions, 'Extension of an existing structure']) {
+        for (const [answer, expected] of [['yes', 'Yes'], ['no', 'No'], ['unable', 'Unable to Verify']]) {
+            assert.ok(text(row(render({ checklist_data: [{ item, answer }] }).report, item)).endsWith(` ${expected}`));
+        }
+        for (const answer of ['maybe', 'YES', 'unable to verify', 'not applicable', 'not_applicable']) {
+            if (item === 'Extension of an existing structure' && answer === 'not_applicable') continue;
+            const cell = text(row(render({ checklist_data: [{ item, answer }] }).report, item));
+            assert.match(cell, /Unknown answer/);
+            assert.ok(cell.includes(JSON.stringify(answer)), 'The unrecognized recorded value must remain visible');
+            assert.doesNotMatch(cell, /Not checked$/);
+        }
+    }
+    const extension = 'Extension of an existing structure';
+    assert.match(text(row(render({ checklist_data: [{ item: extension, answer: 'not_applicable' }] }).report, extension)), /Not Applicable$/);
+});
+
+test('missing, malformed and unknown structured answers remain distinct from explicit No', () => {
+    const item = 'Existing project or development on site';
+    for (const entry of [{ item }, { item, answer: null }, { item, answer: '' }, { item, answer: '   ' }]) {
+        assert.match(text(row(render({ checklist_data: [entry] }).report, item)), /Not recorded$/);
+    }
+    for (const answer of [false, 0, 1, [], { unexpected: 'synthetic' }]) {
+        const cell = text(row(render({ checklist_data: [{ item, answer }] }).report, item));
+        assert.match(cell, /Malformed answer/);
+        assert.ok(cell.includes(JSON.stringify(answer)));
+        assert.doesNotMatch(cell, /(?:No|Not checked)$/);
+    }
+    assert.match(text(row(render({ checklist_data: [{ item, answer: 'maybe' }] }).report, item)), /Unknown answer/);
+    assert.match(text(row(render({ checklist_data: [{ item, answer: 'no' }] }).report, item)), /No$/);
+    for (const entry of [{ item, checked: false }, { item, answer: 'no', passed: true }, { item, answer: 'maybe', checked: false }]) {
+        const cell = text(row(render({ checklist_data: [entry] }).report, item));
+        assert.match(cell, /Malformed structured entry/);
+        assert.ok(cell.includes(JSON.stringify(entry)), 'Mixed-format evidence must not be hidden by a fallback');
+    }
+});
+
+test('only established labels interpret structured tokens while historical booleans remain readable', () => {
+    for (const item of ['Future structured question', 'toString', 'Existing project or development on site ']) {
+        const cell = text(row(render({ checklist_data: [{ item, answer: 'yes' }] }).report, item.trim()));
+        assert.match(cell, /Unknown question/);
+        assert.ok(cell.includes('"answer":"yes"'));
+        assert.doesNotMatch(cell, / Yes$/);
+    }
+    assert.match(text(row(render({ checklist_data: [{ item: 'Historical custom boolean', passed: false }] }).report,
+        'Historical custom boolean')), /Not checked$/);
+});
+
+test('duplicate known questions retain every raw entry without choosing a winner', () => {
+    const questions = [...triStateQuestions, 'Extension of an existing structure', "Existing project's declared use"];
+    for (const item of questions) {
+        for (const values of [['yes', 'no'], ['yes', 'yes'], [null, 'no']]) {
+            const entries = values.map((answer) => ({ item, answer }));
+            const input = { checklist_data: [...checklist, ...entries], checklist_completed_count: 0, checklist_total_count: 5 };
+            const page = render(input);
+            const duplicates = (page.report.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/g) || [])
+                .filter((record) => /<th scope="row"/.test(record) && text(record).startsWith(`${item} `));
+            assert.equal(duplicates.length, 2);
+            duplicates.forEach((record, index) => {
+                assert.match(text(record), /Ambiguous duplicate/);
+                assert.ok(text(record).includes(JSON.stringify(entries[index])));
+            });
+            for (const legacy of checklist) assert.match(text(row(page.report, legacy.item)), /Not checked$/);
+            assert.equal(input.checklist_total_count, 5);
+            assert.equal(input.checklist_completed_count, 0);
+        }
+    }
+});
+
+test('contradictory conditional answers are exposed without discarding historical evidence', () => {
+    for (const [item, answer, parent, parentAnswer] of [
+        ["Existing project's declared use", 'Fictional clinic', 'Existing project or development on site', 'no'],
+        ['Trees present on the lot', 'yes', 'Still at the project proposal stage', 'no'],
+        ['Canal or waterway on or adjoining the lot', 'unable', 'Still at the project proposal stage', 'unable'],
+    ]) {
+        const entry = { item, answer };
+        const page = render({ checklist_data: [entry, { item: parent, answer: parentAnswer }] });
+        const child = text(row(page.report, item));
+        assert.match(child, /Contradictory conditional answer/);
+        assert.ok(child.includes(JSON.stringify(entry)));
+        assert.ok(text(row(page.report, parent)).endsWith(parentAnswer === 'no' ? ' No' : ' Unable to Verify'));
+    }
+    const child = 'Trees present on the lot';
+    const parent = 'Still at the project proposal stage';
+    const ambiguous = render({ checklist_data: [
+        { item: parent, answer: 'yes' }, { item: child, answer: 'yes' }, { item: parent, answer: 'no' },
+    ] });
+    assert.match(text(row(ambiguous.report, child)), /Ambiguous parent answer/);
+    const unverifiable = render({ checklist_data: [{ item: child, answer: 'no' }, { item: parent, answer: 'maybe' }] });
+    assert.match(text(row(unverifiable.report, child)), /Unverifiable parent answer/);
 });
 
 test('historical boolean rows keep their meaning and order beside structured answers', () => {
@@ -253,15 +380,25 @@ test('conditional questions render only the rows actually recorded', () => {
 });
 
 test('missing/malformed evidence is safe and never interpreted through truthiness', () => {
-    for (const data of [undefined, null, '', 'not JSON', {}, [null, 7, 'old entry', { item: {} }]]) {
+    for (const data of [undefined, null, '']) {
         const page = render({ checklist_data: data, observations: {}, findings: [], discrepancies: { invalid: true },
             inspector_notes: 7, recommendations: {}, inspection_result: null });
         assert.match(page.text, /Checklist not recorded/);
         assert.match(page.text, /Inspector's result Not recorded/);
         assert.doesNotMatch(page.text, /\[object Object\]|undefined/);
     }
+    for (const data of ['not JSON', {}, false, [null, 7, 'old entry', { item: {} }]]) {
+        const page = render({ checklist_data: data, inspection_result: null });
+        assert.match(page.text, /Malformed checklist/);
+        assert.match(page.text, /Inspector's result Not recorded/);
+        assert.doesNotMatch(page.text, /\[object Object\]|undefined/);
+        for (const recorded of Array.isArray(data) ? data : [data]) {
+            assert.ok(page.text.includes(JSON.stringify(recorded)), 'Malformed raw evidence must remain visible');
+        }
+    }
     const page = render({ checklist_data: [{ item: 'Unknown answer', checked: 'false' }] });
-    assert.match(text(row(page.report, 'Unknown answer')), /Not recorded$/);
+    assert.match(text(row(page.report, 'Unknown answer')), /Malformed answer/);
+    assert.doesNotMatch(text(row(page.report, 'Unknown answer')), /Not checked$/);
 });
 
 test('untrusted explanation, observation and checklist labels remain escaped', () => {
@@ -270,6 +407,13 @@ test('untrusted explanation, observation and checklist labels remain escaped', (
         discrepancies: injection, observations: injection, checklist_data: [{ item: injection, checked: false }] });
     assert.doesNotMatch(page.report, /<script>/);
     assert.ok(page.report.includes('&lt;script&gt;'));
+    const ambiguous = render({ checklist_data: [
+        { item: 'Existing project or development on site', answer: injection },
+        { item: 'Existing project or development on site', answer: 'yes' },
+    ] });
+    assert.match(ambiguous.text, /Ambiguous duplicate/);
+    assert.doesNotMatch(ambiguous.report, /<script>/);
+    assert.ok(ambiguous.report.includes('&lt;script&gt;'));
 });
 
 test('the server-linked PO decision stays separate, labelled and unchanged for either authorized viewing role', () => {
