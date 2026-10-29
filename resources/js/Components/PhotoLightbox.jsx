@@ -1,5 +1,19 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import downloadPhoto from "./downloadPhoto";
+
+function photoId(value) {
+    if (Number.isSafeInteger(value) && value > 0) return String(value);
+    return typeof value === "string" && value !== "" && value.trim() === value ? value : null;
+}
+
+function photosById(photos) {
+    const byId = new Map();
+    for (const photo of photos) {
+        const id = photoId(photo?.id);
+        if (id !== null) byId.set(id, byId.has(id) ? null : photo);
+    }
+    return byId;
+}
 
 /**
  * Inspection photo lightbox.
@@ -23,13 +37,26 @@ import downloadPhoto from "./downloadPhoto";
  * A photo that still fails after the refresh is reported honestly as
  * unavailable. A broken image is never substituted, and a photo is never invented.
  */
-export default function PhotoLightbox({ photos = [], index, onClose, onIndexChange }) {
-    const [urls, setUrls] = useState(() => photos.map((p) => p.signed_url || null));
+export default function PhotoLightbox({ photos = [], ...props }) {
+    // The caller remaps photos on navigation; only a changed collection resets state.
+    const collectionKey = JSON.stringify(photos.map((photo) => [
+        photo?.inspectionId ?? null, photoId(photo?.id), photo?.signed_url ?? null,
+    ]));
+    return <PhotoLightboxCollection key={collectionKey} photos={photos} {...props} />;
+}
+
+function PhotoLightboxCollection({ photos, index, onClose, onIndexChange }) {
+    const originalPhotos = photosById(photos);
+    const [refreshedPhotos, setRefreshedPhotos] = useState(null);
     const [refreshState, setRefreshState] = useState("idle"); // idle | loading | done | failed
     const [imageError, setImageError] = useState(false);
+    const refreshRequest = useRef(null);
 
     const inspectionId = photos?.[0]?.inspectionId ?? null;
     const current = index != null && photos[index] ? photos[index] : null;
+
+    // A replaced/unmounted collection cannot receive an older refresh result.
+    useEffect(() => () => refreshRequest.current?.abort(), []);
 
     // A new photo gets a fresh chance to load.
     useEffect(() => {
@@ -39,24 +66,28 @@ export default function PhotoLightbox({ photos = [], index, onClose, onIndexChan
     // Re-sign every URL once, the first time an image fails (normally because
     // its signed URL expired while the page sat open).
     const refreshUrls = useCallback(() => {
-        if (!inspectionId || refreshState !== "idle") {
+        if (!inspectionId || refreshState !== "idle" || refreshRequest.current) {
             setImageError(true);
             return;
         }
+        const request = new AbortController();
+        refreshRequest.current = request;
         setRefreshState("loading");
 
-        fetch(`/api/inspections/${inspectionId}/supabase-data`, { cache: "no-store" })
+        fetch(`/api/inspections/${inspectionId}/supabase-data`, { cache: "no-store", signal: request.signal })
             .then((res) => {
                 if (!res.ok) throw new Error("unavailable");
                 return res.json();
             })
             .then((data) => {
+                if (request.signal.aborted) return;
                 const list = Array.isArray(data?.field_job_photos) ? data.field_job_photos : [];
-                setUrls(list.map((p) => p.signed_url || null));
+                setRefreshedPhotos(photosById(list));
                 setImageError(false);
                 setRefreshState("done");
             })
             .catch(() => {
+                if (request.signal.aborted) return;
                 setImageError(true);
                 setRefreshState("failed");
             });
@@ -86,7 +117,9 @@ export default function PhotoLightbox({ photos = [], index, onClose, onIndexChan
 
     if (index == null || !current) return null;
 
-    const signed = urls[index] ?? null;
+    const id = photoId(current.id);
+    const matchedPhoto = originalPhotos.get(id) ? (refreshedPhotos ?? originalPhotos).get(id) : null;
+    const signed = typeof matchedPhoto?.signed_url === "string" ? matchedPhoto.signed_url || null : null;
     const hasMultiple = photos.length > 1;
     const note = typeof current.notes === "string" ? current.notes.trim() : "";
     const refreshing = refreshState === "loading";
