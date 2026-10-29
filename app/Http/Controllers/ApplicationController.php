@@ -1158,6 +1158,7 @@ class ApplicationController extends Controller
         return response()->json($applications->map(fn ($a) => [
             'id'                     => $a->id,
             'reference_number'       => $a->reference_number,
+            'form_number'            => $a->form_number,
             'application_type'       => $a->application_type,
             'status'                 => $a->status,
             'date'                   => ($a->date_of_receipt ?? $a->created_at)?->toDateString(),

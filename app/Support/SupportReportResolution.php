@@ -77,7 +77,7 @@ class SupportReportResolution
                 return $out;
             }
             // All namespace / exact UUID checks above precede these local reads.
-            $query = ZoningApplication::query()->without('types')->select('id', 'reference_number', 'applicant_name', 'barangay', 'assigned_planning_officer_id')
+            $query = ZoningApplication::query()->without('types')->select('id', 'reference_number', 'form_number', 'applicant_name', 'barangay', 'assigned_planning_officer_id')
                 ->with('assignedPlanningOfficer:id,name,role')->whereIn('id', array_column($validated, 'local_id'));
             if ($lock) {
                 $query->lockForUpdate();
@@ -110,7 +110,7 @@ class SupportReportResolution
                     }
                 }
                 $out[$id] = ['resolved' => true, 'message' => null,
-                    'application' => ['id' => $app->id, 'reference_number' => $app->reference_number,
+                    'application' => ['id' => $app->id, 'reference_number' => $app->reference_number, 'form_number' => $app->form_number,
                         'applicant_name' => $app->applicant_name, 'barangay' => $app->barangay,
                         'assigned_planning_officer_id' => $app->assigned_planning_officer_id],
                     'owner' => $owner && $owner->role === 'Planning Officer' ? ['id' => $owner->id, 'name' => $owner->name] : null,

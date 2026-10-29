@@ -197,6 +197,7 @@ export default function Index({ reports = [], counts = {}, allowedTypes = [], fi
     const clearSearch = () => { setQuery(""); visit({ q: "" }); };
     const meta = (report) => support
         ? [report.context?.resolved ? report.context.application.reference_number : "Application context unavailable",
+            report.context?.resolved && report.context.application.form_number && `Form ${report.context.application.form_number}`,
             report.context?.resolved && report.context.application.applicant_name,
             report.support_category_label]
         : [report.module];

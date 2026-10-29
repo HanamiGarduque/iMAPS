@@ -349,6 +349,7 @@ export function ReportWorkspace({ report, context = null, canNotify = false, han
                             {context?.resolved ? <>
                                 <dl>
                                     <Attr icon={sideIcon.hash} label="Application reference"><span className="tabular-nums">{muted(context.application.reference_number)}</span></Attr>
+                                    <Attr icon={sideIcon.hash} label="Form number"><span className="tabular-nums">{muted(context.application.form_number)}</span></Attr>
                                     <Attr icon={sideIcon.pin} label="Barangay">{muted(context.application.barangay)}</Attr>
                                     <Attr icon={glyph.person} label="Applicant">{muted(context.application.applicant_name)}</Attr>
                                     <Attr icon={sideIcon.inspection} label="Originating inspection">{context.origin?.label || "Unavailable"}</Attr>

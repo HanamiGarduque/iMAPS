@@ -66,7 +66,7 @@ class DiagnosticReportController extends Controller
                 $r['reference_code'] ?? null, $r['title'] ?? null, $r['module'] ?? null, $r['inspector']['label'] ?? null,
                 // The pages call an unresolved reporter "Unknown inspector"; let that find it too.
                 ($r['inspector']['resolved'] ?? false) ? null : 'Unknown inspector',
-                $r['support_category_label'] ?? null, $r['context']['application']['reference_number'] ?? null,
+                $r['support_category_label'] ?? null, $r['context']['application']['reference_number'] ?? null, $r['context']['application']['form_number'] ?? null,
                 $r['context']['application']['applicant_name'] ?? null, $r['context']['owner']['name'] ?? null,
             ], 'is_string'))), $q)));
         }

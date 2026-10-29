@@ -28,7 +28,7 @@ class AuditTrail extends Model
             ->leftJoin('zoning_applications as za', 'za.id', '=', 'audit_trail.application_id')
             ->leftJoin('users as u', 'u.id', '=', 'audit_trail.performed_by')
             ->select('audit_trail.id', 'audit_trail.action', 'audit_trail.note',
-                     'audit_trail.performed_at', 'za.reference_number',
+                     'audit_trail.performed_at', 'za.reference_number', 'za.form_number',
                      'za.applicant_name', 'za.id as application_id',
                      'u.name as performed_by_name');
     }
@@ -37,6 +37,7 @@ class AuditTrail extends Model
     {
         return $query->where(fn($q) => $q
             ->where('za.reference_number', 'ilike', "%{$search}%")
+            ->orWhere('za.form_number', 'ilike', "%{$search}%")
             ->orWhere('za.applicant_name', 'ilike', "%{$search}%")
             ->orWhere('u.name', 'ilike', "%{$search}%")
         );

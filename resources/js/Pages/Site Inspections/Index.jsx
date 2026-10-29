@@ -907,6 +907,9 @@ export default function SiteInspectionsIndex() {
                                                                 <span className="block text-[12px] font-medium text-slate-500 tracking-wide break-words">
                                                                     {item.display_reference || `Application #${item.zoning_application_id}`}
                                                                 </span>
+                                                                {item.display_form_number && (
+                                                                    <span className="block text-[11px] text-slate-400 break-words">Form No. {item.display_form_number}</span>
+                                                                )}
                                                             </td>
 
                                                             <td>
@@ -1023,6 +1026,9 @@ export default function SiteInspectionsIndex() {
                                                                         <span className="block text-[13.5px] font-semibold text-slate-900 leading-snug break-words group-hover:text-blue-700 transition-colors">
                                                                             {item.display_reference || `Application #${item.zoning_application_id}`}
                                                                         </span>
+                                                                        {item.display_form_number && (
+                                                                            <span className="block text-[11px] text-slate-500 break-words">Form No. {item.display_form_number}</span>
+                                                                        )}
                                                                     </div>
                                                                     <span className="shrink-0">
                                                                         {statusBadge(item, { compact: true })}

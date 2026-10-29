@@ -119,6 +119,7 @@ export default function Index({ logs, actions = [], filters = {}, auth = {} }) {
                                                             {log.reference_number ? (
                                                                 <>
                                                                     <p className="font-medium text-slate-800">{log.reference_number}</p>
+                                                                    <p className="text-xs text-slate-500">Form No. {log.form_number || "—"}</p>
                                                                     <p className="text-xs text-slate-500">{log.applicant_name}</p>
                                                                 </>
                                                             ) : "—"}

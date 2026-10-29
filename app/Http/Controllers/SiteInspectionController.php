@@ -203,6 +203,7 @@ class SiteInspectionController extends Controller
             $inspection->display_status = $this->displayStatus((string) $inspection->status);
             $inspection->display_reference = $inspection->zoningApplication?->reference_number
                 ?: ('Application #' . $inspection->zoning_application_id);
+            $inspection->display_form_number = $inspection->zoningApplication?->form_number;
         }
     }
 

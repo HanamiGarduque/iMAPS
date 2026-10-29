@@ -10,6 +10,7 @@ const fmtDate = (d) =>
 
 const COLUMNS = [
     { key: "reference_number", label: "Reference No.", width: 128, mono: true },
+    { key: "form_number", label: "Form No.", width: 110, mono: true },
     { key: "applicant_name", label: "Applicant Name", width: 170 },
     { key: "application_type", label: "Application Type", width: 190 },
     { key: "barangay", label: "Barangay", width: 130 },
@@ -39,7 +40,7 @@ export default function AttributeTable({ apps = [], total = 0, selectedAppId, on
         }));
         const filtered = q
             ? withDerived.filter((a) =>
-                  [a.reference_number, a.applicant_name, a.barangay, a.application_type, a.status, a.__tct].some((v) => String(v || "").toLowerCase().includes(q))
+                  [a.reference_number, a.form_number, a.applicant_name, a.barangay, a.application_type, a.status, a.__tct].some((v) => String(v || "").toLowerCase().includes(q))
               )
             : withDerived;
         const dir = sort.dir === "asc" ? 1 : -1;

@@ -11,6 +11,7 @@ const APPLICATION_TYPES = ["All", "Locational Clearance", "Zoning Certificate", 
 
 const COLUMNS = [
     { id: "reference_number", label: "Reference number" },
+    { id: "form_number", label: "Form number" },
     { id: "date", label: "Date filed" },
     { id: "application_type", label: "Application type" },
     { id: "status", label: "Status" },
@@ -71,7 +72,7 @@ const DEFAULTS = {
     end_date: "",
     application_type: "All",
     barangay: "",
-    variables: ["reference_number", "date", "application_type", "status", "name", "barangay", "land_use_class", "lot_area_sqm", "assessment_fee"],
+    variables: ["reference_number", "form_number", "date", "application_type", "status", "name", "barangay", "land_use_class", "lot_area_sqm", "assessment_fee"],
     format: "pdf",
     presentation_style: "table",
     aggregation: "count",

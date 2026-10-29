@@ -50,9 +50,27 @@ class ReportController extends Controller
                 case 'project_cost': $headers[] = 'Project Cost (PHP)'; break;
                 case 'assessment_fee': $headers[] = 'Assessment Fee (PHP)'; break;
                 case 'reference_number': $headers[] = 'Reference Number'; break;
+                case 'form_number': $headers[] = 'Form Number'; break;
             }
         }
-        return empty($headers) ? ['Reference Number'] : $headers;
+        return empty($headers) ? ['Reference Number', 'Form Number'] : $headers;
+    }
+
+    /**
+     * Normalise the picked columns: dedupe, and always pair the Form Number
+     * with the Reference Number (right after it, or alone if only form_number was picked).
+     */
+    private function withFormNumber($variables): array
+    {
+        $vars = array_values(array_unique($variables ?: ['reference_number']));
+        $vars = array_values(array_diff($vars, ['form_number']));
+        $i = array_search('reference_number', $vars, true);
+        if ($i !== false) {
+            array_splice($vars, $i + 1, 0, ['form_number']);
+        } elseif (in_array('form_number', (array) $variables, true)) {
+            $vars[] = 'form_number';
+        }
+        return $vars;
     }
 
     private function extractValue($item, $var)
@@ -74,6 +92,7 @@ class ReportController extends Controller
             case 'project_cost': return $item->project_cost;
             case 'assessment_fee': return $item->assessment_fee;
             case 'reference_number': return $item->reference_number;
+            case 'form_number': return $item->form_number;
             default: return '';
         }
     }
@@ -203,7 +222,7 @@ class ReportController extends Controller
             'application_type' => 'nullable|in:All,Locational Clearance,Zoning Certificate,Development Permit,Preliminary Approval and Locational Clearance (PALC)',
             'barangay' => 'nullable|in:' . implode(',', self::BARANGAYS),
             'variables' => 'nullable|array',
-            'variables.*' => 'in:reference_number,date,application_type,status,name,barangay,land_use_class,lot_area_sqm,building_area,project_cost,purpose,assessment_fee',
+            'variables.*' => 'in:reference_number,form_number,date,application_type,status,name,barangay,land_use_class,lot_area_sqm,building_area,project_cost,purpose,assessment_fee',
             'presentation_style' => 'nullable|in:table,summary_table,bar_chart,horizontal_bar_chart,line_chart,pie_chart,doughnut_chart',
             'aggregation' => 'nullable|in:count,sum_lot_area,avg_lot_area,sum_building_area,sum_project_cost,sum_fee',
             'group_by' => 'nullable|in:status,barangay,application_type,land_use_class,month,year',
@@ -220,7 +239,7 @@ class ReportController extends Controller
         $total_rows = (clone $query)->count();
 
         // Only the columns the user picked, in the order they picked them.
-        $vars = array_values(array_unique($request->variables ?: ['reference_number']));
+        $vars = $this->withFormNumber($request->variables);
 
         $chartData = null;
 
@@ -279,7 +298,7 @@ class ReportController extends Controller
         $allData = $query->get();
 
         // Only the columns the user picked, in the order they picked them.
-        $vars = array_values(array_unique($request->variables ?: ['reference_number']));
+        $vars = $this->withFormNumber($request->variables);
 
         $chartSrc = null;
 

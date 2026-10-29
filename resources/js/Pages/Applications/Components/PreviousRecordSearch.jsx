@@ -113,6 +113,7 @@ export default function PreviousRecordSearch({ open, onClose, onApply }) {
                                     {r.corporation_name && <p className="text-xs text-slate-600 truncate">Applicant: {r.applicant_name}</p>}
                                     <p className="text-[11px] text-slate-500 mt-0.5 truncate">
                                         <span className="font-mono">{r.reference_number}</span>
+                                        {r.form_number ? <> · Form <span className="font-mono">{r.form_number}</span></> : ""}
                                         {r.application_type ? ` · ${r.application_type}` : ""}
                                         {r.date ? ` · ${formatDate(r.date)}` : ""}
                                         {` · ${r.parcels.length} lot${r.parcels.length === 1 ? "" : "s"}`}
@@ -125,6 +126,7 @@ export default function PreviousRecordSearch({ open, onClose, onApply }) {
                         <div className="text-xs space-y-1">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                                 From <span className="font-mono">{selected.reference_number}</span>
+                                {selected.form_number ? <> · Form <span className="font-mono">{selected.form_number}</span></> : null}
                                 {selected.date ? ` · ${formatDate(selected.date)}` : ""}
                             </p>
                             <p className="text-sm font-semibold text-slate-900">{selected.applicant_name}</p>

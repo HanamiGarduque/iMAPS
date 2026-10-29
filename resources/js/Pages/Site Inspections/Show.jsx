@@ -1294,6 +1294,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                             >
                                                 <dl className="pt-1 grid md:grid-cols-2 gap-x-8">
                                                     <InfoRow label="Reference Number" value={app.reference_number} mono />
+                                                    <InfoRow label="Form Number" value={app.form_number} mono />
                                                     <InfoRow label="Application Type" value={app.application_type} />
                                                     <InfoRow label="Status" value={app.status} />
                                                     <InfoRow label="Barangay" value={app.barangay} />

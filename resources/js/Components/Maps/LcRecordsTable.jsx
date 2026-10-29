@@ -10,6 +10,7 @@ const fmtArea = (n) => (n ? Number(n).toLocaleString("en-PH", { maximumFractionD
 
 const COLUMNS = [
     { key: "reference_number", label: "Reference No.", width: 130, mono: true },
+    { key: "form_number", label: "Form No.", width: 110, mono: true },
     { key: "applicant_name", label: "Applicant Name", width: 220 },
     { key: "target_land_use_class", label: "Land Use", width: 130 },
     { key: "purpose", label: "Purpose", width: 230 },
@@ -45,7 +46,7 @@ export default function LcRecordsTable({ barangay, quarter, records = [], onClos
     const rows = useMemo(() => {
         const q = query.trim().toLowerCase();
         const filtered = q
-            ? base.filter((r) => [r.reference_number, r.applicant_name, r.target_land_use_class, r.purpose].some((v) => String(v || "").toLowerCase().includes(q)))
+            ? base.filter((r) => [r.reference_number, r.form_number, r.applicant_name, r.target_land_use_class, r.purpose].some((v) => String(v || "").toLowerCase().includes(q)))
             : base;
         const dir = sort.dir === "asc" ? 1 : -1;
         return [...filtered].sort((x, y) => {

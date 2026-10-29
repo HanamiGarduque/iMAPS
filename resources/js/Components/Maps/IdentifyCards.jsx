@@ -40,7 +40,7 @@ export function ApplicationDetails({ app, barangayZone, onClose }) {
             <header className="flex items-center gap-2 px-4 py-2 bg-[#eef1f5] border-b border-slate-200">
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cfg.color }} aria-hidden="true" />
                 <span className="text-[11px] font-semibold text-slate-700">{cfg.label}</span>
-                <span className="font-mono text-[11px] text-slate-500 truncate">{app.reference_number || `APP-${app.id}`}</span>
+                <span className="font-mono text-[11px] text-slate-500 truncate">{app.reference_number || `APP-${app.id}`}{app.form_number ? ` · Form ${app.form_number}` : ""}</span>
                 <span className="ml-auto" />
                 <CloseButton onClick={onClose} label="Close application details" />
             </header>
