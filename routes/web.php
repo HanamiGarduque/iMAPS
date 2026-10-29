@@ -49,10 +49,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/parcels/verify', [SearchController::class, 'verifyParcel'])
         ->middleware('role:Admin,Planning Officer');
 
-    // Landing page after login: welcome, queues and registry summary
-    Route::get('/overview', [OverviewController::class, 'index'])
-        ->name('overview')
-        ->middleware('role:Admin,Planning Officer');
+    // The Overview page was removed; Maps is the landing page now.
+    Route::get('/overview', fn () => redirect()->route('maps'));
 
     // Unified GIS map (status, trends, diversity)
     Route::get('/maps', [MapsController::class, 'index'])

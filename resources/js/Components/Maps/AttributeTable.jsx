@@ -22,15 +22,30 @@ const ROW_NO_WIDTH = 40;
 const TABLE_WIDTH = ROW_NO_WIDTH + COLUMNS.reduce((sum, c) => sum + c.width, 0);
 
 const MIN_H = 120;
-const DEFAULT_H = 220;
-const BAR_H = 28;
+// About five rows, so the map stays the main view.
+export const TABLE_DEFAULT_H = 196;
+const DEFAULT_H = TABLE_DEFAULT_H;
+const BAR_H = 44;
 
-export default function AttributeTable({ apps = [], total = 0, selectedAppId, onSelect, onHover, onZoomToSelected, onHeightChange, onCollapse, title = "applications" }) {
+// `summary` is the plain sentence the collapsed bar shows. Each new
+// `collapseKey` (a newly picked barangay) folds the table back to that bar.
+export default function AttributeTable({ apps = [], total = 0, selectedAppId, onSelect, onHover, onZoomToSelected, onHeightChange, onCollapse, title = "applications", summary = "", startCollapsed = false, collapseKey = "", resetHeightKey = 0 }) {
     const [query, setQuery] = useState("");
     const [sort, setSort] = useState({ key: "created_at", dir: "desc" });
     const [height, setHeight] = useState(DEFAULT_H);
-    const [collapsed, setCollapsed] = useState(false);
+    const [collapsed, setCollapsed] = useState(startCollapsed);
     const bodyRef = useRef(null);
+
+    const firstKey = useRef(true);
+    useEffect(() => {
+        if (firstKey.current) { firstKey.current = false; return; }
+        if (collapseKey) setCollapsed(true);
+    }, [collapseKey]);
+
+    // Back to the standard height when the side panel returns, so both fit.
+    useEffect(() => {
+        if (resetHeightKey) setHeight(DEFAULT_H);
+    }, [resetHeightKey]);
 
     const rows = useMemo(() => {
         const q = query.trim().toLowerCase();
@@ -89,7 +104,9 @@ export default function AttributeTable({ apps = [], total = 0, selectedAppId, on
 
     return (
         <section
-            className="flex flex-col bg-white border-t border-slate-300 shadow-[0_-6px_16px_rgba(15,23,42,0.10)]"
+            className={collapsed
+                ? "flex flex-col pointer-events-none"
+                : "pointer-events-auto flex flex-col bg-white border-t border-slate-300 shadow-[0_-6px_16px_rgba(15,23,42,0.10)]"}
             style={{ height: collapsed ? undefined : height }}
             aria-label="Applications attribute table"
         >
@@ -103,8 +120,25 @@ export default function AttributeTable({ apps = [], total = 0, selectedAppId, on
                 />
             )}
 
+            {/* Collapsed: a small button floating at the bottom centre of the map, clear of the scale bar. */}
+            {collapsed && (
+                <button
+                    type="button"
+                    onClick={() => setCollapsed(false)}
+                    aria-expanded={false}
+                    title={summary ? `${total} ${summary}` : undefined}
+                    className="pointer-events-auto mb-3 self-center inline-flex items-center gap-2 h-8 pl-3 pr-2 rounded-full bg-white border border-slate-200 shadow-md text-[12px] font-semibold text-[#0b2a5b] hover:bg-slate-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
+                >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" />
+                    </svg>
+                    Show applications
+                    <span className="min-w-5 h-5 px-1.5 rounded-full bg-[#0b2a5b] text-white text-[10.5px] tabular-nums leading-5 text-center">{total}</span>
+                </button>
+            )}
+
             {/* Title bar */}
-            <div className="shrink-0 flex items-center gap-2 h-7 pl-3 pr-1 bg-[#e6e9ee] border-b border-slate-300 text-[11.5px] text-slate-700">
+            {!collapsed && <div className="shrink-0 flex items-center gap-2 h-7 pl-3 pr-1 bg-[#e6e9ee] border-b border-slate-300 text-[11.5px] text-slate-700">
                 <span className="font-semibold text-slate-800">{title}</span>
                 <span className="text-slate-500 tabular-nums truncate">
                     — Features Total: {total}, Filtered: {rows.length}, Selected: {selectedVisible ? 1 : 0}
@@ -112,19 +146,16 @@ export default function AttributeTable({ apps = [], total = 0, selectedAppId, on
                 <button
                     type="button"
                     onClick={() => {
-                        if (!collapsed) onCollapse?.();
-                        setCollapsed(!collapsed);
+                        onCollapse?.();
+                        setCollapsed(true);
                     }}
-                    aria-expanded={!collapsed}
-                    aria-label={collapsed ? "Expand attribute table" : "Collapse attribute table"}
-                    title={collapsed ? "Expand" : "Collapse"}
-                    className="ml-auto w-6 h-6 flex items-center justify-center rounded-[3px] text-slate-600 hover:bg-white hover:text-slate-900 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
+                    aria-expanded={true}
+                    className="ml-auto shrink-0 inline-flex items-center gap-1 px-2 h-6 rounded-[3px] text-[11px] font-semibold text-[#0b2a5b] hover:bg-white cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
                 >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.6" aria-hidden="true">
-                        {collapsed ? <path strokeLinecap="round" d="M12 5v14M5 12h14" /> : <path strokeLinecap="round" d="M5 12h14" />}
-                    </svg>
+                    Hide list
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.6" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                 </button>
-            </div>
+            </div>}
 
             {!collapsed && (
                 <>

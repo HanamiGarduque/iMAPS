@@ -1,5 +1,5 @@
 import { Link } from "@inertiajs/react";
-import { getSLAInfo, getZoningConformity, getStatusMarkerConfig } from "@/Components/MapLayers/StatusPanel";
+import { getZoningConformity, getStatusMarkerConfig } from "@/Components/MapLayers/StatusPanel";
 import { getDiversityTheme } from "@/utils/diversityTheme";
 import { getTrendsDemandColor } from "./LeafletMap";
 
@@ -27,12 +27,9 @@ const Field = ({ label, children, mono }) => (
 // the dock instead of a modal, so the parcel stays visible on the map.
 export function ApplicationDetails({ app, barangayZone, onClose }) {
     const cfg = getStatusMarkerConfig(app.status);
-    const sla = getSLAInfo(app.created_at, app.status);
     const requestedUse = app.target_land_use_class || app.land_use_class;
     // No requested use on file means there is nothing to check yet, not a variance.
     const conformity = requestedUse ? getZoningConformity(requestedUse, barangayZone) : null;
-    const open = sla.status !== "completed";
-    const pct = Math.min(100, Math.round((sla.days / 15) * 100));
     const parcel = app.parcels?.[0];
 
     return (
@@ -51,23 +48,6 @@ export function ApplicationDetails({ app, barangayZone, onClose }) {
                     <p className="text-[11.5px] text-slate-500">{app.application_type}</p>
                 </div>
 
-                {open && (
-                    <div>
-                        <div className="flex items-baseline justify-between text-[11px]">
-                            <span className="text-slate-600">Processing time</span>
-                            <span className="tabular-nums font-semibold text-slate-900">
-                                {sla.days} of 15 days
-                            </span>
-                        </div>
-                        <div className="h-1.5 mt-1 rounded-sm bg-slate-100 overflow-hidden">
-                            <div
-                                className="h-full bg-[#4f74a8]"
-                                style={{ width: `${pct}%` }}
-                            />
-                        </div>
-                    </div>
-                )}
-
                 {conformity ? (
                     <div className={`rounded-[3px] border px-2.5 py-1.5 ${conformity.badgeClass}`} title={conformity.desc}>
                         <div className="flex items-center gap-1.5 text-[11.5px] font-semibold">
@@ -81,19 +61,13 @@ export function ApplicationDetails({ app, barangayZone, onClose }) {
 
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
                     <Field label="Barangay">{app.barangay || "—"}</Field>
-                    <Field label="Requested use">{requestedUse || "—"}</Field>
                     <Field label="Filed">
                         {app.created_at ? new Date(app.created_at).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                     </Field>
-                    <Field label="Lot number" mono>{parcel?.lot_number || "—"}</Field>
+                    {requestedUse && <Field label="Requested use">{requestedUse}</Field>}
+                    {parcel?.lot_number && <Field label="Lot number" mono>{parcel.lot_number}</Field>}
                     {parcel?.tax_dec_number && <Field label="Tax declaration" mono>{parcel.tax_dec_number}</Field>}
                 </dl>
-
-                {app.purpose && (
-                    <p className="text-[11.5px] text-slate-600 truncate" title={app.purpose}>
-                        <span className="text-slate-500">Purpose: </span>{app.purpose}
-                    </p>
-                )}
 
                 <Link
                     href={`/applications/${app.id}`}

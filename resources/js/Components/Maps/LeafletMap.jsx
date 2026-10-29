@@ -228,6 +228,8 @@ const createBaseLayer = (L, mapStyle) => {
 
 const BLANK_TILE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 // Zooming out past this closes the open application (Maps.jsx).
+// The Maps page opens at, and never zooms out past, this level.
+export const HOME_ZOOM = 11.75;
 export const PIN_ZOOM = 15;
 // From here in, an application with a matched lot draws its real outline.
 const LOT_ZOOM = 17;
@@ -322,6 +324,8 @@ export default function LeafletMap({
         // a little more room above, where the title card sits
         paddingTopLeft: [48, 72],
         paddingBottomRight: [48, 48 + (insetsRef.current.bottom || 0)],
+        // Home is always exactly HOME_ZOOM: maxZoom caps the fit, minZoom floors it.
+        maxZoom: HOME_ZOOM,
     });
     const lotsByZoom = (mapZoom ?? 0) >= LOT_ZOOM;
 
@@ -379,6 +383,19 @@ export default function LeafletMap({
             // darker shade, the same fill strength, and on imagery the
             // near-white lowest class fades rather than greying the ground.
             const lowest = resolved.band.id === "monoculture";
+            if (live.current.plain) {
+                // White page, as on the LC demand map.
+                return {
+                    color: isSelected ? "#0b2a5b" : PLAIN_LINE,
+                    weight: isSelected ? 3 : 0.9,
+                    opacity: 1,
+                    dashArray: null,
+                    fill: true,
+                    fillColor: resolved.color,
+                    fillOpacity: (clup ? 0.25 : 1) * (selName && !isSelected ? 0.6 : 1),
+                    className: "",
+                };
+            }
             return {
                 color: isSelected ? selectStroke(imagery) : imagery ? edge.color : resolved.stroke || "#ffffff",
                 weight: isSelected ? (imagery ? 3 : 2.6) : imagery ? edge.weight : 1.2,
@@ -392,7 +409,7 @@ export default function LeafletMap({
         }
 
         const demand = layer === "trends" ? (lcColors?.[name.trim().toLowerCase()] || getTrendsDemandColor(demandFor(name))) : null;
-        if (live.current.plain && layer === "trends") {
+        if (live.current.plain) {
             // White page: opaque fills in the legend's colours, hairline borders.
             return {
                 color: isSelected ? "#0b2a5b" : PLAIN_LINE,
@@ -400,8 +417,10 @@ export default function LeafletMap({
                 opacity: 1,
                 dashArray: null,
                 fill: true,
-                fillColor: demand.color,
-                fillOpacity: selName && !isSelected ? 0.35 : 1,
+                // The zero class is near-white, so on the white page it gets a
+                // light grey to keep every barangay visible.
+                fillColor: demand ? demand.color : stat.total ? getAppLoadColor(stat.total) : "#eef1f5",
+                fillOpacity: (clup ? 0.25 : 1) * (selName && !isSelected ? 0.6 : 1),
                 className: "",
             };
         }
@@ -524,9 +543,9 @@ export default function LeafletMap({
 
             const map = L.map(mapRef.current, {
                 center: [13.785, 121.25],
-                zoom: 12,
+                zoom: HOME_ZOOM,
                 // Finer than whole steps, and low enough that the whole town fits a short window.
-                minZoom: 11,
+                minZoom: HOME_ZOOM,
                 zoomSnap: 0.25,
                 zoomDelta: 1,
                 maxZoom: 19,
@@ -557,6 +576,7 @@ export default function LeafletMap({
             L.control.scale({ position: "bottomleft", metric: true, imperial: false, maxWidth: 120 }).addTo(map);
 
             map.on("zoomend", () => live.current.onZoomChange?.(map.getZoom()));
+            live.current.onZoomChange?.(map.getZoom());
             map.on("click", () => live.current.onMapClick?.());
             map.on("mousemove", (e) => {
                 if (cursorFrame) return;
@@ -729,8 +749,12 @@ export default function LeafletMap({
         let match = null;
         geoLayerRef.current.eachLayer((lf) => { if (featureName(lf.feature).toLowerCase() === target) match = lf; });
         if (!match) return drop();
+        // Leaflet loads asynchronously. If the selection or layer changes before
+        // it resolves, this build is stale: placing it then would leave a leader
+        // line and dot on the map with no card and nothing left to remove them.
+        let cancelled = false;
         import("leaflet").then((mod) => {
-            if (mapInstanceRef.current !== map) return;
+            if (cancelled || mapInstanceRef.current !== map) return;
             const L = mod.default;
             calloutMarkerRef.current?.remove();
             const b = match.getBounds();
@@ -777,8 +801,11 @@ export default function LeafletMap({
             calloutMarkerRef.current = marker;
             setCalloutHost(host);
         });
-        return undefined;
+        return () => { cancelled = true; };
     }, [selectedBgy?.name, Boolean(callout), barangaysReady]);
+
+    // Leaving the map takes the card's marker, line and dot with it.
+    useEffect(() => () => calloutMarkerRef.current?.remove(), []);
 
     // ── Camera follows the selected barangay ──
     useEffect(() => {
@@ -829,7 +856,7 @@ export default function LeafletMap({
         const map = mapInstanceRef.current;
         if (!map || resetTrigger === 0) return;
         if (rosarioBoundsRef.current) map.fitBounds(rosarioBoundsRef.current, homePadding());
-        else map.setView([13.785, 121.25], 12);
+        else map.setView([13.785, 121.25], HOME_ZOOM);
     }, [resetTrigger]);
 
     useEffect(() => {
@@ -889,7 +916,7 @@ export default function LeafletMap({
                     rank = r.value;
                 } else if (layer === "trends") {
                     rank = demandFor(name);
-                    value = rank && !live.current.plain ? `${rank} LC` : "";
+                    value = rank ? `${rank} LC` : "";
                 } else {
                     rank = stat.total;
                     value = rank ? String(rank) : "";
@@ -899,7 +926,7 @@ export default function LeafletMap({
             candidates.sort((a, b) => b.rank - a.rank);
 
             const placed = [];
-            const namesOnly = live.current.plain && layer === "trends";
+            const namesOnly = live.current.plain;
             candidates.forEach(({ name, value, center }) => {
                 const pt = map.latLngToContainerPoint(center);
                 const w = namesOnly ? name.length * 6.6 + 12 : Math.max(name.length, value.length) * 6.2 + 10;
@@ -1007,7 +1034,7 @@ export default function LeafletMap({
         const selName = (selectedBgy?.name || "").trim().toLowerCase();
         const visible = (applications || []).filter(
             (app) => app.parcels?.[0]?.outline
-                && matchesAppFilters(app, appTypeFilter, statusFilter)
+                && matchesAppFilters(app, null, statusFilter)
                 && (!selName || (app?.barangay || "").trim().toLowerCase() === selName)
         );
 

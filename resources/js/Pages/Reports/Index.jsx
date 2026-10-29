@@ -94,6 +94,294 @@ const writeStore = (key, value) => {
     }
 };
 
+const CHART_COLORS = ["#2563eb", "#60a5fa", "#1e40af", "#93c5fd", "#3b82f6", "#1d4ed8", "#bfdbfe", "#475569", "#94a3b8", "#0ea5e9", "#334155", "#7dd3fc"];
+
+// Draws the chart in the browser and returns a PNG data URI. The same image is shown in the
+// preview and embedded in the PDF, so no report data is sent to an outside chart service.
+function renderChartPng(style, labels, data, datasetLabel) {
+    const round = style === "pie_chart" || style === "doughnut_chart";
+    const horizontal = style === "horizontal_bar_chart";
+    const width = 1000;
+    const height = horizontal ? Math.max(600, labels.length * 24 + 120) : 600;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.cssText = "position:fixed;left:-99999px;top:0";
+    document.body.appendChild(canvas);
+
+    const chart = new Chart(canvas, {
+        type: { bar_chart: "bar", horizontal_bar_chart: "bar", line_chart: "line", pie_chart: "pie", doughnut_chart: "doughnut" }[style],
+        data: {
+            labels,
+            datasets: [{
+                label: datasetLabel,
+                data,
+                backgroundColor: round ? labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]) : "#2563eb",
+                borderColor: round ? "#ffffff" : "#2563eb",
+                borderWidth: round ? 2 : style === "line_chart" ? 3 : 0,
+                borderRadius: round ? 0 : 3,
+                tension: 0.25,
+                pointRadius: style === "line_chart" ? 4 : 0,
+            }],
+        },
+        options: {
+            responsive: false,
+            animation: false,
+            devicePixelRatio: 1,
+            indexAxis: horizontal ? "y" : "x",
+            layout: { padding: 16 },
+            plugins: {
+                legend: { display: round, position: "right", labels: { font: { size: 14 } } },
+                title: { display: true, text: datasetLabel, font: { size: 20, weight: "bold" }, color: "#0f172a", padding: { bottom: 16 } },
+            },
+            scales: round ? {} : {
+                x: { beginAtZero: true, ticks: { font: { size: 13 }, color: "#334155" }, grid: { color: "#e2e8f0" } },
+                y: { beginAtZero: true, ticks: { font: { size: 13 }, color: "#334155" }, grid: { color: "#e2e8f0" } },
+            },
+        },
+        plugins: [{
+            id: "white-background",
+            beforeDraw: (c) => {
+                const ctx = c.ctx;
+                ctx.save();
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, c.width, c.height);
+                ctx.restore();
+            },
+        }],
+    });
+
+    const src = canvas.toDataURL("image/png");
+    chart.destroy();
+    canvas.remove();
+    return { src, ratio: height / width };
+}
+
+// ── Styles copied from resources/views/reports/custom.blade.php so the preview matches the PDF.
+// dompdf's "sans-serif" is DejaVu Sans; Verdana is the closest widely installed match in width.
+const DOC = {
+    page: { fontFamily: '"DejaVu Sans", Verdana, sans-serif', fontSize: 12, lineHeight: 1.2, color: "#000", padding: PAGE_MARGIN, boxSizing: "border-box", background: "#fff" },
+    header: { textAlign: "center", marginBottom: 20 },
+    h1: { margin: 0, fontSize: 16, fontWeight: "bold", textTransform: "uppercase" },
+    h2: { margin: "5px 0", fontSize: 14, fontWeight: "normal" },
+    p: { margin: "5px 0", fontSize: 11, color: "#555" },
+    table: { width: "100%", borderCollapse: "collapse", marginTop: 10 },
+    th: { border: "1px solid #ddd", textAlign: "left", background: "#f3f4f6", textTransform: "uppercase", fontWeight: "bold", overflowWrap: "break-word" },
+    td: { border: "1px solid #ddd", textAlign: "left", overflowWrap: "break-word" },
+    h3: { fontSize: 14, fontWeight: "bold", margin: "14px 0" },
+    chartWrap: { textAlign: "center", marginTop: 20, marginBottom: 30 },
+    chartImg: { maxWidth: "90%", height: "auto", border: "1px solid #ddd", padding: 10, background: "#fafafa", boxSizing: "content-box" },
+};
+
+const DocHeader = ({ title, generatedOn }) => (
+    <div style={DOC.header} data-m="header">
+        <h1 style={DOC.h1}>Municipality of Rosario, Batangas</h1>
+        <h2 style={DOC.h2}>{title}</h2>
+        <p style={DOC.p}>Generated on: {generatedOn}</p>
+    </div>
+);
+
+// Same sizing rule as custom.blade.php: text, header text and padding all scale with `fs` (12 = normal).
+const DocTable = ({ headers, rows, fs = 12, style }) => {
+    const k = fs / 12;
+    const th = { ...DOC.th, fontSize: 10 * k, padding: 6 * k };
+    const td = { ...DOC.td, padding: 6 * k };
+    return (
+        <table style={{ ...DOC.table, fontSize: fs, ...style }}>
+            <thead>
+                <tr>{headers.map((h, i) => <th key={i} style={th}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+                {rows.map((r, ri) => (
+                    <tr key={ri}>{r.map((cell, ci) => <td key={ci} style={td}>{cell !== "" && cell !== null ? cell : "N/A"}</td>)}</tr>
+                ))}
+            </tbody>
+        </table>
+    );
+};
+
+const MIN_FONT = 6;
+
+// Renders the report as real pages: content is laid out at true size, measured, split the way
+// dompdf splits it (header and chart on page 1, table header repeated on every page), then scaled to fit.
+// Chart frame: 10px padding + 1px border on each side, plus 20px above and 30px below (custom.blade.php).
+const CHART_FRAME_W = 22;
+const CHART_FRAME_H = 22 + 50;
+const ROWS_UNDER_CHART = 3; // keep at least this many summary rows on page 1 so the table starts there
+
+function PdfPreview({ paper, title, generatedOn, headers, rows, chart, summary, totalRows, stage, dimmed, onFit, onChartWidth }) {
+    const [pageW, pageH] = paper;
+    const contentW = pageW - 2 * PAGE_MARGIN;
+    const contentH = pageH - 2 * PAGE_MARGIN;
+    const fitRef = useRef(null);
+    const measureRef = useRef(null);
+    const [fs, setFs] = useState(12);
+    const [ranges, setRanges] = useState([[0, rows.length]]);
+    const [page, setPage] = useState(0);
+    const [chartImgW, setChartImgW] = useState(0);
+
+    // Fit to width: the narrowest the table can be without breaking words, at normal size.
+    // If that's wider than the paper, shrink the text proportionally (like a print dialog's "Fit").
+    useLayoutEffect(() => {
+        const table = fitRef.current?.querySelector("table");
+        if (!table) return;
+        const minW = table.getBoundingClientRect().width;
+        const next = minW > contentW ? Math.max(MIN_FONT, Math.floor(12 * (contentW / minW) * 4) / 4) : 12;
+        setFs(next);
+        onFit?.(next);
+    }, [rows, headers, contentW]);
+
+    useLayoutEffect(() => {
+        const el = measureRef.current;
+        if (!el) return;
+        const headerH = el.querySelector('[data-m="header"]').offsetHeight + 20;
+        const h3 = el.querySelector('[data-m="h3"]');
+        const h3H = h3 ? h3.offsetHeight + 28 : 0;
+        const theadH = el.querySelector("thead").offsetHeight;
+        const rowHs = [...el.querySelectorAll("tbody tr")].map((r) => r.offsetHeight);
+
+        // Auto-size the chart so the title block, chart, "Data Summary" and the first rows all fit on page 1.
+        // Without this a full-width chart on a landscape page is taller than the page and the table gets cut.
+        let chartW = 0;
+        if (chart) {
+            const firstRows = rowHs.slice(0, ROWS_UNDER_CHART).reduce((a, b) => a + b, 0);
+            const roomForImage = contentH - headerH - CHART_FRAME_H - h3H - 10 - theadH - firstRows;
+            const widest = Math.min(contentW * 0.9 - CHART_FRAME_W, 1000);
+            chartW = Math.max(160, Math.min(widest, roomForImage / chart.ratio));
+        }
+        setChartImgW(chartW);
+        onChartWidth?.(Math.round(chartW));
+        const chartH = chart ? chartW * chart.ratio + CHART_FRAME_H : 0;
+
+        const out = [];
+        let start = 0;
+        let used = headerH + chartH + h3H + 10 + theadH;
+        rowHs.forEach((h, i) => {
+            if (used + h > contentH && i > start) {
+                out.push([start, i]);
+                start = i;
+                used = theadH;
+            }
+            used += h;
+        });
+        out.push([start, rowHs.length]);
+        setRanges(out);
+        setPage((p) => Math.min(p, out.length - 1));
+    }, [rows, headers, pageW, pageH, chart, title, summary, fs]);
+
+    // The preview holds at most 100 detailed rows; estimate the rest from the measured density.
+    const shownRows = rows.length;
+    const extraPages = !summary && totalRows > shownRows && shownRows > 0
+        ? Math.ceil((totalRows - shownRows) / Math.max(1, shownRows / ranges.length))
+        : 0;
+    const totalPages = ranges.length + extraPages;
+
+    // Fit the sheet to the viewport itself (whatever space the toolbar leaves), then apply the user's zoom on top.
+    const viewRef = useRef(null);
+    const [view, setView] = useState({ w: 0, h: 0 });
+    useEffect(() => {
+        const el = viewRef.current;
+        // Outer size, not clientWidth/Height: those shrink when zooming adds scrollbars, which
+        // shrinks the fit, removes the scrollbars, grows the fit again, and the sheet bounces.
+        const ro = new ResizeObserver(() => {
+            const w = el.offsetWidth, h = el.offsetHeight;
+            setView((v) => (v.w === w && v.h === h ? v : { w, h }));
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+    const PAD = 40; // breathing room so the sheet's shadow isn't clipped, plus room for scrollbars
+    const fit = view.w > PAD && view.h > PAD ? Math.min((view.w - PAD) / pageW, (view.h - PAD) / pageH) : 0;
+    const [zoom, setZoom] = useState(1);
+    const scale = fit * zoom;
+    const zoomBy = (f) => setZoom((z) => Math.min(4, Math.max(0.5, +(z * f).toFixed(3))));
+
+    // Ctrl + scroll wheel (and trackpad pinch, which browsers report the same way) zooms smoothly.
+    // Needs a non-passive listener so the browser's own page zoom can be prevented.
+    useEffect(() => {
+        const el = viewRef.current;
+        const onWheel = (e) => {
+            if (!e.ctrlKey) return;
+            e.preventDefault();
+            zoomBy(Math.exp(-e.deltaY * 0.0025));
+        };
+        el.addEventListener("wheel", onWheel, { passive: false });
+        return () => el.removeEventListener("wheel", onWheel);
+    }, []);
+    const [from, to] = ranges[page] || [0, 0];
+    const first = page === 0;
+    const navBtn = "grid place-items-center w-8 h-8 rounded-full text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer transition-colors";
+
+    return (
+        <div className="flex flex-col items-center w-full" style={{ height: stage.h }}>
+            {/* Hidden copies used only for measuring: natural minimum width (for fit), then row heights */}
+            <div ref={fitRef} aria-hidden="true" style={{ ...DOC.page, position: "fixed", left: -99999, top: 0, padding: 0 }}>
+                <DocTable headers={headers} rows={rows} style={{ width: "min-content" }} />
+            </div>
+            <div ref={measureRef} aria-hidden="true" style={{ ...DOC.page, position: "fixed", left: -99999, top: 0, width: contentW, padding: 0 }}>
+                <DocHeader title={title} generatedOn={generatedOn} />
+                {summary && <h3 style={DOC.h3} data-m="h3">Data Summary</h3>}
+                <DocTable headers={headers} rows={rows} fs={fs} />
+            </div>
+
+            {/* Scrollable viewport: the sheet fits by default and can be panned once zoomed in */}
+            <div ref={viewRef} className="flex flex-1 min-h-0 w-full overflow-auto custom-scrollbar" title="Ctrl + scroll to zoom">
+            <div
+                className={`m-auto shrink-0 rounded-sm ring-1 ring-slate-300 shadow-[0_1px_2px_rgba(15,23,42,.06),0_12px_32px_-12px_rgba(15,23,42,.35)] bg-white overflow-hidden transition-opacity ${dimmed ? "opacity-60" : ""}`}
+                style={{ width: pageW * scale, height: pageH * scale, visibility: scale ? "visible" : "hidden" }}
+            >
+                <div style={{ ...DOC.page, width: pageW, height: pageH, transform: `scale(${scale})`, transformOrigin: "top left", overflow: "hidden" }}>
+                    {first && <DocHeader title={title} generatedOn={generatedOn} />}
+                    {first && chart && (
+                        <div style={DOC.chartWrap}>
+                            <img src={chart.src} alt="Chart" style={{ ...DOC.chartImg, width: chartImgW }} />
+                        </div>
+                    )}
+                    {first && summary && <h3 style={DOC.h3}>Data Summary</h3>}
+                    <DocTable headers={headers} rows={rows.slice(from, to)} fs={fs} />
+                </div>
+            </div>
+            </div>
+
+            {/* Floating toolbar: ‹ pin slider › · page count · zoom − % + */}
+            <div className="mt-3 shrink-0 flex items-center gap-1 rounded-full bg-white/95 backdrop-blur px-1.5 py-1 ring-1 ring-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,.05),0_8px_24px_-10px_rgba(15,23,42,.3)]">
+                <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} aria-label="Previous page" className={navBtn}>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                </button>
+                <input
+                    type="range"
+                    min={1}
+                    max={Math.max(1, ranges.length)}
+                    value={page + 1}
+                    onChange={(e) => setPage(Number(e.target.value) - 1)}
+                    disabled={ranges.length < 2}
+                    aria-label="Page"
+                    className="pin-range w-28 sm:w-40 mx-1 disabled:opacity-40"
+                    style={{ "--pct": `${ranges.length < 2 ? 0 : (page / (ranges.length - 1)) * 100}%` }}
+                />
+                <button type="button" onClick={() => setPage((p) => Math.min(ranges.length - 1, p + 1))} disabled={page >= ranges.length - 1} aria-label="Next page" className={navBtn}>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                </button>
+                <span className="px-2 text-[12.5px] font-medium text-slate-600 tabular-nums whitespace-nowrap" aria-live="polite">
+                    Page {page + 1} of {extraPages ? `~${totalPages}` : totalPages}
+                </span>
+                <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden="true" />
+                <button type="button" onClick={() => zoomBy(1 / 1.25)} disabled={zoom <= 0.5} aria-label="Zoom out" className={navBtn}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" d="M5 12h14" /></svg>
+                </button>
+                <button type="button" onClick={() => setZoom(1)} title="Fit to view" aria-label={`Zoom ${Math.round(scale * 100)}%, reset to fit`} className="min-w-[52px] h-8 px-2 rounded-full text-[12.5px] font-semibold text-slate-700 tabular-nums hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 transition-colors">
+                    {Math.round(scale * 100)}%
+                </button>
+                <button type="button" onClick={() => zoomBy(1.25)} disabled={zoom >= 4} aria-label="Zoom in" className={navBtn}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" d="M12 5v14M5 12h14" /></svg>
+                </button>
+            </div>
+            {extraPages > 0 && <p className="mt-1.5 shrink-0 text-[11.5px] text-slate-400">Preview covers the first {shownRows} records</p>}
+        </div>
+    );
+}
+
+// Excel/CSV layout: the exported file is a title row, a blank row, the header row, then data.
 function SheetPreview({ title, headers, rows, dimmed }) {
     const letters = headers.map((_, i) => String.fromCharCode(65 + (i % 26)));
     const sheetRows = [[title], [], headers, ...rows];
@@ -498,8 +786,11 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
 
                         {/* Print-dialog layout: top band, settings sections on the left, boxed preview on the right */}
                         <div className="flex-1 min-h-0 flex flex-col gap-2.5 p-3 bg-slate-100 overflow-y-auto lg:overflow-hidden">
-                            {/* ── TOP BAND (like "Printer" and "Copies") ── */}
-                            <div className="shrink-0 rounded-md border border-slate-300 bg-slate-50 px-4 py-2.5 space-y-2">
+                        <div className="flex-1 min-h-0 grid lg:grid-cols-[minmax(440px,44%)_1fr] gap-2.5">
+                            {/* ── SETTINGS ── */}
+                            <aside className="lg:overflow-y-auto lg:pr-1 space-y-2.5">
+                            {/* ── TOP BAND (like "Printer" and "Copies"), at the head of the settings so the preview gets the full height ── */}
+                            <div className="rounded-md border border-slate-300 bg-slate-50 px-4 py-2.5 space-y-2">
                                 <div className="flex flex-wrap items-center gap-2">
                                     <label htmlFor="template" className="w-20 text-[12.5px] text-slate-800">Template:</label>
                                     <select id="template" value={templateId} onChange={(e) => applyTemplate(e.target.value)} className={`${fieldClass} max-w-[340px]`}>
@@ -518,9 +809,6 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
                                 </div>
                             </div>
 
-                        <div className="flex-1 min-h-0 grid lg:grid-cols-[minmax(440px,44%)_1fr] gap-2.5">
-                            {/* ── SETTINGS ── */}
-                            <aside className="lg:overflow-y-auto lg:pr-1 space-y-2.5">
                                 <Group title="Data to Include">
                                     <div className="flex flex-wrap gap-x-5 gap-y-2.5">
                                         {RANGES.map((r) => (

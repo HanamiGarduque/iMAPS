@@ -60,7 +60,7 @@ export const dialogHeader = (iconSvg, title, { tone = 'blue', subtitle } = {}) =
 const BUTTON = 'w-full h-10 px-4 whitespace-nowrap rounded-xl text-[13.5px] font-semibold cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2';
 
 const classes = ({ tone = 'blue', danger = false, buttons = true } = {}) => ({
-    container: '!bg-slate-900/30 backdrop-blur-sm',
+    container: '!z-[20000] !bg-slate-900/30 backdrop-blur-sm',
     popup: 'imaps-confirm !rounded-2xl !p-0 max-w-[calc(100vw-2rem)] overflow-hidden !shadow-2xl ring-1 ring-slate-900/5',
     closeButton: '!w-8 !h-8 !mt-4 !mr-4 !-mb-12 !rounded-lg !text-2xl !text-slate-400 hover:!text-slate-600 hover:!bg-slate-100 !shadow-none focus-visible:!outline focus-visible:!outline-2 focus-visible:!outline-blue-600',
     title: `!m-0 !px-6 !pt-8 !pb-0 !bg-gradient-to-b ${TITLE_WASH[tone] ?? TITLE_WASH.blue} !to-white`,

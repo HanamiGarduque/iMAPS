@@ -236,7 +236,21 @@ export const getZoningConformity = (requestedUse, zoneValue) => {
     };
 };
 
-const isResolved = (app) => getSLAInfo(app?.created_at, app?.status).status === "completed";
+const CARD = "shrink-0 bg-white border-b border-slate-200";
+const Question = ({ children, className = "" }) => (
+    <h3 className={`text-[12px] font-semibold leading-snug text-slate-800 ${className}`}>{children}</h3>
+);
+const FIELD_LABEL = "block mb-1 text-[10.5px] text-slate-500";
+const FIELD_SELECT = "w-full py-1 pl-2 pr-7 text-[12px] leading-5 text-slate-700 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-[#0b2a5b] focus:ring-2 focus:ring-[#0b2a5b]/15";
+
+const PERIODS = [
+    { id: "all", label: "All time" },
+    { id: "month", label: "This month" },
+    { id: "3months", label: "Last 3 months" },
+    { id: "year", label: "This year" },
+];
+
+export const isResolved = (app) => getSLAInfo(app?.created_at, app?.status).status === "completed";
 
 // The shared status filter: "All" or a STATUS_MARKER_CONFIG key. The map
 // markers, the legend and the attribute table all read the same value.
@@ -256,6 +270,17 @@ const ageInDays = (app) => {
 export default function StatusPanel({
     recent = [],
     selectedBgy = null,
+    onClearBgy = () => {},
+    period = "all",
+    onPeriodChange = () => {},
+    filtersActive = false,
+    onResetFilters = () => {},
+    appType = "All",
+    onAppTypeChange = () => {},
+    permitTypes = [],
+    loadClasses = [],
+    activeOnly = false,
+    onActiveChange = () => {},
 }) {
     const isBgy = Boolean(selectedBgy?.name);
     const bgyName = selectedBgy?.name || "";
@@ -267,42 +292,149 @@ export default function StatusPanel({
         return list.filter((r) => (r.barangay || "").trim().toLowerCase() === target);
     }, [recent, isBgy, bgyName]);
 
+    // The server already narrows the list to the Date filed period, so the
+    // released count covers that same period.
     const stats = useMemo(() => {
-        const now = new Date();
         let open = 0;
-        let releasedThisMonth = 0;
+        let released = 0;
         let openDays = 0;
         baseList.forEach((app) => {
             if (!isResolved(app)) {
                 open++;
                 openDays += ageInDays(app);
             } else if (getStatusMarkerConfig(app?.status) === STATUS_MARKER_CONFIG.Released) {
-                const d = new Date(app.updated_at || app.created_at || 0);
-                if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) releasedThisMonth++;
+                released++;
             }
         });
-        return { total: baseList.length, open, releasedThisMonth, avgOpenDays: open ? Math.round(openDays / open) : 0 };
+        return { total: baseList.length, open, released, avgOpenDays: open ? Math.round(openDays / open) : 0 };
     }, [baseList]);
+    const releasedLabel = {
+        all: "Released (all time)",
+        month: "Released (this month)",
+        "3months": "Released (last 3 months)",
+        year: "Released (this year)",
+    }[period] || "Released";
 
-    const kpis = [
-        { label: "Applications", value: stats.total },
-        { label: "In process", value: stats.open },
-        { label: "Released this month", value: stats.releasedThisMonth },
-    ];
+    const stages = useMemo(() => {
+        const keys = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release"];
+        return keys.map((key) => {
+            const cfg = STATUS_MARKER_CONFIG[key];
+            const count = baseList.filter((app) => !isResolved(app) && getStatusMarkerConfig(app?.status) === cfg).length;
+            return { key, label: cfg.shortLabel, color: cfg.color, border: cfg.border, badgeBg: cfg.badgeBg, badgeText: cfg.badgeText, count };
+        });
+    }, [baseList]);
+    const bottleneck = stages.reduce((max, s) => (s.count > (max?.count ?? 0) ? s : max), null)?.key;
 
+    // Same building blocks as the LC demand panel: question headings, a big
+    // headline figure, bordered comparison tiles, sections split by rules.
+    // Picking a barangay drops the town-wide comparison pieces (the per-barangay
+    // colour scale, the in-process toggle and the in-process total) and adds a
+    // way back to all of Rosario. The toggle stays visible while it is on so a
+    // hidden filter never narrows the numbers.
     return (
         <div className="shrink-0 flex flex-col">
-            <div className="shrink-0 border-b border-slate-200">
-                <div className="grid grid-cols-3">
-                    {kpis.map((k, i) => (
-                        <div key={k.label} className={`px-3 pt-2.5 pb-2 ${i > 0 ? "border-l border-slate-200" : ""}`}>
-                            <span className="block text-[20px] font-semibold tabular-nums leading-none text-slate-900">{k.value}</span>
-                            <span className="block text-[10.5px] text-slate-500 mt-1 leading-tight">{k.label}</span>
-                        </div>
-                    ))}
+            <section className={CARD}>
+                <div className="flex items-baseline justify-between gap-2 px-4 pt-3 pb-1">
+                    <Question>Which applications are shown?</Question>
+                    <button
+                        type="button"
+                        onClick={onResetFilters}
+                        disabled={!filtersActive}
+                        className="text-[10.5px] font-semibold text-[#0b2a5b] hover:underline disabled:text-slate-300 disabled:no-underline disabled:cursor-default cursor-pointer"
+                    >
+                        Reset all
+                    </button>
                 </div>
-            </div>
+                <div className="px-4 pb-3 grid grid-cols-2 gap-2">
+                    <div>
+                        <label htmlFor="status-permit-type" className={FIELD_LABEL}>Permit type</label>
+                        <select id="status-permit-type" value={appType} onChange={(e) => onAppTypeChange(e.target.value)} className={FIELD_SELECT}>
+                            {permitTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label htmlFor="period-filter" className={FIELD_LABEL}>Date filed</label>
+                        <select id="period-filter" value={period} onChange={(e) => onPeriodChange(e.target.value)} className={FIELD_SELECT}>
+                            {PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                        </select>
+                    </div>
+                    {(!isBgy || activeOnly) && (
+                    <label className="col-span-2 flex items-center justify-between gap-2 cursor-pointer">
+                        <span className="text-[11px] text-slate-600">In process only</span>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={activeOnly}
+                            onClick={() => onActiveChange(!activeOnly)}
+                            className={`relative w-8 h-[18px] rounded-full transition-colors cursor-pointer ${activeOnly ? "bg-[#0b2a5b]" : "bg-slate-300"}`}
+                        >
+                            <span className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-transform ${activeOnly ? "translate-x-3.5" : ""}`} />
+                        </button>
+                    </label>
+                    )}
+                    {!isBgy && (
+                    <div className="col-span-2">
+                        <span className={FIELD_LABEL}>Applications per barangay</span>
+                        <div
+                            className="h-2 rounded-full"
+                            style={{ background: `linear-gradient(to right, ${[...loadClasses].reverse().map((c) => c.color).join(", ")})` }}
+                            aria-hidden="true"
+                        />
+                        <div className="flex justify-between mt-0.5 text-[10px] text-slate-400">
+                            <span>Low</span>
+                            <span>Moderate</span>
+                            <span>High</span>
+                        </div>
+                    </div>
+                    )}
+                </div>
+            </section>
 
+            <section className={`${CARD} pb-3`}>
+                <div className="px-4 pt-3">
+                    <Question className="mb-2">How many applications are there?</Question>
+                    <div className="flex items-stretch gap-2">
+                        <div className="flex-1 min-w-0 flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2">
+                            <span className="text-[34px] font-semibold leading-none tabular-nums text-slate-900">{stats.total}</span>
+                            <span className="text-[11.5px] leading-tight text-slate-500">
+                                applications filed
+                                <br />
+                                in {isBgy ? bgyName : "Rosario"}
+                            </span>
+                        </div>
+                        <div className="shrink-0 min-w-[112px] flex flex-col justify-center rounded-lg border border-slate-200 px-3 py-2 text-right">
+                            <span className="block text-[15px] font-semibold leading-tight tabular-nums text-slate-800">{stats.released}</span>
+                            <span className="block text-[10.5px] leading-tight text-slate-500">{releasedLabel}</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section className={`${CARD} pb-3`}>
+                <div className="flex items-baseline justify-between gap-2 px-4 pt-3 pb-2">
+                    <Question>Where are they in the process?</Question>
+                    {!isBgy && <span className="text-[10px] tabular-nums text-slate-400">{stats.open} in process</span>}
+                </div>
+                <ol className="relative grid grid-cols-4 px-2">
+                    <span className="absolute left-[calc(12.5%+4px)] right-[calc(12.5%+4px)] top-[14px] h-px bg-slate-200" aria-hidden="true" />
+                    {stages.map((s) => {
+                        const isMax = s.key === bottleneck && s.count > 0;
+                        return (
+                            <li key={s.key} className="relative flex flex-col items-center min-w-0 px-0.5" title={`${s.label}: ${s.count}`}>
+                                <span
+                                    className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold tabular-nums ring-[3px] ring-white"
+                                    style={isMax
+                                        ? { backgroundColor: s.color, color: "#fff" }
+                                        : { backgroundColor: s.count ? `${s.color}29` : "#f1f5f9", color: s.count ? s.badgeText : "#94a3b8" }}
+                                >
+                                    {s.count}
+                                </span>
+                                <span className={`mt-1 text-[10.5px] leading-tight text-center truncate max-w-full ${isMax ? "font-semibold text-slate-900" : "text-slate-500"}`}>{s.label}</span>
+                            </li>
+                        );
+                    })}
+                </ol>
+            </section>
         </div>
     );
 }

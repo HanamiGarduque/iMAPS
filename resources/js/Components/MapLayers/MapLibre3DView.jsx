@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Map as MapLibreMap, Marker, setWorkerUrl } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { getLens, resolveLensValue, DIVERSITY_LENSES } from "@/utils/diversityTheme";
+import { resolveLensValue, DIVERSITY_LENSES } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import useReducedMotion from "@/utils/useReducedMotion";
@@ -28,7 +28,8 @@ const DEFAULT_BEARING = 0;
 const OBLIQUE_PITCH = 54;
 const OBLIQUE_BEARING = -18;
 const TILT_MS = 1100;
-const MIN_ZOOM = 11;
+// MapLibre zoom runs one level below Leaflet's (512px tiles): 10.75 here is the 2D map's 11.75.
+const MIN_ZOOM = 10.75;
 // The ground size (metres) every selected barangay is framed against on the white LC view.
 const STANDARD_SPAN_M = 5800;
 // How long the 3D map takes to fade in over 2D before it starts to tilt.
@@ -374,8 +375,21 @@ export default function MapLibre3DView({
     demandRef.current = demandCounts;
     const calloutRef = useRef(callout);
     calloutRef.current = callout;
-    const calloutHostRef = useRef(null);
-    const [calloutHost, setCalloutHost] = useState(null);
+    // The card's host lives for the whole view. Off the map it waits in a
+    // hidden parking spot, still laid out, so its content is ready (and its
+    // height known) the moment a barangay is picked.
+    const [calloutHost] = useState(() => {
+        const host = document.createElement("div");
+        // Clicks and drags on the card are the card's own, not the map's.
+        ["click", "dblclick", "mousedown", "pointerdown", "touchstart"].forEach((ev) => host.addEventListener(ev, (e) => e.stopPropagation()));
+        return host;
+    });
+    const calloutHostRef = useRef(calloutHost);
+    const calloutParkRef = useRef(null);
+    useLayoutEffect(() => {
+        calloutParkRef.current?.appendChild(calloutHost);
+        return () => calloutHost.remove();
+    }, [calloutHost]);
     const lcColorsRef = useRef(lcColors);
     lcColorsRef.current = lcColors;
     const insetsRef = useRef(insets);
@@ -388,7 +402,7 @@ export default function MapLibre3DView({
     const selectedNameRef = useRef(null);
 
     const lensRef = useRef(lens);
-    const plainRef = useRef(lens === "trends" && !showSatellite);
+    const plainRef = useRef(!showSatellite);
     const bandRef = useRef(bandFilter);
     const reducedRef = useRef(false);
     const styleReadyRef = useRef(false);
@@ -400,13 +414,6 @@ export default function MapLibre3DView({
     const isFlatRef = useRef(DEFAULT_PITCH < 12);
     const hasEnteredRef = useRef(false);
 
-    // Hover position is written straight to the DOM node; only the *content*
-    // lives in React state, keyed by barangay, so moving the mouse across one
-    // prism re-renders nothing.
-    const hoverElRef = useRef(null);
-    const hoverRafRef = useRef(null);
-    const hoverPointRef = useRef({ x: 0, y: 0 });
-
     // The map's event handlers are bound once, in the init effect. Reading the
     // callbacks through a ref keeps them current; captured directly, a click
     // would forever see the first render's props (which, for `rightPanelOpen`,
@@ -416,7 +423,6 @@ export default function MapLibre3DView({
 
     const prefersReducedMotion = useReducedMotion();
 
-    const [hoverCard, setHoverCard] = useState(null);
     const [loadState, setLoadState] = useState("loading");
 
     useEffect(() => { reducedRef.current = prefersReducedMotion; }, [prefersReducedMotion]);
@@ -482,8 +488,11 @@ export default function MapLibre3DView({
         const zoom = map.getZoom();
         const plain = plainRef.current;
         // On the white page the town view shows names only (the count is on hover and
-        // in the ranking), so more of them fit before they crowd.
-        const namesOnly = plain && !selected;
+        // in the ranking), so more of them fit before they crowd. Application
+        // tracking keeps its counts so the permit-type filter shows on the map.
+        // Diversity lenses never show the value chip; the mix score is in the side panel.
+        const isDiversityLens = lensRef.current !== "status" && lensRef.current !== "trends";
+        const namesOnly = isDiversityLens || (plain && !selected && lensRef.current !== "status");
         // Every barangay is named in the town view; only the satellite view thins out.
         const maxLabels = Infinity;
         let shown = 0;
@@ -523,7 +532,7 @@ export default function MapLibre3DView({
                 else { placed.push(box); shown += 1; }
             }
             // The isolated barangay's label becomes a callout card edged in its demand colour.
-            const focus = Boolean(selected) && name.toLowerCase() === selected && plain;
+            const focus = Boolean(selected) && name.toLowerCase() === selected && (plain || Boolean(calloutRef.current));
             entries[name].el.classList.toggle("imaps3d-focus", focus);
             entries[name].el.classList.toggle("imaps3d-focus-card", focus && Boolean(calloutRef.current));
             if (focus) {
@@ -547,13 +556,9 @@ export default function MapLibre3DView({
         });
 
         // The card rides on the isolated barangay's marker so it follows the map.
+        // The card is already rendered in its hidden parking spot, so it arrives
+        // at full size and its real height places it from the first frame.
         if (focusEl && calloutRef.current) {
-            if (!calloutHostRef.current) {
-                const host = document.createElement("div");
-                // Clicks and drags on the card are the card's own, not the map's.
-                ["click", "dblclick", "mousedown", "pointerdown", "touchstart"].forEach((ev) => host.addEventListener(ev, (e) => e.stopPropagation()));
-                calloutHostRef.current = host;
-            }
             if (calloutHostRef.current.parentNode !== focusEl) focusEl.appendChild(calloutHostRef.current);
             // A short window gets a proportionally smaller card, anchored at its leader line.
             const ch = map.getCanvas().clientHeight;
@@ -581,12 +586,13 @@ export default function MapLibre3DView({
             focusEl.style.setProperty("--lc-dx", `${Math.round(dx / k)}px`);
             calloutHostRef.current.style.transform = `translateX(${Math.round(dx)}px) scale(${k.toFixed(2)})`;
             calloutHostRef.current.style.transformOrigin = "50% 100%";
-            setCalloutHost(calloutHostRef.current);
-        } else if (calloutHostRef.current?.parentNode) {
-            calloutHostRef.current.remove();
-            setCalloutHost(null);
+        } else if (calloutParkRef.current && calloutHostRef.current.parentNode !== calloutParkRef.current) {
+            calloutParkRef.current.appendChild(calloutHostRef.current);
         }
     }, [rightPanelOpen, panelWidth]);
+    // The map's move handler is bound once; it reads the current version here.
+    const refreshLabelsRef = useRef(refreshLabels);
+    refreshLabelsRef.current = refreshLabels;
 
     // Plain white page vs satellite. Only the LC demand forecast is plain, and
     // only until the user asks for the basemap back; every other layer keeps
@@ -857,7 +863,8 @@ export default function MapLibre3DView({
         let zoom = calculatedZoom;
         let padding = basePadding;
         const bb = entry.bounds?.bbox;
-        if (plainRef.current) {
+        // A barangay with a pop-up card is framed with room left for the card.
+        if (plainRef.current || calloutRef.current) {
             const canvas = map.getCanvas();
             const tilt = (pitch * Math.PI) / 180;
             const metersPerPxAt = (z) => (78271.517 * Math.cos((13.8 * Math.PI) / 180)) / 2 ** z;
@@ -930,7 +937,7 @@ export default function MapLibre3DView({
             const padding = { top: 48, left: 48, right: 48 + pad.right, bottom: 48 + pad.bottom };
             const cam = map.cameraForBounds(muniBoundsRef.current, { padding, bearing });
             const [[w, s], [e, n]] = muniBoundsRef.current;
-            if (cam) target = { center: [(w + e) / 2, (s + n) / 2], zoom: Math.max(MIN_ZOOM, cam.zoom), pitch, bearing, padding: pad };
+            if (cam) target = { center: [(w + e) / 2, (s + n) / 2], zoom: MIN_ZOOM, pitch, bearing, padding: pad };
         }
 
         if (!animate || reducedRef.current) {
@@ -1279,20 +1286,6 @@ export default function MapLibre3DView({
 
             map.getCanvas().style.cursor = "pointer";
 
-            hoverPointRef.current = { x: e.point.x, y: e.point.y };
-            if (hoverRafRef.current === null) {
-                hoverRafRef.current = requestAnimationFrame(() => {
-                    hoverRafRef.current = null;
-                    const el = hoverElRef.current;
-                    if (!el) return;
-                    const { x, y } = hoverPointRef.current;
-                    const rect = map.getCanvas().getBoundingClientRect();
-                    const flipX = x > rect.width - 150;
-                    const flipY = y < 180;
-                    el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(${flipX ? "-100%" : "-50%"}, ${flipY ? "14px" : "-100%"})`;
-                });
-            }
-
             if (hoveredIdRef.current === feat.id) return;
 
             if (hoveredIdRef.current !== null) {
@@ -1301,7 +1294,6 @@ export default function MapLibre3DView({
             hoveredIdRef.current = feat.id;
             map.setFeatureState({ source: SRC_PRISMS, id: feat.id }, { hover: true });
 
-            setHoverCard(feat.properties);
             callbacksRef.current.onHoverBgy?.(feat.properties.name);
         };
 
@@ -1311,7 +1303,6 @@ export default function MapLibre3DView({
                 map.setFeatureState({ source: SRC_PRISMS, id: hoveredIdRef.current }, { hover: false });
                 hoveredIdRef.current = null;
             }
-            setHoverCard(null);
             callbacksRef.current.onHoverBgy?.(null);
         };
 
@@ -1340,14 +1331,11 @@ export default function MapLibre3DView({
         map.on("click", LYR_PRISMS, handleClick);
         map.on("click", handleBackgroundClick);
 
-        // Names follow the map as it moves, one pass per frame. Refreshing only
-        // when a zoom ends left them at their old spots mid-zoom and then
-        // snapped them into place.
-        let labelFrame = null;
-        map.on("move", () => {
-            if (labelFrame !== null) return;
-            labelFrame = requestAnimationFrame(() => { labelFrame = null; refreshLabels(); });
-        });
+        // Names follow the map as it moves, in the same frame as the move.
+        // Refreshing only when a zoom ends left them at their old spots mid-zoom
+        // and then snapped them into place; deferring to the next frame let the
+        // selected barangay's card trail its marker and shake during a flight.
+        map.on("move", () => refreshLabelsRef.current());
 
         map.on("moveend", () => {
             refreshLabels();
@@ -1364,7 +1352,6 @@ export default function MapLibre3DView({
         });
 
         return () => {
-            if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current);
             styleReadyRef.current = false;
             Object.values(labelsRef.current).forEach(({ marker }) => marker.remove());
             labelsRef.current = {};
@@ -1380,7 +1367,7 @@ export default function MapLibre3DView({
     // snapping to the new metric.
     useEffect(() => {
         lensRef.current = lens;
-        plainRef.current = lens === "trends" && !showSatellite;
+        plainRef.current = !showSatellite;
         if (!styleReadyRef.current) return;
         applyBackdrop();
         applyPaint();
@@ -1558,14 +1545,11 @@ export default function MapLibre3DView({
         };
     }, [active, loadState, applyPaint]);
 
-    const plain = lens === "trends" && !showSatellite;
-    const metricLabel = lens === "trends" ? "LC applications forecast"
-        : lens === "status" ? "Permit applications filed"
-        : getLens(lens).metricLabel;
+    const plain = !showSatellite;
 
     return (
         <div
-            className={`relative w-full h-full overflow-hidden ${plain ? "imaps3d-plain" : ""}`}
+            className={`relative isolate w-full h-full overflow-hidden ${plain ? "imaps3d-plain" : ""}`}
             style={plain ? { background: PLAIN_PAGE } : { backgroundColor: CANVAS }}
         >
             <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
@@ -1581,9 +1565,9 @@ export default function MapLibre3DView({
 .imaps3d-plain .imaps3d-name-only { padding: 0; background: none; border: 0; box-shadow: none; border-radius: 0; font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; }
 .imaps3d-plain .imaps3d-name-only > span { font-size: 1em; font-weight: 600; letter-spacing: 0.005em; color: #1e293b;
   paint-order: stroke fill; -webkit-text-stroke: 3px rgba(255, 255, 255, 0.85); text-shadow: 0 0 6px rgba(255, 255, 255, 0.7); }
-.imaps3d-plain .imaps3d-focus-card { display: block; margin-top: 0; min-width: 0; padding: 0; background: transparent; border: 0; box-shadow: none; border-radius: 0; pointer-events: auto; translate: 0 calc(-50% - var(--lc-lift, 44px)); }
-.imaps3d-plain .imaps3d-focus-card > span, .imaps3d-plain .imaps3d-focus-card > b,
-.imaps3d-plain .imaps3d-focus-card > em, .imaps3d-plain .imaps3d-focus-card > small { display: none; }
+.imaps3d-focus-card, .imaps3d-plain .imaps3d-focus-card { display: block; text-shadow: none; margin-top: 0; min-width: 0; padding: 0; background: transparent; border: 0; box-shadow: none; border-radius: 0; pointer-events: auto; translate: 0 calc(-50% - var(--lc-lift, 44px)); }
+.imaps3d-focus-card > span, .imaps3d-focus-card > b,
+.imaps3d-focus-card > em, .imaps3d-focus-card > small { display: none; }
 `}</style>
 
             {loadState !== "ready" && (
@@ -1603,40 +1587,8 @@ export default function MapLibre3DView({
                 </div>
             )}
 
-            {calloutHost && callout && createPortal(callout, calloutHost)}
-
-            {/* Hover card. Position is written to this node on a rAF; only the
-                content below is React state, keyed by barangay. */}
-            <div
-                ref={hoverElRef}
-                className="absolute top-0 left-0 pointer-events-none z-[900] will-change-transform"
-                style={{ visibility: hoverCard && lens !== "trends" ? "visible" : "hidden" }}
-            >
-                {/* The LC layer reads its numbers from the chips, the title card and the side panel. */}
-                {hoverCard && lens !== "trends" && (
-                    <div className="bg-white border border-slate-300 rounded-md shadow-md min-w-[200px] mb-3 overflow-hidden animate-in fade-in duration-150">
-                        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 border-b border-slate-200">
-                            <span className="text-[12px] font-bold text-slate-900 truncate">{hoverCard.name}</span>
-                            <span
-                                className="text-[11px] font-mono tabular-nums font-bold px-1.5 rounded-sm shrink-0"
-                                style={{ backgroundColor: hoverCard[`c_${lens}_${slotRef.current}`], color: "#fff" }}
-                            >
-                                {hoverCard[`l_${lens}_${slotRef.current}`]}
-                            </span>
-                        </div>
-                        <div className="px-2.5 py-1.5 space-y-0.5">
-                            <div className="text-[11px] font-semibold text-slate-700">{hoverCard[`cls_${lens}_${slotRef.current}`]}</div>
-                            <div className="text-[10px] text-slate-500">{metricLabel}</div>
-                            {hoverCard.clusterName && (
-                                <div className="flex items-center gap-1.5 pt-1 mt-1 border-t border-slate-200">
-                                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: hoverCard.clusterColor }} />
-                                    <span className="text-[10px] text-slate-500 truncate">{hoverCard.clusterName}</span>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-            </div>
+            <div ref={calloutParkRef} className="absolute top-0 left-0 invisible pointer-events-none" aria-hidden="true" />
+            {callout && createPortal(callout, calloutHost)}
         </div>
     );
 }

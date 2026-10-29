@@ -59,15 +59,47 @@ class PullCompletedInspections extends Command
 
         $response = $supabase->select('field_jobs', $fields, $filters);
 
-        if ($response->failed()) {
+        if (! $response->successful()) {
             $this->error("Failed to connect to Supabase.");
             $this->line('SYNC_RESULT=FAILED');
             return self::FAILURE;
         }
 
+        // Validate the whole batch before any write; decode objects distinctly from lists.
+        try {
+            $payload = json_decode($response->body(), false, 512, JSON_THROW_ON_ERROR);
+            if (! is_array($payload)) {
+                throw new \UnexpectedValueException();
+            }
+
+            $seenIds = [];
+            foreach ($payload as $job) {
+                if (! $job instanceof \stdClass) {
+                    throw new \UnexpectedValueException();
+                }
+
+                $id = $job->local_inspection_id ?? null;
+                // Round-trip canonical integer/string IDs without coercion or overflow.
+                if ((! is_int($id) && ! is_string($id))
+                    || (int) $id <= 0
+                    || (string) (int) $id !== (string) $id
+                    || ($job->status ?? null) !== 'completed'
+                    || isset($seenIds[(int) $id])) {
+                    throw new \UnexpectedValueException();
+                }
+
+                $seenIds[(int) $id] = true;
+            }
+        } catch (\JsonException | \UnexpectedValueException $e) {
+            $this->error('Invalid completed inspections response from Supabase.');
+            $this->line('SYNC_RESULT=FAILED');
+            return self::FAILURE;
+        }
+
+        // Keep the existing associative decoding of optional result fields.
         $completedJobs = $response->json();
 
-        if (empty($completedJobs)) {
+        if ($completedJobs === []) {
             $this->info("No new completed inspections found.");
             // Distinguishes "the bridge has no completed result for this round" from
             // "the round was already current". A support action must be able to
@@ -80,16 +112,11 @@ class PullCompletedInspections extends Command
         $scannedCount = 0;
 
         foreach ($completedJobs as $job) {
-            $localInspectionId = $job['local_inspection_id'] ?? null;
-
-            if ($localInspectionId === null) {
-                Log::warning('Supabase sync issue: Completed field job has no local inspection ID.');
-                continue;
-            }
+            $localInspectionId = (int) $job['local_inspection_id'];
 
             // 2. Wrap local database updates in a transaction to prevent partial saves.
             DB::transaction(function () use ($job, $localInspectionId, &$syncedCount, &$scannedCount) {
-                $localInspection = SiteInspection::find($localInspectionId);
+                $localInspection = SiteInspection::query()->lockForUpdate()->find($localInspectionId);
 
                 if ($localInspection) {
                     // Preserve the local value only when a selected key is unexpectedly absent.

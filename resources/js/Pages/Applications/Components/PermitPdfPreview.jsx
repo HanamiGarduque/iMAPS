@@ -126,7 +126,8 @@ export default function PermitPdfPreview({ url, title, dimmed = false }) {
     useEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
-        const measure = () => setFitWidth(Math.max(0, el.clientWidth - PAD * 2));
+        // offsetWidth, not clientWidth: a scrollbar appearing on zoom must not change the fit, or the page bounces.
+        const measure = () => setFitWidth(Math.max(0, el.offsetWidth - 16 - PAD * 2));
         measure();
         const ro = new ResizeObserver(measure);
         ro.observe(el);

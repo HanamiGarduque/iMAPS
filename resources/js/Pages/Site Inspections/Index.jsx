@@ -21,10 +21,6 @@ const ROSARIO_BARANGAYS = [
 
 // "priority" is the default and is rendered as the dropdown's all-label.
 const SORT_OPTIONS = [
-    { value: "newest", label: "Newest visit" },
-    { value: "oldest", label: "Oldest visit" },
-    { value: "applicant_asc", label: "Applicant (A-Z)" },
-    { value: "applicant_desc", label: "Applicant (Z-A)" },
     { value: "sched_asc", label: "Scheduled (earliest)" },
     { value: "sched_desc", label: "Scheduled (latest)" },
 ];
@@ -169,7 +165,13 @@ export default function SiteInspectionsIndex() {
     const [debouncedSearch, setDebouncedSearch] = useState(() => urlParam("q") || "");
     const [selectedTab, setSelectedTab] = useState(() => (TABS.some(t => t.key && t.key === urlParam("status")) ? urlParam("status") : ""));
     const [selectedBarangay, setSelectedBarangay] = useState(() => urlParam("brgy") || "");
-    const [selectedSort, setSelectedSort] = useState(() => urlParam("sort") || "priority");
+    const [selectedSort, setSelectedSort] = useState(() => {
+        // An old link may carry a sort that no longer exists.
+        const s = urlParam("sort");
+        return SORT_OPTIONS.some((o) => o.value === s) ? s : "priority";
+    });
+    // Which visit a case is on (its latest round): "1", "2", ... ; "" = any.
+    const [selectedVisit, setSelectedVisit] = useState("");
     const [dateField, setDateField] = useState(() => (urlParam("date_by") === "completed" ? "completed" : "scheduled"));
     const [dateFrom, setDateFrom] = useState(() => urlParam("date_from") || "");
     const [dateTo, setDateTo] = useState(() => urlParam("date_to") || "");
@@ -226,7 +228,7 @@ export default function SiteInspectionsIndex() {
     }, []);
 
     const hasActiveFilters = Boolean(
-        debouncedSearch || selectedTab || selectedBarangay || selectedSort !== "priority" || dateFrom || dateTo
+        debouncedSearch || selectedTab || selectedBarangay || selectedVisit || selectedSort !== "priority" || dateFrom || dateTo
     );
 
     const clearFilters = () => {
@@ -234,6 +236,7 @@ export default function SiteInspectionsIndex() {
         setDebouncedSearch("");
         setSelectedTab("");
         setSelectedBarangay("");
+        setSelectedVisit("");
         setSelectedSort("priority");
         setDateFrom("");
         setDateTo("");
@@ -325,6 +328,10 @@ export default function SiteInspectionsIndex() {
         });
     }, [allInspections]);
 
+    // A case's visit number is its latest round's.
+    const visitOf = (c) => Number(c.item.round_number) || c.rounds.length;
+    const visitOptions = [1, 2, 3].map((n) => ({ value: String(n), label: `${ordinal(n)} visit` }));
+
     const inTab = (c, key) => {
         switch (key) {
             case "open": return !isDone(c.item);
@@ -343,6 +350,10 @@ export default function SiteInspectionsIndex() {
         if (selectedBarangay) {
             const brgy = selectedBarangay.toLowerCase();
             items = items.filter(c => String(locationOf(c.item)).toLowerCase().includes(brgy));
+        }
+
+        if (selectedVisit) {
+            items = items.filter(c => visitOf(c) === Number(selectedVisit));
         }
 
         if (debouncedSearch) {
@@ -373,14 +384,6 @@ export default function SiteInspectionsIndex() {
 
         return [...items].sort((a, b) => {
             switch (selectedSort) {
-                case "newest":
-                    return time(b.item.created_at) - time(a.item.created_at);
-                case "oldest":
-                    return time(a.item.created_at) - time(b.item.created_at);
-                case "applicant_asc":
-                    return applicantOf(a.item).localeCompare(applicantOf(b.item));
-                case "applicant_desc":
-                    return applicantOf(b.item).localeCompare(applicantOf(a.item));
                 case "sched_asc":
                     return time(scheduledOf(a.item)) - time(scheduledOf(b.item));
                 case "sched_desc":
@@ -394,7 +397,7 @@ export default function SiteInspectionsIndex() {
                 }
             }
         });
-    }, [cases, operations, selectedBarangay, debouncedSearch, dateField, dateFrom, dateTo, selectedSort]);
+    }, [cases, operations, selectedBarangay, selectedVisit, debouncedSearch, dateField, dateFrom, dateTo, selectedSort]);
 
     const tabCounts = useMemo(() => {
         const counts = {};
@@ -823,6 +826,14 @@ export default function SiteInspectionsIndex() {
 
                                     {/* Sort + View switcher */}
                                     <div className="flex items-center gap-2 ml-auto">
+                                        <div className="w-36">
+                                            <DropdownSelect
+                                                value={selectedVisit}
+                                                onChange={(val) => setSelectedVisit(val || "")}
+                                                options={visitOptions}
+                                                allLabel="All visits"
+                                            />
+                                        </div>
                                         <div className="w-48">
                                             <DropdownSelect
                                                 value={selectedSort === "priority" ? "" : selectedSort}

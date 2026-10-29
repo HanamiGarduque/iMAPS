@@ -20,6 +20,28 @@ class MapsController extends Controller
             $query->ofType($appType);
         }
 
+        // Filing-date window: this month, the last three months, or this year.
+        $period = $request->input('period', 'month');
+        $periodStart = match ($period) {
+            'month'   => now()->startOfMonth(),
+            '3months' => now()->subMonths(3)->startOfDay(),
+            'year'    => now()->startOfYear(),
+            default   => null,
+        };
+        if ($periodStart) {
+            $query->where('created_at', '>=', $periodStart);
+        } else {
+            $period = 'all';
+        }
+
+        // "In process only" drops finished applications (released, approved, denied).
+        $activeOnly = $request->boolean('active');
+        if ($activeOnly) {
+            $query->whereRaw("LOWER(status) NOT LIKE '%released%'")
+                ->whereRaw("LOWER(status) NOT LIKE '%approved%'")
+                ->whereRaw("LOWER(status) NOT LIKE '%denied%'");
+        }
+
         $total = (clone $query)->count();
         $thisMonth = (clone $query)->whereYear('created_at', now()->year)
             ->whereMonth('created_at', now()->month)
@@ -416,7 +438,7 @@ class MapsController extends Controller
             'bgyStats'  => $bgyStats,
             'overallDiversity' => $overallDiversity,
             'urbanGrowthData'  => $urbanGrowthData,
-            'filters'   => ['application_type' => $appType ?? 'All'],
+            'filters'   => ['application_type' => $appType ?? 'All', 'period' => $period, 'active' => $activeOnly],
         ]);
     }
 }

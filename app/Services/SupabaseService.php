@@ -311,54 +311,92 @@ class SupabaseService
      */
     public function fieldJobTransferStates(array $localInspectionIds): array
     {
-        $ids = array_values(array_unique(array_filter(
-            array_map('intval', $localInspectionIds),
-            static fn (int $id): bool => $id > 0
-        )));
+        $validLocalId = static fn (mixed $id): bool =>
+            (is_int($id) || is_string($id)) && (int) $id > 0 && (string) (int) $id === (string) $id;
+        $ids = [];
+        foreach ($localInspectionIds as $id) {
+            if (! $validLocalId($id)) {
+                return [];
+            }
+            $ids[(int) $id] = true;
+        }
 
         if ($ids === []) {
             return [];
         }
 
+        // Existing worker markers; types verified against PostgREST's field_jobs schema.
+        $fields = ['local_inspection_id', 'status', 'current_step', 'started_at', 'submitted_at',
+            'rework_started_at', 'gps_confirmed_at', 'checklist_completed_count', 'photo_count', 'photo_paths', 'findings'];
         $response = $this->select(
             'field_jobs',
-            'local_inspection_id,status,gps_confirmed_at,checklist_completed_count,photo_count',
+            implode(',', $fields),
             $this->scopedFilters([
-                'local_inspection_id' => 'in.(' . implode(',', $ids) . ')',
-                'limit'               => (string) count($ids),
-            ])
+                'local_inspection_id' => 'in.(' . implode(',', array_keys($ids)) . ')',
+            ]),
+            headers: ['Prefer' => 'count=exact'],
         );
 
-        if ($response->failed()) {
+        if (! $response->successful()) {
             Log::error('Failed to read FieldSync job state for reassignment guard', [
-                'local_inspection_ids' => $ids,
+                'local_inspection_ids' => array_keys($ids),
                 'status'               => $response->status(),
-                'body'                 => $response->body(),
             ]);
 
             return [];
         }
 
-        $rows = $response->json();
+        try {
+            $rows = json_decode($response->body(), false, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            return [];
+        }
 
         if (! is_array($rows)) {
             return [];
         }
 
+        // ponytail: deny truncated batches; paginate only if rounds exceed the API row cap.
+        $count = count($rows);
+        $completeRange = $count === 0 ? '*/0' : '0-'.($count - 1).'/'.$count;
+        if ($response->header('Content-Range') !== $completeRange) {
+            return [];
+        }
+
         $states = [];
+        $seen = [];
 
         foreach ($rows as $row) {
-            $localId = $row['local_inspection_id'] ?? null;
+            if (! $row instanceof \stdClass) {
+                return [];
+            }
+            $localId = $row->local_inspection_id ?? null;
+            if (! $validLocalId($localId) || ! isset($ids[(int) $localId])) {
+                return [];
+            }
+            $localId = (int) $localId;
+            if (isset($seen[$localId])) {
+                unset($states[$localId]);
+                continue;
+            }
+            $seen[$localId] = true;
 
-            if ($localId === null) {
+            // Unknown evidence is not zero. Only positively unstarted rows reach consumers.
+            if (array_diff($fields, array_keys((array) $row)) !== []
+                || $row->status !== 'assigned' || $row->current_step !== 0
+                || $row->started_at !== null || $row->submitted_at !== null || $row->rework_started_at !== null
+                || $row->gps_confirmed_at !== null
+                || $row->checklist_completed_count !== 0 || $row->photo_count !== 0
+                || ($row->photo_paths !== null && $row->photo_paths !== [])
+                || ($row->findings !== null && $row->findings !== '')) {
                 continue;
             }
 
-            $states[(int) $localId] = [
-                'status'                   => $row['status'] ?? null,
-                'gps_confirmed_at'         => $row['gps_confirmed_at'] ?? null,
-                'checklist_completed_count' => $row['checklist_completed_count'] ?? 0,
-                'photo_count'              => $row['photo_count'] ?? 0,
+            $states[$localId] = [
+                'status'                   => $row->status,
+                'gps_confirmed_at'         => $row->gps_confirmed_at,
+                'checklist_completed_count' => $row->checklist_completed_count,
+                'photo_count'              => $row->photo_count,
             ];
         }
 

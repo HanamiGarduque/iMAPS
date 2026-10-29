@@ -4,6 +4,9 @@ import { getLens, getScaleSegments, computeBandCounts } from "@/utils/diversityT
 import { ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
 import { TILE_PROVIDERS, DEMAND_CLASSES, APP_LOAD_CLASSES, getTrendsDemandColor } from "./LeafletMap";
 
+// Plain names for the Application Tracking map's colour classes.
+const APP_LOAD_NAMES = { "11+": "Very High", "6–10": "High", "3–5": "Moderate", "1–2": "Low", "0": "None" };
+
 export const MODULES = [
     { id: "status", key: "1", label: "Application Tracking", desc: "Zoning applications and processing status" },
     { id: "trends", key: "2", label: "LC Demand Forecast", desc: "Locational clearance demand by quarter" },
@@ -19,7 +22,7 @@ export const PERMIT_TYPES = [
     { value: "Development Permit", label: "Development Permit" },
 ];
 
-const FIELD = "w-full py-1 pl-2 pr-7 text-[12px] leading-5 bg-white border border-slate-300 rounded-[3px] focus:outline-none focus:border-[#0b2a5b] focus:ring-1 focus:ring-[#0b2a5b]";
+const FIELD = "w-full py-1.5 pl-3 pr-8 text-[12.5px] leading-5 text-slate-700 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-[#0b2a5b] focus:ring-2 focus:ring-[#0b2a5b]/15";
 
 const Swatch = ({ color, ring }) => (
     <span
@@ -30,7 +33,7 @@ const Swatch = ({ color, ring }) => (
 );
 
 const GroupTitle = ({ children }) => (
-    <h3 className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">{children}</h3>
+    <h3 className="px-4 pt-4 pb-1.5 text-[13px] font-bold text-[#0b2a5b]">{children}</h3>
 );
 
 // One legend row. When `onClick` is given it doubles as a filter, the way
@@ -64,8 +67,6 @@ function LegendRow({ swatch, label, count, active, onClick, highlighted = false 
 export default function LayersPanel({
     activeLayer,
     onSelectLayer,
-    appTypeFilter,
-    onAppTypeChange,
     statusFilter,
     onStatusFilterChange,
     statusCounts = {},
@@ -105,8 +106,8 @@ export default function LayersPanel({
                 {MODULES.map((m) => {
                     const active = activeLayer === m.id;
                     return (
-                        <div key={m.id} className={active ? "bg-white border-y border-slate-200" : ""}>
-                            <label className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer ${active ? "" : "hover:bg-slate-200/50"}`} title={m.desc}>
+                        <div key={m.id} className={`mx-3 mb-1 rounded-lg ${active ? "bg-slate-50 ring-1 ring-slate-200" : ""}`}>
+                            <label className={`flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer ${active ? "" : "hover:bg-slate-50"}`} title={m.desc}>
                                 <input
                                     type="radio"
                                     name="analysis-layer"
@@ -115,56 +116,25 @@ export default function LayersPanel({
                                     className="accent-[#0b2a5b]"
                                 />
                                 <span className={`flex-1 min-w-0 text-[12.5px] ${active ? "font-semibold text-[#0b2a5b]" : "text-slate-800"}`}>{m.label}</span>
-                                <kbd className="text-[10px] text-slate-400 border border-slate-300 rounded-[3px] px-1 leading-4 bg-white">{m.key}</kbd>
+                                <kbd className="text-[10px] text-slate-400 border border-slate-200 rounded px-1 leading-4 bg-white">{m.key}</kbd>
                             </label>
 
                             {active && m.id === "status" && (
-                                <div className="pl-8 pr-3 pb-2.5 space-y-2">
-                                    <div>
-                                        <label htmlFor="permit-type" className="sr-only">Permit type</label>
-                                        <select
-                                            id="permit-type"
-                                            value={appTypeFilter}
-                                            onChange={(e) => onAppTypeChange(e.target.value)}
-                                            className={FIELD}
-                                        >
-                                            {PERMIT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <span className="block text-[10.5px] text-slate-500 mb-0.5">Applications per barangay</span>
-                                        <div className="flex">
-                                            {[...APP_LOAD_CLASSES].reverse().map((c) => (
-                                                <div key={c.label} className="flex-1 text-center">
-                                                    <div className="h-2.5 border-y border-black/10" style={{ backgroundColor: c.color }} />
-                                                    <span className="text-[9.5px] tabular-nums text-slate-500">{c.label}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="flex items-baseline justify-between text-[10.5px] text-slate-500 mb-0.5">
-                                            <span title="Applications with a matched lot show as its outline when you zoom in close">Application lots</span>
-                                            {statusFilter !== "All" && (
-                                                <button type="button" onClick={() => onStatusFilterChange("All")} className="text-[#0b2a5b] hover:underline cursor-pointer">All</button>
-                                            )}
-                                        </div>
-                                        {Object.entries(STATUS_MARKER_CONFIG).map(([id, cfg]) => (
-                                            <LegendRow
-                                                key={id}
-                                                swatch={<span className="w-2.5 h-2.5 rounded-[1px] shrink-0 shadow-[0_0_0_1px_#fff,0_0_0_2px_rgba(15,23,42,.45)]" style={{ backgroundColor: cfg.color }} />}
-                                                label={cfg.label}
-                                                count={statusCounts[id] || 0}
-                                                active={statusFilter === id}
-                                                onClick={() => toggleStatus(id)}
-                                            />
-                                        ))}
-                                    </div>
+                                <div className="px-2.5 pb-3">
+                                    <span className="block text-[10.5px] text-slate-500 mb-0.5">Applications per barangay</span>
+                                    {APP_LOAD_CLASSES.map((c) => (
+                                        <LegendRow
+                                            key={c.label}
+                                            swatch={<Swatch color={c.color} />}
+                                            label={APP_LOAD_NAMES[c.label]}
+                                            count={c.label}
+                                        />
+                                    ))}
                                 </div>
                             )}
 
                             {active && m.id === "trends" && (
-                                <div className="pl-8 pr-3 pb-3">
+                                <div className="px-2.5 pb-3">
                                     <div>
                                         <span className="block text-[10.5px] text-slate-500 mb-0.5">
                                             LC per barangay · {activeQuarter?.label} {activeQuarter?.isForecast ? "(forecast)" : "(filed)"}
@@ -183,7 +153,7 @@ export default function LayersPanel({
                             )}
 
                             {active && m.id === "diversity" && (
-                                <div className="pl-8 pr-3 pb-3 space-y-2">
+                                <div className="px-2.5 pb-3 space-y-2">
                                     <div>
                                         <div className="flex items-baseline justify-between text-[10.5px] text-slate-500 mb-0.5">
                                             <span>{lens.metricLabel}</span>
@@ -218,7 +188,7 @@ export default function LayersPanel({
             </div>
 
             <GroupTitle>Overlays</GroupTitle>
-            <div className="px-3 space-y-1">
+            <div className="px-4 space-y-1">
                 <label className="flex items-center gap-2 py-1 text-[12.5px] text-slate-800 cursor-pointer">
                     <input type="checkbox" checked={showClup} onChange={(e) => onToggleClup(e.target.checked)} className="accent-[#0b2a5b]" />
                     CLUP 2030 zoning
@@ -251,40 +221,24 @@ export default function LayersPanel({
             </div>
 
             <GroupTitle>Basemap</GroupTitle>
-            {/* The LC demand forecast sits on plain white in 2D and 3D; a basemap is opt-in. */}
-            {activeLayer === "trends" ? (
-                <div className="px-3 space-y-1.5">
-                    <label className="flex items-center gap-2 py-1 text-[12.5px] text-slate-800 cursor-pointer">
-                        <input type="checkbox" checked={showSatellite3D} onChange={(e) => onToggleSatellite3D(e.target.checked)} className="accent-[#0b2a5b]" />
-                        Show basemap
-                    </label>
-                    {showSatellite3D && !is3D && (
-                        <>
-                            <label htmlFor="basemap" className="sr-only">Basemap</label>
-                            <select id="basemap" value={mapStyle} onChange={(e) => onMapStyle(e.target.value)} className={FIELD}>
-                                {Object.entries(TILE_PROVIDERS).map(([key, p]) => (
-                                    <option key={key} value={key}>{p.label}</option>
-                                ))}
-                            </select>
-                        </>
-                    )}
-                    {showSatellite3D && is3D && <p className="text-[11px] text-slate-500 leading-snug">3D shows the satellite imagery.</p>}
-                </div>
-            ) : (
-                <div className="px-3">
-                    <label htmlFor="basemap" className="sr-only">Basemap</label>
-                    <select
-                        id="basemap"
-                        value={mapStyle}
-                        onChange={(e) => onMapStyle(e.target.value)}
-                        className={FIELD}
-                    >
-                        {Object.entries(TILE_PROVIDERS).map(([key, p]) => (
-                            <option key={key} value={key}>{p.label}</option>
-                        ))}
-                    </select>
-                </div>
-            )}
+            {/* Every layer sits on plain white in 2D and 3D, like the LC demand forecast; a basemap is opt-in. */}
+            <div className="px-4 space-y-1.5">
+                <label className="flex items-center gap-2 py-1 text-[12.5px] text-slate-800 cursor-pointer">
+                    <input type="checkbox" checked={showSatellite3D} onChange={(e) => onToggleSatellite3D(e.target.checked)} className="accent-[#0b2a5b]" />
+                    Show basemap
+                </label>
+                {showSatellite3D && !is3D && (
+                    <>
+                        <label htmlFor="basemap" className="sr-only">Basemap</label>
+                        <select id="basemap" value={mapStyle} onChange={(e) => onMapStyle(e.target.value)} className={FIELD}>
+                            {Object.entries(TILE_PROVIDERS).map(([key, p]) => (
+                                <option key={key} value={key}>{p.label}</option>
+                            ))}
+                        </select>
+                    </>
+                )}
+                {showSatellite3D && is3D && <p className="text-[11px] text-slate-500 leading-snug">3D shows the satellite imagery.</p>}
+            </div>
         </div>
     );
 }
