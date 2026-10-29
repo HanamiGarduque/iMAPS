@@ -18,6 +18,8 @@ const formatR2 = (val) => {
     return n.toFixed(2);
 };
 
+const SHOW_FORECAST_ACCURACY = false;
+
 function MetricCard({ label, value, tooltip, align = 'center', hasBorder = true }) {
     const [open, setOpen] = useState(false);
 
@@ -280,7 +282,8 @@ export default function TrendsPanel({
 
     return (
         <div className="flex-1 min-h-0 flex flex-col">
-            {isForecast && (
+            {/* Accuracy metrics are kept in code but hidden from users; flip to true to restore. */}
+            {SHOW_FORECAST_ACCURACY && isForecast && (
             <section className="border-b border-slate-200" style={after(2)} aria-label="Forecast accuracy">
                 <h3 className="px-4 pt-3.5 pb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Forecast accuracy</h3>
                 <div className="grid grid-cols-4 border-t border-slate-200">
@@ -316,16 +319,18 @@ export default function TrendsPanel({
             ) : (
                 <section className="border-b border-slate-200" aria-label="Demand by barangay">
                     <div className="shrink-0 flex items-baseline px-4 pt-3.5 pb-2">
-                        <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">
-                            {isForecast ? 'Projected demand by barangay' : 'Filings by barangay'}
-                        </h3>
+                        {isForecast ? (
+                            <h3 className="text-[12px] font-semibold text-slate-800 mr-auto">Where will they come from?</h3>
+                        ) : (
+                            <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">Applications by barangay</h3>
+                        )}
                         <span className="text-[10.5px] text-slate-400">
-                            {previous ? `Change vs ${previous.label}` : isForecast ? 'Predicted clearances' : 'Click to open'}
+                            {previous ? `Compared with ${previous.label}` : isForecast ? 'Expected applications' : 'Click to open'}
                         </span>
                     </div>
                     {spread && (
                         <p className="px-4 pb-2 text-[11px] leading-snug text-slate-500">
-                            Half of the quarter's {spread.total} LC {isForecast ? 'projected' : 'filed'} come from <b className="text-slate-700">{spread.k} of {spread.of}</b> barangays.
+                            Half of the quarter's {spread.total} applications {isForecast ? 'expected' : 'filed'} come from <b className="text-slate-700">{spread.k} of {spread.of}</b> barangays.
                         </p>
                     )}
                     <ol>
@@ -412,16 +417,16 @@ export default function TrendsPanel({
 
             {isForecast && (
             <details className="group shrink-0 border-b border-slate-200" style={after(5)}>
-                <summary className="flex items-center justify-between px-4 py-2.5 cursor-pointer list-none hover:bg-slate-50 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                    Model data
+                <summary className="flex items-center justify-between px-4 py-2.5 cursor-pointer list-none hover:bg-slate-50 text-[12px] font-semibold text-slate-800">
+                    How is this estimated?
                     <svg className="w-3.5 h-3.5 text-slate-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                     </svg>
                 </summary>
                 <div className="px-4 pb-3.5 space-y-2">
                     <p className="text-[11px] text-slate-500">
-                        The forecast is trained on the locational clearances recorded in iMAPS. It runs on those
-                        records only — there is no dataset to swap in.
+                        It's an estimate, worked out from the locational clearance applications already recorded in
+                        iMAPS. No other data goes into it.
                     </p>
                     <button
                         type="button"

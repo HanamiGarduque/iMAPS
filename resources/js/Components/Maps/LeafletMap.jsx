@@ -379,6 +379,19 @@ export default function LeafletMap({
             // darker shade, the same fill strength, and on imagery the
             // near-white lowest class fades rather than greying the ground.
             const lowest = resolved.band.id === "monoculture";
+            if (live.current.plain) {
+                // White page, as on the LC demand map.
+                return {
+                    color: isSelected ? "#0b2a5b" : PLAIN_LINE,
+                    weight: isSelected ? 3 : 0.9,
+                    opacity: 1,
+                    dashArray: null,
+                    fill: true,
+                    fillColor: resolved.color,
+                    fillOpacity: (clup ? 0.25 : 1) * (selName && !isSelected ? 0.6 : 1),
+                    className: "",
+                };
+            }
             return {
                 color: isSelected ? selectStroke(imagery) : imagery ? edge.color : resolved.stroke || "#ffffff",
                 weight: isSelected ? (imagery ? 3 : 2.6) : imagery ? edge.weight : 1.2,
@@ -392,7 +405,7 @@ export default function LeafletMap({
         }
 
         const demand = layer === "trends" ? (lcColors?.[name.trim().toLowerCase()] || getTrendsDemandColor(demandFor(name))) : null;
-        if (live.current.plain && layer === "trends") {
+        if (live.current.plain) {
             // White page: opaque fills in the legend's colours, hairline borders.
             return {
                 color: isSelected ? "#0b2a5b" : PLAIN_LINE,
@@ -400,8 +413,10 @@ export default function LeafletMap({
                 opacity: 1,
                 dashArray: null,
                 fill: true,
-                fillColor: demand.color,
-                fillOpacity: selName && !isSelected ? 0.35 : 1,
+                // The zero class is near-white, so on the white page it gets a
+                // light grey to keep every barangay visible.
+                fillColor: demand ? demand.color : stat.total ? getAppLoadColor(stat.total) : "#eef1f5",
+                fillOpacity: (clup ? 0.25 : 1) * (selName && !isSelected ? 0.6 : 1),
                 className: "",
             };
         }
@@ -884,7 +899,7 @@ export default function LeafletMap({
                     rank = r.value;
                 } else if (layer === "trends") {
                     rank = demandFor(name);
-                    value = rank && !live.current.plain ? `${rank} LC` : "";
+                    value = rank ? `${rank} LC` : "";
                 } else {
                     rank = stat.total;
                     value = rank ? String(rank) : "";
@@ -894,7 +909,7 @@ export default function LeafletMap({
             candidates.sort((a, b) => b.rank - a.rank);
 
             const placed = [];
-            const namesOnly = live.current.plain && layer === "trends";
+            const namesOnly = live.current.plain;
             candidates.forEach(({ name, value, center }) => {
                 const pt = map.latLngToContainerPoint(center);
                 const w = namesOnly ? name.length * 6.6 + 12 : Math.max(name.length, value.length) * 6.2 + 10;

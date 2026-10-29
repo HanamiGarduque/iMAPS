@@ -132,10 +132,10 @@ class AuthenticatedSessionController extends Controller
             $authUser->save();
         }
 
-        // Always land on Overview; drop any pre-login URL so it can't resurface later.
+        // Always land on Maps; drop any pre-login URL so it can't resurface later.
         $request->session()->forget('url.intended');
 
-        return redirect(route('overview', absolute: false));
+        return redirect(route('maps', absolute: false));
     }
 
     private function turnstileEnabled(): bool

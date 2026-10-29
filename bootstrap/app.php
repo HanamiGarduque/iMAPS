@@ -32,9 +32,9 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
-        // Signed-in users hitting guest pages (/, /login) go to Overview, not
+        // Signed-in users hitting guest pages (/, /login) go to Maps, not
         // Laravel's default `dashboard` route (which now redirects to Maps).
-        $middleware->redirectUsersTo(fn () => route('overview', absolute: false));
+        $middleware->redirectUsersTo(fn () => route('maps', absolute: false));
 
         $middleware->alias([
             'role' => RoleMiddleware::class,

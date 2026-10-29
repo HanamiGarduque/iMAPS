@@ -236,6 +236,17 @@ export const getZoningConformity = (requestedUse, zoneValue) => {
     };
 };
 
+const FIELD_LABEL = "block mb-1 text-[12.5px] font-medium text-slate-700";
+const FIELD_LABEL_INLINE = "text-[12.5px] font-medium text-slate-700";
+const FIELD_SELECT = "w-full py-2 pl-3 pr-8 text-[12.5px] leading-5 text-slate-600 bg-white border border-slate-300/70 rounded-lg focus:outline-none focus:border-[#0b2a5b] focus:ring-2 focus:ring-[#0b2a5b]/15";
+
+const PERIODS = [
+    { id: "all", label: "All time" },
+    { id: "month", label: "This month" },
+    { id: "3months", label: "Last 3 months" },
+    { id: "year", label: "This year" },
+];
+
 const isResolved = (app) => getSLAInfo(app?.created_at, app?.status).status === "completed";
 
 // The shared status filter: "All" or a STATUS_MARKER_CONFIG key. The map
@@ -256,6 +267,16 @@ const ageInDays = (app) => {
 export default function StatusPanel({
     recent = [],
     selectedBgy = null,
+    period = "all",
+    onPeriodChange = () => {},
+    filtersActive = false,
+    onResetFilters = () => {},
+    appType = "All",
+    onAppTypeChange = () => {},
+    permitTypes = [],
+    loadClasses = [],
+    activeOnly = false,
+    onActiveChange = () => {},
 }) {
     const isBgy = Boolean(selectedBgy?.name);
     const bgyName = selectedBgy?.name || "";
@@ -284,6 +305,16 @@ export default function StatusPanel({
         return { total: baseList.length, open, releasedThisMonth, avgOpenDays: open ? Math.round(openDays / open) : 0 };
     }, [baseList]);
 
+    const stages = useMemo(() => {
+        const keys = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release"];
+        return keys.map((key) => {
+            const cfg = STATUS_MARKER_CONFIG[key];
+            const count = baseList.filter((app) => !isResolved(app) && getStatusMarkerConfig(app?.status) === cfg).length;
+            return { key, label: cfg.shortLabel, color: cfg.color, border: cfg.border, badgeBg: cfg.badgeBg, badgeText: cfg.badgeText, count };
+        });
+    }, [baseList]);
+    const bottleneck = stages.reduce((max, s) => (s.count > (max?.count ?? 0) ? s : max), null)?.key;
+
     const kpis = [
         { label: "Applications", value: stats.total },
         { label: "In process", value: stats.open },
@@ -291,18 +322,101 @@ export default function StatusPanel({
     ];
 
     return (
-        <div className="shrink-0 flex flex-col">
-            <div className="shrink-0 border-b border-slate-200">
-                <div className="grid grid-cols-3">
-                    {kpis.map((k, i) => (
-                        <div key={k.label} className={`px-3 pt-2.5 pb-2 ${i > 0 ? "border-l border-slate-200" : ""}`}>
-                            <span className="block text-[20px] font-semibold tabular-nums leading-none text-slate-900">{k.value}</span>
-                            <span className="block text-[10.5px] text-slate-500 mt-1 leading-tight">{k.label}</span>
-                        </div>
-                    ))}
+        <div className="shrink-0 flex flex-col pb-2.5">
+            {/* Title row */}
+            <div className="flex items-center justify-between px-3 pt-3 pb-2">
+                <h3 className="text-[17px] font-bold tracking-tight text-[#0b2a5b]">Map Filters</h3>
+                <button
+                    type="button"
+                    onClick={onResetFilters}
+                    disabled={!filtersActive}
+                    className="px-3 py-1 rounded-full border border-[#0b2a5b]/30 text-[11px] font-semibold text-[#0b2a5b] hover:bg-[#0b2a5b]/5 disabled:opacity-40 disabled:cursor-default cursor-pointer"
+                >
+                    Reset all
+                </button>
+            </div>
+
+            <div className="mx-3 space-y-2.5">
+                {/* In process only */}
+                <label className="flex items-center gap-2.5 cursor-pointer w-fit">
+                    <span className={FIELD_LABEL_INLINE}>In process only</span>
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={activeOnly}
+                        onClick={() => onActiveChange(!activeOnly)}
+                        className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${activeOnly ? "bg-[#0b2a5b]" : "bg-slate-300"}`}
+                    >
+                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${activeOnly ? "translate-x-4" : ""}`} />
+                    </button>
+                </label>
+
+                <div>
+                    <label htmlFor="status-permit-type" className={FIELD_LABEL}>Permit type</label>
+                    <select id="status-permit-type" value={appType} onChange={(e) => onAppTypeChange(e.target.value)} className={FIELD_SELECT}>
+                        {permitTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                </div>
+
+                <div>
+                    <label htmlFor="period-filter" className={FIELD_LABEL}>Date filed</label>
+                    <select id="period-filter" value={period} onChange={(e) => onPeriodChange(e.target.value)} className={FIELD_SELECT}>
+                        {PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                </div>
+
+                <div>
+                    <span className={FIELD_LABEL}>Applications per barangay</span>
+                    <div
+                        className="h-2.5 rounded-full"
+                        style={{ background: `linear-gradient(to right, ${[...loadClasses].reverse().map((c) => c.color).join(", ")})` }}
+                        aria-hidden="true"
+                    />
+                    <div className="flex justify-between mt-1 text-[11px] text-slate-500">
+                        <span>Low</span>
+                        <span>Moderate</span>
+                        <span>High</span>
+                    </div>
                 </div>
             </div>
 
+            <section className="mx-3 mt-3 rounded-xl border border-slate-300/70 bg-white">
+                <div className="grid grid-cols-3">
+                    {kpis.map((k) => (
+                        <div key={k.label} className="px-1.5 py-3 text-center">
+                            <span className="block text-[19px] font-bold tabular-nums leading-none text-[#0b2a5b]">{k.value}</span>
+                            <span className="block text-[11px] text-slate-700 mt-1.5 leading-tight">{k.label}</span>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            {stats.open > 0 && (
+                <>
+                <h3 className="px-3 pt-3 pb-1 text-[12.5px] font-medium text-slate-700">Status</h3>
+                <section className="mx-3 rounded-xl border border-slate-300/70 bg-white px-1 py-2">
+                    <ol className="relative grid grid-cols-4">
+                        <span className="absolute left-[12.5%] right-[12.5%] top-[14px] h-px bg-slate-200" aria-hidden="true" />
+                        {stages.map((s) => {
+                            const isMax = s.key === bottleneck && s.count > 0;
+                            return (
+                                <li key={s.key} className="relative flex flex-col items-center min-w-0 px-0.5" title={`${s.label}: ${s.count}`}>
+                                    <span
+                                        className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold tabular-nums ring-[3px] ring-white"
+                                        style={isMax
+                                            ? { backgroundColor: s.color, color: "#fff" }
+                                            : { backgroundColor: s.count ? `${s.color}29` : "#f1f5f9", color: s.count ? s.badgeText : "#94a3b8" }}
+                                    >
+                                        {s.count}
+                                    </span>
+                                    <span className={`mt-1 text-[10.5px] leading-tight text-center truncate max-w-full ${isMax ? "font-semibold text-slate-900" : "text-slate-500"}`}>{s.label}</span>
+                                </li>
+                            );
+                        })}
+                    </ol>
+                </section>
+                </>
+            )}
         </div>
     );
 }

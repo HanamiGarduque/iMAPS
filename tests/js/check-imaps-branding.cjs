@@ -52,7 +52,7 @@ test('login navbar renders the complete logo without losing its municipal label'
 test('operational brand trigger keeps its existing open and close callbacks', () => {
     const { default: Header } = load('resources/js/Components/Header.jsx', {
         react: { ...React, useState: (v) => [v, () => {}], useEffect: () => {}, useRef: (v) => ({ current: v }) },
-        '@inertiajs/react': { usePage: () => ({ url: '/overview', props: {} }) },
+        '@inertiajs/react': { usePage: () => ({ url: '/maps', props: {} }) },
         '@/Components/ApplicationLogo': logoImport,
         '@/utils/parcelHandoff.jsx': {}, '@/utils/clupZones': {}, '@/utils/signOut': {},
     });

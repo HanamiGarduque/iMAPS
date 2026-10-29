@@ -388,7 +388,7 @@ export default function MapLibre3DView({
     const selectedNameRef = useRef(null);
 
     const lensRef = useRef(lens);
-    const plainRef = useRef(lens === "trends" && !showSatellite);
+    const plainRef = useRef(!showSatellite);
     const bandRef = useRef(bandFilter);
     const reducedRef = useRef(false);
     const styleReadyRef = useRef(false);
@@ -482,8 +482,9 @@ export default function MapLibre3DView({
         const zoom = map.getZoom();
         const plain = plainRef.current;
         // On the white page the town view shows names only (the count is on hover and
-        // in the ranking), so more of them fit before they crowd.
-        const namesOnly = plain && !selected;
+        // in the ranking), so more of them fit before they crowd. Application
+        // tracking keeps its counts so the permit-type filter shows on the map.
+        const namesOnly = plain && !selected && lensRef.current !== "status";
         // Every barangay is named in the town view; only the satellite view thins out.
         const maxLabels = Infinity;
         let shown = 0;
@@ -1380,7 +1381,7 @@ export default function MapLibre3DView({
     // snapping to the new metric.
     useEffect(() => {
         lensRef.current = lens;
-        plainRef.current = lens === "trends" && !showSatellite;
+        plainRef.current = !showSatellite;
         if (!styleReadyRef.current) return;
         applyBackdrop();
         applyPaint();
@@ -1558,14 +1559,14 @@ export default function MapLibre3DView({
         };
     }, [active, loadState, applyPaint]);
 
-    const plain = lens === "trends" && !showSatellite;
+    const plain = !showSatellite;
     const metricLabel = lens === "trends" ? "LC applications forecast"
         : lens === "status" ? "Permit applications filed"
         : getLens(lens).metricLabel;
 
     return (
         <div
-            className={`relative w-full h-full overflow-hidden ${plain ? "imaps3d-plain" : ""}`}
+            className={`relative isolate w-full h-full overflow-hidden ${plain ? "imaps3d-plain" : ""}`}
             style={plain ? { background: PLAIN_PAGE } : { backgroundColor: CANVAS }}
         >
             <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />

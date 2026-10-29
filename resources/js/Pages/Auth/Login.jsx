@@ -598,7 +598,7 @@ export default function Login() {
                                 <div className="mt-5 border-t border-slate-100 pt-4 text-center">
                                     {/* text-wrap: balance splits the sentence into two even lines instead of leaving "and" on its own. */}
                                     <p className="mx-auto max-w-[19rem] text-xs leading-[1.65] text-slate-500 [text-wrap:balance]">
-                                        Authorized personnel only. By signing in you agree to our{' '}
+                                        By signing in you agree to our{' '}
                                         <span className="whitespace-nowrap"><button type="button" onClick={() => openTerms('terms')} className="font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Terms & Conditions</button>,</span>{' '}
                                         <button type="button" onClick={() => openTerms('privacy')} className="whitespace-nowrap font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Privacy Policy</button>{' '}and{' '}
                                         <button type="button" onClick={() => openTerms('cookies')} className="whitespace-nowrap font-semibold text-slate-700 underline decoration-slate-300 underline-offset-[3px] transition-colors hover:text-blue-600 hover:decoration-blue-400">Cookie & Storage Policy</button>.

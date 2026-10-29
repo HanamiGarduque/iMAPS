@@ -1,6 +1,7 @@
 import { getTrendsDemandColor } from "@/Components/Maps/LeafletMap";
 
 const CARD = "shrink-0 bg-white border-b border-slate-200";
+const QUARTER_MONTHS = { 1: "January–March", 2: "April–June", 3: "July–September", 4: "October–December" };
 const pct = (f) => `${Math.abs(Math.round(f * 100))}%`;
 
 // A change as an arrow and a percentage. More filings read red (more work for
@@ -15,10 +16,15 @@ function Change({ value, className = "" }) {
     );
 }
 
-// Section heading inside a card: a small caps label, an optional count.
+// Each section opens on the question it answers, in plain sentence case.
+const Question = ({ children, className = "" }) => (
+    <h3 className={`text-[12px] font-semibold leading-snug text-slate-800 ${className}`}>{children}</h3>
+);
+
+// Section heading inside a card: a question, an optional count.
 const SectionTitle = ({ children, aside, title }) => (
     <div className="flex items-baseline justify-between gap-2 px-4 pt-3 pb-1" title={title}>
-        <h3 className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-slate-500">{children}</h3>
+        <Question>{children}</Question>
         {aside != null && <span className="text-[10px] tabular-nums text-slate-400">{aside}</span>}
     </div>
 );
@@ -53,13 +59,14 @@ function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearS
     return (
         <div className={`${CARD} pb-3`}>
             <div className="px-4 pt-3">
+                {isForecast && <Question className="mb-2">How many applications should we expect?</Question>}
                 {/* The answer first: how many, and what that means per week. */}
                 {count ? (
                     <div className="flex items-end justify-between gap-3">
                         <div className="flex items-baseline gap-2 min-w-0">
                             <span className="text-[34px] font-semibold leading-none tabular-nums text-slate-900">{count}</span>
                             <span className="text-[11.5px] leading-tight text-slate-500">
-                                LC {isForecast ? "projected" : "filed"}
+                                {isForecast ? "applications expected" : "applications filed"}
                                 <br />
                                 in {quarter?.label}
                             </span>
@@ -73,17 +80,20 @@ function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearS
                     </div>
                 ) : (
                     <p className="text-[11px] text-slate-500">
-                        No LC {isForecast ? "forecast available" : "records"} for this quarter.
+                        {isForecast ? "No estimate available" : "No applications on record"} for this quarter.
                     </p>
                 )}
             </div>
 
             {watch && (watch.lastYear || seasonal) && (
-                <dl className="mx-4 mt-3.5 grid grid-cols-2 divide-x divide-slate-200 rounded-lg border border-slate-200">
-                    {watch.lastYear && <Compare label={`vs ${watch.lastYear.label}`} value={watch.lastYear.change} base={watch.lastYear.total} />}
+                <Question className="px-4 mt-3.5">Is that more or less than usual?</Question>
+            )}
+            {watch && (watch.lastYear || seasonal) && (
+                <dl className="mx-4 mt-2 grid grid-cols-2 divide-x divide-slate-200 rounded-lg border border-slate-200">
+                    {watch.lastYear && <Compare label={`Than last year (${watch.lastYear.label})`} value={watch.lastYear.change} base={watch.lastYear.total} />}
                     {seasonal && (
                         <Compare
-                            label={`vs ${seasonal.span} avg`}
+                            label={`Than usual (${seasonal.span} avg)`}
                             value={seasonal.total > 0 ? (watch.total - seasonal.total) / seasonal.total : null}
                             base={Math.round(seasonal.total)}
                         />
@@ -93,8 +103,8 @@ function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearS
 
             {share != null && (
                 <p className="px-4 pt-3 text-[11px] leading-snug text-slate-500">
-                    Q{quarter.quarter} usually brings <b className="text-slate-700 tabular-nums">{pct(share)}</b> of a year's LC filings
-                    {share >= 0.35 ? ", the busiest quarter" : share <= 0.12 ? ", the quietest quarter" : ""}.
+                    {QUARTER_MONTHS[quarter.quarter] ?? `Q${quarter.quarter}`} usually brings <b className="text-slate-700 tabular-nums">{pct(share)}</b> of a year's applications
+                    {share >= 0.35 ? ", the busiest months of the year" : share <= 0.12 ? ", the quietest months of the year" : ""}.
                 </p>
             )}
 
@@ -105,7 +115,7 @@ function QuarterSummary({ quarter, count, watch, hovered, selectedName, onClearS
                         <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border" style={{ backgroundColor: hovered.cls.color, borderColor: hovered.cls.stroke }} aria-hidden="true" />
                         <span className="flex-1 min-w-0 text-[11.5px] font-medium text-slate-800 truncate">{hovered.name}</span>
                         <span className="text-[11.5px] tabular-nums text-slate-900 shrink-0">
-                            <b>{hovered.count}</b> <span className="text-slate-500">LC</span>
+                            <b>{hovered.count}</b> <span className="text-slate-500">applications</span>
                         </span>
                     </div>
                 )}
@@ -165,18 +175,18 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
     return (
         <section className={CARD} aria-label="What to prepare for">
             <div className="px-4 pt-3">
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#a8521a]">What to prepare for</h3>
+                <Question>What should we prepare for?</Question>
                 {watch.topShare !== null && (
                     <p className="mt-1 text-[11.5px] leading-snug text-slate-700">
-                        The top 5 barangays take <b className="tabular-nums text-slate-900">{pct(watch.topShare)}</b> of expected demand.
+                        The top 5 barangays will bring <b className="tabular-nums text-slate-900">{pct(watch.topShare)}</b> of the applications expected.
                     </p>
                 )}
             </div>
 
             {watch.seasonal ? (
                 <div>
-                    <SectionTitle aside={watch.rising.length || null} title={`Expected at least ${watch.margin.toFixed(1)} LC above ${usual}.`}>
-                        Busier than usual · Q{quarterLabel}
+                    <SectionTitle aside={watch.rising.length || null} title={`At least ${watch.margin.toFixed(1)} more applications than ${usual}.`}>
+                        Which barangays will be busier than usual?
                     </SectionTitle>
                     {shown.length > 0 ? (
                         <ul>
@@ -190,8 +200,8 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
                                     valueClass="text-[#b32a17]"
                                     title={
                                         r.noHistory
-                                            ? `${r.name}: ${r.count} LC expected, but no LC filing has ever been recorded here. The figure comes from neighbouring barangays and land use; treat it with caution.`
-                                            : `${r.name}: ${r.count} LC expected, usually ${r.usual.toFixed(1)}${r.isNew ? " (little or no activity this quarter in past years)" : ""}`
+                                            ? `${r.name}: about ${r.count} expected, but no application has ever been filed here. The figure comes from nearby barangays and land use, so treat it with caution.`
+                                            : `${r.name}: about ${r.count} expected, usually ${r.usual.toFixed(1)}${r.isNew ? " (little or no activity in these months in past years)" : ""}`
                                     }
                                     onSelect={onSelectBgy}
                                     onHover={onHoverBgy}
@@ -199,7 +209,7 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
                             ))}
                         </ul>
                     ) : (
-                        <p className="px-4 text-[11px] text-slate-500">No barangay beyond the model's usual error.</p>
+                        <p className="px-4 text-[11px] text-slate-500">No barangay is expected to be clearly busier than usual.</p>
                     )}
                     {watch.rising.length > shown.length && (
                         <p className="px-4 pt-0.5 text-[10.5px] text-slate-400">+{watch.rising.length - shown.length} more in the barangay list</p>
@@ -207,7 +217,7 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
 
                     {watch.easing.length > 0 && (
                         <p className="px-4 pt-2 text-[11px] leading-snug text-slate-600">
-                            <span className="font-medium">Quieter than usual:</span>{" "}
+                            <span className="font-medium">Which will be quieter?</span>{" "}
                             {watch.easing.slice(0, 3).map((r, i) => (
                                 <span key={r.name}>
                                     {i > 0 && ", "}
@@ -229,8 +239,8 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
 
             {watch.zoningFlags.length > 0 && (
                 <div className="mt-2.5 border-t border-slate-100">
-                    <SectionTitle title="Busier-than-usual barangays whose CLUP 2030 area is almost entirely agricultural or protected.">
-                        Zoning check · mostly agri/protected
+                    <SectionTitle title="Busier-than-usual barangays whose CLUP 2030 area is almost entirely farmland or protected land.">
+                        Which busy areas need a zoning check?
                     </SectionTitle>
                     <ul>
                         {watch.zoningFlags.map((f) => (
@@ -239,20 +249,20 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
                                 name={f.name}
                                 value={`${Math.round(f.pct)}%`}
                                 valueClass="text-[#4d7c0f]"
-                                title={`${f.name}: ${Math.round(f.pct)}% of its CLUP 2030 area is agricultural or protected`}
+                                title={`${f.name}: ${Math.round(f.pct)}% of its CLUP 2030 area is farmland or protected land`}
                                 onSelect={onSelectBgy}
                                 onHover={onHoverBgy}
                             />
                         ))}
                     </ul>
-                    <p className="px-4 pt-0.5 text-[10.5px] text-slate-500">Review new applications here against the zoning.</p>
+                    <p className="px-4 pt-0.5 text-[10.5px] text-slate-500">Mostly farmland or protected land. Check new applications here against the zoning.</p>
                 </div>
             )}
 
             {watch.seasonal ? (
-                <Footnote title={`Compared with ${usual}. Changes under ±${watch.margin.toFixed(1)} LC, the model's typical miss per barangay, are left out.`}>
-                    vs {usualShort} · changes under ±{watch.margin.toFixed(1)} LC (typical model error) hidden.
-                    {watch.rising.some((r) => r.noHistory) && " “No history”: no LC ever filed there; figure estimated from neighbouring barangays."}
+                <Footnote title={`Compared with ${usual}. Changes under ±${watch.margin.toFixed(1)}, the estimate's usual miss per barangay, are left out.`}>
+                    Compared with {usualShort}. Small changes (under ±{watch.margin.toFixed(1)}) are left out.
+                    {watch.rising.some((r) => r.noHistory) && " “No history”: no application ever filed there, so the figure comes from nearby barangays."}
                 </Footnote>
             ) : (
                 <div className="pb-2.5" />
@@ -266,7 +276,7 @@ function ForecastWatchlist({ watch, quarterLabel, onSelectBgy, onHoverBgy }) {
 function ExpectedMix({ mix }) {
     return (
         <section className={CARD} aria-label="Expected application mix">
-            <SectionTitle>Expected applications by zone</SectionTitle>
+            <SectionTitle>What kind of land will they be on?</SectionTitle>
             <div className="mx-4 mt-1 mb-2 flex h-2 rounded-full overflow-hidden ring-1 ring-black/5" aria-hidden="true">
                 {mix.map((m) => (
                     <span key={m.id} style={{ width: `${m.share * 100}%`, backgroundColor: m.fill }} title={`${m.label}: ${pct(m.share)}`} />
@@ -274,7 +284,7 @@ function ExpectedMix({ mix }) {
             </div>
             <ul>
                 {mix.slice(0, 6).map((m) => (
-                    <li key={m.id} className="flex items-center gap-2 px-4 py-[3px] text-[12px]" title={m.lower != null ? `${m.label}: likely ${m.lower}–${m.upper} applications (80% range)` : undefined}>
+                    <li key={m.id} className="flex items-center gap-2 px-4 py-[3px] text-[12px]" title={m.lower != null ? `${m.label}: most likely ${m.lower}–${m.upper} applications` : undefined}>
                         <span className="w-2.5 h-2.5 rounded-[2px] shrink-0 border" style={{ backgroundColor: m.fill, borderColor: m.stroke }} aria-hidden="true" />
                         <span className={`flex-1 min-w-0 truncate ${m.id === "none" ? "text-slate-400" : "text-slate-700"}`}>{m.label}</span>
                         <span className="tabular-nums text-slate-500">≈ {Math.round(m.count)}</span>
@@ -282,7 +292,7 @@ function ExpectedMix({ mix }) {
                     </li>
                 ))}
             </ul>
-            <Footnote>Each barangay's forecast split by the zones of its own LC filings since 2021, blended toward the town-wide split where it has few filings.</Footnote>
+            <Footnote>Based on how past applications in each barangay were zoned since 2021. Barangays with few past applications follow the town-wide pattern.</Footnote>
         </section>
     );
 }

@@ -296,11 +296,16 @@ function PdfPreview({ paper, title, generatedOn, headers, rows, chart, summary, 
     const [view, setView] = useState({ w: 0, h: 0 });
     useEffect(() => {
         const el = viewRef.current;
-        const ro = new ResizeObserver(() => setView({ w: el.clientWidth, h: el.clientHeight }));
+        // Outer size, not clientWidth/Height: those shrink when zooming adds scrollbars, which
+        // shrinks the fit, removes the scrollbars, grows the fit again, and the sheet bounces.
+        const ro = new ResizeObserver(() => {
+            const w = el.offsetWidth, h = el.offsetHeight;
+            setView((v) => (v.w === w && v.h === h ? v : { w, h }));
+        });
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
-    const PAD = 24; // breathing room so the sheet's shadow isn't clipped
+    const PAD = 40; // breathing room so the sheet's shadow isn't clipped, plus room for scrollbars
     const fit = view.w > PAD && view.h > PAD ? Math.min((view.w - PAD) / pageW, (view.h - PAD) / pageH) : 0;
     const [zoom, setZoom] = useState(1);
     const scale = fit * zoom;
@@ -827,8 +832,11 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
 
                         {/* Print-dialog layout: top band, settings sections on the left, boxed preview on the right */}
                         <div className="flex-1 min-h-0 flex flex-col gap-2.5 p-3 bg-slate-100 overflow-y-auto lg:overflow-hidden">
-                            {/* ── TOP BAND (like "Printer" and "Copies") ── */}
-                            <div className="shrink-0 rounded-md border border-slate-300 bg-slate-50 px-4 py-2.5 space-y-2">
+                        <div className="flex-1 min-h-0 grid lg:grid-cols-[minmax(440px,44%)_1fr] gap-2.5">
+                            {/* ── SETTINGS ── */}
+                            <aside className="lg:overflow-y-auto lg:pr-1 space-y-2.5">
+                            {/* ── TOP BAND (like "Printer" and "Copies"), at the head of the settings so the preview gets the full height ── */}
+                            <div className="rounded-md border border-slate-300 bg-slate-50 px-4 py-2.5 space-y-2">
                                 <div className="flex flex-wrap items-center gap-2">
                                     <label htmlFor="template" className="w-20 text-[12.5px] text-slate-800">Template:</label>
                                     <select id="template" value={templateId} onChange={(e) => applyTemplate(e.target.value)} className={`${fieldClass} max-w-[340px]`}>
@@ -848,9 +856,6 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
                                 </div>
                             </div>
 
-                        <div className="flex-1 min-h-0 grid lg:grid-cols-[minmax(440px,44%)_1fr] gap-2.5">
-                            {/* ── SETTINGS ── */}
-                            <aside className="lg:overflow-y-auto lg:pr-1 space-y-2.5">
                                 <Group title="Data to Include">
                                     <div className="flex flex-wrap gap-x-5 gap-y-2.5">
                                         {RANGES.map((r) => (
