@@ -21,7 +21,7 @@ class MapsController extends Controller
         }
 
         // Filing-date window: this month, the last three months, or this year.
-        $period = $request->input('period');
+        $period = $request->input('period', 'month');
         $periodStart = match ($period) {
             'month'   => now()->startOfMonth(),
             '3months' => now()->subMonths(3)->startOfDay(),

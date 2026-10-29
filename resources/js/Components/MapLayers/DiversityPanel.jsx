@@ -3,13 +3,17 @@ import ROSARIO_BARANGAYS_DATA from './rosario_barangays_data.json';
 import MixDonut from './diversity/MixDonut';
 import { ZONE_CATEGORIES } from '@/utils/clupZones';
 import useAnimatedNumber from '@/utils/useAnimatedNumber';
-import { getLens, resolveLensValue, rankByLens, matchesBand, computeDiversityAggregates, findRank } from '@/utils/diversityTheme';
+import { getLens, resolveLensValue, rankByLens, matchesBand, computeDiversityAggregates } from '@/utils/diversityTheme';
 
 // Land-use mix for the municipality or the selected barangay, over the rolling
 // five-year window picked on the map's timeline (the latest by default): the
 // score, how it compares with the CLUP 2030 plan, and what the filed land is
 // made of. Every barangay ranked follows, five at a time; hovering a row
 // lights the barangay on the map, clicking opens it.
+const Question = ({ children, className = "" }) => (
+    <h3 className={`text-[12px] font-semibold leading-snug text-slate-800 ${className}`}>{children}</h3>
+);
+
 export default function DiversityPanel({
     overallDiversity,
     period = null,
@@ -38,7 +42,6 @@ export default function DiversityPanel({
         [bgyStats]
     );
     const municipalScore = typeof overallDiversity?.score === 'number' ? overallDiversity.score : null;
-    const rankInfo = useMemo(() => findRank(aggregates.ranked, bgyName), [aggregates, bgyName]);
 
     // null = too few filings in this period to score.
     const score = isBgy ? (typeof bgyStat.diversity === 'number' ? bgyStat.diversity : null) : municipalScore;
@@ -55,7 +58,13 @@ export default function DiversityPanel({
     const developedHa = isBgy ? bgyStat.developedHa ?? 0 : overallDiversity?.developedHa ?? 0;
     const planScore = isBgy ? bgyStat.clupTargetDiversity : overallDiversity?.planScore;
     const month = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', year: 'numeric' }) : '');
-    const periodLabel = period?.from ? `${month(period.from)} – ${month(period.to)}` : 'the last five years';
+    // A finished year reads "in 2023"; the current one is still running, so it
+    // reads "as of October 2026" (today's month).
+    const now = new Date();
+    const yearPhrase = !period?.year ? ""
+        : period.year === now.getFullYear() ? `, as of ${now.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })}`
+        : ` in ${period.year}`;
+    const periodLabel =period?.from ? `${month(period.from)} – ${month(period.to)}` : 'the last five years';
 
     const ranking = useMemo(
         () => rankByLens("mix", bgyStats).filter((r) => matchesBand("mix", bandFilter, r.stat)),
@@ -74,44 +83,45 @@ export default function DiversityPanel({
     const context = isBgy
         ? score == null
             ? `${records} filing${records === 1 ? "" : "s"} in this period`
-            : `${rankInfo ? `Rank ${rankInfo.rank} of ${rankInfo.total} · ` : ""}${municipalScore == null ? "" : `${signed(score - municipalScore)} vs all of Rosario`}`
+            : municipalScore == null ? "" : `${signed(score - municipalScore)} vs all of Rosario`
         : `All of Rosario · ${aggregates.count} barangays scored`;
 
     return (
         <div className="relative flex-1 min-h-0 flex flex-col bg-white">
             <div className="flex-1 min-h-0 overflow-y-auto">
-            <div className="shrink-0 flex items-stretch border-b border-slate-200">
-                <div
-                    className="w-[76px] shrink-0 flex flex-col items-center justify-center py-2.5 transition-colors duration-500"
-                    style={{ backgroundColor: headline.color, color: headline.onFill }}
-                >
-                    <span className="text-[20px] font-semibold tabular-nums leading-none">{shown}</span>
-                    <span className="text-[9.5px] uppercase tracking-[0.08em] opacity-80 mt-1">Mix score</span>
+            {/* Same building blocks as the Application Tracking panel: question
+                headings, a big headline figure, bordered tiles, sections split by rules. */}
+            <section className="shrink-0 border-b border-slate-200 px-4 pt-3 pb-3">
+                <Question className="mb-2">How mixed is land use in {isBgy ? bgyName : "Rosario"}{yearPhrase}?</Question>
+                <div className="flex items-stretch gap-2">
+                    <div className="flex-1 min-w-0 flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                        <span className="text-[34px] font-semibold leading-none tabular-nums text-slate-900">{shown}</span>
+                        <span className="min-w-0">
+                            <span
+                                className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors duration-500"
+                                style={{ backgroundColor: headline.color, color: headline.onFill }}
+                            >
+                                {headline.band.classification}
+                            </span>
+                            <span className="block text-[10.5px] text-slate-500 mt-1">Mix score, 0 to 1</span>
+                        </span>
+                    </div>
+                    {typeof planScore === 'number' && (
+                        <div className="shrink-0 min-w-[104px] flex flex-col justify-center rounded-lg border border-slate-200 px-3 py-2 text-right">
+                            <span className="block text-[15px] font-semibold leading-tight tabular-nums text-slate-800">{lens.format(planScore)}</span>
+                            <span className="block text-[10.5px] leading-tight text-slate-500">CLUP 2030 plan</span>
+                        </div>
+                    )}
                 </div>
-                <div className="flex-1 min-w-0 px-3 py-2">
-                    <span className="block text-[12.5px] font-semibold text-slate-900 leading-tight">{headline.band.classification}</span>
-                    <span className="block text-[11px] text-slate-500 leading-snug line-clamp-2 mt-0.5">{headline.band.summary}</span>
-                    <span className="block text-[10.5px] tabular-nums text-slate-500 mt-1">{context}</span>
-                </div>
-            </div>
+                <p className="mt-2 text-[11.5px] leading-snug text-slate-600">{headline.band.summary}</p>
+                <p className="mt-1 text-[10.5px] tabular-nums text-slate-400">{context}</p>
+            </section>
 
-            {typeof planScore === 'number' && (
-                <div className="shrink-0 flex items-baseline justify-between gap-2 px-4 py-2 border-b border-slate-200 text-[11px]">
-                    <span className="text-slate-500">CLUP 2030 plan mix</span>
-                    <span className="tabular-nums text-slate-700">
-                        {lens.format(planScore)}
-                        {fromRecords && score != null && (
-                            <span className="ml-1.5 text-slate-500">({signed(score - planScore)} recorded vs plan)</span>
-                        )}
-                    </span>
-                </div>
-            )}
-
+            {/* A selected barangay's filed land use is on its pop-up card on the map. */}
+            {!isBgy && (
             <div className="shrink-0 px-4 py-3 border-b border-slate-200">
-                <div className="flex items-baseline justify-between mb-2">
-                    <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                        Filed land use · {isBgy ? bgyName : "Rosario"}
-                    </h3>
+                <div className="flex items-baseline justify-between gap-2 mb-2">
+                    <Question>What land use was filed?</Question>
                     {fromRecords && (
                         <span className="text-[10.5px] tabular-nums text-slate-400">
                             {Number(records).toLocaleString('en-PH')} filings · {Number(developedHa).toLocaleString('en-PH')} ha
@@ -126,14 +136,15 @@ export default function DiversityPanel({
                     <MixDonut distribution={distribution} replayKey={bgyName || "__all__"} centerValue={shown} centerLabel="Mix" />
                 )}
             </div>
+            )}
 
             {fromRecords && score != null && distribution.length > 0 && (
                 <div className="shrink-0 border-b border-slate-200">
                     <div className="flex items-baseline justify-between px-4 pt-3 pb-1.5">
-                        <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Filed vs CLUP 2030 plan</h3>
+                        <Question>Does it match the CLUP 2030 plan?</Question>
                         <span className="text-[10.5px] text-slate-400">Share of area</span>
                     </div>
-                    <div className="grid grid-cols-[12px_1fr_46px_46px] gap-x-2 px-4 pb-1 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-slate-400">
+                    <div className="grid grid-cols-[12px_1fr_46px_46px] gap-x-2 px-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-400">
                         <span />
                         <span>Zone filed under</span>
                         <span className="text-right">Filed</span>
@@ -152,7 +163,7 @@ export default function DiversityPanel({
                                         <span className="truncate">{zone.label}</span>
                                         {outOfPlan && (
                                             <span
-                                                className="shrink-0 text-[8.5px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] bg-amber-100 text-amber-800 border border-amber-300"
+                                                className="shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] bg-amber-100 text-amber-800 border border-amber-300"
                                                 title={`${d.value}% of the filed lot area is under ${zone.label} zoning, which is ${plan}% of this area in CLUP 2030. Check these filings' zoning codes.`}
                                             >
                                                 Check
@@ -165,6 +176,11 @@ export default function DiversityPanel({
                             );
                         })}
                     </ul>
+                    {fromRecords && score != null && typeof planScore === 'number' && (
+                        <p className="px-4 pt-1 text-[11.5px] text-slate-600 leading-snug">
+                            Filed land is {score >= planScore ? "more" : "less"} mixed than the plan ({signed(score - planScore)}).
+                        </p>
+                    )}
                     <p className="px-4 pt-1 pb-3 text-[10.5px] text-slate-400 leading-snug">
                         Lot area of filings over the five years to {period?.label || "the latest filing"} ({periodLabel}
                         {period?.isPartial ? `; records start ${month(period.from)}, so only ${period.quarters} of 20 quarters` : ""}),
@@ -174,8 +190,10 @@ export default function DiversityPanel({
                 </div>
             )}
 
+            {/* The ranking is for picking a barangay; once one is open it steps aside. */}
+            {!isBgy && (<>
             <div className="shrink-0 flex items-baseline px-4 pt-2.5 pb-2">
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">Diversity by barangay</h3>
+                <Question className="mr-auto">Which barangays are most mixed?</Question>
                 <span className="text-[10.5px] text-slate-400">Highest mix first</span>
             </div>
             <ol className="border-t border-slate-200" onMouseLeave={() => onHoverBgy(null)}>
@@ -239,6 +257,7 @@ export default function DiversityPanel({
                     {unscored} barangay{unscored === 1 ? "" : "s"} with too few filings in this period, not ranked.
                 </p>
             )}
+            </>)}
             </div>
         </div>
     );

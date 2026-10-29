@@ -228,6 +228,8 @@ const createBaseLayer = (L, mapStyle) => {
 
 const BLANK_TILE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 // Zooming out past this closes the open application (Maps.jsx).
+// The Maps page opens at, and never zooms out past, this level.
+export const HOME_ZOOM = 11.75;
 export const PIN_ZOOM = 15;
 // From here in, an application with a matched lot draws its real outline.
 const LOT_ZOOM = 17;
@@ -322,6 +324,8 @@ export default function LeafletMap({
         // a little more room above, where the title card sits
         paddingTopLeft: [48, 72],
         paddingBottomRight: [48, 48 + (insetsRef.current.bottom || 0)],
+        // Home is always exactly HOME_ZOOM: maxZoom caps the fit, minZoom floors it.
+        maxZoom: HOME_ZOOM,
     });
     const lotsByZoom = (mapZoom ?? 0) >= LOT_ZOOM;
 
@@ -539,9 +543,9 @@ export default function LeafletMap({
 
             const map = L.map(mapRef.current, {
                 center: [13.785, 121.25],
-                zoom: 12,
+                zoom: HOME_ZOOM,
                 // Finer than whole steps, and low enough that the whole town fits a short window.
-                minZoom: 11,
+                minZoom: HOME_ZOOM,
                 zoomSnap: 0.25,
                 zoomDelta: 1,
                 maxZoom: 19,
@@ -568,6 +572,7 @@ export default function LeafletMap({
             L.control.scale({ position: "bottomleft", metric: true, imperial: false, maxWidth: 120 }).addTo(map);
 
             map.on("zoomend", () => live.current.onZoomChange?.(map.getZoom()));
+            live.current.onZoomChange?.(map.getZoom());
             map.on("click", () => live.current.onMapClick?.());
             map.on("mousemove", (e) => {
                 if (cursorFrame) return;
@@ -739,8 +744,12 @@ export default function LeafletMap({
         let match = null;
         geoLayerRef.current.eachLayer((lf) => { if (featureName(lf.feature).toLowerCase() === target) match = lf; });
         if (!match) return drop();
+        // Leaflet loads asynchronously. If the selection or layer changes before
+        // it resolves, this build is stale: placing it then would leave a leader
+        // line and dot on the map with no card and nothing left to remove them.
+        let cancelled = false;
         import("leaflet").then((mod) => {
-            if (mapInstanceRef.current !== map) return;
+            if (cancelled || mapInstanceRef.current !== map) return;
             const L = mod.default;
             calloutMarkerRef.current?.remove();
             const b = match.getBounds();
@@ -787,8 +796,11 @@ export default function LeafletMap({
             calloutMarkerRef.current = marker;
             setCalloutHost(host);
         });
-        return undefined;
+        return () => { cancelled = true; };
     }, [selectedBgy?.name, Boolean(callout), barangaysReady]);
+
+    // Leaving the map takes the card's marker, line and dot with it.
+    useEffect(() => () => calloutMarkerRef.current?.remove(), []);
 
     // ── Camera follows the selected barangay ──
     useEffect(() => {
@@ -839,7 +851,7 @@ export default function LeafletMap({
         const map = mapInstanceRef.current;
         if (!map || resetTrigger === 0) return;
         if (rosarioBoundsRef.current) map.fitBounds(rosarioBoundsRef.current, homePadding());
-        else map.setView([13.785, 121.25], 12);
+        else map.setView([13.785, 121.25], HOME_ZOOM);
     }, [resetTrigger]);
 
     useEffect(() => {
@@ -1017,7 +1029,7 @@ export default function LeafletMap({
         const selName = (selectedBgy?.name || "").trim().toLowerCase();
         const visible = (applications || []).filter(
             (app) => app.parcels?.[0]?.outline
-                && matchesAppFilters(app, appTypeFilter, statusFilter)
+                && matchesAppFilters(app, null, statusFilter)
                 && (!selName || (app?.barangay || "").trim().toLowerCase() === selName)
         );
 

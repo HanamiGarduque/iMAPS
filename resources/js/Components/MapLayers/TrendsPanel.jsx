@@ -38,11 +38,11 @@ function MetricCard({ label, value, tooltip, align = 'center', hasBorder = true 
             aria-expanded={open}
             title={tooltip ? `${tooltip.title}: ${tooltip.explanation}` : undefined}
         >
-            <span className="block text-[15px] sm:text-[16px] font-semibold tabular-nums leading-none text-slate-900 truncate">
+            <span className="block text-[15px] sm:text-[15px] font-semibold tabular-nums leading-none text-slate-900 truncate">
                 {value}
             </span>
             <div className="flex items-center gap-0.5 mt-1 text-slate-500">
-                <span className="block text-[9.5px] font-medium uppercase tracking-[0.04em] truncate">
+                <span className="block text-[10px] font-medium uppercase tracking-[0.04em] truncate">
                     {label}
                 </span>
                 <svg
@@ -70,11 +70,11 @@ function MetricCard({ label, value, tooltip, align = 'center', hasBorder = true 
                         <div className="min-w-0">
                             <span className="block text-[11px] font-bold text-white leading-tight truncate">{tooltip.title}</span>
                             {tooltip.subtitle && (
-                                <span className="block text-[9px] text-slate-400 leading-tight truncate">{tooltip.subtitle}</span>
+                                <span className="block text-[10px] text-slate-400 leading-tight truncate">{tooltip.subtitle}</span>
                             )}
                         </div>
                         {tooltip.badge && (
-                            <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 shrink-0">
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 shrink-0">
                                 {tooltip.badge}
                             </span>
                         )}
@@ -83,7 +83,7 @@ function MetricCard({ label, value, tooltip, align = 'center', hasBorder = true 
                         {tooltip.explanation}
                     </p>
                     {tooltip.takeaway && (
-                        <div className="mt-1.5 pt-1.5 border-t border-slate-800 text-[9.5px] text-slate-300/90 leading-normal">
+                        <div className="mt-1.5 pt-1.5 border-t border-slate-800 text-[10px] text-slate-300/90 leading-normal">
                             <span className="font-semibold text-amber-300/90">In plain terms: </span>
                             {tooltip.takeaway}
                         </div>
@@ -285,7 +285,7 @@ export default function TrendsPanel({
             {/* Accuracy metrics are kept in code but hidden from users; flip to true to restore. */}
             {SHOW_FORECAST_ACCURACY && isForecast && (
             <section className="border-b border-slate-200" style={after(2)} aria-label="Forecast accuracy">
-                <h3 className="px-4 pt-3.5 pb-2 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">Forecast accuracy</h3>
+                <h3 className="px-4 pt-3.5 pb-2 text-[12px] font-semibold leading-snug text-slate-800">Forecast accuracy</h3>
                 <div className="grid grid-cols-4 border-t border-slate-200">
                     {metricsConfig.map((k, i) => (
                         <MetricCard
@@ -322,7 +322,7 @@ export default function TrendsPanel({
                         {isForecast ? (
                             <h3 className="text-[12px] font-semibold text-slate-800 mr-auto">Where will they come from?</h3>
                         ) : (
-                            <h3 className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500 mr-auto">Applications by barangay</h3>
+                            <h3 className="text-[12px] font-semibold leading-snug text-slate-800 mr-auto">Applications by barangay</h3>
                         )}
                         <span className="text-[10.5px] text-slate-400">
                             {previous ? `Compared with ${previous.label}` : isForecast ? 'Expected applications' : 'Click to open'}

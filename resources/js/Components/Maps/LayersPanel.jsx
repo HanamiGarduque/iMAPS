@@ -2,7 +2,10 @@ import { useMemo } from "react";
 import { STATUS_MARKER_CONFIG } from "@/Components/MapLayers/StatusPanel";
 import { getLens, getScaleSegments, computeBandCounts } from "@/utils/diversityTheme";
 import { ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
-import { TILE_PROVIDERS, DEMAND_CLASSES, getTrendsDemandColor } from "./LeafletMap";
+import { TILE_PROVIDERS, DEMAND_CLASSES, APP_LOAD_CLASSES, getTrendsDemandColor } from "./LeafletMap";
+
+// Plain names for the Application Tracking map's colour classes.
+const APP_LOAD_NAMES = { "11+": "Very High", "6–10": "High", "3–5": "Moderate", "1–2": "Low", "0": "None" };
 
 export const MODULES = [
     { id: "status", key: "1", label: "Application Tracking", desc: "Zoning applications and processing status" },
@@ -115,6 +118,20 @@ export default function LayersPanel({
                                 <span className={`flex-1 min-w-0 text-[12.5px] ${active ? "font-semibold text-[#0b2a5b]" : "text-slate-800"}`}>{m.label}</span>
                                 <kbd className="text-[10px] text-slate-400 border border-slate-200 rounded px-1 leading-4 bg-white">{m.key}</kbd>
                             </label>
+
+                            {active && m.id === "status" && (
+                                <div className="px-2.5 pb-3">
+                                    <span className="block text-[10.5px] text-slate-500 mb-0.5">Applications per barangay</span>
+                                    {APP_LOAD_CLASSES.map((c) => (
+                                        <LegendRow
+                                            key={c.label}
+                                            swatch={<Swatch color={c.color} />}
+                                            label={APP_LOAD_NAMES[c.label]}
+                                            count={c.label}
+                                        />
+                                    ))}
+                                </div>
+                            )}
 
                             {active && m.id === "trends" && (
                                 <div className="px-2.5 pb-3">

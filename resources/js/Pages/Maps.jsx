@@ -14,24 +14,25 @@ import {
     Pie,
 } from "recharts";
 
-import StatusPanel, { STATUS_MARKER_CONFIG, getStatusMarkerConfig, matchesAppFilters } from "@/Components/MapLayers/StatusPanel";
+import StatusPanel, { STATUS_MARKER_CONFIG, getStatusMarkerConfig, matchesAppFilters, isResolved } from "@/Components/MapLayers/StatusPanel";
 import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import useForecastWatchlist from "@/Components/MapLayers/useForecastWatchlist";
 import { ForecastSummary, ForecastInsights } from "@/Components/MapLayers/ForecastBrief";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
-import LeafletMap, { getAppCoordinates, PIN_ZOOM, getTrendsDemandColor, APP_LOAD_CLASSES } from "@/Components/Maps/LeafletMap";
+import LeafletMap, { getAppCoordinates, PIN_ZOOM, HOME_ZOOM, getTrendsDemandColor, APP_LOAD_CLASSES } from "@/Components/Maps/LeafletMap";
 import LayersPanel, { MODULES, PERMIT_TYPES } from "@/Components/Maps/LayersPanel";
 import TimelineBar from "@/Components/Maps/TimelineBar";
 import DiversityTimeline from "@/Components/Maps/DiversityTimeline";
-import AttributeTable from "@/Components/Maps/AttributeTable";
+import AttributeTable, { TABLE_DEFAULT_H } from "@/Components/Maps/AttributeTable";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import { ApplicationDetails, BarangayCard } from "@/Components/Maps/IdentifyCards";
 import BarangayLocator from "@/Components/Maps/BarangayLocator";
 import LcRecordsTable from "@/Components/Maps/LcRecordsTable";
 import { buildLcView, summarizeBarangay } from "@/utils/lcInsights";
 import LcCallout from "@/Components/Maps/LcCallout";
+import DiversityCallout from "@/Components/Maps/DiversityCallout";
 import useBarangayNames from "@/utils/useBarangayNames";
-import { getLens } from "@/utils/diversityTheme";
+import { getLens, resolveLensValue } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
 import { confirmSignOut } from "@/utils/signOut";
 
@@ -200,7 +201,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const [mapStyle, setMapStyle] = useState("satellite");
     const [showSatellite3D, setShowSatellite3D] = useState(false);
     const [appTypeFilter, setAppTypeFilter] = useState(filters?.application_type || "All");
-    const [periodFilter, setPeriodFilter] = useState(filters?.period || "all");
+    const [periodFilter, setPeriodFilter] = useState(filters?.period || "month");
     const [activeOnly, setActiveOnly] = useState(Boolean(filters?.active));
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [layersOpen, setLayersOpen] = useState(isDesktop);
@@ -210,7 +211,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const [clupOpacity, setClupOpacity] = useState(0.7);
     const [showLabels, setShowLabels] = useState(true);
     const [selectedBgy, setSelectedBgy] = useState(null);
-    const [mapZoom, setMapZoom] = useState(13);
+    const [mapZoom, setMapZoom] = useState(HOME_ZOOM);
     const [resetTrigger, setResetTrigger] = useState(0);
     const [inspectedApp, setInspectedApp] = useState(null);
     const [statusFilter, setStatusFilter] = useState("All");
@@ -482,9 +483,9 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const scopedApps = useMemo(() => {
         const target = (selectedBgy?.name || "").trim().toLowerCase();
         return applications.filter(
-            (a) => matchesAppFilters(a, appTypeFilter, "All") && (!target || (a.barangay || "").trim().toLowerCase() === target)
+            (a) => (!target || (a.barangay || "").trim().toLowerCase() === target)
         );
-    }, [applications, appTypeFilter, selectedBgy]);
+    }, [applications, selectedBgy]);
 
     const statusCounts = useMemo(() => {
         const counts = {};
@@ -525,6 +526,22 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             ? summarizeBarangay({ name: selectedBgy.name, series: quarterSeries, activeIndex: activeQuarterIndex, activeQuarter, records: selectedLcRecords })
             : null
     ), [selectedBgy?.name, activeLayer, quarterSeries, activeQuarterIndex, activeQuarter, selectedLcRecords]);
+    // The pop-up card on the selected barangay: LC demand, or the Diversity
+    // Index's filed land use (same card design).
+    const bgyCallout = lcFocus ? (
+        <LcCallout
+            name={selectedBgy.name}
+            summary={lcSummary}
+            quarter={activeQuarter}
+            onClose={() => setSelectedBgy(null)}
+        />
+    ) : activeLayer === "diversity" && selectedBgy?.name ? (
+        <DiversityCallout
+            name={selectedBgy.name}
+            stat={diversityStats?.[selectedBgy.name] || selectedBgy.data || {}}
+            onClose={() => setSelectedBgy(null)}
+        />
+    ) : null;
     const compactPanel = activeLayer === "status";
     // An open application takes the whole tracking panel: it gets the full map
     // height and the table narrows beside it instead of pushing it to scroll.
@@ -545,6 +562,29 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         if (canvasRef.current) observer.observe(canvasRef.current);
         return () => observer.disconnect();
     }, [showTable, panelOpen, tableHeight, inspectedApp, selectedBgy, compactPanel]);
+
+    // Dragging the table up into the side panel hides the panel, so the
+    // table gets the full width. Only a table made taller than standard does
+    // this; when the panel comes back, the table returns to standard height.
+    const [tableResetKey, setTableResetKey] = useState(0);
+    // Remembers whether the table was last dragged taller, so the panel coming
+    // back (before the table has shrunk) does not hide it again.
+    const prevTableHeight = useRef(tableHeight);
+    const tableGrew = useRef(false);
+    // Runs first: a returning panel clears the drag and resets the table.
+    const prevPanelOpen = useRef(panelOpen);
+    useEffect(() => {
+        if (panelOpen && !prevPanelOpen.current) {
+            tableGrew.current = false;
+            if (tableHeight > TABLE_DEFAULT_H) setTableResetKey((k) => k + 1);
+        }
+        prevPanelOpen.current = panelOpen;
+    }, [panelOpen, tableHeight]);
+    useEffect(() => {
+        if (tableHeight !== prevTableHeight.current) tableGrew.current = tableHeight > prevTableHeight.current;
+        prevTableHeight.current = tableHeight;
+        if (tableGrew.current && panelOpen && showTable && panelNeedsRoom && tableHeight > TABLE_DEFAULT_H) setPanelOpen(false);
+    }, [panelOpen, showTable, panelNeedsRoom, tableHeight]);
     const mapInsets = {
         right: panelOpen && isDesktop() ? 372 : 0,
         bottom: showTable ? tableHeight : 0,
@@ -554,7 +594,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         if (!selectedBgy?.name) return null;
         return {
             total: scopedApps.length,
-            pending: scopedApps.filter((a) => getStatusMarkerConfig(a.status) !== STATUS_MARKER_CONFIG.Released && getStatusMarkerConfig(a.status) !== STATUS_MARKER_CONFIG.Denied).length,
+            pending: scopedApps.filter((a) => !isResolved(a)).length,
         };
     }, [selectedBgy, scopedApps]);
 
@@ -616,7 +656,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const reloadFiltered = (type, period, active = activeOnly) => {
         const params = {};
         if (type !== "All") params.application_type = type;
-        if (period !== "all") params.period = period;
+        if (period !== "month") params.period = period;
         if (active) params.active = 1;
         router.get(
             window.location.pathname,
@@ -798,7 +838,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                             <ToolButton icon="layers" label="Layers panel" pressed={layersOpen} onClick={() => setLayersOpen((v) => !v)} />
                             <Divider />
                             <ToolButton icon="zoomIn" label="Zoom in" onClick={() => (show3D ? view3DRef.current?.zoomBy(1) : setMapZoom((z) => Math.min(19, z + 1)))} />
-                            <ToolButton icon="zoomOut" label="Zoom out" onClick={() => (show3D ? view3DRef.current?.zoomBy(-1) : setMapZoom((z) => Math.max(11, z - 1)))} />
+                            <ToolButton icon="zoomOut" label="Zoom out" onClick={() => (show3D ? view3DRef.current?.zoomBy(-1) : setMapZoom((z) => Math.max(HOME_ZOOM, z - 1)))} />
                             <ToolButton icon="extent" label="Zoom to Rosario" onClick={() => { setSelectedBgy(null); if (show3D) view3DRef.current?.reset(); else setResetTrigger((t) => t + 1); }} />
                             <Divider />
                             <div className="flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Map view">
@@ -873,14 +913,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             currentLayer={activeLayer}
                                             mapStyle={mapStyle}
                                             plain={!showSatellite3D}
-                                            callout={lcFocus && !show3D ? (
-                                                <LcCallout
-                                                    name={selectedBgy.name}
-                                                    summary={lcSummary}
-                                                    quarter={activeQuarter}
-                                                    onClose={() => setSelectedBgy(null)}
-                                                />
-                                            ) : null}
+                                            callout={show3D ? null : bgyCallout}
                                             appTypeFilter={appTypeFilter}
                                             statusFilter={statusFilter}
                                             selectedAppId={inspectedApp?.id ?? null}
@@ -927,14 +960,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     lens={activeLayer === "diversity" ? diversityLens : activeLayer}
                                                     demandCounts={demandByBgy}
                                                     lcColors={lcView}
-                                                    callout={lcFocus ? (
-                                                        <LcCallout
-                                                            name={selectedBgy.name}
-                                                            summary={lcSummary}
-                                                            quarter={activeQuarter}
-                                                            onClose={() => setSelectedBgy(null)}
-                                                        />
-                                                    ) : null}
+                                                    callout={bgyCallout}
                                                     rightPanelOpen={panelOpen}
                                                     panelWidth={372}
                                                     bandFilter={diversityBandFilter}
@@ -949,9 +975,13 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
                                     {/* Map title, like a print layout's. It also reads out whatever is
                                         under the cursor, so nothing floats over the data itself. */}
-                                    {lcFocus ? (
+                                    {lcFocus || (activeLayer === "diversity" && selectedBgy?.name) ? (
                                         <>
-                                            <BarangayLocator name={selectedBgy.name} color={lcFocus.cls.color} onClear={() => setSelectedBgy(null)} />
+                                            <BarangayLocator
+                                                name={selectedBgy.name}
+                                                color={lcFocus ? lcFocus.cls.color : resolveLensValue("mix", { diversity: diversityStats?.[selectedBgy.name]?.diversity ?? null }).color}
+                                                onClear={() => setSelectedBgy(null)}
+                                            />
                                         </>
                                     ) : (
                                     <div className="absolute top-3 left-3 z-[500] bg-white/95 border border-slate-300 rounded-[3px] shadow-sm w-[300px] max-w-[calc(100%-1.5rem)]">
@@ -984,9 +1014,13 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                     {/* Attribute table for the selected barangay, floating over the
                                         bottom of the map so the canvas keeps its full size. */}
                                     {showTable && (
-                                        <div className={`absolute bottom-0 left-0 z-[610] ${panelOpen && panelNeedsRoom ? "right-0 sm:right-[372px]" : "right-0"}`}>
+                                        <div className={`absolute bottom-0 left-0 z-[610] pointer-events-none ${panelOpen && panelNeedsRoom ? "right-0 sm:right-[372px]" : "right-0"}`}>
                                             <AttributeTable
                                                 title={`applications · ${selectedBgy?.name || "All barangays"}`}
+                                                summary={`application${scopedApps.length === 1 ? "" : "s"} in ${selectedBgy?.name || "all barangays"}`}
+                                                startCollapsed={Boolean(selectedBgy?.name)}
+                                                collapseKey={selectedBgy?.name || ""}
+                                                resetHeightKey={tableResetKey}
                                                 apps={visibleApps}
                                                 total={scopedApps.length}
                                                 selectedAppId={inspectedApp?.id ?? null}
@@ -1042,24 +1076,24 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             <DockHeader title={moduleInfo?.label} onClose={() => setPanelOpen(false)} closeLabel="Close analysis panel" />
                                             <div ref={panelBodyRef} className={compactPanel ? "min-h-0 flex flex-col overflow-y-auto" : "flex-1 min-h-0 flex flex-col"}>
 
-                                                {activeLayer === "status" && !selectedBgy?.name && (
+                                                {activeLayer === "status" && (
                                                     <StatusPanel
-                                                        recent={applications.filter((a) => matchesAppFilters(a, appTypeFilter, "All"))}
+                                                        recent={applications}
                                                         selectedBgy={selectedBgy}
+                                                        onClearBgy={() => setSelectedBgy(null)}
                                                         period={periodFilter}
                                                         onPeriodChange={handlePeriodChange}
-                                                        appType={appTypeFilter}
-                                                        loadClasses={APP_LOAD_CLASSES}
+                                                        appType={appTypeFilter}                                                        loadClasses={APP_LOAD_CLASSES}
                                                         permitTypes={PERMIT_TYPES}
                                                         onAppTypeChange={handleAppTypeChange}
                                                         activeOnly={activeOnly}
                                                         onActiveChange={handleActiveChange}
-                                                        filtersActive={periodFilter !== "all" || appTypeFilter !== "All" || activeOnly}
+                                                        filtersActive={periodFilter !== "month" || appTypeFilter !== "All" || activeOnly}
                                                         onResetFilters={() => {
                                                             setAppTypeFilter("All");
-                                                            setPeriodFilter("all");
+                                                            setPeriodFilter("month");
                                                             setActiveOnly(false);
-                                                            reloadFiltered("All", "all", false);
+                                                            reloadFiltered("All", "month", false);
                                                         }}
                                                     />
                                                 )}
@@ -1114,8 +1148,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     <div className="flex-1 min-h-0 flex flex-col">
                                                         <DiversityPanel
                                                             overallDiversity={diversityOverall}
-                                                            period={diversityStep}
-                                                            selectedBgy={selectedBgy}
+                                                            period={diversityStep}                                                            selectedBgy={selectedBgy}
                                                             onSelectBgy={selectBarangay}
                                                             bgyStats={diversityStats}
                                                             lens={diversityLens}
@@ -1179,29 +1212,11 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Scale 1:{mapScale(scaleLat, mapZoom).toLocaleString("en-PH")}</span>
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Zoom {mapZoom}</span>
                             <span className="px-3 border-l border-slate-300 hidden md:block">EPSG:4326</span>
-                            <div className="ml-auto min-w-0 flex items-center gap-1.5 pl-3 border-l border-slate-300">
-                            {activeLayer === "status" && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        // Closing the table closes the application it had open, as collapsing it does.
-                                        if (tableOpen) setInspectedApp(null);
-                                        setTableOpen(!tableOpen);
-                                    }}
-                                    aria-pressed={tableOpen}
-                                    aria-label="Attribute table"
-                                    title={`${tableOpen ? "Close" : "Open"} attribute table · ${selectedBgy?.name || "All barangays"}`}
-                                    className={`w-5 h-5 shrink-0 flex items-center justify-center rounded-[3px] border cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b] ${
-                                        tableOpen ? "bg-[#dce6f3] border-[#9fb4d3] text-[#0b2a5b]" : "border-transparent text-slate-600 hover:bg-white hover:border-slate-300"
-                                    }`}
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d={ICONS.table} />
-                                    </svg>
-                                </button>
+                            {activeLayer !== "status" && (
+                                <div className="ml-auto min-w-0 flex items-center gap-1.5 pl-3 border-l border-slate-300">
+                                    <span className="truncate">{statusSummary}</span>
+                                </div>
                             )}
-                            <span className="truncate">{statusSummary}</span>
-                            </div>
                         </div>
                     </div>
                 </div>

@@ -42,7 +42,7 @@ function Compare({ label, value, base }) {
         <div className="min-w-0 px-3 py-2">
             <dt className="text-[10.5px] text-slate-500 truncate">{label}</dt>
             <dd className="mt-1 flex items-baseline gap-1.5">
-                {value != null ? <Change value={value} className="text-[12.5px]" /> : <span className="text-[12.5px] text-slate-400">—</span>}
+                {value != null ? <Change value={value} className="text-[12px]" /> : <span className="text-[12px] text-slate-400">—</span>}
                 <span className="text-[10.5px] tabular-nums text-slate-400 truncate">from {base}</span>
             </dd>
         </div>
@@ -150,7 +150,7 @@ function WatchRow({ name, tag, tagTone = "info", value, valueClass, title, onSel
                 <span className="min-w-0 truncate">{name}</span>
                 {tag && (
                     <span
-                        className={`shrink-0 text-[8.5px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] ${
+                        className={`shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] ${
                             tagTone === "caution" ? "bg-amber-100 text-amber-800 border border-amber-300" : "bg-[#0b2a5b] text-white"
                         }`}
                     >
