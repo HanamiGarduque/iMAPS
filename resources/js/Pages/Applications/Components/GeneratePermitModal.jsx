@@ -328,24 +328,24 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
         const permitName = typeof item === "object" ? item?.permit_name || "this permit document" : "this permit document";
 
         dialog.fire({
-            title: "Delete stored permit?",
-            text: `Are you sure you want to delete "${permitName}"? This action cannot be undone.`,
+            title: "Remove stored permit?",
+            text: `"${permitName}" will be removed from this list. The file itself is kept on record for MPDO's retention period.`,
             icon: "warning",
             danger: true,
             showCancelButton: true,
-            confirmButtonText: "Delete Permit",
+            confirmButtonText: "Remove Permit",
             focusCancel: true,
         }).then(async (result) => {
             if (result.isConfirmed) {
                 try {
                     await axios.delete(`/applications/${app.id}/saved-permits/${permitId}`);
                     fetchSavedPermits();
-                    notify("Permit document deleted", "success", { timer: 2000 });
+                    notify("Permit document removed", "success", { timer: 2000 });
                 } catch (e) {
                     dialog.fire({
                         icon: "error",
-                        title: "Delete Failed",
-                        text: e.response?.data?.message || "Could not delete stored permit.",
+                        title: "Remove Failed",
+                        text: e.response?.data?.message || "Could not remove stored permit.",
                     });
                 }
             }
@@ -490,8 +490,8 @@ export function PermitExportPanel({ app, savedPermits: propSavedPermits, onSaved
                                             <button
                                                 type="button"
                                                 onClick={() => handleDeleteSavedPermit(item)}
-                                                title="Delete"
-                                                aria-label={`Delete ${item.permit_name}`}
+                                                title="Remove"
+                                                aria-label={`Remove ${item.permit_name}`}
                                                 className="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
                                             >
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">

@@ -5,10 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class GeneratedPermit extends Model
 {
     use HasFactory;
+
+    // Removing a saved permit hides it but keeps the row and the stored file:
+    // it may already have been issued, and permits fall under MPDO's retention.
+    use SoftDeletes;
 
     protected $table = 'generated_permits';
 

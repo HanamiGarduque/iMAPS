@@ -42,6 +42,11 @@ class ZoningApplication extends Model
 
     protected $table = 'zoning_applications';
 
+    public const NOT_VOIDED = 'notVoided';
+
+    /** Decided applications; only these can be archived. */
+    public const CLOSED_STATUSES = ['Released', 'Denied'];
+
     protected $fillable = [
         'reference_number',
         'application_stream',
@@ -91,7 +96,8 @@ class ZoningApplication extends Model
         'project_cost'            => 'float',
         'date_of_receipt' => 'date',
         'number_of_saleable_lots' => 'integer',
-        
+        'archived_at'             => 'datetime',
+        'voided_at'               => 'datetime',
     ];
 
     protected $appends = ['land_use_class', 'application_type'];
@@ -209,6 +215,12 @@ class ZoningApplication extends Model
 
     protected static function booted(): void
     {
+        // A voided application was encoded by mistake. It stays in the table for
+        // the retention period but is not counted, mapped, reported or searched
+        // anywhere. Only the registry's Voided view and the record page read it,
+        // through withVoided().
+        static::addGlobalScope(self::NOT_VOIDED, fn ($query) => $query->whereNull('zoning_applications.voided_at'));
+
         static::saved(function (self $application) {
             if ($application->pendingTypes === null) {
                 return;
@@ -222,6 +234,81 @@ class ZoningApplication extends Model
             $application->pendingTypes = null;
             $application->unsetRelation('types');
         });
+    }
+
+    public function scopeWithVoided($query)
+    {
+        return $query->withoutGlobalScope(self::NOT_VOIDED);
+    }
+
+    public function scopeOnlyVoided($query)
+    {
+        return $query->withoutGlobalScope(self::NOT_VOIDED)->whereNotNull('zoning_applications.voided_at');
+    }
+
+    /** The registry's working list: everything not archived. */
+    public function scopeNotArchived($query)
+    {
+        return $query->whereNull('zoning_applications.archived_at');
+    }
+
+    public function scopeOnlyArchived($query)
+    {
+        return $query->whereNotNull('zoning_applications.archived_at');
+    }
+
+    public function isVoided(): bool
+    {
+        return $this->voided_at !== null;
+    }
+
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
+    }
+
+    /** Encoded it, or currently assigned to it. Same rule as the registry's own-list filter. */
+    public function isOwnedBy(?User $user): bool
+    {
+        return $user !== null
+            && ((int) $this->encoded_by === (int) $user->id
+                || (int) $this->assigned_planning_officer_id === (int) $user->id);
+    }
+
+    /** Admin, or the owning Planning Officer. Archiving is housekeeping, not a decision. */
+    public function canBeArchivedBy(?User $user): bool
+    {
+        return $user !== null
+            && ($user->role === 'Admin' || ($user->role === 'Planning Officer' && $this->isOwnedBy($user)));
+    }
+
+    /** Only the owning Planning Officer, who knows whether the encoding was a mistake. */
+    public function canBeVoidedBy(?User $user): bool
+    {
+        return $user !== null && $user->role === 'Planning Officer' && $this->isOwnedBy($user);
+    }
+
+    /**
+     * Why this application cannot be voided, or null when it can. Voiding is for
+     * an encoding mistake: once the office has decided it, sent a Site Inspector
+     * or generated a permit, it is a real record and is denied, not voided.
+     */
+    public function voidBlocker(): ?string
+    {
+        if ($this->isVoided()) {
+            return 'This application is already voided.';
+        }
+        if (in_array($this->status, self::CLOSED_STATUSES, true)) {
+            return "A {$this->status} application is a decided record and cannot be voided.";
+        }
+        if ($this->siteInspections()->exists()) {
+            return 'A site inspection was already assigned for this application, so it cannot be voided.';
+        }
+        if ($this->generatedPermits()->exists()) {
+            return 'Permits were already generated for this application. Remove them first, or deny the application instead.';
+        }
+
+        return null;
     }
 
     /**

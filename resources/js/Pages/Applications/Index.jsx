@@ -620,7 +620,21 @@ function DropdownSelect({
     );
 }
 
-export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [], drafts_count = 0, applicant_counts = {}, delivery_monitoring = {} }) {
+// Registry views (server-side): the working list, closed records archived out of
+// it, and records voided as encoding mistakes. Nothing is ever deleted: MPDO
+// keeps application records for 10 years.
+const REGISTRY_VIEWS = [
+    { value: "active", label: "Active" },
+    { value: "archived", label: "Archived" },
+    { value: "voided", label: "Voided" },
+];
+
+const VIEW_NOTES = {
+    archived: "Closed applications kept for the 10-year retention period. They still count in reports, maps and search.",
+    voided: "Applications encoded by mistake. They are kept on record but not counted in reports, maps or search.",
+};
+
+export default function Index({ applications, filters = {}, auth = {}, status_counts = {}, inspectors = [], drafts_count = 0, applicant_counts = {}, delivery_monitoring = {}, registry_view = "active", view_counts = {} }) {
     const [clock, setClock] = useState("");
 
     // URL parameter synchronization
@@ -733,6 +747,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         if (dateFrom) params.set("date_from", dateFrom);
         if (dateTo) params.set("date_to", dateTo);
         if (dateRangePreset !== "all") params.set("date_preset", dateRangePreset);
+        // Kept in the URL so loading the next page stays in the same view.
+        if (registry_view !== "active") params.set("view", registry_view);
 
         // LOOP 9D: the delivery filter is SERVER-side. It is pushed into the URL
         // and applied by ApplicationController::applyRegistryFilters(); the
@@ -747,7 +763,19 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         const queryStr = params.toString();
         const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
         window.history.replaceState({}, "", newUrl);
-    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, deliveryMonitoringEnabled, selectedDelivery]);
+    }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, deliveryMonitoringEnabled, selectedDelivery, registry_view]);
+
+    const switchView = (view) => {
+        if (view === registry_view) return;
+        const next = new URLSearchParams(window.location.search);
+        next.delete("page");
+        if (view === "active") next.delete("view");
+        else next.set("view", view);
+        setSelectedIds([]);
+        setPeekItem(null);
+        const qs = next.toString();
+        router.visit(qs ? `${window.location.pathname}?${qs}` : window.location.pathname, { preserveScroll: true });
+    };
 
 
 
@@ -1222,8 +1250,38 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                         );
                                     })}
                                 </div>
+                                <div className="ml-auto mb-1.5 border border-slate-200 bg-white p-0.5 rounded-lg flex items-center shrink-0" role="group" aria-label="Registry view">
+                                    {REGISTRY_VIEWS.map((v) => {
+                                        const isActive = registry_view === v.value;
+                                        const count = view_counts?.[v.value];
+                                        return (
+                                            <button
+                                                key={v.value}
+                                                type="button"
+                                                aria-pressed={isActive}
+                                                onClick={() => switchView(v.value)}
+                                                className={`h-7 px-2.5 rounded-md flex items-center gap-1.5 text-[12px] font-semibold whitespace-nowrap transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                                    isActive ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                                                }`}
+                                            >
+                                                {v.label}
+                                                {count > 0 && (
+                                                    <span className={`text-[10.5px] font-bold tabular-nums px-1.5 py-px rounded-full ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>
+                                                        {count}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                                 </div>
+                                </div>
+
+                                {VIEW_NOTES[registry_view] && (
+                                    <p className={`px-4 py-2 border-b text-[12px] shrink-0 ${registry_view === "voided" ? "bg-rose-50/60 border-rose-100 text-rose-800" : "bg-slate-50 border-slate-200 text-slate-600"}`}>
+                                        {VIEW_NOTES[registry_view]}
+                                    </p>
+                                )}
 
                                 {/* —— FILTER TOOLBAR —— */}
                                 <div className="px-4 py-3 flex flex-wrap items-center gap-2 shrink-0">

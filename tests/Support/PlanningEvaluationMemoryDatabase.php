@@ -86,7 +86,9 @@ trait PlanningEvaluationMemoryDatabase
             'zoning_applications' => ['reference_number' => 'string',
                 'application_stream' => 'string', 'status' => 'string', 'applicant_name' => 'string',
                 'contact_number' => 'string', 'encoded_by' => 'unsignedBigInteger',
-                'assigned_planning_officer_id' => 'unsignedBigInteger', 'purpose' => 'string', 'barangay' => 'string'],
+                'assigned_planning_officer_id' => 'unsignedBigInteger', 'purpose' => 'string', 'barangay' => 'string',
+                // Read by ZoningApplication's not-voided global scope.
+                'voided_at' => 'timestamp'],
             'zoning_application_types' => ['zoning_application_id' => 'unsignedBigInteger', 'application_type' => 'string'],
             'parcels' => ['zoning_application_id' => 'unsignedBigInteger', 'parcel_code' => 'string',
                 'latitude' => 'double', 'longitude' => 'double'],
