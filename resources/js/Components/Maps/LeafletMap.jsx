@@ -252,7 +252,7 @@ export default function LeafletMap({
     mapZoom,
     onZoomChange,
     showClup = false,
-    clupOpacity = 0.7,
+    clupOpacity = 1,
     showLabels = true,
     resetTrigger,
     diversityLens = "mix",
@@ -542,9 +542,13 @@ export default function LeafletMap({
                 };
             }
 
-            // Mask sits between the tiles (incl. CLUP) and the barangays; the
+            // Mask sits between the base tiles and the barangays; the
             // municipal outline above every polygon but under the labels.
             map.createPane("maskPane").style.zIndex = "350";
+            // CLUP tiles sit above the choropleth polygons (overlayPane, 400) so
+            // the zoning colours are never tinted by the shading beneath them.
+            map.createPane("clupPane").style.zIndex = "410";
+            map.getPane("clupPane").style.pointerEvents = "none";
             map.createPane("boundaryPane").style.zIndex = "420";
             map.getPane("maskPane").style.pointerEvents = "none";
             map.getPane("boundaryPane").style.pointerEvents = "none";
@@ -584,6 +588,7 @@ export default function LeafletMap({
                 maxZoom: 22,
                 maxNativeZoom: 19,
                 opacity: clupOpacity,
+                pane: "clupPane",
                 zIndex: 10,
                 errorTileUrl: BLANK_TILE,
             });

@@ -205,7 +205,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const [panelOpen, setPanelOpen] = useState(isDesktop);
     const [clock, setClock] = useState("");
     const [showClup, setShowClup] = useState(false);
-    const [clupOpacity, setClupOpacity] = useState(0.7);
+    const [clupOpacity, setClupOpacity] = useState(1);
     const [showLabels, setShowLabels] = useState(true);
     const [selectedBgy, setSelectedBgy] = useState(null);
     const [mapZoom, setMapZoom] = useState(13);
