@@ -23,6 +23,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // allowlist and hands it Cloudflare's verified client IP.
         $middleware->prepend(\App\Http\Middleware\RestrictToAllowedIps::class);
         $middleware->prepend(\App\Http\Middleware\RequireOriginSecret::class);
+        // Prepended last so it is outermost: even a 403 from the two checks above carries the headers.
+        $middleware->prepend(\App\Http\Middleware\SecurityHeaders::class);
 
         $middleware->web(append: [
             'throttle:app',

@@ -243,23 +243,26 @@ default here — `tests/Unit/ForecastServiceConfigTest.php` enforces that.
 ## 🚂 Production Deployment (Railway)
 
 iMAPS is deployed on **[Railway](https://railway.com)** as a single Docker service plus a PostGIS
-database and one persistent volume, fronted by **Cloudflare**, which only lets the office IP addresses through (WAF custom rule).
+database and one persistent volume, fronted by **Cloudflare**, which only lets registered devices through (client certificates / mTLS and a WAF custom rule).
 The full step-by-step guide is [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md); this
 section is the overview.
 
 ### Access model
 
 iMAPS is **hosted on the internet but restricted to authorized users** — it is not open to the
-public. A Cloudflare WAF custom rule blocks every IP address outside the office allowlist, and
-`ORIGIN_SECRET` makes the app refuse any request that bypassed Cloudflare with a 403; only
-`/ping` (Railway's health check) is exempt. Staff can only reach it from an allowlisted network;
-the server has a public address, so the WAF rule and `ORIGIN_SECRET` are what keep it private.
-`ALLOWED_IPS` can repeat the allowlist inside the app as a second layer.
+public. Each allowed device holds its own **client certificate** (mTLS), and a Cloudflare WAF custom
+rule blocks any request without a valid one, so access follows the device rather than its IP
+address and works from changing networks. `ORIGIN_SECRET` makes the app refuse any request that
+bypassed Cloudflare with a 403; only `/ping` (Railway's health check) is exempt. The server has a
+public address, so the mTLS rule and `ORIGIN_SECRET` are what keep it private. A lost device is
+revoked individually in Cloudflare. The app's login (Turnstile, lockout) and role checks still apply
+on top. `ALLOWED_IPS` is an optional app-side IP allowlist for offices with a fixed public IP; leave
+it unset when staff have dynamic IPs.
 
 ### Architecture
 
 ```text
-Users ──► Cloudflare (WAF: office IPs only, adds X-Origin-Secret)
+Users ──► Cloudflare (mTLS: registered devices only, adds X-Origin-Secret)
               │
               ▼
         Railway app service  (Dockerfile, FrankenPHP/Caddy on $PORT)
@@ -301,7 +304,8 @@ Users ──► Cloudflare (WAF: office IPs only, adds X-Origin-Secret)
    | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` | From Supabase |
    | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Same values; needed at **build** time, so set before the first deploy |
    | `ORIGIN_SECRET` | `openssl rand -hex 32`; must match Cloudflare's `X-Origin-Secret` header |
-   | `ALLOWED_IPS` | Optional app-side office-IP allowlist; works with `ORIGIN_SECRET` (keep it in sync with the Cloudflare list) |
+   | `CSP_MODE`, `HSTS_MAX_AGE` | Security headers: `report-only` (default) / `enforce` / `off` for the Content-Security-Policy, and the HSTS lifetime in seconds (see [SecurityHeaders.php](app/Http/Middleware/SecurityHeaders.php)) |
+   | `ALLOWED_IPS` | Optional app-side IP allowlist for a fixed-IP office; leave unset when staff have dynamic IPs (works with `ORIGIN_SECRET`) |
    | `PERMITS_DISK` | `local` (default, the `/data` volume) or `r2` (Cloudflare R2) — see [Permit storage](#permit-storage-volume-or-cloudflare-r2) |
    | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT` | Only when `PERMITS_DISK=r2`. Endpoint is `https://<account-id>.r2.cloudflarestorage.com` |
    | `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`, `BACKUP_R2_BUCKET` | Separate private bucket for [backups](#backups). `BACKUP_R2_ENDPOINT` defaults to `R2_ENDPOINT` |
@@ -319,12 +323,14 @@ Full steps are in [docs/RAILWAY_DEPLOYMENT.md §2](docs/RAILWAY_DEPLOYMENT.md#2-
 
 1. Proxy the domain through Cloudflare (orange cloud) and set **SSL/TLS → Full (strict)**;
    *Flexible* causes redirect loops.
-2. **IP allowlist:** create an IP list `office_ips` (*Manage Account → Configurations → Lists*) and a
-   WAF custom rule `(not ip.src in $office_ips)` → **Block**. Delete any Zero Trust Access
-   application on the domain, or users still get the email-code prompt.
+2. **Registered devices (mTLS):** add the domain under *SSL/TLS → Client Certificates → Hosts*,
+   issue one client certificate per device, then add a WAF custom rule
+   `(not cf.tls_client_auth.cert_verified and http.host eq "<your-domain>")` → **Block**. Enable the
+   rule only after your own device's certificate works. Delete any unintended Zero Trust Access
+   application on the domain, or users get an extra email-code prompt.
 3. **Transform rule:** set the request header `X-Origin-Secret` to the value of `ORIGIN_SECRET`.
    Without it the app answers 403 to everyone.
-4. Optionally set `ALLOWED_IPS` to the same addresses as a second layer inside the app.
+4. Leave `ALLOWED_IPS` unset when staff have dynamic IPs; it is only for a fixed-IP office.
 
 How the app relies on Cloudflare:
 
@@ -338,10 +344,11 @@ How the app relies on Cloudflare:
   signed-in users get 300 requests/min each, guests get 60/min per IP, and `/ping` is unlimited.
   Stricter per-route limits (10–30/min) apply on top to logins, shapefile and tile uploads, password
   resets and sensitive user data. Covered by `tests/Feature/CloudflareClientIpAndThrottleTest.php`.
-- **App-side allowlist:** [RestrictToAllowedIps.php](app/Http/Middleware/RestrictToAllowedIps.php)
-  runs after the origin-secret check, so behind Cloudflare it sees `CF-Connecting-IP`; without
-  Cloudflare it reads the right-hand (Railway-written) end of `X-Forwarded-For`. It logs blocked
-  addresses as `Blocked by ALLOWED_IPS` so you can copy the office IP from the Railway logs.
+- **App-side allowlist (optional):** [RestrictToAllowedIps.php](app/Http/Middleware/RestrictToAllowedIps.php)
+  only runs when `ALLOWED_IPS` is set. It runs after the origin-secret check, so behind Cloudflare it
+  sees `CF-Connecting-IP`; without Cloudflare it reads the right-hand (Railway-written) end of
+  `X-Forwarded-For`. It logs blocked addresses as `Blocked by ALLOWED_IPS`. It is not compatible with
+  dynamic IPs, which is why device certificates are the primary control.
 
 ### Permit storage (volume or Cloudflare R2)
 
@@ -466,11 +473,13 @@ before opening the site to staff.
 - **Internet required.** Fonts (Google),
   basemaps (OSM/ArcGIS) and the inspector sync (Supabase) all need internet. If the office
   connection or ISP goes down, the system is unavailable.
-- **Access is tied to the office IP allowlist.** Staff can't reach the system from home or mobile
-  data, and if the office ISP changes the public IP, everyone is blocked until the Cloudflare list
-  (and `ALLOWED_IPS`, if set) is updated.
-- **Shared guest rate limit.** Everyone in the office shares one public IP, so all unauthenticated
-  requests from the office (login page, etc.) share the 60/min guest limit.
+- **Access is tied to registered devices.** A browser or computer without a valid client
+  certificate is blocked, so each new device needs a certificate issued and installed, and
+  certificates expire and must be renewed. Phones and shared computers are harder to enrol. Anything
+  else that calls the public domain without a certificate (webhooks, scripts) is blocked unless
+  excepted in the Cloudflare rule.
+- **Shared guest rate limit.** Unauthenticated requests are limited per public IP (60/min), so
+  people behind one shared address (for example the office) share that limit.
 - **Single instance.** The volume and in-container queue worker rule out scaling replicas. A
   container restart briefly takes the whole system down.
 - **Upload size.** Cloudflare's free plan caps requests at 100 MB. Larger tile sets have to be
