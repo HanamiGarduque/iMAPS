@@ -1375,7 +1375,7 @@ function ShowInner({
     // and (several lots) folder tabs labelled with each lot's state.
     const applicantStrip = (() => {
         const name = app.corporation_name || app.applicant_name;
-        const address = [app.applicant_street, app.applicant_barangay].filter(Boolean).join(", ") || app.corporation_address || "";
+        const address = [app.applicant_street, app.applicant_barangay, app.applicant_municipality].filter(Boolean).join(", ") || app.corporation_address || "";
         const phone = String(app.contact_number || app.corporation_contact || "");
         const email = app.email || "";
         return name || address || phone || email ? { name: name || "Applicant", address, phone, email } : null;

@@ -321,9 +321,10 @@ class PermitExcelService
         $lotStreet = $this->street($up($first?->location_address ?: $application->street_address), $lotBarangay);
 
         $applicantBarangay = $up($application->applicant_barangay);
+        $applicantMunicipality = $up($application->applicant_municipality);
         $applicantStreet = $this->street($up($application->applicant_street), $applicantBarangay);
         $address = $applicantStreet || $applicantBarangay
-            ? implode(', ', array_filter([$applicantStreet, $applicantBarangay ? "BRGY. {$applicantBarangay}" : null, 'ROSARIO, BATANGAS']))
+            ? implode(', ', array_filter([$applicantStreet, $applicantBarangay ? "BRGY. {$applicantBarangay}" : null, $applicantMunicipality ?: 'ROSARIO, BATANGAS']))
             : implode(', ', array_filter([$this->street($up($first?->location_address), $barangay), $barangay ? "BRGY. {$barangay}" : null, 'ROSARIO, BATANGAS']));
 
         $taxDecs = $join('tax_dec_number');

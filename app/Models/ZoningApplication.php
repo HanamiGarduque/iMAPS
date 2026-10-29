@@ -64,6 +64,7 @@ class ZoningApplication extends Model
         'applicant_name',
         'applicant_street',
         'applicant_barangay',
+        'applicant_municipality',
         'contact_number',
         'email',
         'representative_name',

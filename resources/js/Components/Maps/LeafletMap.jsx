@@ -181,7 +181,7 @@ const hoverStyle = (imagery) => (imagery ? { weight: 3, color: "#ffffff", opacit
 // land outside it is dimmed by a mask with the municipality cut out, so the
 // study area lifts off the basemap without a frame around it.
 const PLAIN_LINE = "#b9b4ab";
-const boundaryStyles = (imagery, plain = false) => plain ? ({
+export const boundaryStyles = (imagery, plain = false) => plain ? ({
     halo: { stroke: false, fill: false },
     line: { color: PLAIN_LINE, weight: 1.4, opacity: 1, fill: false, lineJoin: "round" },
     mask: { stroke: false, fill: false },
@@ -193,7 +193,7 @@ const boundaryStyles = (imagery, plain = false) => plain ? ({
 // Comfortably past maxBounds at every zoom.
 const MASK_OUTER = [[12.8, 120.2], [12.8, 122.4], [14.8, 122.4], [14.8, 120.2]];
 
-const buildOutsideMask = (L, data, pane, style) => {
+export const buildOutsideMask = (L, data, pane, style) => {
     const holes = [];
     data.features.forEach((f) => {
         const g = f.geometry;

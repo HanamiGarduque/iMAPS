@@ -5,15 +5,6 @@ import { splitFullName, normalizeName, joinName } from "@/utils/names";
 
 const CORPORATE = /\b(corp\.?|corporation|inc\.?|incorporated|co\.|company|cooperative|holdings|realty|development|enterprises?|ltd\.?)\b/i;
 
-const ROSARIO_BARANGAYS = [
-    "Alupay", "Antipolo", "Bagong Pook", "Balibago", "Bayawang", "Baybayin", "Bulihan", "Cahigam", 
-    "Calantas", "Colongan", "Itlugan", "Leviste", "Lumbangan", "Maalas-as", "Mabato", "Mabunga", 
-    "Macalamcam A", "Macalamcam B", "Malaya", "Maligaya", "Marilag", "Masaya", "Matamis", "Mavalor", 
-    "Mayuro", "Namuco", "Namunga", "Natu", "Nasi", "Palakpak", "Pinagsibaan", "Poblacion A", 
-    "Poblacion B", "Poblacion C", "Poblacion D", "Poblacion E", "Putingkahoy", "Quilib", "Salao", 
-    "San Carlos", "San Ignacio", "San Isidro", "San Jose", "San Roque", "Santa Cruz", "Timbugan", 
-    "Tiquiwan", "Tulos"
-];
 
 // A past applicant or corporation from the database, offered for auto-fill
 function SuggestionBanner({ label, name, detail, onApply, onDismiss }) {
@@ -200,12 +191,12 @@ export default function StepApplicant({
             </div>
             {errors.applicant_name && <p className="text-xs font-medium text-rose-500 mt-1">{errors.applicant_name}</p>}
 
-            {/* Address of the Applicant (Street and Barangay only) */}
+            {/* Address of the Applicant: any street, barangay and municipality/city */}
             <div>
                 <Label required hasError={!!errors.applicant_street || !!errors.applicant_barangay}>
-                    Address of the Applicant (Street and Barangay only)
+                    Address of the Applicant (anywhere, inside or outside Rosario, Batangas)
                 </Label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1.5">
                     <div>
                         <Label required hasError={!!errors.applicant_street}>Street Address</Label>
                         <Input
@@ -219,17 +210,25 @@ export default function StepApplicant({
                     </div>
                     <div>
                         <Label required hasError={!!errors.applicant_barangay}>Barangay</Label>
-                        <Select
+                        <Input
+                            type="text"
                             value={form.applicant_barangay || ""}
                             onChange={set("applicant_barangay")}
+                            placeholder="e.g. Poblacion"
                             hasError={!!errors.applicant_barangay}
-                        >
-                            <option value="">Select Barangay...</option>
-                            {ROSARIO_BARANGAYS.map((b) => (
-                                <option key={b} value={b}>{b}</option>
-                            ))}
-                        </Select>
+                        />
                         {errors.applicant_barangay && <p className="text-xs font-medium text-rose-500 mt-1">{errors.applicant_barangay}</p>}
+                    </div>
+                    <div>
+                        <Label required hasError={!!errors.applicant_municipality}>Municipality / City</Label>
+                        <Input
+                            type="text"
+                            value={form.applicant_municipality || ""}
+                            onChange={set("applicant_municipality")}
+                            placeholder="e.g. Lipa City, Batangas"
+                            hasError={!!errors.applicant_municipality}
+                        />
+                        {errors.applicant_municipality && <p className="text-xs font-medium text-rose-500 mt-1">{errors.applicant_municipality}</p>}
                     </div>
                 </div>
             </div>

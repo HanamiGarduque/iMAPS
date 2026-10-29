@@ -74,7 +74,7 @@ const STEPS = [
 
 const STEP_ERROR_FIELDS = {
     [STEP.APPLICATION]: ["application_stream", "application_type", "form_number", "land_use_class", "purpose", "target_land_use_class", "building_area", "area_to_develop", "number_of_saleable_lots", "business_name", "project_cost", "project_tenure"],
-    [STEP.APPLICANT]: ["applicant_name", "first_name", "last_name", "contact_number", "email", "applicant_street", "applicant_barangay", "representative_name", "representative_contact", "representative_address", "corporation_name", "corporation_contact", "corporation_address", "right_over_land"],
+    [STEP.APPLICANT]: ["applicant_name", "first_name", "last_name", "contact_number", "email", "applicant_street", "applicant_barangay", "applicant_municipality", "representative_name", "representative_contact", "representative_address", "corporation_name", "corporation_contact", "corporation_address", "right_over_land"],
     [STEP.FEES]: ["assessment_fee", "or_number", "date_of_receipt", "zoning_certificate_fee", "locational_clearance_fee", "development_permit_fee", "other_fees", "penalty_fee"],
 };
 
@@ -235,6 +235,7 @@ function computeFeeLines(applicationType, landUse, area, cost) {
 // e-mail, numbers and dates keep their own format. Mirrored by App\Http\Controllers\ApplicationController::UPPERCASE_FIELDS.
 const UPPER_FIELDS = [
     "first_name", "middle_name", "last_name", "suffix", "applicant_name", "applicant_street",
+    "applicant_barangay", "applicant_municipality",
     "representative_name", "representative_address", "corporation_name", "corporation_address",
     "business_name", "street_address", "purpose", "remarks",
 ];
@@ -295,6 +296,7 @@ const emptyForm = () => ({
     applicant_name: "",
     applicant_street: "",
     applicant_barangay: "",
+    applicant_municipality: "",
     contact_number: "",
     email: "",
     representative_name: "",
@@ -615,6 +617,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             applicant_name: joinName(parts),
             applicant_street: s.applicant_street || prev.applicant_street,
             applicant_barangay: s.applicant_barangay || prev.applicant_barangay,
+            applicant_municipality: s.applicant_municipality || prev.applicant_municipality,
             contact_number: toMobile(s.contact_number) || prev.contact_number,
             email: s.email || prev.email,
             representative_name: s.representative_name || prev.representative_name,
@@ -664,6 +667,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
     // A previous application chosen in the record search: its applicant, corporation and chosen lots.
     // The lots are verified again against the tax map, so ownership and zoning reflect today's records.
     const [recordSearchOpen, setRecordSearchOpen] = useState(false);
+    const [recordSeed, setRecordSeed] = useState(null); // record picked from the map search box, opened straight at its lot list
     const applyPreviousRecord = (record, lots) => {
         fillApplicant(record);
         if (record.corporation_name) fillCorporation(record);
@@ -1968,17 +1972,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                         <div className="flex items-center gap-2 shrink-0">
                             <button
                                 type="button"
-                                onClick={() => setRecordSearchOpen(true)}
-                                title="Retrieve the details and lots of a returning applicant or corporation"
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                                </svg>
-                                <span className="hidden sm:inline">Retrieve record</span>
-                            </button>
-                            <button
-                                type="button"
                                 onClick={handleRestart}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                             >
@@ -2013,6 +2006,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                     addParcel={addParcel}
                                     removeParcel={removeParcel}
                                     handlePinLookup={handlePinLookup}
+                                    onPickRecord={(record) => { setRecordSeed(record); setRecordSearchOpen(true); }}
                                     setErrors={setErrors}
                                     pinLoading={pinLoading}
                                     errors={errors}
@@ -2413,7 +2407,8 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
             <PreviousRecordSearch
                 open={recordSearchOpen}
-                onClose={() => setRecordSearchOpen(false)}
+                initialRecord={recordSeed}
+                onClose={() => { setRecordSearchOpen(false); setRecordSeed(null); }}
                 onApply={applyPreviousRecord}
             />
         </>

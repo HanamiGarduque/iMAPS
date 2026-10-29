@@ -5,9 +5,11 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
 import { Input } from "./FormControls";
+import useDebouncedLookup from "@/utils/useDebouncedLookup";
 import dialog from "@/utils/dialog";
 import { getZoneInfo, ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
-import { resolveBarangayName } from "@/utils/mapData";
+import { resolveBarangayName, loadMunicipalBoundary } from "@/utils/mapData";
+import { boundaryStyles, buildOutsideMask } from "@/Components/Maps/LeafletMap";
 import {
     MAP_MAX_ZOOM,
     LOT_FOCUS_ZOOM,
@@ -30,8 +32,11 @@ const ROSARIO_BOUNDS = [[13.65, 121.12], [13.92, 121.36]];
 
 
 // QGIS-style locator bar: search lots by PIN / lot no. / owner, or jump to a barangay. Ctrl+K focuses it.
-function Locator({ parcelIndex, brgyIndex, attachedCodes, onPickParcel, onPickBarangay, onLookupPin }) {
+function Locator({ parcelIndex, brgyIndex, attachedCodes, onPickParcel, onPickBarangay, onLookupPin, onPickRecord }) {
     const [q, setQ] = useState("");
+    // Previous applications by applicant / corporation / e-mail / contact number
+    const [records, setRecords] = useState([]);
+    const lookupRecords = useDebouncedLookup("/applications/previous-records", setRecords);
     const [open, setOpen] = useState(false);
     const [hi, setHi] = useState(0);
     const inputRef = useRef(null);
@@ -71,8 +76,17 @@ function Locator({ parcelIndex, brgyIndex, attachedCodes, onPickParcel, onPickBa
         if (/\d/.test(query) && query.length >= 6 && !exact) {
             items.push({ type: "lookup", key: "lookup", title: `Look up PIN “${q.trim()}”`, sub: "Not on the map — search Assessor records" });
         }
+        if (onPickRecord) {
+            records.slice(0, 5).forEach((r) => items.push({
+                type: "record",
+                key: `r-${r.id}`,
+                title: r.corporation_name || r.applicant_name,
+                sub: [r.reference_number, r.form_number && `Form ${r.form_number}`, `${r.parcels.length} lot${r.parcels.length === 1 ? "" : "s"}`].filter(Boolean).join(" · "),
+                item: r,
+            }));
+        }
         return items;
-    }, [q, parcelIndex, brgyIndex]);
+    }, [q, parcelIndex, brgyIndex, records, onPickRecord]);
 
     useEffect(() => setHi(0), [q]);
 
@@ -80,9 +94,11 @@ function Locator({ parcelIndex, brgyIndex, attachedCodes, onPickParcel, onPickBa
         if (!r) return;
         if (r.type === "parcel") onPickParcel(r.item.feature);
         else if (r.type === "brgy") onPickBarangay(r.item.feature);
+        else if (r.type === "record") onPickRecord(r.item);
         else onLookupPin(q.trim());
         setOpen(false);
-        if (r.type !== "lookup") setQ(r.type === "parcel" ? r.title : "");
+        if (r.type === "record") setQ("");
+        else if (r.type !== "lookup") setQ(r.type === "parcel" ? r.title : "");
     };
 
     const showList = open && q.trim().length >= 2;
@@ -98,6 +114,7 @@ function Locator({ parcelIndex, brgyIndex, attachedCodes, onPickParcel, onPickBa
                 value={q}
                 onChange={(e) => {
                     setQ(e.target.value);
+                    lookupRecords(e.target.value);
                     setOpen(true);
                 }}
                 onFocus={() => setOpen(true)}
@@ -120,14 +137,14 @@ function Locator({ parcelIndex, brgyIndex, attachedCodes, onPickParcel, onPickBa
                 aria-expanded={showList}
                 aria-controls="map-locator-results"
                 aria-activedescendant={showList && results[hi] ? `locator-${results[hi].key}` : undefined}
-                aria-label="Search PIN, lot number, owner or barangay"
-                placeholder="Search PIN, lot, owner, barangay…  Ctrl+K"
+                aria-label="Search PIN, lot number, owner, barangay or previous applicant record"
+                placeholder="Search PIN, lot, owner, barangay, record…  Ctrl+K"
                 className="w-full h-7 pl-7 pr-2 rounded-md border border-slate-300 bg-white text-[11px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
             />
             {showList && (
                 <ul id="map-locator-results" role="listbox" className="absolute left-0 right-0 top-full mt-1 z-50 max-h-80 overflow-y-auto bg-white border border-slate-300 rounded-md shadow-lg py-1">
                     {results.length === 0 ? (
-                        <li className="px-3 py-2 text-[11px] text-slate-400">No matching lot or barangay</li>
+                        <li className="px-3 py-2 text-[11px] text-slate-400">No matching lot, barangay or record</li>
                     ) : (
                         results.map((r, i) => (
                             <li
@@ -144,7 +161,7 @@ function Locator({ parcelIndex, brgyIndex, attachedCodes, onPickParcel, onPickBa
                             >
                                 <div className="flex items-center gap-2">
                                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 w-10 shrink-0">
-                                        {r.type === "parcel" ? "Lot" : r.type === "brgy" ? "Brgy" : "Lookup"}
+                                        {r.type === "parcel" ? "Lot" : r.type === "brgy" ? "Brgy" : r.type === "record" ? "Record" : "Lookup"}
                                     </span>
                                     <span className={`text-[11px] font-semibold text-slate-800 truncate ${r.type === "parcel" ? "font-mono" : ""}`}>{r.title}</span>
                                     {r.type === "parcel" && attachedCodes[r.item.pin] && (
@@ -192,6 +209,7 @@ export default function StepPropertyGIS({
     addParcel,
     removeParcel,
     handlePinLookup,
+    onPickRecord,
     setErrors = () => {},
     pinLoading = {},
     errors = {},
@@ -457,6 +475,37 @@ export default function StepPropertyGIS({
         const b = L.geoJSON(brgyMapData).getBounds();
         return b.isValid() ? b.pad(0.05) : null;
     }, [brgyMapData]);
+
+    // Rosario outline drawn exactly as on the Maps page: halo under a crisp line, with the land outside dimmed.
+    const imagery = basemap === "satellite";
+    useEffect(() => {
+        if (!map) return;
+        let cancelled = false;
+        const layers = [];
+        loadMunicipalBoundary().then((data) => {
+            if (cancelled || !data?.features) return;
+            if (!map.getPane("maskPane")) {
+                const mask = map.createPane("maskPane");
+                mask.style.zIndex = "350";
+                mask.style.pointerEvents = "none";
+            }
+            if (!map.getPane("boundaryPane")) {
+                const pane = map.createPane("boundaryPane");
+                pane.style.zIndex = "420";
+                pane.style.pointerEvents = "none";
+            }
+            const styles = boundaryStyles(imagery);
+            const mask = buildOutsideMask(L, data, "maskPane", styles.mask);
+            if (mask) layers.push(mask);
+            layers.push(L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.halo }));
+            layers.push(L.geoJSON(data, { pane: "boundaryPane", interactive: false, style: styles.line }));
+            layers.forEach((l) => l.addTo(map));
+        });
+        return () => {
+            cancelled = true;
+            layers.forEach((l) => map.removeLayer(l));
+        };
+    }, [map, imagery]);
 
     // QGIS Identify: parcel attributes (if a lot was hit) plus the CLUP zone under the clicked point
     const handleIdentify = (latlng, feature) => {
@@ -784,6 +833,7 @@ export default function StepPropertyGIS({
                         onPickParcel={locateParcel}
                         onPickBarangay={locateBarangay}
                         onLookupPin={(pin) => startEncode({ type: "pin", pin })}
+                        onPickRecord={onPickRecord}
                     />
 
                     <div className="ml-auto flex items-center gap-1">
@@ -857,7 +907,7 @@ export default function StepPropertyGIS({
                             )}
 
                             {showBarangays && brgyMapData && (
-                                <GeoJSON data={brgyMapData} style={BARANGAY_LINE} smoothFactor={BARANGAY_LINE.smoothFactor} interactive={false} />
+                                <GeoJSON key={imagery ? "brgy-imagery" : "brgy-plain"} data={brgyMapData} style={imagery ? { ...BARANGAY_LINE, color: "#ffffff", weight: 1.2, opacity: 0.8 } : BARANGAY_LINE} smoothFactor={BARANGAY_LINE.smoothFactor} interactive={false} />
                             )}
                             {showParcelLayer && parcelMapData && (
                                 <GeoJSON

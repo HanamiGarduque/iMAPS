@@ -541,7 +541,7 @@ class ApplicationController extends Controller
      * Mirrors UPPER_FIELDS in resources/js/Pages/Applications/Create.jsx.
      */
     private const UPPERCASE_FIELDS = [
-        'applicant_name', 'applicant_street', 'representative_name', 'representative_address',
+        'applicant_name', 'applicant_street', 'applicant_barangay', 'applicant_municipality', 'representative_name', 'representative_address',
         'corporation_name', 'corporation_address', 'business_name', 'street_address', 'purpose', 'remarks',
     ];
 
@@ -617,6 +617,7 @@ class ApplicationController extends Controller
             'applicant_name'      => 'required|string|max:255',
             'applicant_street'    => 'nullable|string|max:255',
             'applicant_barangay'  => 'nullable|string|max:255',
+            'applicant_municipality' => 'nullable|string|max:255',
             'contact_number'      => ['required', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
             'email'               => 'required|email',
             'representative_name' => 'nullable|string|max:255',
@@ -704,6 +705,7 @@ class ApplicationController extends Controller
                 'applicant_name'             => $validated['applicant_name'],
                 'applicant_street'           => $validated['applicant_street'] ?? null,
                 'applicant_barangay'         => $validated['applicant_barangay'] ?? null,
+                'applicant_municipality'     => $validated['applicant_municipality'] ?? null,
                 'contact_number'             => preg_replace('/\D/', '', $validated['contact_number']),
                 'email'                      => $validated['email'] ?? null,
                 'corporation_name'           => $validated['corporation_name'] ?? null,
@@ -1091,7 +1093,7 @@ class ApplicationController extends Controller
             ->limit(25)
             ->toBase()
             ->get([
-                'applicant_name', 'applicant_street', 'applicant_barangay', 'contact_number', 'email',
+                'applicant_name', 'applicant_street', 'applicant_barangay', 'applicant_municipality', 'contact_number', 'email',
                 'representative_name', 'representative_contact', 'representative_address',
             ]);
 
@@ -1162,9 +1164,11 @@ class ApplicationController extends Controller
             'application_type'       => $a->application_type,
             'status'                 => $a->status,
             'date'                   => ($a->date_of_receipt ?? $a->created_at)?->toDateString(),
+            'created_at'             => $a->created_at?->toIso8601String(),
             'applicant_name'         => $a->applicant_name,
             'applicant_street'       => $a->applicant_street,
             'applicant_barangay'     => $a->applicant_barangay,
+            'applicant_municipality' => $a->applicant_municipality,
             'contact_number'         => $a->contact_number,
             'email'                  => $a->email,
             'representative_name'    => $a->representative_name,

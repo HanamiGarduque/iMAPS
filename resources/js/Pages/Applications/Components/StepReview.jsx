@@ -224,9 +224,7 @@ export default function StepReview({
                         <div>
                             <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">Applicant Address</p>
                             <p className="font-semibold text-slate-900">
-                                {form.applicant_street && form.applicant_barangay
-                                    ? `${form.applicant_street}, Brgy. ${form.applicant_barangay}`
-                                    : form.applicant_street || (form.applicant_barangay ? `Brgy. ${form.applicant_barangay}` : "—")}
+                                {[form.applicant_street, form.applicant_barangay && `Brgy. ${form.applicant_barangay}`, form.applicant_municipality].filter(Boolean).join(", ") || "—"}
                             </p>
                         </div>
 
