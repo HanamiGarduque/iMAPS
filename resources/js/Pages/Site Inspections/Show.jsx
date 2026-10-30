@@ -719,29 +719,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
         ins.completed_at && `Submitted ${formatDate(ins.completed_at)}`,
     ].filter(Boolean).join(" · ");
 
-    // What happens to the result: the Planning Officer's decision on THIS
-    // round, exactly as the server linked it. Nothing is inferred; with no
-    // linked decision the page says so.
-    const poStatus = review?.po_decision
-        ? {
-              label: review.po_decision,
-              sub: [review.po_decision_reviewer && `By ${review.po_decision_reviewer}`, review.po_decision_date && formatDate(review.po_decision_date)].filter(Boolean).join(" · "),
-              tone: "bg-violet-50 text-violet-800 ring-violet-200",
-          }
-        : review?.round_decision_anomaly
-          ? { label: "Needs attention", sub: review.round_decision_anomaly.message, tone: "bg-amber-50 text-amber-800 ring-amber-200" }
-          : reportDone
-            ? { label: "Not yet decided", sub: null, tone: "bg-slate-50 text-slate-700 ring-slate-200" }
-            : null;
-
-    // The inspector's primary assessment and the server-linked PO decision are
-    // separate facts. This page never derives either from the other.
-    const VERDICT_INK = { good: "text-blue-700", bad: "text-red-700", neutral: "text-slate-800" };
+    // The inspector assessment stays separate from the recorded PO review.
     const resultTone = inspectionResult === "Compliant" ? "good" : inspectionResult === "With Discrepancy" ? "bad" : "neutral";
-    const poTone = !poStatus ? "neutral" : /^approved/i.test(poStatus.label) ? "good" : /^(declined|denied)/i.test(poStatus.label) ? "bad" : "neutral";
-    const verdictSteps = [
-        poStatus && { key: "po", who: "Planning Officer", label: poStatus.label, sub: poStatus.sub, tone: poTone },
-    ].filter(Boolean).map((s) => ({ ...s, ink: VERDICT_INK[s.tone], icon: s.tone === "good" ? "check" : s.tone === "bad" ? "x" : null }));
 
     const TABS = [
         { key: "inspection", label: "Report", icon: "doc" },
@@ -1101,30 +1080,11 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                             </div>
                                                         </div>
 
-                                                        {/* PO decision, recorded evidence, then the neutral checklist. */}
+                                                        {/* Recorded inspection evidence; the separate PO review follows this report. */}
                                                         <div className="px-4 py-3">
                                                             <table className="w-full border border-slate-200 text-[12.5px]">
-                                                                {verdictSteps.length > 0 && (
-                                                                    <tbody>
-                                                                        <tr className="bg-slate-100/80">
-                                                                            <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Planning Officer decision</th>
-                                                                        </tr>
-                                                                        {verdictSteps.map((step) => (
-                                                                            <tr key={step.key} className="border-t border-slate-200 align-top">
-                                                                                <th scope="row" className="w-[150px] bg-slate-50 px-2.5 py-1.5 text-left text-[11.5px] font-semibold text-slate-600">{step.who}</th>
-                                                                                <td className="px-2.5 py-1.5 leading-snug">
-                                                                                    <span className={`inline-flex items-center gap-1 font-semibold ${step.ink}`}>
-                                                                                        {step.icon && <Icon name={step.icon} className="w-3.5 h-3.5 shrink-0" strokeWidth={2.6} />}
-                                                                                        {step.label}
-                                                                                    </span>
-                                                                                    {step.sub && <span className="ml-2 text-[11.5px] text-slate-500">{step.sub}</span>}
-                                                                                </td>
-                                                                            </tr>
-                                                                        ))}
-                                                                    </tbody>
-                                                                )}
                                                                 <tbody>
-                                                                    <tr className={`bg-slate-100/80 ${verdictSteps.length > 0 ? "border-t border-slate-200" : ""}`}>
+                                                                    <tr className="bg-slate-100/80">
                                                                         <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Recorded evidence</th>
                                                                     </tr>
                                                                     {reportQuestions.length > 0 ? (
@@ -1184,6 +1144,41 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                         </div>
                                                 </Panel>
                                                 )}
+
+                                                {/* Read-only, server-linked PO outcome: distinct from the inspector assessment. */}
+                                                <Panel title="Planning Officer Review">
+                                                    <div className="pt-3 space-y-3 text-[12.5px] leading-relaxed">
+                                                        {review && review.po_decision ? (
+                                                            <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-3 py-2.5">
+                                                                <p className="text-[11.5px] font-semibold text-slate-600">Decision for this inspection</p>
+                                                                <p className="mt-1 font-bold text-violet-900">{review.po_decision}</p>
+                                                                {(review.po_decision_reviewer || review.po_decision_date) && (
+                                                                    <p className="mt-1 text-[11.5px] text-slate-600">
+                                                                        {[review.po_decision_reviewer && `By ${review.po_decision_reviewer}`, review.po_decision_date && formatDate(review.po_decision_date)].filter(Boolean).join(" · ")}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        ) : review?.round_decision_anomaly ? (
+                                                            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">{review.round_decision_anomaly.message}</p>
+                                                        ) : review?.is_parcel_unknown ? (
+                                                            <p className="text-slate-600">Not available: no parcel is recorded for this inspection.</p>
+                                                        ) : (
+                                                            <p className="text-slate-600">No round-specific Planning Officer decision is recorded.</p>
+                                                        )}
+                                                        {!review?.po_decision && review?.is_current_round && review?.parcel_review && (
+                                                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                                                                <p className="text-[11.5px] font-semibold text-slate-600">Latest Parcel Review</p>
+                                                                <p className="mt-1 font-semibold text-slate-800">{review.parcel_review?.label}</p>
+                                                                {review.parcel_review?.context && <p className="mt-1 text-slate-600">{review.parcel_review?.context}</p>}
+                                                                {(review.parcel_review?.reviewer || review.parcel_review?.reviewed_at) && (
+                                                                    <p className="mt-1 text-[11.5px] text-slate-500">
+                                                                        {[review.parcel_review?.reviewer && `By ${review.parcel_review.reviewer}`, review.parcel_review?.reviewed_at && formatDate(review.parcel_review.reviewed_at)].filter(Boolean).join(" · ")}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </Panel>
 
                                                 {/* Instructions matter while the visit is open; a completed
                                                     round no longer shows them. */}
