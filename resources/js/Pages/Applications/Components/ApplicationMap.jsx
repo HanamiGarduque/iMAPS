@@ -8,7 +8,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { ZONE_CATEGORY_LEGEND } from "@/utils/clupZones";
 import { resolveBarangayName } from "@/utils/mapData";
-import { MAP_MAX_ZOOM, LOT_FOCUS_ZOOM, BASEMAPS, CLUP_TILES, BLANK_TILE, featureArea, insidePoint } from "@/utils/mapGeometry";
+import { MAP_MAX_ZOOM, LOT_FOCUS_ZOOM, CLUP_MIN_ZOOM, BASEMAPS, CLUP_TILES, BLANK_TILE, featureArea, insidePoint } from "@/utils/mapGeometry";
 import { ScaleBar } from "@/Components/MapKit";
 import MapSkeleton from "@/Components/Maps/MapSkeleton";
 
@@ -222,7 +222,7 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
             : { color: lot?.color || "#e2e8f0", weight: 2, opacity: 1, fillColor: lot?.color || "#e2e8f0", fillOpacity: 0.12 };
     };
 
-    const [zoom, setZoom] = useState(11);
+    const [zoom, setZoom] = useState(CLUP_MIN_ZOOM);
     useEffect(() => {
         if (!map) return;
         const onZoom = () => setZoom(map.getZoom());
@@ -250,7 +250,7 @@ export default function ApplicationMap({ lots, parcelMapData, brgyMapData, baran
                 .lot-pin-tip { width: 0; height: 0; margin-top: -1px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #dc2626; }
             `}</style>
 
-            <MapContainer ref={setMap} center={[13.7850, 121.2500]} zoom={11} minZoom={11} maxBounds={[[13.65, 121.12], [13.92, 121.36]]} maxBoundsViscosity={1.0} maxZoom={MAP_MAX_ZOOM} zoomControl={false} attributionControl={false} style={{ width: "100%", height: "100%" }}>
+            <MapContainer ref={setMap} center={[13.7850, 121.2500]} zoom={CLUP_MIN_ZOOM} minZoom={CLUP_MIN_ZOOM} maxBounds={[[13.65, 121.12], [13.92, 121.36]]} maxBoundsViscosity={1.0} maxZoom={MAP_MAX_ZOOM} zoomControl={false} attributionControl={false} style={{ width: "100%", height: "100%" }}>
                 <TileLayer key={basemap} url={BASEMAPS[basemap].url} subdomains="0123" maxZoom={MAP_MAX_ZOOM} maxNativeZoom={BASEMAPS[basemap].maxNativeZoom} keepBuffer={4} />
                 {showClup && !locator && (
                     <TileLayer url={CLUP_TILES.url} maxZoom={MAP_MAX_ZOOM} maxNativeZoom={CLUP_TILES.maxNativeZoom} opacity={0.55} zIndex={10} errorTileUrl={BLANK_TILE} />

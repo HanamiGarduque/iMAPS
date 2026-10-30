@@ -15,6 +15,7 @@ import {
     LOT_FOCUS_ZOOM,
     BASEMAPS,
     CLUP_TILES,
+    CLUP_MIN_ZOOM,
     BLANK_TILE,
     formatDistance,
     formatArea,
@@ -250,7 +251,7 @@ export default function StepPropertyGIS({
     const [dockTab, setDockTab] = useState("layers");
     const [identify, setIdentify] = useState(null);
     const [measure, setMeasure] = useState(null);
-    const [zoom, setZoom] = useState(12);
+    const [zoom, setZoom] = useState(CLUP_MIN_ZOOM);
     const identifyHitRef = useRef(null);
     const identifyMarkerRef = useRef(null);
     const identifySeq = useRef(0);
@@ -814,7 +815,7 @@ export default function StepPropertyGIS({
                     <ToolButton label="Zoom out" onClick={() => map?.zoomOut()}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM13.5 10.5h-6" />
                     </ToolButton>
-                    <ToolButton label="Zoom full (municipality)" onClick={() => (brgyMapData ? fitGeoJSON(brgyMapData) : map?.setView(rosarioCenter, 11))}>
+                    <ToolButton label="Zoom full (municipality)" onClick={() => (brgyMapData ? fitGeoJSON(brgyMapData) : map?.setView(rosarioCenter, CLUP_MIN_ZOOM))}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
                     </ToolButton>
                     <ToolButton label="Zoom to selected lot" disabled={!activeParcelFeature} onClick={() => fitGeoJSON(activeParcelFeature, 60)}>
@@ -858,8 +859,8 @@ export default function StepPropertyGIS({
                         <MapContainer
                             ref={setMap}
                             center={rosarioCenter}
-                            zoom={11}
-                            minZoom={11}
+                            zoom={CLUP_MIN_ZOOM}
+                            minZoom={CLUP_MIN_ZOOM}
                             maxBounds={municipalBounds ? municipalBounds.pad(0.15) : ROSARIO_BOUNDS}
                             maxBoundsViscosity={1.0}
                             maxZoom={MAP_MAX_ZOOM}
