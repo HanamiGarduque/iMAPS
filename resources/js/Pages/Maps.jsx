@@ -31,6 +31,7 @@ import LcRecordsTable from "@/Components/Maps/LcRecordsTable";
 import { buildLcView, summarizeBarangay } from "@/utils/lcInsights";
 import LcCallout from "@/Components/Maps/LcCallout";
 import DiversityCallout from "@/Components/Maps/DiversityCallout";
+import TopMixedCard from "@/Components/Maps/TopMixedCard";
 import StatusCallout from "@/Components/Maps/StatusCallout";
 import useBarangayNames from "@/utils/useBarangayNames";
 import { getLens, resolveLensValue } from "@/utils/diversityTheme";
@@ -444,12 +445,11 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         [mixTimeline, bgyStats, lastStep]
     );
 
-    // "Oct 2021 – Sep 2026", and how much of the five years it covers.
+    // "Oct 2021 – Sep 2026".
     const mixPeriod = (step) => {
         if (!step?.from) return "";
         const m = (d) => new Date(`${d}T00:00:00`).toLocaleDateString("en-PH", { month: "short", year: "numeric" });
-        const span = step.isPartial ? ` · ${(step.quarters / 4).toFixed(2).replace(/\.?0+$/, "")} of 5 yrs recorded` : "";
-        return `${m(step.from)} – ${m(step.to)}${span}`;
+        return `${m(step.from)} – ${m(step.to)}`;
     };
 
     // ── 3D (every map layer) ──
@@ -552,7 +552,8 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             onClose={() => setSelectedBgy(null)}
         />
     ) : null;
-    const compactPanel = activeLayer === "status";
+    // These panels fit without scrolling, so the dock shrinks to their height.
+    const compactPanel = activeLayer === "status" || activeLayer === "diversity";
     // An open application takes the whole tracking panel: it gets the full map
     // height and the table narrows beside it instead of pushing it to scroll.
     const showAppDetails = activeLayer === "status" && Boolean(inspectedApp);
@@ -601,7 +602,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     // Each layer starts at the standard width; switching layers always puts it back.
     const [dockWidth, setDockWidth] = useState(DOCK_MIN_W);
     useEffect(() => { setDockWidth(DOCK_MIN_W); setDockDrag(null); }, [activeLayer]);
-    const panelW = activeLayer === "status" ? DOCK_MIN_W : dockWidth;
+    const panelW = compactPanel ? DOCK_MIN_W : dockWidth;
     const startDockResize = (e) => {
         e.preventDefault();
         const startX = e.clientX;
@@ -799,7 +800,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             ? quarterCount
                 ? `${activeQuarter?.label} · ${quarterCount} LC ${activeQuarter?.isForecast ? "projected" : "filed"}`
                 : `${activeQuarter?.label} · no LC ${activeQuarter?.isForecast ? "forecast available" : "records"} for this quarter`
-            : `5 years to ${diversityStep?.label}${diversityStep?.isPartial ? " (partial)" : ""} · mix 0 to 1${show3D ? " · 3D" : ""}`;
+            : `5 years to ${diversityStep?.label} · mix 0 to 1${show3D ? " · 3D" : ""}`;
     const statusSummary = activeLayer === "status"
         ? `${visibleAppCount} application${visibleAppCount === 1 ? "" : "s"}`
         : activeLayer === "trends"
@@ -1049,6 +1050,16 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                     </div>
                                     )}
 
+                                    {activeLayer === "diversity" && !selectedBgy?.name && (
+                                        <TopMixedCard
+                                            bgyStats={diversityStats}
+                                            bandFilter={diversityBandFilter}
+                                            hoveredBgy={hoveredBgy}
+                                            onSelect={selectBarangay}
+                                            onHover={setHoveredBgy}
+                                        />
+                                    )}
+
                                     {/* Attribute table for the selected barangay, floating over the
                                         bottom of the map so the canvas keeps its full size. */}
                                     {showTable && (
@@ -1198,16 +1209,14 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                 )}
 
                                                 {activeLayer === "diversity" && (
-                                                    <div className="flex-1 min-h-0 flex flex-col">
+                                                    <div className="shrink-0 flex flex-col">
                                                         <DiversityPanel
                                                             overallDiversity={diversityOverall}
                                                             period={diversityStep}                                                            selectedBgy={selectedBgy}
                                                             onSelectBgy={selectBarangay}
                                                             bgyStats={diversityStats}
-                                                            lens={diversityLens}
                                                             bandFilter={diversityBandFilter}
                                                             onSelectBand={setDiversityBandFilter}
-                                                            hoveredBgy={hoveredBgy}
                                                             onHoverBgy={setHoveredBgy}
                                                         />
                                                     </div>

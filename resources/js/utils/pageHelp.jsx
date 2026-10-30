@@ -33,6 +33,7 @@ const PAGES = [
         notes: [
             ['Shortcuts:', '1, 2, 3 switch layers, 4 toggles CLUP 2030, I shows or hides the panel, F goes full screen, Esc clears your selection.'],
             ['Search', 'in the header (Ctrl + K) to jump straight to a barangay.'],
+            ['Diversity Index:', 'the mix score (0 to 1) is the Shannon index of filed lot area by zone, divided by ln 11, over the five years shown on the timeline. A few large lots can outweigh many small ones; filings without a zoning code or lot area are not counted.'],
         ],
     },
     {

@@ -2,7 +2,7 @@
 // thumbnail is Rosario's barangays coloured exactly as the big map would be
 // for that year (the mix at the end of the year, scored over the five years of
 // filings before it; the last one is the latest quarter, labelled with its year). Picking one
-// re-scores the map and the panel. One sentence underneath says what changed.
+// re-scores the map and the panel. A note underneath flags a year too thin to score.
 
 import { useEffect, useMemo, useState } from "react";
 import { loadBarangayBoundaries, resolveBarangayName } from "@/utils/mapData";
@@ -120,49 +120,15 @@ export default function DiversityTimeline({
     });
     const active = steps[index];
     const cur = series[index] || {};
-    const hasPlan = typeof planScore === "number" && !Number.isNaN(planScore);
     const last = choices[choices.length - 1];
     const band = (v) => bandFor?.(isScored(v) ? v : null);
 
-    // "Rosario, 2021–2026: High Mix (0.70), more mixed than the CLUP plan."
+    // The score, band and plan comparison are in the side panel; here only a
+    // period that can't be scored is called out.
     let sentence = null;
-    if (active?.from) {
+    if (active?.from && !isScored(cur.total)) {
         const span = yearOf(active.from) === yearOf(active.to) ? yearOf(active.to) : `${yearOf(active.from)}–${yearOf(active.to)}`;
-        if (!isScored(cur.total)) {
-            sentence = <><b className="font-semibold text-slate-700">{who}, {span}:</b> not enough filings to score yet.</>;
-        } else {
-            let vsPlan = "";
-            if (hasPlan) {
-                const d = cur.total - planScore;
-                vsPlan = Math.abs(d) < 0.05 ? ", about the same as the CLUP plan" : d > 0 ? ", more mixed than the CLUP plan" : ", less mixed than the CLUP plan";
-            }
-            sentence = (
-                <>
-                    <b className="font-semibold text-slate-700">{who}, {span}:</b> {band(cur.total)?.shortLabel} ({cur.total.toFixed(2)}){vsPlan}.
-                    {active.isPartial && <span className="text-slate-400"> Fewer than five years of records.</span>}
-                </>
-            );
-        }
-    }
-
-    // Barangays whose colour changed since the previous thumbnail.
-    let change = null;
-    const pos = choices.indexOf(index);
-    if (pos > 0) {
-        const prev = choices[pos - 1];
-        const a = yearScores[prev] || {}, b = yearScores[index] || {};
-        let up = 0, down = 0;
-        Object.keys(b).forEach((name) => {
-            if (!isScored(a[name]) || !isScored(b[name])) return;
-            const ba = band(a[name]), bb = band(b[name]);
-            if (ba?.id === bb?.id) return;
-            if (b[name] > a[name]) up += 1; else down += 1;
-        });
-        const prevLabel = String(steps[prev]?.year);
-        const n = (k) => `${k} barangay${k === 1 ? "" : "s"}`;
-        change = up || down
-            ? ` Since ${prevLabel}: ${[up && `${n(up)} more mixed`, down && `${n(down)} less mixed`].filter(Boolean).join(", ")}.`
-            : ` No barangay changed colour since ${prevLabel}.`;
+        sentence = <><b className="font-semibold text-slate-700">{who}, {span}:</b> not enough filings to score yet.</>;
     }
 
     const controls = <PlayControls choices={choices} index={index} onIndex={onIndex} playing={playing} onTogglePlay={onTogglePlay} />;
@@ -182,7 +148,7 @@ export default function DiversityTimeline({
                     Mix by year
                     {active?.year != null && <span className="px-1.5 py-px rounded-[3px] bg-[#eaf0f8] text-[#0b2a5b] text-[11px]">{active.year}</span>}
                 </button>
-                <p className="flex-1 min-w-0 text-[10.5px] text-slate-500 truncate" aria-live="polite">{sentence}{change}</p>
+                <p className="flex-1 min-w-0 text-[10.5px] text-slate-500 truncate" aria-live="polite">{sentence}</p>
                 <button
                     type="button"
                     onClick={toggleCollapsed}
@@ -212,7 +178,7 @@ export default function DiversityTimeline({
                     <span className="block text-[10.5px] text-slate-500">Each small map is the big map for that year.</span>
                 </div>
 
-                <div className="flex-1 min-w-0 flex gap-1.5" role="listbox" aria-label="Year">
+                <div className="flex-1 min-w-0 flex gap-2" role="listbox" aria-label="Year">
                     {choices.map((i) => {
                         const s = steps[i];
                         const v = series[i]?.total;
@@ -228,21 +194,27 @@ export default function DiversityTimeline({
                                 title={title}
                                 aria-label={title}
                                 onClick={() => onIndex(i)}
-                                className={`flex-1 min-w-0 flex flex-col items-stretch gap-0.5 p-1 rounded-[4px] border cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#0b2a5b] ${
-                                    selected ? "bg-[#eaf0f8] border-[#0b2a5b] shadow-[inset_0_0_0_1px_#0b2a5b]" : "bg-white border-slate-300 hover:border-slate-400 hover:bg-slate-50"
+                                className={`relative flex-1 min-w-0 h-[64px] p-1 bg-white border cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#0b2a5b] ${
+                                    selected ? "border-[#0b2a5b] shadow-[inset_0_0_0_1px_#0b2a5b]" : "border-slate-300 hover:border-slate-500"
                                 }`}
                             >
-                                <span className="block h-[52px]">
+                                {/* Small multiples in the print-map way: identical frames,
+                                    the map filling each, the year as a corner label. */}
+                                <span className={`block w-full h-full transition-opacity ${selected ? "" : "opacity-80"}`}>
                                     <MiniMap outlines={outlines} scores={yearScores[i]} bandFor={band} highlight={selectedName} />
                                 </span>
-                                <span className={`text-[11.5px] font-semibold text-center whitespace-nowrap ${selected ? "text-[#0b2a5b]" : "text-slate-600"}`}>{label}</span>
+                                <span className={`absolute top-0.5 left-1 text-[10.5px] font-semibold tabular-nums leading-none px-0.5 py-px ${
+                                    selected ? "bg-[#0b2a5b] text-white" : "bg-white/85 text-slate-700"
+                                }`}>
+                                    {label}
+                                </span>
                             </button>
                         );
                     })}
                 </div>
             </div>
 
-            <p className="mt-1 pl-[187px] text-[10.5px] text-slate-500 truncate" aria-live="polite">{sentence}{change}</p>
+            <p className="mt-1 pl-[187px] text-[10.5px] text-slate-500 truncate" aria-live="polite">{sentence}</p>
         </div>
     );
 }
