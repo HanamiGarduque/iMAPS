@@ -32,9 +32,9 @@ class LandUseMixServiceTest extends TestCase
     {
         $this->assertSame(0.0, LandUseMixService::shannon([]));
         $this->assertSame(0.0, LandUseMixService::shannon(['residential' => 100]));
-        // ln 2 / ln 11
-        $this->assertSame(0.29, LandUseMixService::shannon(['residential' => 50, 'commercial' => 50]));
-        // All eleven categories in equal shares is the maximum.
+        // ln 2 / ln 10
+        $this->assertSame(0.30, LandUseMixService::shannon(['residential' => 50, 'commercial' => 50]));
+        // All ten categories in equal shares is the maximum.
         $all = array_fill_keys(array_unique(array_values(LandUseMixService::CATEGORIES)), 1);
         $this->assertCount(LandUseMixService::CATEGORY_COUNT, $all);
         $this->assertSame(1.0, LandUseMixService::shannon($all));
@@ -55,9 +55,9 @@ class LandUseMixServiceTest extends TestCase
         $b = LandUseMixService::aggregate($plan, $records, self::WINDOW)['barangays']['Tulos'];
 
         $this->assertSame('records', $b['source']);
-        $this->assertSame(0.29, $b['diversity']);
+        $this->assertSame(0.30, $b['diversity']);
         $this->assertSame(0.0, $b['planDiversity']);
-        $this->assertSame(0.29, $b['variance']);
+        $this->assertSame(0.30, $b['variance']);
         $this->assertSame(10, $b['records']);
         $this->assertSame(['residential', 'commercial'], array_column($b['distribution'], 'name'));
     }
@@ -69,7 +69,7 @@ class LandUseMixServiceTest extends TestCase
         $after = [...$before, ...$this->records('Tulos', ['C1-Z'], 2023)];
 
         $this->assertSame(0.0, LandUseMixService::aggregate($plan, $before, self::WINDOW)['barangays']['Tulos']['diversity']);
-        $this->assertSame(0.29, LandUseMixService::aggregate($plan, $after, self::WINDOW)['barangays']['Tulos']['diversity']);
+        $this->assertSame(0.30, LandUseMixService::aggregate($plan, $after, self::WINDOW)['barangays']['Tulos']['diversity']);
     }
 
     public function test_too_few_filings_fall_back_to_the_plan(): void
@@ -80,7 +80,7 @@ class LandUseMixServiceTest extends TestCase
         $b = LandUseMixService::aggregate($plan, $records, self::WINDOW)['barangays']['Natu'];
 
         $this->assertSame('plan', $b['source']);
-        $this->assertSame(0.29, $b['diversity']);
+        $this->assertSame(0.30, $b['diversity']);
         $this->assertNull($b['variance']);
     }
 
@@ -126,7 +126,7 @@ class LandUseMixServiceTest extends TestCase
 
         // Residential is never dropped, so the mix appears once commercial does.
         $scores = array_map(fn ($s) => $s['barangays']['Tulos']['diversity'], $timeline);
-        $this->assertSame([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.29, 0.29], $scores);
+        $this->assertSame([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.30, 0.30], $scores);
 
         // The latest step is the headline score.
         $this->assertSame($mix['barangays']['Tulos']['diversity'], end($timeline)['barangays']['Tulos']['diversity']);
@@ -149,7 +149,7 @@ class LandUseMixServiceTest extends TestCase
 
         // Five full years to 2027 Q3 (2022 Q4 – 2027 Q3): both uses, mixed.
         $this->assertSame(['2022-10-01', '2027-09-30', 20, false], [$q3['from'], $q3['to'], $q3['quarters'], $q3['partial']]);
-        $this->assertSame(0.29, $q3['barangays']['Tulos']['diversity']);
+        $this->assertSame(0.30, $q3['barangays']['Tulos']['diversity']);
         $this->assertSame(10, $q3['barangays']['Tulos']['records']);
 
         // A quarter later 2022 Q4 has rolled out of the window.

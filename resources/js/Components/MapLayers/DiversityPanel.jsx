@@ -79,6 +79,26 @@ export default function DiversityPanel({
 
     const unscored = Object.values(bgyStats || {}).filter((st) => typeof st?.diversity !== 'number').length;
 
+    // Every zone that was filed on or is in the plan, most filed first, then
+    // by zoned area so zones with no filings still show how much land waits.
+    const zoneRows = [...new Set([...distribution, ...planDistribution].map((d) => d.name))]
+        .map((name) => {
+            const filed = distribution.find((d) => d.name === name);
+            return {
+                name,
+                filedHa: filed ? filed.ha ?? (filed.value / 100) * developedHa : 0,
+                zonedHa: planDistribution.find((p) => p.name === name)?.ha ?? 0,
+            };
+        })
+        .sort((a, b) => b.filedHa - a.filedHa || b.zonedHa - a.zonedHa);
+    const fmtHa = (v) => (v === 0 ? "0" : v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString('en-PH'));
+    const fmtOfZone = (filed, zoned) => {
+        if (zoned <= 0) return "—";
+        if (filed === 0) return "0%";
+        const p = (filed / zoned) * 100;
+        return p < 0.1 ? "<0.1%" : p < 10 ? `${p.toFixed(1)}%` : `${Math.round(p)}%`;
+    };
+
     const signed = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
     const context = isBgy
         ? score == null
@@ -138,54 +158,61 @@ export default function DiversityPanel({
             </div>
             )}
 
-            {fromRecords && score != null && distribution.length > 0 && (
+            {/* Filings are compared with the plan as filed area ÷ zoned area, not
+                share against share: the plan zones all land, filings are only the
+                lots being developed, so their two splits are not meant to match. */}
+            {fromRecords && score != null && zoneRows.length > 0 && (
                 <div className="shrink-0 border-b border-slate-200">
                     <div className="flex items-baseline justify-between px-4 pt-3 pb-1.5">
-                        <Question>Does it match the CLUP 2030 plan?</Question>
-                        <span className="text-[10.5px] text-slate-400">Share of area</span>
+                        <Question>How much of each zone was filed on?</Question>
+                        <span className="text-[10.5px] text-slate-400">Lot area, ha</span>
                     </div>
-                    <div className="grid grid-cols-[12px_1fr_46px_46px] gap-x-2 px-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-400">
+                    <div className="grid grid-cols-[12px_1fr_48px_56px_46px] gap-x-1.5 px-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-400">
                         <span />
-                        <span>Zone filed under</span>
+                        <span>CLUP zone</span>
                         <span className="text-right">Filed</span>
-                        <span className="text-right">Plan</span>
+                        <span className="text-right">Zoned</span>
+                        <span className="text-right">Of zone</span>
                     </div>
                     <ul className="pb-1">
-                        {distribution.map((d) => {
-                            const zone = ZONE_CATEGORIES[d.name] || { label: d.name, fill: "#e2e8f0", stroke: "#94a3b8" };
-                            const plan = planDistribution.find((p) => p.name === d.name)?.value ?? 0;
-                            // Much more filed than the plan sets aside for it.
-                            const outOfPlan = d.value >= 10 && plan < 2;
+                        {zoneRows.map((r) => {
+                            const zone = ZONE_CATEGORIES[r.name] || { label: r.name, fill: "#e2e8f0", stroke: "#94a3b8" };
+                            const place = isBgy ? bgyName : "Rosario";
+                            // Filings the plan cannot hold: a zone this area does not
+                            // have, or more lot area than the zone has.
+                            const check = r.filedHa > 0 && r.zonedHa === 0
+                                ? `${fmtHa(r.filedHa)} ha was filed under ${zone.label} zoning, but CLUP 2030 zones no land in ${place} as ${zone.label}. Check these filings' zoning codes.`
+                                : r.filedHa > r.zonedHa
+                                    ? `More lot area was filed under ${zone.label} zoning (${fmtHa(r.filedHa)} ha) than CLUP 2030 zones for it in ${place} (${fmtHa(r.zonedHa)} ha). The same lot filed more than once, or a wrong zoning code, would do this.`
+                                    : null;
                             return (
-                                <li key={d.name} className="grid grid-cols-[12px_1fr_46px_46px] items-center gap-x-2 px-4 py-[3px] text-[12px]">
+                                <li key={r.name} className="grid grid-cols-[12px_1fr_48px_56px_46px] items-center gap-x-1.5 px-4 py-[3px] text-[12px]">
                                     <span className="w-2.5 h-2.5 rounded-[2px] border" style={{ backgroundColor: zone.fill, borderColor: zone.stroke }} aria-hidden="true" />
                                     <span className="min-w-0 flex items-center gap-1.5 text-slate-700">
                                         <span className="truncate">{zone.label}</span>
-                                        {outOfPlan && (
+                                        {check && (
                                             <span
                                                 className="shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] bg-amber-100 text-amber-800 border border-amber-300"
-                                                title={`${d.value}% of the filed lot area is under ${zone.label} zoning, which is ${plan}% of this area in CLUP 2030. Check these filings' zoning codes.`}
+                                                title={check}
                                             >
                                                 Check
                                             </span>
                                         )}
                                     </span>
-                                    <span className="text-right tabular-nums font-semibold text-slate-900">{d.value}%</span>
-                                    <span className="text-right tabular-nums text-slate-500">{plan}%</span>
+                                    <span className={`text-right tabular-nums ${r.filedHa > 0 ? "font-semibold text-slate-900" : "text-slate-400"}`}>{fmtHa(r.filedHa)}</span>
+                                    <span className="text-right tabular-nums text-slate-500">{r.zonedHa > 0 ? fmtHa(r.zonedHa) : "—"}</span>
+                                    <span className="text-right tabular-nums font-semibold text-slate-700">{fmtOfZone(r.filedHa, r.zonedHa)}</span>
                                 </li>
                             );
                         })}
                     </ul>
-                    {fromRecords && score != null && typeof planScore === 'number' && (
-                        <p className="px-4 pt-1 text-[11.5px] text-slate-600 leading-snug">
-                            Filed land is {score >= planScore ? "more" : "less"} mixed than the plan ({signed(score - planScore)}).
-                        </p>
-                    )}
                     <p className="px-4 pt-1 pb-3 text-[10.5px] text-slate-400 leading-snug">
-                        Lot area of filings over the five years to {period?.label || "the latest filing"} ({periodLabel}
+                        Filed: lot area of filings over the five years to {period?.label || "the latest filing"} ({periodLabel}
                         {period?.isPartial ? `; records start ${month(period.from)}, so only ${period.quarters} of 20 quarters` : ""}),
-                        by the zone each was filed under. A few large lots can outweigh many small ones. Filings without a zoning code
-                        or lot area are not counted. The mix score above is the Shannon index of this split ÷ ln 11.
+                        by the zone each was filed under. Zoned: land CLUP 2030 sets aside for that zone. Of zone: filed ÷ zoned.
+                        The plan zones all land and only part of it is developed in five years, so a low share is normal, most of all
+                        for farmland and forest. Filings without a zoning code or lot area, and utilities and roads, are not counted. The mix
+                        score above is the Shannon index of the filed split ÷ ln 10.
                     </p>
                 </div>
             )}

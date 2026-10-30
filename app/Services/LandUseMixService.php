@@ -11,8 +11,8 @@ use Illuminate\Support\Facades\DB;
  *     LUM = −Σ pᵢ ln pᵢ / ln K
  *
  * where pᵢ is land-use category i's share of the land area and K is the number
- * of categories (the 11 official CLUP 2030 categories). 0 means a single land
- * use; 1 means all eleven in equal shares.
+ * of categories (the 10 CLUP 2030 categories counted here). 0 means a single
+ * land use; 1 means all ten in equal shares.
  *
  * Two versions of the score are computed:
  *  - recorded mix: the lot area of every clearance, certificate and permit in
@@ -53,9 +53,10 @@ class LandUseMixService
     public const ALIASES = ['palacpac' => 'palakpak'];
 
     /**
-     * CLUP 2030 zone code => land-use category, as in clupZones.js. Roads are
-     * left out: no clearance is filed for a road, so counting them would give
-     * the plan a land use the records can never have.
+     * CLUP 2030 zone code => land-use category, as in clupZones.js. Utilities
+     * and roads (UTS-Z, CMRF, ROAD, PROPOSED ROAD) are left out of both the
+     * filings and the plan: they serve the land around them rather than being
+     * a land use of their own, so they are not part of the mix.
      */
     public const CATEGORIES = [
         'PDA-SZ' => 'agricultural', 'PTA-SZ-RA' => 'agricultural', '5491-APDA-SZ' => 'agricultural',
@@ -68,11 +69,10 @@ class LandUseMixService
         'GI-Z' => 'institutional',
         'PR-Z' => 'parks', 'C/MP-Z' => 'parks',
         'T-Z' => 'tourism', 'ECT-Z' => 'tourism',
-        'UTS-Z' => 'utilities', 'CMRF' => 'utilities',
     ];
 
     /** K in the formula: every category a zone can fall in. */
-    public const CATEGORY_COUNT = 11;
+    public const CATEGORY_COUNT = 10;
 
     /** Normalised Shannon index over category => area, rounded to two places. */
     public static function shannon(array $areas): float
@@ -106,7 +106,7 @@ class LandUseMixService
         return $out;
     }
 
-    /** Category shares as [{name, value}] in percent, largest first. */
+    /** Category shares as [{name, value, ha}], value in percent, largest first. */
     public static function distribution(array $areas, int $precision = 1): array
     {
         $total = array_sum($areas);
@@ -115,7 +115,7 @@ class LandUseMixService
         }
         $rows = [];
         foreach ($areas as $cat => $area) {
-            $rows[] = ['name' => $cat, 'value' => round($area / $total * 100, $precision)];
+            $rows[] = ['name' => $cat, 'value' => round($area / $total * 100, $precision), 'ha' => round($area / 10000, 2)];
         }
         usort($rows, fn ($a, $b) => $b['value'] <=> $a['value']);
 
