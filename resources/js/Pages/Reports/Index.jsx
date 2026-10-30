@@ -159,6 +159,8 @@ function renderChartPng(style, labels, data, datasetLabel) {
 
 // ── Styles copied from resources/views/reports/custom.blade.php so the preview matches the PDF.
 // dompdf's "sans-serif" is DejaVu Sans; Verdana is the closest widely installed match in width.
+const MM = 96 / 25.4; // CSS px per mm
+const PAGE_MARGIN = 12 * MM; // dompdf's default page margin is 1.2cm
 const DOC = {
     page: { fontFamily: '"DejaVu Sans", Verdana, sans-serif', fontSize: 12, lineHeight: 1.2, color: "#000", padding: PAGE_MARGIN, boxSizing: "border-box", background: "#fff" },
     header: { textAlign: "center", marginBottom: 20 },

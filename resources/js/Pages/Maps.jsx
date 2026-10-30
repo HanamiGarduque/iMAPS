@@ -19,7 +19,7 @@ import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import useForecastWatchlist from "@/Components/MapLayers/useForecastWatchlist";
 import { ForecastSummary, ForecastInsights } from "@/Components/MapLayers/ForecastBrief";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
-import LeafletMap, { getAppCoordinates, PIN_ZOOM, HOME_ZOOM, getTrendsDemandColor, APP_LOAD_CLASSES } from "@/Components/Maps/LeafletMap";
+import LeafletMap, { getAppCoordinates, PIN_ZOOM, HOME_ZOOM, getTrendsDemandColor, APP_LOAD_CLASSES, getAppLoadColor } from "@/Components/Maps/LeafletMap";
 import LayersPanel, { MODULES, PERMIT_TYPES } from "@/Components/Maps/LayersPanel";
 import TimelineBar from "@/Components/Maps/TimelineBar";
 import DiversityTimeline from "@/Components/Maps/DiversityTimeline";
@@ -31,6 +31,7 @@ import LcRecordsTable from "@/Components/Maps/LcRecordsTable";
 import { buildLcView, summarizeBarangay } from "@/utils/lcInsights";
 import LcCallout from "@/Components/Maps/LcCallout";
 import DiversityCallout from "@/Components/Maps/DiversityCallout";
+import StatusCallout from "@/Components/Maps/StatusCallout";
 import useBarangayNames from "@/utils/useBarangayNames";
 import { getLens, resolveLensValue } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
@@ -145,6 +146,9 @@ function mapScale(lat, zoom) {
 }
 
 const isDesktop = () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
+// The right panel's width range when it is dragged (LC demand and diversity).
+const DOCK_MIN_W = 372;
+const DOCK_MAX_W = 640;
 
 const ICONS = {
     layers: "M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3",
@@ -153,8 +157,7 @@ const ICONS = {
     extent: "M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15",
     panel: "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z",
     fullscreen: "M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4",
-    table: "M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M3.75 14.25h16.5M9 9.75v9",
-};
+    table: "M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M3.75 14.25h16.5M9 9.75v9",};
 
 function ToolButton({ icon, label, onClick, pressed, disabled }) {
     return (
@@ -565,6 +568,13 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             stat={diversityStats?.[selectedBgy.name] || selectedBgy.data || {}}
             onClose={() => setSelectedBgy(null)}
         />
+    ) : activeLayer === "status" && selectedBgy?.name ? (
+        <StatusCallout
+            name={selectedBgy.name}
+            apps={scopedApps}
+            period={periodFilter}
+            onClose={() => setSelectedBgy(null)}
+        />
     ) : null;
     const compactPanel = activeLayer === "status";
     // An open application takes the whole tracking panel: it gets the full map
@@ -609,8 +619,33 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         prevTableHeight.current = tableHeight;
         if (tableGrew.current && panelOpen && showTable && panelNeedsRoom && tableHeight > TABLE_DEFAULT_H) setPanelOpen(false);
     }, [panelOpen, showTable, panelNeedsRoom, tableHeight]);
+    // LC demand and diversity panels can be dragged wider. The panel follows the
+    // pointer live; the map refits once, on release (dockWidth), so it never sits under the panel.
+    const [dockDrag, setDockDrag] = useState(null);
+    // Each layer starts at the standard width; switching layers always puts it back.
+    const [dockWidth, setDockWidth] = useState(DOCK_MIN_W);
+    useEffect(() => { setDockWidth(DOCK_MIN_W); setDockDrag(null); }, [activeLayer]);
+    const panelW = activeLayer === "status" ? DOCK_MIN_W : dockWidth;
+    const startDockResize = (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startW = dockWidth;
+        const maxW = Math.min(DOCK_MAX_W, Math.round(window.innerWidth * 0.5));
+        let w = startW;
+        const move = (ev) => { w = Math.min(maxW, Math.max(DOCK_MIN_W, startW + startX - ev.clientX)); setDockDrag(w); };
+        const up = () => {
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+            document.body.style.cursor = "";
+            setDockDrag(null);
+            setDockWidth(w);
+        };
+        document.body.style.cursor = "col-resize";
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+    };
     const mapInsets = {
-        right: panelOpen && isDesktop() ? 372 : 0,
+        right: panelOpen && isDesktop() ? panelW : 0,
         bottom: showTable ? tableHeight : 0,
     };
 
@@ -975,6 +1010,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     active={show3D}
                                                     syncRef={leafletViewRef}
                                                     controlRef={view3DRef}
+                                                    onZoomChange={setMapZoom}
                                                     showLabels={showLabels}
                                                     showSatellite={showSatellite3D}
                                                     selectedBgy={selectedBgy}
@@ -986,7 +1022,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     lcColors={lcView}
                                                     callout={bgyCallout}
                                                     rightPanelOpen={panelOpen}
-                                                    panelWidth={372}
+                                                    panelWidth={panelW}
                                                     bandFilter={diversityBandFilter}
                                                     hoveredBgy={hoveredBgy}
                                                     onHoverBgy={setHoveredBgy}
@@ -999,11 +1035,13 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
                                     {/* Map title, like a print layout's. It also reads out whatever is
                                         under the cursor, so nothing floats over the data itself. */}
-                                    {lcFocus || (activeLayer === "diversity" && selectedBgy?.name) ? (
+                                    {lcFocus || ((activeLayer === "diversity" || activeLayer === "status") && selectedBgy?.name) ? (
                                         <>
                                             <BarangayLocator
                                                 name={selectedBgy.name}
-                                                color={lcFocus ? lcFocus.cls.color : resolveLensValue("mix", { diversity: diversityStats?.[selectedBgy.name]?.diversity ?? null }).color}
+                                                color={lcFocus ? lcFocus.cls.color
+                                                    : activeLayer === "status" ? getAppLoadColor(mapStats?.[selectedBgy.name]?.total || 0)
+                                                    : resolveLensValue("mix", { diversity: diversityStats?.[selectedBgy.name]?.diversity ?? null }).color}
                                                 onClear={() => setSelectedBgy(null)}
                                             />
                                         </>
@@ -1094,9 +1132,24 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             className={`absolute top-0 right-0 z-[620] w-full sm:w-[372px] flex flex-col bg-white border-l border-slate-200 shadow-xl lg:shadow-none ${
                                                 compactPanel ? "border-b" : "bottom-0"
                                             }`}
-                                            style={compactPanel ? { maxHeight: panelNeedsRoom || !showTable ? "100%" : `calc(100% - ${tableHeight + 12}px)` } : undefined}
+                                            style={compactPanel
+                                                ? { maxHeight: panelNeedsRoom || !showTable ? "100%" : `calc(100% - ${tableHeight + 12}px)` }
+                                                : isDesktop() ? { width: dockDrag ?? dockWidth } : undefined}
                                             aria-label="Identify and analysis"
                                         >
+                                            {!compactPanel && (
+                                                <div
+                                                    role="separator"
+                                                    aria-orientation="vertical"
+                                                    aria-label="Resize panel"
+                                                    title="Drag to resize"
+                                                    onPointerDown={startDockResize}
+                                                    onDoubleClick={() => setDockWidth(DOCK_MIN_W)}
+                                                    className="hidden lg:block absolute top-0 bottom-0 -left-1 w-2 z-10 cursor-col-resize group"
+                                                >
+                                                    <span className={`absolute top-1/2 left-[3px] -translate-y-1/2 h-10 w-[3px] rounded-full transition-colors ${dockDrag ? "bg-[#1e3a8a]" : "bg-slate-300 group-hover:bg-slate-500"}`} />
+                                                </div>
+                                            )}
                                             <DockHeader title={moduleInfo?.label} onClose={() => setPanelOpen(false)} closeLabel="Close analysis panel" />
                                             <div ref={panelBodyRef} className={compactPanel ? "min-h-0 flex flex-col overflow-y-auto" : "flex-1 min-h-0 flex flex-col"}>
 
