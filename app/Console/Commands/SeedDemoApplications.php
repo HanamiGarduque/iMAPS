@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Jobs\PushInspectionToSupabase;
+use App\Jobs\PushPlanningReviewToSupabase;
+use App\Models\InspectionDeliveryAttempt;
 use App\Models\SiteInspection;
 use App\Models\User;
 use App\Models\ZoningApplication;
@@ -10,8 +12,11 @@ use App\Services\ApplicationStatusTracker;
 use App\Services\PermitExcelService;
 use App\Services\SupabaseService;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -25,15 +30,29 @@ use Illuminate\Support\Str;
  * audit notes), only backdated, so the pages read like months of real use.
  * Parcels are sampled from land_parcels, so they sit on the map.
  *
- * Nothing leaves the database unless --sync is given: no Supabase pushes and
- * no in-app notifications.
+ * Nothing leaves the database unless --sync (or later --push) is given. Then
+ * the FieldSync side is played out too: every round is delivered by the real
+ * PushInspectionToSupabase job, returned rounds are completed on the field job
+ * the way the app records them (steps, GPS, checklist, activity feed), the
+ * Planning Review of each returned round goes out through
+ * PushPlanningReviewToSupabase, the status timeline reaches the public tracker,
+ * and the results are pulled back with sync:pull-inspections. --purge removes
+ * the remote copies as well. No in-app notifications are sent either way.
  */
 class SeedDemoApplications extends Command
 {
     protected $signature = 'demo:applications
         {--count=50 : How many applications to create}
         {--seed=2026 : Random seed; the same seed on the same data gives the same applications}
-        {--sync : Also push the status timelines and the open inspection rounds to Supabase (public tracker and FieldSync app)}
+        {--shuffle : Draw the scenarios, parcel counts and officers at random instead of the fixed interleaved spread}
+        {--inspector= : Site Inspector (id or name) who takes about half of the inspection rounds}
+        {--per-barangay= : Instead of --count: every barangay gets a random number of applications in this range (e.g. 2-10), sited on its own lots}
+        {--inspected : Only stages where the Planning Officer sent the lot to a site inspection}
+        {--except= : Leave these stages out, comma-separated (e.g. inspection_scheduled,reinspection_scheduled for no open inspection rounds)}
+        {--from= : Earliest date of any event, YYYY-MM-DD (default: about six months back)}
+        {--to= : Latest date of any event, YYYY-MM-DD (default: now)}
+        {--sync : Also play the applications out on Supabase (FieldSync app and public tracker)}
+        {--push : Instead of creating any, play the sample applications already here out on Supabase (skips what is already there)}
         {--dry-run : Show who and what would be used, write nothing}
         {--purge : Delete the sample applications this command created, instead of creating any}
         {--force : Do not ask for confirmation}';
@@ -70,50 +89,86 @@ class SeedDemoApplications extends Command
         'reinspected_then_released'    => [1, 0, 'permit',    ['encode', 'inspect', 'discrepancy', 'reinspect', 'compliant', 'approve', 'release']],
     ];
 
+    /**
+     * Seeder land-use categories and the CLUP 2030 zones sampled for each.
+     * Left out on purpose: C/MP-Z (cemetery / memorial park), the protection
+     * zones (PTA-SZ-RA rice areas, 5491-APDA-SZ buffer / greenbelt) and the
+     * forest zones, where none of these projects may be built.
+     */
     private const CLASSES = [
         'residential'   => ['R1-Z', 'R2-Z', 'MR2-SZ', 'BR2-SZ'],
-        'commercial'    => ['C1-Z', 'C2-Z', 'C/MP-Z'],
+        'commercial'    => ['C1-Z', 'C2-Z'],
         'industrial'    => ['I1-Z', 'I2-Z', 'I3-Z'],
         'agricultural'  => ['AgIndZ', 'AgIndZ-PTR', 'AgIndZ-PGR'],
         'institutional' => ['GI-Z'],
+        'production'    => ['PDA-SZ'],
+        'ecotourism'    => ['ECT-Z'],
     ];
 
-    private const CATEGORY_WEIGHTS = ['residential' => 38, 'commercial' => 30, 'industrial' => 12, 'agricultural' => 14, 'institutional' => 6];
+    private const CATEGORY_WEIGHTS = ['residential' => 38, 'commercial' => 30, 'industrial' => 12, 'agricultural' => 14, 'institutional' => 6, 'production' => 6, 'ecotourism' => 3];
 
-    // [business name, purpose, short use, types, building area range, project cost range, corporation, saleable lots range]
+    /**
+     * How often each stage is drawn per application with --per-barangay
+     * (finished filings outnumber open ones, as in a working office).
+     */
+    private const STAGE_WEIGHTS = [
+        'awaiting_review' => 8, 'inspection_scheduled' => 14, 'inspection_returned' => 9, 'reinspection_scheduled' => 5,
+        'denied_at_review' => 4, 'denied_after_inspection' => 8, 'for_release' => 8, 'for_release_after_inspection' => 11,
+        'released' => 12, 'released_after_inspection' => 20, 'sb_pending' => 3, 'sb_after_inspection' => 5,
+        'sb_released' => 2, 'reinspected_then_released' => 7,
+    ];
+
+    /**
+     * [business name, purpose, short use, types, building area range, project
+     * cost range, corporation, saleable lots range, CLUP zones it is an allowed
+     * use in]. A project is only ever filed on (and across) lots of its zones.
+     */
     private const PROJECTS = [
         'residential' => [
-            [null, 'Construction of a two-storey single-detached residential house', 'residential house', ['Locational Clearance'], [90, 220], [1_200_000, 3_500_000], null, null],
-            [null, 'Construction of a bungalow-type residential house', 'residential house', ['Locational Clearance'], [60, 120], [800_000, 1_800_000], null, null],
-            ['{last} Apartment', 'Construction of a six-door two-storey apartment building', 'apartment building', ['Locational Clearance', 'Zoning Certificate'], [280, 420], [4_000_000, 7_500_000], null, null],
-            ['{last} Sari-Sari Store', 'Sari-sari store attached to the existing residence', 'sari-sari store', ['Zoning Certificate'], [12, 30], [50_000, 150_000], null, null],
-            ['Villa {brgy} Homes', 'Residential subdivision development with road network and drainage', 'residential subdivision', ['Preliminary Approval and Locational Clearance (PALC)', 'Development Permit'], null, [18_000_000, 45_000_000], 'Batangas Southridge Land Corp.', [12, 40]],
+            [null, 'Construction of a two-storey single-detached residential house', 'residential house', ['Locational Clearance'], [90, 220], [1_200_000, 3_500_000], null, null, ['R1-Z', 'R2-Z', 'MR2-SZ', 'BR2-SZ']],
+            [null, 'Construction of a bungalow-type residential house', 'residential house', ['Locational Clearance'], [60, 120], [800_000, 1_800_000], null, null, ['R1-Z', 'R2-Z', 'MR2-SZ', 'BR2-SZ']],
+            ['{last} Apartment', 'Construction of a six-door two-storey apartment building', 'apartment building', ['Locational Clearance', 'Zoning Certificate'], [280, 420], [4_000_000, 7_500_000], null, null, ['R2-Z', 'MR2-SZ', 'BR2-SZ']],
+            ['{last} Townhouses', 'Construction of a four-unit two-storey townhouse row', 'townhouse row', ['Locational Clearance'], [220, 360], [5_000_000, 9_000_000], null, null, ['R2-Z', 'MR2-SZ']],
+            ['{last} Sari-Sari Store', 'Sari-sari store attached to the existing residence', 'sari-sari store', ['Zoning Certificate'], [12, 30], [50_000, 150_000], null, null, ['R1-Z', 'R2-Z', 'MR2-SZ', 'BR2-SZ']],
+            ['Villa {brgy} Homes', 'Residential subdivision development with road network and drainage', 'residential subdivision', ['Preliminary Approval and Locational Clearance (PALC)', 'Development Permit'], null, [18_000_000, 45_000_000], 'Batangas Southridge Land Corp.', [12, 40], ['R1-Z', 'R2-Z']],
         ],
         'commercial' => [
-            ['{last} Bakeshop', 'Operation of a bakery and pastry shop', 'bakery', ['Zoning Certificate'], [40, 90], [300_000, 900_000], null, null],
-            ['{last} Hardware & Construction Supply', 'Hardware and construction supply store with stockyard', 'hardware store', ['Locational Clearance', 'Zoning Certificate'], [150, 400], [1_500_000, 4_000_000], null, null],
-            ['{brgy} Water Refilling Station', 'Purified water refilling station', 'water refilling station', ['Zoning Certificate'], [25, 60], [250_000, 600_000], null, null],
-            ['{last} Auto Repair Shop', 'Automotive repair and vulcanizing shop', 'auto repair shop', ['Locational Clearance', 'Zoning Certificate'], [120, 300], [700_000, 2_000_000], null, null],
-            ['{last} Dental Clinic', 'Dental clinic on the ground floor of an existing building', 'dental clinic', ['Zoning Certificate'], [40, 80], [400_000, 1_200_000], null, null],
-            ['{last} Commercial Building', 'Construction of a three-storey commercial building with ground-floor retail', 'commercial building', ['Locational Clearance'], [450, 900], [9_000_000, 18_000_000], 'Lipa-Rosario Development Corp.', null],
-            ['Kapihan sa {brgy}', 'Coffee shop and snack bar', 'coffee shop', ['Zoning Certificate'], [35, 90], [350_000, 1_000_000], null, null],
-            ['Rosario Fuels Station', 'Construction and operation of a gasoline service station', 'gasoline station', ['Locational Clearance', 'Zoning Certificate'], [180, 350], [12_000_000, 20_000_000], 'Pinagsibaan Fuel Corp.', null],
+            ['{last} Bakeshop', 'Operation of a bakery and pastry shop', 'bakery', ['Zoning Certificate'], [40, 90], [300_000, 900_000], null, null, ['C1-Z', 'C2-Z']],
+            ['{last} Hardware & Construction Supply', 'Hardware and construction supply store with stockyard', 'hardware store', ['Locational Clearance', 'Zoning Certificate'], [150, 400], [1_500_000, 4_000_000], null, null, ['C2-Z']],
+            ['{brgy} Water Refilling Station', 'Purified water refilling station', 'water refilling station', ['Zoning Certificate'], [25, 60], [250_000, 600_000], null, null, ['C1-Z', 'C2-Z']],
+            ['{last} Auto Repair Shop', 'Automotive repair and vulcanizing shop', 'auto repair shop', ['Locational Clearance', 'Zoning Certificate'], [120, 300], [700_000, 2_000_000], null, null, ['C2-Z']],
+            ['{last} Dental Clinic', 'Dental clinic on the ground floor of an existing building', 'dental clinic', ['Zoning Certificate'], [40, 80], [400_000, 1_200_000], null, null, ['C1-Z', 'C2-Z']],
+            ['{last} Commercial Building', 'Construction of a three-storey commercial building with ground-floor retail', 'commercial building', ['Locational Clearance'], [450, 900], [9_000_000, 18_000_000], 'Lipa-Rosario Development Corp.', null, ['C1-Z', 'C2-Z']],
+            ['Kapihan sa {brgy}', 'Coffee shop and snack bar', 'coffee shop', ['Zoning Certificate'], [35, 90], [350_000, 1_000_000], null, null, ['C1-Z', 'C2-Z']],
+            ['Rosario Fuels Station', 'Construction and operation of a gasoline service station', 'gasoline station', ['Locational Clearance', 'Zoning Certificate'], [180, 350], [12_000_000, 20_000_000], 'Pinagsibaan Fuel Corp.', null, ['C2-Z']],
         ],
         'industrial' => [
-            ['{last} Rice & Feeds Trading', 'Warehouse for rice and animal feeds trading', 'warehouse', ['Locational Clearance'], [300, 800], [3_000_000, 8_000_000], null, null],
-            ['{last} Hollow Blocks', 'Hollow blocks manufacturing plant', 'hollow blocks plant', ['Locational Clearance', 'Zoning Certificate'], [200, 500], [1_500_000, 4_000_000], null, null],
-            ['Silangan Cold Storage', 'Cold storage facility for agricultural produce', 'cold storage facility', ['Locational Clearance'], [600, 1500], [15_000_000, 35_000_000], 'Silangan Cold Chain Inc.', null],
-            ['{last} Steel Works', 'Steel fabrication and welding shop', 'steel fabrication shop', ['Locational Clearance', 'Zoning Certificate'], [250, 600], [2_500_000, 6_000_000], 'Marasigan Steelworks Inc.', null],
+            ['{last} Rice & Feeds Trading', 'Warehouse for rice and animal feeds trading', 'warehouse', ['Locational Clearance'], [300, 800], [3_000_000, 8_000_000], null, null, ['I1-Z', 'I2-Z', 'I3-Z']],
+            ['Silangan Cold Storage', 'Cold storage facility for agricultural produce', 'cold storage facility', ['Locational Clearance'], [600, 1500], [15_000_000, 35_000_000], 'Silangan Cold Chain Inc.', null, ['I1-Z', 'I2-Z']],
+            ['{last} Food Products', 'Food processing and packaging plant (banana chips and dried fruit)', 'food processing plant', ['Locational Clearance', 'Zoning Certificate'], [250, 600], [3_000_000, 7_000_000], null, null, ['I1-Z', 'I2-Z']],
+            ['{last} Hollow Blocks', 'Hollow blocks manufacturing plant', 'hollow blocks plant', ['Locational Clearance', 'Zoning Certificate'], [200, 500], [1_500_000, 4_000_000], null, null, ['I2-Z', 'I3-Z']],
+            ['{last} Steel Works', 'Steel fabrication and welding shop', 'steel fabrication shop', ['Locational Clearance', 'Zoning Certificate'], [250, 600], [2_500_000, 6_000_000], 'Marasigan Steelworks Inc.', null, ['I2-Z', 'I3-Z']],
         ],
         'agricultural' => [
-            ['{last} Poultry Farm', 'Poultry layer farm, 5,000 heads', 'poultry farm', ['Locational Clearance'], [400, 1200], [2_000_000, 5_000_000], null, null],
-            ['{last} Piggery', 'Backyard piggery, 40 heads, with septic and biogas digester', 'piggery', ['Locational Clearance'], [150, 350], [600_000, 1_500_000], null, null],
-            ['{last} Rice Mill', 'Rice mill and palay drying pavement', 'rice mill', ['Locational Clearance', 'Zoning Certificate'], [250, 600], [2_500_000, 6_000_000], 'Rosario Agri-Ventures Inc.', null],
-            [null, 'Agricultural produce consolidation and packing shed', 'packing shed', ['Locational Clearance'], [120, 300], [500_000, 1_500_000], null, null],
+            ['{last} Poultry Farm', 'Poultry layer farm, 5,000 heads', 'poultry farm', ['Locational Clearance'], [400, 1200], [2_000_000, 5_000_000], null, null, ['AgIndZ-PTR', 'AgIndZ']],
+            ['{last} Piggery', 'Commercial piggery, 40 heads, with septic tank and biogas digester', 'piggery', ['Locational Clearance'], [150, 350], [600_000, 1_500_000], null, null, ['AgIndZ-PGR', 'AgIndZ']],
+            ['{last} Rice Mill', 'Rice mill and palay drying pavement', 'rice mill', ['Locational Clearance', 'Zoning Certificate'], [250, 600], [2_500_000, 6_000_000], 'Rosario Agri-Ventures Inc.', null, ['AgIndZ']],
+            ['{last} Feed Mill', 'Animal feed mill with raw-material warehouse', 'feed mill', ['Locational Clearance', 'Zoning Certificate'], [300, 700], [4_000_000, 9_000_000], null, null, ['AgIndZ', 'AgIndZ-PTR', 'AgIndZ-PGR']],
+            [null, 'Agricultural produce consolidation and packing shed', 'packing shed', ['Locational Clearance'], [120, 300], [500_000, 1_500_000], null, null, ['AgIndZ']],
         ],
         'institutional' => [
-            ['Little Learners Academy', 'Expansion of a private preschool, two additional classrooms', 'school expansion', ['Locational Clearance'], [120, 260], [2_000_000, 4_500_000], 'Little Learners Academy of Rosario, Inc.', null],
-            ['{brgy} Chapel', 'Construction of a barangay chapel', 'chapel', ['Locational Clearance'], [150, 300], [1_500_000, 3_500_000], '{brgy} Pastoral Council', null],
+            ['Little Learners Academy', 'Expansion of a private preschool, two additional classrooms', 'school expansion', ['Locational Clearance'], [120, 260], [2_000_000, 4_500_000], 'Little Learners Academy of Rosario, Inc.', null, ['GI-Z']],
+            ['{brgy} Chapel', 'Construction of a barangay chapel', 'chapel', ['Locational Clearance'], [150, 300], [1_500_000, 3_500_000], '{brgy} Pastoral Council', null, ['GI-Z']],
+            ['{brgy} Health Station', 'Construction of a barangay health station with a birthing room', 'health station', ['Locational Clearance'], [80, 160], [1_500_000, 3_000_000], null, null, ['GI-Z']],
+        ],
+        'production' => [
+            [null, 'Construction of a farmhouse with a tool and storage shed', 'farmhouse', ['Locational Clearance'], [60, 150], [600_000, 1_500_000], null, null, ['PDA-SZ']],
+            ['{last} Coffee Farm', 'Coffee processing shed and drying area', 'coffee processing shed', ['Locational Clearance'], [120, 300], [800_000, 2_500_000], null, null, ['PDA-SZ']],
+            ['{brgy} Seedling Nursery', 'Vegetable and fruit-tree seedling nursery with a greenhouse', 'seedling nursery', ['Locational Clearance'], [100, 250], [400_000, 1_200_000], null, null, ['PDA-SZ']],
+        ],
+        'ecotourism' => [
+            ['{last} Farm Resort', 'Construction of a farm resort with cottages and a swimming pool', 'farm resort', ['Locational Clearance', 'Zoning Certificate'], [250, 700], [3_000_000, 9_000_000], null, null, ['ECT-Z']],
+            ['{brgy} Eco-Lodge', 'Eco-tourism lodge with a nature trail and view deck', 'eco-tourism lodge', ['Locational Clearance'], [180, 450], [2_500_000, 7_000_000], 'Rosario Highlands Eco-Ventures Inc.', null, ['ECT-Z']],
         ],
     ];
 
@@ -146,11 +201,12 @@ class SeedDemoApplications extends Command
 
     private array $pos = [];
     private array $inspectors = [];
+    private ?User $featured = null;
     private ?User $admin = null;
     private array $usedPins = [];
     private array $usedForms = [];
     private array $writtenFiles = [];
-    private array $trackRows = [];
+    private array $createdIds = [];
     private array $openInspectionIds = [];
     private array $counts = ['parcels' => 0, 'inspections' => 0, 'reviews' => 0, 'permits' => 0];
     private int $inspectorTurn = 0;
@@ -164,7 +220,40 @@ class SeedDemoApplications extends Command
         }
 
         mt_srand((int) $this->option('seed'));
+
+        if ($this->option('push')) {
+            $ids = $this->sampleApplications()->keys()->all();
+            if (! $ids) {
+                $this->info('No sample applications found.');
+                return self::SUCCESS;
+            }
+            return $this->mirror($ids) ? self::SUCCESS : self::FAILURE;
+        }
         $count = max(1, (int) $this->option('count'));
+        $perBarangay = $this->option('per-barangay');
+        if ($perBarangay !== null && ! preg_match('/^(\d+)(?:-(\d+))?$/', $perBarangay, $range)) {
+            $this->error('--per-barangay takes a number or a range such as 2-10.');
+            return self::FAILURE;
+        }
+        $unknown = array_diff($this->excluded(), array_keys(self::SCENARIOS));
+        if ($unknown) {
+            $this->error('Unknown stage(s): ' . implode(', ', $unknown) . '. Stages: ' . implode(', ', array_keys(self::SCENARIOS)) . '.');
+            return self::FAILURE;
+        }
+        if (! $this->scenarios()) {
+            $this->error('No stage is left to seed after --inspected / --except.');
+            return self::FAILURE;
+        }
+        try {
+            [$from, $to] = $this->window();
+        } catch (\Throwable) {
+            $this->error('--from and --to take dates such as 2026-09-01.');
+            return self::FAILURE;
+        }
+        if ($from->gte($to)) {
+            $this->error('--from must be before --to (and before now).');
+            return self::FAILURE;
+        }
 
         $this->pos = User::where('role', 'Planning Officer')->where('is_active', true)->orderBy('id')->get()->all();
         $this->inspectors = User::where('role', 'Site Inspector')->where('is_active', true)->whereNotNull('handshake_key')->orderBy('id')->get()->all();
@@ -178,24 +267,43 @@ class SeedDemoApplications extends Command
             $this->error('No active Site Inspector with a FieldSync account exists. Create one first; inspection rounds need an inspector.');
             return self::FAILURE;
         }
+        if (($wanted = $this->option('inspector')) !== null) {
+            $this->featured = collect($this->inspectors)->first(fn ($u) => (string) $u->id === $wanted || strcasecmp($u->name, $wanted) === 0);
+            if (! $this->featured) {
+                $this->error("No active Site Inspector with a FieldSync account matches \"{$wanted}\".");
+                return self::FAILURE;
+            }
+        }
 
         $available = DB::table('land_parcels')
             ->whereNotNull('geom')
             ->whereNotNull('property_index_number')
             ->whereIn('land_use_class', array_merge(...array_values(self::CLASSES)))
             ->count();
-        if ($available < $count * 2) {
+        if ($perBarangay === null && $available < $count * 2) {
             $this->error("Only {$available} usable land parcels found. Import the land parcel layer (Settings) first; sample parcels are taken from it.");
             return self::FAILURE;
         }
 
-        $plans = $this->plan($count);
+        $plans = $perBarangay !== null
+            ? $this->timed($this->planPerBarangay((int) $range[1], (int) ($range[2] ?? $range[1])))
+            : $this->plan($count);
+        $count = count($plans);
 
         $this->info(sprintf('Database: %s on %s', config('database.connections.' . config('database.default') . '.database'), config('database.connections.' . config('database.default') . '.host')));
         $this->line('Planning Officers: ' . collect($this->pos)->map(fn ($u) => "{$u->name} (#{$u->id})")->implode(', '));
         $this->line('Site Inspectors:   ' . collect($this->inspectors)->map(fn ($u) => "{$u->name} (#{$u->id})")->implode(', '));
+        if ($this->featured) {
+            $this->line("Featured inspector: {$this->featured->name} (#{$this->featured->id}), about half of the rounds");
+        }
         $this->line('Admin:             ' . ($this->admin ? "{$this->admin->name} (#{$this->admin->id})" : 'none (no reassignment samples)'));
+        $this->line(sprintf('Window:            %s to %s', $from->toDateString(), $to->toDateString()));
         $this->table(['Scenario', 'Applications', 'Multi-parcel'], collect($plans)->groupBy('key')->map(fn ($g, $k) => [$k, $g->count(), $g->where('multi', true)->count()])->values()->all());
+        if ($perBarangay !== null) {
+            $this->table(['Barangay', 'Applications', 'Single / multi-parcel', 'Land use'], collect($plans)->groupBy('barangay')->sortKeys()->map(fn ($g, $b) => [
+                $b, $g->count(), $g->where('multi', false)->count() . ' / ' . $g->where('multi', true)->count(), $g->countBy('category')->map(fn ($n, $c) => "{$c} {$n}")->implode(', '),
+            ])->values()->all());
+        }
 
         if ($this->option('dry-run')) {
             $this->comment('Dry run: nothing written.');
@@ -228,7 +336,7 @@ class SeedDemoApplications extends Command
             });
         } catch (\Throwable $e) {
             $this->deleteWrittenFiles();
-            $this->error('Nothing was saved: ' . $e->getMessage());
+            $this->error(sprintf('Nothing was saved: %s (%s:%d)', $e->getMessage(), basename($e->getFile()), $e->getLine()));
             return self::FAILURE;
         }
 
@@ -238,9 +346,10 @@ class SeedDemoApplications extends Command
         ));
 
         if ($this->option('sync')) {
-            $this->sync();
-        } elseif ($this->openInspectionIds) {
-            $this->comment(count($this->openInspectionIds) . ' open inspection rounds were not sent to the FieldSync app (run with --sync to send them).');
+            return $this->mirror($this->createdIds) ? self::SUCCESS : self::FAILURE;
+        }
+        if ($this->openInspectionIds) {
+            $this->comment(count($this->openInspectionIds) . ' open inspection rounds were not sent to the FieldSync app (run with --push to send them).');
         }
 
         return self::SUCCESS;
@@ -253,9 +362,19 @@ class SeedDemoApplications extends Command
     {
         $instances = [];
         $widest = max(array_column(self::SCENARIOS, 0));
+        // --shuffle: every scenario once (in random order) before any repeats, ~40% multi-parcel.
+        $bag = [];
+        while ($this->option('shuffle') && count($instances) < $count) {
+            if (! $bag) {
+                $bag = array_keys($this->scenarios());
+            }
+            $key = array_splice($bag, mt_rand(0, count($bag) - 1), 1)[0];
+            [$n, , $stream, $steps] = self::SCENARIOS[$key];
+            $instances[] = ['key' => $key, 'nth' => mt_rand(0, $n - 1), 'multi' => mt_rand(1, 100) <= 40, 'stream' => $stream, 'steps' => $steps];
+        }
         for ($pass = 0; count($instances) < $count; $pass++) {
             for ($r = 0; $r < $widest; $r++) {
-                foreach (self::SCENARIOS as $key => [$n, $multi, $stream, $steps]) {
+                foreach ($this->scenarios() as $key => [$n, $multi, $stream, $steps]) {
                     if ($r < $n && count($instances) < $count) {
                         $instances[] = ['key' => $key, 'nth' => $pass * $n + $r, 'multi' => $r < $multi, 'stream' => $stream, 'steps' => $steps];
                     }
@@ -263,6 +382,12 @@ class SeedDemoApplications extends Command
             }
         }
 
+        return $this->timed($instances);
+    }
+
+    /** Event times for every instance, filed in the order they were received (so references run chronologically). */
+    private function timed(array $instances): array
+    {
         foreach ($instances as &$instance) {
             $instance += $this->planTimes($instance);
         }
@@ -271,6 +396,120 @@ class SeedDemoApplications extends Command
         usort($instances, fn ($a, $b) => $a['times'][0] <=> $b['times'][0]);
 
         return $instances;
+    }
+
+    /**
+     * --per-barangay: a random number of applications per barangay, each on
+     * that barangay's own unused lots, each at a stage drawn at random
+     * (STAGE_WEIGHTS). A barangay never gets more filings or parcels than it
+     * has free lots.
+     */
+    private function planPerBarangay(int $min, int $max): array
+    {
+        $scenarios = $this->scenarios();
+        $instances = [];
+
+        foreach ($this->barangayStock() as $brgy => $left) {
+            $n = min(mt_rand($min, $max), array_sum($left));
+            for ($k = 0; $k < $n; $k++) {
+                // Lots this filing may take while leaving one for every filing after it.
+                $spare = array_sum($left) - ($n - $k - 1);
+
+                // Each filing's stage is drawn at random; a petition needs an agricultural lot.
+                $key = $this->weighted(array_filter(
+                    array_intersect_key(self::STAGE_WEIGHTS, $scenarios),
+                    fn ($k) => $scenarios[$k][2] !== 'amendment' || ($left['agricultural'] ?? 0) >= 2,
+                    ARRAY_FILTER_USE_KEY
+                ));
+                [$cnt, , $stream, $steps] = $scenarios[$key];
+
+                $category = $stream === 'amendment'
+                    ? 'agricultural'
+                    : $this->weighted(array_intersect_key(self::CATEGORY_WEIGHTS, array_filter($left)));
+                $size = $spare >= 2 && mt_rand(1, 100) <= 40 ? min(mt_rand(2, 4), $spare) : 1;
+
+                $left[$category]--;
+                for ($j = 1; $j < $size; $j++) {
+                    arsort($left);
+                    $left[array_key_first($left)]--;
+                }
+
+                $instances[] = [
+                    'key' => $key, 'nth' => mt_rand(0, $cnt - 1), 'multi' => $size > 1, 'size' => $size,
+                    'stream' => $stream, 'steps' => $steps, 'barangay' => $brgy, 'category' => $category,
+                ];
+            }
+        }
+
+        return $instances;
+    }
+
+    /** Unused sample-able lots per barangay and category: [barangay => [category => count]]. */
+    private function barangayStock(): array
+    {
+        $category = [];
+        foreach (self::CLASSES as $cat => $classes) {
+            foreach ($classes as $class) {
+                $category[$class] = $cat;
+            }
+        }
+        $in = implode(',', array_fill(0, count($category), '?'));
+
+        $rows = DB::select(
+            "SELECT barangay, land_use_class, count(*) AS n FROM land_parcels lp
+             WHERE geom IS NOT NULL AND property_index_number IS NOT NULL AND owner_name IS NOT NULL AND barangay IS NOT NULL
+               AND land_use_class IN ({$in}) AND lot_area_sqm BETWEEN 80 AND 20000
+               AND NOT EXISTS (SELECT 1 FROM parcels p WHERE p.property_index_number = lp.property_index_number)
+             GROUP BY barangay, land_use_class ORDER BY barangay",
+            array_keys($category)
+        );
+
+        $stock = [];
+        foreach ($rows as $r) {
+            $stock[$r->barangay][$category[$r->land_use_class]] = ($stock[$r->barangay][$category[$r->land_use_class]] ?? 0) + $r->n;
+        }
+
+        return $stock;
+    }
+
+    private function categoryOf(string $class): string
+    {
+        foreach (self::CLASSES as $category => $classes) {
+            if (in_array($class, $classes, true)) {
+                return $category;
+            }
+        }
+
+        throw new \RuntimeException("Zone {$class} is not one the seeder files on.");
+    }
+
+    /** The scenarios in play: with --inspected only those where a site inspection is sent, minus --except. */
+    private function scenarios(): array
+    {
+        $scenarios = $this->option('inspected')
+            ? array_filter(self::SCENARIOS, fn ($s) => in_array('inspect', $s[3], true))
+            : self::SCENARIOS;
+
+        return array_diff_key($scenarios, array_flip($this->excluded()));
+    }
+
+    private function excluded(): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', (string) $this->option('except')))));
+    }
+
+    /** [earliest, latest] moment any event may fall on. */
+    private function window(): array
+    {
+        static $window;
+
+        if (! $window) {
+            $to = $this->option('to') ? Carbon::parse($this->option('to'))->endOfDay()->min(now()) : now();
+            $from = $this->option('from') ? Carbon::parse($this->option('from'))->startOfDay() : $to->copy()->startOfDay()->subDays(185);
+            $window = [$from, $to];
+        }
+
+        return [$window[0]->copy(), $window[1]->copy()];
     }
 
     private function planTimes(array $instance): array
@@ -310,18 +549,20 @@ class SeedDemoApplications extends Command
 
         $last = end($steps);
         $overdue = $instance['key'] === 'inspection_scheduled' && $instance['nth'] === 0;
+        $total = array_sum($gaps);
+        [$from, $now] = $this->window();
+        // Days the whole chain can slide back and still start inside the window.
+        $room = max(0, (int) floor(abs($from->diffInDays($now->copy()->startOfDay()))) - $total);
         $endAgo = match (true) {
             $overdue                               => $sched['scheduled'] + $sched['deadline'] + mt_rand(1, 3),
             in_array($last, ['inspect', 'reinspect']) => mt_rand(0, 4),
             $last === 'encode'                     => mt_rand(0, 10),
             $last === 'returned'                   => mt_rand(0, 6),
             str_starts_with($instance['key'], 'sb_') && $last === 'approve' => mt_rand(5, 45),
-            default                                => mt_rand(3, 170),
+            default                                => mt_rand(min(3, $room), $room),
         };
-        $total = array_sum($gaps);
-        $endAgo = max(0, min($endAgo, 185 - $total));
+        $endAgo = max(0, min($endAgo, $room));
 
-        $now = now();
         $day = $now->copy()->startOfDay()->subDays($endAgo + $total);
         $prev = null;
         $times = [];
@@ -376,6 +617,7 @@ class SeedDemoApplications extends Command
                 'release'     => $this->release($a, $at),
             };
         }
+        $this->createdIds[] = $a['id'];
     }
 
     /** The applicant, project and parcels of one application. */
@@ -389,13 +631,48 @@ class SeedDemoApplications extends Command
             [$target, $purpose, $use, $types, $business] = $this->pick(self::AMENDMENTS);
             $project = [$business, $purpose, $use, $types, null, [5_000_000, 30_000_000], null, null];
         } else {
-            $parcelCategory = $mismatch ? 'residential' : $this->weighted(self::CATEGORY_WEIGHTS);
-            $projectCategory = $mismatch ? $this->pick(['industrial', 'agricultural']) : $parcelCategory;
-            $project = $this->pick(self::PROJECTS[$projectCategory]);
+            $parcelCategory = $plan['category'] ?? ($mismatch ? 'residential' : $this->weighted(self::CATEGORY_WEIGHTS));
             $target = null;
+            $project = null;
         }
 
-        $parcels = $this->sampleParcels($parcelCategory, $plan['multi'] ? mt_rand(2, 4) : 1);
+        // Once the first lot is drawn, its CLUP zone decides the project, and
+        // the project decides which zones the rest of the lots may be in.
+        $fit = function (object $anchor) use ($amendment, $mismatch, &$project): array {
+            if ($amendment) {
+                return self::CLASSES['agricultural'];
+            }
+            $category = $this->categoryOf($anchor->land_use_class);
+            if ($mismatch) {
+                // The deliberate wrong-zone filing that the Planning Officer declines.
+                $project = $this->pick(self::PROJECTS[$this->pick(['industrial', 'agricultural'])]);
+                return self::CLASSES[$category];
+            }
+            $project = $this->pick(array_values(array_filter(self::PROJECTS[$category], fn ($p) => in_array($anchor->land_use_class, $p[8], true))));
+
+            return $project[8];
+        };
+
+        $size = $plan['size'] ?? ($plan['multi'] ? mt_rand(2, 4) : 1);
+        $brgy = $plan['barangay'] ?? null;
+        try {
+            $parcels = $this->sampleParcels($parcelCategory, $size, $brgy, $fit);
+        } catch (\RuntimeException $e) {
+            // That barangay ran out of this kind of lot (neighbours of earlier filings took them): use another kind there.
+            if ($amendment || $brgy === null) {
+                throw $e;
+            }
+            foreach (array_keys(self::CLASSES) as $other) {
+                try {
+                    $parcels = $this->sampleParcels($other, $size, $brgy, $fit);
+                    $parcelCategory = $other;
+                    break;
+                } catch (\RuntimeException) {
+                }
+            }
+            $parcels ?? throw $e;
+        }
+
         [$business, $purpose, $use, $types, $buildingRange, $costRange, $corporation, $lotsRange] = $project;
 
         $brgy = $parcels[0]->barangay;
@@ -460,7 +737,7 @@ class SeedDemoApplications extends Command
             'po'                      => $this->pos[$plan['nth'] % count($this->pos)],
             'reassign_po'             => in_array($plan['key'], ['for_release', 'inspection_returned'], true) && $plan['nth'] === 0,
             'reassign_inspector'      => $plan['key'] === 'inspection_scheduled' && $plan['nth'] === 1,
-            'mixed'                   => $plan['multi'] && $plan['nth'] % 2 === 0,
+            'mixed'                   => count($parcels) > 1 && $plan['nth'] % 2 === 0,
             'round'                   => 0,
             'pending'                 => [],
             'returned'                => [],
@@ -666,7 +943,7 @@ class SeedDemoApplications extends Command
     private function createInspection(array &$a, object $p, Carbon $at, array $round, bool $reinspection): int
     {
         $po = $a['po'];
-        $inspector = $this->inspectors[$this->inspectorTurn++ % count($this->inspectors)];
+        $inspector = $this->nextInspector();
         $scheduled = Carbon::parse($round['date']);
 
         $id = DB::table('site_inspections')->insertGetId([
@@ -885,7 +1162,6 @@ class SeedDemoApplications extends Command
             'created_at'            => $at,
         ];
         DB::table('application_status_tracks')->insert($row);
-        $this->trackRows[] = $row;
     }
 
     private function audit(array $a, string $action, User $by, string $note, Carbon $at): void
@@ -896,7 +1172,12 @@ class SeedDemoApplications extends Command
     // ── Parcels ─────────────────────────────────────────────────────────────
 
     /** An unused lot of the category plus its nearest unused neighbours, so a multi-parcel filing is contiguous. */
-    private function sampleParcels(string $category, int $count): array
+    /**
+     * An unused lot of the category, then its nearest unused neighbours (within
+     * 300 m, same barangay) in the zones $fit returns for that first lot, so a
+     * multi-parcel filing is contiguous and every lot allows the project.
+     */
+    private function sampleParcels(string $category, int $count, ?string $barangay, callable $fit): array
     {
         $columns = 'gid, barangay, lot_area_sqm, land_use_class, survey_number, location_address, owner_name, lot_number,
             property_index_number, tct_number, tax_dec_number, arp_number,
@@ -909,24 +1190,28 @@ class SeedDemoApplications extends Command
             "SELECT {$columns} FROM land_parcels
              WHERE geom IS NOT NULL AND property_index_number IS NOT NULL AND owner_name IS NOT NULL
                AND land_use_class IN ({$in}) AND lot_area_sqm BETWEEN 80 AND 20000
-             ORDER BY md5(gid::text || ?) LIMIT 50",
-            [...$classes, $salt]
+               AND (?::text IS NULL OR barangay = ?)
+             ORDER BY md5(gid::text || ?) LIMIT 200",
+            [...$classes, $barangay, $barangay, $salt]
         );
         $anchor = collect($candidates)->first(fn ($p) => ! isset($this->usedPins[$p->property_index_number]));
         if (! $anchor) {
-            throw new \RuntimeException("No unused {$category} land parcel left to sample.");
+            throw new \RuntimeException("No unused {$category} land parcel left to sample" . ($barangay ? " in {$barangay}." : '.'));
         }
 
         $parcels = [$anchor];
         $this->usedPins[$anchor->property_index_number] = true;
+        $zones = $fit($anchor);
 
         if ($count > 1) {
+            $allowed = implode(',', array_fill(0, count($zones), '?'));
             $neighbours = DB::select(
                 "SELECT {$columns} FROM land_parcels
                  WHERE gid <> ? AND geom IS NOT NULL AND property_index_number IS NOT NULL AND owner_name IS NOT NULL
-                   AND barangay = ? AND lot_area_sqm BETWEEN 80 AND 20000
-                 ORDER BY geom <-> (SELECT geom FROM land_parcels WHERE gid = ?) LIMIT 20",
-                [$anchor->gid, $anchor->barangay, $anchor->gid]
+                   AND barangay = ? AND lot_area_sqm BETWEEN 80 AND 20000 AND land_use_class IN ({$allowed})
+                   AND ST_DWithin(geom::geography, (SELECT geom FROM land_parcels WHERE gid = ?)::geography, 300)
+                 ORDER BY geom <-> (SELECT geom FROM land_parcels WHERE gid = ?) LIMIT 40",
+                [$anchor->gid, $anchor->barangay, ...$zones, $anchor->gid, $anchor->gid]
             );
             foreach ($neighbours as $n) {
                 if (count($parcels) >= $count) {
@@ -942,43 +1227,284 @@ class SeedDemoApplications extends Command
         return $parcels;
     }
 
-    // ── After commit ────────────────────────────────────────────────────────
+    // ── FieldSync / public tracker ──────────────────────────────────────────
 
-    private function sync(): void
+    private const APP_STEPS = [1 => 'Site verification', 2 => 'GPS verification', 3 => 'Photos', 4 => 'Checklist', 5 => 'Findings'];
+
+    /**
+     * Play the given sample applications out on Supabase. Anything already
+     * there (a timeline, a delivered round, a completed job, a review) is left
+     * alone, so this can be re-run after a partial failure.
+     */
+    private function mirror(array $ids): bool
     {
         if (! config('services.supabase.url') || ! config('services.supabase.service_key')) {
-            $this->warn('Supabase is not configured here; nothing synced.');
+            $this->error('Supabase is not configured here; nothing pushed.');
+            return false;
+        }
+
+        $supabase = app(SupabaseService::class);
+        $this->info('Playing ' . count($ids) . " applications out on Supabase (bridge {$supabase->bridgeSourceId()})...");
+        $failed = 0;
+
+        // 1. Public tracker timeline, with its real (backdated) times.
+        $tracks = 0;
+        foreach (DB::table('zoning_applications')->whereIn('id', $ids)->orderBy('id')->get(['reference_number', 'form_number']) as $app) {
+            // The tracker is keyed by reference (one row per reference and status),
+            // and other iMAPS databases share it: never mix two filings' timelines.
+            $there = $supabase->select('application_status_tracks', 'form_number', ['reference_number' => "eq.{$app->reference_number}"]);
+            if (! $there->successful()) {
+                $failed++;
+                continue;
+            }
+            $forms = array_unique(array_column($there->json(), 'form_number'));
+            if (array_diff($forms, [$app->form_number])) {
+                $this->warn("Public tracker already holds {$app->reference_number} for another filing (form " . implode(', ', array_diff($forms, [$app->form_number])) . '); its timeline was not pushed.');
+                continue;
+            }
+            if ($forms) {
+                continue;
+            }
+            $rows = DB::table('application_status_tracks')->where('reference_number', $app->reference_number)->where('form_number', $app->form_number)->orderBy('created_at')->orderBy('id')->get()
+                ->unique('status');
+            foreach ($rows as $row) {
+                $ok = $supabase->pushStatusTrack([
+                    'reference_number'      => $row->reference_number,
+                    'form_number'           => $row->form_number,
+                    'contact_number'        => $row->contact_number,
+                    'masked_applicant_name' => $row->masked_applicant_name,
+                    'application_type'      => $row->application_type,
+                    'business_name'         => $row->business_name,
+                    'status'                => $row->status,
+                    'stage_order'           => $row->stage_order,
+                    'note'                  => $row->note,
+                    'scheduled_date'        => $row->scheduled_date ? Carbon::parse($row->scheduled_date)->toIso8601String() : null,
+                    'created_at'            => $this->utc($row->created_at),
+                ]);
+                $ok ? $tracks++ : $failed++;
+            }
+        }
+        $this->line("Public tracker: {$tracks} timeline entries pushed.");
+
+        // 2. Every round, oldest first, so a reinspection finds its previous round.
+        $delivered = $completed = 0;
+        $returned = [];
+        foreach (SiteInspection::whereIn('zoning_application_id', $ids)->orderBy('id')->get() as $round) {
+            try {
+                $jobId = $this->deliverRound($supabase, $round, $delivered);
+                if ($round->status === 'completed') {
+                    $this->completeOnApp($supabase, $round->fresh(), $jobId) && $completed++;
+                    $returned[] = $round->id;
+                }
+            } catch (\Throwable $e) {
+                $failed++;
+                $this->warn("Round #{$round->id}: {$e->getMessage()}");
+            }
+        }
+        $this->line("FieldSync: {$delivered} rounds delivered, {$completed} completed on the app.");
+
+        // 3. The Planning Review of every returned round, as the controller sends it.
+        $reviews = 0;
+        $rows = DB::table('technical_reviews as t')->join('users as u', 'u.id', '=', 't.reviewed_by')
+            ->whereIn('t.zoning_application_id', $ids)->whereNotNull('t.reviewed_site_inspection_id')
+            ->whereIn('t.decision', PushPlanningReviewToSupabase::TRANSPORTABLE_DECISIONS)
+            ->orderBy('t.id')->get(['t.*', 'u.name as reviewer']);
+        foreach ($rows as $r) {
+            try {
+                $reviewedAt = Carbon::parse($r->reviewed_at);
+                PushPlanningReviewToSupabase::dispatchSync((int) $r->id, (int) $r->reviewed_site_inspection_id, $r->decision, (int) $r->reviewed_by, $r->reviewer, $reviewedAt->toIso8601String(), $r->decision_reason);
+                $this->remote()->patch('field_job_reviews?' . $this->query($supabase->scopedFilters(['technical_review_id' => "eq.{$r->id}"])), ['created_at' => $this->utc($reviewedAt->copy()->addSeconds(2))])->throw();
+                $reviews++;
+            } catch (\Throwable $e) {
+                $failed++;
+                $this->warn("Review #{$r->id}: {$e->getMessage()}");
+            }
+        }
+        $this->line("FieldSync: {$reviews} Planning Reviews sent back to the inspectors.");
+
+        // 4. iMAPS pulls the app's results back, the same command the scheduler runs.
+        $pulled = [];
+        foreach ($returned as $id) {
+            Artisan::call('sync:pull-inspections', ['--local-inspection-id' => $id]);
+            $result = Str::after(Str::afterLast(trim(Artisan::output()), "\n"), 'SYNC_RESULT=');
+            $pulled[$result] = ($pulled[$result] ?? 0) + 1;
+        }
+        $this->line('Pulled back: ' . (collect($pulled)->map(fn ($n, $r) => "{$n} {$r}")->implode(', ') ?: 'nothing to pull'));
+
+        if ($failed) {
+            $this->error("{$failed} pushes failed (see above / laravel.log). Run --push again to retry them.");
+        }
+
+        return $failed === 0;
+    }
+
+    /** Deliver a round through the real bridge job, unless it already reached FieldSync. Returns the field job id. */
+    private function deliverRound(SupabaseService $supabase, SiteInspection $round, int &$delivered): string
+    {
+        $jobId = $supabase->findFieldJobIdByLocalInspectionId($round->id);
+        if (! $jobId) {
+            // The seeder's stand-in delivery record gives way to the real one.
+            DB::table('inspection_delivery_attempts')->where('site_inspection_id', $round->id)->delete();
+            DB::table('site_inspections')->where('id', $round->id)->update(['delivery_status' => null, 'delivered_at' => null, 'last_delivery_attempt_at' => null]);
+
+            PushInspectionToSupabase::dispatchSync(SiteInspection::findOrFail($round->id), InspectionDeliveryAttempt::SOURCE_INITIAL_DISPATCH);
+
+            $jobId = $supabase->findFieldJobIdByLocalInspectionId($round->id)
+                ?? throw new \RuntimeException('delivered, but the field job cannot be found');
+            $delivered++;
+        }
+        if (DB::table('site_inspections')->where('id', $round->id)->value('delivery_status') !== 'delivered') {
+            throw new \RuntimeException('the bridge did not confirm delivery');
+        }
+
+        // Delivered seconds after the Planning Officer assigned it, not today.
+        $created = Carbon::parse($round->getRawOriginal('created_at'));
+        $sent = $created->copy()->addSeconds(3);
+        $ack = $created->copy()->addSeconds(6);
+        DB::table('inspection_delivery_attempts')->where('site_inspection_id', $round->id)->update(['attempted_at' => $sent, 'completed_at' => $ack, 'created_at' => $sent]);
+        DB::table('site_inspections')->where('id', $round->id)->update([
+            'last_delivery_attempt_at' => $sent, 'delivered_at' => $ack,
+            'updated_at' => $round->getRawOriginal('submitted_at') ?? $created,
+        ]);
+        $this->remote()->patch("field_jobs?id=eq.{$jobId}", ['created_at' => $this->utc($created)])->throw();
+
+        return $jobId;
+    }
+
+    /** What the inspector's phone records while working a returned round: steps, GPS, checklist, findings, activity feed. */
+    private function completeOnApp(SupabaseService $supabase, SiteInspection $round, string $jobId): bool
+    {
+        $job = $this->remote()->get('field_jobs', ['id' => "eq.{$jobId}", 'select' => 'status'])->throw()->json();
+        if (($job[0]['status'] ?? null) === 'completed') {
+            return false;
+        }
+
+        $submitted = Carbon::parse($round->getRawOriginal('submitted_at'));
+        $span = mt_rand(20, 45) * 60;
+        $start = $submitted->copy()->subSeconds($span);
+        $at = fn (float $share) => $start->copy()->addSeconds((int) round($span * $share));
+        $steps = [1 => $at(0.03), 2 => $at(0.12), 3 => $at(0.45), 4 => $at(0.65), 5 => $at(0.92)];
+        $gps = $steps[2]->copy()->subSecond();
+        $checklist = $round->checklist_data ?? [];
+
+        $this->remote()->patch('field_jobs?' . $this->query($supabase->scopedFilters(['id' => "eq.{$jobId}"])), [
+            'status'                    => 'completed',
+            'current_step'              => 6,
+            'started_at'                => $this->utc($start->copy()->addSeconds(5)),
+            'step_timestamps'           => array_map(fn ($t) => $t->copy()->utc()->format('Y-m-d\TH:i:s.u\Z'), $steps),
+            'gps_confirmed_at'          => $this->utc($gps),
+            'confirmed_latitude'        => $round->confirmed_latitude,
+            'confirmed_longitude'       => $round->confirmed_longitude,
+            'gps_accuracy_m'            => $round->gps_accuracy_m,
+            'checklist_data'            => $checklist,
+            'checklist_completed_count' => count(array_filter($checklist, fn ($c) => $c['checked'] ?? false)),
+            'checklist_total_count'     => count($checklist),
+            'photo_paths'               => [],
+            'photo_count'               => 0,
+            'inspection_result'         => $round->inspection_result,
+            'is_compliant'              => $round->is_compliant,
+            'findings'                  => $round->findings,
+            'observations'              => $round->observations,
+            'discrepancies'             => $round->discrepancies,
+            'recommendations'           => $round->recommendations,
+            'inspector_notes'           => $round->inspector_notes,
+            'submitted_at'              => $this->utc($submitted),
+            'updated_at'                => $this->utc($submitted),
+        ])->throw();
+
+        // The local copy keeps the app's GPS time, so the pull-back changes nothing.
+        DB::table('site_inspections')->where('id', $round->id)->update(['gps_confirmed_at' => $gps]);
+
+        $inspector = $this->profileId($round->inspector_id);
+        $place = DB::table('parcels')->where('id', $round->parcel_id)->value('barangay');
+        $feed = [];
+        foreach ($steps as $n => $t) {
+            if ($n === 2) {
+                $feed[] = ['gps_confirmed', 'GPS verified on-site', $gps];
+            }
+            $feed[] = ['step_completed', "Completed Step {$n}: " . self::APP_STEPS[$n], $t];
+        }
+        $feed[] = ['inspection_completed', 'Inspection completed', $submitted];
+        $this->remote()->post('activity_log', array_map(fn ($e) => [
+            'inspector_id' => $inspector, 'field_job_id' => $jobId, 'event_type' => $e[0], 'title' => $e[1], 'subtitle' => $place,
+            'occurred_at' => $this->utc($e[2]), 'created_at' => $this->utc($e[2]), 'is_read' => true,
+        ], $feed))->throw();
+
+        return true;
+    }
+
+    /** Remove the remote copies of the given sample applications. */
+    private function unmirror(array $appIds, array $references): void
+    {
+        if (! config('services.supabase.url') || ! config('services.supabase.service_key')) {
             return;
         }
 
         $supabase = app(SupabaseService::class);
-        $failed = 0;
-        foreach ($this->trackRows as $row) {
-            try {
-                $payload = $row;
-                unset($payload['created_at']);
-                $payload['scheduled_date'] = $row['scheduled_date'] ? Carbon::parse($row['scheduled_date'])->toIso8601String() : null;
-                $supabase->pushStatusTrack($payload) || $failed++;
-            } catch (\Throwable) {
-                $failed++;
-            }
-        }
-        $this->line(sprintf('Status timeline: %d entries pushed to Supabase, %d failed.', count($this->trackRows) - $failed, $failed));
+        $rounds = DB::table('site_inspections')->whereIn('zoning_application_id', $appIds)->pluck('id')->all();
+        $parcels = DB::table('parcels')->whereIn('zoning_application_id', $appIds)->pluck('id')->all();
+        $in = fn (array $ids) => 'in.(' . implode(',', $ids) . ')';
+        $scoped = fn (string $table, array $filters) => $this->remote()->delete($table . '?' . $this->query($supabase->scopedFilters($filters)))->throw();
 
-        foreach (array_keys($this->openInspectionIds) as $id) {
-            PushInspectionToSupabase::dispatch(SiteInspection::findOrFail($id));
+        try {
+            if ($rounds) {
+                $jobs = array_column($this->remote()->get('field_jobs', $supabase->scopedFilters(['local_inspection_id' => $in($rounds), 'select' => 'id']))->throw()->json(), 'id');
+                if ($jobs) {
+                    $quoted = 'in.(' . implode(',', $jobs) . ')';
+                    $this->remote()->delete('activity_log?' . $this->query(['field_job_id' => $quoted]))->throw();
+                    $scoped('field_job_reviews', ['field_job_id' => $quoted]);
+                }
+                $scoped('field_jobs', ['local_inspection_id' => $in($rounds)]);
+            }
+            if ($parcels) {
+                $scoped('supabase_parcels', ['local_parcel_id' => $in($parcels)]);
+            }
+            $scoped('supabase_zoning_applications', ['local_application_id' => $in($appIds)]);
+            foreach ($references as $reference => $form) {
+                $this->remote()->delete('application_status_tracks?' . $this->query(['reference_number' => "eq.{$reference}", 'form_number' => "eq.{$form}"]))->throw();
+            }
+            $this->line('Removed their FieldSync jobs, reviews, activity and tracker timelines from Supabase.');
+        } catch (\Throwable $e) {
+            $this->warn('Supabase cleanup failed (' . $e->getMessage() . '); remote copies may remain.');
         }
-        $this->line(count($this->openInspectionIds) . ' open inspection rounds queued for the FieldSync app.');
+    }
+
+    private function remote(): PendingRequest
+    {
+        $key = config('services.supabase.service_key');
+
+        return Http::baseUrl(rtrim(config('services.supabase.url'), '/') . '/rest/v1/')
+            ->withHeaders(['apikey' => $key, 'Authorization' => "Bearer {$key}", 'Prefer' => 'return=minimal'])
+            ->timeout(20);
+    }
+
+    private function query(array $filters): string
+    {
+        return http_build_query($filters, '', '&', PHP_QUERY_RFC3986);
+    }
+
+    /** A local (app timezone) time as the UTC instant Supabase stores. */
+    private function utc(mixed $time): string
+    {
+        $time = $time instanceof \DateTimeInterface ? Carbon::instance($time) : Carbon::parse($time, config('app.timezone'));
+
+        return $time->utc()->toIso8601String();
+    }
+
+    private function profileId(int $userId): string
+    {
+        static $ids = [];
+
+        return $ids[$userId] ??= $this->remote()->get('profiles', [
+            'handshake_key' => 'eq.' . DB::table('users')->where('id', $userId)->value('handshake_key'), 'select' => 'id',
+        ])->throw()->json()[0]['id'] ?? throw new \RuntimeException("no FieldSync profile for user #{$userId}");
     }
 
     // ── Purge ───────────────────────────────────────────────────────────────
 
     private function purge(): int
     {
-        $apps = DB::table('zoning_applications')
-            ->where('email', 'like', '%@' . self::EMAIL_DOMAIN)
-            ->where('form_number', 'like', self::FORM_PREFIX . '%')
-            ->pluck('reference_number', 'id');
+        $apps = $this->sampleApplications();
 
         if ($apps->isEmpty()) {
             $this->info('No sample applications found.');
@@ -991,12 +1517,15 @@ class SeedDemoApplications extends Command
             $this->comment('Dry run: nothing deleted.');
             return self::SUCCESS;
         }
-        if (! $this->option('force') && ! $this->confirm('Delete them with their parcels, reviews, inspections, permits, timeline and audit entries?')) {
+        if (! $this->option('force') && ! $this->confirm('Delete them with their parcels, reviews, inspections, permits, timeline and audit entries (here and on Supabase)?')) {
             return self::FAILURE;
         }
 
         $ids = $apps->keys()->all();
         $files = DB::table('generated_permits')->whereIn('zoning_application_id', $ids)->pluck('file_path')->all();
+
+        // Remote first: the local rows hold the ids the remote copies are keyed by.
+        $this->unmirror($ids, DB::table('zoning_applications')->whereIn('id', $ids)->pluck('form_number', 'reference_number')->all());
 
         DB::transaction(function () use ($ids, $apps) {
             DB::table('audit_trail')->whereIn('application_id', $ids)->delete();
@@ -1016,12 +1545,32 @@ class SeedDemoApplications extends Command
         }
 
         $this->info("Deleted {$apps->count()} sample applications and " . count($files) . ' permit files.');
-        $this->comment('Anything pushed earlier with --sync stays in Supabase.');
 
         return self::SUCCESS;
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
+
+    /** reference_number by id of the sample applications (both markers, so never a real filing). */
+    private function sampleApplications(): \Illuminate\Support\Collection
+    {
+        return DB::table('zoning_applications')
+            ->where('email', 'like', '%@' . self::EMAIL_DOMAIN)
+            ->where('form_number', 'like', self::FORM_PREFIX . '%')
+            ->orderBy('id')
+            ->pluck('reference_number', 'id');
+    }
+
+    /** The featured inspector about half the time, otherwise the others in turn (at random with --shuffle). */
+    private function nextInspector(): User
+    {
+        $others = array_values(array_filter($this->inspectors, fn ($u) => $u->id !== $this->featured?->id));
+        if ($this->featured && (! $others || mt_rand(1, 100) <= 50)) {
+            return $this->featured;
+        }
+
+        return $this->option('shuffle') ? $this->pick($others) : $others[$this->inspectorTurn++ % count($others)];
+    }
 
     private function deleteWrittenFiles(): void
     {

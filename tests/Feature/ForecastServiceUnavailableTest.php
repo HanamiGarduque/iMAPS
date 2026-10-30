@@ -4,35 +4,11 @@ namespace Tests\Feature;
 
 use App\Services\ForecastService;
 use Exception;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class ForecastServiceUnavailableTest extends TestCase
 {
-    use DatabaseTransactions;
-
-    private function seedRecordedHistory(): void
-    {
-        DB::table('historical_data')->insert([
-            [
-                'encoding_date' => '2024-01-15',
-                'barangay' => 'Namunga',
-                'application_type' => 'Locational Clearance',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
-            [
-                'encoding_date' => '2024-04-20',
-                'barangay' => 'Namuco',
-                'application_type' => 'Locational Clearance',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
-        ]);
-    }
-
     public function test_missing_api_key_fails_loudly_instead_of_calling_the_service(): void
     {
         config(['services.forecast.api_key' => null]);
@@ -59,8 +35,6 @@ class ForecastServiceUnavailableTest extends TestCase
 
     public function test_an_unreachable_service_throws_rather_than_returning_invented_pins(): void
     {
-        $this->seedRecordedHistory();
-
         config([
             'services.forecast.url' => 'http://localhost:8002/api/v1/forecast',
             'services.forecast.api_key' => 'test-key',
@@ -75,31 +49,8 @@ class ForecastServiceUnavailableTest extends TestCase
         }
     }
 
-    public function test_an_empty_history_fails_closed(): void
+    public function test_the_run_fetches_the_service_forecast_without_sending_history(): void
     {
-        DB::table('historical_data')->delete();
-
-        config([
-            'services.forecast.url' => 'http://localhost:8002/api/v1/forecast',
-            'services.forecast.api_key' => 'test-key',
-        ]);
-        Http::fake();
-
-        try {
-            (new ForecastService)->generateForecast();
-            $this->fail('A forecast with no recorded history must throw.');
-        } catch (\DomainException $e) {
-            // A data precondition, not an outage: the controller answers 422.
-            $this->assertStringContainsString('No recorded clearance history', $e->getMessage());
-        }
-
-        Http::assertNothingSent();
-    }
-
-    public function test_the_run_sends_the_recorded_history_as_the_csv(): void
-    {
-        $this->seedRecordedHistory();
-
         config([
             'services.forecast.url' => 'http://localhost:8002/api/v1/forecast',
             'services.forecast.api_key' => 'test-key',
@@ -108,21 +59,18 @@ class ForecastServiceUnavailableTest extends TestCase
 
         (new ForecastService)->generateForecast();
 
+        // The service forecasts from its own MPDO-based history; nothing from
+        // this database is uploaded.
         Http::assertSent(function ($request) {
-            $csv = $request->data()[0]['contents'];
-            // fputcsv() quotes the fields that need it; the service reads it with pandas.
-            $this->assertStringContainsString('Encoding Date', $csv);
-            $this->assertStringContainsString('2024-01-15,Namunga,', $csv);
-            $this->assertStringContainsString('2024-04-20,Namuco,', $csv);
-
-            return true;
+            return $request->method() === 'GET'
+                && $request->url() === 'http://localhost:8002/api/v1/forecast'
+                && $request->hasHeader('X-API-Key', 'test-key')
+                && $request->body() === '';
         });
     }
 
     public function test_a_predicted_count_is_passed_through_without_inventing_records(): void
     {
-        $this->seedRecordedHistory();
-
         config([
             'services.forecast.url' => 'http://localhost:8002/api/v1/forecast',
             'services.forecast.api_key' => 'test-key',
@@ -147,5 +95,34 @@ class ForecastServiceUnavailableTest extends TestCase
             'predicted' => 7.0,
         ]], $result['demand']);
         $this->assertSame(42.3, $result['metrics']['validation_wmape']);
+    }
+
+    public function test_the_services_history_is_passed_through_with_imaps_spellings(): void
+    {
+        config([
+            'services.forecast.url' => 'http://localhost:8002/api/v1/forecast',
+            'services.forecast.api_key' => 'test-key',
+        ]);
+        Http::fake(['*' => Http::response([
+            'forecasts' => [],
+            'metrics' => [],
+            'history' => [
+                ['label' => '2025 Q4', 'year' => 2025, 'quarter' => 4, 'total' => 179,
+                 'barangays' => ['Quilib' => 18, 'Nazi' => 2, 'Palacpac' => 1]],
+                ['label' => 'broken', 'barangays' => []],
+            ],
+        ], 200)]);
+
+        $result = (new ForecastService)->generateForecast();
+
+        // The comparison baseline for "than last year" is the service's own
+        // history, with its shapefile spellings mapped back to iMAPS names.
+        $this->assertSame([[
+            'year' => 2025,
+            'quarter' => 4,
+            'label' => '2025 Q4',
+            'total' => 179,
+            'barangays' => ['Quilib' => 18, 'Nasi' => 2, 'Palakpak' => 1],
+        ]], $result['history']);
     }
 }

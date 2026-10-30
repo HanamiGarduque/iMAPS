@@ -20,6 +20,19 @@ router.on('invalid', (event) => {
     }
 });
 
+// A page frame marked overflow-hidden can still be scrolled by the browser:
+// focusing or scrolling-into-view something inside it slides the whole page
+// up and leaves a blank band below. Frames that are not meant to scroll are
+// put back where they belong, on every page. Small clipped boxes (text
+// truncation, sliders) are left alone.
+document.addEventListener('scroll', (e) => {
+    const el = e.target
+    if (!(el instanceof HTMLElement) || el.clientHeight < 200) return
+    const style = getComputedStyle(el)
+    if (style.overflowY === 'hidden' || style.overflowY === 'clip') { if (el.scrollTop) el.scrollTop = 0 }
+    if (style.overflowX === 'hidden' || style.overflowX === 'clip') { if (el.scrollLeft && el.clientWidth >= 200) el.scrollLeft = 0 }
+}, true)
+
 createInertiaApp({
     resolve: name =>
         resolvePageComponent(

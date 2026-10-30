@@ -11,14 +11,15 @@ use Illuminate\Support\Facades\DB;
  *     LUM = −Σ pᵢ ln pᵢ / ln K
  *
  * where pᵢ is land-use category i's share of the land area and K is the number
- * of categories (the 11 official CLUP 2030 categories). 0 means a single land
- * use; 1 means all eleven in equal shares.
+ * of categories (the 10 CLUP 2030 categories counted here). 0 means a single
+ * land use; 1 means all ten in equal shares.
  *
  * Two versions of the score are computed:
- *  - recorded mix: the lot area of every clearance, certificate and permit in
- *    historical_data over the last five years, grouped by the category of the
- *    zone it was filed under. This is the headline score. It moves as new
- *    records come in, so it tracks what is actually being developed.
+ *  - recorded mix: the lot area of the locational clearances for development
+ *    (see DEVELOPMENT_PURPOSES) in historical_data over the last five years,
+ *    grouped by the category of the zone each was filed under. This is the
+ *    headline score. It moves as new records come in, so it tracks what is
+ *    actually being developed.
  *  - plan mix: the area of each CLUP 2030 zone. It does not change until the
  *    plan is amended, so it is the baseline the recorded mix is compared to.
  *
@@ -49,13 +50,42 @@ class LandUseMixService
      */
     public const MIN_RECORDS = 5;
 
+    /**
+     * Only locational clearances are counted: each is one proposed project on
+     * one lot. Zoning certificates only confirm a lot's zone (often for a loan
+     * or a sale), and development permits usually follow a clearance for the
+     * same land, so counting either would add land that is not being
+     * developed, or the same land twice.
+     */
+    public const APPLICATION_TYPE = 'Locational Clearance';
+
+    /**
+     * Clearance purposes that are a development. The rest (bank financing,
+     * business permit, environmental compliance, general property clearance,
+     * land title verification) are paperwork for a lot that is not changing
+     * use. A purpose not listed here is not counted.
+     */
+    public const DEVELOPMENT_PURPOSES = [
+        'Subdivision Phase 1',
+        'Residential Construction',
+        'Commercial Building Construction',
+        'Commercial Complex Development',
+        'Warehouse/Factory Construction',
+        'Industrial Park Expansion',
+        'Agribusiness Construction',
+        'Facility/Structure Construction',
+        'Farm Development Permit',
+        'Site Development Permit',
+    ];
+
     /** Filing-record spellings the zoning map spells differently. */
     public const ALIASES = ['palacpac' => 'palakpak'];
 
     /**
-     * CLUP 2030 zone code => land-use category, as in clupZones.js. Roads are
-     * left out: no clearance is filed for a road, so counting them would give
-     * the plan a land use the records can never have.
+     * CLUP 2030 zone code => land-use category, as in clupZones.js. Utilities
+     * and roads (UTS-Z, CMRF, ROAD, PROPOSED ROAD) are left out of both the
+     * filings and the plan: they serve the land around them rather than being
+     * a land use of their own, so they are not part of the mix.
      */
     public const CATEGORIES = [
         'PDA-SZ' => 'agricultural', 'PTA-SZ-RA' => 'agricultural', '5491-APDA-SZ' => 'agricultural',
@@ -68,11 +98,10 @@ class LandUseMixService
         'GI-Z' => 'institutional',
         'PR-Z' => 'parks', 'C/MP-Z' => 'parks',
         'T-Z' => 'tourism', 'ECT-Z' => 'tourism',
-        'UTS-Z' => 'utilities', 'CMRF' => 'utilities',
     ];
 
     /** K in the formula: every category a zone can fall in. */
-    public const CATEGORY_COUNT = 11;
+    public const CATEGORY_COUNT = 10;
 
     /** Normalised Shannon index over category => area, rounded to two places. */
     public static function shannon(array $areas): float
@@ -106,7 +135,7 @@ class LandUseMixService
         return $out;
     }
 
-    /** Category shares as [{name, value}] in percent, largest first. */
+    /** Category shares as [{name, value, ha}], value in percent, largest first. */
     public static function distribution(array $areas, int $precision = 1): array
     {
         $total = array_sum($areas);
@@ -115,7 +144,7 @@ class LandUseMixService
         }
         $rows = [];
         foreach ($areas as $cat => $area) {
-            $rows[] = ['name' => $cat, 'value' => round($area / $total * 100, $precision)];
+            $rows[] = ['name' => $cat, 'value' => round($area / $total * 100, $precision), 'ha' => round($area / 10000, 2)];
         }
         usort($rows, fn ($a, $b) => $b['value'] <=> $a['value']);
 
@@ -344,13 +373,17 @@ class LandUseMixService
         ];
     }
 
-    /** Filings with a zone and lot area inside [from, to]. */
+    /** Locational clearances for development with a zone and lot area inside [from, to]. */
     public function developmentRecords(string $from, string $to)
     {
+        $purposes = array_map('mb_strtolower', self::DEVELOPMENT_PURPOSES);
+
         return DB::table('historical_data')
             ->selectRaw('barangay, zoning_code, lot_area_sqm,
                 EXTRACT(YEAR FROM encoding_date::date)::int AS year,
                 EXTRACT(QUARTER FROM encoding_date::date)::int AS quarter')
+            ->whereRaw('LOWER(TRIM(application_type)) = ?', [mb_strtolower(self::APPLICATION_TYPE)])
+            ->whereRaw('LOWER(TRIM(purpose)) IN ('.implode(',', array_fill(0, count($purposes), '?')).')', $purposes)
             ->whereNotNull('zoning_code')
             ->where('lot_area_sqm', '>', 0)
             ->whereRaw('encoding_date::date BETWEEN ? AND ?', [$from, $to])

@@ -1,18 +1,29 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import ROSARIO_BARANGAYS_DATA from './rosario_barangays_data.json';
-import MixDonut from './diversity/MixDonut';
 import { ZONE_CATEGORIES } from '@/utils/clupZones';
 import useAnimatedNumber from '@/utils/useAnimatedNumber';
-import { getLens, resolveLensValue, rankByLens, matchesBand, computeDiversityAggregates } from '@/utils/diversityTheme';
+import { getLens, resolveLensValue, computeBandCounts } from '@/utils/diversityTheme';
 
 // Land-use mix for the municipality or the selected barangay, over the rolling
-// five-year window picked on the map's timeline (the latest by default): the
-// score, how it compares with the CLUP 2030 plan, and what the filed land is
-// made of. Every barangay ranked follows, five at a time; hovering a row
-// lights the barangay on the map, clicking opens it.
+// five-year window picked on the map's timeline (the latest by default). Built
+// like the Application Tracking panel so it fits without scrolling: the score
+// tiles, one stacked bar of what was filed, and one row of band circles. The
+// map does the ranking; clicking a band lights its barangays there.
 const Question = ({ children, className = "" }) => (
     <h3 className={`text-[12px] font-semibold leading-snug text-slate-800 ${className}`}>{children}</h3>
 );
+
+const CARD = "shrink-0 border-b border-slate-200";
+const TOP_ZONES = 3;
+// Zones listed under "How much of each zone was filed on?".
+const ZONE_ROWS = 4;
+
+const fmtHa = (v) => (v === 0 ? "0" : v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString('en-PH'));
+const fmtOfZone = (filed, zoned) => {
+    if (zoned <= 0) return "—";
+    const p = (filed / zoned) * 100;
+    return p < 0.1 ? "<0.1%" : p < 10 ? `${p.toFixed(1)}%` : `${Math.round(p)}%`;
+};
 
 export default function DiversityPanel({
     overallDiversity,
@@ -21,14 +32,12 @@ export default function DiversityPanel({
     onSelectBgy = () => {},
     bgyStats = {},
     bandFilter = "all",
-    hoveredBgy = null,
+    onSelectBand = () => {},
     onHoverBgy = () => {},
 }) {
     const lens = getLens("mix");
     const isBgy = Boolean(selectedBgy?.name);
     const bgyName = selectedBgy?.name || "";
-    const PAGE_SIZE = 5;
-    const [page, setPage] = useState(0);
 
     const matchedGeoBgy = useMemo(
         () => (bgyName ? ROSARIO_BARANGAYS_DATA.find((b) => b.name.toLowerCase() === bgyName.toLowerCase()) : null),
@@ -37,10 +46,6 @@ export default function DiversityPanel({
     // The live backend record is authoritative; the click payload is a fallback.
     const bgyStat = useMemo(() => (bgyName ? bgyStats?.[bgyName] || selectedBgy?.data || {} : {}), [bgyStats, bgyName, selectedBgy]);
 
-    const aggregates = useMemo(
-        () => computeDiversityAggregates(Object.entries(bgyStats || {}).map(([name, s]) => ({ name, diversity: s?.diversity }))),
-        [bgyStats]
-    );
     const municipalScore = typeof overallDiversity?.score === 'number' ? overallDiversity.score : null;
 
     // null = too few filings in this period to score.
@@ -49,13 +54,9 @@ export default function DiversityPanel({
     const animated = useAnimatedNumber(score ?? 0);
     const shown = score == null ? "—" : lens.format(animated);
 
-    // The donut is the land-use class of the filings in the selected period,
-    // so it moves with the timeline; the plan is only the comparison column.
     const distribution = isBgy ? bgyStat.distribution || matchedGeoBgy?.dist || [] : overallDiversity?.distribution || [];
-    const planDistribution = (isBgy ? bgyStat.baselineDistribution : overallDiversity?.planDistribution) || [];
     const fromRecords = (isBgy ? bgyStat.mixSource : overallDiversity?.source) === 'records';
     const records = isBgy ? bgyStat.mixRecords ?? 0 : overallDiversity?.records ?? 0;
-    const developedHa = isBgy ? bgyStat.developedHa ?? 0 : overallDiversity?.developedHa ?? 0;
     const planScore = isBgy ? bgyStat.clupTargetDiversity : overallDiversity?.planScore;
     const month = (d) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', year: 'numeric' }) : '');
     // A finished year reads "in 2023"; the current one is still running, so it
@@ -64,46 +65,152 @@ export default function DiversityPanel({
     const yearPhrase = !period?.year ? ""
         : period.year === now.getFullYear() ? `, as of ${now.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })}`
         : ` in ${period.year}`;
-    const periodLabel =period?.from ? `${month(period.from)} – ${month(period.to)}` : 'the last five years';
+    const periodLabel = period?.from ? `${month(period.from)} – ${month(period.to)}` : 'the last five years';
 
-    const ranking = useMemo(
-        () => rankByLens("mix", bgyStats).filter((r) => matchesBand("mix", bandFilter, r.stat)),
-        [bgyStats, bandFilter]
+    // The bar draws every zone; the chips name the biggest few and fold the rest.
+    const segments = useMemo(() => {
+        const zones = [...distribution]
+            .filter((d) => d.value > 0)
+            .sort((a, b) => b.value - a.value)
+            .map((d) => ({ ...d, zone: ZONE_CATEGORIES[d.name] || { label: d.name, fill: "#e2e8f0", stroke: "#94a3b8" } }));
+        const top = zones.slice(0, TOP_ZONES);
+        const rest = zones.slice(TOP_ZONES).reduce((sum, d) => sum + d.value, 0);
+        return { zones, chips: rest > 0 ? [...top, { name: "__other", value: Math.round(rest), zone: { label: "Other", fill: "#e2e8f0", stroke: "#94a3b8" } }] : top };
+    }, [distribution]);
+
+    const bandCounts = useMemo(() => computeBandCounts("mix", bgyStats), [bgyStats]);
+
+    // A selected barangay's score, band and land use are on its pop-up on the
+    // map, so the panel answers the other question: how it compares with its
+    // CLUP 2030 plan and with the town.
+    // Filings are compared with the plan as filed area ÷ zoned area, not share
+    // against share: the plan zones all land, filings are only the lots being
+    // developed, so their two splits are not meant to match.
+    const planDistribution = isBgy ? bgyStat.baselineDistribution || [] : [];
+    const developedHa = bgyStat.developedHa ?? 0;
+    const zoneRows = useMemo(() => {
+        const rows = segments.zones.map((d) => {
+            const filedHa = d.ha ?? (d.value / 100) * developedHa;
+            const zonedHa = planDistribution.find((p) => p.name === d.name)?.ha ?? 0;
+            // Filings the plan cannot hold: a zone this barangay does not
+            // have, or more lot area than the zone has.
+            const check = zonedHa === 0
+                ? `${fmtHa(filedHa)} ha was filed under ${d.zone.label} zoning, but CLUP 2030 zones no land in ${bgyName} as ${d.zone.label}. Check these filings' zoning codes.`
+                : filedHa > zonedHa
+                    ? `More lot area was filed under ${d.zone.label} zoning (${fmtHa(filedHa)} ha) than CLUP 2030 zones for it in ${bgyName} (${fmtHa(zonedHa)} ha). The same lot filed more than once, or a wrong zoning code, would do this.`
+                    : null;
+            return { ...d, filedHa, zonedHa, check };
+        }).sort((a, b) => b.filedHa - a.filedHa);
+        // The zones with the most land filed on, and any that need checking.
+        return rows.filter((r, i) => i < ZONE_ROWS || r.check);
+    }, [segments, planDistribution, developedHa, bgyName]);
+    const moreZones = segments.zones.length - zoneRows.length;
+
+    // Within 0.05 reads as on par: smaller gaps are noise in a 0–1 index.
+    const gap = (diff, what) => (Math.abs(diff) < 0.05
+        ? `close to ${what}`
+        : `${diff > 0 ? "more" : "less"} mixed than ${what}`);
+    const compareLine = score == null ? "" : [
+        typeof planScore === 'number' && gap(score - planScore, "its CLUP 2030 target"),
+        municipalScore != null && gap(score - municipalScore, "the Rosario average"),
+    ].filter(Boolean).join(" and ");
+
+    // Same tiles as the town view: a large headline figure, then the smaller
+    // right-aligned comparison tiles.
+    const Tile = ({ value, label }) => (
+        <div className="shrink-0 min-w-[92px] flex flex-col justify-center rounded-lg border border-slate-200 px-3 py-2 text-right">
+            <span className="block text-[15px] font-semibold leading-tight tabular-nums text-slate-800">
+                {typeof value === 'number' ? lens.format(value) : "—"}
+            </span>
+            <span className="block text-[10.5px] leading-tight text-slate-500">{label}</span>
+        </div>
     );
 
-    useEffect(() => setPage(0), [bandFilter, period?.label]);
-    const pageCount = Math.max(1, Math.ceil(ranking.length / PAGE_SIZE));
-    const safePage = Math.min(page, pageCount - 1);
-    const pageStart = safePage * PAGE_SIZE;
-    const visibleRanking = ranking.slice(pageStart, pageStart + PAGE_SIZE);
+    if (isBgy) {
+        return (
+            <div className="relative shrink-0 flex flex-col bg-white">
+                <section className={`${CARD} px-4 pt-3 pb-3`}>
+                    <Question className="mb-2">Is {bgyName} on track with the CLUP 2030 plan{yearPhrase}?</Question>
+                    <div className="flex items-stretch gap-2">
+                        <div className="flex-1 min-w-0 flex items-center rounded-lg border border-slate-200 px-3 py-2">
+                            <span className="text-[34px] font-semibold leading-none tabular-nums text-slate-900">{shown}</span>
+                        </div>
+                        <Tile value={planScore} label="CLUP 2030 plan" />
+                        <Tile value={municipalScore} label="All of Rosario" />
+                    </div>
+                    <p className="mt-2 text-[11.5px] leading-snug text-slate-600">
+                        {score == null
+                            ? `${records} filing${records === 1 ? "" : "s"} in ${periodLabel}, too few to score.`
+                            : `Land use in ${bgyName} is ${compareLine}.`}
+                    </p>
+                </section>
 
-    const unscored = Object.values(bgyStats || {}).filter((st) => typeof st?.diversity !== 'number').length;
-
-    const signed = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`;
-    const context = isBgy
-        ? score == null
-            ? `${records} filing${records === 1 ? "" : "s"} in this period`
-            : municipalScore == null ? "" : `${signed(score - municipalScore)} vs all of Rosario`
-        : `All of Rosario · ${aggregates.count} barangays scored`;
+                {score != null && fromRecords && zoneRows.length > 0 && (
+                    <section className={`${CARD} px-4 pt-3 pb-3`}>
+                        {/* One row per zone: the whole bar is the land CLUP 2030 zones for
+                            that use in the barangay, the filled part is how much of it was
+                            filed on. One measure, so the bar and the figure always agree. */}
+                        <div className="flex items-baseline justify-between gap-2 mb-2">
+                            <Question>How much of each zone was filed on?</Question>
+                            <span className="text-[10.5px] text-slate-400">Filed of CLUP zone</span>
+                        </div>
+                        <ul className="space-y-1.5">
+                            {zoneRows.map((r) => {
+                                const pct = r.zonedHa > 0 ? Math.min(100, (r.filedHa / r.zonedHa) * 100) : 100;
+                                return (
+                                    <li
+                                        key={r.name}
+                                        className="grid grid-cols-[10px_minmax(0,1fr)_minmax(0,1.2fr)_40px] items-center gap-x-2"
+                                        title={r.check || `${fmtHa(r.filedHa)} ha filed on, of the ${fmtHa(r.zonedHa)} ha CLUP 2030 zones ${r.zone.label} in ${bgyName}`}
+                                    >
+                                        <span className="w-2.5 h-2.5 rounded-[2px] border" style={{ backgroundColor: r.zone.fill, borderColor: r.zone.stroke }} aria-hidden="true" />
+                                        <span className="min-w-0">
+                                            <span className="flex items-center gap-1.5 text-[11.5px] leading-tight text-slate-700">
+                                                <span className="truncate">{r.zone.label}</span>
+                                                {r.check && (
+                                                    <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] bg-amber-100 text-amber-800 border border-amber-300">
+                                                        Check
+                                                    </span>
+                                                )}
+                                            </span>
+                                            <span className="block text-[10px] leading-tight tabular-nums text-slate-400">
+                                                {fmtHa(r.filedHa)} of {r.zonedHa > 0 ? fmtHa(r.zonedHa) : "0"} ha
+                                            </span>
+                                        </span>
+                                        <span className="h-2 rounded-sm bg-slate-100 border border-slate-200 overflow-hidden" aria-hidden="true">
+                                            <span
+                                                className="block h-full transition-[width] duration-500"
+                                                style={{ width: r.filedHa > 0 ? `max(2px, ${pct}%)` : 0, backgroundColor: r.zone.stroke }}
+                                            />
+                                        </span>
+                                        <span className="text-right text-[11.5px] tabular-nums font-semibold text-slate-900">{fmtOfZone(r.filedHa, r.zonedHa)}</span>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                        <p className="mt-2 text-[10.5px] leading-snug text-slate-400">
+                            Bar = CLUP 2030 zone · fill = filed, {periodLabel}
+                            {moreZones > 0 ? ` · +${moreZones} smaller zone${moreZones === 1 ? "" : "s"}` : ""}
+                        </p>
+                    </section>
+                )}
+            </div>
+        );
+    }
 
     return (
-        <div className="relative flex-1 min-h-0 flex flex-col bg-white">
-            <div className="flex-1 min-h-0 overflow-y-auto">
-            {/* Same building blocks as the Application Tracking panel: question
-                headings, a big headline figure, bordered tiles, sections split by rules. */}
-            <section className="shrink-0 border-b border-slate-200 px-4 pt-3 pb-3">
+        <div className="relative shrink-0 flex flex-col bg-white">
+            <div>
+            <section className={`${CARD} px-4 pt-3 pb-3`}>
                 <Question className="mb-2">How mixed is land use in {isBgy ? bgyName : "Rosario"}{yearPhrase}?</Question>
                 <div className="flex items-stretch gap-2">
                     <div className="flex-1 min-w-0 flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2">
                         <span className="text-[34px] font-semibold leading-none tabular-nums text-slate-900">{shown}</span>
-                        <span className="min-w-0">
-                            <span
-                                className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors duration-500"
-                                style={{ backgroundColor: headline.color, color: headline.onFill }}
-                            >
-                                {headline.band.classification}
-                            </span>
-                            <span className="block text-[10.5px] text-slate-500 mt-1">Mix score, 0 to 1</span>
+                        <span
+                            className="inline-block text-[11px] font-semibold px-2 py-0.5 rounded-md transition-colors duration-500"
+                            style={{ backgroundColor: headline.color, color: headline.onFill }}
+                        >
+                            {headline.band.classification}
                         </span>
                     </div>
                     {typeof planScore === 'number' && (
@@ -114,150 +221,79 @@ export default function DiversityPanel({
                     )}
                 </div>
                 <p className="mt-2 text-[11.5px] leading-snug text-slate-600">{headline.band.summary}</p>
-                <p className="mt-1 text-[10.5px] tabular-nums text-slate-400">{context}</p>
             </section>
 
-            {/* A selected barangay's filed land use is on its pop-up card on the map. */}
-            {!isBgy && (
-            <div className="shrink-0 px-4 py-3 border-b border-slate-200">
-                <div className="flex items-baseline justify-between gap-2 mb-2">
-                    <Question>What land use was filed?</Question>
-                    {fromRecords && (
-                        <span className="text-[10.5px] tabular-nums text-slate-400">
-                            {Number(records).toLocaleString('en-PH')} filings · {Number(developedHa).toLocaleString('en-PH')} ha
-                        </span>
-                    )}
-                </div>
-                {score == null || !fromRecords || distribution.length === 0 ? (
-                    <p className="text-[11px] text-slate-500 py-3 text-center">
+            <section className={`${CARD} px-4 pt-3 pb-3`}>
+                <Question className="mb-2">What land use was filed?</Question>
+                {score == null || !fromRecords || segments.zones.length === 0 ? (
+                    <p className="text-[11px] text-slate-500 py-1">
                         Too few filings with a zoning code and lot area in {periodLabel} to show.
                     </p>
-                ) : (
-                    <MixDonut distribution={distribution} replayKey={bgyName || "__all__"} centerValue={shown} centerLabel="Mix" />
-                )}
-            </div>
-            )}
-
-            {fromRecords && score != null && distribution.length > 0 && (
-                <div className="shrink-0 border-b border-slate-200">
-                    <div className="flex items-baseline justify-between px-4 pt-3 pb-1.5">
-                        <Question>Does it match the CLUP 2030 plan?</Question>
-                        <span className="text-[10.5px] text-slate-400">Share of area</span>
+                ) : (<>
+                    <div className="flex h-3 rounded-sm overflow-hidden bg-slate-100" role="img" aria-label="Share of filed lot area by zone">
+                        {segments.zones.map((d) => (
+                            <span
+                                key={d.name}
+                                className="h-full border-r border-white last:border-r-0 transition-[width] duration-500"
+                                style={{ width: `${d.value}%`, backgroundColor: d.zone.fill }}
+                                title={`${d.zone.label}: ${d.value}%`}
+                            />
+                        ))}
                     </div>
-                    <div className="grid grid-cols-[12px_1fr_46px_46px] gap-x-2 px-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-400">
-                        <span />
-                        <span>Zone filed under</span>
-                        <span className="text-right">Filed</span>
-                        <span className="text-right">Plan</span>
-                    </div>
-                    <ul className="pb-1">
-                        {distribution.map((d) => {
-                            const zone = ZONE_CATEGORIES[d.name] || { label: d.name, fill: "#e2e8f0", stroke: "#94a3b8" };
-                            const plan = planDistribution.find((p) => p.name === d.name)?.value ?? 0;
-                            // Much more filed than the plan sets aside for it.
-                            const outOfPlan = d.value >= 10 && plan < 2;
-                            return (
-                                <li key={d.name} className="grid grid-cols-[12px_1fr_46px_46px] items-center gap-x-2 px-4 py-[3px] text-[12px]">
-                                    <span className="w-2.5 h-2.5 rounded-[2px] border" style={{ backgroundColor: zone.fill, borderColor: zone.stroke }} aria-hidden="true" />
-                                    <span className="min-w-0 flex items-center gap-1.5 text-slate-700">
-                                        <span className="truncate">{zone.label}</span>
-                                        {outOfPlan && (
-                                            <span
-                                                className="shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] bg-amber-100 text-amber-800 border border-amber-300"
-                                                title={`${d.value}% of the filed lot area is under ${zone.label} zoning, which is ${plan}% of this area in CLUP 2030. Check these filings' zoning codes.`}
-                                            >
-                                                Check
-                                            </span>
-                                        )}
-                                    </span>
-                                    <span className="text-right tabular-nums font-semibold text-slate-900">{d.value}%</span>
-                                    <span className="text-right tabular-nums text-slate-500">{plan}%</span>
-                                </li>
-                            );
-                        })}
+                    <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                        {segments.chips.map((d) => (
+                            <li key={d.name} className="flex items-center gap-1.5 min-w-0 text-[11.5px]">
+                                <span className="w-2.5 h-2.5 shrink-0 rounded-[2px] border" style={{ backgroundColor: d.zone.fill, borderColor: d.zone.stroke }} aria-hidden="true" />
+                                <span className="truncate text-slate-700">{d.zone.label}</span>
+                                <span className="ml-auto tabular-nums font-semibold text-slate-900">{d.value}%</span>
+                            </li>
+                        ))}
                     </ul>
-                    {fromRecords && score != null && typeof planScore === 'number' && (
-                        <p className="px-4 pt-1 text-[11.5px] text-slate-600 leading-snug">
-                            Filed land is {score >= planScore ? "more" : "less"} mixed than the plan ({signed(score - planScore)}).
-                        </p>
-                    )}
-                    <p className="px-4 pt-1 pb-3 text-[10.5px] text-slate-400 leading-snug">
-                        Lot area of filings over the five years to {period?.label || "the latest filing"} ({periodLabel}
-                        {period?.isPartial ? `; records start ${month(period.from)}, so only ${period.quarters} of 20 quarters` : ""}),
-                        by the zone each was filed under. A few large lots can outweigh many small ones. Filings without a zoning code
-                        or lot area are not counted. The mix score above is the Shannon index of this split ÷ ln 11.
+                    <p className="mt-2 text-[10.5px] leading-snug text-slate-400">
+                        Lot area of development clearances, {periodLabel}
                     </p>
-                </div>
-            )}
+                </>)}
+            </section>
 
-            {/* The ranking is for picking a barangay; once one is open it steps aside. */}
-            {!isBgy && (<>
-            <div className="shrink-0 flex items-baseline px-4 pt-2.5 pb-2">
-                <Question className="mr-auto">Which barangays are most mixed?</Question>
-                <span className="text-[10.5px] text-slate-400">Highest mix first</span>
-            </div>
-            <ol className="border-t border-slate-200" onMouseLeave={() => onHoverBgy(null)}>
-                {ranking.length === 0 && (
-                    <li className="px-4 py-6 text-center text-[12px] text-slate-500">No barangays in this band.</li>
-                )}
-                {visibleRanking.map((r, idx) => {
-                    const i = pageStart + idx;
-                    const selected = bgyName && r.name.toLowerCase() === bgyName.toLowerCase();
-                    const hovered = hoveredBgy && r.name.toLowerCase() === hoveredBgy.toLowerCase();
-                    return (
-                        <li key={r.name}>
-                            <button
-                                type="button"
-                                onClick={() => onSelectBgy(r.name)}
-                                onMouseEnter={() => onHoverBgy(r.name)}
-                                onFocus={() => onHoverBgy(r.name)}
-                                className={`w-full grid grid-cols-[20px_12px_1fr_64px_34px] items-center gap-2 px-4 py-1.5 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b] ${
-                                    selected ? 'bg-[#eaf0f8] shadow-[inset_3px_0_0_#0b2a5b]' : hovered ? 'bg-slate-100' : 'hover:bg-slate-50'
-                                }`}
-                            >
-                                <span className="text-[10.5px] tabular-nums text-slate-400">{i + 1}</span>
-                                <span className="w-3 h-3 rounded-[2px] border border-black/15" style={{ backgroundColor: r.band.fill }} aria-hidden="true" />
-                                <span className="text-[12px] text-slate-800 truncate">{r.name}</span>
-                                <span className="h-1.5 rounded-sm bg-slate-100 overflow-hidden" aria-hidden="true">
-                                    <span className="block h-full rounded-sm" style={{ width: `${Math.max(3, r.value * 100)}%`, backgroundColor: r.band.fill }} />
-                                </span>
-                                <span className="text-[12px] font-semibold tabular-nums text-slate-900 text-right">{lens.format(r.value)}</span>
-                            </button>
-                        </li>
-                    );
-                })}
-            </ol>
-            {ranking.length > PAGE_SIZE && (
-                <div className="shrink-0 flex items-center justify-between px-4 py-1.5 border-t border-slate-200 bg-slate-50/70">
-                        <button
-                            type="button"
-                            onClick={() => setPage(safePage - 1)}
-                            disabled={safePage === 0}
-                            aria-label="Previous five barangays"
-                            className="w-7 h-7 flex items-center justify-center rounded-[3px] border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
-                        >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+            {/* Picking a barangay is done on the map; once one is open the town-wide bands step aside. */}
+            {!isBgy && (
+            <section className={`${CARD} pt-3 pb-3`}>
+                <div className="flex items-baseline justify-between gap-2 px-4 pb-2">
+                    <Question>How mixed are the barangays?</Question>
+                    {bandFilter !== "all" && (
+                        <button type="button" onClick={() => onSelectBand("all")} className="text-[10.5px] font-semibold text-[#0b2a5b] hover:underline cursor-pointer">
+                            Show all
                         </button>
-                    <span className="text-[10.5px] tabular-nums text-slate-500">
-                        {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, ranking.length)} of {ranking.length}
-                    </span>
-                        <button
-                            type="button"
-                            onClick={() => setPage(safePage + 1)}
-                            disabled={safePage >= pageCount - 1}
-                            aria-label="Next five barangays"
-                            className="w-7 h-7 flex items-center justify-center rounded-[3px] border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]"
-                        >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                        </button>
+                    )}
                 </div>
+                <ol className="relative grid grid-cols-5 px-2">
+                    <span className="absolute left-[calc(10%+4px)] right-[calc(10%+4px)] top-[14px] h-px bg-slate-200" aria-hidden="true" />
+                    {lens.bands.map((b) => {
+                        const count = bandCounts[b.id] ?? 0;
+                        const active = bandFilter === b.id;
+                        const dimmed = bandFilter !== "all" && !active;
+                        return (
+                            <li key={b.id} className="relative flex flex-col items-center min-w-0 px-0.5">
+                                <button
+                                    type="button"
+                                    onClick={() => onSelectBand(active ? "all" : b.id)}
+                                    disabled={count === 0}
+                                    aria-pressed={active}
+                                    title={`${b.label}: ${count} barangay${count === 1 ? "" : "s"}`}
+                                    className={`w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold tabular-nums ring-[3px] cursor-pointer disabled:cursor-default transition-opacity ${
+                                        active ? "ring-[#0b2a5b]/25" : "ring-white"
+                                    } ${dimmed ? "opacity-35" : ""}`}
+                                    style={count ? { backgroundColor: b.fill, color: b.onFill, boxShadow: `inset 0 0 0 1px ${b.stroke}` } : { backgroundColor: "#f1f5f9", color: "#94a3b8" }}
+                                >
+                                    {count}
+                                </button>
+                                <span className={`mt-1 text-[10px] leading-tight text-center truncate max-w-full ${active ? "font-semibold text-slate-900" : "text-slate-500"}`}>{b.shortLabel}</span>
+                            </li>
+                        );
+                    })}
+                </ol>
+            </section>
             )}
-            {unscored > 0 && bandFilter === "all" && (
-                <p className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-100">
-                    {unscored} barangay{unscored === 1 ? "" : "s"} with too few filings in this period, not ranked.
-                </p>
-            )}
-            </>)}
             </div>
         </div>
     );

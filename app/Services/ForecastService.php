@@ -4,9 +4,6 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
-use DomainException;
 use Exception;
 
 class ForecastService
@@ -17,9 +14,8 @@ class ForecastService
 
     /**
      * The forecasting service names barangays after its own shapefile, which
-     * spells two of them differently from iMAPS. Its input side already folds
-     * our spellings into its own (so the model does train on their history);
-     * this maps its output back so the counts land on the right barangay.
+     * spells two of them differently from iMAPS. This maps its output back so
+     * the counts land on the right barangay.
      */
     public const SERVICE_NAME_ALIASES = [
         'nazi'     => 'Nasi',
@@ -33,49 +29,6 @@ class ForecastService
         $this->url = (string) config('services.forecast.url');
         $this->apiKey = (string) config('services.forecast.api_key');
         $this->timeout = (int) config('services.forecast.timeout', 180);
-    }
-
-    /**
-     * The clearance history this system actually holds, as the CSV the
-     * microservice expects: Encoding Date, Barangay, Application Type, and
-     * Zoning Code, which the service uses to forecast the application mix.
-     *
-     * Read from historical_data — the same table the Maps page shows as
-     * recorded history — so the forecast is never trained on a bundled file
-     * that has drifted from the records on screen.
-     */
-    protected function recordedHistoryCsv(): string
-    {
-        $rows = Schema::hasTable('historical_data')
-            ? DB::table('historical_data')
-                ->select('encoding_date', 'barangay', 'application_type', 'zoning_code')
-                ->whereNotNull('encoding_date')
-                ->whereNotNull('barangay')
-                ->where('barangay', '<>', '')
-                ->orderBy('encoding_date')
-                ->get()
-            : collect();
-
-        if ($rows->isEmpty()) {
-            // Not a service outage: the operator has to fix the data.
-            throw new DomainException('No recorded clearance history is available to forecast from. Import the historical clearances, or upload a CSV with this run.');
-        }
-
-        $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, ['Encoding Date', 'Barangay', 'Application Type', 'Zoning Code']);
-        foreach ($rows as $row) {
-            fputcsv($handle, [
-                substr((string) $row->encoding_date, 0, 10),
-                trim((string) $row->barangay),
-                (string) $row->application_type,
-                trim((string) ($row->zoning_code ?? '')),
-            ]);
-        }
-        rewind($handle);
-        $csv = stream_get_contents($handle);
-        fclose($handle);
-
-        return $csv;
     }
 
     /**
@@ -98,9 +51,10 @@ class ForecastService
     }
 
     /**
-     * Send the recorded history to the FastAPI microservice and retrieve the
-     * forecast. The history is read from the database, never uploaded: a model
-     * run that anyone could feed an arbitrary CSV is not evidence about Rosario.
+     * Fetch the forecast from the FastAPI microservice. The service forecasts
+     * from its own history (MPDO monthly totals, split by barangay), so nothing
+     * is sent: the model runs on the same data it was validated on, never on
+     * whatever happens to be in this database or an uploaded file.
      */
     public function generateForecast(): array
     {
@@ -124,8 +78,7 @@ class ForecastService
                     'X-API-Key' => $this->apiKey,
                     'accept'    => 'application/json',
                 ])
-                ->attach('file', $this->recordedHistoryCsv(), 'recorded_clearance_history.csv')
-                ->post($this->url);
+                ->get($this->url);
 
             if ($response->failed()) {
                 Log::error('Forecast Microservice Error', [
@@ -163,9 +116,31 @@ class ForecastService
 
             $data['demand'] = $demand;
 
+            // The quarters the forecast was made from. A forecast quarter is
+            // compared against these, not historical_data, so "than last year"
+            // uses the same history as the model.
+            $history = [];
+            foreach ($data['history'] ?? [] as $q) {
+                if (!isset($q['year'], $q['quarter'], $q['total'])) {
+                    continue;
+                }
+                $barangays = [];
+                foreach ($q['barangays'] ?? [] as $name => $count) {
+                    $name = trim((string) $name);
+                    $name = self::SERVICE_NAME_ALIASES[mb_strtolower($name)] ?? $name;
+                    $barangays[$name] = ($barangays[$name] ?? 0) + (int) $count;
+                }
+                $history[] = [
+                    'year'      => (int) $q['year'],
+                    'quarter'   => (int) $q['quarter'],
+                    'label'     => (string) ($q['label'] ?? ''),
+                    'total'     => (int) $q['total'],
+                    'barangays' => $barangays,
+                ];
+            }
+            $data['history'] = $history;
+
             return $data;
-        } catch (DomainException $e) {
-            throw $e;
         } catch (Exception $e) {
             // Fail closed. Inventing pins and reporting fixed MAE/WMAPE here
             // presented a forecast that no model produced.

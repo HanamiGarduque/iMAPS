@@ -10,13 +10,11 @@ const fmtDate = (d) =>
 
 const COLUMNS = [
     { key: "reference_number", label: "Reference No.", width: 128, mono: true },
-    { key: "form_number", label: "Form No.", width: 110, mono: true },
     { key: "applicant_name", label: "Applicant Name", width: 170 },
     { key: "application_type", label: "Application Type", width: 190 },
     { key: "barangay", label: "Barangay", width: 130 },
     { key: "status", label: "Status", width: 138 },
     { key: "created_at", label: "Date Filed", width: 100, format: fmtDate, numeric: true },
-    { key: "__tct", label: "Tax Dec. No.", width: 132, mono: true },
 ];
 const ROW_NO_WIDTH = 40;
 const TABLE_WIDTH = ROW_NO_WIDTH + COLUMNS.reduce((sum, c) => sum + c.width, 0);
@@ -73,7 +71,16 @@ export default function AttributeTable({ apps = [], total = 0, selectedAppId, on
     // Keep the selected feature in view when it is picked on the map.
     useEffect(() => {
         if (selectedAppId == null || !bodyRef.current) return;
-        bodyRef.current.querySelector(`[data-app-id="${selectedAppId}"]`)?.scrollIntoView({ block: "nearest" });
+        // Scrolls the table body only: scrollIntoView also scrolled the page's
+        // overflow-hidden frame, pushing the header off-screen.
+        const body = bodyRef.current;
+        const row = body.querySelector(`[data-app-id="${selectedAppId}"]`);
+        if (!row) return;
+        const head = body.querySelector("thead")?.offsetHeight || 0;
+        const top = row.offsetTop - head;
+        const bottom = row.offsetTop + row.offsetHeight - body.clientHeight;
+        if (body.scrollTop > top) body.scrollTop = top;
+        else if (body.scrollTop < bottom) body.scrollTop = bottom;
     }, [selectedAppId]);
 
     // Drag the top edge to trade map space for table space.
@@ -187,7 +194,7 @@ export default function AttributeTable({ apps = [], total = 0, selectedAppId, on
                     </div>
 
                     {/* Table */}
-                    <div ref={bodyRef} className="flex-1 min-h-0 overflow-auto" onMouseLeave={() => onHover?.(null)}>
+                    <div ref={bodyRef} className="relative flex-1 min-h-0 overflow-auto overscroll-contain" onMouseLeave={() => onHover?.(null)}>
                         <table
                             className="border-collapse text-[12px] text-slate-800 tabular-nums"
                             style={{ tableLayout: "fixed", width: TABLE_WIDTH, minWidth: "100%" }}

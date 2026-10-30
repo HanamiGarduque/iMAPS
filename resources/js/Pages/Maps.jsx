@@ -19,7 +19,7 @@ import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import useForecastWatchlist from "@/Components/MapLayers/useForecastWatchlist";
 import { ForecastSummary, ForecastInsights } from "@/Components/MapLayers/ForecastBrief";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
-import LeafletMap, { getAppCoordinates, PIN_ZOOM, HOME_ZOOM, getTrendsDemandColor, APP_LOAD_CLASSES } from "@/Components/Maps/LeafletMap";
+import LeafletMap, { getAppCoordinates, PIN_ZOOM, HOME_ZOOM, getTrendsDemandColor, APP_LOAD_CLASSES, getAppLoadColor } from "@/Components/Maps/LeafletMap";
 import LayersPanel, { MODULES, PERMIT_TYPES } from "@/Components/Maps/LayersPanel";
 import TimelineBar from "@/Components/Maps/TimelineBar";
 import DiversityTimeline from "@/Components/Maps/DiversityTimeline";
@@ -31,6 +31,9 @@ import LcRecordsTable from "@/Components/Maps/LcRecordsTable";
 import { buildLcView, summarizeBarangay } from "@/utils/lcInsights";
 import LcCallout from "@/Components/Maps/LcCallout";
 import DiversityCallout from "@/Components/Maps/DiversityCallout";
+import TopMixedCard from "@/Components/Maps/TopMixedCard";
+import TopDemandCard from "@/Components/Maps/TopDemandCard";
+import StatusCallout from "@/Components/Maps/StatusCallout";
 import useBarangayNames from "@/utils/useBarangayNames";
 import { getLens, resolveLensValue } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
@@ -73,7 +76,7 @@ class MapsErrorBoundary extends Component {
 
 // Bumped when the forecast payload shape changes, so a cached run from an
 // older shape is ignored rather than read as empty.
-const FORECAST_CACHE_KEY = "imaps_forecast_data_v3";
+const FORECAST_CACHE_KEY = "imaps_forecast_data_v4";
 
 const quarterLabel = (y, q) => `Q${q} '${String(y).slice(-2)}`;
 
@@ -145,6 +148,9 @@ function mapScale(lat, zoom) {
 }
 
 const isDesktop = () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
+// The right panel's width range when it is dragged (LC demand and diversity).
+const DOCK_MIN_W = 372;
+const DOCK_MAX_W = 640;
 
 const ICONS = {
     layers: "M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3",
@@ -153,8 +159,7 @@ const ICONS = {
     extent: "M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15",
     panel: "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z",
     fullscreen: "M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4",
-    table: "M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M3.75 14.25h16.5M9 9.75v9",
-};
+    table: "M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M3.75 14.25h16.5M9 9.75v9",};
 
 function ToolButton({ icon, label, onClick, pressed, disabled }) {
     return (
@@ -223,8 +228,6 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const [cursor, setCursor] = useState(null);
     const [hoveredAppId, setHoveredAppId] = useState(null);
     const [tableHeight, setTableHeight] = useState(0);
-    // A barangay to keep selected across a module switch (from the barangay card).
-    const carryBgyRef = useRef(null);
 
     // ── LC demand timeline ──
     const [customForecastData, setCustomForecastData] = useState(() => {
@@ -312,6 +315,30 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         });
     }, [urbanGrowthData, timelineQuarters, forecastDemand]);
 
+    // The quarters the forecast was made from, as the service reports them. A
+    // forecast quarter is compared against these ("than last year", "than
+    // usual"), never against historical_data: that table is what the Recorded
+    // view shows, the model never saw it, and its counts can differ.
+    const forecastSeries = useMemo(() => {
+        const history = Array.isArray(customForecastData?.history) ? customForecastData.history : [];
+        if (history.length === 0) return quarterSeries;
+        const byKey = {};
+        history.forEach((h) => {
+            const byBgy = {};
+            Object.entries(h.barangays || {}).forEach(([name, n]) => {
+                const b = name.trim().toLowerCase();
+                if (b) byBgy[b] = (byBgy[b] || 0) + (Number(n) || 0);
+            });
+            byKey[`${h.year}-${h.quarter}`] = { total: Number(h.total) || 0, byBgy };
+        });
+        // A recorded quarter outside the service's window has nothing to
+        // compare with (null total), rather than falling back to the database.
+        return quarterSeries.map((q) => (
+            q.isForecast ? q : { ...q, ...(byKey[`${q.year}-${q.quarter}`] || { total: null, byBgy: {} }) }
+        ));
+    }, [quarterSeries, customForecastData]);
+    const comparisonSeries = activeQuarter?.isForecast ? forecastSeries : quarterSeries;
+
     // The model's own validation figures, or nothing. There is no stand-in:
     // a fixed MAE/WMAPE here read as accuracy no model had measured.
     const forecastMetrics = useMemo(() => {
@@ -329,7 +356,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const forecastWatch = useForecastWatchlist({
         forecastData: customForecastData,
         activeQuarter,
-        series: quarterSeries,
+        series: forecastSeries,
         mae: forecastMetrics?.mae ?? null,
         urbanGrowthData,
     });
@@ -360,16 +387,31 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     // change from the same quarter a year earlier when that quarter is on record.
     const lcLastYear = useMemo(() => (
         activeQuarter
-            ? quarterSeries.find((q) => !q.isForecast && q.total !== null && q.year === activeQuarter.year - 1 && q.quarter === activeQuarter.quarter) || null
+            ? comparisonSeries.find((q) => !q.isForecast && q.total !== null && q.year === activeQuarter.year - 1 && q.quarter === activeQuarter.quarter) || null
             : null
-    ), [quarterSeries, activeQuarter]);
-    const barangayCount = useBarangayNames().length;
+    ), [comparisonSeries, activeQuarter]);
+    const barangayNames = useBarangayNames();
+    const barangayCount = barangayNames.length;
+    // The barangays with the most applications in the quarter on screen, with
+    // the change from the same quarter a year earlier when that is on record.
+    const topDemandRows = useMemo(() => {
+        if (activeLayer !== "trends") return [];
+        return barangayNames
+            .map((name) => {
+                const key = name.trim().toLowerCase();
+                const count = demandByBgy[key] || 0;
+                return { name, count, delta: lcLastYear ? count - (lcLastYear.byBgy?.[key] || 0) : null };
+            })
+            .filter((r) => r.count > 0)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5);
+    }, [activeLayer, barangayNames, demandByBgy, lcLastYear]);
     const lcView = useMemo(() => buildLcView({
         names: Object.keys(bgyStats || {}),
-        current: quarterSeries[activeQuarterIndex],
+        current: comparisonSeries[activeQuarterIndex],
         lastYear: lcLastYear,
         total: barangayCount,
-    }), [bgyStats, quarterSeries, activeQuarterIndex, lcLastYear, barangayCount]);
+    }), [bgyStats, comparisonSeries, activeQuarterIndex, lcLastYear, barangayCount]);
 
     // ── Diversity timeline ──
     // One step per quarter, each scored over the five years ending that
@@ -441,12 +483,11 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         [mixTimeline, bgyStats, lastStep]
     );
 
-    // "Oct 2021 – Sep 2026", and how much of the five years it covers.
+    // "Oct 2021 – Sep 2026".
     const mixPeriod = (step) => {
         if (!step?.from) return "";
         const m = (d) => new Date(`${d}T00:00:00`).toLocaleDateString("en-PH", { month: "short", year: "numeric" });
-        const span = step.isPartial ? ` · ${(step.quarters / 4).toFixed(2).replace(/\.?0+$/, "")} of 5 yrs recorded` : "";
-        return `${m(step.from)} – ${m(step.to)}${span}`;
+        return `${m(step.from)} – ${m(step.to)}`;
     };
 
     // ── 3D (every map layer) ──
@@ -523,9 +564,9 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     }, [urbanGrowthData, selectedBgy?.name, activeLayer]);
     const lcSummary = useMemo(() => (
         selectedBgy?.name && activeLayer === "trends"
-            ? summarizeBarangay({ name: selectedBgy.name, series: quarterSeries, activeIndex: activeQuarterIndex, activeQuarter, records: selectedLcRecords })
+            ? summarizeBarangay({ name: selectedBgy.name, series: comparisonSeries, activeIndex: activeQuarterIndex, activeQuarter, records: selectedLcRecords })
             : null
-    ), [selectedBgy?.name, activeLayer, quarterSeries, activeQuarterIndex, activeQuarter, selectedLcRecords]);
+    ), [selectedBgy?.name, activeLayer, comparisonSeries, activeQuarterIndex, activeQuarter, selectedLcRecords]);
     // The pop-up card on the selected barangay: LC demand, or the Diversity
     // Index's filed land use (same card design).
     const bgyCallout = lcFocus ? (
@@ -541,8 +582,16 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             stat={diversityStats?.[selectedBgy.name] || selectedBgy.data || {}}
             onClose={() => setSelectedBgy(null)}
         />
+    ) : activeLayer === "status" && selectedBgy?.name ? (
+        <StatusCallout
+            name={selectedBgy.name}
+            apps={scopedApps}
+            period={periodFilter}
+            onClose={() => setSelectedBgy(null)}
+        />
     ) : null;
-    const compactPanel = activeLayer === "status";
+    // These panels fit without scrolling, so the dock shrinks to their height.
+    const compactPanel = activeLayer === "status" || activeLayer === "diversity";
     // An open application takes the whole tracking panel: it gets the full map
     // height and the table narrows beside it instead of pushing it to scroll.
     const showAppDetails = activeLayer === "status" && Boolean(inspectedApp);
@@ -585,8 +634,33 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         prevTableHeight.current = tableHeight;
         if (tableGrew.current && panelOpen && showTable && panelNeedsRoom && tableHeight > TABLE_DEFAULT_H) setPanelOpen(false);
     }, [panelOpen, showTable, panelNeedsRoom, tableHeight]);
+    // LC demand and diversity panels can be dragged wider. The panel follows the
+    // pointer live; the map refits once, on release (dockWidth), so it never sits under the panel.
+    const [dockDrag, setDockDrag] = useState(null);
+    // Each layer starts at the standard width; switching layers always puts it back.
+    const [dockWidth, setDockWidth] = useState(DOCK_MIN_W);
+    useEffect(() => { setDockWidth(DOCK_MIN_W); setDockDrag(null); }, [activeLayer]);
+    const panelW = compactPanel ? DOCK_MIN_W : dockWidth;
+    const startDockResize = (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startW = dockWidth;
+        const maxW = Math.min(DOCK_MAX_W, Math.round(window.innerWidth * 0.5));
+        let w = startW;
+        const move = (ev) => { w = Math.min(maxW, Math.max(DOCK_MIN_W, startW + startX - ev.clientX)); setDockDrag(w); };
+        const up = () => {
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+            document.body.style.cursor = "";
+            setDockDrag(null);
+            setDockWidth(w);
+        };
+        document.body.style.cursor = "col-resize";
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+    };
     const mapInsets = {
-        right: panelOpen && isDesktop() ? 372 : 0,
+        right: panelOpen && isDesktop() ? panelW : 0,
         bottom: showTable ? tableHeight : 0,
     };
 
@@ -697,15 +771,14 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         return () => clearInterval(id);
     }, []);
 
-    // Changing module starts from a clean slate.
+    // Changing module resets its own filters and playback, not the barangay.
     useEffect(() => {
         if (activeLayer !== "diversity") setDiversityBandFilter("all");
         if (activeLayer !== "trends") setIsTimelinePlaying(false);
         if (activeLayer !== "diversity") setIsDiversityPlaying(false);
         if (activeLayer !== "status") setInspectedApp(null);
-        const carried = carryBgyRef.current;
-        carryBgyRef.current = null;
-        setSelectedBgy(carried ? { name: carried, data: bgyStats?.[carried] || {} } : null);
+        // An open barangay stays open, and the camera stays on it.
+        setSelectedBgy((cur) => (cur ? { name: cur.name, data: bgyStats?.[cur.name] || cur.data || {} } : null));
         setHoveredBgy(null);
         setParcels2D(false);
         setParcels3D(false);
@@ -764,7 +837,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             ? quarterCount
                 ? `${activeQuarter?.label} · ${quarterCount} LC ${activeQuarter?.isForecast ? "projected" : "filed"}`
                 : `${activeQuarter?.label} · no LC ${activeQuarter?.isForecast ? "forecast available" : "records"} for this quarter`
-            : `5 years to ${diversityStep?.label}${diversityStep?.isPartial ? " (partial)" : ""} · mix 0 to 1${show3D ? " · 3D" : ""}`;
+            : `5 years to ${diversityStep?.label} · mix 0 to 1${show3D ? " · 3D" : ""}`;
     const statusSummary = activeLayer === "status"
         ? `${visibleAppCount} application${visibleAppCount === 1 ? "" : "s"}`
         : activeLayer === "trends"
@@ -951,6 +1024,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     active={show3D}
                                                     syncRef={leafletViewRef}
                                                     controlRef={view3DRef}
+                                                    onZoomChange={setMapZoom}
                                                     showLabels={showLabels}
                                                     showSatellite={showSatellite3D}
                                                     selectedBgy={selectedBgy}
@@ -962,7 +1036,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     lcColors={lcView}
                                                     callout={bgyCallout}
                                                     rightPanelOpen={panelOpen}
-                                                    panelWidth={372}
+                                                    panelWidth={panelW}
                                                     bandFilter={diversityBandFilter}
                                                     hoveredBgy={hoveredBgy}
                                                     onHoverBgy={setHoveredBgy}
@@ -975,11 +1049,13 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
                                     {/* Map title, like a print layout's. It also reads out whatever is
                                         under the cursor, so nothing floats over the data itself. */}
-                                    {lcFocus || (activeLayer === "diversity" && selectedBgy?.name) ? (
+                                    {lcFocus || ((activeLayer === "diversity" || activeLayer === "status") && selectedBgy?.name) ? (
                                         <>
                                             <BarangayLocator
                                                 name={selectedBgy.name}
-                                                color={lcFocus ? lcFocus.cls.color : resolveLensValue("mix", { diversity: diversityStats?.[selectedBgy.name]?.diversity ?? null }).color}
+                                                color={lcFocus ? lcFocus.cls.color
+                                                    : activeLayer === "status" ? getAppLoadColor(mapStats?.[selectedBgy.name]?.total || 0)
+                                                    : resolveLensValue("mix", { diversity: diversityStats?.[selectedBgy.name]?.diversity ?? null }).color}
                                                 onClear={() => setSelectedBgy(null)}
                                             />
                                         </>
@@ -999,7 +1075,6 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                 activeLayer={activeLayer}
                                                 onSwitch={(id) => {
                                                     if (id === activeLayer) return;
-                                                    carryBgyRef.current = selectedBgy.name;
                                                     setActiveLayer(id);
                                                 }}
                                                 onClose={() => setSelectedBgy(null)}
@@ -1009,6 +1084,27 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             {hoverText || (show3D ? "Drag to orbit · click a barangay to open it" : "Hover a barangay · click to open it")}
                                         </div>
                                     </div>
+                                    )}
+
+                                    {activeLayer === "diversity" && !selectedBgy?.name && (
+                                        <TopMixedCard
+                                            bgyStats={diversityStats}
+                                            bandFilter={diversityBandFilter}
+                                            hoveredBgy={hoveredBgy}
+                                            onSelect={selectBarangay}
+                                            onHover={setHoveredBgy}
+                                        />
+                                    )}
+
+                                    {activeLayer === "trends" && !selectedBgy?.name && (
+                                        <TopDemandCard
+                                            rows={topDemandRows}
+                                            title={activeQuarter?.isForecast ? "Where will they come from?" : "Applications by barangay"}
+                                            compareLabel={lcLastYear?.label ?? null}
+                                            hoveredBgy={hoveredBgy}
+                                            onSelect={selectBarangay}
+                                            onHover={setHoveredBgy}
+                                        />
                                     )}
 
                                     {/* Attribute table for the selected barangay, floating over the
@@ -1070,9 +1166,24 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             className={`absolute top-0 right-0 z-[620] w-full sm:w-[372px] flex flex-col bg-white border-l border-slate-200 shadow-xl lg:shadow-none ${
                                                 compactPanel ? "border-b" : "bottom-0"
                                             }`}
-                                            style={compactPanel ? { maxHeight: panelNeedsRoom || !showTable ? "100%" : `calc(100% - ${tableHeight + 12}px)` } : undefined}
+                                            style={compactPanel
+                                                ? { maxHeight: panelNeedsRoom || !showTable ? "100%" : `calc(100% - ${tableHeight + 12}px)` }
+                                                : isDesktop() ? { width: dockDrag ?? dockWidth } : undefined}
                                             aria-label="Identify and analysis"
                                         >
+                                            {!compactPanel && (
+                                                <div
+                                                    role="separator"
+                                                    aria-orientation="vertical"
+                                                    aria-label="Resize panel"
+                                                    title="Drag to resize"
+                                                    onPointerDown={startDockResize}
+                                                    onDoubleClick={() => setDockWidth(DOCK_MIN_W)}
+                                                    className="hidden lg:block absolute top-0 bottom-0 -left-1 w-2 z-10 cursor-col-resize group"
+                                                >
+                                                    <span className={`absolute top-1/2 left-[3px] -translate-y-1/2 h-10 w-[3px] rounded-full transition-colors ${dockDrag ? "bg-[#1e3a8a]" : "bg-slate-300 group-hover:bg-slate-500"}`} />
+                                                </div>
+                                            )}
                                             <DockHeader title={moduleInfo?.label} onClose={() => setPanelOpen(false)} closeLabel="Close analysis panel" />
                                             <div ref={panelBodyRef} className={compactPanel ? "min-h-0 flex flex-col overflow-y-auto" : "flex-1 min-h-0 flex flex-col"}>
 
@@ -1114,7 +1225,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                             onHoverBgy={setHoveredBgy}
                                                             onForecastGenerated={handleForecastGenerated}
                                                             activePins={activeHistoricalPins}
-                                                            series={quarterSeries}
+                                                            series={comparisonSeries}
                                                             activeIndex={activeQuarterIndex}
                                                             onSelectQuarter={setActiveQuarterIndex}
                                                             header={activeQuarter?.isForecast && (
@@ -1136,6 +1247,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                                 <ForecastInsights
                                                                     quarter={activeQuarter}
                                                                     watch={forecastWatch}
+                                                                    selectedName={selectedBgy?.name}
                                                                     onSelectBgy={selectBarangay}
                                                                     onHoverBgy={setHoveredBgy}
                                                                 />
@@ -1145,16 +1257,14 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                 )}
 
                                                 {activeLayer === "diversity" && (
-                                                    <div className="flex-1 min-h-0 flex flex-col">
+                                                    <div className="shrink-0 flex flex-col">
                                                         <DiversityPanel
                                                             overallDiversity={diversityOverall}
                                                             period={diversityStep}                                                            selectedBgy={selectedBgy}
                                                             onSelectBgy={selectBarangay}
                                                             bgyStats={diversityStats}
-                                                            lens={diversityLens}
                                                             bandFilter={diversityBandFilter}
                                                             onSelectBand={setDiversityBandFilter}
-                                                            hoveredBgy={hoveredBgy}
                                                             onHoverBgy={setHoveredBgy}
                                                         />
                                                     </div>
@@ -1176,7 +1286,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                         playing={isTimelinePlaying}
                                         onTogglePlay={() => setIsTimelinePlaying((p) => !p)}
                                         count={quarterCount}
-                                        series={quarterSeries}
+                                        series={comparisonSeries}
                                         peakQuarter={1}
                                     />
                                 )}

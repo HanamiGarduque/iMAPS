@@ -16,8 +16,8 @@
 // ramp paints the score. Keeping the two separate is what stops the map's
 // colour and the legend's filter from meaning two different things.
 
-// Cut-offs are on the normalised Shannon index (0–1 over the 11 CLUP
-// categories). Entropy runs lower than the Simpson index the bands were first
+// Cut-offs are on the normalised Shannon index (0–1 over the 10 CLUP
+// categories counted; utilities and roads are left out). Entropy runs lower than the Simpson index the bands were first
 // drawn for, so they sit lower: across Rosario's barangays the recorded mix
 // spans roughly 0.10–0.70.
 export const DIVERSITY_TIERS = [
@@ -28,8 +28,8 @@ export const DIVERSITY_TIERS = [
         max: Infinity,
         label: "High Mix (≥ 0.60)",
         shortLabel: "High Mix",
-        fill: "#3f007d",
-        stroke: "#2a0054",
+        fill: "#14476b",
+        stroke: "#0c2f48",
         onFill: "#ffffff",
         classification: "High Urban Mix",
         summary: "Main commercial and residential area with a good mix of shops, public facilities, and housing.",
@@ -41,8 +41,8 @@ export const DIVERSITY_TIERS = [
         max: 0.60,
         label: "Diverse (0.45–0.59)",
         shortLabel: "Diverse",
-        fill: "#6a51a3",
-        stroke: "#4a3874",
+        fill: "#2f8a99",
+        stroke: "#226673",
         onFill: "#ffffff",
         classification: "Active Growth Area",
         summary: "Growing area that mixes housing subdivisions, public facilities, and businesses.",
@@ -54,8 +54,8 @@ export const DIVERSITY_TIERS = [
         max: 0.45,
         label: "Balanced (0.30–0.44)",
         shortLabel: "Balanced",
-        fill: "#9e9ac8",
-        stroke: "#6f6aa3",
+        fill: "#6fbcb8",
+        stroke: "#4c9592",
         onFill: "#0f172a",
         classification: "Balanced Town",
         summary: "An area where farms and established housing communities exist together.",
@@ -67,8 +67,8 @@ export const DIVERSITY_TIERS = [
         max: 0.30,
         label: "Rural (0.15–0.29)",
         shortLabel: "Rural",
-        fill: "#cbc9e2",
-        stroke: "#9590c0",
+        fill: "#b9dfdc",
+        stroke: "#86bdb9",
         onFill: "#0f172a",
         classification: "Rural Community",
         summary: "Mostly farming area with scattered houses.",
@@ -80,8 +80,8 @@ export const DIVERSITY_TIERS = [
         max: 0.15,
         label: "Specialized Ag (< 0.15)",
         shortLabel: "Specialized Ag",
-        fill: "#f2f0f7",
-        stroke: "#a8a3cc",
+        fill: "#eef6f6",
+        stroke: "#a9cfcd",
         onFill: "#0f172a",
         classification: "Farming Area",
         summary: "Protected farming area with very few buildings for other uses.",
@@ -182,7 +182,7 @@ export const DIVERSITY_LENSES = [
         tabLabel: "Overview",
         metricLabel: "Mix Score",
         question: "How varied is the land being developed in this barangay?",
-        caption: "Mix Score (normalised Shannon index over the 11 CLUP land-use categories) of the lot area recorded in clearances, certificates and permits, compared with the CLUP 2030 plan mix.",
+        caption: "Mix Score (normalised Shannon index over 10 CLUP land-use categories; utilities and roads not counted) of the lot area in locational clearances for development (not zoning certificates, development permits or paperwork-only clearances), compared with the CLUP 2030 plan mix.",
         heightNote: "Height & colour = recorded mix (0.00 – 1.00)",
         bands: DIVERSITY_TIERS,
         domain: [0, 1],

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { loadBarangayBoundaries, loadMunicipalBoundary, resolveBarangayName } from "@/utils/mapData";
 
-const W = 148;
-const H = 96;
-const PAD = 8;
+const W = 70;
+const H = 56;
+const PAD = 4;
 const MAX_POINTS = 140;
-const SCALE_KM = 5;
 const KM_PER_DEG_LAT = 111.32;
+const FRAME = "#c62828";
 
 const outerRings = (geometry) => {
     if (!geometry) return [];
@@ -25,10 +25,38 @@ const extent = (rings) => {
 
 const dms = (value, pos, neg) => `${Math.abs(value).toFixed(3)}° ${value >= 0 ? pos : neg}`;
 
-// A locator inset in the usual cartographic way: the town with every barangay
-// boundary drawn faintly, the selected one filled and ringed so even a small
-// barangay can be found, a graticule, a north arrow and a scale bar. It has no
-// interaction of its own beyond the way back to the whole town.
+// Equirectangular fit of a lon/lat box into the inset, longitude shrunk by
+// latitude so shapes keep their proportions.
+function projector({ w, s, e, n }) {
+    const k = Math.cos((((s + n) / 2) * Math.PI) / 180);
+    const scale = Math.min((W - PAD * 2) / ((e - w) * k || 1e-9), (H - PAD * 2) / ((n - s) || 1e-9));
+    const offX = (W - (e - w) * k * scale) / 2;
+    const offY = (H - (n - s) * scale) / 2;
+    const X = (x) => offX + (x - w) * k * scale;
+    const Y = (y) => offY + (n - y) * scale;
+    const path = (rings) => rings.map((ring) => {
+        const step = Math.max(1, Math.ceil(ring.length / MAX_POINTS));
+        const pts = ring.filter((_, i) => i % step === 0).map(([x, y]) => `${X(x).toFixed(1)},${Y(y).toFixed(1)}`);
+        return `M${pts.join("L")}Z`;
+    }).join("");
+    return { X, Y, path, pxPerKm: scale / KM_PER_DEG_LAT };
+}
+
+// A nice round scale-bar length that fits about a third of the inset.
+const niceKm = (pxPerKm) => [0.25, 0.5, 1, 2, 5, 10].reduce((best, km) => (km * pxPerKm <= W / 3 ? km : best), 0.25);
+
+const Inset = ({ caption, children }) => (
+    <figure className="m-0 min-w-0">
+        <div className="border border-slate-800 bg-white">
+            <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block">{children}</svg>
+        </div>
+        <figcaption className="mt-0.5 text-[9px] text-slate-500 text-center truncate">{caption}</figcaption>
+    </figure>
+);
+
+// A locator in the style of a printed zoning map's insets: Rosario with a red
+// frame around the barangay, then the barangay itself framed in red, its
+// neighbours drawn faintly for context, with a north arrow and a scale bar.
 export default function BarangayLocator({ name, color = "#f03b20", onClear = null, compact = false }) {
     const [geo, setGeo] = useState(null);
 
@@ -48,92 +76,79 @@ export default function BarangayLocator({ name, color = "#f03b20", onClear = nul
     const bgyRings = bgy ? outerRings(bgy.geometry) : [];
     const allRings = geo.bgys.features.flatMap((f) => outerRings(f.geometry));
 
-    const { w, s, e, n } = extent(muniRings);
-    if (!Number.isFinite(w)) return null;
-
-    // Equirectangular, with longitude shrunk by latitude so the town keeps its shape.
-    const k = Math.cos((((s + n) / 2) * Math.PI) / 180);
-    const spanX = (e - w) * k;
-    const spanY = n - s;
-    const scale = Math.min((W - PAD * 2) / spanX, (H - PAD * 2) / spanY);
-    const offX = (W - spanX * scale) / 2;
-    const offY = (H - spanY * scale) / 2;
-    const X = (x) => offX + (x - w) * k * scale;
-    const Y = (y) => offY + (n - y) * scale;
-    const px = ([x, y]) => `${X(x).toFixed(1)},${Y(y).toFixed(1)}`;
-
-    const toPath = (rings) => rings.map((ring) => {
-        const step = Math.max(1, Math.ceil(ring.length / MAX_POINTS));
-        const pts = ring.filter((_, i) => i % step === 0).map(px);
-        return `M${pts.join("L")}Z`;
-    }).join("");
-
-    // The ring that calls out the barangay, sized to it but never smaller than
-    // a thumb-sized target, so Santa Cruz is as findable as Calantas.
+    const town = extent(muniRings);
+    if (!Number.isFinite(town.w)) return null;
     const b = extent(bgyRings);
     const hasBgy = Number.isFinite(b.w);
-    const cx = hasBgy ? X((b.w + b.e) / 2) : 0;
-    const cy = hasBgy ? Y((b.s + b.n) / 2) : 0;
-    const half = hasBgy ? Math.hypot(X(b.e) - X(b.w), Y(b.s) - Y(b.n)) / 2 : 0;
-    const ringR = Math.max(9, half + 4);
-    const showRing = hasBgy && half < 18;
+
+    const t = projector(town);
+    // The red frame on the town inset, never smaller than a findable square.
+    const fx0 = hasBgy ? t.X(b.w) : 0, fx1 = hasBgy ? t.X(b.e) : 0;
+    const fy0 = hasBgy ? t.Y(b.n) : 0, fy1 = hasBgy ? t.Y(b.s) : 0;
+    const fw = Math.max(8, fx1 - fx0), fh = Math.max(8, fy1 - fy0);
+    const fx = (fx0 + fx1) / 2 - fw / 2 - 1.5, fy = (fy0 + fy1) / 2 - fh / 2 - 1.5;
+
+    // The zoomed inset: the barangay's box with a margin so neighbours show.
+    const mx = (b.e - b.w) * 0.18, my = (b.n - b.s) * 0.18;
+    const z = hasBgy ? projector({ w: b.w - mx, e: b.e + mx, s: b.s - my, n: b.n + my }) : null;
+    const km = z ? niceKm(z.pxPerKm) : 0;
+    const barPx = z ? km * z.pxPerKm : 0;
 
     const lat = hasBgy ? (b.s + b.n) / 2 : null;
     const lng = hasBgy ? (b.w + b.e) / 2 : null;
-    const scaleBarPx = (SCALE_KM * scale) / KM_PER_DEG_LAT;
 
     return (
         <div
-            className="absolute top-3 left-3 z-[500] w-[164px] overflow-hidden rounded-lg bg-white/95 backdrop-blur-sm ring-1 ring-slate-900/10 shadow-[0_4px_16px_rgba(15,23,42,0.14)]"
+            className="absolute top-3 left-3 z-[500] w-[172px] overflow-hidden rounded-lg bg-white/95 backdrop-blur-sm ring-1 ring-slate-900/10 shadow-[0_4px_16px_rgba(15,23,42,0.14)]"
             role="img"
             aria-label={`${name} within Rosario`}
         >
-            <div className="px-3 pt-2.5 pb-2">
+            <div className="px-2.5 pt-2 pb-1.5">
                 <div className="text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-400">Location · Rosario</div>
-                <div className="text-[13px] font-semibold text-slate-900 leading-tight truncate">{name}</div>
-                {hasBgy && <div className="mt-0.5 text-[10px] tabular-nums text-slate-500">{dms(lat, "N", "S")} · {dms(lng, "E", "W")}</div>}
+                <div className="text-[12px] font-semibold text-slate-900 leading-tight truncate">{name}</div>
+                {hasBgy && <div className="text-[9.5px] tabular-nums text-slate-500">{dms(lat, "N", "S")} · {dms(lng, "E", "W")}</div>}
             </div>
 
-            {!compact && <div className="mx-2 rounded-[5px] border border-slate-200 bg-[#f7f8fa] overflow-hidden">
-                <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="block">
-                    {/* graticule */}
-                    <g stroke="#e3e6ea" strokeWidth="0.5" strokeDasharray="2 3">
-                        {[1, 2, 3].map((i) => <line key={`v${i}`} x1={(W / 4) * i} y1="0" x2={(W / 4) * i} y2={H} />)}
-                        {[1, 2].map((i) => <line key={`h${i}`} x1="0" y1={(H / 3) * i} x2={W} y2={(H / 3) * i} />)}
-                    </g>
-                    <path d={toPath(muniRings)} fill="#ffffff" stroke="#aeb5bd" strokeWidth="1" strokeLinejoin="round" />
-                    <path d={toPath(allRings)} fill="none" stroke="#d5dae0" strokeWidth="0.5" strokeLinejoin="round" />
-                    {hasBgy && (
-                        <>
-                            <path d={toPath(bgyRings)} fill={color} stroke="#0f172a" strokeOpacity="0.75" strokeWidth="0.8" strokeLinejoin="round" />
-                            {showRing && (
-                                <>
-                                    <circle cx={cx} cy={cy} r={ringR} fill="none" stroke="#ffffff" strokeWidth="3" />
-                                    <circle cx={cx} cy={cy} r={ringR} fill="none" stroke="#0b2a5b" strokeWidth="1.2" />
-                                </>
-                            )}
-                        </>
+            {!compact && (
+                <div className="px-2.5 grid grid-cols-2 gap-1.5">
+                    <Inset caption="Rosario">
+                        <path d={t.path(muniRings)} fill="#f1f5f9" stroke="#64748b" strokeWidth="0.9" strokeLinejoin="round" />
+                        <path d={t.path(allRings)} fill="none" stroke="#cbd5e1" strokeWidth="0.4" strokeLinejoin="round" />
+                        {hasBgy && (
+                            <>
+                                <path d={t.path(bgyRings)} fill={color} stroke="#0f172a" strokeOpacity="0.6" strokeWidth="0.5" />
+                                <rect x={fx} y={fy} width={fw + 3} height={fh + 3} fill="none" stroke={FRAME} strokeWidth="1.4" />
+                            </>
+                        )}
+                    </Inset>
+                    {z && (
+                        <Inset caption={name}>
+                            <rect x="0" y="0" width={W} height={H} fill="#f8fafc" />
+                            <path d={z.path(allRings)} fill="#ffffff" stroke="#cbd5e1" strokeWidth="0.6" strokeLinejoin="round" />
+                            <path d={z.path(bgyRings)} fill={color} stroke="#0f172a" strokeOpacity="0.7" strokeWidth="0.9" strokeLinejoin="round" />
+                            <rect x="0.75" y="0.75" width={W - 1.5} height={H - 1.5} fill="none" stroke={FRAME} strokeWidth="1.5" />
+                            {/* north arrow */}
+                            <g transform={`translate(${W - 9} 5)`}>
+                                <path d="M0 0 L3.5 9 L0 7 L-3.5 9 Z" fill="#334155" />
+                                <text y="17" textAnchor="middle" fontSize="6" fontWeight="700" fill="#334155">N</text>
+                            </g>
+                            {/* scale bar */}
+                            <g transform={`translate(5 ${H - 9})`}>
+                                <rect x="0" y="0" width={barPx / 2} height="2.5" fill="#334155" />
+                                <rect x={barPx / 2} y="0" width={barPx / 2} height="2.5" fill="#ffffff" stroke="#334155" strokeWidth="0.5" />
+                                <rect x="0" y="0" width={barPx} height="2.5" fill="none" stroke="#334155" strokeWidth="0.5" />
+                                <text x={barPx + 3} y="3" fontSize="6" fontWeight="600" fill="#475569">{km} km</text>
+                            </g>
+                        </Inset>
                     )}
-                    {/* north arrow */}
-                    <g transform={`translate(${W - 13} 6)`}>
-                        <path d="M0 0 L4 11 L0 8.5 L-4 11 Z" fill="#334155" />
-                        <text y="21" textAnchor="middle" fontSize="7" fontWeight="700" fill="#334155">N</text>
-                    </g>
-                    {/* scale bar */}
-                    <g transform={`translate(7 ${H - 11})`}>
-                        <rect x="0" y="0" width={scaleBarPx / 2} height="3" fill="#334155" />
-                        <rect x={scaleBarPx / 2} y="0" width={scaleBarPx / 2} height="3" fill="#ffffff" stroke="#334155" strokeWidth="0.6" />
-                        <rect x="0" y="0" width={scaleBarPx} height="3" fill="none" stroke="#334155" strokeWidth="0.6" />
-                        <text x={scaleBarPx + 4} y="3.5" fontSize="7" fontWeight="600" fill="#475569">{SCALE_KM} km</text>
-                    </g>
-                </svg>
-            </div>}
+                </div>
+            )}
 
             {onClear ? (
                 <button
                     type="button"
                     onClick={onClear}
-                    className={`${compact ? "mt-0" : "mt-2"} w-full h-8 flex items-center justify-center gap-1 border-t border-slate-200 text-[11.5px] font-medium text-slate-600 hover:text-[#0b2a5b] hover:bg-slate-50 cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b]`}
+                    className={`${compact ? "mt-0" : "mt-1.5"} w-full h-7 flex items-center justify-center gap-1 border-t border-slate-200 text-[11px] font-medium text-slate-600 hover:text-[#0b2a5b] hover:bg-slate-50 cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b]`}
                 >
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
                     All barangays
