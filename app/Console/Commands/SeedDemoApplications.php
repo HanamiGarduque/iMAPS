@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Jobs\PushInspectionToSupabase;
+use App\Jobs\PushPlanningReviewToSupabase;
+use App\Models\InspectionDeliveryAttempt;
 use App\Models\SiteInspection;
 use App\Models\User;
 use App\Models\ZoningApplication;
@@ -10,8 +12,11 @@ use App\Services\ApplicationStatusTracker;
 use App\Services\PermitExcelService;
 use App\Services\SupabaseService;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -25,15 +30,24 @@ use Illuminate\Support\Str;
  * audit notes), only backdated, so the pages read like months of real use.
  * Parcels are sampled from land_parcels, so they sit on the map.
  *
- * Nothing leaves the database unless --sync is given: no Supabase pushes and
- * no in-app notifications.
+ * Nothing leaves the database unless --sync (or later --push) is given. Then
+ * the FieldSync side is played out too: every round is delivered by the real
+ * PushInspectionToSupabase job, returned rounds are completed on the field job
+ * the way the app records them (steps, GPS, checklist, activity feed), the
+ * Planning Review of each returned round goes out through
+ * PushPlanningReviewToSupabase, the status timeline reaches the public tracker,
+ * and the results are pulled back with sync:pull-inspections. --purge removes
+ * the remote copies as well. No in-app notifications are sent either way.
  */
 class SeedDemoApplications extends Command
 {
     protected $signature = 'demo:applications
         {--count=50 : How many applications to create}
         {--seed=2026 : Random seed; the same seed on the same data gives the same applications}
-        {--sync : Also push the status timelines and the open inspection rounds to Supabase (public tracker and FieldSync app)}
+        {--shuffle : Draw the scenarios, parcel counts and officers at random instead of the fixed interleaved spread}
+        {--inspector= : Site Inspector (id or name) who takes about half of the inspection rounds}
+        {--sync : Also play the applications out on Supabase (FieldSync app and public tracker)}
+        {--push : Instead of creating any, play the sample applications already here out on Supabase (skips what is already there)}
         {--dry-run : Show who and what would be used, write nothing}
         {--purge : Delete the sample applications this command created, instead of creating any}
         {--force : Do not ask for confirmation}';
@@ -146,11 +160,12 @@ class SeedDemoApplications extends Command
 
     private array $pos = [];
     private array $inspectors = [];
+    private ?User $featured = null;
     private ?User $admin = null;
     private array $usedPins = [];
     private array $usedForms = [];
     private array $writtenFiles = [];
-    private array $trackRows = [];
+    private array $createdIds = [];
     private array $openInspectionIds = [];
     private array $counts = ['parcels' => 0, 'inspections' => 0, 'reviews' => 0, 'permits' => 0];
     private int $inspectorTurn = 0;
@@ -164,6 +179,15 @@ class SeedDemoApplications extends Command
         }
 
         mt_srand((int) $this->option('seed'));
+
+        if ($this->option('push')) {
+            $ids = $this->sampleApplications()->keys()->all();
+            if (! $ids) {
+                $this->info('No sample applications found.');
+                return self::SUCCESS;
+            }
+            return $this->mirror($ids) ? self::SUCCESS : self::FAILURE;
+        }
         $count = max(1, (int) $this->option('count'));
 
         $this->pos = User::where('role', 'Planning Officer')->where('is_active', true)->orderBy('id')->get()->all();
@@ -177,6 +201,13 @@ class SeedDemoApplications extends Command
         if (! $this->inspectors) {
             $this->error('No active Site Inspector with a FieldSync account exists. Create one first; inspection rounds need an inspector.');
             return self::FAILURE;
+        }
+        if (($wanted = $this->option('inspector')) !== null) {
+            $this->featured = collect($this->inspectors)->first(fn ($u) => (string) $u->id === $wanted || strcasecmp($u->name, $wanted) === 0);
+            if (! $this->featured) {
+                $this->error("No active Site Inspector with a FieldSync account matches \"{$wanted}\".");
+                return self::FAILURE;
+            }
         }
 
         $available = DB::table('land_parcels')
@@ -194,6 +225,9 @@ class SeedDemoApplications extends Command
         $this->info(sprintf('Database: %s on %s', config('database.connections.' . config('database.default') . '.database'), config('database.connections.' . config('database.default') . '.host')));
         $this->line('Planning Officers: ' . collect($this->pos)->map(fn ($u) => "{$u->name} (#{$u->id})")->implode(', '));
         $this->line('Site Inspectors:   ' . collect($this->inspectors)->map(fn ($u) => "{$u->name} (#{$u->id})")->implode(', '));
+        if ($this->featured) {
+            $this->line("Featured inspector: {$this->featured->name} (#{$this->featured->id}), about half of the rounds");
+        }
         $this->line('Admin:             ' . ($this->admin ? "{$this->admin->name} (#{$this->admin->id})" : 'none (no reassignment samples)'));
         $this->table(['Scenario', 'Applications', 'Multi-parcel'], collect($plans)->groupBy('key')->map(fn ($g, $k) => [$k, $g->count(), $g->where('multi', true)->count()])->values()->all());
 
@@ -238,9 +272,10 @@ class SeedDemoApplications extends Command
         ));
 
         if ($this->option('sync')) {
-            $this->sync();
-        } elseif ($this->openInspectionIds) {
-            $this->comment(count($this->openInspectionIds) . ' open inspection rounds were not sent to the FieldSync app (run with --sync to send them).');
+            return $this->mirror($this->createdIds) ? self::SUCCESS : self::FAILURE;
+        }
+        if ($this->openInspectionIds) {
+            $this->comment(count($this->openInspectionIds) . ' open inspection rounds were not sent to the FieldSync app (run with --push to send them).');
         }
 
         return self::SUCCESS;
@@ -253,6 +288,16 @@ class SeedDemoApplications extends Command
     {
         $instances = [];
         $widest = max(array_column(self::SCENARIOS, 0));
+        // --shuffle: every scenario once (in random order) before any repeats, ~40% multi-parcel.
+        $bag = [];
+        while ($this->option('shuffle') && count($instances) < $count) {
+            if (! $bag) {
+                $bag = array_keys(self::SCENARIOS);
+            }
+            $key = array_splice($bag, mt_rand(0, count($bag) - 1), 1)[0];
+            [$n, , $stream, $steps] = self::SCENARIOS[$key];
+            $instances[] = ['key' => $key, 'nth' => mt_rand(0, $n - 1), 'multi' => mt_rand(1, 100) <= 40, 'stream' => $stream, 'steps' => $steps];
+        }
         for ($pass = 0; count($instances) < $count; $pass++) {
             for ($r = 0; $r < $widest; $r++) {
                 foreach (self::SCENARIOS as $key => [$n, $multi, $stream, $steps]) {
@@ -376,6 +421,7 @@ class SeedDemoApplications extends Command
                 'release'     => $this->release($a, $at),
             };
         }
+        $this->createdIds[] = $a['id'];
     }
 
     /** The applicant, project and parcels of one application. */
@@ -666,7 +712,7 @@ class SeedDemoApplications extends Command
     private function createInspection(array &$a, object $p, Carbon $at, array $round, bool $reinspection): int
     {
         $po = $a['po'];
-        $inspector = $this->inspectors[$this->inspectorTurn++ % count($this->inspectors)];
+        $inspector = $this->nextInspector();
         $scheduled = Carbon::parse($round['date']);
 
         $id = DB::table('site_inspections')->insertGetId([
@@ -885,7 +931,6 @@ class SeedDemoApplications extends Command
             'created_at'            => $at,
         ];
         DB::table('application_status_tracks')->insert($row);
-        $this->trackRows[] = $row;
     }
 
     private function audit(array $a, string $action, User $by, string $note, Carbon $at): void
@@ -942,43 +987,284 @@ class SeedDemoApplications extends Command
         return $parcels;
     }
 
-    // ── After commit ────────────────────────────────────────────────────────
+    // ── FieldSync / public tracker ──────────────────────────────────────────
 
-    private function sync(): void
+    private const APP_STEPS = [1 => 'Site verification', 2 => 'GPS verification', 3 => 'Photos', 4 => 'Checklist', 5 => 'Findings'];
+
+    /**
+     * Play the given sample applications out on Supabase. Anything already
+     * there (a timeline, a delivered round, a completed job, a review) is left
+     * alone, so this can be re-run after a partial failure.
+     */
+    private function mirror(array $ids): bool
     {
         if (! config('services.supabase.url') || ! config('services.supabase.service_key')) {
-            $this->warn('Supabase is not configured here; nothing synced.');
+            $this->error('Supabase is not configured here; nothing pushed.');
+            return false;
+        }
+
+        $supabase = app(SupabaseService::class);
+        $this->info('Playing ' . count($ids) . " applications out on Supabase (bridge {$supabase->bridgeSourceId()})...");
+        $failed = 0;
+
+        // 1. Public tracker timeline, with its real (backdated) times.
+        $tracks = 0;
+        foreach (DB::table('zoning_applications')->whereIn('id', $ids)->orderBy('id')->get(['reference_number', 'form_number']) as $app) {
+            // The tracker is keyed by reference (one row per reference and status),
+            // and other iMAPS databases share it: never mix two filings' timelines.
+            $there = $supabase->select('application_status_tracks', 'form_number', ['reference_number' => "eq.{$app->reference_number}"]);
+            if (! $there->successful()) {
+                $failed++;
+                continue;
+            }
+            $forms = array_unique(array_column($there->json(), 'form_number'));
+            if (array_diff($forms, [$app->form_number])) {
+                $this->warn("Public tracker already holds {$app->reference_number} for another filing (form " . implode(', ', array_diff($forms, [$app->form_number])) . '); its timeline was not pushed.');
+                continue;
+            }
+            if ($forms) {
+                continue;
+            }
+            $rows = DB::table('application_status_tracks')->where('reference_number', $app->reference_number)->where('form_number', $app->form_number)->orderBy('created_at')->orderBy('id')->get()
+                ->unique('status');
+            foreach ($rows as $row) {
+                $ok = $supabase->pushStatusTrack([
+                    'reference_number'      => $row->reference_number,
+                    'form_number'           => $row->form_number,
+                    'contact_number'        => $row->contact_number,
+                    'masked_applicant_name' => $row->masked_applicant_name,
+                    'application_type'      => $row->application_type,
+                    'business_name'         => $row->business_name,
+                    'status'                => $row->status,
+                    'stage_order'           => $row->stage_order,
+                    'note'                  => $row->note,
+                    'scheduled_date'        => $row->scheduled_date ? Carbon::parse($row->scheduled_date)->toIso8601String() : null,
+                    'created_at'            => $this->utc($row->created_at),
+                ]);
+                $ok ? $tracks++ : $failed++;
+            }
+        }
+        $this->line("Public tracker: {$tracks} timeline entries pushed.");
+
+        // 2. Every round, oldest first, so a reinspection finds its previous round.
+        $delivered = $completed = 0;
+        $returned = [];
+        foreach (SiteInspection::whereIn('zoning_application_id', $ids)->orderBy('id')->get() as $round) {
+            try {
+                $jobId = $this->deliverRound($supabase, $round, $delivered);
+                if ($round->status === 'completed') {
+                    $this->completeOnApp($supabase, $round->fresh(), $jobId) && $completed++;
+                    $returned[] = $round->id;
+                }
+            } catch (\Throwable $e) {
+                $failed++;
+                $this->warn("Round #{$round->id}: {$e->getMessage()}");
+            }
+        }
+        $this->line("FieldSync: {$delivered} rounds delivered, {$completed} completed on the app.");
+
+        // 3. The Planning Review of every returned round, as the controller sends it.
+        $reviews = 0;
+        $rows = DB::table('technical_reviews as t')->join('users as u', 'u.id', '=', 't.reviewed_by')
+            ->whereIn('t.zoning_application_id', $ids)->whereNotNull('t.reviewed_site_inspection_id')
+            ->whereIn('t.decision', PushPlanningReviewToSupabase::TRANSPORTABLE_DECISIONS)
+            ->orderBy('t.id')->get(['t.*', 'u.name as reviewer']);
+        foreach ($rows as $r) {
+            try {
+                $reviewedAt = Carbon::parse($r->reviewed_at);
+                PushPlanningReviewToSupabase::dispatchSync((int) $r->id, (int) $r->reviewed_site_inspection_id, $r->decision, (int) $r->reviewed_by, $r->reviewer, $reviewedAt->toIso8601String(), $r->decision_reason);
+                $this->remote()->patch('field_job_reviews?' . $this->query($supabase->scopedFilters(['technical_review_id' => "eq.{$r->id}"])), ['created_at' => $this->utc($reviewedAt->copy()->addSeconds(2))])->throw();
+                $reviews++;
+            } catch (\Throwable $e) {
+                $failed++;
+                $this->warn("Review #{$r->id}: {$e->getMessage()}");
+            }
+        }
+        $this->line("FieldSync: {$reviews} Planning Reviews sent back to the inspectors.");
+
+        // 4. iMAPS pulls the app's results back, the same command the scheduler runs.
+        $pulled = [];
+        foreach ($returned as $id) {
+            Artisan::call('sync:pull-inspections', ['--local-inspection-id' => $id]);
+            $result = Str::after(Str::afterLast(trim(Artisan::output()), "\n"), 'SYNC_RESULT=');
+            $pulled[$result] = ($pulled[$result] ?? 0) + 1;
+        }
+        $this->line('Pulled back: ' . (collect($pulled)->map(fn ($n, $r) => "{$n} {$r}")->implode(', ') ?: 'nothing to pull'));
+
+        if ($failed) {
+            $this->error("{$failed} pushes failed (see above / laravel.log). Run --push again to retry them.");
+        }
+
+        return $failed === 0;
+    }
+
+    /** Deliver a round through the real bridge job, unless it already reached FieldSync. Returns the field job id. */
+    private function deliverRound(SupabaseService $supabase, SiteInspection $round, int &$delivered): string
+    {
+        $jobId = $supabase->findFieldJobIdByLocalInspectionId($round->id);
+        if (! $jobId) {
+            // The seeder's stand-in delivery record gives way to the real one.
+            DB::table('inspection_delivery_attempts')->where('site_inspection_id', $round->id)->delete();
+            DB::table('site_inspections')->where('id', $round->id)->update(['delivery_status' => null, 'delivered_at' => null, 'last_delivery_attempt_at' => null]);
+
+            PushInspectionToSupabase::dispatchSync(SiteInspection::findOrFail($round->id), InspectionDeliveryAttempt::SOURCE_INITIAL_DISPATCH);
+
+            $jobId = $supabase->findFieldJobIdByLocalInspectionId($round->id)
+                ?? throw new \RuntimeException('delivered, but the field job cannot be found');
+            $delivered++;
+        }
+        if (DB::table('site_inspections')->where('id', $round->id)->value('delivery_status') !== 'delivered') {
+            throw new \RuntimeException('the bridge did not confirm delivery');
+        }
+
+        // Delivered seconds after the Planning Officer assigned it, not today.
+        $created = Carbon::parse($round->getRawOriginal('created_at'));
+        $sent = $created->copy()->addSeconds(3);
+        $ack = $created->copy()->addSeconds(6);
+        DB::table('inspection_delivery_attempts')->where('site_inspection_id', $round->id)->update(['attempted_at' => $sent, 'completed_at' => $ack, 'created_at' => $sent]);
+        DB::table('site_inspections')->where('id', $round->id)->update([
+            'last_delivery_attempt_at' => $sent, 'delivered_at' => $ack,
+            'updated_at' => $round->getRawOriginal('submitted_at') ?? $created,
+        ]);
+        $this->remote()->patch("field_jobs?id=eq.{$jobId}", ['created_at' => $this->utc($created)])->throw();
+
+        return $jobId;
+    }
+
+    /** What the inspector's phone records while working a returned round: steps, GPS, checklist, findings, activity feed. */
+    private function completeOnApp(SupabaseService $supabase, SiteInspection $round, string $jobId): bool
+    {
+        $job = $this->remote()->get('field_jobs', ['id' => "eq.{$jobId}", 'select' => 'status'])->throw()->json();
+        if (($job[0]['status'] ?? null) === 'completed') {
+            return false;
+        }
+
+        $submitted = Carbon::parse($round->getRawOriginal('submitted_at'));
+        $span = mt_rand(20, 45) * 60;
+        $start = $submitted->copy()->subSeconds($span);
+        $at = fn (float $share) => $start->copy()->addSeconds((int) round($span * $share));
+        $steps = [1 => $at(0.03), 2 => $at(0.12), 3 => $at(0.45), 4 => $at(0.65), 5 => $at(0.92)];
+        $gps = $steps[2]->copy()->subSecond();
+        $checklist = $round->checklist_data ?? [];
+
+        $this->remote()->patch('field_jobs?' . $this->query($supabase->scopedFilters(['id' => "eq.{$jobId}"])), [
+            'status'                    => 'completed',
+            'current_step'              => 6,
+            'started_at'                => $this->utc($start->copy()->addSeconds(5)),
+            'step_timestamps'           => array_map(fn ($t) => $t->copy()->utc()->format('Y-m-d\TH:i:s.u\Z'), $steps),
+            'gps_confirmed_at'          => $this->utc($gps),
+            'confirmed_latitude'        => $round->confirmed_latitude,
+            'confirmed_longitude'       => $round->confirmed_longitude,
+            'gps_accuracy_m'            => $round->gps_accuracy_m,
+            'checklist_data'            => $checklist,
+            'checklist_completed_count' => count(array_filter($checklist, fn ($c) => $c['checked'] ?? false)),
+            'checklist_total_count'     => count($checklist),
+            'photo_paths'               => [],
+            'photo_count'               => 0,
+            'inspection_result'         => $round->inspection_result,
+            'is_compliant'              => $round->is_compliant,
+            'findings'                  => $round->findings,
+            'observations'              => $round->observations,
+            'discrepancies'             => $round->discrepancies,
+            'recommendations'           => $round->recommendations,
+            'inspector_notes'           => $round->inspector_notes,
+            'submitted_at'              => $this->utc($submitted),
+            'updated_at'                => $this->utc($submitted),
+        ])->throw();
+
+        // The local copy keeps the app's GPS time, so the pull-back changes nothing.
+        DB::table('site_inspections')->where('id', $round->id)->update(['gps_confirmed_at' => $gps]);
+
+        $inspector = $this->profileId($round->inspector_id);
+        $place = DB::table('parcels')->where('id', $round->parcel_id)->value('barangay');
+        $feed = [];
+        foreach ($steps as $n => $t) {
+            if ($n === 2) {
+                $feed[] = ['gps_confirmed', 'GPS verified on-site', $gps];
+            }
+            $feed[] = ['step_completed', "Completed Step {$n}: " . self::APP_STEPS[$n], $t];
+        }
+        $feed[] = ['inspection_completed', 'Inspection completed', $submitted];
+        $this->remote()->post('activity_log', array_map(fn ($e) => [
+            'inspector_id' => $inspector, 'field_job_id' => $jobId, 'event_type' => $e[0], 'title' => $e[1], 'subtitle' => $place,
+            'occurred_at' => $this->utc($e[2]), 'created_at' => $this->utc($e[2]), 'is_read' => true,
+        ], $feed))->throw();
+
+        return true;
+    }
+
+    /** Remove the remote copies of the given sample applications. */
+    private function unmirror(array $appIds, array $references): void
+    {
+        if (! config('services.supabase.url') || ! config('services.supabase.service_key')) {
             return;
         }
 
         $supabase = app(SupabaseService::class);
-        $failed = 0;
-        foreach ($this->trackRows as $row) {
-            try {
-                $payload = $row;
-                unset($payload['created_at']);
-                $payload['scheduled_date'] = $row['scheduled_date'] ? Carbon::parse($row['scheduled_date'])->toIso8601String() : null;
-                $supabase->pushStatusTrack($payload) || $failed++;
-            } catch (\Throwable) {
-                $failed++;
-            }
-        }
-        $this->line(sprintf('Status timeline: %d entries pushed to Supabase, %d failed.', count($this->trackRows) - $failed, $failed));
+        $rounds = DB::table('site_inspections')->whereIn('zoning_application_id', $appIds)->pluck('id')->all();
+        $parcels = DB::table('parcels')->whereIn('zoning_application_id', $appIds)->pluck('id')->all();
+        $in = fn (array $ids) => 'in.(' . implode(',', $ids) . ')';
+        $scoped = fn (string $table, array $filters) => $this->remote()->delete($table . '?' . $this->query($supabase->scopedFilters($filters)))->throw();
 
-        foreach (array_keys($this->openInspectionIds) as $id) {
-            PushInspectionToSupabase::dispatch(SiteInspection::findOrFail($id));
+        try {
+            if ($rounds) {
+                $jobs = array_column($this->remote()->get('field_jobs', $supabase->scopedFilters(['local_inspection_id' => $in($rounds), 'select' => 'id']))->throw()->json(), 'id');
+                if ($jobs) {
+                    $quoted = 'in.(' . implode(',', $jobs) . ')';
+                    $this->remote()->delete('activity_log?' . $this->query(['field_job_id' => $quoted]))->throw();
+                    $scoped('field_job_reviews', ['field_job_id' => $quoted]);
+                }
+                $scoped('field_jobs', ['local_inspection_id' => $in($rounds)]);
+            }
+            if ($parcels) {
+                $scoped('supabase_parcels', ['local_parcel_id' => $in($parcels)]);
+            }
+            $scoped('supabase_zoning_applications', ['local_application_id' => $in($appIds)]);
+            foreach ($references as $reference => $form) {
+                $this->remote()->delete('application_status_tracks?' . $this->query(['reference_number' => "eq.{$reference}", 'form_number' => "eq.{$form}"]))->throw();
+            }
+            $this->line('Removed their FieldSync jobs, reviews, activity and tracker timelines from Supabase.');
+        } catch (\Throwable $e) {
+            $this->warn('Supabase cleanup failed (' . $e->getMessage() . '); remote copies may remain.');
         }
-        $this->line(count($this->openInspectionIds) . ' open inspection rounds queued for the FieldSync app.');
+    }
+
+    private function remote(): PendingRequest
+    {
+        $key = config('services.supabase.service_key');
+
+        return Http::baseUrl(rtrim(config('services.supabase.url'), '/') . '/rest/v1/')
+            ->withHeaders(['apikey' => $key, 'Authorization' => "Bearer {$key}", 'Prefer' => 'return=minimal'])
+            ->timeout(20);
+    }
+
+    private function query(array $filters): string
+    {
+        return http_build_query($filters, '', '&', PHP_QUERY_RFC3986);
+    }
+
+    /** A local (app timezone) time as the UTC instant Supabase stores. */
+    private function utc(mixed $time): string
+    {
+        $time = $time instanceof \DateTimeInterface ? Carbon::instance($time) : Carbon::parse($time, config('app.timezone'));
+
+        return $time->utc()->toIso8601String();
+    }
+
+    private function profileId(int $userId): string
+    {
+        static $ids = [];
+
+        return $ids[$userId] ??= $this->remote()->get('profiles', [
+            'handshake_key' => 'eq.' . DB::table('users')->where('id', $userId)->value('handshake_key'), 'select' => 'id',
+        ])->throw()->json()[0]['id'] ?? throw new \RuntimeException("no FieldSync profile for user #{$userId}");
     }
 
     // ── Purge ───────────────────────────────────────────────────────────────
 
     private function purge(): int
     {
-        $apps = DB::table('zoning_applications')
-            ->where('email', 'like', '%@' . self::EMAIL_DOMAIN)
-            ->where('form_number', 'like', self::FORM_PREFIX . '%')
-            ->pluck('reference_number', 'id');
+        $apps = $this->sampleApplications();
 
         if ($apps->isEmpty()) {
             $this->info('No sample applications found.');
@@ -991,12 +1277,15 @@ class SeedDemoApplications extends Command
             $this->comment('Dry run: nothing deleted.');
             return self::SUCCESS;
         }
-        if (! $this->option('force') && ! $this->confirm('Delete them with their parcels, reviews, inspections, permits, timeline and audit entries?')) {
+        if (! $this->option('force') && ! $this->confirm('Delete them with their parcels, reviews, inspections, permits, timeline and audit entries (here and on Supabase)?')) {
             return self::FAILURE;
         }
 
         $ids = $apps->keys()->all();
         $files = DB::table('generated_permits')->whereIn('zoning_application_id', $ids)->pluck('file_path')->all();
+
+        // Remote first: the local rows hold the ids the remote copies are keyed by.
+        $this->unmirror($ids, DB::table('zoning_applications')->whereIn('id', $ids)->pluck('form_number', 'reference_number')->all());
 
         DB::transaction(function () use ($ids, $apps) {
             DB::table('audit_trail')->whereIn('application_id', $ids)->delete();
@@ -1016,12 +1305,32 @@ class SeedDemoApplications extends Command
         }
 
         $this->info("Deleted {$apps->count()} sample applications and " . count($files) . ' permit files.');
-        $this->comment('Anything pushed earlier with --sync stays in Supabase.');
 
         return self::SUCCESS;
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
+
+    /** reference_number by id of the sample applications (both markers, so never a real filing). */
+    private function sampleApplications(): \Illuminate\Support\Collection
+    {
+        return DB::table('zoning_applications')
+            ->where('email', 'like', '%@' . self::EMAIL_DOMAIN)
+            ->where('form_number', 'like', self::FORM_PREFIX . '%')
+            ->orderBy('id')
+            ->pluck('reference_number', 'id');
+    }
+
+    /** The featured inspector about half the time, otherwise the others in turn (at random with --shuffle). */
+    private function nextInspector(): User
+    {
+        $others = array_values(array_filter($this->inspectors, fn ($u) => $u->id !== $this->featured?->id));
+        if ($this->featured && (! $others || mt_rand(1, 100) <= 50)) {
+            return $this->featured;
+        }
+
+        return $this->option('shuffle') ? $this->pick($others) : $others[$this->inspectorTurn++ % count($others)];
+    }
 
     private function deleteWrittenFiles(): void
     {

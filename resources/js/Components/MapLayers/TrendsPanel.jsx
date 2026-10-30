@@ -428,14 +428,6 @@ export default function TrendsPanel({
                         It's an estimate, worked out from the locational clearance applications already recorded in
                         iMAPS. No other data goes into it.
                     </p>
-                    <button
-                        type="button"
-                        onClick={() => handleExecuteForecast(false)}
-                        disabled={isExecuting}
-                        className="w-full h-7 rounded-[3px] text-[11.5px] font-semibold bg-[#0b2a5b] hover:bg-[#0e3574] text-white disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
-                    >
-                        {isExecuting ? 'Running model…' : 'Run forecast model'}
-                    </button>
                     {intakeError && (
                         <p role="alert" className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-[3px] px-2 py-1.5">{intakeError}</p>
                     )}

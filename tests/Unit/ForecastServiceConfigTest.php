@@ -116,20 +116,21 @@ class ForecastServiceConfigTest extends TestCase
         $controller = file_get_contents(__DIR__ . '/../../app/Http/Controllers/ForecastController.php');
 
         // The model's output is presented as evidence about Rosario, so it runs
-        // on the recorded clearances and nothing else.
+        // on the service's own MPDO-based history and nothing else.
         $this->assertStringNotContainsString('UploadedFile', $service);
         $this->assertStringNotContainsString('getClientOriginalName', $service);
         $this->assertStringNotContainsString("\$request->file(", $controller);
         $this->assertStringNotContainsString("'file' =>", $controller);
     }
 
-    public function test_the_run_uses_recorded_history_not_a_bundled_csv(): void
+    public function test_the_run_fetches_the_service_forecast_and_sends_no_history(): void
     {
         $source = $this->forecastServiceSource();
 
-        // The bundled CSV could drift from — or never have matched — the
-        // clearances the dashboard shows as recorded.
-        $this->assertStringNotContainsString('rosario_zoning_apps_2021_2026.csv', $source);
-        $this->assertStringContainsString("DB::table('historical_data')", $source);
+        // The service forecasts from its own MPDO-based history, the data it
+        // was validated on. historical_data feeds the Maps page, not the model.
+        $this->assertStringContainsString('->get($this->url)', $source);
+        $this->assertStringNotContainsString('->attach(', $source);
+        $this->assertStringNotContainsString('DB::table(', $source);
     }
 }

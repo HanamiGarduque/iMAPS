@@ -6,6 +6,8 @@ import L from "leaflet";
 export const MAP_MAX_ZOOM = 20;
 // Zoom used when focusing a lot: close, but wide enough to keep neighbouring lots and zone lines in view
 export const LOT_FOCUS_ZOOM = 19;
+// Lowest zoom the CLUP tiles are cut for (public/tiles/clup_tiles starts at 12): the floor for registry maps
+export const CLUP_MIN_ZOOM = 12;
 export const BASEMAPS = {
     satellite: { label: "Google Satellite", url: "https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", maxNativeZoom: 18 },
     street: { label: "Google Road", url: "https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", maxNativeZoom: 20 },
