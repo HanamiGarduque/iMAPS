@@ -19,7 +19,7 @@ import TrendsPanel from "@/Components/MapLayers/TrendsPanel";
 import useForecastWatchlist from "@/Components/MapLayers/useForecastWatchlist";
 import { ForecastSummary, ForecastInsights } from "@/Components/MapLayers/ForecastBrief";
 import DiversityPanel from "@/Components/MapLayers/DiversityPanel";
-import LeafletMap, { getAppCoordinates, PIN_ZOOM, HOME_ZOOM, getTrendsDemandColor, APP_LOAD_CLASSES } from "@/Components/Maps/LeafletMap";
+import LeafletMap, { getAppCoordinates, PIN_ZOOM, HOME_ZOOM, getTrendsDemandColor, APP_LOAD_CLASSES, getAppLoadColor } from "@/Components/Maps/LeafletMap";
 import LayersPanel, { MODULES, PERMIT_TYPES } from "@/Components/Maps/LayersPanel";
 import TimelineBar from "@/Components/Maps/TimelineBar";
 import DiversityTimeline from "@/Components/Maps/DiversityTimeline";
@@ -31,6 +31,7 @@ import LcRecordsTable from "@/Components/Maps/LcRecordsTable";
 import { buildLcView, summarizeBarangay } from "@/utils/lcInsights";
 import LcCallout from "@/Components/Maps/LcCallout";
 import DiversityCallout from "@/Components/Maps/DiversityCallout";
+import StatusCallout from "@/Components/Maps/StatusCallout";
 import useBarangayNames from "@/utils/useBarangayNames";
 import { getLens, resolveLensValue } from "@/utils/diversityTheme";
 import { getZoneInfo } from "@/utils/clupZones";
@@ -153,8 +154,7 @@ const ICONS = {
     extent: "M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15",
     panel: "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z",
     fullscreen: "M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4",
-    table: "M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M3.75 14.25h16.5M9 9.75v9",
-};
+    table: "M3.75 5.25h16.5v13.5H3.75zM3.75 9.75h16.5M3.75 14.25h16.5M9 9.75v9",};
 
 function ToolButton({ icon, label, onClick, pressed, disabled }) {
     return (
@@ -539,6 +539,13 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         <DiversityCallout
             name={selectedBgy.name}
             stat={diversityStats?.[selectedBgy.name] || selectedBgy.data || {}}
+            onClose={() => setSelectedBgy(null)}
+        />
+    ) : activeLayer === "status" && selectedBgy?.name ? (
+        <StatusCallout
+            name={selectedBgy.name}
+            apps={scopedApps}
+            period={periodFilter}
             onClose={() => setSelectedBgy(null)}
         />
     ) : null;
@@ -951,6 +958,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     active={show3D}
                                                     syncRef={leafletViewRef}
                                                     controlRef={view3DRef}
+                                                    onZoomChange={setMapZoom}
                                                     showLabels={showLabels}
                                                     showSatellite={showSatellite3D}
                                                     selectedBgy={selectedBgy}
@@ -975,11 +983,13 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
                                     {/* Map title, like a print layout's. It also reads out whatever is
                                         under the cursor, so nothing floats over the data itself. */}
-                                    {lcFocus || (activeLayer === "diversity" && selectedBgy?.name) ? (
+                                    {lcFocus || ((activeLayer === "diversity" || activeLayer === "status") && selectedBgy?.name) ? (
                                         <>
                                             <BarangayLocator
                                                 name={selectedBgy.name}
-                                                color={lcFocus ? lcFocus.cls.color : resolveLensValue("mix", { diversity: diversityStats?.[selectedBgy.name]?.diversity ?? null }).color}
+                                                color={lcFocus ? lcFocus.cls.color
+                                                    : activeLayer === "status" ? getAppLoadColor(mapStats?.[selectedBgy.name]?.total || 0)
+                                                    : resolveLensValue("mix", { diversity: diversityStats?.[selectedBgy.name]?.diversity ?? null }).color}
                                                 onClear={() => setSelectedBgy(null)}
                                             />
                                         </>

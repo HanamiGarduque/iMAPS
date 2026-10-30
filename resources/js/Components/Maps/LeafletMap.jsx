@@ -815,7 +815,7 @@ export default function LeafletMap({
         if (!selectedBgy?.name) {
             if (hadSelectionRef.current && rosarioBoundsRef.current) {
                 if (prefersReducedMotion) map.fitBounds(rosarioBoundsRef.current, homePadding());
-                else map.flyToBounds(rosarioBoundsRef.current, { ...homePadding(), duration: 0.9, easeLinearity: 0.15 });
+                else map.flyToBounds(rosarioBoundsRef.current, { ...homePadding(), duration: 0.8, easeLinearity: 0.15 });
             }
             hadSelectionRef.current = false;
             return;
@@ -831,7 +831,7 @@ export default function LeafletMap({
 
         const opts = { ...framePadding(), maxZoom: 14.5 };
         if (prefersReducedMotion) map.fitBounds(match.getBounds(), opts);
-        else map.flyToBounds(match.getBounds(), { ...opts, duration: 0.9, easeLinearity: 0.15 });
+        else map.flyToBounds(match.getBounds(), { ...opts, duration: 0.8, easeLinearity: 0.15 });
     }, [selectedBgy, barangaysReady]);
 
     // Declared after the selection effect so an explicit fly-to (a located
@@ -844,7 +844,7 @@ export default function LeafletMap({
         const { right = 0, bottom = 0 } = insetsRef.current;
         const target = map.unproject(map.project(flyToTarget.coords, z).add([right / 2, bottom / 2]), z);
         if (prefersReducedMotion) map.setView(target, z);
-        else map.flyTo(target, z, { duration: 0.9, easeLinearity: 0.25 });
+        else map.flyTo(target, z, { duration: 0.8, easeLinearity: 0.25 });
     }, [flyToTarget]);
 
     useEffect(() => {

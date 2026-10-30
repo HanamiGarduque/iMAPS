@@ -287,10 +287,6 @@ class MapsController extends Controller
             ->orderBy('encoding_date', 'asc')
             ->get();
 
-        $bgyCentroids = DB::table('barangay_boundary')
-            ->select('location', DB::raw('ST_Y(ST_Centroid(geom)) as lat'), DB::raw('ST_X(ST_Centroid(geom)) as lng'))
-            ->get()
-            ->keyBy(fn($item) => trim($item->location));
 
         $historicalBgyCounts = [];
         $historicalByYearAndBarangay = [];
@@ -321,11 +317,8 @@ class MapsController extends Controller
             $zCode = trim($hRow->zoning_code ?? '');
             $cat = $zoneCategoryMap[$zCode] ?? 'Special projects';
 
-            // 3. Populate Map Pins & Popup Info with jitter for visual clarity
-            $centroid = $bgyCentroids[$bName] ?? null;
-            $lat = $centroid ? ($centroid->lat + (($hRow->id % 13) - 6) * 0.0008) : 13.8459;
-            $lng = $centroid ? ($centroid->lng + (($hRow->id % 17) - 8) * 0.0008) : 121.2068;
-
+            // 3. The LC records behind the timeline and the records table. Only the
+            // fields the page reads: this list ships with every Maps load.
             if (!isset($historicalPins[$year])) {
                 $historicalPins[$year] = [];
             }
@@ -335,13 +328,10 @@ class MapsController extends Controller
                 'form_number' => $hRow->form_number,
                 'applicant_name' => $hRow->name,
                 'barangay' => $bName,
-                'application_type' => $hRow->application_type,
                 'purpose' => $hRow->purpose,
                 'zoning_code' => $zCode,
                 'target_land_use_class' => $cat,
                 'lot_area_sqm' => $hRow->lot_area_sqm,
-                'latitude' => $lat,
-                'longitude' => $lng,
                 'created_at' => $hRow->encoding_date,
             ];
         }

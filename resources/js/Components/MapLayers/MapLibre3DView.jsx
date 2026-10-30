@@ -48,6 +48,13 @@ const PLAIN_PAGE = "radial-gradient(ellipse at 50% 45%, #ffffff 0%, #ffffff 52%,
 const PLAIN_LINE = "#b9b4ab";
 const SHADOW_STEPS = [[3, 5], [7, 11], [12, 18]];
 const INK = "#0f172a";
+// Diversity prisms stand lower: full-height walls along the ragged boundaries
+// read as clutter, and the colour already carries the score.
+// Labels are refreshed every frame of a flight; writing an unchanged value
+// still dirties style and layout for all 48 of them.
+const put = (target, key, value) => { if (target[key] !== value) target[key] = value; };
+// Application tracking gets the same restraint so one busy barangay doesn't tower.
+const lensHeightScale = (lensId) => (lensId === "trends" ? 1 : lensId === "status" ? 0.3 : 0.35);
 
 const SRC_PRISMS = "diversity-source";
 const SRC_PARCELS = "clup-parcels";
@@ -62,7 +69,7 @@ const LYR_PARCEL_LINES = "clup-parcels-lines";
 // Motion constants, so the whole scene shares one rhythm.
 const MORPH_MS = 650;
 const FADE_MS = 260;
-const FLIGHT_MS = 1100;
+const FLIGHT_MS = 950;
 const PARCEL_HEIGHT = 190;
 
 const easeSine = (t) => 0.5 - 0.5 * Math.cos(Math.PI * t);
@@ -343,6 +350,7 @@ export default function MapLibre3DView({
     hoveredBgy = null,
     onHoverBgy = () => {},
     onParcelsVisible = () => {},
+    onZoomChange = null,
     // Overrides for embedding in a smaller canvas (the Overview card); the
     // defaults are the Maps page's framing.
     baseZoom = 11.5,
@@ -369,6 +377,7 @@ export default function MapLibre3DView({
     const showLabelsRef = useRef(showLabels);
     showLabelsRef.current = showLabels;
     const lastPropsRef = useRef(null);
+    const lastDataRef = useRef(null);
     const activeRef = useRef(active);
     activeRef.current = active;
     const demandRef = useRef(demandCounts);
@@ -419,7 +428,7 @@ export default function MapLibre3DView({
     // would forever see the first render's props (which, for `rightPanelOpen`,
     // meant the panel re-opened itself every time even after being closed).
     const callbacksRef = useRef({});
-    callbacksRef.current = { onFeatureClick, onMapClick, onHoverBgy, onParcelsVisible };
+    callbacksRef.current = { onFeatureClick, onMapClick, onHoverBgy, onParcelsVisible, onZoomChange };
 
     const prefersReducedMotion = useReducedMotion();
 
@@ -433,7 +442,7 @@ export default function MapLibre3DView({
 
     const heightExpression = useCallback((lensId, flat) => {
         if (flat) return 0;
-        return ["to-number", ["get", `h_${lensId}_${slotRef.current}`]];
+        return ["*", lensHeightScale(lensId), ["to-number", ["get", `h_${lensId}_${slotRef.current}`]]];
     }, []);
 
     const colorExpression = useCallback((lensId) => [
@@ -492,7 +501,8 @@ export default function MapLibre3DView({
         // tracking keeps its counts so the permit-type filter shows on the map.
         // Diversity lenses never show the value chip; the mix score is in the side panel.
         const isDiversityLens = lensRef.current !== "status" && lensRef.current !== "trends";
-        const namesOnly = isDiversityLens || (plain && !selected && lensRef.current !== "status");
+        // Application tracking reads like the LC demand view: names on the map, counts on hover.
+        const namesOnly = isDiversityLens || (plain && !selected);
         // Every barangay is named in the town view; only the satellite view thins out.
         const maxLabels = Infinity;
         let shown = 0;
@@ -507,22 +517,30 @@ export default function MapLibre3DView({
         let focusInfo = null;
         candidates.forEach(({ name, marker, rank, value, band: b, point: ground }) => {
             const { valueEl, metaEl, changeEl } = entries[name];
-            const rise = Math.round(rank * lift);
+            const rise = Math.round(rank * lensHeightScale(lensRef.current) * lift);
             marker.setOffset([0, -rise]);
             const point = { x: ground.x, y: ground.y - rise };
-            valueEl.textContent = value;
-            valueEl.style.display = value && !namesOnly ? "" : "none";
+            put(valueEl, "textContent", value);
+            put(valueEl.style, "display", value && !namesOnly ? "" : "none");
             entries[name].el.classList.toggle("imaps3d-name-only", namesOnly);
             // Names grow a little as the map is zoomed in, so they stay in proportion to the shapes.
-            entries[name].el.style.fontSize = namesOnly ? `${Math.min(14, Math.max(8.5, 8.5 + (zoom - 11) * 2.2)).toFixed(1)}px` : "";
+            put(entries[name].el.style, "fontSize", namesOnly ? `${Math.round(Math.min(14, Math.max(8.5, 8.5 + (zoom - 11) * 2.2)) * 2) / 2}px` : "");
             let target = 1;
             if (selected) target = name.toLowerCase() === selected ? 1 : 0;
             else if (band && band !== "all" && b !== band) target = 0.15;
             if (target > 0.5 && plain && !selected && ((!namesOnly && !value && zoom < 13.4) || shown >= maxLabels)) target = 0;
             if (namesOnly) {
-                // No hiding: a small name is better than a missing one. Busier barangays
-                // sit on top where names touch.
-                entries[name].el.style.zIndex = String(1000 + Math.round(rank));
+                // Names that would collide give way to busier barangays, and come
+                // back as the map zooms in and they have room.
+                put(entries[name].el.style, "zIndex", String(1000 + Math.round(rank)));
+                if (target > 0.5 && !selected) {
+                    const fs = Math.min(14, Math.max(8.5, 8.5 + (zoom - 11) * 2.2));
+                    const w = name.length * fs * 0.58 + 6;
+                    const h = fs + 4;
+                    const box = { l: point.x - w / 2, r: point.x + w / 2, t: point.y - h / 2, b: point.y + h / 2 };
+                    if (placed.some((q) => box.l < q.r && box.r > q.l && box.t < q.b && box.b > q.t)) target = 0;
+                    else placed.push(box);
+                }
                 shown += 1;
             } else if (target > 0.5) {
                 const w = namesOnly ? name.length * 7 + 16 : Math.max(name.length, value.length) * 6.2 + (plain ? 20 : 10);
@@ -547,9 +565,9 @@ export default function MapLibre3DView({
             }
             const lc = lcColorsRef.current?.[name.toLowerCase()];
             if (focus) entries[name].el.style.setProperty("--lc", propsFor(name)[`c_${key}`] || "#94a3b8");
-            metaEl.textContent = focus ? (lc?.meta || "").split(" · ")[0] : "";
-            changeEl.textContent = focus ? lc?.change || "" : "";
-            changeEl.dataset.tone = lc?.delta > 0 ? "up" : lc?.delta < 0 ? "down" : "flat";
+            put(metaEl, "textContent", focus ? (lc?.meta || "").split(" · ")[0] : "");
+            put(changeEl, "textContent", focus ? lc?.change || "" : "");
+            put(changeEl.dataset, "tone", lc?.delta > 0 ? "up" : lc?.delta < 0 ? "down" : "flat");
             // Through the marker: it rewrites its element's opacity on every moveend.
             const opacity = showLabelsRef.current || focus ? target : 0;
             marker.setOpacity(opacity, opacity);
@@ -678,7 +696,7 @@ export default function MapLibre3DView({
             // one barangay ends and another begins.
             const showAllBoundaries = isFlatRef.current && !hasSelection;
             const plain = plainRef.current;
-            map.setPaintProperty(LYR_FOOTPRINTS, "line-color", plain ? PLAIN_LINE : "#ffffff");
+            map.setPaintProperty(LYR_FOOTPRINTS, "line-color", "#ffffff");
             map.setPaintProperty(
                 LYR_FOOTPRINTS,
                 "line-opacity",
@@ -1339,6 +1357,8 @@ export default function MapLibre3DView({
 
         map.on("moveend", () => {
             refreshLabels();
+            // The status bar reads Leaflet zoom (MapLibre's plus one).
+            if (activeRef.current) callbacksRef.current.onZoomChange?.(Math.round((map.getZoom() + 1) * 100) / 100);
             const p = Math.round(map.getPitch());
 
             // Flatten only when the view has actually settled top-down, with
@@ -1376,6 +1396,11 @@ export default function MapLibre3DView({
     // Live stats changed (a new permit, a fresh request): rebuild the source.
     useEffect(() => {
         if (!styleReadyRef.current) return;
+        // applyPaint changes identity with the panel, so this re-ran on barangay
+        // clicks and re-uploaded every prism mid-flight. Rebuild on new data only.
+        const data = lastDataRef.current;
+        if (styleReadyRef.current && data && data[0] === bgyStats && data[1] === demandCounts && data[2] === lcColors) return;
+        if (styleReadyRef.current) lastDataRef.current = [bgyStats, demandCounts, lcColors];
         syncSourceData();
         applyPaint();
     }, [bgyStats, demandCounts, lcColors, syncSourceData, applyPaint]);
@@ -1472,21 +1497,31 @@ export default function MapLibre3DView({
 
     // Panel toggle: resize and re-pad only. This used to re-fly the camera to
     // the selection, which yanked the view mid-interaction.
+    const prevPanelOpenRef = useRef(rightPanelOpen);
     useEffect(() => {
+        // The panel slides, so the canvas is measured once it has settled. The
+        // table only changes padding: re-aim at once, or a barangay click's
+        // flight (the table collapses with it) restarts mid-air and stutters.
+        const panelMoved = prevPanelOpenRef.current !== rightPanelOpen;
+        prevPanelOpenRef.current = rightPanelOpen;
         const timer = setTimeout(() => {
             const map = mapRef.current;
             if (!map) return;
             if (!activeRef.current) return;
-            map.resize();
+            if (panelMoved) map.resize();
             // With a barangay open, refit it to what is still visible; otherwise just re-pad.
             if (selectedNameRef.current) {
                 flightTargetRef.current = null;
                 flyToBarangay(selectedNameRef.current);
+            } else if (map.isMoving()) {
+                // Mid fly-out (the table closes with the deselection): re-aim the
+                // flight at the new padding instead of cutting it short.
+                frameMunicipality(!reducedRef.current);
             } else if (reducedRef.current) map.jumpTo({ padding: cameraPadding() });
             else map.easeTo({ padding: cameraPadding(), duration: 420, easing: easeSine });
-        }, 300);
+        }, panelMoved ? 300 : 0);
         return () => clearTimeout(timer);
-    }, [rightPanelOpen, insets?.bottom, cameraPadding, flyToBarangay]);
+    }, [rightPanelOpen, insets?.bottom, cameraPadding, flyToBarangay, frameMunicipality]);
 
     // The view stays mounted when hidden so returning to it is instant. On
     // reappearing it re-measures in case the window or the panel changed size

@@ -267,6 +267,23 @@ const ageInDays = (app) => {
     return Math.max(1, Math.floor((Date.now() - new Date(app.created_at).getTime()) / 86400000));
 };
 
+// Open applications per processing stage; shared with the barangay pop-up card.
+export function countStages(list = []) {
+    const keys = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release"];
+    return keys.map((key) => {
+        const cfg = STATUS_MARKER_CONFIG[key];
+        const count = list.filter((app) => !isResolved(app) && getStatusMarkerConfig(app?.status) === cfg).length;
+        return { key, label: cfg.shortLabel, color: cfg.color, border: cfg.border, badgeBg: cfg.badgeBg, badgeText: cfg.badgeText, count };
+    });
+}
+
+export const RELEASED_LABELS = {
+    all: "Released (all time)",
+    month: "Released (this month)",
+    "3months": "Released (last 3 months)",
+    year: "Released (this year)",
+};
+
 export default function StatusPanel({
     recent = [],
     selectedBgy = null,
@@ -308,21 +325,9 @@ export default function StatusPanel({
         });
         return { total: baseList.length, open, released, avgOpenDays: open ? Math.round(openDays / open) : 0 };
     }, [baseList]);
-    const releasedLabel = {
-        all: "Released (all time)",
-        month: "Released (this month)",
-        "3months": "Released (last 3 months)",
-        year: "Released (this year)",
-    }[period] || "Released";
+    const releasedLabel = RELEASED_LABELS[period] || "Released";
 
-    const stages = useMemo(() => {
-        const keys = ["Received", "Technical Review", "Under Sangguniang Bayan", "For Release"];
-        return keys.map((key) => {
-            const cfg = STATUS_MARKER_CONFIG[key];
-            const count = baseList.filter((app) => !isResolved(app) && getStatusMarkerConfig(app?.status) === cfg).length;
-            return { key, label: cfg.shortLabel, color: cfg.color, border: cfg.border, badgeBg: cfg.badgeBg, badgeText: cfg.badgeText, count };
-        });
-    }, [baseList]);
+    const stages = useMemo(() => countStages(baseList), [baseList]);
     const bottleneck = stages.reduce((max, s) => (s.count > (max?.count ?? 0) ? s : max), null)?.key;
 
     // Same building blocks as the LC demand panel: question headings, a big
@@ -390,6 +395,7 @@ export default function StatusPanel({
                 </div>
             </section>
 
+            {!isBgy && (<>
             <section className={`${CARD} pb-3`}>
                 <div className="px-4 pt-3">
                     <Question className="mb-2">How many applications are there?</Question>
@@ -435,6 +441,7 @@ export default function StatusPanel({
                     })}
                 </ol>
             </section>
+            </>)}
         </div>
     );
 }
