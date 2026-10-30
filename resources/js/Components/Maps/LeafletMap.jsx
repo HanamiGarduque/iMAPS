@@ -320,13 +320,25 @@ export default function LeafletMap({
     });
     // Whole-municipality view: balanced left and right so Rosario sits in the
     // middle of the canvas (the pan limits leave room on every side for this).
-    const homePadding = () => ({
-        // a little more room above, where the title card sits
-        paddingTopLeft: [48, 72],
-        paddingBottomRight: [48, 48 + (insetsRef.current.bottom || 0)],
-        // Home is always exactly HOME_ZOOM: maxZoom caps the fit, minZoom floors it.
-        maxZoom: HOME_ZOOM,
-    });
+    const homePadding = () => {
+        // A panel dragged wider than its standard width: Rosario fits entirely
+        // beside it, zooming out below HOME_ZOOM if it has to (the floor drops
+        // with it, and comes back once the panel is standard again).
+        const wide = (insetsRef.current.right || 0) > 372;
+        const pad = {
+            // a little more room above, where the title card sits
+            paddingTopLeft: [48, 72],
+            paddingBottomRight: [48 + (wide ? insetsRef.current.right : 0), 48 + (insetsRef.current.bottom || 0)],
+            // Home is always exactly HOME_ZOOM: maxZoom caps the fit, minZoom floors it.
+            maxZoom: HOME_ZOOM,
+        };
+        const map = mapInstanceRef.current;
+        if (map && rosarioBoundsRef.current) {
+            const fit = wide ? map.getBoundsZoom(rosarioBoundsRef.current, false, L.point(96 + insetsRef.current.right, 120 + (insetsRef.current.bottom || 0))) : HOME_ZOOM;
+            map.setMinZoom(Math.min(HOME_ZOOM, fit));
+        }
+        return pad;
+    };
     const lotsByZoom = (mapZoom ?? 0) >= LOT_ZOOM;
 
     const staticBgyData = useMemo(() => {
@@ -648,7 +660,7 @@ export default function LeafletMap({
                 const b = rosarioBoundsRef.current.pad(0.15);
                 const w = b.getEast() - b.getWest();
                 const h = b.getNorth() - b.getSouth();
-                map.setMaxBounds([[b.getSouth() - h * 0.25, b.getWest() - w * 0.6], [b.getNorth() + h * 0.4, b.getEast() + w * 0.6]]);
+                map.setMaxBounds([[b.getSouth() - h * 0.25, b.getWest() - w * 0.6], [b.getNorth() + h * 0.4, b.getEast() + w * 1.6]]);
             });
 
             loadBarangayBoundaries()
@@ -833,6 +845,26 @@ export default function LeafletMap({
         if (prefersReducedMotion) map.fitBounds(match.getBounds(), opts);
         else map.flyToBounds(match.getBounds(), { ...opts, duration: 0.8, easeLinearity: 0.15 });
     }, [selectedBgy, barangaysReady]);
+
+    // A resized side panel: refit what is on screen to the room left beside it.
+    const prevRightRef = useRef(insets?.right || 0);
+    useEffect(() => {
+        const map = mapInstanceRef.current;
+        const right = insets?.right || 0;
+        const prev = prevRightRef.current;
+        prevRightRef.current = right;
+        if (!map || !geoLayerRef.current || !prev || !right || prev === right) return;
+        let bounds = rosarioBoundsRef.current;
+        let opts = homePadding();
+        if (selectedBgy?.name) {
+            const target = selectedBgy.name.trim().toLowerCase();
+            geoLayerRef.current.eachLayer((lf) => { if (featureName(lf.feature).toLowerCase() === target) bounds = lf.getBounds(); });
+            opts = { ...framePadding(), maxZoom: 14.5 };
+        }
+        if (!bounds) return;
+        if (prefersReducedMotion) map.fitBounds(bounds, opts);
+        else map.flyToBounds(bounds, { ...opts, duration: 0.5, easeLinearity: 0.15 });
+    }, [insets?.right]);
 
     // Declared after the selection effect so an explicit fly-to (a located
     // application or a verified parcel) wins over the barangay framing.

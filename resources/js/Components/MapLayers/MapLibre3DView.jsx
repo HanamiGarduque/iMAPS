@@ -955,7 +955,11 @@ export default function MapLibre3DView({
             const padding = { top: 48, left: 48, right: 48 + pad.right, bottom: 48 + pad.bottom };
             const cam = map.cameraForBounds(muniBoundsRef.current, { padding, bearing });
             const [[w, s], [e, n]] = muniBoundsRef.current;
-            if (cam) target = { center: [(w + e) / 2, (s + n) / 2], zoom: MIN_ZOOM, pitch, bearing, padding: pad };
+            // A side panel dragged wider than standard: zoom out until Rosario fits beside it.
+            const wide = pad.right > 372;
+            const zoom = wide && cam ? Math.min(MIN_ZOOM, cam.zoom) : MIN_ZOOM;
+            map.setMinZoom(Math.min(MIN_ZOOM, zoom));
+            if (cam) target = { center: [(w + e) / 2, (s + n) / 2], zoom, pitch, bearing, padding: pad };
         }
 
         if (!animate || reducedRef.current) {
@@ -965,6 +969,8 @@ export default function MapLibre3DView({
         map.stop();
         map.easeTo({ ...target, duration: FLIGHT_MS, easing: easeSine, essential: true });
     }, [cameraPadding, baseZoom, framePadding]);
+    const frameMunicipalityRef = useRef(frameMunicipality);
+    frameMunicipalityRef.current = frameMunicipality;
 
     // ── Layer setup ──────────────────────────────────────────────────────────
 
@@ -1498,12 +1504,16 @@ export default function MapLibre3DView({
     // Panel toggle: resize and re-pad only. This used to re-fly the camera to
     // the selection, which yanked the view mid-interaction.
     const prevPanelOpenRef = useRef(rightPanelOpen);
+    const prevPanelWidthRef = useRef(panelWidth);
     useEffect(() => {
         // The panel slides, so the canvas is measured once it has settled. The
         // table only changes padding: re-aim at once, or a barangay click's
         // flight (the table collapses with it) restarts mid-air and stutters.
         const panelMoved = prevPanelOpenRef.current !== rightPanelOpen;
         prevPanelOpenRef.current = rightPanelOpen;
+        // A dragged panel width re-frames the whole town, so Rosario stays clear of it.
+        const widthChanged = prevPanelWidthRef.current !== panelWidth;
+        prevPanelWidthRef.current = panelWidth;
         const timer = setTimeout(() => {
             const map = mapRef.current;
             if (!map) return;
@@ -1513,7 +1523,7 @@ export default function MapLibre3DView({
             if (selectedNameRef.current) {
                 flightTargetRef.current = null;
                 flyToBarangay(selectedNameRef.current);
-            } else if (map.isMoving()) {
+            } else if (map.isMoving() || (widthChanged && rightPanelOpen)) {
                 // Mid fly-out (the table closes with the deselection): re-aim the
                 // flight at the new padding instead of cutting it short.
                 frameMunicipality(!reducedRef.current);
@@ -1551,6 +1561,9 @@ export default function MapLibre3DView({
                 // Padding eases in with the tilt, sliding the map out from under
                 // the panel into the visible area.
                 const target = { pitch: OBLIQUE_PITCH, bearing: OBLIQUE_BEARING, padding: cameraPaddingRef.current() };
+                // A widened panel: the 2D view handed over is already shifted clear of
+                // it, and adding the padding again pushed Rosario far left. Frame it fresh.
+                if (!selectedNameRef.current && target.padding.right > 372) { frameMunicipalityRef.current(!instant); return; }
                 if (instant) map.jumpTo(target);
                 else map.easeTo({ ...target, duration: TILT_MS, easing: easeSine, essential: true });
             };

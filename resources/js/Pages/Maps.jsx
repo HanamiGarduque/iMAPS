@@ -146,6 +146,9 @@ function mapScale(lat, zoom) {
 }
 
 const isDesktop = () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
+// The right panel's width range when it is dragged (LC demand and diversity).
+const DOCK_MIN_W = 372;
+const DOCK_MAX_W = 640;
 
 const ICONS = {
     layers: "M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3",
@@ -592,8 +595,33 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         prevTableHeight.current = tableHeight;
         if (tableGrew.current && panelOpen && showTable && panelNeedsRoom && tableHeight > TABLE_DEFAULT_H) setPanelOpen(false);
     }, [panelOpen, showTable, panelNeedsRoom, tableHeight]);
+    // LC demand and diversity panels can be dragged wider. The panel follows the
+    // pointer live; the map refits once, on release (dockWidth), so it never sits under the panel.
+    const [dockDrag, setDockDrag] = useState(null);
+    // Each layer starts at the standard width; switching layers always puts it back.
+    const [dockWidth, setDockWidth] = useState(DOCK_MIN_W);
+    useEffect(() => { setDockWidth(DOCK_MIN_W); setDockDrag(null); }, [activeLayer]);
+    const panelW = activeLayer === "status" ? DOCK_MIN_W : dockWidth;
+    const startDockResize = (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startW = dockWidth;
+        const maxW = Math.min(DOCK_MAX_W, Math.round(window.innerWidth * 0.5));
+        let w = startW;
+        const move = (ev) => { w = Math.min(maxW, Math.max(DOCK_MIN_W, startW + startX - ev.clientX)); setDockDrag(w); };
+        const up = () => {
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+            document.body.style.cursor = "";
+            setDockDrag(null);
+            setDockWidth(w);
+        };
+        document.body.style.cursor = "col-resize";
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+    };
     const mapInsets = {
-        right: panelOpen && isDesktop() ? 372 : 0,
+        right: panelOpen && isDesktop() ? panelW : 0,
         bottom: showTable ? tableHeight : 0,
     };
 
@@ -970,7 +998,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     lcColors={lcView}
                                                     callout={bgyCallout}
                                                     rightPanelOpen={panelOpen}
-                                                    panelWidth={372}
+                                                    panelWidth={panelW}
                                                     bandFilter={diversityBandFilter}
                                                     hoveredBgy={hoveredBgy}
                                                     onHoverBgy={setHoveredBgy}
@@ -1080,9 +1108,24 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                             className={`absolute top-0 right-0 z-[620] w-full sm:w-[372px] flex flex-col bg-white border-l border-slate-200 shadow-xl lg:shadow-none ${
                                                 compactPanel ? "border-b" : "bottom-0"
                                             }`}
-                                            style={compactPanel ? { maxHeight: panelNeedsRoom || !showTable ? "100%" : `calc(100% - ${tableHeight + 12}px)` } : undefined}
+                                            style={compactPanel
+                                                ? { maxHeight: panelNeedsRoom || !showTable ? "100%" : `calc(100% - ${tableHeight + 12}px)` }
+                                                : isDesktop() ? { width: dockDrag ?? dockWidth } : undefined}
                                             aria-label="Identify and analysis"
                                         >
+                                            {!compactPanel && (
+                                                <div
+                                                    role="separator"
+                                                    aria-orientation="vertical"
+                                                    aria-label="Resize panel"
+                                                    title="Drag to resize"
+                                                    onPointerDown={startDockResize}
+                                                    onDoubleClick={() => setDockWidth(DOCK_MIN_W)}
+                                                    className="hidden lg:block absolute top-0 bottom-0 -left-1 w-2 z-10 cursor-col-resize group"
+                                                >
+                                                    <span className={`absolute top-1/2 left-[3px] -translate-y-1/2 h-10 w-[3px] rounded-full transition-colors ${dockDrag ? "bg-[#1e3a8a]" : "bg-slate-300 group-hover:bg-slate-500"}`} />
+                                                </div>
+                                            )}
                                             <DockHeader title={moduleInfo?.label} onClose={() => setPanelOpen(false)} closeLabel="Close analysis panel" />
                                             <div ref={panelBodyRef} className={compactPanel ? "min-h-0 flex flex-col overflow-y-auto" : "flex-1 min-h-0 flex flex-col"}>
 
