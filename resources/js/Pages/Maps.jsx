@@ -73,7 +73,7 @@ class MapsErrorBoundary extends Component {
 
 // Bumped when the forecast payload shape changes, so a cached run from an
 // older shape is ignored rather than read as empty.
-const FORECAST_CACHE_KEY = "imaps_forecast_data_v3";
+const FORECAST_CACHE_KEY = "imaps_forecast_data_v4";
 
 const quarterLabel = (y, q) => `Q${q} '${String(y).slice(-2)}`;
 
@@ -312,6 +312,30 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         });
     }, [urbanGrowthData, timelineQuarters, forecastDemand]);
 
+    // The quarters the forecast was made from, as the service reports them. A
+    // forecast quarter is compared against these ("than last year", "than
+    // usual"), never against historical_data: that table is what the Recorded
+    // view shows, the model never saw it, and its counts can differ.
+    const forecastSeries = useMemo(() => {
+        const history = Array.isArray(customForecastData?.history) ? customForecastData.history : [];
+        if (history.length === 0) return quarterSeries;
+        const byKey = {};
+        history.forEach((h) => {
+            const byBgy = {};
+            Object.entries(h.barangays || {}).forEach(([name, n]) => {
+                const b = name.trim().toLowerCase();
+                if (b) byBgy[b] = (byBgy[b] || 0) + (Number(n) || 0);
+            });
+            byKey[`${h.year}-${h.quarter}`] = { total: Number(h.total) || 0, byBgy };
+        });
+        // A recorded quarter outside the service's window has nothing to
+        // compare with (null total), rather than falling back to the database.
+        return quarterSeries.map((q) => (
+            q.isForecast ? q : { ...q, ...(byKey[`${q.year}-${q.quarter}`] || { total: null, byBgy: {} }) }
+        ));
+    }, [quarterSeries, customForecastData]);
+    const comparisonSeries = activeQuarter?.isForecast ? forecastSeries : quarterSeries;
+
     // The model's own validation figures, or nothing. There is no stand-in:
     // a fixed MAE/WMAPE here read as accuracy no model had measured.
     const forecastMetrics = useMemo(() => {
@@ -329,7 +353,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const forecastWatch = useForecastWatchlist({
         forecastData: customForecastData,
         activeQuarter,
-        series: quarterSeries,
+        series: forecastSeries,
         mae: forecastMetrics?.mae ?? null,
         urbanGrowthData,
     });
@@ -360,16 +384,16 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     // change from the same quarter a year earlier when that quarter is on record.
     const lcLastYear = useMemo(() => (
         activeQuarter
-            ? quarterSeries.find((q) => !q.isForecast && q.total !== null && q.year === activeQuarter.year - 1 && q.quarter === activeQuarter.quarter) || null
+            ? comparisonSeries.find((q) => !q.isForecast && q.total !== null && q.year === activeQuarter.year - 1 && q.quarter === activeQuarter.quarter) || null
             : null
-    ), [quarterSeries, activeQuarter]);
+    ), [comparisonSeries, activeQuarter]);
     const barangayCount = useBarangayNames().length;
     const lcView = useMemo(() => buildLcView({
         names: Object.keys(bgyStats || {}),
-        current: quarterSeries[activeQuarterIndex],
+        current: comparisonSeries[activeQuarterIndex],
         lastYear: lcLastYear,
         total: barangayCount,
-    }), [bgyStats, quarterSeries, activeQuarterIndex, lcLastYear, barangayCount]);
+    }), [bgyStats, comparisonSeries, activeQuarterIndex, lcLastYear, barangayCount]);
 
     // ── Diversity timeline ──
     // One step per quarter, each scored over the five years ending that
@@ -523,9 +547,9 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     }, [urbanGrowthData, selectedBgy?.name, activeLayer]);
     const lcSummary = useMemo(() => (
         selectedBgy?.name && activeLayer === "trends"
-            ? summarizeBarangay({ name: selectedBgy.name, series: quarterSeries, activeIndex: activeQuarterIndex, activeQuarter, records: selectedLcRecords })
+            ? summarizeBarangay({ name: selectedBgy.name, series: comparisonSeries, activeIndex: activeQuarterIndex, activeQuarter, records: selectedLcRecords })
             : null
-    ), [selectedBgy?.name, activeLayer, quarterSeries, activeQuarterIndex, activeQuarter, selectedLcRecords]);
+    ), [selectedBgy?.name, activeLayer, comparisonSeries, activeQuarterIndex, activeQuarter, selectedLcRecords]);
     // The pop-up card on the selected barangay: LC demand, or the Diversity
     // Index's filed land use (same card design).
     const bgyCallout = lcFocus ? (
@@ -1114,7 +1138,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                             onHoverBgy={setHoveredBgy}
                                                             onForecastGenerated={handleForecastGenerated}
                                                             activePins={activeHistoricalPins}
-                                                            series={quarterSeries}
+                                                            series={comparisonSeries}
                                                             activeIndex={activeQuarterIndex}
                                                             onSelectQuarter={setActiveQuarterIndex}
                                                             header={activeQuarter?.isForecast && (
@@ -1176,7 +1200,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                         playing={isTimelinePlaying}
                                         onTogglePlay={() => setIsTimelinePlaying((p) => !p)}
                                         count={quarterCount}
-                                        series={quarterSeries}
+                                        series={comparisonSeries}
                                         peakQuarter={1}
                                     />
                                 )}
