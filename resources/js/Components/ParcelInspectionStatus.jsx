@@ -181,21 +181,35 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
     const onStatusFetchedRef = useRef(onStatusFetched);
     const onInspectionDataFetchedRef = useRef(onInspectionDataFetched);
     const localInspectionRef = useRef(localInspection);
+    // Current assignment comes from the server-loaded iMAPS inspection, not
+    // from the asynchronously fetched FieldSync evidence record.
+    const inspectorAssignmentId = localInspection?.inspector_id ?? null;
 
     onStatusFetchedRef.current = onStatusFetched;
     onInspectionDataFetchedRef.current = onInspectionDataFetched;
     localInspectionRef.current = localInspection;
 
     useEffect(() => {
+        // A same-round handover changes inspector_id but not inspectionId.
+        // Drop the previous render's evidence/name immediately on the new
+        // assignment, and ignore a response after its effect is invalidated.
+        let cancelled = false;
+        setInspection(localInspectionRef.current);
+
         const getInspection = async () => {
             setLoading(true);
             setLoadError(null);
 
             try {
                 const remoteInspection = await fetchParcelInspection(inspectionId);
+                if (cancelled) return;
                 const local = localInspectionRef.current;
+                // Laravel's siteInspection.inspector is the current assignment
+                // authority. Remote evidence never takes ownership of this label.
                 const data = remoteInspection
-                    ? { ...local, ...remoteInspection }
+                    ? { ...local, ...remoteInspection,
+                        inspector_id: local?.inspector_id,
+                        inspector: local?.inspector }
                     : local;
                 setInspection(data);
 
@@ -206,9 +220,11 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                     onInspectionDataFetchedRef.current(data);
                 }
             } catch (error) {
-                setLoadError(error.message || 'Inspection evidence is temporarily unavailable.');
+                if (!cancelled) {
+                    setLoadError(error.message || 'Inspection evidence is temporarily unavailable.');
+                }
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
@@ -217,7 +233,8 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
         } else {
             setLoading(false);
         }
-    }, [inspectionId]);
+        return () => { cancelled = true; };
+    }, [inspectionId, inspectorAssignmentId]);
     
     // The report layout never waits on the sync when the server already sent a copy.
     const showWhileSyncing = report && Boolean(inspection);
