@@ -48,6 +48,7 @@ class SeedDemoApplications extends Command
         {--inspector= : Site Inspector (id or name) who takes about half of the inspection rounds}
         {--per-barangay= : Instead of --count: every barangay gets a random number of applications in this range (e.g. 2-10), sited on its own lots}
         {--inspected : Only stages where the Planning Officer sent the lot to a site inspection}
+        {--except= : Leave these stages out, comma-separated (e.g. inspection_scheduled,reinspection_scheduled for no open inspection rounds)}
         {--from= : Earliest date of any event, YYYY-MM-DD (default: about six months back)}
         {--to= : Latest date of any event, YYYY-MM-DD (default: now)}
         {--sync : Also play the applications out on Supabase (FieldSync app and public tracker)}
@@ -232,6 +233,15 @@ class SeedDemoApplications extends Command
         $perBarangay = $this->option('per-barangay');
         if ($perBarangay !== null && ! preg_match('/^(\d+)(?:-(\d+))?$/', $perBarangay, $range)) {
             $this->error('--per-barangay takes a number or a range such as 2-10.');
+            return self::FAILURE;
+        }
+        $unknown = array_diff($this->excluded(), array_keys(self::SCENARIOS));
+        if ($unknown) {
+            $this->error('Unknown stage(s): ' . implode(', ', $unknown) . '. Stages: ' . implode(', ', array_keys(self::SCENARIOS)) . '.');
+            return self::FAILURE;
+        }
+        if (! $this->scenarios()) {
+            $this->error('No stage is left to seed after --inspected / --except.');
             return self::FAILURE;
         }
         try {
@@ -473,12 +483,19 @@ class SeedDemoApplications extends Command
         throw new \RuntimeException("Zone {$class} is not one the seeder files on.");
     }
 
-    /** The scenarios in play: with --inspected only those where a site inspection is sent. */
+    /** The scenarios in play: with --inspected only those where a site inspection is sent, minus --except. */
     private function scenarios(): array
     {
-        return $this->option('inspected')
+        $scenarios = $this->option('inspected')
             ? array_filter(self::SCENARIOS, fn ($s) => in_array('inspect', $s[3], true))
             : self::SCENARIOS;
+
+        return array_diff_key($scenarios, array_flip($this->excluded()));
+    }
+
+    private function excluded(): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', (string) $this->option('except')))));
     }
 
     /** [earliest, latest] moment any event may fall on. */
