@@ -160,6 +160,17 @@ export default function useForecastWatchlist({ forecastData, activeQuarter, seri
                 });
             });
         }
+        // One barangay's own split, for when it is selected: its expected
+        // filings spread over the same pooled shares used above.
+        const mixByBgy = {};
+        if (townN > 0) {
+            ranking.forEach((r) => {
+                mixByBgy[r.name.toLowerCase()] = Object.entries(shareFor(r.name))
+                    .map(([id, f]) => ({ ...categories[id], id, count: f * r.raw, share: f }))
+                    .filter((m) => m.count >= 0.05)
+                    .sort((a, b) => (a.id === "none") - (b.id === "none") || b.count - a.count);
+            });
+        }
         // The forecasting service computes the same split server-side from the
         // full training window, with 80% ranges; prefer it when the run has one.
         const served = forecastData?.application_mix?.quarters?.[`${activeQuarter.year} Q${activeQuarter.quarter}`];
@@ -211,6 +222,7 @@ export default function useForecastWatchlist({ forecastData, activeQuarter, seri
             margin,
             zoningFlags,
             mix,
+            mixByBgy,
             outlook,
             mae,
         };

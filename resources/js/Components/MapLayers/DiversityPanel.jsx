@@ -15,6 +15,8 @@ const Question = ({ children, className = "" }) => (
 
 const CARD = "shrink-0 border-b border-slate-200";
 const TOP_ZONES = 3;
+// Zones listed under "How much of each zone was filed on?".
+const ZONE_ROWS = 4;
 
 const fmtHa = (v) => (v === 0 ? "0" : v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString('en-PH'));
 const fmtOfZone = (filed, zoned) => {
@@ -99,9 +101,10 @@ export default function DiversityPanel({
                     : null;
             return { ...d, filedHa, zonedHa, check };
         }).sort((a, b) => b.filedHa - a.filedHa);
-        // The biggest few, plus any that need checking.
-        return rows.filter((r, i) => i < TOP_ZONES || r.check);
+        // The zones with the most land filed on, and any that need checking.
+        return rows.filter((r, i) => i < ZONE_ROWS || r.check);
     }, [segments, planDistribution, developedHa, bgyName]);
+    const moreZones = segments.zones.length - zoneRows.length;
 
     // Within 0.05 reads as on par: smaller gaps are noise in a 0–1 index.
     const gap = (diff, what) => (Math.abs(diff) < 0.05
@@ -144,37 +147,50 @@ export default function DiversityPanel({
 
                 {score != null && fromRecords && zoneRows.length > 0 && (
                     <section className={`${CARD} px-4 pt-3 pb-3`}>
+                        {/* One row per zone: the whole bar is the land CLUP 2030 zones for
+                            that use in the barangay, the filled part is how much of it was
+                            filed on. One measure, so the bar and the figure always agree. */}
                         <div className="flex items-baseline justify-between gap-2 mb-2">
                             <Question>How much of each zone was filed on?</Question>
-                            <span className="text-[10.5px] text-slate-400">Filed ÷ zoned</span>
+                            <span className="text-[10.5px] text-slate-400">Filed of CLUP zone</span>
                         </div>
-                        <ul className="space-y-1">
-                            {zoneRows.map((r) => (
-                                <li key={r.name} className="grid grid-cols-[10px_1fr_auto_40px] items-center gap-x-2 text-[11.5px]">
-                                    <span className="w-2.5 h-2.5 rounded-[2px] border" style={{ backgroundColor: r.zone.fill, borderColor: r.zone.stroke }} aria-hidden="true" />
-                                    <span className="min-w-0 flex items-center gap-1.5 text-slate-700">
-                                        <span className="truncate">{r.zone.label}</span>
-                                        {r.check && (
-                                            <span
-                                                className="shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] bg-amber-100 text-amber-800 border border-amber-300"
-                                                title={r.check}
-                                            >
-                                                Check
+                        <ul className="space-y-1.5">
+                            {zoneRows.map((r) => {
+                                const pct = r.zonedHa > 0 ? Math.min(100, (r.filedHa / r.zonedHa) * 100) : 100;
+                                return (
+                                    <li
+                                        key={r.name}
+                                        className="grid grid-cols-[10px_minmax(0,1fr)_minmax(0,1.2fr)_40px] items-center gap-x-2"
+                                        title={r.check || `${fmtHa(r.filedHa)} ha filed on, of the ${fmtHa(r.zonedHa)} ha CLUP 2030 zones ${r.zone.label} in ${bgyName}`}
+                                    >
+                                        <span className="w-2.5 h-2.5 rounded-[2px] border" style={{ backgroundColor: r.zone.fill, borderColor: r.zone.stroke }} aria-hidden="true" />
+                                        <span className="min-w-0">
+                                            <span className="flex items-center gap-1.5 text-[11.5px] leading-tight text-slate-700">
+                                                <span className="truncate">{r.zone.label}</span>
+                                                {r.check && (
+                                                    <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] bg-amber-100 text-amber-800 border border-amber-300">
+                                                        Check
+                                                    </span>
+                                                )}
                                             </span>
-                                        )}
-                                    </span>
-                                    <span className="text-[10.5px] tabular-nums text-slate-500">
-                                        {fmtHa(r.filedHa)} of {r.zonedHa > 0 ? fmtHa(r.zonedHa) : "0"} ha
-                                    </span>
-                                    <span className="text-right tabular-nums font-semibold text-slate-900">{fmtOfZone(r.filedHa, r.zonedHa)}</span>
-                                </li>
-                            ))}
+                                            <span className="block text-[10px] leading-tight tabular-nums text-slate-400">
+                                                {fmtHa(r.filedHa)} of {r.zonedHa > 0 ? fmtHa(r.zonedHa) : "0"} ha
+                                            </span>
+                                        </span>
+                                        <span className="h-2 rounded-sm bg-slate-100 border border-slate-200 overflow-hidden" aria-hidden="true">
+                                            <span
+                                                className="block h-full transition-[width] duration-500"
+                                                style={{ width: r.filedHa > 0 ? `max(2px, ${pct}%)` : 0, backgroundColor: r.zone.stroke }}
+                                            />
+                                        </span>
+                                        <span className="text-right text-[11.5px] tabular-nums font-semibold text-slate-900">{fmtOfZone(r.filedHa, r.zonedHa)}</span>
+                                    </li>
+                                );
+                            })}
                         </ul>
                         <p className="mt-2 text-[10.5px] leading-snug text-slate-400">
-                            Lot area of locational clearances for development in {periodLabel}, against the land CLUP 2030 zones
-                            for it in {bgyName}. The plan zones
-                            all land and only part of it is developed in five years, so a low share is normal. Utilities and
-                            roads are not counted.
+                            Bar = CLUP 2030 zone · fill = filed, {periodLabel}
+                            {moreZones > 0 ? ` · +${moreZones} smaller zone${moreZones === 1 ? "" : "s"}` : ""}
                         </p>
                     </section>
                 )}
@@ -234,8 +250,7 @@ export default function DiversityPanel({
                         ))}
                     </ul>
                     <p className="mt-2 text-[10.5px] leading-snug text-slate-400">
-                        Share of lot area in locational clearances for development, {periodLabel}. Zoning certificates,
-                        development permits, and utilities and roads are not counted.
+                        Lot area of development clearances, {periodLabel}
                     </p>
                 </>)}
             </section>
