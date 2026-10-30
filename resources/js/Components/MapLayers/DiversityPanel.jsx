@@ -218,20 +218,6 @@ export default function DiversityPanel({
                                 title={`${d.zone.label}: ${d.value}%`}
                             />
                         ))}
-                ) : (
-                    <MixDonut distribution={distribution} replayKey={bgyName || "__all__"} centerValue={shown} centerLabel="Mix" />
-                )}
-            </div>
-            )}
-
-            {/* Filings are compared with the plan as filed area ÷ zoned area, not
-                share against share: the plan zones all land, filings are only the
-                lots being developed, so their two splits are not meant to match. */}
-            {fromRecords && score != null && zoneRows.length > 0 && (
-                <div className="shrink-0 border-b border-slate-200">
-                    <div className="flex items-baseline justify-between px-4 pt-3 pb-1.5">
-                        <Question>How much of each zone was filed on?</Question>
-                        <span className="text-[10.5px] text-slate-400">Lot area, ha</span>
                     </div>
                     <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
                         {segments.chips.map((d) => (
@@ -241,44 +227,6 @@ export default function DiversityPanel({
                                 <span className="ml-auto tabular-nums font-semibold text-slate-900">{d.value}%</span>
                             </li>
                         ))}
-                    <div className="grid grid-cols-[12px_1fr_48px_56px_46px] gap-x-1.5 px-4 pb-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-400">
-                        <span />
-                        <span>CLUP zone</span>
-                        <span className="text-right">Filed</span>
-                        <span className="text-right">Zoned</span>
-                        <span className="text-right">Of zone</span>
-                    </div>
-                    <ul className="pb-1">
-                        {zoneRows.map((r) => {
-                            const zone = ZONE_CATEGORIES[r.name] || { label: r.name, fill: "#e2e8f0", stroke: "#94a3b8" };
-                            const place = isBgy ? bgyName : "Rosario";
-                            // Filings the plan cannot hold: a zone this area does not
-                            // have, or more lot area than the zone has.
-                            const check = r.filedHa > 0 && r.zonedHa === 0
-                                ? `${fmtHa(r.filedHa)} ha was filed under ${zone.label} zoning, but CLUP 2030 zones no land in ${place} as ${zone.label}. Check these filings' zoning codes.`
-                                : r.filedHa > r.zonedHa
-                                    ? `More lot area was filed under ${zone.label} zoning (${fmtHa(r.filedHa)} ha) than CLUP 2030 zones for it in ${place} (${fmtHa(r.zonedHa)} ha). The same lot filed more than once, or a wrong zoning code, would do this.`
-                                    : null;
-                            return (
-                                <li key={r.name} className="grid grid-cols-[12px_1fr_48px_56px_46px] items-center gap-x-1.5 px-4 py-[3px] text-[12px]">
-                                    <span className="w-2.5 h-2.5 rounded-[2px] border" style={{ backgroundColor: zone.fill, borderColor: zone.stroke }} aria-hidden="true" />
-                                    <span className="min-w-0 flex items-center gap-1.5 text-slate-700">
-                                        <span className="truncate">{zone.label}</span>
-                                        {check && (
-                                            <span
-                                                className="shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] px-1 rounded-[3px] bg-amber-100 text-amber-800 border border-amber-300"
-                                                title={check}
-                                            >
-                                                Check
-                                            </span>
-                                        )}
-                                    </span>
-                                    <span className={`text-right tabular-nums ${r.filedHa > 0 ? "font-semibold text-slate-900" : "text-slate-400"}`}>{fmtHa(r.filedHa)}</span>
-                                    <span className="text-right tabular-nums text-slate-500">{r.zonedHa > 0 ? fmtHa(r.zonedHa) : "—"}</span>
-                                    <span className="text-right tabular-nums font-semibold text-slate-700">{fmtOfZone(r.filedHa, r.zonedHa)}</span>
-                                </li>
-                            );
-                        })}
                     </ul>
                 </>)}
             </section>
