@@ -32,6 +32,7 @@ import { buildLcView, summarizeBarangay } from "@/utils/lcInsights";
 import LcCallout from "@/Components/Maps/LcCallout";
 import DiversityCallout from "@/Components/Maps/DiversityCallout";
 import TopMixedCard from "@/Components/Maps/TopMixedCard";
+import TopDemandCard from "@/Components/Maps/TopDemandCard";
 import StatusCallout from "@/Components/Maps/StatusCallout";
 import useBarangayNames from "@/utils/useBarangayNames";
 import { getLens, resolveLensValue } from "@/utils/diversityTheme";
@@ -227,8 +228,6 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const [cursor, setCursor] = useState(null);
     const [hoveredAppId, setHoveredAppId] = useState(null);
     const [tableHeight, setTableHeight] = useState(0);
-    // A barangay to keep selected across a module switch (from the barangay card).
-    const carryBgyRef = useRef(null);
 
     // ── LC demand timeline ──
     const [customForecastData, setCustomForecastData] = useState(() => {
@@ -391,7 +390,22 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
             ? comparisonSeries.find((q) => !q.isForecast && q.total !== null && q.year === activeQuarter.year - 1 && q.quarter === activeQuarter.quarter) || null
             : null
     ), [comparisonSeries, activeQuarter]);
-    const barangayCount = useBarangayNames().length;
+    const barangayNames = useBarangayNames();
+    const barangayCount = barangayNames.length;
+    // The barangays with the most applications in the quarter on screen, with
+    // the change from the same quarter a year earlier when that is on record.
+    const topDemandRows = useMemo(() => {
+        if (activeLayer !== "trends") return [];
+        return barangayNames
+            .map((name) => {
+                const key = name.trim().toLowerCase();
+                const count = demandByBgy[key] || 0;
+                return { name, count, delta: lcLastYear ? count - (lcLastYear.byBgy?.[key] || 0) : null };
+            })
+            .filter((r) => r.count > 0)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5);
+    }, [activeLayer, barangayNames, demandByBgy, lcLastYear]);
     const lcView = useMemo(() => buildLcView({
         names: Object.keys(bgyStats || {}),
         current: comparisonSeries[activeQuarterIndex],
@@ -757,15 +771,14 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
         return () => clearInterval(id);
     }, []);
 
-    // Changing module starts from a clean slate.
+    // Changing module resets its own filters and playback, not the barangay.
     useEffect(() => {
         if (activeLayer !== "diversity") setDiversityBandFilter("all");
         if (activeLayer !== "trends") setIsTimelinePlaying(false);
         if (activeLayer !== "diversity") setIsDiversityPlaying(false);
         if (activeLayer !== "status") setInspectedApp(null);
-        const carried = carryBgyRef.current;
-        carryBgyRef.current = null;
-        setSelectedBgy(carried ? { name: carried, data: bgyStats?.[carried] || {} } : null);
+        // An open barangay stays open, and the camera stays on it.
+        setSelectedBgy((cur) => (cur ? { name: cur.name, data: bgyStats?.[cur.name] || cur.data || {} } : null));
         setHoveredBgy(null);
         setParcels2D(false);
         setParcels3D(false);
@@ -1062,7 +1075,6 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                 activeLayer={activeLayer}
                                                 onSwitch={(id) => {
                                                     if (id === activeLayer) return;
-                                                    carryBgyRef.current = selectedBgy.name;
                                                     setActiveLayer(id);
                                                 }}
                                                 onClose={() => setSelectedBgy(null)}
@@ -1078,6 +1090,17 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                         <TopMixedCard
                                             bgyStats={diversityStats}
                                             bandFilter={diversityBandFilter}
+                                            hoveredBgy={hoveredBgy}
+                                            onSelect={selectBarangay}
+                                            onHover={setHoveredBgy}
+                                        />
+                                    )}
+
+                                    {activeLayer === "trends" && !selectedBgy?.name && (
+                                        <TopDemandCard
+                                            rows={topDemandRows}
+                                            title={activeQuarter?.isForecast ? "Where will they come from?" : "Applications by barangay"}
+                                            compareLabel={lcLastYear?.label ?? null}
                                             hoveredBgy={hoveredBgy}
                                             onSelect={selectBarangay}
                                             onHover={setHoveredBgy}
@@ -1224,6 +1247,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                                 <ForecastInsights
                                                                     quarter={activeQuarter}
                                                                     watch={forecastWatch}
+                                                                    selectedName={selectedBgy?.name}
                                                                     onSelectBgy={selectBarangay}
                                                                     onHoverBgy={setHoveredBgy}
                                                                 />

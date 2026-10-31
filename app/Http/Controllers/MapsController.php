@@ -78,8 +78,8 @@ class MapsController extends Controller
 
         // ── Land-use mix (normalised Shannon index) ──
         // Headline score: lot area filed per land-use category over the last
-        // five years of recorded clearances, certificates and permits, so it
-        // moves as development is recorded. The CLUP 2030 zone areas are the
+        // five years of locational clearances for development, so it moves as
+        // development is recorded. The CLUP 2030 zone areas are the
         // plan baseline it is compared against (variance = recorded − plan).
         // The timeline cuts the same five years into rolling twelve months.
         $mix = app(LandUseMixService::class)->compute();

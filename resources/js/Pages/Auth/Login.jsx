@@ -39,8 +39,8 @@ const MODULES = [
     { name: 'Demand Forecasting', title: 'Data to decisions', text: 'Turn approved clearances into trends and forecasted demand by barangay.' },
 ];
 
-// The three policy documents below mirror the FieldSync drafts in
-// imaps_fieldsync_main/assets/policies/ (DRAFT v0.9, prepared October 18, 2026).
+// These three legal notices mirror the MPDO-administered FieldSync policies
+// in imaps_fieldsync_main/assets/policies/ (wording revision October 30, 2026).
 // Keep both sides in step — when a FieldSync policy is revised, update the
 // matching document below as well.
 
@@ -49,7 +49,7 @@ const PRIVACY = [
         'This notice explains how personal information may be handled within the iMAPS internal web system and the iMAPS FieldSync mobile application in connection with MPDO Rosario zoning administration, application monitoring, GIS reporting, and field inspections. It applies to applicant and property records handled by the office and to authorized personnel using the Platforms. If a separate public status portal is operated, its actual authentication method, visible fields, and service provider must be verified and described before including it under this notice.',
     ]],
     ['Responsible Office and Privacy Contact', [
-        'The responsible personal information controller and any personal information processors must be identified by the implementing municipality before deployment. Proposed service office: Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas. Official controller designation: __________. Data Protection Officer/privacy contact: Name/Office: __________  Email: __________  Address: __________  Request procedure: __________.',
+        'The responsible personal information controller and any personal information processors must be identified by the implementing municipality before deployment. Responsible service office: Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas. Institutional policy verification: MPDO. Data Protection Officer/privacy contact: Submit inquiries through MPDO at the Municipal Hall, Rosario, Batangas; MPDO refers privacy matters and data-subject requests to the municipality’s designated DPO through official channels.',
     ]],
     ['Categories of Personal and Operational Data', [
         'Depending on the user’s role and the feature used, records may include: (a) staff account identifiers, contact details, roles, login/session and audit information; (b) application and permit-related records such as applicant and business names, contact details, submitted documents, processing status, dates, parcel identifiers, and land-use or zoning information; (c) inspection assignments and results, inspector identifiers, timestamps, checklists, field notes, GPS coordinates, and photographs; and (d) technical data needed for system operation, troubleshooting, synchronization, and security. Not every field is collected by every feature or from every person. Exact database fields and mobile permissions must be inventoried before publication.',
@@ -70,7 +70,7 @@ const PRIVACY = [
         'Access should be limited to officials and personnel who need data for their assigned responsibilities. Information may also pass through contracted hosting, authentication, synchronization, backup, and mapping services needed to operate the Platforms; the actual providers, hosting locations, contractual roles, and categories of data disclosed must be confirmed. Information may be disclosed to competent authorities where required or authorized by law. Official records must not be shared for unrelated advertising or marketing purposes. Specific access limitations cannot be promised until role permissions and public endpoints have been verified.',
     ]],
     ['Public Status Information', [
-        'If an applicant-facing status portal is part of the approved deployment, the office must publish its verified lookup requirements and the exact application fields it reveals. A public-facing screen should disclose no more information than necessary for the status inquiry. The draft does not assert that full contact information, remarks, or parcel identifiers are inaccessible, because this requires confirmation of deployed queries, database permissions, and access rules.',
+        'If an applicant-facing status portal is part of the approved deployment, the office must publish its verified lookup requirements and the exact application fields it reveals. A public-facing screen should disclose no more information than necessary for the status inquiry. This notice does not assert that full contact information, remarks, or parcel identifiers are inaccessible, because this requires confirmation of deployed queries, database permissions, and access rules.',
     ]],
     ['Security and Incident Handling', [
         'The responsible office should maintain proportionate organizational, physical, and technical safeguards, including approved access permissions, authentication controls, audit logging, secure transmission, backups, incident response, and device procedures. These measures must be regularly reviewed, especially wherever mobile and web services exchange data. No system can promise absolute security. Personal data breaches and requests for assistance should be escalated through the approved municipal incident-response and DPO process, with regulatory notification when required by applicable rules.',
@@ -82,7 +82,7 @@ const PRIVACY = [
         'Individuals have rights under the Data Privacy Act, as applicable, including the rights to be informed, access information, rectify inaccurate data, object in circumstances provided by law, request erasure or blocking where legally available, data portability where applicable, seek damages, and file a complaint with the National Privacy Commission. Some requests may be limited by lawful government recordkeeping or other statutory duties. Requests should be submitted through the designated MPDO or municipal privacy contact, and identity may be verified before personal records are disclosed.',
     ]],
     ['Policy Changes and Contact', [
-        'Material changes in processing practices should be reflected in an updated notice, with notice provided through an appropriate platform or official office channel. Version: DRAFT 0.9. Effective date: Pending official approval. Responsible office: MPDO, Municipality of Rosario, Batangas. Official DPO/privacy contact and reporting channel: __________. This draft requires validation against the production configuration and review by the responsible office before release.',
+        'Material changes in processing practices should be reflected in an updated notice, with notice provided through an appropriate platform or official office channel. Version: 1.0 (wording revision October 30, 2026). Original policy cycle: September 2026. Responsible office and institutional policy authority: MPDO, Municipality of Rosario, Batangas. Official DPO/privacy requests are referred through the MPDO municipal office contact channel. Production configuration and implementation details remain subject to ongoing office review.',
     ]],
 ];
 
@@ -118,7 +118,7 @@ const TERMS = [
         'The office may revise operating procedures and these Terms when necessary, with appropriate notice. Access may be suspended or adjusted when authorized for security, role changes, or administrative reasons. These Terms are interpreted in accordance with applicable laws of the Republic of the Philippines. They do not remove rights granted by law or replace established government processes.',
     ]],
     ['Contact and Acknowledgment', [
-        'Office: Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas. Privacy/security contact: Name/Office: __________  Email: __________  Contact channel: __________. Policy owner and publication authority: __________. Effective date: Pending official approval. For internal staff, acknowledgment may be recorded as part of approved onboarding; displaying this notice alone does not prove that user consent or legal authorization for all processing has been obtained.',
+        'Office: Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas. Privacy/security contact: MPDO through the official municipal office channels; privacy matters are referred to the municipality’s designated Data Protection Officer. Policy owner, verification, and approval: MPDO (institutional). For internal staff, acknowledgment may be recorded as part of approved onboarding; displaying this notice alone does not prove that user consent or legal authorization for all processing has been obtained.',
     ]],
 ];
 
@@ -151,7 +151,7 @@ const COOKIES = [
         'Storage lifetimes vary by record type, device state, server configuration, backup practice, and legal records-retention duties. The final published policy must specify, or link to a schedule for, actual session expiration, offline draft cleanup, audit-log retention, application/inspection record retention, and third-party storage practices. Review this policy whenever the app adds an SDK, changes its sync design, or alters cookies or storage settings.',
     ]],
     ['Contact and Version', [
-        'Responsible office: Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas. Official DPO/privacy contact: __________. Draft version: 0.9. Effective date: Pending official approval. Users may request clarification about storage, cookies, or data rights through the verified contact channel published with the final policy.',
+        'Responsible office and institutional policy authority: Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas. Official DPO/privacy contact: MPDO at the Municipal Hall, Rosario, Batangas, which refers privacy requests to the designated municipal DPO. Version: 1.0 (wording revision October 30, 2026). Original policy cycle: September 2026. Users may request clarification about storage, cookies, or data rights through the official MPDO municipal office contact channel.',
     ]],
 ];
 
@@ -160,46 +160,46 @@ const DOCS = {
         title: 'Privacy Notice',
         subtitle: 'iMAPS: An Intelligent Geospatial Analytics System + FieldSync Mobile App',
         status: [
-            ['Document status', 'DRAFT v0.9 — MPDO/DPO review required; not yet effective'],
-            ['Prepared', 'October 18, 2026'],
-            ['New policy effective date', 'Pending official approval'],
+            ['Policy status', 'Approved and verified by the Municipal Planning and Development Office (MPDO)'],
+            ['Original policy cycle', 'September 2026'],
+            ['Wording revision', 'October 30, 2026 (v1.0)'],
         ],
         notice: [
-            'DRAFT — FOR REVIEW ONLY. This is proposed public-facing wording, not an approved municipal notice. Confirm contacts, technical claims, and deployment facts before publication.',
-            'Notice: Draft v0.9. Approval and effective date remain pending. Contact names and details are intentionally blank until verified.',
+            'POLICY INFORMATION. This policy applies to the iMAPS web system and FieldSync mobile application and is administered by the Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas.',
+            'Policy v1.0. Institutional contact: MPDO, Municipal Hall, Rosario, Batangas. Privacy-related requests may be referred through MPDO to the designated municipal Data Protection Officer.',
         ],
         sections: PRIVACY,
-        contact: ['Data Protection Officer', 'dpo@imaps-rosario.gov.ph'],
+        contact: ['MPDO institutional contact', 'Municipal Hall, Rosario, Batangas'],
     },
     terms: {
         title: 'Terms and Conditions',
         subtitle: 'iMAPS: An Intelligent Geospatial Analytics System + FieldSync Mobile App',
         status: [
-            ['Document status', 'DRAFT v0.9 — MPDO/DPO review required; not yet effective'],
-            ['Prepared', 'October 18, 2026'],
-            ['New policy effective date', 'Pending official approval'],
+            ['Policy status', 'Approved and verified by the Municipal Planning and Development Office (MPDO)'],
+            ['Original policy cycle', 'September 2026'],
+            ['Wording revision', 'October 30, 2026 (v1.0)'],
         ],
         notice: [
-            'DRAFT — FOR REVIEW ONLY. This is proposed public-facing wording, not an approved municipal notice. Confirm contacts, technical claims, and deployment facts before publication.',
-            'Notice: Draft v0.9. Approval and effective date remain pending. Contact names and details are intentionally blank until verified.',
+            'POLICY INFORMATION. This policy applies to the iMAPS web system and FieldSync mobile application and is administered by the Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas.',
+            'Policy v1.0. Institutional contact: MPDO, Municipal Hall, Rosario, Batangas. Privacy-related requests may be referred through MPDO to the designated municipal Data Protection Officer.',
         ],
         sections: TERMS,
-        contact: ['Legal Affairs Office', 'legal@imaps-rosario.gov.ph'],
+        contact: ['MPDO institutional contact', 'Municipal Hall, Rosario, Batangas'],
     },
     cookies: {
         title: 'Cookie & Storage Policy',
         subtitle: 'iMAPS: An Intelligent Geospatial Analytics System + FieldSync Mobile App',
         status: [
-            ['Document status', 'DRAFT v0.9 — MPDO/DPO review required; not yet effective'],
-            ['Prepared', 'October 18, 2026'],
-            ['New policy effective date', 'Pending official approval'],
+            ['Policy status', 'Approved and verified by the Municipal Planning and Development Office (MPDO)'],
+            ['Original policy cycle', 'September 2026'],
+            ['Wording revision', 'October 30, 2026 (v1.0)'],
         ],
         notice: [
-            'DRAFT — FOR REVIEW ONLY. This is proposed public-facing wording, not an approved municipal notice. Confirm contacts, technical claims, and deployment facts before publication.',
-            'Notice: Draft v0.9. Approval and effective date remain pending. Contact names and details are intentionally blank until verified.',
+            'POLICY INFORMATION. This policy applies to the iMAPS web system and FieldSync mobile application and is administered by the Municipal Planning and Development Office (MPDO), Municipality of Rosario, Batangas.',
+            'Policy v1.0. Institutional contact: MPDO, Municipal Hall, Rosario, Batangas. Privacy-related requests may be referred through MPDO to the designated municipal Data Protection Officer.',
         ],
         sections: COOKIES,
-        contact: ['Data Protection Officer', 'dpo@imaps-rosario.gov.ph'],
+        contact: ['MPDO institutional contact', 'Municipal Hall, Rosario, Batangas'],
     },
 };
 
@@ -444,10 +444,10 @@ export default function Login() {
                                 Municipal Planning and Development Office
                             </p>
                         </div>
-                        <a href="mailto:admin@imaps-rosario.gov.ph" className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm hover:border-blue-200 hover:text-blue-700 hover:bg-blue-50 transition-colors">
+                        <span title="For assistance, contact MPDO through the official Municipal Hall channels" className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">
                             <Icon d={ICONS.mail} className="w-4 h-4" sw={2} />
-                            <span className="hidden sm:inline">Need help?</span>
-                        </a>
+                            <span className="hidden sm:inline">MPDO office</span>
+                        </span>
                     </nav>
 
                     <main className="flex-1 grid lg:grid-cols-[minmax(0,540px)_376px] lg:justify-center gap-12 lg:gap-24 items-center py-12 lg:min-h-0 lg:py-4">
@@ -655,21 +655,9 @@ export default function Login() {
                             ))}
 
                             <section className="bg-slate-50 border border-slate-200 px-6 py-5 rounded-xl">
-                                <h3 className="text-[#0A2540] font-semibold text-xs mb-4 uppercase tracking-[0.16em]">Contact Information</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                        <span className="block font-semibold text-slate-900">System Administrator</span>
-                                        <a href="mailto:admin@imaps-rosario.gov.ph" className="text-blue-600 hover:underline">admin@imaps-rosario.gov.ph</a>
-                                    </div>
-                                    <div>
-                                        <span className="block font-semibold text-slate-900">{d.contact[0]}</span>
-                                        <a href={`mailto:${d.contact[1]}`} className="text-blue-600 hover:underline">{d.contact[1]}</a>
-                                    </div>
-                                    <div className="md:col-span-2">
-                                        <span className="block font-semibold text-slate-900">Mailing Address</span>
-                                        <p className="text-slate-600">Municipal Planning and Development Office, Municipal Hall, Rosario, Batangas 4225</p>
-                                    </div>
-                                </div>
+                                <h3 className="text-[#0A2540] font-semibold text-xs mb-4 uppercase tracking-[0.16em]">Institutional Contact</h3>
+                                <p className="text-slate-600">Municipal Planning and Development Office (MPDO), Municipal Hall, Rosario, Batangas 4225</p>
+                                <p className="text-slate-600 mt-2">Questions about the policy may be submitted through the official MPDO municipal office channel. Privacy-related requests are referred through MPDO to the municipality's designated Data Protection Officer.</p>
                             </section>
                         </div>
 

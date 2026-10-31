@@ -182,7 +182,7 @@ export const DIVERSITY_LENSES = [
         tabLabel: "Overview",
         metricLabel: "Mix Score",
         question: "How varied is the land being developed in this barangay?",
-        caption: "Mix Score (normalised Shannon index over 10 CLUP land-use categories; utilities and roads not counted) of the lot area recorded in clearances, certificates and permits, compared with the CLUP 2030 plan mix.",
+        caption: "Mix Score (normalised Shannon index over 10 CLUP land-use categories; utilities and roads not counted) of the lot area in locational clearances for development (not zoning certificates, development permits or paperwork-only clearances), compared with the CLUP 2030 plan mix.",
         heightNote: "Height & colour = recorded mix (0.00 – 1.00)",
         bands: DIVERSITY_TIERS,
         domain: [0, 1],

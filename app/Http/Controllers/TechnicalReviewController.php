@@ -910,6 +910,14 @@ class TechnicalReviewController extends Controller
             return response()->json(['error' => 'A valid inspection ID is required.'], 422);
         }
 
+        // Match the Site Inspection page's exact-round Admin/PO visibility.
+        // A missing or unauthorized round is hidden before any signed-photo read.
+        abort_unless(
+            \App\Models\SiteInspection::visibleTo(request()->user())
+                ->whereKey((int) $localInspectionId)
+                ->exists(),
+            404
+        );
         try {
             $inspection = app(SupabaseService::class)
                 ->getInspectionWithSignedPhotos((int) $localInspectionId);
