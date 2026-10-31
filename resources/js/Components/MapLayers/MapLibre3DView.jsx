@@ -350,6 +350,9 @@ export default function MapLibre3DView({
     hoveredBgy = null,
     onHoverBgy = () => {},
     onParcelsVisible = () => {},
+    // The geographic position under the cursor ({ lat, lng }), or null when it
+    // leaves the map, for the status bar.
+    onCursorMove = () => {},
     onZoomChange = null,
     // Overrides for embedding in a smaller canvas (the Overview card); the
     // defaults are the Maps page's framing.
@@ -428,7 +431,7 @@ export default function MapLibre3DView({
     // would forever see the first render's props (which, for `rightPanelOpen`,
     // meant the panel re-opened itself every time even after being closed).
     const callbacksRef = useRef({});
-    callbacksRef.current = { onFeatureClick, onMapClick, onHoverBgy, onParcelsVisible, onZoomChange };
+    callbacksRef.current = { onFeatureClick, onMapClick, onHoverBgy, onParcelsVisible, onZoomChange, onCursorMove };
 
     const prefersReducedMotion = useReducedMotion();
 
@@ -1354,6 +1357,10 @@ export default function MapLibre3DView({
         map.on("mouseleave", LYR_PRISMS, handleLeave);
         map.on("click", LYR_PRISMS, handleClick);
         map.on("click", handleBackgroundClick);
+
+        // Cursor position for the status bar, anywhere on the map (not just over a barangay).
+        map.on("mousemove", (e) => callbacksRef.current.onCursorMove?.({ lat: e.lngLat.lat, lng: e.lngLat.lng }));
+        map.getCanvas().addEventListener("mouseleave", () => callbacksRef.current.onCursorMove?.(null));
 
         // Names follow the map as it moves, in the same frame as the move.
         // Refreshing only when a zoom ends left them at their old spots mid-zoom

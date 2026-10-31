@@ -101,7 +101,7 @@ export default function LayersPanel({
 
     return (
         <div className="h-full overflow-y-auto pb-4">
-            <GroupTitle>Choose a Map View</GroupTitle>
+            <GroupTitle>Layers</GroupTitle>
             <div role="radiogroup" aria-label="Analysis layer">
                 {MODULES.map((m) => {
                     const active = activeLayer === m.id;
@@ -120,7 +120,6 @@ export default function LayersPanel({
                                     className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10.5px] font-bold tabular-nums transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#0b2a5b] ${
                                         active ? "bg-white ring-2 ring-blue-600" : "bg-white ring-1 ring-slate-300 group-hover:ring-blue-400"
                                     }`}
-                                    title={`Shortcut: press ${m.key}`}
                                     aria-hidden="true"
                                 >
                                     {active && <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
