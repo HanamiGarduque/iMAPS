@@ -599,7 +599,7 @@ export default function LeafletMap({
             });
             map.on("mouseout", () => live.current.onCursorMove?.(null));
 
-            mapRef.current.classList.toggle("is-imagery", isImageryStyle(mapStyle));
+            mapRef.current.classList.toggle("is-imagery", isImageryStyle(mapStyle) && !live.current.plain);
             tileLayerRef.current = createBaseLayer(L, mapStyle);
             if (!live.current.plain) tileLayerRef.current.addTo(map);
             mapRef.current.classList.toggle("is-plain", Boolean(live.current.plain));
