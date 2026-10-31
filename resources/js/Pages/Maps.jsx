@@ -185,8 +185,8 @@ const Divider = () => <span className="w-px h-5 bg-slate-300 mx-1" aria-hidden="
 
 function DockHeader({ title, onClose, closeLabel }) {
     return (
-        <div className="shrink-0 flex items-center justify-between h-11 px-4 bg-white border-b border-slate-200">
-            <h2 className="text-[15px] font-bold text-[#0b2a5b]">{title}</h2>
+        <div className="shrink-0 flex items-center justify-between gap-2 h-11 px-4 bg-white border-b border-slate-200">
+            <h2 className="min-w-0 truncate text-[13.5px] font-bold text-[#0b2a5b]" title={title}>{title}</h2>
             <button
                 type="button"
                 onClick={onClose}
@@ -1190,7 +1190,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     <span className={`absolute top-1/2 left-[3px] -translate-y-1/2 h-10 w-[3px] rounded-full transition-colors ${dockDrag ? "bg-[#1e3a8a]" : "bg-slate-300 group-hover:bg-slate-500"}`} />
                                                 </div>
                                             )}
-                                            <DockHeader title={activeLayer === "trends" && !activeQuarter?.isForecast ? "LC Applications Filed" : moduleInfo?.label} onClose={() => setPanelOpen(false)} closeLabel="Close analysis panel" />
+                                            <DockHeader title={activeLayer === "trends" ? (activeQuarter?.isForecast ? "Locational Clearance Demand Forecast" : "Recorded Locational Clearance Applications") : moduleInfo?.label} onClose={() => setPanelOpen(false)} closeLabel="Close analysis panel" />
                                             <div ref={panelBodyRef} className={compactPanel || fitPanel ? "min-h-0 flex flex-col overflow-y-auto" : "flex-1 min-h-0 flex flex-col"}>
 
                                                 {activeLayer === "status" && (

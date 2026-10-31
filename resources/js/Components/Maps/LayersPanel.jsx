@@ -9,7 +9,7 @@ const APP_LOAD_NAMES = { "11+": "Very High", "6–10": "High", "3–5": "Moderat
 
 export const MODULES = [
     { id: "status", key: "1", label: "Application Tracking", desc: "Zoning applications and processing status" },
-    { id: "trends", key: "2", label: "LC Demand Forecast", desc: "Locational clearance demand by quarter" },
+    { id: "trends", key: "2", label: "LC Demand", desc: "Locational clearance demand by quarter" },
     { id: "diversity", key: "3", label: "Diversity Index", desc: "Land-use mix per barangay" },
 ];
 
