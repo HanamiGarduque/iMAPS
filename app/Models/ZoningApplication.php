@@ -316,6 +316,25 @@ class ZoningApplication extends Model
     }
 
     /**
+     * The applications a signed-in user works with: Admins see every one, a
+     * Planning Officer (any other role) only those they encoded or currently
+     * own after a reassignment. Fails closed: no user matches no rows.
+     * Shared by the registry and the Application Tracking map so the two
+     * always agree on who sees what.
+     */
+    public function scopeVisibleTo($query, ?\App\Models\User $user)
+    {
+        if (($user?->role ?? null) === 'Admin') {
+            return $query;
+        }
+
+        return $query->where(function ($q) use ($user) {
+            $q->where('zoning_applications.encoded_by', $user?->id ?? 0)
+                ->orWhere('zoning_applications.assigned_planning_officer_id', $user?->id ?? 0);
+        });
+    }
+
+    /**
      * Applications filed for $type, alone or together with other types.
      */
     public function scopeOfType($query, string $type)

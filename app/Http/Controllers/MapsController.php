@@ -15,7 +15,9 @@ class MapsController extends Controller
     {
         $appType = $request->input('application_type');
 
-        $query = ZoningApplication::query();
+        // Application Tracking is role-based, like the registry: an Admin sees every
+        // application, a Planning Officer only the ones they encoded or now own.
+        $query = ZoningApplication::query()->visibleTo(Auth::user());
         if ($appType && $appType !== 'All') {
             $query->ofType($appType);
         }

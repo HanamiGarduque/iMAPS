@@ -363,17 +363,7 @@ class ApplicationController extends Controller
     // (a separate controller) still read the full set for export.
     private function restrictToOwnApplications($query)
     {
-        $user = Auth::user();
-
-        if (($user?->role ?? null) === 'Admin') {
-            return $query;
-        }
-
-        return $query->where(function ($q) use ($user) {
-            // Fails closed: no signed-in user matches no rows.
-            $q->where('zoning_applications.encoded_by', $user?->id ?? 0)
-                ->orWhere('zoning_applications.assigned_planning_officer_id', $user?->id ?? 0);
-        });
+        return $query->visibleTo(Auth::user());
     }
 
     private const REGISTRY_VIEWS = ['active', 'archived', 'voided'];
