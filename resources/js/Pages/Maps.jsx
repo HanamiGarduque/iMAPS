@@ -185,8 +185,8 @@ const Divider = () => <span className="w-px h-5 bg-slate-300 mx-1" aria-hidden="
 
 function DockHeader({ title, onClose, closeLabel }) {
     return (
-        <div className="shrink-0 flex items-center justify-between h-11 px-4 bg-white border-b border-slate-200">
-            <h2 className="text-[15px] font-bold text-[#0b2a5b]">{title}</h2>
+        <div className="shrink-0 flex items-center justify-between gap-2 h-11 px-4 bg-white border-b border-slate-200">
+            <h2 className="min-w-0 truncate text-[13.5px] font-bold text-[#0b2a5b]" title={title}>{title}</h2>
             <button
                 type="button"
                 onClick={onClose}
@@ -385,11 +385,14 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
     // Per-barangay colour and hover text for the LC map; the hover adds the
     // change from the same quarter a year earlier when that quarter is on record.
-    const lcLastYear = useMemo(() => (
-        activeQuarter
-            ? comparisonSeries.find((q) => !q.isForecast && q.total !== null && q.year === activeQuarter.year - 1 && q.quarter === activeQuarter.quarter) || null
-            : null
-    ), [comparisonSeries, activeQuarter]);
+    // Same base as summarizeBarangay: a recorded quarter against the quarter
+    // just before, a forecast against the same quarter a year earlier.
+    const lcLastYear = useMemo(() => {
+        if (!activeQuarter) return null;
+        if (activeQuarter.isForecast) return comparisonSeries.find((q) => !q.isForecast && q.total !== null && q.year === activeQuarter.year - 1 && q.quarter === activeQuarter.quarter) || null;
+        const prev = comparisonSeries[activeQuarterIndex - 1];
+        return prev && !prev.isForecast && prev.total !== null ? prev : null;
+    }, [comparisonSeries, activeQuarter, activeQuarterIndex]);
     const barangayNames = useBarangayNames();
     const barangayCount = barangayNames.length;
     // The barangays with the most applications in the quarter on screen, with
@@ -592,6 +595,9 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     ) : null;
     // These panels fit without scrolling, so the dock shrinks to their height.
     const compactPanel = activeLayer === "status" || activeLayer === "diversity";
+    // The LC panel on a recorded quarter also ends where its content ends,
+    // but keeps its resizable width.
+    const fitPanel = activeLayer === "trends" && !activeQuarter?.isForecast;
     // An open application takes the whole tracking panel: it gets the full map
     // height and the table narrows beside it instead of pushing it to scroll.
     const showAppDetails = activeLayer === "status" && Boolean(inspectedApp);
@@ -1164,11 +1170,11 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                     {panelOpen && (
                                         <aside
                                             className={`absolute top-0 right-0 z-[620] w-full sm:w-[372px] flex flex-col bg-white border-l border-slate-200 shadow-xl lg:shadow-none ${
-                                                compactPanel ? "border-b" : "bottom-0"
+                                                compactPanel || fitPanel ? "border-b" : "bottom-0"
                                             }`}
                                             style={compactPanel
                                                 ? { maxHeight: panelNeedsRoom || !showTable ? "100%" : `calc(100% - ${tableHeight + 12}px)` }
-                                                : isDesktop() ? { width: dockDrag ?? dockWidth } : undefined}
+                                                : isDesktop() ? { width: dockDrag ?? dockWidth, ...(fitPanel ? { maxHeight: "100%" } : {}) } : fitPanel ? { maxHeight: "100%" } : undefined}
                                             aria-label="Identify and analysis"
                                         >
                                             {!compactPanel && (
@@ -1184,8 +1190,8 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     <span className={`absolute top-1/2 left-[3px] -translate-y-1/2 h-10 w-[3px] rounded-full transition-colors ${dockDrag ? "bg-[#1e3a8a]" : "bg-slate-300 group-hover:bg-slate-500"}`} />
                                                 </div>
                                             )}
-                                            <DockHeader title={moduleInfo?.label} onClose={() => setPanelOpen(false)} closeLabel="Close analysis panel" />
-                                            <div ref={panelBodyRef} className={compactPanel ? "min-h-0 flex flex-col overflow-y-auto" : "flex-1 min-h-0 flex flex-col"}>
+                                            <DockHeader title={activeLayer === "trends" ? (activeQuarter?.isForecast ? "Locational Clearance Demand Forecast" : "Recorded Locational Clearance Applications") : moduleInfo?.label} onClose={() => setPanelOpen(false)} closeLabel="Close analysis panel" />
+                                            <div ref={panelBodyRef} className={compactPanel || fitPanel ? "min-h-0 flex flex-col overflow-y-auto" : "flex-1 min-h-0 flex flex-col"}>
 
                                                 {activeLayer === "status" && (
                                                     <StatusPanel
@@ -1322,7 +1328,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Scale 1:{mapScale(scaleLat, mapZoom).toLocaleString("en-PH")}</span>
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Zoom {mapZoom}</span>
                             <span className="px-3 border-l border-slate-300 hidden md:block">EPSG:4326</span>
-                            {activeLayer !== "status" && (
+                            {activeLayer !== "status" && activeLayer !== "trends" && (
                                 <div className="ml-auto min-w-0 flex items-center gap-1.5 pl-3 border-l border-slate-300">
                                     <span className="truncate">{statusSummary}</span>
                                 </div>

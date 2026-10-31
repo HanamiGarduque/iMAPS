@@ -223,7 +223,7 @@ class SiteInspectionScopedSyncContractTest extends TestCase
 
         $this->assertStringContainsString('foreach ($completedJobs as $job) {', $command);
         $this->assertStringContainsString(
-            'SiteInspection::find($localInspectionId)',
+            'SiteInspection::query()->lockForUpdate()->find($localInspectionId)',
             $command,
             'Only the id carried by the scoped remote row is resolved locally.'
         );
@@ -367,7 +367,8 @@ class SiteInspectionScopedSyncContractTest extends TestCase
 
         $this->assertStringContainsString('/site-inspections/${ins.id}/sync-from-fieldsync', $show);
         $this->assertStringContainsString('Sync from FieldSync', $show);
-        $this->assertStringContainsString('Admin Support Actions', $show);
+        $this->assertStringContainsString('Admin support actions', $show);
+        $this->assertStringContainsString('{userRole === "Admin" && (', $show);
     }
 
     public function test_support_action_states_it_cannot_take_business_decisions(): void
@@ -484,8 +485,9 @@ class SiteInspectionScopedSyncContractTest extends TestCase
         );
         $this->assertStringContainsString('break-words', $m[1], 'The reference must be allowed to wrap.');
 
-        $this->assertStringContainsString('INS-{item.id}', $list);
+        $this->assertStringContainsString('`INS-${i.id}`', $list);
         $this->assertStringContainsString('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3', $list);
+        $this->assertStringContainsString('href={folderDetailUrl(item)}', $list);
     }
     public function test_completed_checkmark_and_folder_navigation_are_preserved(): void
     {

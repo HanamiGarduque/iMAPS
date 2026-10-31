@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 import SignedChange from '@/Components/Maps/SignedChange';
+import { TownTrend, MONTH_SPAN, ord } from '@/Components/MapLayers/RecordedSummary';
 
 const TITLE = 'text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500';
 
 // One line across all quarters: the filled area is what was filed, the dashed
 // orange stretch is the forecast, the marked point is the quarter on the map.
 // Every quarter is a click target, as the bars were.
-function QuarterTrend({ points, activeIndex, onSelect }) {
+export function QuarterTrend({ points, activeIndex, onSelect }) {
     const W = 330, H = 92, PX = 8, TOP = 20, BASE = 70;
     const n = points.length;
     if (n < 2) return null;
@@ -80,6 +81,55 @@ export default function BarangayLcDetail({ bgyName, series = [], activeIndex = 0
     // LC per quarter for this barangay, across the whole timeline.
     const trend = useMemo(() => series.map((q) => ({ ...q, value: q.total === null ? null : q.byBgy?.[key] || 0 })), [series, key]);
 
+    // A recorded quarter reads like the town summary, with this barangay's
+    // numbers: how many applied, what for, and how this year compares.
+    if (!activeQuarter?.isForecast && series[activeIndex]) {
+        const cur = series[activeIndex];
+        // Count and change come from the shared summary, the same one the map
+        // card reads, so the two always show the same numbers.
+        const count = summary ? summary.count : cur.byBgy?.[key] || 0;
+        const hasBase = Boolean(summary?.lastYear);
+        const pts = series.map((q, i) => ({ ...q, i, total: q.byBgy?.[key] || 0 })).filter((q) => !q.isForecast && series[q.i].total !== null);
+        const firstYear = pts[0]?.year;
+        const H3 = 'text-[12.5px] font-semibold text-slate-800';
+        return (
+            <>
+                {/* Who and when on one line, then the quarter's numbers as two
+                    labelled tiles: how many were filed, and the change. */}
+                <section className="shrink-0 px-4 pt-3 pb-3.5 border-b border-slate-200" aria-label="This quarter">
+                    <div className="flex items-baseline gap-2">
+                        <h3 className="min-w-0 mr-auto text-[16px] font-semibold text-slate-900 leading-tight truncate">{bgyName}</h3>
+                        <span className="shrink-0 text-[11.5px] text-slate-500">{ord(cur.quarter)} Quarter of {cur.year}</span>
+                    </div>
+                    <div className="mt-2.5 grid grid-cols-2 rounded-md border border-slate-200 bg-slate-50/70 divide-x divide-slate-200">
+                        <div className="px-3 py-2.5">
+                            <div className="text-[10.5px] text-slate-500">Applications filed</div>
+                            <div className="mt-1 text-[22px] font-semibold tabular-nums leading-none text-slate-900">{count}</div>
+                        </div>
+                        <div className="px-3 py-2.5">
+                            <div className="text-[10.5px] text-slate-500">{hasBase ? `vs ${summary.baseLabel}` : 'vs last quarter'}</div>
+                            {hasBase ? (
+                                <div className={`mt-1 text-[22px] font-semibold tabular-nums leading-none ${summary.delta > 0 ? 'text-[#1f9d55]' : summary.delta < 0 ? 'text-[#d1342a]' : 'text-slate-500'}`}>
+                                    {summary.delta === 0 ? 'Same' : `${summary.delta > 0 ? '+' : '−'}${Math.abs(summary.delta)}`}
+                                </div>
+                            ) : (
+                                <div className="mt-1.5 text-[11.5px] leading-snug text-slate-500">First on record</div>
+                            )}
+                        </div>
+                    </div>
+                </section>
+
+                {firstYear !== undefined && cur.year > firstYear && (
+                    <section className="shrink-0 px-4 pt-3 pb-2" aria-label="Compared with other years">
+                        <h3 className={H3}>How does this year compare?</h3>
+                        <p className="mb-1.5 text-[11px] text-slate-500">Applications from {MONTH_SPAN[cur.quarter - 1]} of each year.</p>
+                        <TownTrend pts={pts} activeIndex={activeIndex} onSelect={onSelectQuarter} />
+                    </section>
+                )}
+            </>
+        );
+    }
+
     return (
         <>
             <div className="shrink-0 px-4 pt-3 pb-2.5 border-b border-slate-200">
@@ -110,23 +160,6 @@ export default function BarangayLcDetail({ bgyName, series = [], activeIndex = 0
                 </div>
             )}
 
-            {summary && !summary.isForecast && (
-                <button
-                    type="button"
-                    onClick={onOpenRecords}
-                    aria-pressed={recordsOpen}
-                    className="shrink-0 w-full flex items-center gap-2 px-4 py-3 text-left border-b border-slate-200 hover:bg-slate-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b]"
-                >
-                    <span className="min-w-0 flex-1">
-                        <span className="block text-[12px] font-semibold text-slate-900">LC records</span>
-                        <span className="block text-[11px] text-slate-500">{summary.quarterRecordCount} filed in {activeQuarter?.label}</span>
-                    </span>
-                    <span className="shrink-0 flex items-center gap-1 text-[11.5px] font-semibold text-[#0b2a5b]">
-                        View records
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                    </span>
-                </button>
-            )}
         </>
     );
 }

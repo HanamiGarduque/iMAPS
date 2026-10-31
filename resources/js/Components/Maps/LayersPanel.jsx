@@ -9,7 +9,7 @@ const APP_LOAD_NAMES = { "11+": "Very High", "6–10": "High", "3–5": "Moderat
 
 export const MODULES = [
     { id: "status", key: "1", label: "Application Tracking", desc: "Zoning applications and processing status" },
-    { id: "trends", key: "2", label: "LC Demand Forecast", desc: "Locational clearance demand by quarter" },
+    { id: "trends", key: "2", label: "LC Demand", desc: "Locational clearance demand by quarter" },
     { id: "diversity", key: "3", label: "Diversity Index", desc: "Land-use mix per barangay" },
 ];
 
@@ -101,22 +101,31 @@ export default function LayersPanel({
 
     return (
         <div className="h-full overflow-y-auto pb-4">
-            <GroupTitle>Analysis</GroupTitle>
+            <GroupTitle>Choose a Map View</GroupTitle>
             <div role="radiogroup" aria-label="Analysis layer">
                 {MODULES.map((m) => {
                     const active = activeLayer === m.id;
                     return (
                         <div key={m.id} className={`mx-3 mb-1 rounded-lg ${active ? "bg-slate-50 ring-1 ring-slate-200" : ""}`}>
-                            <label className={`flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer ${active ? "" : "hover:bg-slate-50"}`} title={m.desc}>
+                            <label className={`group flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer ${active ? "" : "hover:bg-slate-50"}`} title={m.desc}>
+                                {/* A blue radio circle; keys 1–3 still switch views. */}
                                 <input
                                     type="radio"
                                     name="analysis-layer"
                                     checked={active}
                                     onChange={() => onSelectLayer(m.id)}
-                                    className="accent-[#0b2a5b]"
+                                    className="peer sr-only"
                                 />
+                                <span
+                                    className={`w-5 h-5 shrink-0 rounded-full flex items-center justify-center text-[10.5px] font-bold tabular-nums transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#0b2a5b] ${
+                                        active ? "bg-white ring-2 ring-blue-600" : "bg-white ring-1 ring-slate-300 group-hover:ring-blue-400"
+                                    }`}
+                                    title={`Shortcut: press ${m.key}`}
+                                    aria-hidden="true"
+                                >
+                                    {active && <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                                </span>
                                 <span className={`flex-1 min-w-0 text-[12.5px] ${active ? "font-semibold text-[#0b2a5b]" : "text-slate-800"}`}>{m.label}</span>
-                                <kbd className="text-[10px] text-slate-400 border border-slate-200 rounded px-1 leading-4 bg-white">{m.key}</kbd>
                             </label>
 
                             {active && m.id === "status" && (

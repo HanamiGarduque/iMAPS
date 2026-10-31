@@ -34,7 +34,7 @@ export default function TopDemandCard({ rows = [], title, compareLabel = null, h
                                 onClick={() => onSelect(r.name)}
                                 onMouseEnter={() => onHover(r.name)}
                                 onFocus={() => onHover(r.name)}
-                                className={`w-full grid grid-cols-[14px_1fr_auto_auto] items-center gap-1.5 px-3 py-[3px] text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b] ${
+                                className={`w-full grid grid-cols-[14px_1fr_auto] items-center gap-1.5 px-3 py-[3px] text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#0b2a5b] ${
                                     hovered ? "bg-[#eaf0f8] shadow-[inset_3px_0_0_#0b2a5b]" : "hover:bg-slate-50"
                                 }`}
                             >
@@ -45,19 +45,12 @@ export default function TopDemandCard({ rows = [], title, compareLabel = null, h
                                     {i + 1}
                                 </span>
                                 <span className="truncate text-[11px] text-slate-800">{r.name}</span>
-                                <span
-                                    className={`text-[10px] tabular-nums text-right ${r.delta > 0 ? "text-[#b32a17]" : "text-[#1f5fa8]"}`}
-                                    title={compareLabel ? `vs ${compareLabel}` : undefined}
-                                >
-                                    {r.delta == null || r.delta === 0 ? "" : `${r.delta > 0 ? "+" : "−"}${Math.abs(r.delta)}`}
-                                </span>
                                 <span className="text-[11px] font-semibold tabular-nums text-slate-900 min-w-[18px] text-right">{r.count}</span>
                             </button>
                         </li>
                     );
                 })}
             </ol>
-            {compareLabel && <p className="px-3 py-1 text-[10px] text-slate-400 border-t border-slate-100">Change vs {compareLabel}</p>}
         </section>
     );
 }

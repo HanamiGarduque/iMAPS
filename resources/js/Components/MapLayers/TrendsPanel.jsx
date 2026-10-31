@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
 import BarangayLcDetail from '@/Components/MapLayers/BarangayLcDetail';
+import RecordedSummary from '@/Components/MapLayers/RecordedSummary';
+import useBarangayNames from '@/utils/useBarangayNames';
 
 // The service reports validation_wmape as a percentage (e.g. 42.3).
 const formatWmape = (val) => {
@@ -145,6 +147,7 @@ export default function TrendsPanel({
     }, [activePins, isForecast, forecastData, activeQuarter]);
 
     const quarterTotal = ranking.reduce((sum, r) => sum + r.count, 0);
+    const barangayNames = useBarangayNames();
 
     // Historical LC records for the selected barangay
     const bgyRecords = useMemo(() => {
@@ -284,6 +287,16 @@ export default function TrendsPanel({
                     recordsOpen={recordsOpen}
                 />
                 </div>
+            ) : !isForecast && ranking.length > 0 ? (
+                <RecordedSummary
+                    ranking={ranking}
+                    series={series}
+                    activeIndex={activeIndex}
+                    onSelectQuarter={onSelectQuarter}
+                    onSelectBgy={onSelectBgy}
+                    onHoverBgy={onHoverBgy}
+                    totalBarangays={barangayNames.length}
+                />
             ) : (
                 ranking.length === 0 && (
                 <section className="border-b border-slate-200" aria-label="Demand by barangay">
