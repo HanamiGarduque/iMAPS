@@ -54,8 +54,8 @@ export default function TimelineBar({
 
     return (
         <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-3 pt-2 pb-2.5 bg-[#f5f6f8] border-t border-slate-300" role="group" aria-label={ariaLabel}>
-            {/* Records / Forecast: Records opens on the latest record, Forecast on its first quarter. */}
-            <div className="shrink-0 flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Records or forecast quarters">
+            {/* Recorded / Forecast: Recorded opens on the latest record, Forecast on its first quarter. */}
+            <div className="shrink-0 flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Recorded or forecast quarters">
                 <button
                     type="button"
                     aria-pressed={!isForecast}
@@ -63,7 +63,7 @@ export default function TimelineBar({
                     onClick={() => !isForecast || onIndex(recorded[recorded.length - 1])}
                     className={chip(!isForecast, "recorded")}
                 >
-                    Records
+                    Recorded
                 </button>
                 <button
                     type="button"
