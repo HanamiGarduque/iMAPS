@@ -237,7 +237,7 @@ const MockFrame = ({ nav, title, children }) => (
     <span className="mt-2 block w-full max-w-[400px] rounded-xl border border-slate-200/80 bg-white p-1 shadow-[0_1px_0_rgba(255,255,255,.8)_inset,0_8px_14px_-10px_rgba(37,99,235,.45),0_4px_12px_-6px_rgba(15,23,42,.08)] ring-1 ring-blue-600/5" aria-hidden="true">
     <span className="flex items-center gap-1 px-2 pt-1 pb-1.5">
         <span className="w-1.5 h-1.5 rounded-full bg-rose-300" /><span className="w-1.5 h-1.5 rounded-full bg-amber-300" /><span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
-        <span className="mx-auto h-3 w-32 rounded-full bg-slate-100 text-[7px] leading-3 text-center font-semibold text-slate-400">imaps.rosario.gov.ph</span>
+        <span className="mx-auto h-3 w-32 rounded-full bg-slate-100 text-[7px] leading-3 text-center font-semibold text-slate-400">imaps-mpdorosario.com</span>
     </span>
     <span className="flex rounded-lg border border-slate-100 overflow-hidden">
         <span className="flex flex-col items-center gap-1.5 w-9 shrink-0 py-2 border-r border-slate-100 bg-white">
