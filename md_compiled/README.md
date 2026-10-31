@@ -16,19 +16,22 @@
   - **Interactive GIS Viewport**: Built with MapLibre GL 3D & Leaflet for rendering barangay boundaries, zoning classification overlays, and land parcel boundaries.
   - **Land-Use Mix Monitoring**: normalised Shannon entropy index per barangay (−Σ p ln p ÷ ln 11 over the CLUP land-use categories), computed from the lot area filed in the last five years of recorded clearances, certificates and permits (`historical_data`) and compared against the CLUP 2030 plan mix. A time slider steps quarter by quarter through rolling five-year windows; the window is anchored on the latest filing, so each new import moves it forward.
   - **Urban Growth Forecasting**: Integration with a predictive forecasting service to project quarter-by-quarter land-use transitions and urban expansion. **Requires a separate FastAPI + XGBoost microservice that lives in its own repository** — see [Urban Growth Forecasting](#-urban-growth-forecasting-external-microservice).
+  - **Landing Page**: The Overview page was removed; `/maps` is now the landing page. In-page help (`pageHelp.jsx`) explains each page.
   - **Tax Dec & Parcel Lookup**: Live verification of Tax Declaration numbers (Tax Dec / TCT) against spatial parcel boundaries.
 
 - **📋 Zoning Application Docket (`/applications`)**
   - **End-to-End Workflow**: Complete lifecycle tracking: Application Encoding → Parcel Verification → Technical Review → Field Inspection Scheduling → Final Decision (Approval/Disapproval).
   - **Offline & Draft Storage**: Local storage backup and draft manager enabling Planning Officers to prepare application details offline.
+  - **Applicant Municipality & Previous Records**: Applications capture the applicant's municipality, and the previous-record search was reworked for matching earlier filings.
 
 - **🔍 Technical Review & Field Inspections (`/site-inspections`)**
   - **Inspector Allocation & Scheduling**: Assign field inspectors to specific pending applications with geographic provenance.
+  - **Inspection Reports**: Structured checklist evidence is preserved in reports, reassignment refreshes the inspector report, and Planning Officers can read only the private photos of their own inspections.
   - **Supabase Cloud Sync**: Bidirectional sync between local Laravel backend and mobile inspector applications (`PushInspectionToSupabase`, `PullCompletedInspections`).
 
 - **📊 Analytics & Reporting (`/reports`)**
-  - **Export Formats**: PDF export via `laravel-dompdf` and Excel export via `simplexlsxgen`.
-  - **Interactive Visualizations**: Data charts built with Chart.js and Recharts for trend analysis.
+  - **Export Formats**: Custom reports are exported as Excel (`simplexlsxgen`) or CSV; the old Blade/PDF report view and in-report chart rendering were removed. Permit documents are still generated as XLSX/PDF (see Permit storage).
+  - **Report Builder**: Preset reports (monthly applications, by barangay, fees by month, land-use summary, full list) with a live preview. Reports show the `form_number` beside the `reference_number`.
 
 - **🔐 Security, Audit Trail & Role-Based Access (`/users`)**
   - **Granular RBAC**: Role middleware distinguishing `Admin` and `Planning Officer` capabilities.
@@ -191,17 +194,21 @@ Running it without Docker starts uvicorn on **port 8000**, which collides with
 
 | | |
 | --- | --- |
-| Request | `POST {FORECAST_SERVICE_URL}` — multipart `file`, header `X-API-Key` |
+| Request | `GET {FORECAST_SERVICE_URL}` — header `X-API-Key`, **no body and no upload** |
 | Default URL | `http://localhost:8002/api/v1/forecast` |
-| CSV columns required | `Encoding Date`, `Barangay`, `Application Type`. iMAPS builds the CSV from the `historical_data` table — the same recorded clearances the dashboard shows. There is no upload: the endpoint takes no body and ignores one. An empty table answers **HTTP 422** with "no recorded clearance history", not a forecast |
-| Data precondition | the CSV must contain a **fully completed quarter**; the service trains on a rolling 60 months from it and predicts the next two quarters, then rejects the request if that precondition fails |
-| Response | `{ forecasts: [{Date, Quarter_Label, Barangay, Predicted_Quarterly_Clearances}], metrics: {validation_mae, validation_wmape, validation_r2}, summary: {q<N>_<YEAR>_total, combined_total} }` |
+| Input data | None sent. The service forecasts from **its own history** (MPDO monthly totals, split by barangay), so the model runs on the data it was validated on rather than on `historical_data`, whose synthetic rows did not match the MPDO totals (e.g. Q4 2025: 89 vs 179) |
+| Horizon | The service trains on a rolling 60 months and predicts the next two quarters |
+| Response | `{ forecasts: [{Date, Quarter_Label, Barangay, Predicted_Quarterly_Clearances}], history: [...], metrics: {validation_mae, validation_wmape, validation_r2}, summary: {q<N>_<YEAR>_total, combined_total} }` |
 | Runtime | **~24s warm, over 30s cold** (it trains an XGBoost model per request and loads the shapefiles on first call). `FORECAST_SERVICE_TIMEOUT` defaults to 180s; Guzzle's 30s default used to abort the request mid-forecast. Match it in nginx (`fastcgi_read_timeout`) and php-fpm (`request_terminate_timeout`). |
 
 `ForecastService` parses `Quarter_Label` (`"2026 Q4"`) into a `demand` array of
 `{barangay, year, quarter, label, predicted}` and passes `metrics` straight through, so the
 MAE/WMAPE shown in the Trends panel are the model's real validation figures and the map shows
-the predicted count per barangay. A row whose quarter label cannot be parsed is dropped and
+the predicted count per barangay. The `history` the service returns is normalised too: on a
+forecast quarter the Maps page compares against it ("than last year", "than usual", per-barangay
+changes, the timeline sentence) instead of `historical_data`. Recorded quarters still read
+`historical_data`. The browser's saved forecast is keyed `v4`, so a run saved from the older
+service (no history) is dropped and regenerated. A row whose quarter label cannot be parsed is dropped and
 logged rather than filed under a guessed year, and no application records are generated from a
 count. `validation_wmape` is a percentage (e.g. 42.3), which is how `formatWmape` in
 `TrendsPanel.jsx` renders it. Where there is no run to show, the panel shows `—`, not a
@@ -332,6 +339,31 @@ Full steps are in [docs/RAILWAY_DEPLOYMENT.md §2](docs/RAILWAY_DEPLOYMENT.md#2-
    Without it the app answers 403 to everyone.
 4. Leave `ALLOWED_IPS` unset when staff have dynamic IPs; it is only for a fixed-IP office.
 
+#### Issuing and revoking device certificates (mTLS)
+
+One certificate per device; never share one between people or machines. A browser without a
+certificate sees Cloudflare's "Sorry, you have been blocked" page.
+
+1. **Generate a CSR on the device.** The member creates a private key and certificate signing
+   request on their own device (on Windows, `certreq -new` makes a non-exportable key in the
+   user's certificate store) and sends only the CSR.
+2. **Issue it in Cloudflare.** *SSL/TLS → Client Certificates → Add Certificate*, choose to use
+   your own CSR, paste it, set a validity (1 year is a sensible default) and hand the issued
+   certificate back. If Cloudflare rejects a `certreq` CSR, change the `NEW CERTIFICATE REQUEST`
+   header and footer to `CERTIFICATE REQUEST`.
+3. **Install it.** The member installs it (`certreq -accept` on Windows), restarts the browser and
+   picks the certificate when prompted. Use Brave, Chrome or Edge on Windows; they read the
+   Windows certificate store. Managed PCs can skip the prompt with the
+   `AutoSelectCertificateForUrls` browser policy.
+4. **Keep a register.** Record member, device, issue and expiry dates, and renew before expiry.
+5. **Revoke** from the same Client Certificates list when a device is lost or a member leaves;
+   only that device is blocked.
+
+Prefer the CSR route: Cloudflare-generated keys (bundled as `.p12`) expose the private key to the
+admin and must travel over a secure channel. To pause enforcement without invalidating any
+certificate, set the WAF rule to **Disabled**. Because the rule only filters traffic that passes
+through Cloudflare, `ORIGIN_SECRET` stays mandatory.
+
 How the app relies on Cloudflare:
 
 - **Origin secret** ([RequireOriginSecret.php](app/Http/Middleware/RequireOriginSecret.php)): Railway's
@@ -457,6 +489,29 @@ before opening the site to staff.
   php artisan backup:run            # database dump
   php artisan backup:run --files    # storage/app archive
   ```
+- **Seed Demo Applications** (local/demo data only, never production):
+  ```bash
+  php artisan demo:applications --count=50 --dry-run          # preview who and what would be used
+  php artisan demo:applications --per-barangay=2-10            # random count per barangay, on its own lots
+  php artisan demo:applications --inspector="Name" --inspected # inspector takes ~half of the rounds
+  php artisan demo:applications --except=inspection_scheduled,reinspection_scheduled
+  php artisan demo:applications --from=2026-05-01 --to=2026-10-31 --seed=2026
+  php artisan demo:applications --sync                         # also play out on Supabase (FieldSync + public tracker)
+  php artisan demo:applications --tracker-only                 # status timelines to the public tracker only
+  php artisan demo:applications --push                         # push already-created samples to Supabase
+  php artisan demo:applications --purge                        # remove the samples this command created
+  ```
+  `--shuffle` randomises scenarios/officers; `--force` skips confirmation.
+- **Fit Historical Clearances to the CLUP Plan** (dry run unless `--apply`):
+  ```bash
+  php artisan historical:fit-to-clup [--cap=0.2] [--seed=2026] [--apply] [--sql=changes.sql]
+  ```
+- **Forecast Report in the Console** (metrics, tables, charts from the running forecast service):
+  ```bash
+  python3 scripts/forecast_report.py [--top 48] [--save] [--no-show] [--json PATH]
+  ```
+  A notebook version is in `scripts/forecast_report.ipynb`. Needs only `matplotlib`; reads
+  `FORECAST_SERVICE_URL` / `FORECAST_SERVICE_API_KEY` from the environment or `.env`.
 - **Execute Test Suite:**
   ```bash
   composer run test
@@ -496,8 +551,8 @@ before opening the site to staff.
   after the ordinance is enacted, then re-imported on the Settings page and the cache refreshed
   with `php artisan map:warm --fresh`.
 - **Forecasting is optional and external.** It needs the separate FastAPI/XGBoost service, takes
-  about 24–30+ seconds per run and requires at least one fully completed quarter of history.
-  Forecasts are estimates and are only as good as the recorded clearance history. They support
+  about 24–30+ seconds per run and forecasts from the service's own MPDO-based history, not from
+  `historical_data`. Forecasts are estimates and are only as good as that history. They support
   decisions but don't make them.
 - **Land-use mix depends on recorded data.** The entropy index uses the lot areas filed in
   `historical_data`. Missing or mis-encoded historical records skew the scores.
