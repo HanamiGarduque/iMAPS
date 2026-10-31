@@ -30,6 +30,35 @@ const showResetHelp = () =>
         },
     );
 
+const pinSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
+
+// "Need help?" in the top bar: the same dialog as "Forgot your password?",
+// with where to reach the MPDO, which manages iMAPS accounts. Contact details
+// from the LGU's published directory (Rosario AccessPoint) — confirm with the
+// office if they change.
+const helpHeader = resetHelpHeader.replace(keySvg, pinSvg).replace('Forgot your password?', 'Need help?');
+const helpRow = (label, value) => '<div style="display:flex;gap:12px;padding:8px 0;border-top:1px solid #eef1f5"><span style="width:62px;flex-shrink:0;font-size:12px;color:#94a3b8">' + label + '</span><span style="font-size:13px;color:#0f172a">' + value + '</span></div>';
+const showHelp = () =>
+    confirmDialog(
+        helpHeader,
+        '<div style="padding-bottom:22px">' +
+            '<p style="margin:0;text-wrap:balance">Visit or call the MPDO for account and sign-in help.</p>' +
+            '<div style="margin-top:16px;text-align:left">' +
+                helpRow('Office', 'Municipal Planning and Development Office') +
+                helpRow('Location', '2nd Floor, Municipal Hall Annex I<br>Gualberto Ave., Poblacion B, Rosario, Batangas') +
+                helpRow('Phone', '<a href="tel:+63437260329" style="color:#1d4ed8;font-weight:600;text-decoration:none">(043) 726-0329</a>') +
+            '</div>' +
+        '</div>',
+        '',
+        {
+            showCancelButton: false,
+            showConfirmButton: false,
+            width: 400,
+            showClass: { popup: 'dialog-in', backdrop: 'swal2-backdrop-show' },
+            hideClass: { popup: 'dialog-out', backdrop: 'swal2-backdrop-hide' },
+        },
+    );
+
 const ACTIVE_PARCEL = [10, 21, 28];
 
 // Mirrors the modules that exist in the app today.
@@ -444,10 +473,14 @@ export default function Login() {
                                 Municipal Planning and Development Office
                             </p>
                         </div>
-                        <span title="For assistance, contact MPDO through the official Municipal Hall channels" className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">
-                            <Icon d={ICONS.mail} className="w-4 h-4" sw={2} />
-                            <span className="hidden sm:inline">MPDO office</span>
-                        </span>
+                        <button
+                            type="button"
+                            onClick={showHelp}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-semibold transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="9.5" /><path strokeLinecap="round" strokeLinejoin="round" d="M9.4 9.2a2.7 2.7 0 0 1 5.2 1c0 1.8-2.6 2.3-2.6 3.8M12 17h.01" /></svg>
+                            <span className="hidden sm:inline">Need help?</span>
+                        </button>
                     </nav>
 
                     <main className="flex-1 grid lg:grid-cols-[minmax(0,540px)_376px] lg:justify-center gap-12 lg:gap-24 items-center py-12 lg:min-h-0 lg:py-4">
