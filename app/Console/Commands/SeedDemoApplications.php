@@ -52,6 +52,7 @@ class SeedDemoApplications extends Command
         {--from= : Earliest date of any event, YYYY-MM-DD (default: about six months back)}
         {--to= : Latest date of any event, YYYY-MM-DD (default: now)}
         {--sync : Also play the applications out on Supabase (FieldSync app and public tracker)}
+        {--tracker-only : Send only the status timelines to the public tracker; nothing goes to the FieldSync app (implies --sync when creating)}
         {--push : Instead of creating any, play the sample applications already here out on Supabase (skips what is already there)}
         {--dry-run : Show who and what would be used, write nothing}
         {--purge : Delete the sample applications this command created, instead of creating any}
@@ -345,7 +346,7 @@ class SeedDemoApplications extends Command
             count($plans), $this->counts['parcels'], $this->counts['reviews'], $this->counts['inspections'], $this->counts['permits']
         ));
 
-        if ($this->option('sync')) {
+        if ($this->option('sync') || $this->option('tracker-only')) {
             return $this->mirror($this->createdIds) ? self::SUCCESS : self::FAILURE;
         }
         if ($this->openInspectionIds) {
@@ -1285,6 +1286,16 @@ class SeedDemoApplications extends Command
             }
         }
         $this->line("Public tracker: {$tracks} timeline entries pushed.");
+
+        if ($this->option('tracker-only')) {
+            $this->line('Tracker only: nothing was sent to the FieldSync app.');
+
+            if ($failed) {
+                $this->error("{$failed} pushes failed (see above / laravel.log). Run --push --tracker-only again to retry them.");
+            }
+
+            return $failed === 0;
+        }
 
         // 2. Every round, oldest first, so a reinspection finds its previous round.
         $delivered = $completed = 0;
