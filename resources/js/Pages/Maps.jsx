@@ -1099,7 +1099,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                     {activeLayer === "trends" && !selectedBgy?.name && (
                                         <TopDemandCard
                                             rows={topDemandRows}
-                                            title={activeQuarter?.isForecast ? "Where will they come from?" : "Applications by barangay"}
+                                            title={activeQuarter?.isForecast ? "Projected origin of applicants" : "Applications by barangay"}
                                             compareLabel={lcLastYear?.label ?? null}
                                             hoveredBgy={hoveredBgy}
                                             onSelect={selectBarangay}
