@@ -64,7 +64,7 @@ const ACTIVE_PARCEL = [10, 21, 28];
 // Mirrors the modules that exist in the app today.
 const MODULES = [
     { name: 'Registry', title: 'Encode to approval', text: 'Encode zoning applications, save drafts and follow every status change.' },
-    { name: 'Geospatial Mapping', title: 'Land use, mapped', text: 'Check each application against zoning, parcel and barangay layers.' },
+    { name: 'Land Use Map', title: 'Land use, mapped', text: 'Check each application against zoning, parcel and barangay layers.' },
     { name: 'Demand Forecasting', title: 'Data to decisions', text: 'Turn approved clearances into trends and forecasted demand by barangay.' },
 ];
 
@@ -273,7 +273,7 @@ const MOCKS = [
             </span>
         ))}
     </MockFrame>,
-    <MockFrame key="b" nav={1} title="Geospatial Mapping">
+    <MockFrame key="b" nav={1} title="Land Use Map">
         <span className="flex gap-2">
             <span className="relative flex-1 h-[60px] rounded-md bg-slate-50 overflow-hidden">
                 <svg className="absolute inset-0 w-full h-full" viewBox="0 0 120 60" preserveAspectRatio="none" fill="none">
