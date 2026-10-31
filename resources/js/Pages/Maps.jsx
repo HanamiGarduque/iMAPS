@@ -211,6 +211,33 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [layersOpen, setLayersOpen] = useState(isDesktop);
     const [panelOpen, setPanelOpen] = useState(isDesktop);
+    // Full map view: browser fullscreen with the Layers panel hidden and the
+    // analysis panel shown. Leaving it (the button again, or Esc out of
+    // fullscreen) puts the Layers panel back as it was.
+    const [fullMap, setFullMap] = useState(false);
+    const layersBeforeFullMap = useRef(true);
+    const toggleFullMap = () => {
+        if (fullMap) {
+            setFullMap(false);
+            setLayersOpen(layersBeforeFullMap.current);
+            if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        } else {
+            layersBeforeFullMap.current = layersOpen;
+            setFullMap(true);
+            setLayersOpen(false);
+            setPanelOpen(true);
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+        }
+    };
+    useEffect(() => {
+        const onChange = () => {
+            if (document.fullscreenElement || !fullMap) return;
+            setFullMap(false);
+            setLayersOpen(layersBeforeFullMap.current);
+        };
+        document.addEventListener("fullscreenchange", onChange);
+        return () => document.removeEventListener("fullscreenchange", onChange);
+    }, [fullMap]);
     const [clock, setClock] = useState("");
     const [showClup, setShowClup] = useState(false);
     const [clupOpacity, setClupOpacity] = useState(1);
@@ -916,10 +943,6 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                         <div className="shrink-0 flex items-center gap-0.5 h-10 px-2 bg-[#f1f3f6] border-b border-slate-300" role="toolbar" aria-label="Map tools">
                             <ToolButton icon="layers" label="Layers panel" pressed={layersOpen} onClick={() => setLayersOpen((v) => !v)} />
                             <Divider />
-                            <ToolButton icon="zoomIn" label="Zoom in" onClick={() => (show3D ? view3DRef.current?.zoomBy(1) : setMapZoom((z) => Math.min(19, z + 1)))} />
-                            <ToolButton icon="zoomOut" label="Zoom out" onClick={() => (show3D ? view3DRef.current?.zoomBy(-1) : setMapZoom((z) => Math.max(HOME_ZOOM, z - 1)))} />
-                            <ToolButton icon="extent" label="Zoom to Rosario" onClick={() => { setSelectedBgy(null); if (show3D) view3DRef.current?.reset(); else setResetTrigger((t) => t + 1); }} />
-                            <Divider />
                             <div className="flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Map view">
                                 {["2D", "3D"].map((v) => {
                                     const on = (v === "3D") === show3D;
@@ -942,14 +965,13 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
 
                             <span className="ml-auto" />
                             <ToolButton icon="panel" label="Identify and analysis panel" pressed={panelOpen} onClick={() => setPanelOpen((v) => !v)} />
-                            <ToolButton icon="fullscreen" label="Fullscreen" onClick={toggleFullscreen} />
                         </div>
 
                         <div className="flex-1 min-h-0 flex relative">
                             {/* ── Layers dock ── */}
                             {layersOpen && (
                                 <aside className="absolute lg:relative inset-y-0 left-0 z-[620] w-[272px] shrink-0 flex flex-col bg-white border-r border-slate-200 shadow-xl lg:shadow-none" aria-label="Layers">
-                                    <DockHeader title="Layers" onClose={() => setLayersOpen(false)} closeLabel="Close layers panel" />
+                                    <DockHeader title="Choose a Map View" onClose={() => setLayersOpen(false)} closeLabel="Close layers panel" />
                                     <div className="flex-1 min-h-0">
                                         <LayersPanel
                                             activeLayer={activeLayer}
@@ -1031,6 +1053,7 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                     syncRef={leafletViewRef}
                                                     controlRef={view3DRef}
                                                     onZoomChange={setMapZoom}
+                                                    onCursorMove={setCursor}
                                                     showLabels={showLabels}
                                                     showSatellite={showSatellite3D}
                                                     selectedBgy={selectedBgy}
@@ -1323,16 +1346,28 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                         {/* ── Status bar ── */}
                         <div className="shrink-0 flex items-center h-6 px-2 bg-[#f1f3f6] border-t border-slate-300 text-[11px] text-slate-600 tabular-nums overflow-hidden" aria-live="off">
                             <span className="w-[210px] shrink-0 truncate" title="Cursor position">
-                                {cursor && !show3D ? `${cursor.lat.toFixed(5)}° N, ${cursor.lng.toFixed(5)}° E` : "—"}
+                                {cursor ? `${cursor.lat.toFixed(5)}° N, ${cursor.lng.toFixed(5)}° E` : "—"}
                             </span>
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Scale 1:{mapScale(scaleLat, mapZoom).toLocaleString("en-PH")}</span>
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Zoom {mapZoom}</span>
                             <span className="px-3 border-l border-slate-300 hidden md:block">EPSG:4326</span>
+                            <span className="ml-auto" />
                             {activeLayer !== "status" && activeLayer !== "trends" && (
-                                <div className="ml-auto min-w-0 flex items-center gap-1.5 pl-3 border-l border-slate-300">
+                                <div className="min-w-0 flex items-center gap-1.5 px-3 border-l border-slate-300">
                                     <span className="truncate">{statusSummary}</span>
                                 </div>
                             )}
+                            {/* Zoom controls at the right end of the status bar, beside the scale and zoom readout. */}
+                            <div className="shrink-0 flex items-center gap-0.5 pl-2 border-l border-slate-300" role="group" aria-label="Zoom">
+                                {[
+                                    ["zoomIn", "Zoom in", () => (show3D ? view3DRef.current?.zoomBy(1) : setMapZoom((z) => Math.min(19, z + 1)))],
+                                    ["zoomOut", "Zoom out", () => (show3D ? view3DRef.current?.zoomBy(-1) : setMapZoom((z) => Math.max(HOME_ZOOM, z - 1)))],
+                                    ["extent", fullMap ? "Exit full map view" : "Full map view", toggleFullMap],
+                                ].map(([icon, label, onClick]) => (
+                                    <button key={icon} type="button" onClick={onClick} aria-label={label} title={label} aria-pressed={icon === "extent" ? fullMap : undefined} className={`w-5 h-5 flex items-center justify-center rounded-[3px] ${icon === "extent" && fullMap ? "bg-white text-[#0b2a5b] ring-1 ring-slate-300" : "text-slate-600"} hover:bg-white hover:text-slate-900 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b]`}>                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.9" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d={ICONS[icon]} /></svg>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
