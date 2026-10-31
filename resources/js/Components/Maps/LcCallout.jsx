@@ -20,7 +20,7 @@ const Divider = () => <div className="my-2.5 border-t border-slate-200" />;
 
 export default function LcCallout({ name, summary, quarter, onClose }) {
     if (!summary) return null;
-    const { count, band, delta, lastYear, isForecast, typeCounts } = summary;
+    const { count, band, delta, baseLabel, isForecast, typeCounts } = summary;
     const status = band.label.replace(/ (Demand|Activity)$/, "");
 
     return (
@@ -55,7 +55,7 @@ export default function LcCallout({ name, summary, quarter, onClose }) {
                     </span>
                 </div>
             </div>
-            <div className="mt-1.5 text-[12px]"><SignedChange delta={delta} baseLabel={lastYear?.label} /></div>
+            <div className="mt-1.5 text-[12px]"><SignedChange delta={delta} baseLabel={baseLabel} /></div>
 
             {!isForecast && typeCounts.length > 0 && (
                 <>

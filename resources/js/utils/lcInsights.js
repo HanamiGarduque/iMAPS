@@ -54,9 +54,14 @@ export function summarizeBarangay({ name, series, activeIndex, activeQuarter, re
     const count = countOf(current);
     const isForecast = Boolean(activeQuarter?.isForecast);
 
-    const lastYear = current
+    // What the change is measured against, shared by the map card and the side
+    // panel so they always agree: a recorded quarter against the quarter just
+    // before it, a forecast against the same quarter a year earlier.
+    const prevQ = series[activeIndex - 1];
+    const lastYear = !current ? null : isForecast
         ? series.find((q) => !q.isForecast && q.total !== null && q.year === current.year - 1 && q.quarter === current.quarter) || null
-        : null;
+        : prevQ && !prevQ.isForecast && prevQ.total !== null ? prevQ : null;
+    const baseLabel = lastYear ? (isForecast ? lastYear.label : "last quarter") : null;
     const delta = lastYear ? count - countOf(lastYear) : null;
 
     // The quarter after this one. A recorded quarter reads against this one; a
@@ -88,6 +93,7 @@ export function summarizeBarangay({ name, series, activeIndex, activeQuarter, re
         isForecast,
         lastYear,
         delta,
+        baseLabel,
         following: hasFollowing ? following : null,
         followingCount,
         followingBase,

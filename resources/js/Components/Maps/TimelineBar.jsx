@@ -1,9 +1,13 @@
 // Temporal controller for the LC demand map. Two chips split the quarters into
 // Recorded and Forecast, and the slider beside them covers only the chosen
 // side, so a forecast quarter never sits on the same track as the records.
-// One sentence carries the numbers, compared with the same quarter a year
-// earlier (LC filings are seasonal, so that is the fair comparison).
-const quarterName = (q) => (q ? `Quarter ${q.quarter}, ${q.year}` : "");
+// The quarter on screen and its count sit at the right; comparisons live in the side panel.
+// Quarters are named by their months ("Jan–Mar 2021") so nobody has to
+// work out what "Quarter 1" covers.
+import { useState } from "react";
+
+const MONTHS = ["Jan–Mar", "Apr–Jun", "Jul–Sep", "Oct–Dec"];
+const quarterName = (q) => (q ? `${MONTHS[q.quarter - 1]} ${q.year}` : "");
 
 export default function TimelineBar({
     quarters,
@@ -35,50 +39,23 @@ export default function TimelineBar({
         on ? (tone === "forecast" ? "bg-[#ea580c] text-white" : "bg-[#0b2a5b] text-white") : "bg-white text-slate-600 hover:bg-slate-50"
     }`;
 
-    // "205 applications filed · 2% fewer than Quarter 2, 2024"
-    const total = series[index]?.total ?? count;
-    const prevIdx = quarters.findIndex((q) => active && q.year === active.year - 1 && q.quarter === active.quarter);
-    const prev = prevIdx !== -1 ? series[prevIdx]?.total : null;
-    let compare = "";
-    if (typeof prev === "number" && prev > 0 && typeof total === "number") {
-        const pct = Math.round(((total - prev) / prev) * 100);
-        const prevLabel = quarterName(quarters[prevIdx]);
-        compare = pct === 0 ? `about the same as ${prevLabel}` : `${Math.abs(pct)}% ${pct > 0 ? "more" : "fewer"} than ${prevLabel}`;
-    }
-    const sentence = summary ?? [
-        `${typeof total === "number" ? total : count} application${total === 1 ? "" : "s"} ${isForecast ? "expected" : "filed"}`,
-        compare,
-    ].filter(Boolean).join(" · ");
 
     const accent = isForecast ? "#ea580c" : "#0b2a5b";
 
-    return (
-        <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-3 py-2 bg-[#f5f6f8] border-t border-slate-300" role="group" aria-label={ariaLabel}>
-            <div className="shrink-0 flex items-center gap-1">
-                <button type="button" className={btn} onClick={() => step(-1)} disabled={index === 0} aria-label="Previous quarter">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-                </button>
-                <button
-                    type="button"
-                    className={`${btn} ${playing ? "!bg-[#0b2a5b] !border-[#0b2a5b] !text-white hover:!bg-[#0e3574]" : ""}`}
-                    onClick={onTogglePlay}
-                    disabled={quarters.length <= 1}
-                    aria-label={playing ? "Pause" : "Play through quarters"}
-                    aria-pressed={playing}
-                >
-                    {playing ? (
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-                    ) : (
-                        <svg className="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
-                    )}
-                </button>
-                <button type="button" className={btn} onClick={() => step(1)} disabled={index === last} aria-label="Next quarter">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                </button>
-            </div>
+    // Hover preview: which quarter the pointer is over, before any click.
+    const [hoverK, setHoverK] = useState(null);
+    const onTrackMove = (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        setHoverK(sideLast > 0 ? Math.round(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * sideLast) : 0);
+    };
+    const hoverQ = hoverK !== null ? quarters[side[hoverK]] : null;
+    const hoverT = hoverK !== null ? series[side[hoverK]]?.total : null;
 
-            {/* Recorded / Forecast: Recorded opens on the latest record, Forecast on its first quarter. */}
-            <div className="shrink-0 flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Recorded or forecast quarters">
+
+    return (
+        <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-3 pt-2 pb-2.5 bg-[#f5f6f8] border-t border-slate-300" role="group" aria-label={ariaLabel}>
+            {/* Records / Forecast: Records opens on the latest record, Forecast on its first quarter. */}
+            <div className="shrink-0 flex border border-slate-300 rounded-[3px] overflow-hidden" role="group" aria-label="Records or forecast quarters">
                 <button
                     type="button"
                     aria-pressed={!isForecast}
@@ -86,7 +63,7 @@ export default function TimelineBar({
                     onClick={() => !isForecast || onIndex(recorded[recorded.length - 1])}
                     className={chip(!isForecast, "recorded")}
                 >
-                    Recorded
+                    Records
                 </button>
                 <button
                     type="button"
@@ -99,8 +76,35 @@ export default function TimelineBar({
                 </button>
             </div>
 
-            <div className={`min-w-[220px] px-2 ${isForecast ? "w-[320px] shrink-0 mx-1" : "flex-1"}`}>
-                {/* Years (each over its first quarter); the short forecast track names every quarter. */}
+            <div className="shrink-0 flex items-center gap-1">
+                <button type="button" className={btn} onClick={() => step(-1)} disabled={index === 0} aria-label="Previous quarter">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <button
+                    type="button"
+                    className={`${btn} !w-auto px-2.5 gap-1.5 text-[11.5px] font-semibold ${playing ? "!bg-[#0b2a5b] !border-[#0b2a5b] !text-white hover:!bg-[#0e3574]" : ""}`}
+                    onClick={onTogglePlay}
+                    disabled={quarters.length <= 1}
+                    aria-pressed={playing}
+                    title="Play the map through every quarter"
+                >
+                    {playing ? (
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                    ) : (
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                    )}
+                    {playing ? "Pause" : "Play"}
+                </button>
+                <button type="button" className={btn} onClick={() => step(1)} disabled={index === last} aria-label="Next quarter">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                </button>
+                <span className="ml-2 min-w-[108px] text-[13px] font-semibold text-slate-900 tabular-nums whitespace-nowrap" aria-live="polite">{quarterName(active)}{isForecast && <span className="ml-1.5 text-[11.5px] font-medium text-[#c2410c]">· Projected</span>}</span>
+            </div>
+
+            <div className="min-w-[260px] flex-1 px-2">
+                {/* The short forecast track names every quarter above it; the records
+                    track labels its years below, beside the Q1–Q4 of the selected year. */}
+                {isForecast && (
                 <div className="relative h-4 text-[10.5px] font-semibold tabular-nums">
                     {side.map((gi, k) => {
                         const q = quarters[gi];
@@ -118,8 +122,17 @@ export default function TimelineBar({
                         );
                     })}
                 </div>
+                )}
 
                 <div className="relative h-5">
+                    {hoverQ && (
+                        <span
+                            className="absolute bottom-full mb-1.5 -translate-x-1/2 px-2 py-1 rounded-[3px] bg-slate-900 text-white text-[10.5px] font-semibold whitespace-nowrap pointer-events-none z-10"
+                            style={{ left: `${pos(hoverK)}%` }}
+                        >
+                            {quarterName(hoverQ)} · {typeof hoverT === "number" ? `${hoverT} ${hoverQ.isForecast ? "expected" : "filed"}` : "no data"}
+                        </span>
+                    )}
                     <div
                         className="absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-full"
                         style={isForecast
@@ -136,7 +149,7 @@ export default function TimelineBar({
                             <span
                                 key={`${q.year}-${q.quarter}`}
                                 title={describe(q, t, t !== null && t !== undefined)}
-                                className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-px rounded-full ${q.quarter === 1 || isForecast ? "h-3.5 bg-slate-500" : "h-2 bg-slate-400"}`}
+                                className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full ${k === sideLast ? "w-[1.5px] h-2.5 bg-slate-500" : q.quarter === 1 || isForecast ? "w-px h-2.5 bg-slate-400" : "w-px h-1 bg-slate-300"}`}
                                 style={{ left: `${pos(k)}%` }}
                             />
                         );
@@ -155,19 +168,39 @@ export default function TimelineBar({
                         value={local}
                         disabled={side.length <= 1}
                         onChange={(e) => onIndex(side[Number(e.target.value)])}
+                        onMouseMove={onTrackMove}
+                        onMouseLeave={() => setHoverK(null)}
                         aria-label={isForecast ? "Forecast quarter" : "Recorded quarter"}
                         aria-valuetext={quarterName(active)}
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-default"
                     />
                 </div>
-            </div>
 
-            <p className="min-w-0 flex-1 basis-[240px] text-[12px] text-slate-600 tabular-nums truncate">
-                <span className="font-semibold text-slate-900">{quarterName(active)}</span>
-                {isForecast && <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#c2410c]">Estimate</span>}
-                <span className="mx-1.5 text-slate-400">·</span>
-                {sentence}
-            </p>
+                {/* Under the track: Q1–Q4 on the selected year's ticks, then every
+                    year centred on its own stretch (the selected one in navy). */}
+                {!isForecast && (
+                    <div className="relative h-2.5 -mt-0.5 text-[8.5px] leading-[10px] tabular-nums pointer-events-none" aria-hidden="true">
+                        {side.map((gi, k) => quarters[gi].year === active?.year && (
+                            <span key={`q-${gi}`} className={`absolute ${k === 0 ? "" : "-translate-x-1/2"} ${gi === index ? "font-bold text-[#0b2a5b]" : "text-slate-400"}`} style={{ left: `${pos(k)}%` }}>
+                                Q{quarters[gi].quarter}
+                            </span>
+                        ))}
+                    </div>
+                )}
+                {!isForecast && (
+                    <div className="relative h-3 text-[10px] leading-3 tabular-nums pointer-events-none" aria-hidden="true">
+                        {[...new Set(side.map((gi) => quarters[gi].year))].map((year) => {
+                            const ks = side.flatMap((gi, k) => (quarters[gi].year === year ? [k] : []));
+                            const mid = (pos(ks[0]) + pos(ks[ks.length - 1])) / 2;
+                            return (
+                                <span key={`y-${year}`} className={`absolute -translate-x-1/2 whitespace-nowrap ${year === active?.year ? "font-semibold text-[#0b2a5b]" : "text-slate-400"}`} style={{ left: `${mid}%` }}>
+                                    {year}
+                                </span>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
