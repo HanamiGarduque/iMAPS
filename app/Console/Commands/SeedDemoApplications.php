@@ -754,29 +754,33 @@ class SeedDemoApplications extends Command
         $a['form_number'] = $this->formNumber();
         $a['label'] = $label;
 
+        // Free text is stored in capitals, exactly as ApplicationController::store() does.
+        $up = fn (?string $v) => $v === null ? null : mb_strtoupper($v);
+
         $a['id'] = DB::table('zoning_applications')->insertGetId([
             'reference_number'        => $a['reference_number'],
             'application_stream'      => $a['stream'],
+            'application_type'        => $label,
             'form_number'             => $a['form_number'],
             'target_land_use_class'   => $a['target'],
             'status'                  => 'Received',
-            'purpose'                 => $a['purpose'],
-            'applicant_name'          => $a['applicant'],
-            'applicant_street'        => $a['applicant_street'],
-            'applicant_barangay'      => $a['applicant_barangay'],
+            'purpose'                 => $up($a['purpose']),
+            'applicant_name'          => $up($a['applicant']),
+            'applicant_street'        => $up($a['applicant_street']),
+            'applicant_barangay'      => $up($a['applicant_barangay']),
             'contact_number'          => $a['contact'],
             'email'                   => $a['email'],
-            'corporation_name'        => $a['corporation'],
-            'corporation_address'     => $a['corporation'] ? 'Brgy. ' . $a['barangay'] . ', Rosario, Batangas' : null,
+            'corporation_name'        => $up($a['corporation']),
+            'corporation_address'     => $a['corporation'] ? $up('Brgy. ' . $a['barangay'] . ', Rosario, Batangas') : null,
             'corporation_contact'     => $a['corporation'] ? $this->phone() : null,
-            'representative_name'     => $a['representative'],
-            'representative_address'  => $a['representative'] ? 'Purok ' . mt_rand(1, 7) . ', Brgy. ' . $a['barangay'] . ', Rosario, Batangas' : null,
+            'representative_name'     => $up($a['representative']),
+            'representative_address'  => $a['representative'] ? $up('Purok ' . mt_rand(1, 7) . ', Brgy. ' . $a['barangay'] . ', Rosario, Batangas') : null,
             'representative_contact'  => $a['representative'] ? $this->phone() : null,
             'barangay'                => $a['barangay'],
             'building_area'           => $a['building_area'],
             'area_to_develop'         => $a['area_to_develop'],
             'number_of_saleable_lots' => $a['lots'],
-            'business_name'           => $a['business_name'],
+            'business_name'           => $up($a['business_name']),
             'project_cost'            => $a['cost'],
             'right_over_land'         => $a['right_over_land'],
             'project_tenure'          => $a['tenure'],
@@ -801,19 +805,19 @@ class SeedDemoApplications extends Command
             $p->id = DB::table('parcels')->insertGetId([
                 'zoning_application_id' => $a['id'],
                 'parcel_code'           => sprintf('P-%02d', $index + 1),
-                'location_address'      => $p->location_address,
+                'location_address'      => $up($p->location_address),
                 'barangay'              => $p->barangay,
-                'owner_name'            => $p->owner_name,
-                'lot_number'            => $p->lot_number,
-                'tct_number'            => $p->tct_number,
-                'tax_dec_number'        => $p->tax_dec_number,
+                'owner_name'            => $up($p->owner_name),
+                'lot_number'            => $up($p->lot_number),
+                'tct_number'            => $up($p->tct_number),
+                'tax_dec_number'        => $up($p->tax_dec_number),
                 'lot_area_sqm'          => round((float) $p->lot_area_sqm, 2),
                 'latitude'              => round((float) $p->lat, 7),
                 'longitude'             => round((float) $p->lng, 7),
                 'land_use_class'        => $p->land_use_class,
-                'property_index_number' => $p->property_index_number,
-                'arp_number'            => $p->arp_number,
-                'survey_number'         => $p->survey_number,
+                'property_index_number' => $up($p->property_index_number),
+                'arp_number'            => $up($p->arp_number),
+                'survey_number'         => $up($p->survey_number),
                 'created_at'            => $at,
                 'updated_at'            => $at,
             ]);
@@ -873,6 +877,8 @@ class SeedDemoApplications extends Command
             $decisions[$p->id] = ($decision === 'Needs Site Inspection' && $a['mixed'] && $i === 0 && ! $reviewed) ? 'Approved' : $decision;
         }
 
+        $up = fn (?string $v) => $v === null ? null : mb_strtoupper($v);
+
         $roundNo = ++$a['round'];
         foreach ($targets as $p) {
             $d = $decisions[$p->id];
@@ -888,8 +894,8 @@ class SeedDemoApplications extends Command
                 'reviewed_by'                 => $po->id,
                 'review_round'                => $roundNo,
                 'decision'                    => $d,
-                'findings'                    => $findings,
-                'decision_reason'             => $reason,
+                'findings'                    => $up($findings),
+                'decision_reason'             => $up($reason),
                 'site_inspection_task_id'     => $taskId,
                 'reviewed_site_inspection_id' => $reviewed[$p->id]['id'] ?? null,
                 'reviewed_at'                 => $at,
@@ -954,9 +960,9 @@ class SeedDemoApplications extends Command
             'status'                    => 'assigned',
             'scheduled_date'            => $scheduled->toDateString(),
             'deadline_date'             => $scheduled->copy()->addDays($round['deadline'])->toDateString(),
-            'assigned_notes'            => $reinspection
+            'assigned_notes'            => mb_strtoupper($reinspection
                 ? 'Reinspect after the applicant\'s corrections: verify the setback and that the encroachment was removed.'
-                : $this->pick(self::ASSIGN_NOTES),
+                : $this->pick(self::ASSIGN_NOTES)),
             'assigned_by_imaps_user_id' => $po->id,
             'assigned_by_name'          => $po->name,
             'created_at'                => $at,
