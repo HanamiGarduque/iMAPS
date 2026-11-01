@@ -18,6 +18,7 @@
   - **Urban Growth Forecasting**: Integration with a predictive forecasting service to project quarter-by-quarter land-use transitions and urban expansion. **Requires a separate FastAPI + XGBoost microservice that lives in its own repository** — see [Urban Growth Forecasting](#-urban-growth-forecasting-external-microservice).
   - **Landing Page**: The Overview page was removed; `/maps` is now the landing page. In-page help (`pageHelp.jsx`) explains each page.
   - **Tax Dec & Parcel Lookup**: Live verification of Tax Declaration numbers (Tax Dec / TCT) against spatial parcel boundaries.
+  - **Role-Based Application Tracking**: The Application Tracking map follows the same visibility as the registry. Admins see every application; Planning Officers see only those they encoded or currently own after a reassignment. Both use the shared `ZoningApplication::visibleTo()` scope, which fails closed (no signed-in user matches no rows), covered by `tests/Feature/ApplicationVisibilityScopeTest.php`.
 
 - **📋 Zoning Application Docket (`/applications`)**
   - **End-to-End Workflow**: Complete lifecycle tracking: Application Encoding → Parcel Verification → Technical Review → Field Inspection Scheduling → Final Decision (Approval/Disapproval).
@@ -35,6 +36,7 @@
 
 - **🔐 Security, Audit Trail & Role-Based Access (`/users`)**
   - **Granular RBAC**: Role middleware distinguishing `Admin` and `Planning Officer` capabilities.
+  - **Row-Level Visibility**: Beyond route access, application data is scoped per user: Planning Officers only see applications they encoded or are assigned to, in both the registry and the map.
   - **Comprehensive Audit Logging**: Event logging (`AuditTrail`) tracking sensitive data access, password resets, status transitions, and system activities.
 
 ---

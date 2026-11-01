@@ -217,7 +217,7 @@ class WorkAssignmentService
                 action: 'PLANNING_OFFICER_ASSIGNED',
                 actor: $creator,
                 note: sprintf(
-                    'Initial Planning Officer ownership assigned to %s at application creation by the same officer. encoded_by is unchanged and keeps its own meaning.',
+                    'Initial Planning Officer ownership assigned to %s at application creation by the same officer.',
                     $creator->name
                 ),
             );

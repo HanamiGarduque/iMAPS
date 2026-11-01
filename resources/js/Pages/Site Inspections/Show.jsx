@@ -1059,13 +1059,13 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 {/* The recorded inspector assessment stays primary; the PO decision
                                                     remains a separate, server-linked read-only record. */}
                                                 {hasFindings ? (
-                                                    <article className="rounded-lg border border-slate-200 bg-white overflow-hidden" aria-label="Site inspection report">
-                                                        <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2 border-b border-slate-200 bg-slate-50">
+                                                    <article className="rounded-lg border border-slate-200 bg-white overflow-hidden flex flex-col min-h-[16rem] lg:min-h-[12rem]" aria-label="Site inspection report">
+                                                        <header className="shrink-0 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2 border-b border-slate-200 bg-slate-50">
                                                             <h3 className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">Site inspection report</h3>
                                                             {reportByline && <p className="text-[11.5px] text-slate-600">{reportByline}</p>}
                                                         </header>
 
-                                                        <div role="group" aria-label="Inspector's result" className="mx-4 mt-3 flex items-start gap-3 rounded-lg border border-slate-200 px-3.5 py-3">
+                                                        <div role="group" aria-label="Inspector's result" className="mx-4 mt-3 shrink-0 flex items-start gap-3 rounded-lg border border-slate-200 px-3.5 py-3">
                                                             <span
                                                                 className={`w-8 h-8 rounded-full grid place-items-center shrink-0 ${
                                                                     resultTone === "good" ? "bg-blue-600 text-white" : resultTone === "bad" ? "bg-red-600 text-white" : "bg-slate-100 text-slate-500"
@@ -1081,7 +1081,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                         </div>
 
                                                         {/* Recorded inspection evidence; the separate PO review follows this report. */}
-                                                        <div className="px-4 py-3">
+                                                        <div className="px-4 py-3 flex-1 min-h-0 overflow-y-auto overscroll-contain">
                                                             <table className="w-full border border-slate-200 text-[12.5px]">
                                                                 <tbody>
                                                                     <tr className="bg-slate-100/80">

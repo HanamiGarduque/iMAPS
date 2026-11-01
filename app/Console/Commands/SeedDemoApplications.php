@@ -829,7 +829,7 @@ class SeedDemoApplications extends Command
             'zoning_application_id' => $a['id'], 'assignment_type' => 'initial', 'from_planning_officer_id' => null,
             'to_planning_officer_id' => $po->id, 'reason' => null, 'reason_note' => null, 'reassigned_by' => $po->id, 'reassigned_at' => $at,
         ]);
-        $this->audit($a, 'PLANNING_OFFICER_ASSIGNED', $po, sprintf('Initial Planning Officer ownership assigned to %s at application creation by the same officer. encoded_by is unchanged and keeps its own meaning.', $po->name), $at);
+        $this->audit($a, 'PLANNING_OFFICER_ASSIGNED', $po, sprintf('Initial Planning Officer ownership assigned to %s at application creation by the same officer.', $po->name), $at);
 
         $status = $a['stream'] === 'amendment' ? 'Under Sangguniang Bayan' : 'Technical Review';
         $this->setStatus($a, $status, $at);
