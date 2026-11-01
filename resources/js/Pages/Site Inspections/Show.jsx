@@ -1059,7 +1059,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 {/* The recorded inspector assessment stays primary; the PO decision
                                                     remains a separate, server-linked read-only record. */}
                                                 {hasFindings ? (
-                                                    <article className="rounded-lg border border-slate-200 bg-white overflow-hidden flex flex-col min-h-[16rem] lg:min-h-[12rem]" aria-label="Site inspection report">
+                                                    <article className="rounded-lg border border-slate-200 bg-white overflow-hidden flex flex-col shrink-0" aria-label="Site inspection report">
                                                         <header className="shrink-0 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2 border-b border-slate-200 bg-slate-50">
                                                             <h3 className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">Site inspection report</h3>
                                                             {reportByline && <p className="text-[11.5px] text-slate-600">{reportByline}</p>}
@@ -1081,7 +1081,8 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                         </div>
 
                                                         {/* Recorded inspection evidence; the separate PO review follows this report. */}
-                                                        <div className="px-4 py-3 flex-1 min-h-0 overflow-y-auto overscroll-contain">
+                                                        <div className="px-4 py-3">
+                                                            <div className="grid gap-3 xl:grid-cols-2 items-start">
                                                             <table className="w-full border border-slate-200 text-[12.5px]">
                                                                 <tbody>
                                                                     <tr className="bg-slate-100/80">
@@ -1104,8 +1105,10 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                                         </tr>
                                                                     )}
                                                                 </tbody>
+                                                            </table>
+                                                            <table className="w-full border border-slate-200 text-[12.5px]">
                                                                 <tbody aria-label="Inspection checklist">
-                                                                    <tr className="border-t border-slate-200 bg-slate-100/80">
+                                                                    <tr className="bg-slate-100/80">
                                                                         <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Inspection checklist</th>
                                                                     </tr>
                                                                     {checklist.length ? checklist.map((entry, index) => (
@@ -1118,6 +1121,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                                     )}
                                                                 </tbody>
                                                             </table>
+                                                            </div>
                                                             {(ins.confirmed_latitude || ins.confirmed_longitude) && (
                                                                 <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-slate-500">
                                                                     <Icon name="gps" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
