@@ -159,6 +159,7 @@ const ICON_PATHS = {
     info: "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z",
     alert: "M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z",
     check: "M4.5 12.75l6 6 9-13.5",
+    officer: "M15 9h3.75M15 12h3.75M15 15h3.75M4.5 19.5h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5zm6-10.125a1.875 1.875 0 11-3.75 0 1.875 1.875 0 013.75 0zm1.294 6.336a6.721 6.721 0 01-3.17.789 6.721 6.721 0 01-3.168-.789 3.376 3.376 0 016.338 0z",
     x: "M6 18L18 6M6 6l12 12",
     chevronDown: "M19.5 8.25l-7.5 7.5-7.5-7.5",
     chevronRight: "M8.25 4.5l7.5 7.5-7.5 7.5",
@@ -675,20 +676,6 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
     // A completed round's steps are history, so the tracker gives way to one
     // line in the header: "Assigned Oct 11 → Completed Oct 11".
     const showTracker = !roundDone;
-    const shortDay = (d) => {
-        const dt = d ? new Date(d) : null;
-        if (!dt || Number.isNaN(dt.getTime())) return null;
-        return dt.toLocaleDateString("en-PH", {
-            month: "short",
-            day: "numeric",
-            ...(dt.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
-        });
-    };
-    const assignedDay = shortDay(ins.created_at);
-    const completedStamp = stampOf(ins.completed_at);
-    const roundSummary = roundDone
-        ? [assignedDay && `Assigned ${assignedDay}`, completedStamp ? `Completed ${completedStamp}` : "Completed"].filter(Boolean).join(" → ")
-        : null;
 
     // The legacy binary is derived, not a second verdict or a missing result's
     // replacement. Review/reinspection are procedural, never proven non-compliance.
@@ -722,20 +709,19 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
     // The inspector assessment stays separate from the recorded PO review.
     const resultTone = inspectionResult === "Compliant" ? "good" : inspectionResult === "With Discrepancy" ? "bad" : "neutral";
 
-    const TABS = [
-        { key: "inspection", label: "Report", icon: "doc" },
-        { key: "photos", label: "Photos", icon: "photo", count: loadingPhotos || photosError ? null : inspectionPhotos.length },
-        { key: "parcel", label: "Parcel", icon: "map" },
-        { key: "application", label: "Application", icon: "briefcase" },
-    ];
+    const mergedDetails = roundDone && activeTab === "application";
+    const photoStrip = roundDone && activeTab === "inspection";
 
-    const inspectorInitials = String(inspector.name || "")
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((part, i, all) => (i === 0 || i === all.length - 1 ? part[0] : ""))
-        .join("")
-        .toUpperCase();
+    const TABS = [
+        { key: "inspection", label: "Report", icon: "doc", count: roundDone && !loadingPhotos && !photosError ? inspectionPhotos.length : null },
+        // A completed round is read as a whole: photos sit with the report,
+        // the parcel with the application, leaving three tabs.
+        !roundDone && { key: "photos", label: "Photos", icon: "photo", count: loadingPhotos || photosError ? null : inspectionPhotos.length },
+        !roundDone && { key: "parcel", label: "Parcel", icon: "map" },
+        { key: "application", label: roundDone ? "Application Details" : "Application", icon: "briefcase" },
+        // Last: the PO decides after weighing the report, photos, parcel and application.
+        { key: "review", label: "Decision", icon: "officer", dot: review?.po_decision ? "bg-blue-600" : "bg-slate-400" },
+    ].filter(Boolean);
 
     // The Admin sync explanation is disclosed on demand; the confirm dialog
     // repeats it before anything runs.
@@ -917,6 +903,88 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
           ? `${roundLabel} · ${roundNote || "Parcel not recorded"}`
           : roundLabel;
 
+    const poDecided = Boolean(review?.po_decision);
+    const poStatus = poDecided
+        ? { tone: "border-slate-200 bg-white", icon: "check", badge: "bg-blue-600 text-white", eyebrow: "Decision for this inspection", title: review.po_decision, titleClass: "text-slate-900",
+            meta: [review.po_decision_reviewer && `By ${review.po_decision_reviewer}`, review.po_decision_date && formatDate(review.po_decision_date)].filter(Boolean).join(" · ") }
+        : review?.round_decision_anomaly
+          ? { tone: "border-amber-200 bg-amber-50", icon: "x", badge: "bg-amber-500 text-white", eyebrow: "Needs attention", title: review.round_decision_anomaly.message, titleClass: "text-amber-900" }
+          : review?.is_parcel_unknown
+            ? { tone: "border-slate-200 bg-white", icon: "map", badge: "bg-slate-100 text-slate-500", eyebrow: "Not available", title: "No parcel is recorded for this inspection.", titleClass: "text-slate-800" }
+            : { tone: "border-slate-200 bg-white", icon: "history", badge: "bg-slate-100 text-slate-600", eyebrow: "Status", title: "Waiting for the Planning Officer's decision", titleClass: "text-slate-900",
+                meta: reportDone ? "The inspector's report is in — ready for review." : "The inspector's report has not been submitted yet." };
+    const lastAction = !poDecided && review?.is_current_round ? review?.parcel_review : null;
+
+    // The review's history, oldest first: what the PO asked for, what the
+    // inspector found, then the decision (or the step still waiting on it).
+    const reviewHistory = [
+        lastAction && {
+            key: "po-action", dot: "bg-slate-400 ring-slate-100", who: "Planning Officer",
+            title: lastAction.label, text: lastAction.context, by: lastAction.reviewer, at: lastAction.reviewed_at,
+        },
+        reportDone && {
+            key: "report", dot: "bg-slate-400 ring-slate-100", who: "Inspector",
+            title: `Report submitted${inspectionResult ? ` — ${inspectionResult}` : ""}`, by: inspector.name, at: ins.submitted_at,
+            action: { label: "View report", tab: "inspection" },
+        },
+    ].filter(Boolean).sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+    reviewHistory.push(poDecided
+        ? { key: "decision", dot: "bg-blue-600 ring-blue-100", who: "Planning Officer", title: review.po_decision, by: review.po_decision_reviewer, at: review.po_decision_date }
+        : { key: "decision", pending: true, who: "Planning Officer", title: "Decision pending" });
+
+    // Read-only, server-linked PO outcome: distinct from the inspector assessment.
+    const poReview = (
+        <article className="rounded-lg border border-slate-200 bg-white overflow-hidden shrink-0" aria-label="Planning Officer Review">
+            <header className="px-4 py-1.5 border-b border-slate-200 bg-slate-50">
+                <h3 className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">Planning Officer Review</h3>
+            </header>
+            <div className="p-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start text-[12.5px] leading-snug">
+                {/* Where it stands now */}
+                <div className={`flex items-start gap-3 rounded-lg border px-3.5 py-3 ${poStatus.tone}`}>
+                    <span className={`w-9 h-9 rounded-full grid place-items-center shrink-0 ${poStatus.badge}`} aria-hidden="true">
+                        <Icon name={poStatus.icon} className="w-4 h-4" strokeWidth={2.4} />
+                    </span>
+                    <div className="min-w-0">
+                        <p className="text-[11.5px] font-semibold text-slate-500">{poStatus.eyebrow}</p>
+                        <p className={`text-[14.5px] font-semibold ${poStatus.titleClass}`}>{poStatus.title}</p>
+                        {poStatus.meta && <p className="mt-0.5 text-[11.5px] text-slate-600">{poStatus.meta}</p>}
+                    </div>
+                </div>
+
+                {/* How it got here */}
+                <section aria-label="Review history">
+                    <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">History</p>
+                    <ol>
+                        {reviewHistory.map((item, idx) => (
+                            <li key={item.key} className="relative flex gap-3 pb-3 last:pb-0">
+                                {idx < reviewHistory.length - 1 && <span className="absolute left-[4.5px] top-4 bottom-0 w-px bg-slate-200" aria-hidden="true" />}
+                                <span
+                                    className={`relative mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${item.pending ? "border-2 border-dashed border-slate-400 bg-white" : `ring-4 ${item.dot}`}`}
+                                    aria-hidden="true"
+                                />
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{item.who}</p>
+                                    <p className={`font-semibold ${item.pending ? "text-slate-500" : "text-slate-900"}`}>{item.title}</p>
+                                    {item.text && <p className="text-slate-600">{item.text}</p>}
+                                    {(item.by || item.at) && (
+                                        <p className="text-[11.5px] text-slate-500">
+                                            {[item.by && `By ${item.by}`, item.at && formatDate(item.at)].filter(Boolean).join(" · ")}
+                                        </p>
+                                    )}
+                                    {item.action && (
+                                        <button type="button" onClick={() => setActiveTab(item.action.tab)} className="mt-0.5 text-[11.5px] font-semibold text-blue-700 hover:underline cursor-pointer">
+                                            {item.action.label} →
+                                        </button>
+                                    )}
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+                </section>
+            </div>
+        </article>
+    );
+
     return (
         <>
             <Head title={`Inspection: ${ins.id || "Detail"} | iMAPS`} />
@@ -1018,6 +1086,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 >
                                                     <Icon name={tab.icon} className="w-4 h-4" />
                                                     {tab.label}
+                                                    {tab.dot && <span className={`w-1.5 h-1.5 rounded-full ${tab.dot}`} aria-hidden="true" />}
                                                     {tab.count != null && (
                                                         <span className={`text-[10.5px] font-bold tabular-nums px-1.5 py-px rounded-full ${isActive ? "bg-blue-700 text-white" : "bg-slate-200 text-slate-600"}`}>{tab.count}</span>
                                                     )}
@@ -1028,7 +1097,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                 </div>
 
                                 {/* ── THE RECORD ── */}
-                                <div className="flex-1 min-w-0 lg:min-h-0 lg:overflow-y-auto p-5 short:p-4 flex flex-col gap-5 short:gap-4">
+                                <div className="flex-1 min-w-0 lg:min-h-0 lg:overflow-y-auto p-4 short:p-3 flex flex-col gap-4 short:gap-3">
                                         {/* Progress (narrower screens): the same steps, across */}
                                         {showTracker && (
                                         <ol className="grid grid-cols-4 rounded-lg border border-slate-200 px-4 py-3" aria-label="Inspection progress">
@@ -1059,13 +1128,13 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 {/* The recorded inspector assessment stays primary; the PO decision
                                                     remains a separate, server-linked read-only record. */}
                                                 {hasFindings ? (
-                                                    <article className="rounded-lg border border-slate-200 bg-white overflow-hidden flex flex-col min-h-[16rem] lg:min-h-[12rem]" aria-label="Site inspection report">
-                                                        <header className="shrink-0 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-2 border-b border-slate-200 bg-slate-50">
+                                                    <article className="rounded-lg border border-slate-200 bg-white overflow-hidden flex flex-col shrink-0" aria-label="Site inspection report">
+                                                        <header className="shrink-0 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-4 py-1.5 border-b border-slate-200 bg-slate-50">
                                                             <h3 className="text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">Site inspection report</h3>
                                                             {reportByline && <p className="text-[11.5px] text-slate-600">{reportByline}</p>}
                                                         </header>
 
-                                                        <div role="group" aria-label="Inspector's result" className="mx-4 mt-3 shrink-0 flex items-start gap-3 rounded-lg border border-slate-200 px-3.5 py-3">
+                                                        <div role="group" aria-label="Inspector's result" className="mx-4 mt-2.5 shrink-0 flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-1.5">
                                                             <span
                                                                 className={`w-8 h-8 rounded-full grid place-items-center shrink-0 ${
                                                                     resultTone === "good" ? "bg-blue-600 text-white" : resultTone === "bad" ? "bg-red-600 text-white" : "bg-slate-100 text-slate-500"
@@ -1074,14 +1143,15 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                             >
                                                                 <Icon name={resultTone === "good" ? "check" : resultTone === "bad" ? "x" : "history"} className="w-4 h-4" strokeWidth={2.6} />
                                                             </span>
-                                                            <div className="min-w-0">
+                                                            <div className="min-w-0 flex items-baseline gap-2">
                                                                 <p className="text-[11.5px] font-semibold text-slate-500">Inspector's result</p>
                                                                 <p className={`text-[14.5px] font-bold leading-snug ${resultTone === "good" ? "text-blue-800" : resultTone === "bad" ? "text-red-700" : "text-slate-900"}`}>{inspectionResult || "Not recorded"}</p>
                                                             </div>
                                                         </div>
 
                                                         {/* Recorded inspection evidence; the separate PO review follows this report. */}
-                                                        <div className="px-4 py-3 flex-1 min-h-0 overflow-y-auto overscroll-contain">
+                                                        <div className="px-4 pt-2.5 pb-2">
+                                                            <div className="grid gap-3 xl:grid-cols-2 items-start">
                                                             <table className="w-full border border-slate-200 text-[12.5px]">
                                                                 <tbody>
                                                                     <tr className="bg-slate-100/80">
@@ -1090,45 +1160,39 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                                     {reportQuestions.length > 0 ? (
                                                                         reportQuestions.map((q) => (
                                                                             <tr key={q.label} className="border-t border-slate-200 align-top">
-                                                                                <th scope="row" className={`w-[150px] bg-slate-50 px-2.5 py-1.5 text-left text-[11.5px] font-semibold ${q.alert ? "text-red-700" : "text-slate-600"}`}>
+                                                                                <th scope="row" className={`w-[150px] bg-slate-50 px-2.5 py-1 text-left text-[11.5px] font-semibold ${q.alert ? "text-red-700" : "text-slate-600"}`}>
                                                                                     {q.label}
                                                                                 </th>
-                                                                                <td className="px-2.5 py-1.5 leading-snug text-slate-800 break-words">
+                                                                                <td className="px-2.5 py-1 leading-snug text-slate-800 break-words">
                                                                                     <ReportValue value={q.value} alert={q.alert} labelled={q.labelled} />
                                                                                 </td>
                                                                             </tr>
                                                                         ))
                                                                     ) : (
                                                                         <tr className="border-t border-slate-200">
-                                                                            <td colSpan={2} className="px-2.5 py-1.5 text-slate-600">The inspector submitted this report without written findings.</td>
+                                                                            <td colSpan={2} className="px-2.5 py-1 text-slate-600">The inspector submitted this report without written findings.</td>
                                                                         </tr>
                                                                     )}
                                                                 </tbody>
+                                                            </table>
+                                                            <div className="flex flex-col gap-3">
+                                                            <table className="w-full border border-slate-200 text-[12.5px]">
                                                                 <tbody aria-label="Inspection checklist">
-                                                                    <tr className="border-t border-slate-200 bg-slate-100/80">
+                                                                    <tr className="bg-slate-100/80">
                                                                         <th colSpan={2} scope="colgroup" className="px-2.5 py-1 text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Inspection checklist</th>
                                                                     </tr>
                                                                     {checklist.length ? checklist.map((entry, index) => (
                                                                         <tr key={`${index}-${entry.item}`} className="border-t border-slate-200 align-top">
-                                                                            <th scope="row" className="bg-slate-50 px-2.5 py-1.5 text-left text-[11.5px] font-semibold text-slate-600 [overflow-wrap:anywhere]">{entry.item}</th>
-                                                                            <td className="px-2.5 py-1.5 text-slate-700 whitespace-pre-wrap [overflow-wrap:anywhere]">{entry.answer}</td>
+                                                                            <th scope="row" className="bg-slate-50 px-2.5 py-1 text-left text-[11.5px] font-semibold text-slate-600 [overflow-wrap:anywhere]">{entry.item}</th>
+                                                                            <td className="px-2.5 py-1 text-slate-700 whitespace-pre-wrap [overflow-wrap:anywhere]">{entry.answer}</td>
                                                                         </tr>
                                                                     )) : (
-                                                                        <tr className="border-t border-slate-200"><td colSpan={2} className="px-2.5 py-1.5 text-slate-500">Checklist not recorded</td></tr>
+                                                                        <tr className="border-t border-slate-200"><td colSpan={2} className="px-2.5 py-1 text-slate-500">Checklist not recorded</td></tr>
                                                                     )}
                                                                 </tbody>
                                                             </table>
-                                                            {(ins.confirmed_latitude || ins.confirmed_longitude) && (
-                                                                <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-slate-500">
-                                                                    <Icon name="gps" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                                                    <span>GPS confirmed</span>
-                                                                    <span className="font-mono text-[11px] text-slate-700">
-                                                                        {ins.confirmed_latitude || "—"}, {ins.confirmed_longitude || "—"}
-                                                                    </span>
-                                                                    {ins.gps_accuracy_m ? <span>· ±{Number(ins.gps_accuracy_m).toFixed(1)} m</span> : null}
-                                                                    {ins.gps_confirmed_at ? <span>· {formatDate(ins.gps_confirmed_at)}</span> : null}
-                                                                </p>
-                                                            )}
+                                                            </div>
+                                                            </div>
                                                         </div>
                                                     </article>
                                                 ) : (
@@ -1145,40 +1209,6 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 </Panel>
                                                 )}
 
-                                                {/* Read-only, server-linked PO outcome: distinct from the inspector assessment. */}
-                                                <Panel title="Planning Officer Review">
-                                                    <div className="pt-3 space-y-3 text-[12.5px] leading-relaxed">
-                                                        {review && review.po_decision ? (
-                                                            <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-3 py-2.5">
-                                                                <p className="text-[11.5px] font-semibold text-slate-600">Decision for this inspection</p>
-                                                                <p className="mt-1 font-bold text-violet-900">{review.po_decision}</p>
-                                                                {(review.po_decision_reviewer || review.po_decision_date) && (
-                                                                    <p className="mt-1 text-[11.5px] text-slate-600">
-                                                                        {[review.po_decision_reviewer && `By ${review.po_decision_reviewer}`, review.po_decision_date && formatDate(review.po_decision_date)].filter(Boolean).join(" · ")}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        ) : review?.round_decision_anomaly ? (
-                                                            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">{review.round_decision_anomaly.message}</p>
-                                                        ) : review?.is_parcel_unknown ? (
-                                                            <p className="text-slate-600">Not available: no parcel is recorded for this inspection.</p>
-                                                        ) : (
-                                                            <p className="text-slate-600">No round-specific Planning Officer decision is recorded.</p>
-                                                        )}
-                                                        {!review?.po_decision && review?.is_current_round && review?.parcel_review && (
-                                                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                                                                <p className="text-[11.5px] font-semibold text-slate-600">Latest Parcel Review</p>
-                                                                <p className="mt-1 font-semibold text-slate-800">{review.parcel_review?.label}</p>
-                                                                {review.parcel_review?.context && <p className="mt-1 text-slate-600">{review.parcel_review?.context}</p>}
-                                                                {(review.parcel_review?.reviewer || review.parcel_review?.reviewed_at) && (
-                                                                    <p className="mt-1 text-[11.5px] text-slate-500">
-                                                                        {[review.parcel_review?.reviewer && `By ${review.parcel_review.reviewer}`, review.parcel_review?.reviewed_at && formatDate(review.parcel_review.reviewed_at)].filter(Boolean).join(" · ")}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </Panel>
 
                                                 {/* Instructions matter while the visit is open; a completed
                                                     round no longer shows them. */}
@@ -1190,25 +1220,15 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                     </Panel>
                                                 )}
 
-                                                {/* GPS confirmation, as one line (inside the report card when there is one) */}
-                                                {!hasFindings && (ins.confirmed_latitude || ins.confirmed_longitude) && (
-                                                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500">
-                                                        <Icon name="gps" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                                        <span>GPS confirmed</span>
-                                                        <span className="font-mono text-[11.5px] text-slate-700">
-                                                            {ins.confirmed_latitude || "—"}, {ins.confirmed_longitude || "—"}
-                                                        </span>
-                                                        {ins.gps_accuracy_m ? <span>· ±{Number(ins.gps_accuracy_m).toFixed(1)} m</span> : null}
-                                                        {ins.gps_confirmed_at ? <span>· {formatDate(ins.gps_confirmed_at)}</span> : null}
-                                                    </p>
-                                                )}
                                             </>
                                         )}
 
-                                        {/* ── Photos Tab ── */}
-                                        {activeTab === "photos" && (
-                                            <Panel title="Field photos">
-                                                <div className="pt-4">
+                                        {/* ── PO Review Tab: read-only, server-linked; distinct from the inspector assessment ── */}
+                                        {activeTab === "review" && poReview}
+
+                                        {(activeTab === "photos" || (roundDone && activeTab === "inspection")) && (
+                                            <Panel title={photoStrip ? `Field photos (${inspectionPhotos.length})` : "Field photos"}>
+                                                <div className={photoStrip ? "pt-2" : "pt-4"}>
                                                     {loadingPhotos ? (
                                                         <div className="flex flex-col items-center justify-center py-10 text-slate-400">
                                                             <svg className="animate-spin w-5 h-5 mb-2.5 text-blue-600" fill="none" viewBox="0 0 24 24" aria-hidden="true">
@@ -1218,7 +1238,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                             <span className="text-xs font-medium">Loading photos…</span>
                                                         </div>
                                                     ) : photosError ? (
-                                                        <div className="py-8 short:py-5 flex flex-col items-center text-center">
+                                                        <div className={`${photoStrip ? "py-2" : "py-8 short:py-5"} flex flex-col items-center text-center`}>
                                                             <span className="w-11 h-11 rounded-xl bg-rose-50 border border-rose-100 text-rose-500 flex items-center justify-center">
                                                                 <Icon name="alert" className="w-5 h-5" strokeWidth={1.6} />
                                                             </span>
@@ -1233,7 +1253,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                             </button>
                                                         </div>
                                                     ) : inspectionPhotos && inspectionPhotos.length > 0 ? (
-                                                        <div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2.5">
+                                                        <div className={photoStrip ? "flex gap-2 overflow-x-auto pb-1 [&>*]:w-24 [&>*]:shrink-0" : "grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2.5"}>
                                                             {inspectionPhotos.map((photo, idx) => {
                                                                 // The authorized contract is `signed_url`. The server
                                                                 // deliberately does NOT emit a raw path or a stored
@@ -1279,7 +1299,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                             })}
                                                         </div>
                                                     ) : (
-                                                        <div className="py-8 short:py-5 flex flex-col items-center text-center">
+                                                        <div className={`${photoStrip ? "py-2" : "py-8 short:py-5"} flex flex-col items-center text-center`}>
                                                             <span className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 text-slate-400 flex items-center justify-center">
                                                                 <Icon name="photo" className="w-5 h-5" strokeWidth={1.6} />
                                                             </span>
@@ -1292,10 +1312,12 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                         )}
 
                                         {/* ── Parcel Tab ── */}
-                                        {activeTab === "parcel" && (
+                                        {/* Completed round: parcel and application side by side, in one view */}
+                                        <div className={mergedDetails ? "grid gap-4 lg:grid-cols-2 items-start" : "contents"}>
+                                        {(activeTab === "parcel" || (roundDone && activeTab === "application")) && (
                                             <Panel title="Parcel record">
                                                 {parcel.id ? (
-                                                    <dl className="pt-1 grid md:grid-cols-2 gap-x-8">
+                                                    <dl className={`pt-1 grid gap-x-8 ${mergedDetails ? "sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2" : "md:grid-cols-2"}`}>
                                                         <InfoRow label="Parcel Code" value={parcel.parcel_code} />
                                                         <InfoRow label="Property Index Number" value={parcel.property_index_number} mono />
                                                         <InfoRow label="Lot Number" value={parcel.lot_number} />
@@ -1334,7 +1356,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                     </Link>
                                                 )}
                                             >
-                                                <dl className="pt-1 grid md:grid-cols-2 gap-x-8">
+                                                <dl className={`pt-1 grid gap-x-8 ${mergedDetails ? "sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2" : "md:grid-cols-2"}`}>
                                                     <InfoRow label="Reference Number" value={app.reference_number} mono />
                                                     <InfoRow label="Form Number" value={app.form_number} mono />
                                                     <InfoRow label="Application Type" value={app.application_type} />
@@ -1358,6 +1380,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                                 )}
                                             </Panel>
                                         )}
+                                        </div>
                                     </div>
 
                             </section>
@@ -1367,7 +1390,7 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                             <aside aria-label="Lot and visit" className="lg:w-[360px] shrink-0 lg:min-h-0 lg:overflow-y-auto flex flex-col gap-3 short:gap-2.5">
                                 {/* The lot: the map exists to locate THIS parcel */}
                                 <section className="bg-white rounded-xl border border-slate-200 overflow-hidden shrink-0" aria-label="Parcel location">
-                                    <div className="relative h-[190px] short:h-[160px] bg-slate-100 border-b border-slate-200">
+                                    <div className="relative h-[150px] short:h-[130px] bg-slate-100 border-b border-slate-200">
                                         {targetPin ? (
                                             <>
                                                 <div className="absolute inset-0">
@@ -1403,57 +1426,64 @@ export default function Show({ auth, inspection, applicationSupport = null }) {
                                             </div>
                                         )}
                                     </div>
+                                    {/* Parcel: the PIN, then its three facts across */}
                                     {targetPin && (
-                                        <dl className="px-4 py-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
-                                            <div className="col-span-2 min-w-0">
-                                                <dt className="flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
-                                                    <Icon name="pin" className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                                    PIN
-                                                </dt>
-                                                <dd className="mt-0.5 font-mono text-[12px] font-semibold text-slate-900 break-all">{parcel.property_index_number}</dd>
+                                        <div className="px-4 pt-3 pb-2.5">
+                                            <div className="flex items-baseline justify-between gap-3">
+                                                <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Parcel</p>
+                                                <p className="font-mono text-[11.5px] font-semibold text-slate-900 truncate">{parcel.property_index_number}</p>
                                             </div>
-                                            {[
-                                                ["Lot", parcel.lot_number, true],
-                                                ["Area", parcel.lot_area_sqm ? `${parcel.lot_area_sqm} sq.m` : null],
-                                                ["Barangay", parcel.barangay || app.barangay],
-                                            ].map(([label, value, wide]) => (
-                                                <div key={label} className={`min-w-0 ${wide ? "col-span-2" : ""}`}>
-                                                    <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-                                                    <dd className="mt-0.5 text-[13px] font-semibold text-slate-900 break-words">{value || "—"}</dd>
+                                            <dl className="mt-2 grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3">
+                                                {[
+                                                    ["Lot", parcel.lot_number],
+                                                    ["Area", parcel.lot_area_sqm ? `${Number(parcel.lot_area_sqm).toLocaleString("en-PH")} m²` : null],
+                                                    ["Barangay", parcel.barangay || app.barangay],
+                                                ].map(([label, value]) => (
+                                                    <div key={label} className="min-w-0">
+                                                        <dt className="text-[11px] text-slate-500">{label}</dt>
+                                                        <dd className="text-[12.5px] font-semibold text-slate-900 leading-snug break-words">{value || "—"}</dd>
+                                                    </div>
+                                                ))}
+                                            </dl>
+                                            {(ins.confirmed_latitude || ins.confirmed_longitude) && (
+                                                <p
+                                                    className="mt-2 flex items-center gap-1.5 text-[11.5px] text-slate-500 min-w-0"
+                                                    title={`${ins.confirmed_latitude || "—"}, ${ins.confirmed_longitude || "—"}`}
+                                                >
+                                                    <Icon name="gps" className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                                    <span className="font-semibold text-slate-700 shrink-0">GPS confirmed</span>
+                                                    <span className="truncate">
+                                                        {[ins.gps_accuracy_m && `±${Number(ins.gps_accuracy_m).toFixed(1)} m`, ins.gps_confirmed_at && formatDate(ins.gps_confirmed_at)].filter(Boolean).join(" · ")}
+                                                    </span>
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Visit: who went, then the three dates that matter, in one row */}
+                                    <div className="px-4 py-2.5 border-t border-slate-100" aria-label="Visit">
+                                        <div className="flex items-baseline justify-between gap-3">
+                                            <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Inspector</p>
+                                            <p className="text-[12px] font-semibold text-slate-900 truncate">{inspector.name || "Unassigned"}</p>
+                                        </div>
+                                        {/* Done: only when it was completed, as a row like the inspector's.
+                                            Open: the plan and the deadline. */}
+                                        {roundDone ? (
+                                            <div className="mt-1.5 flex items-baseline justify-between gap-3">
+                                                <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Completed</p>
+                                                <p className="text-[12px] font-semibold text-slate-900 tabular-nums">{ins.completed_at ? formatDate(ins.completed_at) : "—"}</p>
+                                            </div>
+                                        ) : (
+                                        <dl className="mt-2 grid grid-cols-2 gap-x-3">
+                                            {[["Scheduled", ins.scheduled_date], ["Deadline", ins.deadline_date]].map(([label, value]) => (
+                                                <div key={label} className="min-w-0">
+                                                    <dt className="text-[11px] text-slate-500">{label}</dt>
+                                                    <dd className="text-[12.5px] font-semibold text-slate-900 tabular-nums">{value ? formatDate(value) : "—"}</dd>
                                                 </div>
                                             ))}
                                         </dl>
-                                    )}
-                                </section>
-
-                                {/* The visit: who went, and when */}
-                                <section className="bg-white rounded-xl border border-slate-200 px-4 py-3 shrink-0" aria-label="Visit">
-                                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-                                        <div className="col-span-2 min-w-0">
-                                            <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">Inspector</dt>
-                                            <dd className="mt-1 flex items-center gap-2 min-w-0">
-                                                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0" aria-hidden="true">
-                                                    {inspectorInitials || "?"}
-                                                </span>
-                                                <span className="text-[13px] font-semibold text-slate-900 truncate">{inspector.name || "Unassigned"}</span>
-                                            </dd>
-                                        </div>
-                                        {[
-                                            ["Scheduled", ins.scheduled_date ? formatDate(ins.scheduled_date) : null],
-                                            ["Deadline", ins.deadline_date ? formatDate(ins.deadline_date) : null],
-                                        ].map(([label, value]) => (
-                                            <div key={label} className="min-w-0">
-                                                <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-                                                <dd className="mt-0.5 text-[13px] font-semibold text-slate-900">{value || "—"}</dd>
-                                            </div>
-                                        ))}
-                                    </dl>
-                                    {roundSummary && (
-                                        <p className="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center gap-1.5 text-[12px] text-slate-500 tabular-nums">
-                                            <Icon name="history" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                            {roundSummary}
-                                        </p>
-                                    )}
+                                        )}
+                                    </div>
                                 </section>
 
                                 {/* Scoped sync OUTCOME, set from the flash the controller
