@@ -772,7 +772,6 @@ class SeedDemoApplications extends Command
         $a['id'] = DB::table('zoning_applications')->insertGetId([
             'reference_number'        => $a['reference_number'],
             'application_stream'      => $a['stream'],
-            'application_type'        => $label,
             'form_number'             => $a['form_number'],
             'target_land_use_class'   => $a['target'],
             'status'                  => 'Received',
