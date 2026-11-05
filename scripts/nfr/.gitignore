@@ -1,0 +1,5 @@
+.session.json
+.env.nfr
+node_modules/
+nfr-results-*.json
+uptime-log.csv
