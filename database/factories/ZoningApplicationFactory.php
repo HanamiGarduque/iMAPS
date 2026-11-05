@@ -53,17 +53,19 @@ class ZoningApplicationFactory extends Factory
             'reference_number'    => $referenceNumber,
             'application_type'    => $applicationType,
             'status' => 'Received',
-            'purpose'             => $this->faker->sentence(10),
-            'applicant_name'      => $this->faker->name(),
+            'form_number'         => 'U-' . $this->faker->unique()->numerify('######'),
+            // Free text is stored in capitals, as ApplicationController::store() does.
+            'purpose'             => mb_strtoupper($this->faker->sentence(10)),
+            'applicant_name'      => mb_strtoupper($this->faker->name()),
             'contact_number'      => $this->faker->numerify('09#########'),
             'email'               => $this->faker->optional(0.7)->safeEmail(),
-            'representative_name' => $this->faker->optional(0.4)->name(),
+            'representative_name' => ($n = $this->faker->optional(0.4)->name()) ? mb_strtoupper($n) : null,
             'barangay'            => $this->faker->randomElement(self::BARANGAYS),
             // lot_number, tct_number, lot_area_sqm, latitude and longitude live on `parcels`:
             // an application has many parcels, so they are no longer columns here.
             'assessment_fee'      => $this->faker->randomFloat(2, 500, 50000),
-            'or_number'           => $this->faker->optional(0.5)->numerify('OR-#######'),
-            'remarks'             => $this->faker->optional(0.4)->sentence(),
+            'or_number'           => $this->faker->optional(0.5)->numerify('OR-######'),
+            'remarks'             => ($r = $this->faker->optional(0.4)->sentence()) ? mb_strtoupper($r) : null,
             'encoded_by'              => User::inRandomOrder()->value('id'),
             'target_land_use_class'   => $this->faker->randomElement(self::LAND_USE_CLASSES),
         ];

@@ -787,7 +787,7 @@ class SeedDemoApplications extends Command
             'preferred_release_mode'  => $a['release_mode'],
             'assessment_fee'          => array_sum($a['fees']),
             'date_of_receipt'         => $at->toDateString(),
-            'or_number'               => sprintf('OR-%05d', mt_rand(10000, 99999)),
+            'or_number'               => sprintf('OR-%06d', mt_rand(100000, 999999)),
             'encoded_by'              => $po->id,
             'assigned_planning_officer_id' => $po->id,
             'created_at'              => $at,
