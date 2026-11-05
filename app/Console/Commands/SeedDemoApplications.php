@@ -74,21 +74,23 @@ class SeedDemoApplications extends Command
      * Released).
      */
     private const SCENARIOS = [
-        'awaiting_review'              => [5, 1, 'permit',    ['encode']],
-        'inspection_scheduled'         => [6, 2, 'permit',    ['encode', 'inspect']],
-        'inspection_returned'          => [5, 1, 'permit',    ['encode', 'inspect', 'returned']],
-        'reinspection_scheduled'       => [2, 0, 'permit',    ['encode', 'inspect', 'discrepancy', 'reinspect']],
-        'denied_at_review'             => [3, 0, 'permit',    ['encode', 'decline']],
-        'denied_after_inspection'      => [3, 1, 'permit',    ['encode', 'inspect', 'discrepancy', 'decline']],
-        'for_release'                  => [4, 1, 'permit',    ['encode', 'approve']],
-        'for_release_after_inspection' => [3, 0, 'permit',    ['encode', 'inspect', 'compliant', 'approve']],
-        'released'                     => [6, 2, 'permit',    ['encode', 'approve', 'release']],
-        'released_after_inspection'    => [5, 1, 'permit',    ['encode', 'inspect', 'compliant', 'approve', 'release']],
+        // About one filing in five (10 of 50) goes through a site inspection; the rest are decided at desk review.
+        'awaiting_review'              => [8, 2, 'permit',    ['encode']],
+        'inspection_scheduled'         => [3, 1, 'permit',    ['encode', 'inspect']],
+        'inspection_returned'          => [2, 1, 'permit',    ['encode', 'inspect', 'returned']],
+        'reinspection_scheduled'       => [1, 0, 'permit',    ['encode', 'inspect', 'discrepancy', 'reinspect']],
+        'denied_at_review'             => [5, 0, 'permit',    ['encode', 'decline']],
+        'denied_after_inspection'      => [1, 0, 'permit',    ['encode', 'inspect', 'discrepancy', 'decline']],
+        'for_release'                  => [8, 2, 'permit',    ['encode', 'approve']],
+        'for_release_after_inspection' => [1, 0, 'permit',    ['encode', 'inspect', 'compliant', 'approve']],
+        'released'                     => [10, 3, 'permit',   ['encode', 'approve', 'release']],
+        'released_after_inspection'    => [1, 0, 'permit',    ['encode', 'inspect', 'compliant', 'approve', 'release']],
         'sb_pending'                   => [3, 1, 'amendment', ['encode', 'approve']],
-        'sb_after_inspection'          => [2, 0, 'amendment', ['encode', 'inspect', 'compliant', 'approve']],
+        'sb_after_inspection'          => [1, 0, 'amendment', ['encode', 'inspect', 'compliant', 'approve']],
         'sb_released'                  => [2, 0, 'amendment', ['encode', 'approve', 'ordinance', 'release']],
         'reinspected_then_released'    => [1, 0, 'permit',    ['encode', 'inspect', 'discrepancy', 'reinspect', 'compliant', 'approve', 'release']],
     ];
+
 
     /**
      * Seeder land-use categories and the CLUP 2030 zones sampled for each.
@@ -113,11 +115,12 @@ class SeedDemoApplications extends Command
      * (finished filings outnumber open ones, as in a working office).
      */
     private const STAGE_WEIGHTS = [
-        'awaiting_review' => 8, 'inspection_scheduled' => 14, 'inspection_returned' => 9, 'reinspection_scheduled' => 5,
-        'denied_at_review' => 4, 'denied_after_inspection' => 8, 'for_release' => 8, 'for_release_after_inspection' => 11,
-        'released' => 12, 'released_after_inspection' => 20, 'sb_pending' => 3, 'sb_after_inspection' => 5,
-        'sb_released' => 2, 'reinspected_then_released' => 7,
+        'awaiting_review' => 20, 'inspection_scheduled' => 6, 'inspection_returned' => 4, 'reinspection_scheduled' => 2,
+        'denied_at_review' => 10, 'denied_after_inspection' => 2, 'for_release' => 20, 'for_release_after_inspection' => 3,
+        'released' => 30, 'released_after_inspection' => 4, 'sb_pending' => 8, 'sb_after_inspection' => 1,
+        'sb_released' => 5, 'reinspected_then_released' => 2,
     ];
+
 
     /**
      * [business name, purpose, short use, types, building area range, project
@@ -362,23 +365,32 @@ class SeedDemoApplications extends Command
     private function plan(int $count): array
     {
         $instances = [];
-        $widest = max(array_column(self::SCENARIOS, 0));
         // --shuffle: every scenario once (in random order) before any repeats, ~40% multi-parcel.
         $bag = [];
         while ($this->option('shuffle') && count($instances) < $count) {
             if (! $bag) {
-                $bag = array_keys($this->scenarios());
+                $bag = [];
+                foreach ($this->scenarios() as $k => $sc) {
+                    array_push($bag, ...array_fill(0, max(1, $sc[0]), $k));
+                }
             }
             $key = array_splice($bag, mt_rand(0, count($bag) - 1), 1)[0];
             [$n, , $stream, $steps] = self::SCENARIOS[$key];
             $instances[] = ['key' => $key, 'nth' => mt_rand(0, $n - 1), 'multi' => mt_rand(1, 100) <= 40, 'stream' => $stream, 'steps' => $steps];
         }
-        for ($pass = 0; count($instances) < $count; $pass++) {
-            for ($r = 0; $r < $widest; $r++) {
-                foreach ($this->scenarios() as $key => [$n, $multi, $stream, $steps]) {
-                    if ($r < $n && count($instances) < $count) {
-                        $instances[] = ['key' => $key, 'nth' => $pass * $n + $r, 'multi' => $r < $multi, 'stream' => $stream, 'steps' => $steps];
-                    }
+        // Proportional spread: each scenario's n filings sit at (r + 0.5) / n of the cycle, so any prefix
+        // (a small --count) keeps the same mix as the full set instead of one of every stage.
+        $cycle = [];
+        foreach ($this->scenarios() as $key => [$n, $multi, $stream, $steps]) {
+            for ($r = 0; $r < $n; $r++) {
+                $cycle[] = ['at' => ($r + 0.5) / $n, 'key' => $key, 'r' => $r, 'n' => $n, 'multi' => $r < $multi, 'stream' => $stream, 'steps' => $steps];
+            }
+        }
+        usort($cycle, fn ($x, $y) => $x['at'] <=> $y['at']);
+        for ($pass = 0; $cycle && count($instances) < $count; $pass++) {
+            foreach ($cycle as $c) {
+                if (count($instances) < $count) {
+                    $instances[] = ['key' => $c['key'], 'nth' => $pass * $c['n'] + $c['r'], 'multi' => $c['multi'], 'stream' => $c['stream'], 'steps' => $c['steps']];
                 }
             }
         }
