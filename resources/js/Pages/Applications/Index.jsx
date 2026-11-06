@@ -920,15 +920,9 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
             if (s === "") {
                 return Object.values(status_counts).reduce((a, b) => Number(a) + Number(b), 0);
             }
-            if (s === "Released") {
-                return Number(status_counts["Released"] || 0) + Number(status_counts["For Release"] || 0);
-            }
             return Number(status_counts[s] || 0);
         }
         if (s === "") return fullDataset.length;
-        if (s === "Released") {
-            return fullDataset.filter((a) => a?.status === "Released" || a?.status === "For Release").length;
-        }
         return fullDataset.filter((a) => a?.status === s).length;
     };
 
@@ -937,11 +931,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         let list = [...fullDataset];
 
         if (selectedStatus) {
-            if (selectedStatus === "Released") {
-                list = list.filter((item) => item?.status === "Released" || item?.status === "For Release");
-            } else {
-                list = list.filter((item) => item?.status === selectedStatus);
-            }
+            list = list.filter((item) => item?.status === selectedStatus);
         }
         if (selectedCategory) {
             list = list.filter((item) => item?.application_type === selectedCategory);
@@ -1256,7 +1246,8 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                         { label: "All", status: "", count: getStatusCount(""), d: "M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm0 5.25h.007v.008H3.75V12zm0 5.25h.007v.008H3.75v-.008z" },
                                         { label: "Technical review", status: "Technical Review", count: reviewCount, d: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" },
                                         { label: "Sangguniang Bayan", status: "Under Sangguniang Bayan", count: sbCount, d: "M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0012 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18" },
-                                        { label: "Issued / ready", status: "Released", count: releasedCount, d: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+                                        { label: "For release", status: "For Release", count: forReleaseCount, d: "M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859M2.25 13.5V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.5M2.25 13.5l2.4-7.2A2.25 2.25 0 016.79 4.75h10.42a2.25 2.25 0 012.14 1.55l2.4 7.2" },
+                                        { label: "Released", status: "Released", count: releasedCount, d: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
                                     ].map((tab) => {
                                         const isActive = tab.status === "" ? !selectedStatus : selectedStatus === tab.status;
                                         return (
