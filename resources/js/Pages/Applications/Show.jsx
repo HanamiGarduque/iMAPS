@@ -15,6 +15,7 @@ import { loadBarangayBoundaries } from "@/utils/mapData";
 import ApplicationMap from "./Components/ApplicationMap";
 import SiteMapPrint from "./Components/SiteMapPrint";
 import { PermitExportPanel, getMissingRecommendedPermits, getPermitChecklist } from "./Components/GeneratePermitModal";
+import RejectionReasonSelector from "./Components/RejectionReasonSelector";
 import { confirmSignOut } from "@/utils/signOut";
 
 const STANDARD_STAGES = ["Received", "Technical Review", "For Release", "Released"];
@@ -336,6 +337,13 @@ function RecordedDecision({ review, label = "Recorded decision" }) {
                     {dash(review.reviewed_by_name)} · {fmtDate(review.reviewed_at)}
                     {review.review_round > 1 && ` · round ${review.review_round}`}
                 </p>
+                {review.rejection_category && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-800 border border-rose-200">
+                            {review.rejection_category}
+                        </span>
+                    </div>
+                )}
                 {review.decision_reason && <p className="mt-2 pl-2.5 border-l-2 border-slate-200 text-[12px] text-slate-600">{review.decision_reason}</p>}
                 {review.findings && <p className="mt-2 pl-2.5 border-l-2 border-slate-200 text-[12px] text-slate-600">{review.findings}</p>}
             </div>
@@ -736,6 +744,9 @@ function ShowInner({
             init[p.id] = {
                 decision: "",
                 decision_reason: "",
+                rejection_category: "",
+                rejection_code: "",
+                rejection_notes: "",
                 findings: "",
                 inspector_id: "",
                 scheduled_date: "",
@@ -789,7 +800,13 @@ function ShowInner({
             parcelId,
             ["Needs Site Inspection", REINSPECTION_DECISION].includes(r.decision)
                 ? r
-                : { decision: r.decision, decision_reason: r.decision_reason, findings: r.findings },
+                : {
+                    decision: r.decision,
+                    decision_reason: r.decision_reason,
+                    rejection_category: r.rejection_category,
+                    rejection_code: r.rejection_code,
+                    findings: r.findings,
+                },
         ]));
         setSaving(true);
         router.post(
@@ -1245,10 +1262,34 @@ function ShowInner({
 
                 {/* What the chosen decision needs, revealed under the choices */}
                 <div id={`reveal-${p.id}`} className="scroll-mb-4 space-y-2.5 empty:hidden mt-3">
-                {["Declined", REINSPECTION_DECISION].includes(review.decision) && (
+                {review.decision === "Declined" && (
+                    <div key={`reason-declined-${p.id}`} className="lot-reveal">
+                        <RejectionReasonSelector
+                            category={review.rejection_category || ""}
+                            reasonCode={review.rejection_code || ""}
+                            notes={review.rejection_notes || ""}
+                            decisionReason={review.decision_reason || ""}
+                            prefix={`reviews.${p.id}`}
+                            compact={false}
+                            onChange={({ rejection_category, rejection_code, decision_reason, notes }) => {
+                                setReviews((prev) => ({
+                                    ...prev,
+                                    [p.id]: {
+                                        ...prev[p.id],
+                                        rejection_category,
+                                        rejection_code,
+                                        decision_reason,
+                                        rejection_notes: notes,
+                                    },
+                                }));
+                            }}
+                        />
+                    </div>
+                )}
+                {review.decision === REINSPECTION_DECISION && (
                     <div key={`reason-${review.decision}`} className="lot-reveal">
                         <label htmlFor={`reason-${p.id}`} className={LABEL}>
-                            {review.decision === REINSPECTION_DECISION ? "Reason for reinspection" : "Reason for declining"} <span className="text-rose-600">*</span>
+                            Reason for reinspection <span className="text-rose-600">*</span>
                         </label>
                         <textarea
                             id={`reason-${p.id}`}
@@ -1257,7 +1298,7 @@ function ShowInner({
                             aria-required={true}
                             value={review.decision_reason}
                             onChange={(e) => setReview(p.id, "decision_reason", e.target.value)}
-                            placeholder={review.decision === REINSPECTION_DECISION ? "Why does this lot need another inspection round?" : "Regulatory basis for declining this lot…"}
+                            placeholder="Why does this lot need another inspection round?"
                             className={`mt-1 resize-none ${FIELD_SM}`}
                         />
                     </div>
@@ -1705,6 +1746,13 @@ function ShowInner({
                 {/* The officer's own words, when they gave any */}
                 {latest && (latest.decision_reason || latest.findings) && (
                     <div className="px-4 py-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+                        {latest.rejection_category && (
+                            <div className="mb-1">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-800 border border-rose-200">
+                                    {latest.rejection_category}
+                                </span>
+                            </div>
+                        )}
                         {latest.decision_reason && <p className="text-[12.5px] text-slate-800"><span className="text-slate-500">Reason · </span>{latest.decision_reason}</p>}
                         {latest.findings && <p className="text-[12.5px] text-slate-800"><span className="text-slate-500">Notes · </span>{latest.findings}</p>}
                     </div>

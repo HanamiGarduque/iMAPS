@@ -1,5 +1,6 @@
 import React from "react";
 import { Label, Textarea } from "./FormControls";
+import RejectionReasonSelector from "./RejectionReasonSelector";
 
 const today = () => {
     const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
@@ -67,15 +68,21 @@ export default function ParcelInspectionScheduler({
             {/* Declined Reason Block */}
             {decision === "Declined" && (
                 <div className="mt-3 pt-3 border-t border-rose-200/60 animate-in fade-in slide-in-from-top-2">
-                    <Label required hasError={!!errors[`parcels.${index}.decision_reason`]}>Reason for Declination</Label>
-                    <Textarea
-                        rows={2}
-                        value={parcel.decision_reason || ""}
-                        onChange={setParcelField(index, "decision_reason")}
-                        placeholder="Specify the regulatory basis for declining this specific parcel..."
-                        hasError={!!errors[`parcels.${index}.decision_reason`]}
+                    <RejectionReasonSelector
+                        category={parcel.rejection_category || ""}
+                        reasonCode={parcel.rejection_code || ""}
+                        notes={parcel.rejection_notes || ""}
+                        decisionReason={parcel.decision_reason || ""}
+                        prefix={`parcels.${index}`}
+                        errors={errors}
+                        compact={true}
+                        onChange={({ rejection_category, rejection_code, decision_reason, notes }) => {
+                            setParcelField(index, "rejection_category")({ target: { value: rejection_category } });
+                            setParcelField(index, "rejection_code")({ target: { value: rejection_code } });
+                            setParcelField(index, "decision_reason")({ target: { value: decision_reason } });
+                            setParcelField(index, "rejection_notes")({ target: { value: notes } });
+                        }}
                     />
-                    {errors[`parcels.${index}.decision_reason`] && <p className="text-[10px] font-medium text-rose-500 mt-1">{errors[`parcels.${index}.decision_reason`]}</p>}
                 </div>
             )}
 

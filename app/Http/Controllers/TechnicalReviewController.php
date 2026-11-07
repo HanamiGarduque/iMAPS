@@ -17,6 +17,7 @@ use App\Services\ApplicationStatusTracker;
 use App\Models\AppNotification;
 use App\Services\SupabaseService;
 use App\Services\WorkAssignmentService;
+use App\Support\RejectionReasons;
 
 use Illuminate\Support\Facades\Log; // For placeholder SMS logic
 use Illuminate\Http\Request;
@@ -37,6 +38,8 @@ class TechnicalReviewController extends Controller
             'decision'           => 'required|string',
             'findings'           => 'nullable|string',
             'decision_reason'    => 'required_if:decision,Declined,Requires Reinspection|nullable|string',
+            'rejection_category' => 'nullable|string|max:100',
+            'rejection_code'     => 'nullable|string|max:100',
 
             // Validation for Site Inspection assignment
             'inspector_id'       => [
@@ -138,18 +141,32 @@ class TechnicalReviewController extends Controller
                     );
                 }
 
+                $rejectionCode = $validated['rejection_code'] ?? null;
+                $rejectionCategory = $validated['rejection_category'] ?? null;
+                $decisionReason = $validated['decision_reason'] ?? null;
+
+                if ($validated['decision'] === 'Declined' && !empty($rejectionCode) && RejectionReasons::isValidCode($rejectionCode)) {
+                    $item = RejectionReasons::get($rejectionCode);
+                    $rejectionCategory = $item['category'];
+                    if (empty($decisionReason)) {
+                        $decisionReason = RejectionReasons::formatDecisionReason($rejectionCode);
+                    }
+                }
+
                 // Create the technical review row for the parcel
                 $technicalReview = TechnicalReview::create([
-                    'zoning_application_id'      => $application->id,
-                    'parcel_id'                  => $parcel->id,
-                    'reviewed_by'                => auth()->id(),
-                    'review_round'               => $nextRound,
-                    'decision'                   => $validated['decision'],
-                    'findings'                   => $validated['findings'] ?? null,
-                    'decision_reason'            => $validated['decision_reason'] ?? null,
-                    'site_inspection_task_id'    => $siteInspectionId,
+                    'zoning_application_id'       => $application->id,
+                    'parcel_id'                   => $parcel->id,
+                    'reviewed_by'                 => auth()->id(),
+                    'review_round'                => $nextRound,
+                    'decision'                    => $validated['decision'],
+                    'findings'                    => $validated['findings'] ?? null,
+                    'decision_reason'             => $decisionReason,
+                    'rejection_category'          => $rejectionCategory,
+                    'rejection_code'              => $rejectionCode,
+                    'site_inspection_task_id'     => $siteInspectionId,
                     'reviewed_site_inspection_id' => $reviewedSiteInspectionId,
-                    'reviewed_at'                => now(),
+                    'reviewed_at'                 => now(),
                 ]);
 
                 if ($reviewedSiteInspectionId !== null) {
@@ -265,6 +282,8 @@ class TechnicalReviewController extends Controller
             'reviews.*.decision'                 => 'required|string|in:Approved,Needs Site Inspection,Requires Reinspection,Declined',
             'reviews.*.findings'                 => 'nullable|string',
             'reviews.*.decision_reason'          => 'required_if:reviews.*.decision,Requires Reinspection|nullable|string',
+            'reviews.*.rejection_category'       => 'nullable|string|max:100',
+            'reviews.*.rejection_code'           => 'nullable|string|max:100',
             'reviews.*.inspector_id'             => [
                 'exclude_unless:reviews.*.decision,Needs Site Inspection,Requires Reinspection',
                 'nullable',
@@ -312,7 +331,7 @@ class TechnicalReviewController extends Controller
                 );
             }
 
-            if ($review['decision'] === 'Declined' && empty($review['decision_reason'])) {
+            if ($review['decision'] === 'Declined' && empty($review['decision_reason']) && empty($review['rejection_code'])) {
                 throw ValidationException::withMessages([
                     "reviews.$parcelId.decision_reason" => 'A decision reason is required when the decision is "Declined".',
                 ]);
@@ -376,17 +395,31 @@ class TechnicalReviewController extends Controller
                     );
                 }
 
+                $rejectionCode = $review['rejection_code'] ?? null;
+                $rejectionCategory = $review['rejection_category'] ?? null;
+                $decisionReason = $review['decision_reason'] ?? null;
+
+                if ($review['decision'] === 'Declined' && !empty($rejectionCode) && RejectionReasons::isValidCode($rejectionCode)) {
+                    $item = RejectionReasons::get($rejectionCode);
+                    $rejectionCategory = $item['category'];
+                    if (empty($decisionReason)) {
+                        $decisionReason = RejectionReasons::formatDecisionReason($rejectionCode);
+                    }
+                }
+
                 $technicalReview = TechnicalReview::create([
-                    'zoning_application_id'      => $application->id,
-                    'parcel_id'                  => $parcelId,
-                    'reviewed_by'                => auth()->id(),
-                    'review_round'               => $nextRound,
-                    'decision'                   => $review['decision'],
-                    'findings'                   => $review['findings'] ?? null,
-                    'decision_reason'            => $review['decision_reason'] ?? null,
-                    'site_inspection_task_id'    => $siteInspectionId,
+                    'zoning_application_id'       => $application->id,
+                    'parcel_id'                   => $parcelId,
+                    'reviewed_by'                 => auth()->id(),
+                    'review_round'                => $nextRound,
+                    'decision'                    => $review['decision'],
+                    'findings'                    => $review['findings'] ?? null,
+                    'decision_reason'             => $decisionReason,
+                    'rejection_category'          => $rejectionCategory,
+                    'rejection_code'              => $rejectionCode,
+                    'site_inspection_task_id'     => $siteInspectionId,
                     'reviewed_site_inspection_id' => $reviewedSiteInspectionId,
-                    'reviewed_at'                => now(),
+                    'reviewed_at'                 => now(),
                 ]);
 
                 if ($reviewedSiteInspectionId !== null) {

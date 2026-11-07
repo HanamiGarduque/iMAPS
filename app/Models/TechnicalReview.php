@@ -14,6 +14,8 @@ class TechnicalReview extends Model
         'decision',
         'findings',
         'decision_reason',
+        'rejection_category',
+        'rejection_code',
         // The NEW inspection round created by this decision, when applicable.
         'site_inspection_task_id',
         // Loop 8: the EXISTING inspection round whose result this review is

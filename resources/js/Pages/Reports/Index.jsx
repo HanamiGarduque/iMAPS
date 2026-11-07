@@ -6,8 +6,10 @@ import Chart from "chart.js/auto";
 import Header from "@/Components/Header";
 import Sidebar from "@/Components/Sidebar";
 import { confirmSignOut } from "@/utils/signOut";
+import { REJECTION_CATEGORIES } from "../Applications/data/rejectionReasons";
 
 const APPLICATION_TYPES = ["All", "Locational Clearance", "Zoning Certificate", "Development Permit", "Preliminary Approval and Locational Clearance (PALC)"];
+const STATUS_OPTIONS = ["All", "Received", "Technical Review", "Under Sangguniang Bayan", "For Release", "Released", "Denied"];
 
 const COLUMNS = [
     { id: "reference_number", label: "Reference number" },
@@ -23,6 +25,9 @@ const COLUMNS = [
     { id: "project_cost", label: "Project cost" },
     { id: "purpose", label: "Purpose" },
     { id: "assessment_fee", label: "Assessment fee" },
+    { id: "rejection_category", label: "Rejection category" },
+    { id: "rejection_code", label: "Rejection reason / ground" },
+    { id: "decision_reason", label: "Decision reason notes" },
 ];
 
 const CHART_TYPES = [
@@ -40,6 +45,8 @@ const GROUP_BY = [
     { id: "land_use_class", label: "Land use class" },
     { id: "month", label: "Month" },
     { id: "year", label: "Year" },
+    { id: "rejection_category", label: "Rejection category" },
+    { id: "rejection_code", label: "Rejection reason / ground" },
 ];
 
 const MEASURES = [
@@ -71,6 +78,8 @@ const DEFAULTS = {
     start_date: "",
     end_date: "",
     application_type: "All",
+    status: "All",
+    rejection_category: "All",
     barangay: "",
     variables: ["reference_number", "form_number", "date", "application_type", "status", "name", "barangay", "land_use_class", "lot_area_sqm", "assessment_fee"],
     format: "pdf",
@@ -83,6 +92,9 @@ const DEFAULTS = {
 
 // Ready-made reports. `range` is resolved to real dates when the template is applied.
 const TEMPLATES = [
+    { id: "rejections", label: "Common rejection causes (chart)", range: "all", settings: { format: "pdf", presentation_style: "horizontal_bar_chart", group_by: "rejection_category", aggregation: "count", status: "Denied", orientation: "portrait" } },
+    { id: "rejection_grounds", label: "Specific rejection grounds (donut)", range: "all", settings: { format: "pdf", presentation_style: "doughnut_chart", group_by: "rejection_code", aggregation: "count", status: "Denied", orientation: "portrait" } },
+    { id: "rejections_table", label: "Denied applications list", range: "all", settings: { format: "xlsx", presentation_style: "table", status: "Denied", variables: ["reference_number", "form_number", "date", "name", "barangay", "application_type", "rejection_category", "rejection_code", "decision_reason"] } },
     { id: "monthly", label: "Monthly applications (chart)", range: "year", settings: { format: "pdf", presentation_style: "bar_chart", group_by: "month", aggregation: "count" } },
     { id: "barangay", label: "Applications by barangay", range: "year", settings: { format: "pdf", presentation_style: "horizontal_bar_chart", group_by: "barangay", aggregation: "count", orientation: "portrait" } },
     { id: "fees", label: "Fees collected by month", range: "year", settings: { format: "xlsx", presentation_style: "summary_table", group_by: "month", aggregation: "sum_fee" } },
@@ -508,7 +520,6 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
         f.variables = Array.isArray(f.variables) ? f.variables.filter((v) => COLUMNS.some((c) => c.id === v)) : DEFAULTS.variables;
         if (!PAPER[f.document_size]) f.document_size = DEFAULTS.document_size;
         if (!["pdf", "xlsx", "csv"].includes(f.format)) f.format = DEFAULTS.format;
-        delete f.status; // filter removed; older saved setups may still carry it
         if (f.barangay && !barangays.includes(f.barangay)) f.barangay = "";
         const range = RANGES.find((r) => r.id === rangeId);
         if (range?.range) [f.start_date, f.end_date] = range.range(new Date());
@@ -521,7 +532,7 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
     const [templateId, setTemplateId] = useState(saved?.templateId || "");
     const [recent, setRecent] = useState(() => readStore(RECENT_KEY, []));
     const [moreOpen, setMoreOpen] = useState(false);
-    const [dataMoreOpen, setDataMoreOpen] = useState(() => !!(saved?.form?.barangay || (saved?.form?.application_type && saved.form.application_type !== "All")));
+    const [dataMoreOpen, setDataMoreOpen] = useState(() => !!(saved?.form?.barangay || (saved?.form?.application_type && saved.form.application_type !== "All") || (saved?.form?.status && saved.form.status !== "All") || (saved?.form?.rejection_category && saved.form.rejection_category !== "All")));
     const [recentPick, setRecentPick] = useState("");
 
     const [preview, setPreview] = useState(null);
@@ -569,7 +580,11 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
         if (form.start_date && form.end_date) dates = `${form.start_date} to ${form.end_date}`;
         else if (form.start_date) dates = `from ${form.start_date}`;
         else if (form.end_date) dates = `until ${form.end_date}`;
-        const filters = [form.barangay].filter(Boolean);
+        const filters = [
+            form.barangay,
+            form.status && form.status !== "All" ? `Status: ${form.status}` : null,
+            form.rejection_category && form.rejection_category !== "All" ? `Category: ${form.rejection_category}` : null,
+        ].filter(Boolean);
         return `${type} Report (${dates})${filters.length ? ` - ${filters.join(", ")}` : ""}`;
     })();
 
@@ -880,13 +895,29 @@ export default function ReportsIndex({ auth = {}, barangays = [] }) {
                                     <MoreToggle
                                         open={dataMoreOpen}
                                         onToggle={() => setDataMoreOpen((o) => !o)}
-                                        hint={[form.application_type === "All" ? "all types" : form.application_type, form.barangay || "all barangays"].join(", ")}
+                                        hint={[
+                                            form.application_type === "All" ? "all types" : form.application_type,
+                                            form.status && form.status !== "All" ? `status: ${form.status}` : null,
+                                            form.rejection_category && form.rejection_category !== "All" ? `cat: ${form.rejection_category}` : null,
+                                            form.barangay || "all barangays",
+                                        ].filter(Boolean).join(", ")}
                                     />
                                     {dataMoreOpen && (
                                         <div className="mt-3 space-y-2.5">
                                             <Row id="application_type" label="Type">
                                                 <select id="application_type" value={form.application_type} onChange={(e) => set("application_type", e.target.value)} className={fieldClass}>
                                                     {APPLICATION_TYPES.map((t) => <option key={t} value={t}>{t === "All" ? "All application types" : t}</option>)}
+                                                </select>
+                                            </Row>
+                                            <Row id="status" label="Status">
+                                                <select id="status" value={form.status || "All"} onChange={(e) => set("status", e.target.value)} className={fieldClass}>
+                                                    {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s === "All" ? "All statuses" : s}</option>)}
+                                                </select>
+                                            </Row>
+                                            <Row id="rejection_category" label="Rejection Ground">
+                                                <select id="rejection_category" value={form.rejection_category || "All"} onChange={(e) => set("rejection_category", e.target.value)} className={fieldClass}>
+                                                    <option value="All">All rejection categories</option>
+                                                    {REJECTION_CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                                                 </select>
                                             </Row>
                                             <Row id="barangay" label="Barangay">

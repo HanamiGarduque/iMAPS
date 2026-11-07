@@ -31,6 +31,7 @@ use App\Support\InspectionSummary;
 use App\Support\InspectionRoundNumbering;
 use App\Support\InspectorTransferGuard;
 use App\Support\ReassignmentReasons;
+use App\Support\RejectionReasons;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -519,7 +520,9 @@ class ApplicationController extends Controller
         return Inertia::render('Applications/Create', [
             'cloudDraftPayload' => $draftPayload,
             'cloudDraftRef'     => $draftRef,
-            'inspectors'        => $inspectors // --- NEW: Pass inspectors to the view ---
+            'inspectors'        => $inspectors, // --- NEW: Pass inspectors to the view ---
+            'rejectionTaxonomy' => RejectionReasons::all(),
+            'rejectionReasons'  => RejectionReasons::byCategory(),
         ]);
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -656,6 +659,8 @@ class ApplicationController extends Controller
             // --- NEW: Dynamic Validation for Evaluation Decisions & Site Inspections ---
             'parcels.*.decision'          => 'nullable|string|in:Approved,Needs Site Inspection,Declined',
             'parcels.*.decision_reason'   => 'required_if:parcels.*.decision,Declined|nullable|string',
+            'parcels.*.rejection_category' => ['nullable', 'string', 'max:100', Rule::in(RejectionReasons::categories())],
+            'parcels.*.rejection_code'     => ['nullable', 'string', 'max:100', Rule::in(RejectionReasons::codes())],
             'parcels.*.findings'          => 'nullable|string',
             'parcels.*.assigned_notes'    => 'nullable|string',
             'parcels.*.inspector_id'      => 'required_if:parcels.*.decision,Needs Site Inspection|nullable|exists:users,id',
@@ -857,13 +862,27 @@ class ApplicationController extends Controller
                         );
                     }
 
+                    $rejectionCode = $parcelData['rejection_code'] ?? null;
+                    $rejectionCategory = $parcelData['rejection_category'] ?? null;
+                    $decisionReason = $parcelData['decision_reason'] ?? null;
+
+                    if ($parcelData['decision'] === 'Declined' && !empty($rejectionCode) && RejectionReasons::isValidCode($rejectionCode)) {
+                        $item = RejectionReasons::get($rejectionCode);
+                        $rejectionCategory = $item['category'];
+                        if (empty($decisionReason)) {
+                            $decisionReason = RejectionReasons::formatDecisionReason($rejectionCode);
+                        }
+                    }
+
                     TechnicalReview::create([
                         'zoning_application_id'   => $application->id,
                         'parcel_id'               => $parcel->id,
                         'reviewed_by'             => Auth::id(),
                         'review_round'            => 1,
                         'decision'                => $parcelData['decision'],
-                        'decision_reason'         => $parcelData['decision_reason'] ?? null,
+                        'decision_reason'         => $decisionReason,
+                        'rejection_category'      => $rejectionCategory,
+                        'rejection_code'          => $rejectionCode,
                         'findings'                => $parcelData['findings'] ?? null,
                         'site_inspection_task_id' => $siteInspectionId,
                         'reviewed_at'             => now(),
@@ -1352,6 +1371,8 @@ class ApplicationController extends Controller
             'inspectorRoundState'     => $inspectorRoundState,
             'inspectionHistory'       => $inspectionHistory,
             'reassignmentReasons'     => ReassignmentReasons::all(),
+            'rejectionTaxonomy'       => RejectionReasons::all(),
+            'rejectionReasons'        => RejectionReasons::byCategory(),
 
             // Authority is stated by the server rather than inferred in the
             // browser, so the UI can never offer a control the route would refuse.
@@ -1461,6 +1482,8 @@ class ApplicationController extends Controller
             'decision'              => 'required|in:' . implode(',', self::REVIEW_DECISIONS),
             'findings'              => 'nullable|string',
             'decision_reason'       => 'required_if:decision,Declined|nullable|string',
+            'rejection_category'    => ['nullable', 'string', 'max:100', Rule::in(RejectionReasons::categories())],
+            'rejection_code'        => ['nullable', 'string', 'max:100', Rule::in(RejectionReasons::codes())],
         ]);
 
         DB::beginTransaction();
@@ -1494,6 +1517,18 @@ class ApplicationController extends Controller
                 );
             }
 
+            $rejectionCode = $validated['rejection_code'] ?? null;
+            $rejectionCategory = $validated['rejection_category'] ?? null;
+            $decisionReason = $validated['decision_reason'] ?? null;
+
+            if ($validated['decision'] === 'Declined' && !empty($rejectionCode) && RejectionReasons::isValidCode($rejectionCode)) {
+                $item = RejectionReasons::get($rejectionCode);
+                $rejectionCategory = $item['category'];
+                if (empty($decisionReason)) {
+                    $decisionReason = RejectionReasons::formatDecisionReason($rejectionCode);
+                }
+            }
+
             $nextRound = (TechnicalReview::where('zoning_application_id', $application->id)->max('review_round') ?? 0) + 1;
             TechnicalReview::create([
                 'zoning_application_id' => $application->id,
@@ -1501,7 +1536,9 @@ class ApplicationController extends Controller
                 'review_round'          => $nextRound,
                 'decision'              => $validated['decision'],
                 'findings'              => $validated['findings'] ?? null,
-                'decision_reason'       => $validated['decision_reason'] ?? null,
+                'decision_reason'       => $decisionReason,
+                'rejection_category'    => $rejectionCategory,
+                'rejection_code'        => $rejectionCode,
             ]);
 
             $note = "Technical review round {$nextRound}: {$validated['decision']}.";

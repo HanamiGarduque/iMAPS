@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ZoningApplication;
+use App\Support\RejectionReasons;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -27,6 +28,7 @@ class ReportController extends Controller
     {
         return Inertia::render('Reports/Index', [
             'barangays' => self::BARANGAYS,
+            'rejectionCategories' => RejectionReasons::categories(),
         ]);
     }
 
@@ -51,6 +53,9 @@ class ReportController extends Controller
                 case 'assessment_fee': $headers[] = 'Assessment Fee (PHP)'; break;
                 case 'reference_number': $headers[] = 'Reference Number'; break;
                 case 'form_number': $headers[] = 'Form Number'; break;
+                case 'rejection_category': $headers[] = 'Rejection Category'; break;
+                case 'rejection_code': $headers[] = 'Rejection Reason'; break;
+                case 'decision_reason': $headers[] = 'Decision Reason'; break;
             }
         }
         return empty($headers) ? ['Reference Number', 'Form Number'] : $headers;
@@ -93,13 +98,32 @@ class ReportController extends Controller
             case 'assessment_fee': return $item->assessment_fee;
             case 'reference_number': return $item->reference_number;
             case 'form_number': return $item->form_number;
+            case 'rejection_category': {
+                $declinedReview = $item->technicalReviews ? $item->technicalReviews->where('decision', 'Declined')->last() : null;
+                if ($declinedReview?->rejection_category) {
+                    return $declinedReview->rejection_category;
+                }
+                return $item->status === 'Denied' ? 'Uncategorized Rejection' : '';
+            }
+            case 'rejection_code': {
+                $declinedReview = $item->technicalReviews ? $item->technicalReviews->where('decision', 'Declined')->last() : null;
+                if ($declinedReview?->rejection_code) {
+                    $reasonItem = RejectionReasons::get($declinedReview->rejection_code);
+                    return $reasonItem ? $reasonItem['label'] : $declinedReview->rejection_code;
+                }
+                return $item->status === 'Denied' ? ($declinedReview?->decision_reason ?: 'Unspecified Ground') : '';
+            }
+            case 'decision_reason': {
+                $declinedReview = $item->technicalReviews ? $item->technicalReviews->where('decision', 'Declined')->last() : null;
+                return $declinedReview?->decision_reason ?? '';
+            }
             default: return '';
         }
     }
 
     private function buildQuery(Request $request)
     {
-        $query = ZoningApplication::with('parcels');
+        $query = ZoningApplication::with(['parcels', 'technicalReviews']);
 
         if ($request->start_date) {
             $query->whereDate('created_at', '>=', $request->start_date);
@@ -109,6 +133,16 @@ class ReportController extends Controller
         }
         if ($request->application_type && $request->application_type !== 'All') {
             $query->ofType($request->application_type);
+        }
+        if ($request->status && $request->status !== 'All') {
+            $query->where('status', $request->status);
+        }
+        if ($request->rejection_category && $request->rejection_category !== 'All') {
+            $cat = $request->rejection_category;
+            $query->whereHas('technicalReviews', function ($tr) use ($cat) {
+                $tr->where('decision', 'Declined')
+                   ->where('rejection_category', $cat);
+            });
         }
         // Same fallback as extractValue(): the application's own barangay, else its first parcel's.
         if ($request->barangay) {
@@ -134,6 +168,10 @@ class ReportController extends Controller
             foreach (self::BARANGAYS as $b) {
                 $groupedData[$b] = ['count' => 0, 'lot_area' => 0, 'fee' => 0, 'project_cost' => 0, 'building_area' => 0];
             }
+        } elseif ($groupBy === 'rejection_category') {
+            foreach (RejectionReasons::categories() as $cat) {
+                $groupedData[$cat] = ['count' => 0, 'lot_area' => 0, 'fee' => 0, 'project_cost' => 0, 'building_area' => 0];
+            }
         }
 
         foreach ($data as $item) {
@@ -141,7 +179,9 @@ class ReportController extends Controller
             $val = $groupBy === 'month'
                 ? ($item->created_at ? $item->created_at->format('Y-m') : '')
                 : (string) $this->extractValue($item, $groupBy);
-            if ($val === '') $val = 'Unknown';
+            if ($val === '') {
+                $val = in_array($groupBy, ['rejection_category', 'rejection_code']) ? 'Non-Declined' : 'Unknown';
+            }
             
             if (!isset($groupedData[$val])) {
                 $groupedData[$val] = ['count' => 0, 'lot_area' => 0, 'fee' => 0, 'project_cost' => 0, 'building_area' => 0];
@@ -165,6 +205,11 @@ class ReportController extends Controller
         $datasetLabel = 'Count';
 
         foreach ($groupedData as $label => $stats) {
+            // Omit 'Non-Declined' if count is 0 when grouping by rejection category/code
+            if (in_array($groupBy, ['rejection_category', 'rejection_code']) && $label === 'Non-Declined' && $stats['count'] === 0) {
+                continue;
+            }
+
             if ($groupBy === 'month' && $label !== 'Unknown') {
                 $label = \Carbon\Carbon::createFromFormat('Y-m', $label)->format('M Y');
             }
@@ -194,11 +239,17 @@ class ReportController extends Controller
             $rows[] = [$label, $val];
         }
 
+        $groupName = match ($groupBy) {
+            'rejection_category' => 'Rejection Category',
+            'rejection_code' => 'Rejection Reason',
+            default => ucwords(str_replace('_', ' ', $groupBy)),
+        };
+
         return [
             'labels' => $labels,
             'data' => $dataPts,
             'datasetLabel' => $datasetLabel,
-            'groupName' => ucwords(str_replace('_', ' ', $groupBy)),
+            'groupName' => $groupName,
             'rows' => $rows
         ];
     }
@@ -220,12 +271,14 @@ class ReportController extends Controller
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'application_type' => 'nullable|in:All,Locational Clearance,Zoning Certificate,Development Permit,Preliminary Approval and Locational Clearance (PALC)',
+            'status' => 'nullable|string',
+            'rejection_category' => 'nullable|string',
             'barangay' => 'nullable|in:' . implode(',', self::BARANGAYS),
             'variables' => 'nullable|array',
-            'variables.*' => 'in:reference_number,form_number,date,application_type,status,name,barangay,land_use_class,lot_area_sqm,building_area,project_cost,purpose,assessment_fee',
+            'variables.*' => 'in:reference_number,form_number,date,application_type,status,name,barangay,land_use_class,lot_area_sqm,building_area,project_cost,purpose,assessment_fee,rejection_category,rejection_code,decision_reason',
             'presentation_style' => 'nullable|in:table,summary_table,bar_chart,horizontal_bar_chart,line_chart,pie_chart,doughnut_chart',
             'aggregation' => 'nullable|in:count,sum_lot_area,avg_lot_area,sum_building_area,sum_project_cost,sum_fee',
-            'group_by' => 'nullable|in:status,barangay,application_type,land_use_class,month,year',
+            'group_by' => 'nullable|in:status,barangay,application_type,land_use_class,month,year,rejection_category,rejection_code',
         ];
     }
 
@@ -331,7 +384,11 @@ class ReportController extends Controller
         elseif ($request->start_date) $dateStr = 'from ' . $request->start_date;
         elseif ($request->end_date) $dateStr = 'until ' . $request->end_date;
 
-        $filters = array_filter([$request->barangay]);
+        $filters = array_filter([
+            $request->barangay,
+            ($request->status && $request->status !== 'All') ? "Status: {$request->status}" : null,
+            ($request->rejection_category && $request->rejection_category !== 'All') ? "Category: {$request->rejection_category}" : null,
+        ]);
         $reportTitleStr = $appTypeStr . ' Report (' . $dateStr . ')' . ($filters ? ' - ' . implode(', ', $filters) : '');
         $filename = str_replace([' ', '(', ')'], ['_', '', ''], $reportTitleStr) . '_' . date('Ymd_His');
 
