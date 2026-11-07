@@ -32,7 +32,6 @@ dynamic IPs are not locked out.
 | `ORIGIN_SECRET` | `openssl rand -hex 32` (see section 3) |
 | `CSP_MODE` | `report-only` (default: violations are logged in the browser console, nothing is blocked), `enforce` or `off`. Switch to `enforce` after checking the console on `/login` and the map pages |
 | `HSTS_MAX_AGE` | seconds, default `31536000` (1 year); sent only over HTTPS; `0` disables |
-| `ALLOWED_IPS` | leave **unset** when staff use dynamic IPs; only for an office with a fixed public IP (see section 2b) |
 
    Do not set `PORT`; Railway injects it. Do not run the seeders (`admin@imaps.com` / `password123`).
 5. **Networking → Custom Domain:** add your domain, point the CNAME Railway gives you at it. Then **delete the generated `*.up.railway.app` domain.**
@@ -82,17 +81,6 @@ private key to the admin and must be moved over a secure channel, so prefer the 
 browser prompt to choose a certificate appears by default; managed PCs can skip it with the
 `AutoSelectCertificateForUrls` browser policy.
 
-## 2b. `ALLOWED_IPS` (app-side allowlist)
-
-`ALLOWED_IPS` on the app service (comma-separated, CIDR allowed, e.g. `203.0.113.10,198.51.100.0/24`)
-makes the app itself return 403 to any other client IP (`/ping` stays open). It works with
-`ORIGIN_SECRET` set: the app then checks Cloudflare's `CF-Connecting-IP`. It is **not compatible
-with dynamic IPs**: anyone whose address changes is blocked until the list is edited, so leave it
-**unset** when access is controlled by device certificates (section 2). Use it only for an office
-with a fixed public IP, or alone while the domain is not on Cloudflare yet (leave `ORIGIN_SECRET`
-unset then). Blocked IPs are logged as `Blocked by ALLOWED_IPS`; if you are blocked, copy the IP
-from the Railway logs.
-
 ## 3. Why the origin secret
 
 The mTLS rule only filters traffic that goes through Cloudflare. Railway's origin is still
@@ -114,10 +102,10 @@ Cloudflare adds (`app/Http/Middleware/RequireOriginSecret.php`).
 
 ## 5. Go-live checklist
 
-- [ ] `ORIGIN_SECRET` set (or `ALLOWED_IPS` until Cloudflare is live); generated `*.up.railway.app` domain deleted.
+- [ ] `ORIGIN_SECRET` set; generated `*.up.railway.app` domain deleted.
 - [ ] Domain listed under Client Certificates → Hosts; mTLS block rule is **Active**; every team device has its own certificate and the register of issued certificates is up to date.
 - [ ] Tested: a registered device loads the site from a different network; an unregistered browser is blocked.
-- [ ] `ALLOWED_IPS` unset (dynamic IPs) and the old `office_ips` WAF rule removed or disabled; no unintended Zero Trust Access application on the domain.
+- [ ] Old `office_ips` WAF rule removed or disabled; no unintended Zero Trust Access application on the domain.
 - [ ] Seeders never run; no `admin@imaps.com` / `password123` account exists (`User::where('email','admin@imaps.com')->count()` is 0).
 - [ ] `APP_DEBUG=false`, `SESSION_SECURE_COOKIE=true`, `SESSION_ENCRYPT=true`.
 - [ ] Security headers present (`curl -sI https://<domain>/ping`): `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`, and a `Content-Security-Policy-Report-Only` (or `Content-Security-Policy` once `CSP_MODE=enforce`) with no console violations on `/login` and the map pages.

@@ -12,6 +12,9 @@ Artisan::command('inspire', function () {
 // The new Laravel 11+ way to schedule tasks directly in the routes file
 Schedule::command('sync:pull-inspections')->everyFiveMinutes();
 
+// Compile real clearance filings and sync with the spatial forecasting microservice at each quarter close.
+Schedule::command('forecast:sync')->quarterly()->withoutOverlapping();
+
 // Drop read notifications older than 90 days (see AppNotification::prunable).
 Schedule::command('model:prune', ['--model' => [\App\Models\AppNotification::class]])->daily();
 

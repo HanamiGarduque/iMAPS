@@ -16,8 +16,8 @@
 // ramp paints the score. Keeping the two separate is what stops the map's
 // colour and the legend's filter from meaning two different things.
 
-// Cut-offs are on the normalised Shannon index (0–1 over the 10 CLUP
-// categories counted; utilities and roads are left out). Calibrated to
+// Cut-offs are on the normalised Shannon index (0–1 over the 11 CLUP
+// categories counted; utilities and roads are included). Calibrated to
 // real-world co-dominant land use in Rosario (municipal average ~0.39, CLUP 2030
 // target 0.49) using straightforward, accessible labels for LGU planning staff.
 export const DIVERSITY_TIERS = [
@@ -182,7 +182,7 @@ export const DIVERSITY_LENSES = [
         tabLabel: "Overview",
         metricLabel: "Mix Score",
         question: "How varied is the land being developed in this barangay?",
-        caption: "Mix Score (normalised Shannon index over 10 CLUP land-use categories; utilities and roads not counted) of the lot area in locational clearances for development (not zoning certificates, development permits or paperwork-only clearances), compared with the CLUP 2030 plan mix.",
+        caption: "Mix Score (normalised Shannon index over 11 CLUP land-use categories; utilities and roads included) of the lot area in locational clearances for development (not zoning certificates, development permits or paperwork-only clearances), compared with the CLUP 2030 plan mix.",
         heightNote: "Height & colour = recorded mix (0.00 – 1.00)",
         bands: DIVERSITY_TIERS,
         domain: [0, 1],

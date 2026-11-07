@@ -265,8 +265,7 @@ address and works from changing networks. `ORIGIN_SECRET` makes the app refuse a
 bypassed Cloudflare with a 403; only `/ping` (Railway's health check) is exempt. The server has a
 public address, so the mTLS rule and `ORIGIN_SECRET` are what keep it private. A lost device is
 revoked individually in Cloudflare. The app's login (Turnstile, lockout) and role checks still apply
-on top. `ALLOWED_IPS` is an optional app-side IP allowlist for offices with a fixed public IP; leave
-it unset when staff have dynamic IPs.
+on top.
 
 ### Architecture
 
@@ -314,7 +313,6 @@ Users ──► Cloudflare (mTLS: registered devices only, adds X-Origin-Secret)
    | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Same values; needed at **build** time, so set before the first deploy |
    | `ORIGIN_SECRET` | `openssl rand -hex 32`; must match Cloudflare's `X-Origin-Secret` header |
    | `CSP_MODE`, `HSTS_MAX_AGE` | Security headers: `report-only` (default) / `enforce` / `off` for the Content-Security-Policy, and the HSTS lifetime in seconds (see [SecurityHeaders.php](app/Http/Middleware/SecurityHeaders.php)) |
-   | `ALLOWED_IPS` | Optional app-side IP allowlist for a fixed-IP office; leave unset when staff have dynamic IPs (works with `ORIGIN_SECRET`) |
    | `PERMITS_DISK` | `local` (default, the `/data` volume) or `r2` (Cloudflare R2) — see [Permit storage](#permit-storage-volume-or-cloudflare-r2) |
    | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT` | Only when `PERMITS_DISK=r2`. Endpoint is `https://<account-id>.r2.cloudflarestorage.com` |
    | `BACKUP_R2_ACCESS_KEY_ID`, `BACKUP_R2_SECRET_ACCESS_KEY`, `BACKUP_R2_BUCKET` | Separate private bucket for [backups](#backups). `BACKUP_R2_ENDPOINT` defaults to `R2_ENDPOINT` |
@@ -339,7 +337,6 @@ Full steps are in [docs/RAILWAY_DEPLOYMENT.md §2](docs/RAILWAY_DEPLOYMENT.md#2-
    application on the domain, or users get an extra email-code prompt.
 3. **Transform rule:** set the request header `X-Origin-Secret` to the value of `ORIGIN_SECRET`.
    Without it the app answers 403 to everyone.
-4. Leave `ALLOWED_IPS` unset when staff have dynamic IPs; it is only for a fixed-IP office.
 
 #### Issuing and revoking device certificates (mTLS)
 
@@ -378,11 +375,6 @@ How the app relies on Cloudflare:
   signed-in users get 300 requests/min each, guests get 60/min per IP, and `/ping` is unlimited.
   Stricter per-route limits (10–30/min) apply on top to logins, shapefile and tile uploads, password
   resets and sensitive user data. Covered by `tests/Feature/CloudflareClientIpAndThrottleTest.php`.
-- **App-side allowlist (optional):** [RestrictToAllowedIps.php](app/Http/Middleware/RestrictToAllowedIps.php)
-  only runs when `ALLOWED_IPS` is set. It runs after the origin-secret check, so behind Cloudflare it
-  sees `CF-Connecting-IP`; without Cloudflare it reads the right-hand (Railway-written) end of
-  `X-Forwarded-For`. It logs blocked addresses as `Blocked by ALLOWED_IPS`. It is not compatible with
-  dynamic IPs, which is why device certificates are the primary control.
 
 ### Permit storage (volume or Cloudflare R2)
 

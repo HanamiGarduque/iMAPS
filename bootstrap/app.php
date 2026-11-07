@@ -19,11 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Behind Railway + Cloudflare: trust forwarded proto/IP headers.
         $middleware->trustProxies(at: '*');
-        // prepend() puts each class first, so RequireOriginSecret runs before the
-        // allowlist and hands it Cloudflare's verified client IP.
-        $middleware->prepend(\App\Http\Middleware\RestrictToAllowedIps::class);
+        // prepend() puts each class first.
         $middleware->prepend(\App\Http\Middleware\RequireOriginSecret::class);
-        // Prepended last so it is outermost: even a 403 from the two checks above carries the headers.
+        // Prepended last so it is outermost: even a 403 from the check above carries the headers.
         $middleware->prepend(\App\Http\Middleware\SecurityHeaders::class);
 
         $middleware->web(append: [

@@ -36,7 +36,7 @@ trait PlanningEvaluationMemoryDatabase
                 'queue.connections.database.connection' => 'sqlite',
                 'queue.connections.database.table' => 'jobs',
                 'queue.connections.database.after_commit' => false,
-                'app.origin_secret' => '', 'app.allowed_ips' => [],
+                'app.origin_secret' => '',
                 'bridge.source_id' => 'planning-evaluation-test',
                 'services.supabase.url' => 'https://evaluation.test',
                 'services.supabase.key' => 'test-only',

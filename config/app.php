@@ -22,8 +22,6 @@ return [
     // HSTS lifetime in seconds, sent only over HTTPS. 0 disables it.
     'hsts_max_age' => (int) env('HSTS_MAX_AGE', 31536000),
 
-    'allowed_ips' => array_filter(array_map('trim', explode(',', (string) env('ALLOWED_IPS')))),
-
     /*
     |--------------------------------------------------------------------------
     | Application Environment
