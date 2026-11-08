@@ -539,7 +539,7 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
     const [values, setValues] = useState({});
     const [cells, setCells] = useState({});
     const [loading, setLoading] = useState(true);
-    const [busy, setBusy] = useState(null); // "pdf" | "xlsx"
+    const [busy, setBusy] = useState(null); // "pdf"
     const [error, setError] = useState("");
     const [previewUrl, setPreviewUrl] = useState(null);
     const [previewLoading, setPreviewLoading] = useState(false);
@@ -703,13 +703,13 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
         };
     }, [previewUrl]);
 
-    const generate = async (format) => {
-        setBusy(format);
+    const generate = async () => {
+        setBusy("pdf");
         setError("");
         try {
             const res = await axios.post(
                 `/applications/${app.id}/export-document/${type}`,
-                { fields: values, cells, format },
+                { fields: values, cells, format: "pdf" },
                 { responseType: "blob" }
             );
             remember();
@@ -717,16 +717,8 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
             setModalSavedPermits((prev) => [...prev, { permit_type: type }]);
             onPermitGenerated?.(type);
             const url = URL.createObjectURL(res.data);
-            if (format === "pdf") {
-                // Confirm it worked and let the officer open it from here (a click, so no pop-up blocker)
-                setSuccess({ label: schema.label, regenerated, url, at: new Date() });
-            } else {
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${schema.label.replace(/\s+/g, "_")}_${app.reference_number || app.id}.${format}`;
-                a.click();
-                setTimeout(() => URL.revokeObjectURL(url), 60_000);
-            }
+            // Confirm it worked and let the officer open it from here (a click, so no pop-up blocker)
+            setSuccess({ label: schema.label, regenerated, url, at: new Date() });
         } catch (e) {
             let msg = "Failed to generate the permit.";
             if (e.response?.data instanceof Blob) {
@@ -916,25 +908,9 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                         </button>
                         <button
                             type="button"
-                            disabled={loading || !!busy || !schema || previewPending}
-                            title="Download the filled permit as an Excel file. Open it in Microsoft Excel to print it with the exact template layout."
-                            onClick={() => generate("xlsx")}
-                            className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed text-[12.5px] font-semibold transition-colors cursor-pointer"
-                        >
-                            {busy === "xlsx" ? (
-                                <span className="w-3.5 h-3.5 border-2 border-emerald-600/30 border-t-emerald-600 rounded-full animate-spin" aria-hidden="true" />
-                            ) : (
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                                </svg>
-                            )}
-                            {busy === "xlsx" ? "Preparing…" : "Download Excel"}
-                        </button>
-                        <button
-                            type="button"
                             disabled={loading || !!busy || !schema || missing.length > 0 || previewPending}
                             title={missing.length > 0 ? `Fill in first: ${missing.map((f) => f.label).join(", ")}` : previewPending ? "Waiting for the preview to finish updating" : undefined}
-                            onClick={() => generate("pdf")}
+                            onClick={generate}
                             className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/40 disabled:cursor-not-allowed text-white text-[12.5px] font-semibold transition-colors cursor-pointer"
                         >
                             {busy === "pdf" ? (

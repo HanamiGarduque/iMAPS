@@ -1986,7 +1986,7 @@ class ApplicationController extends Controller
             'fields.*' => 'nullable',
             'cells'    => 'nullable|array',
             'cells.*'  => 'nullable|string|max:500',
-            'format'   => 'nullable|in:pdf,xlsx',
+            'format'   => 'nullable|in:pdf',
         ]);
         $format = $validated['format'] ?? 'pdf';
 
