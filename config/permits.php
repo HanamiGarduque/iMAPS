@@ -29,8 +29,8 @@ return [
     'allowed_uses_sheet' => 'ALLOWED USES LIST',
 
     // How the filled .xlsx is turned into a PDF (see App\Services\PermitPdfConverter):
-    //   auto        → LibreOffice if installed, else Microsoft Excel (Windows), else dompdf
-    //   libreoffice → always LibreOffice        excel  → always Microsoft Excel (Windows only)
+    //   auto        → Microsoft Excel if installed (Windows), else LibreOffice, else dompdf
+    //   excel       → always Microsoft Excel (Windows only)   libreoffice → always LibreOffice
     //   dompdf      → no external software, rougher layout (draft quality)
     'pdf_driver' => env('PERMIT_PDF_DRIVER', 'auto'),
 
@@ -53,6 +53,10 @@ return [
     */
     'documents' => [
 
+        // Only cells the template cannot fill by itself are overridden here: checkmarks and
+        // dropdowns chosen in the modal (the template holds a fixed sample value there), and
+        // formulas whose source is gone. Everything else prints exactly as typed in the workbook.
+
         'ze' => [
             'label'      => 'Zoning Evaluation',
             'sheet'      => 'EVALUATION',
@@ -60,14 +64,9 @@ return [
             'print_area' => 'A1:N80',
             'fit_height' => 1,
             // The Zoning Administrator's name box (H74:J74) is too narrow for the name; K-N are empty.
-            // Left-aligned so the name lines up with its caption, like "Prepared by".
             'merge' => ['H74:N74' => 'left'],
             'cells' => [
-                // Caption under the Zoning Administrator's signature
-                'H75' => 'Zoning Administrator, OIC',
-                'E13' => '${YEAR_TODAY}',
-                'N13' => '${YEAR_TODAY}',
-                'W8'  => '${ZONING_CLASSIFICATION}',
+                'W8'  => '${ZONING_CLASSIFICATION}', // =K63
                 'C23' => '${ROL_OWNER_MARK}',
                 'G23' => '${ROL_LESSEE_MARK}',
                 'L23' => '${ROL_OTHERS_MARK}',
@@ -79,7 +78,6 @@ return [
                 'C29' => '${ZONING_REQUIREMENT}',
                 'K63' => '${ZONING_CLASSIFICATION}',
                 'R11' => '${BUILDING_SETBACK}',
-                'W15' => '${DATE_APPROVED}',
             ],
             'bind' => [
                 'W10' => 'EVALUATION_OF_FACTS',
@@ -95,18 +93,8 @@ return [
             'print_area' => 'A1:G54',
             'fit_height' => 1,
             'cells' => [
-                // Caption under the Zoning Administrator's signature
-                'D49' => 'Zoning Administrator, OIC',
-                'B10' => '${DATE_TODAY}',
-                'D14' => '${CORPORATION_ADDRESS}',
-                'D18' => '${PROJECT_LOCATION}',
-                'A22' => '${ZC_DN}',
-                'A26' => '${EVALUATION_OF_FACTS}',
-                'D28' => '${ZE_NO}',
-                'C29' => '${DEVELOPMENT_FEE}',
-                'B30' => '${ZONING_REQUIREMENT}',
-                'B31' => '${ALLOWABLE_USE}',
-                'B52' => '${LOCATIONAL_CLEARANCE_FEE}',
+                'A26' => '${EVALUATION_OF_FACTS}', // =EVALUATION!W10 (dropdown)
+                'B30' => '${ZONING_REQUIREMENT}',  // =EVALUATION!C29 (dropdown)
             ],
             'bind' => [],
         ],
@@ -118,27 +106,12 @@ return [
             'print_area' => 'A1:I83',
             'fit_height' => 0,
             'cells' => [
-                // Caption under the Zoning Administrator's signature
-                'E34' => 'Zoning Administrator, OIC',
-                'F47' => 'Zoning Administrator, OIC',
-                'E81' => 'Zoning Administrator, OIC',
-                'H8'  => '${ZC_DN}',
-                'D15' => '${PROJECT_LOCATION}',
-                'G18' => '${LC_DN}',
-                // EVALUATION!M27; same date as the certified copy on page 2 (F83)
-                'F36' => '${DATE_TODAY}',
-                'A39' => '${APPLICANT_NAME}',
                 'F40' => '${CERTIFICATION_PURPOSE}',
+                // ='ORIG COPY OF EVALUATION'!P20 — that sheet no longer exists (#REF!)
                 'A42' => '${GIVEN_DATE}',
-                'B70' => '${OR_NUMBER}',
-                'B71' => '${DATE_ISSUED}',
-                'B72' => '${ZONING_FEE}',
-                'F73' => '${PROJECT_LOCATION}',
-                'B74' => '${ZC_DN}',
             ],
             'bind' => [
                 'F40' => 'CERTIFICATION_PURPOSE',
-                'B72' => 'ZONING_FEE',
             ],
         ],
 
@@ -148,17 +121,7 @@ return [
             'paper'      => 'FOLIO', // 8.5" x 13" long bond
             'print_area' => 'A1:J53',
             'fit_height' => 1,
-            'cells' => [
-                'F11' => '${PROJECT_LOCATION}',
-                // EVALUATION!C15/C18 are indented with spaces, which would push these centered names off-centre
-                'A11' => '${PARCEL_OWNER}',
-                'A13' => '${APPLICANT_NAME}',
-                'F13' => '${ADDRESS}',
-                'A15' => '${PROJECT_AREA} SQ.M',
-                'I15' => '${SALEABLE_LOTS}',
-                'F17' => '${PROJECT_LOCATION}',
-                'F21' => '${DATE_APPROVED}',
-            ],
+            'cells' => [],
             'bind' => [],
         ],
     ],
@@ -167,6 +130,7 @@ return [
     'aliases' => [
         'NAME_OF_APPLICANT'        => 'APPLICANT_NAME',
         'DECISION_NO'              => 'LC_DN',
+        'ZONING_CERT_NO'           => 'ZC_DN',
         'BUSINESS_NAME'            => 'PROJECT_NAME',
         'LAND_USE_CLASS'           => 'ZONING_CLASSIFICATION',
         'REFERENCE_NUMBER'         => 'APPLICATION_NO',

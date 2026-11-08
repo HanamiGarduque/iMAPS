@@ -554,7 +554,7 @@ class PermitExcelService
         }, $text);
 
         // Tags were often typed with trailing spaces / line breaks
-        $out = rtrim($out);
+        $out = rtrim(str_replace("\t", ' ', $out));
 
         // A missing number would otherwise print just the unit, e.g. " SQ.M"
         return preg_match('/^\s*SQ\.?\s*M\.?$/i', $out) ? '' : $out;

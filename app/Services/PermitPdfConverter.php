@@ -15,10 +15,10 @@ use Symfony\Component\Process\ExecutableFinder;
  * Converts a filled permit workbook (.xlsx) to PDF.
  *
  * Drivers (config/permits.php → pdf_driver, env PERMIT_PDF_DRIVER):
- *   - libreoffice : soffice --headless --convert-to pdf  (best on Linux/macOS/servers)
- *   - excel       : Microsoft Excel via VBScript COM      (Windows + desktop Excel only)
+ *   - excel       : Microsoft Excel via VBScript COM      (Windows + desktop Excel only; exact office layout)
+ *   - libreoffice : soffice --headless --convert-to pdf  (Linux/macOS/servers)
  *   - dompdf      : PhpSpreadsheet's Dompdf writer        (no install needed, draft quality)
- *   - auto        : first one that is available, in the order above (default)
+ *   - auto        : first one that is available, in the order above (default) — Excel on Windows
  */
 class PermitPdfConverter
 {
