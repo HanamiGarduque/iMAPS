@@ -121,7 +121,11 @@ return [
             'paper'      => 'FOLIO', // 8.5" x 13" long bond
             'print_area' => 'A1:J53',
             'fit_height' => 1,
-            'cells' => [],
+            'cells' => [
+                // Template joins barangay and municipality with tab spacing; print a proper "BARANGAY, ROSARIO, BATANGAS"
+                'F11' => '${BARANGAY_LOT}, ROSARIO, BATANGAS',
+                'F17' => '${STREET_LOT} ${BARANGAY_LOT}, ROSARIO, BATANGAS',
+            ],
             'bind' => [],
         ],
     ],
@@ -131,7 +135,6 @@ return [
         'NAME_OF_APPLICANT'        => 'APPLICANT_NAME',
         'DECISION_NO'              => 'LC_DN',
         'ZONING_CERT_NO'           => 'ZC_DN',
-        'BUSINESS_NAME'            => 'PROJECT_NAME',
         'LAND_USE_CLASS'           => 'ZONING_CLASSIFICATION',
         'REFERENCE_NUMBER'         => 'APPLICATION_NO',
         'ZC_AMOUNT'                => 'ZONING_FEE',
@@ -173,7 +176,8 @@ return [
         'CONTACT_NUMBER'      => ['label' => 'Contact number',           'group' => 'Applicant & project', 'readonly' => true],
         'CORPORATION_NAME'    => ['label' => 'Name of corporation',      'group' => 'Applicant & project', 'readonly' => true],
         'CORPORATION_ADDRESS' => ['label' => 'Corporation address / tel.', 'group' => 'Applicant & project', 'readonly' => true],
-        'PROJECT_NAME'        => ['label' => 'Project / business name',  'group' => 'Applicant & project', 'readonly' => true],
+        'PROJECT_NAME'        => ['label' => 'Name / type of project',   'group' => 'Applicant & project', 'readonly' => true],
+        'BUSINESS_NAME'       => ['label' => 'Business name',            'group' => 'Applicant & project', 'readonly' => true],
         'PROJECT_TYPE'        => ['label' => 'Project type',             'group' => 'Applicant & project', 'readonly' => true],
         'PROPOSED_USE'        => ['label' => 'Proposed use',             'group' => 'Applicant & project', 'readonly' => true],
         'PROJECT_AREA'        => ['label' => 'Project area (sq.m)',      'group' => 'Applicant & project', 'readonly' => true],

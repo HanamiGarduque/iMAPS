@@ -179,8 +179,13 @@ class PermitExcelService
 
         $this->fillSheet($sheet, $doc, $values, $cellInput);
         $this->widenMerges($sheet, $doc['merge'] ?? []);
+        $this->growRowsForText($sheet);
         $this->isolateSheet($spreadsheet, $sheet);
         $this->applyPageSetup($sheet, $doc);
+        if ($format === 'pdf' && ! $this->pdf->excelInstalled()) {
+            // No Excel here: fonts the server lacks would otherwise print in a monospace fallback
+            $this->substituteFonts($sheet);
+        }
         $this->markAmended($sheet, $this->lastAmendment);
 
         $xlsxPath = "{$dir}/{$base}.xlsx";
@@ -363,11 +368,14 @@ class PermitExcelService
             'CONTACT_NUMBER'      => (string) $application->contact_number,
             'CORPORATION_NAME'    => $up($application->corporation_name) ?: 'N/A',
             'CORPORATION_ADDRESS' => $up(implode(' / ', array_filter([$application->corporation_address, $application->corporation_contact]))) ?: 'N/A',
-            'PROJECT_NAME'        => $up(($application->business_name ?? $application->project_type_business_name ?? null) ?: $application->purpose),
+            // Name/Type of Project = what is being built; Business Name = the business, "-" when there is none
+            'PROJECT_NAME'        => $up($application->purpose),
+            'BUSINESS_NAME'       => $up($application->business_name) ?: '-',
             'PROJECT_TYPE'        => $up($application->purpose),
             'PROPOSED_USE'        => $up($application->purpose),
             'PROJECT_AREA'        => $this->num($application->area_to_develop ?: $lotArea),
-            'BUILDING_AREA'       => $this->num($application->building_area),
+            // No floor area recorded → the area being developed / the lot, so the box is never blank
+            'BUILDING_AREA'       => $this->num($application->building_area ?: ($application->area_to_develop ?: $lotArea)),
             'SALEABLE_LOTS'       => $application->number_of_saleable_lots ? (string) $application->number_of_saleable_lots : 'N/A',
 
             'PARCEL_OWNER'      => $up($join('owner_name') ?: $application->applicant_name),
@@ -395,7 +403,8 @@ class PermitExcelService
 
             'OR_NUMBER'                  => (string) $application->or_number,
             'ASSESSMENT_FEE'             => $this->num($application->assessment_fee),
-            'ZONING_FEE'                 => $this->num($zoningFee),
+            // No fee recorded → the standard Zoning Certificate fee (it used to default to 720 as well)
+            'ZONING_FEE'                 => $this->num($zoningFee > 0 ? $zoningFee : 720),
             'LOCATIONAL_CLEARANCE_FEE'   => $this->num($locationalClearanceFee),
             'DEVELOPMENT_FEE'            => $this->num($developmentFee),
             'ZC_AMOUNT'                  => $zoningFee > 0 ? rtrim(rtrim(number_format($zoningFee, 2, '.', ''), '0'), '.') : '720',
@@ -449,6 +458,7 @@ class PermitExcelService
 
     private function fillSheet(Worksheet $sheet, array $doc, array $values, array $cellInput): void
     {
+        $this->filledCells = [];
         $overrides = $doc['cells'] ?? [];
         $boundCells = array_keys($doc['bind'] ?? []);
 
@@ -488,6 +498,7 @@ class PermitExcelService
                 }
                 if ($changed) {
                     $cell->setValue($raw);
+                    $this->filledCells[$coord] = true;
                 }
                 continue;
             }
@@ -519,8 +530,12 @@ class PermitExcelService
         }
     }
 
+    /** Coordinates of the cells filled from application data (their rows may need to grow). */
+    private array $filledCells = [];
+
     private function writeString(Cell $cell, string $value): void
     {
+        $this->filledCells[$cell->getCoordinate()] = true;
         $cell->setValueExplicit($value, DataType::TYPE_STRING);
     }
 
@@ -573,6 +588,114 @@ class PermitExcelService
             }
             $sheet->mergeCells($range);
             $sheet->getStyle($range)->getAlignment()->setHorizontal($align);
+        }
+    }
+
+    /**
+     * Fonts the workbook uses that LibreOffice servers don't have (they print as monospace), mapped to a
+     * look-alike that is bundled or ships with fonts-liberation. Only used for PDFs made without Excel;
+     * the downloadable .xlsx keeps the original fonts. [name => [replacement, size factor]]
+     */
+    private const FONT_SUBSTITUTES = [
+        'Arial Narrow'    => ['Calibri', 0.92],
+        'Lucida Fax'      => ['Times New Roman', 1.0],
+        'Bodoni'          => ['Times New Roman', 1.0],
+        'Balthazar'       => ['Times New Roman', 1.0],
+        'Libre Franklin'  => ['Arial', 1.0],
+        'AngiePro-Black'  => ['Arial', 1.0],
+        'Ui-monospace'    => ['Arial', 1.0],
+        'Arial Black'     => ['Arial', 1.0],
+    ];
+
+    private function substituteFonts(Worksheet $sheet): void
+    {
+        foreach ($sheet->getCoordinates() as $coord) {
+            $cell = $sheet->getCell($coord);
+            $value = $cell->getValue();
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            if ($value instanceof RichText) {
+                foreach ($value->getRichTextElements() as $el) {
+                    if ($el instanceof \PhpOffice\PhpSpreadsheet\RichText\Run && ($sub = self::FONT_SUBSTITUTES[$el->getFont()?->getName()] ?? null)) {
+                        $el->getFont()->setName($sub[0])->setSize(round($el->getFont()->getSize() * $sub[1], 1));
+                    }
+                }
+            }
+
+            $font = $cell->getStyle()->getFont();
+            if ($sub = self::FONT_SUBSTITUTES[$font->getName()] ?? null) {
+                $bold = $font->getBold() || $font->getName() === 'Arial Black';
+                $sheet->getStyle($coord)->getFont()->setName($sub[0])->setSize(round($font->getSize() * $sub[1], 1))->setBold($bold);
+            }
+        }
+    }
+
+    /**
+     * Excel re-fits a row to its text on screen, but a saved row keeps its stored height, so a value longer
+     * than its (merged) cell wraps into a row that is too short and prints cramped or clipped. Grow the
+     * row to the number of lines the text needs. Only cells filled from application data are touched.
+     */
+    private function growRowsForText(Worksheet $sheet): void
+    {
+        $defaultWidth = $sheet->getDefaultColumnDimension()->getWidth();
+        $defaultWidth = $defaultWidth > 0 ? $defaultWidth : 8.43;
+        $widthOf = function (string $col) use ($sheet, $defaultWidth) {
+            $w = $sheet->getColumnDimension($col)->getWidth();
+            return $w > 0 ? $w : $defaultWidth;
+        };
+
+        $need = [];
+        foreach (array_keys($this->filledCells) as $coord) {
+            $cell = $sheet->getCell($coord);
+            $text = trim((string) $cell->getValue());
+            if ($text === '' || $cell->isFormula()) {
+                continue;
+            }
+
+            $merge = $cell->getMergeRange();
+            $style = $cell->getStyle();
+            $wraps = $style->getAlignment()->getWrapText();
+            // Text may spill into an empty neighbour, but not into one that has content (it gets cut off)
+            $neighbour = $sheet->getCell(Coordinate::stringFromColumnIndex(Coordinate::columnIndexFromString($cell->getColumn()) + 1) . $cell->getRow())->getValue();
+            $clipped = !$merge && !$wraps && $neighbour !== null && $neighbour !== '';
+            if (!$merge && !$wraps && !$clipped) {
+                continue;
+            }
+
+            // Width of the (merged) box in Excel character units → pixels
+            $cols = [$cell->getColumn()];
+            if ($merge) {
+                [$from, $to] = Coordinate::rangeBoundaries($merge);
+                $cols = array_map(fn ($i) => Coordinate::stringFromColumnIndex($i), range($from[0], $to[0]));
+            }
+            $px = array_sum(array_map(fn ($c) => $widthOf($c) * 7 + 5, $cols)) - 6;
+
+            $size = (float) ($style->getFont()->getSize() ?: 11);
+            $upper = mb_strtoupper($text) === $text;
+            $charPx = $size * 1.333 * ($upper ? 0.74 : 0.60) * ($style->getFont()->getBold() ? 1.06 : 1.0);
+
+            $lines = 0;
+            foreach (preg_split('/\R/', $text) as $part) {
+                $lines += max(1, (int) ceil(mb_strlen($part) * $charPx / max($px, 1)));
+            }
+            if ($lines <= 1) {
+                continue;
+            }
+
+            if (!$wraps) {
+                $sheet->getStyle($coord)->getAlignment()->setWrapText(true);
+            }
+            $row = $cell->getRow();
+            $need[$row] = max($need[$row] ?? 0, $lines * $size * 1.22 + 4);
+        }
+
+        foreach ($need as $row => $height) {
+            $dim = $sheet->getRowDimension($row);
+            if ($height > $dim->getRowHeight()) {
+                $dim->setRowHeight(round($height, 2));
+            }
         }
     }
 
