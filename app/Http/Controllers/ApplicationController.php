@@ -125,9 +125,18 @@ class ApplicationController extends Controller
 
         $this->applyRegistryFilters($query, $request);
 
+        $sort = (string) $request->query('sort', 'newest');
+        match ($sort) {
+            'oldest'         => $query->orderBy('zoning_applications.created_at')->orderBy('zoning_applications.id'),
+            'fee_desc'       => $query->orderByDesc('zoning_applications.assessment_fee')->orderByDesc('zoning_applications.id'),
+            'fee_asc'        => $query->orderBy('zoning_applications.assessment_fee')->orderBy('zoning_applications.id'),
+            'applicant_asc'  => $query->orderByRaw('LOWER(zoning_applications.applicant_name) ASC')->orderBy('zoning_applications.id'),
+            'applicant_desc' => $query->orderByRaw('LOWER(zoning_applications.applicant_name) DESC')->orderBy('zoning_applications.id'),
+            'ref_asc'        => $query->orderBy('zoning_applications.reference_number')->orderBy('zoning_applications.id'),
+            default          => $query->orderByDesc('zoning_applications.created_at')->orderByDesc('zoning_applications.id'),
+        };
+
         $applications = $query
-            ->orderByDesc('zoning_applications.created_at')
-            ->orderByDesc('zoning_applications.id')
             ->paginate(25)
             ->withQueryString();
 
@@ -241,7 +250,7 @@ class ApplicationController extends Controller
 
         return Inertia::render('Applications/Index', [
             'applications'    => $applications,
-            'filters'         => (object) $request->only(['barangay', 'status', 'application_type', 'date_from', 'date_to', 'search']),
+            'filters'         => (object) $request->only(['barangay', 'status', 'application_type', 'land_use', 'sort', 'date_from', 'date_to', 'search']),
             // Active (default), Archived or Voided. Server-side, because the
             // browser only ever holds one page of the selected view.
             'registry_view'   => $view,
@@ -404,6 +413,9 @@ class ApplicationController extends Controller
 
         if ($request->filled('status'))
             $query->where('zoning_applications.status', $request->status);
+
+        if ($request->filled('land_use'))
+            $query->where('zoning_applications.target_land_use_class', $request->land_use);
 
         if ($request->filled('application_type'))
             $query->ofType($request->application_type);
@@ -1977,19 +1989,6 @@ class ApplicationController extends Controller
             'format'   => 'nullable|in:pdf,xlsx',
         ]);
         $format = $validated['format'] ?? 'pdf';
-
-        // A permit is never issued with its decision numbers or Zoning Administrator blank
-        try {
-            $missing = $permits->missingRequired($application, $type, $validated['fields'] ?? []);
-        } catch (\InvalidArgumentException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        }
-        if ($missing) {
-            return response()->json([
-                'message' => 'Fill in the required fields before generating: ' . implode(', ', $missing),
-                'missing' => $missing,
-            ], 422);
-        }
 
         try {
             $path = $permits->generate($application, $type, $validated, $format);

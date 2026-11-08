@@ -647,7 +647,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
     const [searchInput, setSearchInput] = useState(urlParams.get("search") || filters?.search || "");
     const [debouncedSearch, setDebouncedSearch] = useState(urlParams.get("search") || filters?.search || "");
     const [selectedStatus, setSelectedStatus] = useState(urlParams.get("status") || filters?.status || "");
-    const [selectedCategory, setSelectedCategory] = useState(urlParams.get("category") || filters?.application_type || "");
+    const [selectedCategory, setSelectedCategory] = useState(urlParams.get("application_type") || urlParams.get("category") || filters?.application_type || "");
     const [selectedLandUse, setSelectedLandUse] = useState(urlParams.get("land_use") || filters?.land_use_class || "");
     const [selectedBarangay, setSelectedBarangay] = useState(urlParams.get("barangay") || filters?.barangay || "");
 
@@ -735,35 +735,44 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
         return () => document.removeEventListener("mousedown", handleOutside);
     }, []);
 
-    // URL query sync
+    // Server-driven filtering. The server only sends one page (25 rows), so
+    // filtering that page in the browser hid matches that lived on later pages
+    // (e.g. a tab showing "30" but an empty table). Every filter change now
+    // re-queries the server, which also keeps the URL in sync.
+    const isFirstFilterRun = useRef(true);
     useEffect(() => {
+        if (isFirstFilterRun.current) {
+            isFirstFilterRun.current = false;
+            return;
+        }
         if (typeof window === "undefined") return;
         const params = new URLSearchParams();
         if (debouncedSearch) params.set("search", debouncedSearch);
         if (selectedStatus) params.set("status", selectedStatus);
-        if (selectedCategory) params.set("category", selectedCategory);
+        if (selectedCategory) params.set("application_type", selectedCategory);
         if (selectedLandUse) params.set("land_use", selectedLandUse);
         if (selectedBarangay) params.set("barangay", selectedBarangay);
         if (selectedSort && selectedSort !== "newest") params.set("sort", selectedSort);
         if (dateFrom) params.set("date_from", dateFrom);
         if (dateTo) params.set("date_to", dateTo);
         if (dateRangePreset !== "all") params.set("date_preset", dateRangePreset);
-        // Kept in the URL so loading the next page stays in the same view.
         if (registry_view !== "active") params.set("view", registry_view);
-
-        // LOOP 9D: the delivery filter is SERVER-side. It is pushed into the URL
-        // and applied by ApplicationController::applyRegistryFilters(); the
-        // browser never filters delivery state itself, because deciding which
-        // round an application is judged by is a business fact.
         if (deliveryMonitoringEnabled && selectedDelivery && selectedDelivery !== "all") {
             params.set("delivery_status", selectedDelivery);
-        } else {
-            params.delete("delivery_status");
         }
 
         const queryStr = params.toString();
-        const newUrl = queryStr ? `${window.location.pathname}?${queryStr}` : window.location.pathname;
-        window.history.replaceState({}, "", newUrl);
+        if (queryStr === window.location.search.replace(/^\?/, "")) return;
+
+        // A pending "load more" must not append onto a different result set.
+        isAppendingRef.current = false;
+        setIsFetchingMore(false);
+        router.get(window.location.pathname, Object.fromEntries(params), {
+            only: ["applications", "filters", "applicant_counts"],
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        });
     }, [debouncedSearch, selectedStatus, selectedCategory, selectedLandUse, selectedBarangay, selectedSort, dateFrom, dateTo, dateRangePreset, deliveryMonitoringEnabled, selectedDelivery, registry_view]);
 
     const switchView = (view) => {
@@ -928,57 +937,11 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
 
     // Filter & Sort Dataset
     const filteredList = useMemo(() => {
-        let list = [...fullDataset];
+        const list = [...fullDataset];
 
-        if (selectedStatus) {
-            list = list.filter((item) => item?.status === selectedStatus);
-        }
-        if (selectedCategory) {
-            list = list.filter((item) => item?.application_type === selectedCategory);
-        }
-        if (selectedLandUse) {
-            list = list.filter((item) => String(item?.target_land_use_class || item?.land_use_class || "").toLowerCase() === selectedLandUse.toLowerCase());
-        }
-        if (selectedBarangay) {
-            list = list.filter((item) => String(item?.barangay || "").toLowerCase() === selectedBarangay.toLowerCase());
-        }
-        if (dateFrom) {
-            list = list.filter((item) => {
-                const itemDate = new Date(item.created_at).toISOString().split("T")[0];
-                return itemDate >= dateFrom;
-            });
-        }
-        if (dateTo) {
-            list = list.filter((item) => {
-                const itemDate = new Date(item.created_at).toISOString().split("T")[0];
-                return itemDate <= dateTo;
-            });
-        }
-        if (debouncedSearch) {
-            const q = debouncedSearch.toLowerCase();
-            list = list.filter((item) => {
-                const matchRef = String(item?.reference_number || "").toLowerCase().includes(q) || String(item?.form_number || "").toLowerCase().includes(q);
-                const matchName = String(item?.applicant_name || "").toLowerCase().includes(q);
-                const matchBrgy = String(item?.barangay || "").toLowerCase().includes(q);
-                const matchPurpose = String(item?.purpose || "").toLowerCase().includes(q);
-                const matchTct = String(item?.tct_number || "").toLowerCase().includes(q);
-                return matchRef || matchName || matchBrgy || matchPurpose || matchTct;
-            });
-        }
-
-        list.sort((a, b) => {
-            if (selectedSort === "newest") return new Date(b?.created_at || 0) - new Date(a?.created_at || 0);
-            if (selectedSort === "oldest") return new Date(a?.created_at || 0) - new Date(b?.created_at || 0);
-            if (selectedSort === "fee_desc") return parseFloat(b?.assessment_fee || 0) - parseFloat(a?.assessment_fee || 0);
-            if (selectedSort === "fee_asc") return parseFloat(a?.assessment_fee || 0) - parseFloat(b?.assessment_fee || 0);
-            if (selectedSort === "applicant_asc") return String(a?.applicant_name || "").localeCompare(String(b?.applicant_name || ""));
-            if (selectedSort === "applicant_desc") return String(b?.applicant_name || "").localeCompare(String(a?.applicant_name || ""));
-            if (selectedSort === "ref_asc") return String(a?.reference_number || "").localeCompare(String(b?.reference_number || ""));
-            return 0;
-        });
-
+        // Filtering and sorting happen on the server (see effect above).
         return list;
-    }, [fullDataset, selectedStatus, selectedCategory, selectedLandUse, debouncedSearch, selectedBarangay, selectedSort, dateFrom, dateTo]);
+    }, [fullDataset]);
 
     // Every loaded-and-filtered row is rendered; "more" now means the server
     // has additional pages we haven't fetched yet, not rows we're hiding.

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
@@ -16,13 +17,14 @@ use Symfony\Component\Process\ExecutableFinder;
  *
  * Drivers (config/permits.php → pdf_driver, env PERMIT_PDF_DRIVER):
  *   - excel       : Microsoft Excel via VBScript COM      (Windows + desktop Excel only; exact office layout)
+ *   - remote      : a Windows machine running scripts/excel-converter (Excel exports it; for cloud hosts like Railway)
  *   - libreoffice : soffice --headless --convert-to pdf  (Linux/macOS/servers)
  *   - dompdf      : PhpSpreadsheet's Dompdf writer        (no install needed, draft quality)
  *   - auto        : first one that is available, in the order above (default) — Excel on Windows
  */
 class PermitPdfConverter
 {
-    public const DRIVERS = ['excel', 'libreoffice', 'dompdf'];
+    public const DRIVERS = ['excel', 'remote', 'libreoffice', 'dompdf'];
 
     /** Driver that produced the last PDF (exposed to the UI as a header). */
     public ?string $lastDriver = null;
@@ -37,7 +39,7 @@ class PermitPdfConverter
             : [$driver];
 
         if (!in_array($driver, ['auto', ...self::DRIVERS], true)) {
-            throw new RuntimeException("Unknown PERMIT_PDF_DRIVER \"{$driver}\". Use auto, libreoffice, excel or dompdf.");
+            throw new RuntimeException("Unknown PERMIT_PDF_DRIVER \"{$driver}\". Use auto, excel, remote, libreoffice or dompdf.");
         }
 
         $errors = [];
@@ -49,6 +51,7 @@ class PermitPdfConverter
                 match ($candidate) {
                     'libreoffice' => $this->viaLibreOffice($xlsxPath, $outDir),
                     'excel'       => $this->viaExcel($xlsxPath, $pdfPath),
+                    'remote'      => $this->viaRemote($xlsxPath, $pdfPath),
                     'dompdf'      => $this->viaDompdf($xlsxPath, $pdfPath),
                 };
                 if (!is_file($pdfPath) || filesize($pdfPath) === 0) {
@@ -70,6 +73,7 @@ class PermitPdfConverter
         return match ($driver) {
             'libreoffice' => $this->sofficeBinary() !== null,
             'excel'       => $this->excelInstalled(),
+            'remote'      => (string) config('permits.remote_url') !== '' && (string) config('permits.remote_key') !== '',
             'dompdf'      => class_exists(\Dompdf\Dompdf::class),
             default       => false,
         };
@@ -113,6 +117,30 @@ class PermitPdfConverter
         return null;
     }
 
+    /**
+     * fontconfig file that adds resources/fonts/permits (Carlito = Calibri, Caladea = Cambria) to the
+     * system fonts, so LibreOffice lays text out like Excel even on a bare server (Railway/Docker).
+     */
+    private function fontConfigFile(): ?string
+    {
+        $dir = resource_path('fonts/permits');
+        if (PHP_OS_FAMILY === 'Windows' || !is_dir($dir)) {
+            return null;
+        }
+
+        $file = sys_get_temp_dir() . '/imaps_fonts_' . md5($dir) . '.conf';
+        if (!is_file($file)) {
+            $xml = '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig>'
+                . '<include ignore_missing="yes">/etc/fonts/fonts.conf</include>'
+                . '<dir>' . htmlspecialchars($dir, ENT_XML1) . '</dir>'
+                . '<cachedir>' . htmlspecialchars(sys_get_temp_dir() . '/imaps_fontcache', ENT_XML1) . '</cachedir>'
+                . '</fontconfig>';
+            file_put_contents($file, $xml);
+        }
+
+        return $file;
+    }
+
     private function viaLibreOffice(string $xlsxPath, string $outDir): void
     {
         $bin = $this->sofficeBinary() ?? throw new RuntimeException('LibreOffice is not installed.');
@@ -124,7 +152,7 @@ class PermitPdfConverter
 
         try {
             $result = Process::timeout(120)
-                ->env(['HOME' => sys_get_temp_dir()])
+                ->env(array_filter(['HOME' => sys_get_temp_dir(), 'FONTCONFIG_FILE' => $this->fontConfigFile()]))
                 ->run([
                     $bin,
                     '-env:UserInstallation=' . $profileUri,
@@ -238,6 +266,31 @@ VBS;
         if (!$ok) {
             throw new RuntimeException(trim($result->errorOutput()) ?: 'Excel could not export the PDF.');
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Remote Excel (Windows converter, see scripts/excel-converter)
+    // ─────────────────────────────────────────────────────────────────────
+
+    private function viaRemote(string $xlsxPath, string $pdfPath): void
+    {
+        $url = rtrim((string) config('permits.remote_url'), '/') . '/convert';
+
+        // Short connect timeout: when the Windows machine is off we must fall back quickly
+        $response = Http::withHeaders(['X-Converter-Key' => (string) config('permits.remote_key')])
+            ->connectTimeout(5)
+            ->timeout(90)
+            ->withBody((string) file_get_contents($xlsxPath), 'application/octet-stream')
+            ->post($url);
+
+        if (!$response->successful()) {
+            throw new RuntimeException('Excel converter returned HTTP ' . $response->status() . ': ' . mb_substr(trim($response->body()), 0, 200));
+        }
+        if (!str_starts_with($response->body(), '%PDF')) {
+            throw new RuntimeException('Excel converter did not return a PDF.');
+        }
+
+        file_put_contents($pdfPath, $response->body());
     }
 
     // ─────────────────────────────────────────────────────────────────────

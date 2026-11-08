@@ -1112,8 +1112,8 @@ function ShowInner({
         });
     };
     const receiptFields = (
-        <div className="flex flex-col sm:flex-row sm:items-start gap-2.5">
-            <div className="flex-1 min-w-0">
+        <div className="flex flex-col gap-3">
+            <div className="min-w-0">
                 <label htmlFor="or_number" className="text-[12px] font-medium text-slate-700">Official Receipt (OR) no.</label>
                 <div className="relative mt-1">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12.5px] font-semibold text-slate-500 pointer-events-none select-none">OR-</span>
@@ -1135,7 +1135,7 @@ function ShowInner({
                 </div>
                 {receiptErrors.or_number && <p className="text-[11.5px] text-rose-600 mt-1">{receiptErrors.or_number}</p>}
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0">
                 <label htmlFor="date_of_receipt" className="text-[12px] font-medium text-slate-700">Date of receipt</label>
                 <input
                     id="date_of_receipt"
@@ -1152,7 +1152,7 @@ function ShowInner({
                 type="button"
                 onClick={saveReceipt}
                 disabled={saving || (receiptSaved && !receiptDirty)}
-                className="sm:mt-[22px] h-[34px] px-3.5 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-400 text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed shrink-0"
+                className="self-end h-[34px] px-3.5 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-400 text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed shrink-0"
             >
                 {receiptSaved ? "Update receipt" : "Save receipt"}
             </button>}
@@ -1931,24 +1931,26 @@ function ShowInner({
                         {nextStepBar}
 
                         {releaseStage ? (
-                            <>
-                                {/* The official receipt comes first: the permits print its OR no. */}
+                            <div className={app.status === "For Release" ? "grid grid-cols-1 lg:grid-cols-3 gap-5 items-start" : ""}>
+                                {/* Left (2/3): generating permits is For Release's work, then the documents */}
+                                <div className={`min-w-0 space-y-5 ${app.status === "For Release" ? "lg:col-span-2" : ""}`}>
+                                    {app.status === "For Release" && canRecordPlanningDecision && (
+                                        <section>
+                                            {sectionTitle("Generate permits")}
+                                            <PermitExportPanel app={app} part="generate" savedPermits={savedPermits} onSavedPermitsChange={setSavedPermits} />
+                                        </section>
+                                    )}
+                                    <PermitExportPanel app={app} part="documents" savedPermits={savedPermits} onSavedPermitsChange={setSavedPermits} />
+                                </div>
+                                {/* Right (1/3): the official receipt; the permits print its OR no. */}
                                 {app.status === "For Release" && (
-                                    <section>
+                                    <aside className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/70 p-4 lg:sticky lg:top-0">
                                         {sectionTitle("Official receipt")}
                                         {receiptFields}
-                                        {!receiptSaved && <p className="mt-1.5 text-[11.5px] text-slate-500">Record the receipt before generating permits so they carry the OR no.</p>}
-                                    </section>
+                                        {!receiptSaved && <p className="mt-2 text-[11.5px] text-slate-500">Record the receipt before generating permits so they carry the OR no.</p>}
+                                    </aside>
                                 )}
-                                {/* Generating permits is For Release's work, so the gallery comes next */}
-                                {app.status === "For Release" && canRecordPlanningDecision && (
-                                    <section>
-                                        {sectionTitle("Generate permits")}
-                                        <PermitExportPanel app={app} part="generate" savedPermits={savedPermits} onSavedPermitsChange={setSavedPermits} />
-                                    </section>
-                                )}
-                                <PermitExportPanel app={app} part="documents" savedPermits={savedPermits} onSavedPermitsChange={setSavedPermits} />
-                            </>
+                            </div>
                         ) : deskLot ? (
                             <section key={deskLot.parcel.id} className="animate-in fade-in duration-150">
                                 {sectionTitle(lots.length === 1 ? `Evaluation · Lot ${deskLot.code}` : "Evaluation")}

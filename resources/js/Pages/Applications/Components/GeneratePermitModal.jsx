@@ -916,7 +916,22 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
                         </button>
                         <button
                             type="button"
-                            // Never issue a permit with a required field blank (the server refuses it too)
+                            disabled={loading || !!busy || !schema || previewPending}
+                            title="Download the filled permit as an Excel file. Open it in Microsoft Excel to print it with the exact template layout."
+                            onClick={() => generate("xlsx")}
+                            className="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed text-[12.5px] font-semibold transition-colors cursor-pointer"
+                        >
+                            {busy === "xlsx" ? (
+                                <span className="w-3.5 h-3.5 border-2 border-emerald-600/30 border-t-emerald-600 rounded-full animate-spin" aria-hidden="true" />
+                            ) : (
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                </svg>
+                            )}
+                            {busy === "xlsx" ? "Preparing…" : "Download Excel"}
+                        </button>
+                        <button
+                            type="button"
                             disabled={loading || !!busy || !schema || missing.length > 0 || previewPending}
                             title={missing.length > 0 ? `Fill in first: ${missing.map((f) => f.label).join(", ")}` : previewPending ? "Waiting for the preview to finish updating" : undefined}
                             onClick={() => generate("pdf")}
@@ -1047,8 +1062,8 @@ export default function GeneratePermitModal({ app, initialType, onClose, onPermi
 const withCurrent = (options = [], current) => (current && !options.includes(current) ? [current, ...options] : options);
 
 // Fields generation can't do without (the decision numbers and the administrator).
-// Same rule as REQUIRED_PATTERN in app/Services/PermitExcelService.php, which enforces it.
-const isRequired = (f) => f.type !== "check" && /_DN$|^ADMIN$/.test(f.key);
+// No field is mandatory: a permit can be generated with any field left blank.
+const isRequired = () => false;
 
 const inputCls = "w-full h-8 rounded-md border border-slate-300 bg-white px-2.5 py-1 leading-5 text-[12.5px] text-slate-900 transition hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 focus:outline-none";
 // Required fields that start empty (decision numbers); defaulted ones like the Zoning Administrator don't

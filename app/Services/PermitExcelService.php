@@ -32,10 +32,6 @@ class PermitExcelService
 {
     private const TAG_PATTERN = '/(\$?)\{\s*([A-Za-z0-9_ ]+?)\s*\}/';
 
-    /** Fields a permit cannot be issued without: the decision numbers and the Zoning Administrator.
-     *  Same rule as isRequired() in GeneratePermitModal.jsx. */
-    private const REQUIRED_PATTERN = '/_DN$|^ADMIN$/';
-
     /** Generated PDFs are reused for identical input for this long (preview, then Generate). */
     private const PDF_CACHE_TTL = 86400;
     private const CHECK = '√';
@@ -140,22 +136,6 @@ class PermitExcelService
     }
 
     /**
-     * Labels of this permit's required fields that are still blank once the application's
-     * defaults and the submitted values are combined.
-     */
-    public function missingRequired(ZoningApplication $application, string $type, array $fieldsInput): array
-    {
-        $values = $this->values($application, $fieldsInput);
-
-        return collect($this->schema($application, $type)['fields'])
-            ->filter(fn ($f) => $f['type'] !== 'check' && preg_match(self::REQUIRED_PATTERN, $f['key']))
-            ->filter(fn ($f) => trim((string) ($values[$f['key']] ?? '')) === '')
-            ->pluck('label')
-            ->values()
-            ->all();
-    }
-
-    /**
      * Fill the permit and return the absolute path of the generated file.
      *
      * @param array $input  ['fields' => [TAG => value], 'cells' => [A32 => value]]
@@ -255,6 +235,8 @@ class PermitExcelService
             is_file($template) ? filemtime($template) : 0,
             md5(serialize(config('permits'))),
             filemtime(__FILE__), // a change to how permits are filled invalidates old PDFs
+            filemtime(app_path('Services/PermitPdfConverter.php')), // ...and so does a change to how they are converted
+            md5(implode(',', array_map('basename', glob(resource_path('fonts/permits/*.ttf')) ?: []))), // ...or to the bundled fonts
         ]));
     }
 
@@ -278,7 +260,7 @@ class PermitExcelService
     private function storeCachedPdf(?string $key, string $pdfPath, ?string $driver): void
     {
         // Only real office layouts are worth reusing; the Dompdf fallback is a rough draft
-        if (!$key || !in_array($driver, ['excel', 'libreoffice'], true)) {
+        if (!$key || !in_array($driver, ['excel', 'remote', 'libreoffice'], true)) {
             return;
         }
 

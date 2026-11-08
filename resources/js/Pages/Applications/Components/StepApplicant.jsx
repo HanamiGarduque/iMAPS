@@ -225,7 +225,7 @@ export default function StepApplicant({
                             type="text"
                             value={form.applicant_municipality || ""}
                             onChange={set("applicant_municipality")}
-                            placeholder="e.g. Lipa City, Batangas"
+                            placeholder="e.g. Rosario, Batangas"
                             hasError={!!errors.applicant_municipality}
                         />
                         {errors.applicant_municipality && <p className="text-xs font-medium text-rose-500 mt-1">{errors.applicant_municipality}</p>}
