@@ -58,7 +58,7 @@ return [
             'sheet'      => 'EVALUATION',
             'paper'      => 'A4',
             'print_area' => 'A1:N80',
-            'fit_height' => 0, // 0 = as many pages as needed
+            'fit_height' => 1,
             // The Zoning Administrator's name box (H74:J74) is too narrow for the name; K-N are empty.
             // Left-aligned so the name lines up with its caption, like "Prepared by".
             'merge' => ['H74:N74' => 'left'],
@@ -106,6 +106,7 @@ return [
                 'C29' => '${DEVELOPMENT_FEE}',
                 'B30' => '${ZONING_REQUIREMENT}',
                 'B31' => '${ALLOWABLE_USE}',
+                'B52' => '${LOCATIONAL_CLEARANCE_FEE}',
             ],
             'bind' => [],
         ],
@@ -131,13 +132,13 @@ return [
                 'A42' => '${GIVEN_DATE}',
                 'B70' => '${OR_NUMBER}',
                 'B71' => '${DATE_ISSUED}',
-                'B72' => '${ZC_AMOUNT}',
+                'B72' => '${ZONING_FEE}',
                 'F73' => '${PROJECT_LOCATION}',
                 'B74' => '${ZC_DN}',
             ],
             'bind' => [
                 'F40' => 'CERTIFICATION_PURPOSE',
-                'B72' => 'ZC_AMOUNT',
+                'B72' => 'ZONING_FEE',
             ],
         ],
 
@@ -164,11 +165,15 @@ return [
 
     // Old / alternate tag names → the canonical field they show
     'aliases' => [
-        'NAME_OF_APPLICANT' => 'APPLICANT_NAME',
-        'DECISION_NO'       => 'LC_DN',
-        'BUSINESS_NAME'     => 'PROJECT_NAME',
-        'LAND_USE_CLASS'    => 'ZONING_CLASSIFICATION',
-        'REFERENCE_NUMBER'  => 'APPLICATION_NO',
+        'NAME_OF_APPLICANT'        => 'APPLICANT_NAME',
+        'DECISION_NO'              => 'LC_DN',
+        'BUSINESS_NAME'            => 'PROJECT_NAME',
+        'LAND_USE_CLASS'           => 'ZONING_CLASSIFICATION',
+        'REFERENCE_NUMBER'         => 'APPLICATION_NO',
+        'ZC_AMOUNT'                => 'ZONING_FEE',
+        'ZONING_CERTIFICATE_FEE'   => 'ZONING_FEE',
+        'LOCATIONAL_CLEARANCE'     => 'LOCATIONAL_CLEARANCE_FEE',
+        'DEVELOPMENT_PERMIT_FEE'   => 'DEVELOPMENT_FEE',
     ],
 
     // Tags computed from other fields — never shown in the modal
@@ -238,10 +243,12 @@ return [
         'REF_OTHERS'            => ['label' => 'Reference: Others',       'group' => 'Evaluation', 'type' => 'check'],
 
         // Fees
-        'OR_NUMBER'       => ['label' => 'O.R. No.',                     'group' => 'Fees', 'readonly' => true],
-        'ASSESSMENT_FEE'  => ['label' => 'Amount paid (Php)',            'group' => 'Fees', 'readonly' => true],
-        'DEVELOPMENT_FEE' => ['label' => 'Development fee (Php)',        'group' => 'Fees', 'readonly' => true],
-        'ZC_AMOUNT'       => ['label' => 'Zoning Certificate amount',  'group' => 'Fees', 'type' => 'select', 'options' => 'LIST!K10:K28'],
+        'OR_NUMBER'                => ['label' => 'O.R. No.',                          'group' => 'Fees', 'readonly' => true],
+        'ASSESSMENT_FEE'           => ['label' => 'Amount paid (Php)',                 'group' => 'Fees', 'readonly' => true],
+        'ZONING_FEE'               => ['label' => 'Zoning Certificate fee (Php)',      'group' => 'Fees', 'readonly' => true],
+        'LOCATIONAL_CLEARANCE_FEE' => ['label' => 'Locational Clearance fee (Php)',    'group' => 'Fees', 'readonly' => true],
+        'DEVELOPMENT_FEE'          => ['label' => 'Development fee (Php)',             'group' => 'Fees', 'readonly' => true],
+        'ZC_AMOUNT'                => ['label' => 'Zoning Certificate amount',         'group' => 'Fees', 'type' => 'select', 'options' => 'LIST!K10:K28'],
 
         // Signatories
         'PLANNING_OFFICER' => ['label' => 'Prepared by (Planning Officer)', 'group' => 'Signatories'],

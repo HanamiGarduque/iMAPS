@@ -22,7 +22,7 @@ use Symfony\Component\Process\ExecutableFinder;
  */
 class PermitPdfConverter
 {
-    public const DRIVERS = ['libreoffice', 'excel', 'dompdf'];
+    public const DRIVERS = ['excel', 'libreoffice', 'dompdf'];
 
     /** Driver that produced the last PDF (exposed to the UI as a header). */
     public ?string $lastDriver = null;

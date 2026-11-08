@@ -1896,7 +1896,7 @@ class ApplicationController extends Controller
     /** Fields + dropdowns for the Generate Permit modal, prefilled from the record. */
     public function permitSchema(int $id, string $type, PermitExcelService $permits)
     {
-        $application = ZoningApplication::with(['parcels', 'encodedBy'])->findOrFail($id);
+        $application = ZoningApplication::with(['parcels', 'encodedBy', 'fees'])->findOrFail($id);
 
         try {
             return response()->json([
@@ -1910,7 +1910,7 @@ class ApplicationController extends Controller
 
     public function exportPreview(Request $request, int $id, string $type, PermitExcelService $permits)
     {
-        $application = ZoningApplication::with(["parcels", "encodedBy"])->findOrFail($id);
+        $application = ZoningApplication::with(["parcels", "encodedBy", "fees"])->findOrFail($id);
         
         $validated = $request->validate([
             "fields"   => "nullable|array",
@@ -1935,7 +1935,7 @@ class ApplicationController extends Controller
 
     public function exportDocument(Request $request, int $id, string $type, PermitExcelService $permits)
     {
-        $application = ZoningApplication::with(['parcels', 'encodedBy'])->findOrFail($id);
+        $application = ZoningApplication::with(['parcels', 'encodedBy', 'fees'])->findOrFail($id);
 
         $validated = $request->validate([
             'fields'   => 'nullable|array',

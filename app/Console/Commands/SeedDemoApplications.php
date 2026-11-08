@@ -1081,7 +1081,7 @@ class SeedDemoApplications extends Command
     private function release(array &$a, Carbon $at): void
     {
         $po = $a['po'];
-        $model = ZoningApplication::with(['parcels', 'encodedBy'])->findOrFail($a['id']);
+        $model = ZoningApplication::with(['parcels', 'encodedBy', 'fees'])->findOrFail($a['id']);
         $service = app(PermitExcelService::class);
         $disk = Storage::disk(config('filesystems.permits_disk'));
 

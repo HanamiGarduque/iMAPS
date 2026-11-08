@@ -336,7 +336,26 @@ class PermitExcelService
         $rol = $up($application->right_over_land ?: 'OWNER');
 
         $meta = $this->templateMeta();
-        $zcAmount = (float) ($application->zoning_certificate_fee ?? 0);
+        $zoningFee = (float) ($application->zoning_certificate_fee ?? 0);
+        $locationalClearanceFee = (float) ($application->locational_clearance_fee ?? 0);
+        $developmentFee = (float) ($application->development_permit_fee ?? 0);
+
+        $hasNoFeeRows = $application->relationLoaded('fees')
+            ? $application->fees->isEmpty()
+            : ! $application->fees()->exists();
+
+        if ($hasNoFeeRows && (float) $application->assessment_fee > 0) {
+            $types = array_map('strtoupper', $application->getRecommendedPermitTypes());
+            if ($zoningFee <= 0 && in_array('ZC', $types, true)) {
+                $zoningFee = (float) $application->assessment_fee;
+            }
+            if ($locationalClearanceFee <= 0 && in_array('LC', $types, true)) {
+                $locationalClearanceFee = (float) $application->assessment_fee;
+            }
+            if ($developmentFee <= 0 && in_array('DP', $types, true)) {
+                $developmentFee = (float) $application->assessment_fee;
+            }
+        }
 
         $count = max($parcels->count(), 1);
 
@@ -392,10 +411,12 @@ class PermitExcelService
             'REF_TITLE'             => true,
             'REF_OTHERS'            => false,
 
-            'OR_NUMBER'       => (string) $application->or_number,
-            'ASSESSMENT_FEE'  => $this->num($application->assessment_fee),
-            'DEVELOPMENT_FEE' => $this->num($application->development_permit_fee),
-            'ZC_AMOUNT'       => $zcAmount > 0 ? rtrim(rtrim(number_format($zcAmount, 2, '.', ''), '0'), '.') : '720',
+            'OR_NUMBER'                  => (string) $application->or_number,
+            'ASSESSMENT_FEE'             => $this->num($application->assessment_fee),
+            'ZONING_FEE'                 => $this->num($zoningFee),
+            'LOCATIONAL_CLEARANCE_FEE'   => $this->num($locationalClearanceFee),
+            'DEVELOPMENT_FEE'            => $this->num($developmentFee),
+            'ZC_AMOUNT'                  => $zoningFee > 0 ? rtrim(rtrim(number_format($zoningFee, 2, '.', ''), '0'), '.') : '720',
 
             'PLANNING_OFFICER' => $officer,
             'PO_INITIALS'      => $this->initials($officer),
@@ -519,12 +540,6 @@ class PermitExcelService
     private function writeString(Cell $cell, string $value): void
     {
         $cell->setValueExplicit($value, DataType::TYPE_STRING);
-
-        // Long names/addresses shrink to fit their (merged) box instead of being clipped
-        $alignment = $cell->getStyle()->getAlignment();
-        if ($cell->isInMergeRange() && !$alignment->getWrapText()) {
-            $alignment->setShrinkToFit(true);
-        }
     }
 
     private function replaceTags(string $text, array $values): string
@@ -601,13 +616,21 @@ class PermitExcelService
         $setup->setFitToPage(true);
         $setup->setFitToWidth(1);
         $setup->setFitToHeight($doc['fit_height'] ?? 0);
-        $setup->setHorizontalCentered(true);
 
+        // Preserve template's native margins; fallback only if unset
         $margins = $sheet->getPageMargins();
-        $margins->setTop(0.5);
-        $margins->setBottom(0.5);
-        $margins->setLeft(0.9);
-        $margins->setRight(0.9);
+        if ($margins->getLeft() <= 0) {
+            $margins->setLeft(0.7);
+        }
+        if ($margins->getRight() <= 0) {
+            $margins->setRight(0.7);
+        }
+        if ($margins->getTop() <= 0) {
+            $margins->setTop(0.5);
+        }
+        if ($margins->getBottom() <= 0) {
+            $margins->setBottom(0.5);
+        }
     }
 
     private function convertToPdf(string $xlsxPath, string $outDir): string

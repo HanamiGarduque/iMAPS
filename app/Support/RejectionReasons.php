@@ -84,6 +84,16 @@ final class RejectionReasons
     }
 
     /**
+     * All recognized reason codes.
+     *
+     * @return array<int, string>
+     */
+    public static function codes(): array
+    {
+        return array_keys(self::all());
+    }
+
+    /**
      * Complete definition catalog of reasons.
      *
      * @return array<string, array{code: string, category: string, label: string, regulatory_basis: string, description: string, requires_notes: bool}>
