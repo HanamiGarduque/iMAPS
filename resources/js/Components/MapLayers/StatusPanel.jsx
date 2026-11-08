@@ -298,6 +298,8 @@ export default function StatusPanel({
     loadClasses = [],
     activeOnly = false,
     onActiveChange = () => {},
+    statusFilter = "All",
+    onStatusFilterChange = () => {},
 }) {
     const isBgy = Boolean(selectedBgy?.name);
     const bgyName = selectedBgy?.name || "";
@@ -419,23 +421,61 @@ export default function StatusPanel({
             <section className={`${CARD} pb-3`}>
                 <div className="flex items-baseline justify-between gap-2 px-4 pt-3 pb-2">
                     <Question>Where are they in the process?</Question>
-                    {!isBgy && <span className="text-[10px] tabular-nums text-slate-400">{stats.open} in process</span>}
+                    {!isBgy && (
+                        statusFilter && statusFilter !== "All" ? (
+                            <button
+                                type="button"
+                                onClick={() => onStatusFilterChange("All")}
+                                className="text-[10px] font-semibold text-[#0b2a5b] hover:underline cursor-pointer"
+                                title="Clear stage filter"
+                            >
+                                Clear filter · {stats.open} in process
+                            </button>
+                        ) : (
+                            <span className="text-[10px] tabular-nums text-slate-400">{stats.open} in process</span>
+                        )
+                    )}
                 </div>
                 <ol className="relative grid grid-cols-4 px-2">
                     <span className="absolute left-[calc(12.5%+4px)] right-[calc(12.5%+4px)] top-[14px] h-px bg-slate-200" aria-hidden="true" />
                     {stages.map((s) => {
-                        const isMax = s.key === bottleneck && s.count > 0;
+                        const isFilterActive = statusFilter && statusFilter !== "All";
+                        const isSelected = statusFilter === s.key;
+                        const isHighlighted = isFilterActive ? isSelected : (s.key === bottleneck && s.count > 0);
+
                         return (
-                            <li key={s.key} className="relative flex flex-col items-center min-w-0 px-0.5" title={`${s.label}: ${s.count}`}>
-                                <span
-                                    className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold tabular-nums ring-[3px] ring-white"
-                                    style={isMax
-                                        ? { backgroundColor: s.color, color: "#fff" }
-                                        : { backgroundColor: s.count ? `${s.color}29` : "#f1f5f9", color: s.count ? s.badgeText : "#94a3b8" }}
+                            <li key={s.key} className="relative flex flex-col items-center min-w-0 px-0.5">
+                                <button
+                                    type="button"
+                                    onClick={() => onStatusFilterChange(isSelected ? "All" : s.key)}
+                                    className="group flex flex-col items-center w-full focus:outline-none cursor-pointer"
+                                    title={isSelected ? `${s.label}: ${s.count} (Active filter — click to clear)` : `Filter by ${s.label}: ${s.count}`}
+                                    aria-pressed={isSelected}
                                 >
-                                    {s.count}
-                                </span>
-                                <span className={`mt-1 text-[10.5px] leading-tight text-center truncate max-w-full ${isMax ? "font-semibold text-slate-900" : "text-slate-500"}`}>{s.label}</span>
+                                    <span
+                                        className={`w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold tabular-nums ring-[3px] ring-white transition-all duration-150 ${
+                                            isSelected
+                                                ? "shadow-md scale-110 outline outline-2 outline-offset-2 outline-[#0b2a5b]"
+                                                : "group-hover:scale-105 group-hover:shadow-sm"
+                                        }`}
+                                        style={isHighlighted
+                                            ? { backgroundColor: s.color, color: "#fff" }
+                                            : { backgroundColor: s.count ? `${s.color}29` : "#f1f5f9", color: s.count ? s.badgeText : "#94a3b8" }}
+                                    >
+                                        {s.count}
+                                    </span>
+                                    <span
+                                        className={`mt-1 text-[10.5px] leading-tight text-center truncate max-w-full transition-colors ${
+                                            isSelected
+                                                ? "font-bold text-[#0b2a5b]"
+                                                : isHighlighted
+                                                    ? "font-semibold text-slate-900"
+                                                    : "text-slate-500 group-hover:text-slate-800"
+                                        }`}
+                                    >
+                                        {s.label}
+                                    </span>
+                                </button>
                             </li>
                         );
                     })}

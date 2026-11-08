@@ -1223,16 +1223,25 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                                                         onClearBgy={() => setSelectedBgy(null)}
                                                         period={periodFilter}
                                                         onPeriodChange={handlePeriodChange}
-                                                        appType={appTypeFilter}                                                        loadClasses={APP_LOAD_CLASSES}
+                                                        appType={appTypeFilter}
+                                                        loadClasses={APP_LOAD_CLASSES}
                                                         permitTypes={PERMIT_TYPES}
                                                         onAppTypeChange={handleAppTypeChange}
                                                         activeOnly={activeOnly}
                                                         onActiveChange={handleActiveChange}
-                                                        filtersActive={periodFilter !== "month" || appTypeFilter !== "All" || activeOnly}
+                                                        statusFilter={statusFilter}
+                                                        onStatusFilterChange={(newStatus) => {
+                                                            setStatusFilter(newStatus);
+                                                            if (newStatus !== "All") {
+                                                                setTableOpen(true);
+                                                            }
+                                                        }}
+                                                        filtersActive={periodFilter !== "month" || appTypeFilter !== "All" || activeOnly || statusFilter !== "All"}
                                                         onResetFilters={() => {
                                                             setAppTypeFilter("All");
                                                             setPeriodFilter("month");
                                                             setActiveOnly(false);
+                                                            setStatusFilter("All");
                                                             reloadFiltered("All", "month", false);
                                                         }}
                                                     />
@@ -1352,6 +1361,28 @@ function MapsInner({ userName, userRole, bgyStats, recent, filters, overallDiver
                             <span className="px-3 border-l border-slate-300 hidden sm:block">Zoom {mapZoom}</span>
                             <span className="px-3 border-l border-slate-300 hidden md:block">EPSG:4326</span>
                             <span className="ml-auto" />
+                            {activeLayer === "status" && (
+                                <div className="min-w-0 flex items-center gap-1.5 px-3 border-l border-slate-300">
+                                    <span className="truncate">{statusSummary}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (tableOpen) setInspectedApp(null);
+                                            setTableOpen(!tableOpen);
+                                        }}
+                                        aria-pressed={tableOpen}
+                                        aria-label="Attribute table"
+                                        title={`${tableOpen ? "Close" : "Open"} attribute table · ${selectedBgy?.name || "All barangays"}`}
+                                        className={`w-5 h-5 shrink-0 flex items-center justify-center rounded-[3px] border cursor-pointer focus-visible:outline-2 focus-visible:outline-[#0b2a5b] ${
+                                            tableOpen ? "bg-[#dce6f3] border-[#9fb4d3] text-[#0b2a5b]" : "border-transparent text-slate-600 hover:bg-white hover:border-slate-300"
+                                        }`}
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d={ICONS.table} />
+                                        </svg>
+                                    </button>
+                                </div>
+                            )}
                             {activeLayer !== "status" && activeLayer !== "trends" && (
                                 <div className="min-w-0 flex items-center gap-1.5 px-3 border-l border-slate-300">
                                     <span className="truncate">{statusSummary}</span>

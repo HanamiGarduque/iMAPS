@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">iMAPS — Intelligent Geospatial Analytics & Land-Use Monitoring System</h1>
+  <h1 align="center">iMAPS — Integrated Geospatial Analytics & Land-Use Monitoring System</h1>
   <p align="center">
     <strong>Municipal Government of Rosario, Batangas</strong>
   </p>

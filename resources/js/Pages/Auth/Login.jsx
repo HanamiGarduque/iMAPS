@@ -117,7 +117,7 @@ const PRIVACY = [
 
 const TERMS = [
     ['Purpose and Scope', [
-        'These Terms describe the responsible use of iMAPS: An Intelligent Geospatial Analytics System for Zoning Application Tracking and Land-Use Development Monitoring, including its internal web system and its companion iMAPS FieldSync mobile application (together, the “Platforms”). The Platforms are designed to assist the Municipal Planning and Development Office (MPDO) of Rosario, Batangas with application records, zoning-related workflows, maps, analytics, and field inspections. Any separately operated public application-status portal is covered only after the implementing office confirms that it falls within the same service and publishes matching notices.',
+        'These Terms describe the responsible use of iMAPS: An Integrated Geospatial Analytics System for Zoning Application Tracking and Land-Use Development Monitoring, including its internal web system and its companion iMAPS FieldSync mobile application (together, the “Platforms”). The Platforms are designed to assist the Municipal Planning and Development Office (MPDO) of Rosario, Batangas with application records, zoning-related workflows, maps, analytics, and field inspections. Any separately operated public application-status portal is covered only after the implementing office confirms that it falls within the same service and publishes matching notices.',
     ]],
     ['Authorized Users and Access', [
         'Internal functions are intended for personnel specifically authorized by the implementing office, such as administrators, planning officers, and assigned site inspectors. Access is role-dependent. Users must sign in using credentials provided or approved by the organization and must not share accounts or attempt to access records outside their assigned duties. A person using a public-facing status inquiry, if officially enabled, receives only the access and functions expressly offered through that service.',
@@ -187,7 +187,7 @@ const COOKIES = [
 const DOCS = {
     privacy: {
         title: 'Privacy Notice',
-        subtitle: 'iMAPS: An Intelligent Geospatial Analytics System + FieldSync Mobile App',
+        subtitle: 'iMAPS: An Integrated Geospatial Analytics System + FieldSync Mobile App',
         status: [
             ['Policy status', 'Approved and verified by the Municipal Planning and Development Office (MPDO)'],
             ['Original policy cycle', 'September 2026'],
@@ -202,7 +202,7 @@ const DOCS = {
     },
     terms: {
         title: 'Terms and Conditions',
-        subtitle: 'iMAPS: An Intelligent Geospatial Analytics System + FieldSync Mobile App',
+        subtitle: 'iMAPS: An Integrated Geospatial Analytics System + FieldSync Mobile App',
         status: [
             ['Policy status', 'Approved and verified by the Municipal Planning and Development Office (MPDO)'],
             ['Original policy cycle', 'September 2026'],
@@ -217,7 +217,7 @@ const DOCS = {
     },
     cookies: {
         title: 'Cookie & Storage Policy',
-        subtitle: 'iMAPS: An Intelligent Geospatial Analytics System + FieldSync Mobile App',
+        subtitle: 'iMAPS: An Integrated Geospatial Analytics System + FieldSync Mobile App',
         status: [
             ['Policy status', 'Approved and verified by the Municipal Planning and Development Office (MPDO)'],
             ['Original policy cycle', 'September 2026'],
