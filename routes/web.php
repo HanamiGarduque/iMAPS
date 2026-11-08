@@ -166,6 +166,11 @@ Route::middleware('auth')->group(function () {
         ->name('applications.amendmentRefs')
         ->middleware('role:Planning Officer');
 
+    Route::post('/applications/{id}/receipt', [ApplicationController::class, 'updateReceipt'])
+        ->whereNumber('id')
+        ->name('applications.receipt')
+        ->middleware('role:Planning Officer');
+
     // ── Record retention (no delete: MPDO keeps records for 10 years) ──
     // Archive: Admin or the owning Planning Officer. Void: the owning Planning
     // Officer only. Ownership is re-checked in ApplicationRecordController.

@@ -595,6 +595,8 @@ function ShowInner({
     const [brgyMapData, setBrgyMapData] = useState(null);
     const [liveStatuses, setLiveStatuses] = useState({});
     const [refs, setRefs] = useState({ sb_ordinance_number: app.sb_ordinance_number || "", dar_clearance_ref: app.dar_clearance_ref || "" });
+    const [receipt, setReceipt] = useState({ or_number: app.or_number || "", date_of_receipt: (app.date_of_receipt || "").slice(0, 10) || new Date().toISOString().slice(0, 10) });
+    const [receiptErrors, setReceiptErrors] = useState({});
     const [savedPermits, setSavedPermits] = useState(app.generated_permits || app.generatedPermits || []);
 
     useEffect(() => {
@@ -1091,6 +1093,71 @@ function ShowInner({
         </div>
     );
     const refsForm = refsFields(false);
+
+    // For Release: the official receipt (OR no. + date of receipt) is recorded here, before release
+    const receiptSaved = Boolean(app.or_number?.trim() && app.date_of_receipt);
+    const receiptDirty = receipt.or_number !== (app.or_number || "") || receipt.date_of_receipt !== (app.date_of_receipt || "").slice(0, 10);
+    const saveReceipt = () => {
+        const errs = {};
+        if (!/^OR-\d{6}$/.test(receipt.or_number.trim())) errs.or_number = "OR number must be exactly 6 digits.";
+        if (!receipt.date_of_receipt) errs.date_of_receipt = "Date of receipt is required.";
+        setReceiptErrors(errs);
+        if (Object.keys(errs).length) return;
+        setSaving(true);
+        router.post(`/applications/${app.id}/receipt`, receipt, {
+            preserveScroll: true,
+            onSuccess: () => showToast("Official receipt saved."),
+            onError: (e) => setReceiptErrors(e),
+            onFinish: () => setSaving(false),
+        });
+    };
+    const receiptFields = (
+        <div className="flex flex-col sm:flex-row sm:items-start gap-2.5">
+            <div className="flex-1 min-w-0">
+                <label htmlFor="or_number" className="text-[12px] font-medium text-slate-700">Official Receipt (OR) no.</label>
+                <div className="relative mt-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12.5px] font-semibold text-slate-500 pointer-events-none select-none">OR-</span>
+                    <input
+                        id="or_number"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={receipt.or_number.replace(/^OR-/i, "").replace(/\D/g, "").slice(0, 6)}
+                        disabled={!canRecordPlanningDecision}
+                        onChange={(e) => {
+                            const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                            setReceipt((r) => ({ ...r, or_number: digits ? `OR-${digits}` : "" }));
+                        }}
+                        placeholder="123456"
+                        aria-invalid={!!receiptErrors.or_number}
+                        className={`font-mono pl-11 ${FIELD.replace("py-2", "py-1.5")} ${receiptErrors.or_number ? "border-rose-400" : ""}`}
+                    />
+                </div>
+                {receiptErrors.or_number && <p className="text-[11.5px] text-rose-600 mt-1">{receiptErrors.or_number}</p>}
+            </div>
+            <div className="flex-1 min-w-0">
+                <label htmlFor="date_of_receipt" className="text-[12px] font-medium text-slate-700">Date of receipt</label>
+                <input
+                    id="date_of_receipt"
+                    type="date"
+                    value={receipt.date_of_receipt}
+                    disabled={!canRecordPlanningDecision}
+                    onChange={(e) => setReceipt((r) => ({ ...r, date_of_receipt: e.target.value }))}
+                    aria-invalid={!!receiptErrors.date_of_receipt}
+                    className={`mt-1 ${FIELD.replace("py-2", "py-1.5")} ${receiptErrors.date_of_receipt ? "border-rose-400" : ""}`}
+                />
+                {receiptErrors.date_of_receipt && <p className="text-[11.5px] text-rose-600 mt-1">{receiptErrors.date_of_receipt}</p>}
+            </div>
+            {canRecordPlanningDecision && <button
+                type="button"
+                onClick={saveReceipt}
+                disabled={saving || (receiptSaved && !receiptDirty)}
+                className="sm:mt-[22px] h-[34px] px-3.5 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-400 text-[12.5px] font-semibold cursor-pointer disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed shrink-0"
+            >
+                {receiptSaved ? "Update receipt" : "Save receipt"}
+            </button>}
+        </div>
+    );
 
 
     const historyView =
@@ -1865,7 +1932,15 @@ function ShowInner({
 
                         {releaseStage ? (
                             <>
-                                {/* Generating permits is For Release's work, so the gallery comes first */}
+                                {/* The official receipt comes first: the permits print its OR no. */}
+                                {app.status === "For Release" && (
+                                    <section>
+                                        {sectionTitle("Official receipt")}
+                                        {receiptFields}
+                                        {!receiptSaved && <p className="mt-1.5 text-[11.5px] text-slate-500">Record the receipt before generating permits so they carry the OR no.</p>}
+                                    </section>
+                                )}
+                                {/* Generating permits is For Release's work, so the gallery comes next */}
                                 {app.status === "For Release" && canRecordPlanningDecision && (
                                     <section>
                                         {sectionTitle("Generate permits")}
@@ -1887,13 +1962,13 @@ function ShowInner({
                     {/* For Release: the last step, after the permits. Blue only once every required permit is generated. */}
                     {app.status === "For Release" && canAct && primaryAction && (
                         <div className="shrink-0 px-5 py-3 border-t border-slate-200 bg-slate-50/70 flex items-center justify-end gap-4">
-                            <p className={`text-[12px] ${missingPermits.length ? "text-slate-500" : "text-emerald-700 font-medium"}`}>
-                                {missingPermits.length ? "Generate the required permits to release." : "All required permits are ready."}
+                            <p className={`text-[12px] ${missingPermits.length || !receiptSaved ? "text-slate-500" : "text-emerald-700 font-medium"}`}>
+                                {!receiptSaved ? "Record the official receipt to release." : missingPermits.length ? "Generate the required permits to release." : "All required permits are ready."}
                             </p>
                             <button
                                 type="button"
                                 onClick={primaryAction.onClick}
-                                disabled={primaryAction.disabled || missingPermits.length > 0}
+                                disabled={primaryAction.disabled || missingPermits.length > 0 || !receiptSaved}
                                 title={primaryAction.title || undefined}
                                 className="h-9 px-4 rounded-lg border border-blue-600 bg-blue-600 shadow-sm shadow-blue-900/10 hover:bg-blue-700 hover:border-blue-700 active:bg-blue-800 text-white text-[13px] font-semibold whitespace-nowrap cursor-pointer transition-colors disabled:bg-slate-200 disabled:border-slate-200 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                             >

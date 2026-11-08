@@ -205,40 +205,6 @@ export default function StepFee({
                         />
                     </div>
                 </div>
-
-                <div>
-                    <Label required hasError={!!errors.date_of_receipt}>Date of Receipt</Label>
-                    <Input
-                        type="date"
-                        value={form.date_of_receipt || ""}
-                        onChange={set("date_of_receipt")}
-                        className="bg-white text-xs font-semibold"
-                        hasError={!!errors.date_of_receipt}
-                    />
-                    {errors.date_of_receipt && <p className="text-xs font-medium text-rose-500 mt-1">{errors.date_of_receipt}</p>}
-                </div>
-            </div>
-
-            {/* Official Receipt (OR) Number */}
-            <div className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200 mt-2">
-                <Label hasError={!!errors.or_number}>Official Receipt (OR) Number</Label>
-                <div className="relative mt-1">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-mono text-sm font-semibold text-slate-500 pointer-events-none select-none">OR-</span>
-                    <Input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        value={(form.or_number || "").replace(/^OR-/i, "").replace(/\D/g, "").slice(0, 6)}
-                        onChange={(e) => {
-                            const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
-                            set("or_number")({ target: { value: digits ? `OR-${digits}` : "" } });
-                        }}
-                        placeholder="123456"
-                        className="font-mono bg-white pl-12"
-                        hasError={!!errors.or_number}
-                    />
-                </div>
-                {errors.or_number && <p className="text-xs font-medium text-rose-500 mt-1">{errors.or_number}</p>}
             </div>
         </div>
     );

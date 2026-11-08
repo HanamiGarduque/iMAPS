@@ -617,7 +617,6 @@ class ApplicationController extends Controller
             'barangay'            => 'required|string',
             'street_address'      => 'nullable|string|max:255',
             'assessment_fee'      => 'required|numeric|min:0',
-            'or_number'              => ['required', 'regex:/^OR-\d{6}$/'],
             'remarks'             => 'nullable|string',
             'corporation_contact'    => ['nullable', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
             'representative_contact' => ['nullable', 'regex:/^(09|\+63|63|\d)\d{9}$/'],
@@ -628,7 +627,6 @@ class ApplicationController extends Controller
             'development_permit_fee'   => 'nullable|numeric|min:0',
             'other_fees'               => 'nullable|numeric|min:0',
             'penalty_fee'      => 'nullable|numeric|min:0',
-            'date_of_receipt'  => 'required|date',
             'corporation_name'           => 'nullable|string|max:255',
             'corporation_address'        => 'nullable|string|max:255',
             'representative_address'     => 'nullable|string|max:255',
@@ -720,8 +718,6 @@ class ApplicationController extends Controller
                 'project_tenure'             => $validated['project_tenure'] ?? null,
                 'preferred_release_mode'     => $validated['preferred_release_mode'],
                 'assessment_fee'             => $validated['assessment_fee'],
-                'date_of_receipt'            => $validated['date_of_receipt'],
-                'or_number'                  => $validated['or_number'],
                 'remarks'                    => $validated['remarks'] ?? null,
                 'encoded_by'                 => Auth::id(),
             ]);
@@ -1628,6 +1624,35 @@ class ApplicationController extends Controller
     // UPDATE STATUS — General-purpose status transitions (excludes Technical
     // Review, which must go through submitTechnicalReview()).
     // ─────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // Official receipt (OR no. + date of receipt), recorded at For Release
+    // ─────────────────────────────────────────────────────────────────────────
+    public function updateReceipt(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'or_number'       => ['required', 'regex:/^OR-\d{6}$/'],
+            'date_of_receipt' => 'required|date',
+        ], [
+            'or_number.regex' => 'OR number must be exactly 6 digits.',
+        ]);
+
+        $application = ZoningApplication::findOrFail($id);
+        if ($application->status !== 'For Release') {
+            return back()->withErrors(['or_number' => 'The official receipt is recorded when the application is For Release.']);
+        }
+
+        $application->update($validated);
+
+        AuditLogger::log(
+            applicationId: $application->id,
+            action: 'RECEIPT_RECORDED',
+            performedBy: Auth::id(),
+            note: sprintf('OR no.: %s; Date of receipt: %s', $validated['or_number'], $validated['date_of_receipt'])
+        );
+
+        return back()->with('success', 'Official receipt saved.');
+    }
+
     public function updateStatus(Request $request)
     {
         $request->validate([
@@ -1665,6 +1690,13 @@ class ApplicationController extends Controller
             if ($transitionError) {
                 DB::rollBack();
                 return back()->withErrors(['status' => $transitionError]);
+            }
+
+            if ($request->new_status === 'Released' && (empty(trim($application->or_number ?? '')) || empty($application->date_of_receipt))) {
+                DB::rollBack();
+                return back()->withErrors([
+                    'status' => 'Record the Official Receipt (OR) number and date of receipt before releasing this application.',
+                ]);
             }
 
             if ($request->new_status === 'Released') {

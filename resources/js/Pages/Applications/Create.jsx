@@ -75,7 +75,7 @@ const STEPS = [
 const STEP_ERROR_FIELDS = {
     [STEP.APPLICATION]: ["application_stream", "application_type", "form_number", "land_use_class", "purpose", "target_land_use_class", "building_area", "area_to_develop", "number_of_saleable_lots", "business_name", "project_cost", "project_tenure"],
     [STEP.APPLICANT]: ["applicant_name", "first_name", "last_name", "contact_number", "email", "applicant_street", "applicant_barangay", "applicant_municipality", "representative_name", "representative_contact", "representative_address", "corporation_name", "corporation_contact", "corporation_address", "right_over_land"],
-    [STEP.FEES]: ["assessment_fee", "or_number", "date_of_receipt", "zoning_certificate_fee", "locational_clearance_fee", "development_permit_fee", "other_fees", "penalty_fee"],
+    [STEP.FEES]: ["assessment_fee", "zoning_certificate_fee", "locational_clearance_fee", "development_permit_fee", "other_fees", "penalty_fee"],
 };
 
 const DRAFT_UUID_KEY = "imaps_current_draft_uuid";
@@ -322,9 +322,7 @@ const emptyForm = () => ({
     development_permit_fee: "",
     other_fees: "",
     penalty_fee: "",
-    date_of_receipt: new Date().toISOString().split("T")[0], // Default to today
     assessment_fee: "0.00",
-    or_number: "",
     
 
     parcels: [
@@ -1500,11 +1498,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
         }
 
         if (step === STEP.FEES) {
-            if (!form.or_number?.trim()) {
-                newErrors.or_number = "Official Receipt (OR) number is required.";
-            } else if (!/^OR-\d{6}$/.test(form.or_number.trim())) {
-                newErrors.or_number = "OR number must be exactly 6 digits.";
-            }
             if (form.assessment_fee === "" || form.assessment_fee == null || Number(form.assessment_fee) < 0) {
                 newErrors.assessment_fee = "Assessment fee is required.";
             }
@@ -1619,7 +1612,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                     total_area: totalLotArea,
                     project_cost: form.project_cost,
                     assessment_fee: form.assessment_fee,
-                    or_number: form.or_number,
                 });
 
                 clearDraftStateRecord();
@@ -1792,7 +1784,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
             Boolean(form.barangay && form.parcels?.some((p) => p.property_index_number?.trim())),
             Boolean(form.application_type && form.form_number?.trim() && form.purpose?.trim() && (form.application_stream !== "amendment" || form.target_land_use_class)),
             Boolean((form.last_name?.trim() && form.first_name?.trim()) && form.contact_number?.trim() && form.email?.trim() && form.right_over_land),
-            Boolean(form.or_number?.trim() && form.assessment_fee !== "" && Number(form.assessment_fee) >= 0),
+            Boolean(form.assessment_fee !== "" && Number(form.assessment_fee) >= 0),
             Boolean(form.preferred_release_mode),
         ];
         return done.filter(Boolean).length * 20;
@@ -1825,9 +1817,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                 );
             case STEP.FEES:
                 return Boolean(
-                    form.or_number?.trim() ||
-                    (form.assessment_fee !== "" && form.assessment_fee != null && Number(form.assessment_fee) > 0) ||
-                    form.date_of_receipt
+                    form.assessment_fee !== "" && form.assessment_fee != null && Number(form.assessment_fee) > 0
                 );
             case STEP.REVIEW:
                 return Boolean(form.preferred_release_mode);
@@ -2041,7 +2031,7 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
                                                 <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
                                                     {currentStep === STEP.APPLICATION && "Choose the clearance type, then describe the project. Options follow the zoning check of the property."}
                                                     {currentStep === STEP.APPLICANT && "Confirm who is applying and their right over the land. The registered owner can be used as the applicant."}
-                                                    {currentStep === STEP.FEES && "Compute the assessment fee and record the official receipt."}
+                                                    {currentStep === STEP.FEES && "Compute the assessment fee."}
                                                     {currentStep === STEP.REVIEW && "Check every section, including the fee, then choose the release mode and submit."}
                                                 </p>
                                             </div>
@@ -2333,10 +2323,6 @@ export default function Create({ auth, errors: serverErrors = {}, cloudDraftPayl
 
                             {/* Assessment & Fee */}
                             <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
-                                <div>
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Official Receipt (OR)</p>
-                                    <p className="font-mono font-bold text-slate-900 text-sm">{routingSlipData.or_number || "N/A"}</p>
-                                </div>
                                 <div>
                                     <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Total Assessed Fee</p>
                                     <p className="font-mono font-extrabold text-blue-900 text-base">

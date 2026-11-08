@@ -252,7 +252,7 @@ export default function StepReview({
                 <ReviewAccordion
                     stepNum="4"
                     title="Assessment & Fees"
-                    summary={`${peso(form.assessment_fee)} · OR ${form.or_number || "not recorded"}`}
+                    summary={peso(form.assessment_fee)}
                     onEdit={() => setCurrentStep(STEP.FEES)}
                     defaultOpen={true}
                 >
@@ -260,15 +260,6 @@ export default function StepReview({
                         <div>
                             <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">Total Assessment Fee</p>
                             <p className="font-mono font-bold text-slate-900 text-sm">{peso(form.assessment_fee)}</p>
-                        </div>
-                        <div>
-                            <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">Official Receipt</p>
-                            <p className="font-mono font-semibold text-slate-900">{form.or_number || "—"}</p>
-                        </div>
-                        
-                        <div>
-                            <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mb-0.5">Date of Receipt</p>
-                            <p className="font-semibold text-slate-900">{form.date_of_receipt || "—"}</p>
                         </div>
                         {feeItems.length > 0 && (
                             <div className="sm:col-span-3 space-y-1">
