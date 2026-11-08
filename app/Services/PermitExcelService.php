@@ -373,9 +373,10 @@ class PermitExcelService
             'BUSINESS_NAME'       => $up($application->business_name) ?: '-',
             'PROJECT_TYPE'        => $up($application->purpose),
             'PROPOSED_USE'        => $up($application->purpose),
-            'PROJECT_AREA'        => $this->num($application->area_to_develop ?: $lotArea),
-            // No floor area recorded → the area being developed / the lot, so the box is never blank
-            'BUILDING_AREA'       => $this->num($application->building_area ?: ($application->area_to_develop ?: $lotArea)),
+            // "Area to be Developed" from the application form (never the lot or building area)
+            'PROJECT_AREA'        => $this->num($application->area_to_develop) ?: 'N/A',
+            // Building floor area as entered on the application; N/A when none was recorded (never the lot area)
+            'BUILDING_AREA'       => $this->num($application->building_area) ?: 'N/A',
             'SALEABLE_LOTS'       => $application->number_of_saleable_lots ? (string) $application->number_of_saleable_lots : 'N/A',
 
             'PARCEL_OWNER'      => $up($join('owner_name') ?: $application->applicant_name),
@@ -385,7 +386,7 @@ class PermitExcelService
             'BARANGAY_LOT'      => $lotBarangay,
             'BARANGAY'          => $barangay,
             'PROJECT_LOCATION'  => implode(', ', array_filter([$lotStreet, $lotBarangay ? "BRGY. {$lotBarangay}" : null, 'ROSARIO, BATANGAS'])),
-            'LOT_AREA'          => $this->num($lotArea ?: $application->area_to_develop),
+            'LOT_AREA'          => $this->num($lotArea) ?: 'N/A', // total of the parcels' lot areas
             'TD_ARP'            => implode(' / ', array_filter([$taxDecs, $arps])) ?: 'N/A',
             'PROPERTY_INDEX_NO' => $join('property_index_number') ?: 'N/A',
             'RIGHT_OVER_LAND'   => str_contains($rol, 'OWN') ? 'OWNER' : (str_contains($rol, 'LESS') ? 'LESSEE' : 'OTHERS'),
@@ -554,7 +555,12 @@ class PermitExcelService
         $out = rtrim(str_replace("\t", ' ', $out));
 
         // A missing number would otherwise print just the unit, e.g. " SQ.M"
-        return preg_match('/^\s*SQ\.?\s*M\.?$/i', $out) ? '' : $out;
+        if (preg_match('/^\s*SQ\.?\s*M\.?$/i', $out)) {
+            return '';
+        }
+
+        // "N/A SQ.M" → "N/A"
+        return preg_match('/^\s*N\/A\s*SQ\.?\s*M\.?$/i', $out) ? 'N/A' : $out;
     }
 
     private function isolateSheet(Spreadsheet $spreadsheet, Worksheet $keep): void
@@ -637,6 +643,15 @@ class PermitExcelService
      * than its (merged) cell wraps into a row that is too short and prints cramped or clipped. Grow the
      * row to the number of lines the text needs. Only cells filled from application data are touched.
      */
+    private const GLYPH_WIDTH = [
+        'Calibri'         => [0.46, 0.44],
+        'Cambria'         => [0.60, 0.48],
+        'Times New Roman' => [0.62, 0.44],
+        'Arial'           => [0.66, 0.52],
+        'Arial Narrow'    => [0.54, 0.43],
+    ];
+
+
     private function growRowsForText(Worksheet $sheet): void
     {
         $defaultWidth = $sheet->getDefaultColumnDimension()->getWidth();
@@ -674,7 +689,9 @@ class PermitExcelService
 
             $size = (float) ($style->getFont()->getSize() ?: 11);
             $upper = mb_strtoupper($text) === $text;
-            $charPx = $size * 1.333 * ($upper ? 0.74 : 0.60) * ($style->getFont()->getBold() ? 1.06 : 1.0);
+            // Average glyph width in em, [capitals, mixed case], per font (Calibri is much narrower than Arial)
+            [$caps, $mixed] = self::GLYPH_WIDTH[$style->getFont()->getName()] ?? self::GLYPH_WIDTH['Arial'];
+            $charPx = $size * 1.333 * ($upper ? $caps : $mixed) * ($style->getFont()->getBold() ? 1.06 : 1.0);
 
             $lines = 0;
             foreach (preg_split('/\R/', $text) as $part) {

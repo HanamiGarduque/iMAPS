@@ -107,6 +107,7 @@ return [
             'fit_height' => 0,
             'cells' => [
                 'F40' => '${CERTIFICATION_PURPOSE}',
+                'G22' => '${PROJECT_AREA} SQ.M', // "Area applied for" = the project area, not the building floor area
                 // ='ORIG COPY OF EVALUATION'!P20 — that sheet no longer exists (#REF!)
                 'A42' => '${GIVEN_DATE}',
             ],
@@ -122,6 +123,7 @@ return [
             'print_area' => 'A1:J53',
             'fit_height' => 1,
             'cells' => [
+                'A15' => '${PROJECT_AREA} SQ.M', // "Project Area" = Area to be Developed (the template formula points at the building area)
                 // Template joins barangay and municipality with tab spacing; print a proper "BARANGAY, ROSARIO, BATANGAS"
                 'F11' => '${BARANGAY_LOT}, ROSARIO, BATANGAS',
                 'F17' => '${STREET_LOT} ${BARANGAY_LOT}, ROSARIO, BATANGAS',
