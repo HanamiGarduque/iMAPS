@@ -320,12 +320,12 @@ export default function DraftsIndex({ drafts, filters = {}, activity_counts = {}
                                 {/* —— TABLE —— */}
                                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                                     <div className="flex-1 overflow-auto custom-scrollbar">
-                                        <table className="tabular-nums w-full text-left border-separate border-spacing-0 min-w-[760px] text-[13px] table-fixed">
+                                        <table className="tabular-nums w-full text-left border-separate border-spacing-0 min-w-[850px] text-[13px] table-fixed">
                                             <thead className="sticky top-0 z-10 bg-slate-100">
                                                 <tr className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500 [&>th]:border-y [&>th]:border-slate-200 [&>th]:py-2.5 [&>th]:px-3 [&>th]:whitespace-nowrap [&>th]:font-semibold">
                                                     <th className="w-[160px] !pl-5">Reference no.</th>
-                                                    <th className="w-[24%]">Applicant</th>
-                                                    <th>Application type</th>
+                                                    <th className="w-[200px]">Applicant</th>
+                                                    <th className="w-[180px]">Application type</th>
                                                     <th className="w-[140px]">Barangay</th>
                                                     <th className="w-[130px]">Last edited</th>
                                                     <th className="w-[104px] !pr-5 text-right">Actions</th>

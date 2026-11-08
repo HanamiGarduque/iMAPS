@@ -1526,7 +1526,7 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                             {viewMode === "list" ? (
                                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
                                     <div className="flex-1 overflow-auto custom-scrollbar">
-                                        <table className="tabular-nums w-full text-left border-separate border-spacing-0 min-w-[900px] text-[13px] table-fixed">
+                                        <table className="tabular-nums w-full text-left border-separate border-spacing-0 min-w-[1080px] text-[13px] table-fixed">
                                             <thead className="sticky top-0 z-10 bg-slate-100">
                                                 <tr className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-500 [&>th]:border-y [&>th]:border-slate-200 [&>th]:py-2.5 [&>th]:px-3 [&>th]:whitespace-nowrap [&>th]:font-semibold">
                                                     <th className="w-11 !pl-4 !pr-2">
@@ -1535,16 +1535,16 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                     <th className="w-[140px]" aria-sort={selectedSort === "ref_asc" ? "ascending" : "none"}>
                                                         <SortHeader label="Reference no." dir={selectedSort === "ref_asc" ? "asc" : null} onClick={() => handleHeaderSort("ref")} />
                                                     </th>
-                                                    <th className="w-[120px]">Form no.</th>
-                                                    <th className="w-[24%]" aria-sort={selectedSort === "applicant_asc" ? "ascending" : selectedSort === "applicant_desc" ? "descending" : "none"}>
+                                                    <th className="w-[110px]">Form no.</th>
+                                                    <th className="w-[220px]" aria-sort={selectedSort === "applicant_asc" ? "ascending" : selectedSort === "applicant_desc" ? "descending" : "none"}>
                                                         <SortHeader label="Applicant" dir={selectedSort === "applicant_asc" ? "asc" : selectedSort === "applicant_desc" ? "desc" : null} onClick={() => handleHeaderSort("applicant")} />
                                                     </th>
-                                                    <th>Application type</th>
+                                                    <th className="w-[180px]">Application type</th>
                                                     <th className="w-[140px]">Barangay</th>
-                                                    <th className="w-[130px]" aria-sort={selectedSort === "newest" ? "descending" : selectedSort === "oldest" ? "ascending" : "none"}>
+                                                    <th className="w-[125px]" aria-sort={selectedSort === "newest" ? "descending" : selectedSort === "oldest" ? "ascending" : "none"}>
                                                         <SortHeader label="Date filed" dir={selectedSort === "newest" ? "desc" : selectedSort === "oldest" ? "asc" : null} onClick={() => handleHeaderSort("date")} />
                                                     </th>
-                                                    <th className="w-[204px] !pr-4">Status</th>
+                                                    <th className="w-[195px] !pr-4">Status</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -1587,14 +1587,14 @@ export default function Index({ applications, filters = {}, auth = {}, status_co
                                                                 <span className="text-[12px] font-medium text-slate-500 tracking-wide">{item.form_number || <span className="text-slate-300">—</span>}</span>
                                                             </td>
 
-                                                            <td>
+                                                            <td className="truncate">
                                                                 <p className="font-medium text-slate-900 truncate" title={item.applicant_name || undefined}>
                                                                     {item.applicant_name || "Unknown Applicant"}
                                                                 </p>
                                                             </td>
 
-                                                            <td>
-                                                                <div className="flex items-center gap-1.5">
+                                                            <td className="truncate">
+                                                                <div className="flex items-center gap-1.5 min-w-0">
                                                                     <span className="text-slate-700 truncate" title={[types.join(", "), item.remarks?.trim() && `Remark: ${item.remarks.trim()}`].filter(Boolean).join("\n")}>{types[0] || "—"}</span>
                                                                     {types.length > 1 && (
                                                                         <span className="shrink-0 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 rounded" title={types.slice(1).join(", ")}>
