@@ -260,7 +260,7 @@ class PermitExcelService
     private function storeCachedPdf(?string $key, string $pdfPath, ?string $driver): void
     {
         // Only real office layouts are worth reusing; the Dompdf fallback is a rough draft
-        if (!$key || !in_array($driver, ['excel', 'remote', 'libreoffice'], true)) {
+        if (!$key || !in_array($driver, ['excel', 'libreoffice'], true)) {
             return;
         }
 

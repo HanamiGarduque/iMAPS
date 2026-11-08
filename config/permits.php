@@ -29,15 +29,10 @@ return [
     'allowed_uses_sheet' => 'ALLOWED USES LIST',
 
     // How the filled .xlsx is turned into a PDF (see App\Services\PermitPdfConverter):
-    //   auto        → Microsoft Excel (Windows) → remote Excel converter → LibreOffice → dompdf
-    //   remote      → always the Windows Excel converter below (for cloud hosts such as Railway)
+    //   auto        → Microsoft Excel (Windows) → LibreOffice → dompdf
     //   excel       → always Microsoft Excel (Windows only)   libreoffice → always LibreOffice
     //   dompdf      → no external software, rougher layout (draft quality)
     'pdf_driver' => env('PERMIT_PDF_DRIVER', 'auto'),
-
-    // Windows machine running scripts/excel-converter (real Excel, exact layout). Used by the cloud app.
-    'remote_url' => env('PERMIT_REMOTE_URL', ''),
-    'remote_key' => env('PERMIT_REMOTE_KEY', ''),
 
     // LibreOffice binary. Leave as "soffice" to auto-detect (PATH + usual install folders),
     // or set a full path, e.g. "C:\Program Files\LibreOffice\program\soffice.exe"
