@@ -363,7 +363,7 @@ export default function LeafletMap({
     const live = useRef({});
     live.current = {
         currentLayer, selectedBgy, showClup, showLabels, imagery: isImageryStyle(mapStyle) && !plain, plain,
-        diversityLens, diversityBandFilter, staticBgyData, bgyDemandCounts: demandCounts,
+        diversityLens, diversityBandFilter, statusFilter, staticBgyData, bgyDemandCounts: demandCounts,
         onFeatureClick, onMapClick, onHoverBgy, onCursorMove, onZoomChange, onInspectApp, onHoverApp,
     };
 
@@ -372,7 +372,7 @@ export default function LeafletMap({
     const demandFor = (name) => live.current.bgyDemandCounts[name.trim().toLowerCase()] || 0;
 
     const getFeatureStyle = (feature) => {
-        const { currentLayer: layer, selectedBgy: sel, showClup: clup, diversityLens: lensId, diversityBandFilter: band, imagery } = live.current;
+        const { currentLayer: layer, selectedBgy: sel, showClup: clup, diversityLens: lensId, diversityBandFilter: band, statusFilter: statFilter, imagery } = live.current;
         const name = featureName(feature);
         const stat = statFor(name);
         const selName = (sel?.name || "").trim().toLowerCase();
@@ -418,6 +418,18 @@ export default function LeafletMap({
                 fillOpacity: (clup ? 0.25 : imagery ? (lowest ? 0.28 : 0.66) : 0.82) * (selName && !isSelected ? 0.4 : 1),
                 className: "",
             };
+        }
+
+        if (layer === "status" && statFilter && statFilter !== "All") {
+            const bgyTarget = name.trim().toLowerCase();
+            const bgyMatch = (applications || []).some(
+                (a) => (a.barangay || "").trim().toLowerCase() === bgyTarget && matchesAppFilters(a, null, statFilter)
+            );
+            if (!bgyMatch) {
+                return imagery
+                    ? { color: "#ffffff", weight: 0.8, opacity: 0.55, dashArray: "3 3", fill: true, fillColor: "#020617", fillOpacity: 0.35, className: "" }
+                    : { color: "#b8c0cc", weight: 0.8, opacity: 0.9, dashArray: "3 3", fill: true, fillColor: "#e2e8f0", fillOpacity: 0.4, className: "" };
+            }
         }
 
         const demand = layer === "trends" ? (lcColors?.[name.trim().toLowerCase()] || getTrendsDemandColor(demandFor(name))) : null;
@@ -744,7 +756,7 @@ export default function LeafletMap({
 
         geoLayerRef.current?.bringToFront();
         raiseSelected();
-    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, demandCounts, lcColors, diversityLens, diversityBandFilter, zoningReady, barangaysReady, mapStyle, plain]);
+    }, [currentLayer, selectedBgy, showClup, clupOpacity, staticBgyData, demandCounts, lcColors, diversityLens, diversityBandFilter, statusFilter, zoningReady, barangaysReady, mapStyle, plain]);
 
     // ── Callout card on the selected barangay ──
     const calloutMarkerRef = useRef(null);
@@ -927,7 +939,7 @@ export default function LeafletMap({
         const run = ++labelsRunRef.current;
         group.clearLayers();
 
-        const { currentLayer: layer, diversityLens: lensId, diversityBandFilter: band, showLabels: on } = live.current;
+        const { currentLayer: layer, diversityLens: lensId, diversityBandFilter: band, statusFilter: statFilter, showLabels: on } = live.current;
         if (!on) return;
 
         import("leaflet").then((mod) => {
@@ -950,8 +962,18 @@ export default function LeafletMap({
                     rank = demandFor(name);
                     value = rank ? `${rank} LC` : "";
                 } else {
-                    rank = stat.total;
-                    value = rank ? String(rank) : "";
+                    if (statFilter && statFilter !== "All") {
+                        const bgyTarget = name.trim().toLowerCase();
+                        const matchingCount = (applications || []).filter(
+                            (a) => (a.barangay || "").trim().toLowerCase() === bgyTarget && matchesAppFilters(a, null, statFilter)
+                        ).length;
+                        if (!matchingCount) return;
+                        rank = matchingCount;
+                        value = String(rank);
+                    } else {
+                        rank = stat.total;
+                        value = rank ? String(rank) : "";
+                    }
                 }
                 candidates.push({ name, value, rank, center: lf.getBounds().getCenter() });
             });
@@ -986,7 +1008,7 @@ export default function LeafletMap({
 
     useEffect(() => {
         renderLabels();
-    }, [currentLayer, diversityLens, diversityBandFilter, selectedBgy, showLabels, staticBgyData, demandCounts, barangaysReady, renderLabels, plain]);
+    }, [currentLayer, diversityLens, diversityBandFilter, statusFilter, selectedBgy, showLabels, staticBgyData, demandCounts, barangaysReady, renderLabels, plain]);
 
     useEffect(() => {
         const map = mapInstanceRef.current;
