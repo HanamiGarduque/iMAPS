@@ -80,7 +80,7 @@ class SecurityHeaders
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src 'self' data: https://fonts.gstatic.com",
             "img-src 'self' data: blob: {$tiles} {$supabase}",
-            "connect-src 'self' {$tiles} https://challenges.cloudflare.com {$supabase}".($supabase ? ' '.str_replace('https://', 'wss://', $supabase) : ''),
+            "connect-src 'self' blob: {$tiles} https://challenges.cloudflare.com {$supabase}".($supabase ? ' '.str_replace('https://', 'wss://', $supabase) : ''),
             "worker-src 'self' blob:",
             "frame-src 'self' blob: https://challenges.cloudflare.com",
             "object-src 'none'",
