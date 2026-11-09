@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { fetchParcelInspection } from "@/utils/supabaseApi";
 import downloadPhoto from "./downloadPhoto";
+import PhotoLightbox from "./PhotoLightbox";
 
 // ── Badge Configuration ──
 const STATUS_CONFIG = {
@@ -71,8 +72,9 @@ const VERDICT_TONE = {
 
 // Inline photo viewer (no modal): a sliding track of the photos, arrows over the photo,
 // thumbnails below. ← / → step through them while the viewer has focus.
-function PhotoViewer({ photos, formatDate, formatTime, className = "" }) {
+function PhotoViewer({ photos, formatDate, formatTime, inspectionId = null, className = "" }) {
     const [index, setIndex] = useState(0);
+    const [lightboxIndex, setLightboxIndex] = useState(null);
     const count = photos.length;
     const current = Math.min(index, count - 1);
     const photo = photos[current];
@@ -101,7 +103,9 @@ function PhotoViewer({ photos, formatDate, formatTime, className = "" }) {
                             <img
                                 src={p.signed_url}
                                 alt={`Field photograph ${i + 1} of ${count}`}
-                                className={`max-w-full max-h-full object-contain transition-[opacity,transform] duration-500 motion-reduce:transition-none ${i === current ? "opacity-100 scale-100" : "opacity-40 scale-[.96]"}`}
+                                onClick={() => i === current && setLightboxIndex(i)}
+                                title="Click to enlarge"
+                                className={`cursor-zoom-in max-w-full max-h-full object-contain transition-[opacity,transform] duration-500 motion-reduce:transition-none ${i === current ? "opacity-100 scale-100" : "opacity-40 scale-[.96]"}`}
                                 draggable="false"
                             />
                         </div>
@@ -155,6 +159,15 @@ function PhotoViewer({ photos, formatDate, formatTime, className = "" }) {
                         </button>
                     ))}
                 </div>
+            )}
+
+            {lightboxIndex !== null && (
+                <PhotoLightbox
+                    photos={photos.map((p, i) => ({ ...p, inspectionId, alt: p.notes?.trim() || `Inspection Photo ${i + 1}` }))}
+                    index={lightboxIndex}
+                    onClose={() => setLightboxIndex(null)}
+                    onIndexChange={(i) => { setLightboxIndex(i); setIndex(i); }}
+                />
             )}
         </div>
     );
@@ -442,7 +455,7 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                     )}
 
                     {photosToRender.length > 0 && (
-                        <PhotoViewer photos={photosToRender} formatDate={formatDate} formatTime={formatTime} className="px-5 pb-4" />
+                        <PhotoViewer photos={photosToRender} formatDate={formatDate} formatTime={formatTime} inspectionId={inspectionId} className="px-5 pb-4" />
                     )}
                 </article>
             );
@@ -520,7 +533,7 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                 {photosToRender.length > 0 && (
                     <section className={`px-5 pb-3 ${wide ? "xl:pl-0 xl:pt-2.5" : ""}`}>
                         <h4 className="text-[11.5px] font-semibold text-slate-600">Annex · Field photographs ({actualPhotoCount})</h4>
-                        <PhotoViewer photos={photosToRender} formatDate={formatDate} formatTime={formatTime} className="mt-1.5" />
+                        <PhotoViewer photos={photosToRender} formatDate={formatDate} formatTime={formatTime} inspectionId={inspectionId} className="mt-1.5" />
                     </section>
                 )}
                 </div>
@@ -708,7 +721,7 @@ export default function ParcelInspectionStatus({ inspectionId, localInspection =
                 {photosToRender.length > 0 && (
                     <div className="pt-4 border-t border-slate-100">
                         <SectionLabel>Attached Field Photos</SectionLabel>
-                        <PhotoViewer photos={photosToRender} formatDate={formatDate} formatTime={formatTime} className="mt-2 max-w-[640px]" />
+                        <PhotoViewer photos={photosToRender} formatDate={formatDate} formatTime={formatTime} inspectionId={inspectionId} className="mt-2 max-w-[640px]" />
                     </div>
                 )}
             </div>
