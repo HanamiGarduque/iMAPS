@@ -30,7 +30,7 @@ dynamic IPs are not locked out.
 | `VITE_ARCGIS_API_KEY` | Esri basemap key (satellite and topographic maps); needed at **build** time. Without it the map silently falls back to OpenStreetMap. Restrict it to the "Static basemap tiles" privilege and your domain referrer |
 | `FORECAST_SERVICE_URL`, `FORECAST_SERVICE_API_KEY` | only if the forecasting service is hosted somewhere |
 | `ORIGIN_SECRET` | `openssl rand -hex 32` (see section 3) |
-| `CSP_MODE` | `report-only` (default: violations are logged in the browser console, nothing is blocked), `enforce` or `off`. Switch to `enforce` after checking the console on `/login` and the map pages |
+| `CSP_MODE` | `enforce` (default), `report-only` (log violations in the browser console, block nothing) or `off`. Use `report-only` to debug a blocked resource |
 | `HSTS_MAX_AGE` | seconds, default `31536000` (1 year); sent only over HTTPS; `0` disables |
 
    Do not set `PORT`; Railway injects it. Do not run the seeders (`admin@imaps.com` / `password123`).

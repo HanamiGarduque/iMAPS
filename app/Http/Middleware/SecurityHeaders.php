@@ -21,13 +21,17 @@ use Symfony\Component\HttpFoundation\Response;
  * switching to `enforce`. It is skipped while the Vite dev server runs, whose
  * origin changes per machine. Headers a controller already set are left alone.
  *
- * script-src keeps 'unsafe-inline' because the login splash and Inertia boot code
- * are inline; moving them to a nonce is the next tightening step.
+ * script-src uses a per-request nonce (no 'unsafe-inline'); inline <script> tags in
+ * the blade view must carry nonce="{{ Vite::cspNonce() }}". style-src keeps
+ * 'unsafe-inline' for the launch splash styles and React inline style attributes.
  */
 class SecurityHeaders
 {
     public function handle(Request $request, Closure $next): Response
     {
+        // Per-request nonce: Vite adds it to its own tags, the blade view to its inline scripts.
+        Vite::useCspNonce();
+
         $response = $next($request);
 
         $headers = $response->headers;
@@ -72,14 +76,14 @@ class SecurityHeaders
 
         $directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+            "script-src 'self' 'nonce-".Vite::cspNonce()."' https://challenges.cloudflare.com",
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src 'self' data: https://fonts.gstatic.com",
             "img-src 'self' data: blob: {$tiles} {$supabase}",
             "connect-src 'self' {$tiles} https://challenges.cloudflare.com {$supabase}".($supabase ? ' '.str_replace('https://', 'wss://', $supabase) : ''),
             "worker-src 'self' blob:",
             "frame-src 'self' blob: https://challenges.cloudflare.com",
-            "object-src 'self'",
+            "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",
             "frame-ancestors 'self'",

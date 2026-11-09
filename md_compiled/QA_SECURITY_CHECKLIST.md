@@ -73,7 +73,7 @@ Already done well (keep, don't regress): parameterized `whereRaw` queries, `Ensu
 ### Transport & headers
 - [ ] HTTPS enforced; HSTS enabled (`SecurityHeaders` middleware sends it over HTTPS; `HSTS_MAX_AGE`).
 - [x] Security headers added by `app/Http/Middleware/SecurityHeaders.php` (covered by `tests/Feature/SecurityHeadersTest.php`): `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy`, `Permissions-Policy`, `frame-ancestors` in the CSP.
-- [ ] Content-Security-Policy ships as **report-only** (`CSP_MODE=report-only`). Open `/login` (Turnstile), the Maps page (2D and 3D), an application with a permit preview and an inspection photo, and confirm the browser console shows no violations, then set `CSP_MODE=enforce`.
+- [ ] Content-Security-Policy is **enforced** by default (`CSP_MODE=enforce`). Open `/login` (Turnstile), the Maps page (2D and 3D), an application with a permit preview and an inspection photo, and confirm the browser console shows no violations; if something is blocked, set `CSP_MODE=report-only` to debug.
 - [ ] Tighten CSP later: replace `'unsafe-inline'` in `script-src` with a per-request nonce (the login splash and Inertia boot code are inline).
 - [ ] Verify the live headers: `curl -sI https://<domain>/ping` (from a registered device if the mTLS rule is on) or securityheaders.com.
 - [ ] CORS config does not allow `*` with credentials.

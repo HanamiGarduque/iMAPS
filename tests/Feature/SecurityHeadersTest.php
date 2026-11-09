@@ -87,4 +87,16 @@ class SecurityHeadersTest extends TestCase
         $this->assertStringContainsString('https://abc.supabase.co', $csp);
         $this->assertStringContainsString('wss://abc.supabase.co', $csp);
     }
+
+    public function test_scripts_use_a_nonce_instead_of_unsafe_inline(): void
+    {
+        config(['app.csp_mode' => 'enforce']);
+
+        $response = $this->get('/login');
+        $csp = $response->headers->get('Content-Security-Policy');
+
+        $this->assertMatchesRegularExpression("/script-src 'self' 'nonce-[^']+' /", $csp);
+        $this->assertStringNotContainsString("'unsafe-inline' https://challenges", $csp);
+        $this->assertStringContainsString("object-src 'none'", $csp);
+    }
 }

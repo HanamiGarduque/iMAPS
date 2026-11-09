@@ -103,7 +103,7 @@
             #launch-splash .ls-bar::after { left: 28%; }
         }
     </style>
-    <script>document.documentElement.classList.add('splash-on');</script>
+    <script nonce="{{ Vite::cspNonce() }}">document.documentElement.classList.add('splash-on');</script>
     @endif
     @inertiaHead
 </head>
@@ -140,7 +140,7 @@
         <div class="ls-name">Municipal Planning &amp; Development Office</div>
         <div class="ls-status" aria-hidden="true"><div class="ls-bar"></div><span>Preparing your workspace</span></div>
     </div>
-    <script>
+    <script nonce="{{ Vite::cspNonce() }}">
         (function () {
             var el = document.getElementById('launch-splash');
             var root = document.documentElement;

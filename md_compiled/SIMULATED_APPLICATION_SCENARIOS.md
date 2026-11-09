@@ -101,7 +101,7 @@ ORDER BY gid LIMIT 5;
 8. I-click ang **Submit**. Tandaan ang lumabas na **Reference Number** at ikumpara sa Form Number.
 9. Buksan ang application sa **Applications** list. Dahil approved agad ang parcel, dapat **For Release** na ang status.
 10. Pumunta sa tab na **Export permit/doc**, i-generate ang **Locational Clearance** (PDF).
-11. Sa **Receipt**, i-record ang **OR Number** (hal. `OR-0048213`) at **date of receipt**.
+11. Sa **Receipt**, i-record ang **OR Number** (hal. `OR-048213`) at **date of receipt**.
 12. I-click ang **Mark as Released**.
 
 **Dapat makita:** Status `Released`; may saved permit; kumpleto ang timeline (Received → For Release → Released); may entry sa Audit Trail; lumalabas ang lot sa map na naka-link sa application.
@@ -166,7 +166,7 @@ ORDER BY gid LIMIT 5;
 10. Bumalik bilang `Planning Officer`. Buksan ang application, tingnan ang inspection report sa review desk, at itakda ang parcel decision = **Approved**.
 11. I-submit ang technical review. Dapat lumipat ang status sa **For Release**.
 12. I-generate ang parehong permit (Zoning Certificate at Locational Clearance) sa **Export permit/doc**.
-13. I-record ang OR Number (`OR-0048276`) at date of receipt, tapos **Mark as Released**.
+13. I-record ang OR Number (`OR-048276`) at date of receipt, tapos **Mark as Released**.
 
 **Dapat makita:** May inspection round na `returned`; may notification sa inspector; kumpleto ang timeline; dalawang permit ang naka-save.
 
@@ -274,7 +274,7 @@ ORDER BY gid LIMIT 5;
 | Assessment fee | ₱6,000.00 |
 | SB Ordinance No. | `SB-ORD-2026-014` |
 | DAR Clearance Ref | `DAR-IV-A-2026-0331` |
-| OR Number | `OR-0048390` |
+| OR Number | `OR-048390` |
 | Preferred release mode | Pick-up |
 
 **Parcel (`land_parcels`, gid 1798):**
@@ -304,7 +304,7 @@ ORDER BY gid LIMIT 5;
 6. Buksan ang application. Ilipat sa **Technical Review**, tapusin ang evaluation, at ilipat sa **Under Sangguniang Bayan**.
 7. Sa **Amendment refs**, i-record ang **SB Ordinance No.** (`SB-ORD-2026-014`) at **DAR Clearance Ref** (`DAR-IV-A-2026-0331`).
 8. Subukan munang i-release nang **walang** SB Ordinance Number. Dapat **tanggihan** ng system. Pagkatapos ay ilagay ito at ituloy.
-9. Ilipat sa **For Release**, i-generate ang kinakailangang permit/dokumento, i-record ang OR Number (`OR-0048390`) at date of receipt.
+9. Ilipat sa **For Release**, i-generate ang kinakailangang permit/dokumento, i-record ang OR Number (`OR-048390`) at date of receipt.
 10. **Mark as Released.**
 
 **Dapat makita:** Kasama ang yugtong *Under Sangguniang Bayan* sa timeline (5 stages, hindi 4); hindi puwedeng mag-release kung walang SB ordinance number; nakikita ang status sa public tracker.
