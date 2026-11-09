@@ -15,8 +15,8 @@ use Symfony\Component\HttpFoundation\Response;
  * Permissions-Policy that switches off features the app never uses. HSTS is sent
  * only over HTTPS (trustProxies makes isSecure() correct behind Cloudflare).
  *
- * Content-Security-Policy is controlled by CSP_MODE: `report-only` (default, the
- * browser logs violations to the console and blocks nothing), `enforce`, or `off`.
+ * Content-Security-Policy is controlled by CSP_MODE: `report-only` (the
+ * browser logs violations to the console and blocks nothing), `enforce` (default), or `off`.
  * Check the console on the login page and the map pages in report-only mode before
  * switching to `enforce`. It is skipped while the Vite dev server runs, whose
  * origin changes per machine. Headers a controller already set are left alone.
@@ -36,6 +36,7 @@ class SecurityHeaders
             'X-Content-Type-Options' => 'nosniff',
             'X-Frame-Options' => 'SAMEORIGIN',
             'Referrer-Policy' => 'strict-origin-when-cross-origin',
+            'Cross-Origin-Opener-Policy' => 'same-origin',
             'Permissions-Policy' => 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
         ];
 

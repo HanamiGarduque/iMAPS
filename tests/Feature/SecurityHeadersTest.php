@@ -13,6 +13,7 @@ class SecurityHeadersTest extends TestCase
         $response->assertOk();
         $response->assertHeader('X-Content-Type-Options', 'nosniff');
         $response->assertHeader('X-Frame-Options', 'SAMEORIGIN');
+        $response->assertHeader('Cross-Origin-Opener-Policy', 'same-origin');
         $response->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
         $this->assertStringContainsString('camera=()', $response->headers->get('Permissions-Policy'));
     }
@@ -42,7 +43,7 @@ class SecurityHeadersTest extends TestCase
         $this->get('https://localhost/ping')->assertHeaderMissing('Strict-Transport-Security');
     }
 
-    public function test_csp_is_report_only_by_default(): void
+    public function test_csp_can_be_report_only(): void
     {
         config(['app.csp_mode' => 'report-only']);
 
@@ -55,9 +56,8 @@ class SecurityHeadersTest extends TestCase
         $this->assertStringContainsString("frame-ancestors 'self'", $csp);
     }
 
-    public function test_csp_can_be_enforced(): void
+    public function test_csp_is_enforced_by_default(): void
     {
-        config(['app.csp_mode' => 'enforce']);
 
         $response = $this->get('/ping');
 
